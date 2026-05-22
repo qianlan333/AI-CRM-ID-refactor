@@ -849,8 +849,11 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "api_admin_automation_conversion_model_infra_settings_save_legacy",
     }
     kept_routes = {
+        "/admin/automation-conversion/programs/<int:program_id>/overview",
         "/admin/automation-conversion/programs/<int:program_id>/operations",
+        "/admin/automation-conversion/programs/<int:program_id>/executions",
         "/admin/automation-conversion/programs/<int:program_id>/flow-design",
+        "/admin/automation-conversion/programs/<int:program_id>/member-ops",
         "/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send",
         "/admin/automation-conversion/programs/<int:program_id>/overview/signup-tag/apply",
         "/admin/automation-conversion/programs/<int:program_id>/overview/message-activity-sync/run",

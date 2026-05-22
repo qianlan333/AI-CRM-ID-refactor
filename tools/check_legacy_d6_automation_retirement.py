@@ -23,9 +23,6 @@ RETIRED_READONLY_ROUTES: tuple[tuple[str, str], ...] = (
 )
 
 RETIRED_ALIAS_ROUTES: tuple[tuple[str, str], ...] = (
-    ("GET", "/admin/automation-conversion/programs/<int:program_id>/overview"),
-    ("GET", "/admin/automation-conversion/programs/<int:program_id>/executions"),
-    ("GET", "/admin/automation-conversion/programs/<int:program_id>/member-ops"),
     ("GET", "/api/admin/automation-conversion/dashboard"),
     ("GET", "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search"),
     ("GET", "/api/admin/automation-conversion/member"),
@@ -36,6 +33,9 @@ RETIRED_ALIAS_ROUTES: tuple[tuple[str, str], ...] = (
 )
 
 RETAINED_FALLBACK_ROUTES: tuple[tuple[str, str], ...] = (
+    ("GET", "/admin/automation-conversion/programs/<int:program_id>/overview"),
+    ("GET", "/admin/automation-conversion/programs/<int:program_id>/executions"),
+    ("GET", "/admin/automation-conversion/programs/<int:program_id>/member-ops"),
     ("POST", "/api/admin/automation-conversion/member/push-openclaw"),
     ("POST", "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview"),
     ("POST", "/api/admin/automation-conversion/stage/<stage_key>/manual-send"),
