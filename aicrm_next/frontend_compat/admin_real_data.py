@@ -1,328 +1,52 @@
 from __future__ import annotations
 
-import os
-from datetime import UTC, datetime
 from typing import Any
 
-from aicrm_next.shared.runtime import database_mode, production_data_ready, runtime_health_state
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _database_url() -> str:
-    return str(os.getenv("DATABASE_URL", "") or "").strip()
-
-
-def _pg_available() -> bool:
-    return database_mode() == "postgres" and bool(_database_url())
-
-
-def _query_rows(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    if not _pg_available():
-        return []
-    try:
-        import psycopg
-        from psycopg.rows import dict_row
-    except ModuleNotFoundError:
-        return []
-    try:
-        with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
-            with conn.cursor() as cur:
-                cur.execute(query, params)
-                return [dict(row) for row in cur.fetchall()]
-    except Exception:
-        return []
-
-
-def _query_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any]:
-    rows = _query_rows(query, params)
-    return rows[0] if rows else {}
-
-
-def _count(table: str) -> int:
-    row = _query_one(
-        """
-        SELECT CASE WHEN to_regclass(%s) IS NULL THEN 0
-                    ELSE (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', %s), false, true, '')))[1]::text::int
-               END AS count
-        """,
-        (table, table),
-    )
-    return int(row.get("count") or 0)
-
-
-def _source_status() -> str:
-    return "production_postgres" if production_data_ready() else "local_contract_probe"
-
-
-def _local_rows(prefix: str, count: int = 1) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": f"{prefix}_contract_{index + 1}",
-            "name": f"{prefix} contract probe {index + 1}",
-            "status": "available",
-            "updated_at": _now_iso(),
-        }
-        for index in range(count)
-    ]
+from aicrm_next.admin_read_model.application import (
+    GetAdminAiAssistantPageQuery,
+    GetAdminApiDocsPageQuery,
+    GetAdminConfigPageQuery,
+    GetAdminFunnelPageQuery,
+    GetAdminJobsPageQuery,
+    GetAdminMediaPageQuery,
+    GetAdminProductsPageQuery,
+    GetAdminTransactionsPageQuery,
+    GetAdminWeComTagsPageQuery,
+    page_row_count,
+)
 
 
 def ai_assistant_payload() -> dict[str, Any]:
-    config_count = _count("automation_agent_config")
-    run_count = _count("automation_agent_run")
-    output_count = _count("automation_agent_output")
-    llm_call_count = _count("automation_agent_llm_call_log")
-    configs = _query_rows(
-        """
-        SELECT id, agent_code, display_name, scenario_code, enabled, updated_at
-        FROM automation_agent_config
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 10
-        """
-    )
-    runs = _query_rows(
-        """
-        SELECT id, run_id, agent_code, status, external_contact_id, created_at, updated_at
-        FROM automation_agent_run
-        ORDER BY created_at DESC, id DESC
-        LIMIT 10
-        """
-    )
-    outputs = _query_rows(
-        """
-        SELECT id, output_id, run_id, agent_code, output_type, applied_status, created_at
-        FROM automation_agent_output
-        ORDER BY created_at DESC, id DESC
-        LIMIT 10
-        """
-    )
-    calls = _query_rows(
-        """
-        SELECT id, agent_code, model_name, status, latency_ms, created_at
-        FROM automation_agent_llm_call_log
-        ORDER BY created_at DESC, id DESC
-        LIMIT 10
-        """
-    )
-    if not _pg_available() and not configs and not runs:
-        configs = _local_rows("agent_config")
-    cards = [
-        {"label": "Agent 配置", "value": config_count or len(configs), "description": "automation_agent_config"},
-        {"label": "最近运行", "value": run_count or len(runs), "description": "automation_agent_run"},
-        {"label": "最近输出", "value": output_count or len(outputs), "description": "automation_agent_output"},
-        {"label": "LLM 调用", "value": llm_call_count or len(calls), "description": "automation_agent_llm_call_log"},
-    ]
-    return {
-        "source_status": _source_status(),
-        "cards": cards,
-        "sections": [
-            {"title": "Agent 配置", "headers": ["agent_code", "名称", "场景", "启用", "更新时间"], "rows": [[r.get("agent_code") or r.get("id"), r.get("display_name") or r.get("name"), r.get("scenario_code") or "-", r.get("enabled", r.get("status")), r.get("updated_at")] for r in configs]},
-            {"title": "最近运行", "headers": ["run_id", "agent_code", "状态", "客户", "时间"], "rows": [[r.get("run_id") or r.get("id"), r.get("agent_code"), r.get("status"), r.get("external_contact_id"), r.get("created_at")] for r in runs]},
-            {"title": "最近输出", "headers": ["output_id", "run_id", "agent_code", "状态", "时间"], "rows": [[r.get("output_id") or r.get("id"), r.get("run_id"), r.get("agent_code"), r.get("applied_status"), r.get("created_at")] for r in outputs]},
-            {"title": "LLM 调用", "headers": ["agent_code", "模型", "状态", "延迟", "时间"], "rows": [[r.get("agent_code"), r.get("model_name"), r.get("status"), r.get("latency_ms"), r.get("created_at")] for r in calls]},
-        ],
-    }
+    return GetAdminAiAssistantPageQuery()()
 
 
 def funnel_payload() -> dict[str, Any]:
-    counts = {
-        "客户总数": _count("contacts"),
-        "问卷提交": _count("questionnaire_submissions"),
-        "订单数": _count("wechat_pay_orders"),
-        "自动化成员": _count("automation_member"),
-        "运营任务": _count("automation_operation_task"),
-        "工作流执行": _count("automation_workflow_execution"),
-    }
-    if not _pg_available():
-        counts = {"客户总数": 1, "问卷提交": 1, "订单数": 1, "自动化成员": 1, "运营任务": 1, "工作流执行": 1}
-    cards = [{"label": key, "value": value, "description": "生产统计" if _pg_available() else "本地结构校验"} for key, value in counts.items()]
-    recent_contacts = _query_rows(
-        """
-        SELECT external_userid, COALESCE(customer_name, remark, external_userid) AS name, owner_userid, updated_at
-        FROM contacts ORDER BY updated_at DESC, id DESC LIMIT 10
-        """
-    )
-    recent_submissions = _query_rows(
-        """
-        SELECT respondent_key, external_userid, total_score, submitted_at
-        FROM questionnaire_submissions ORDER BY submitted_at DESC, id DESC LIMIT 10
-        """
-    )
-    rows = [[r.get("external_userid"), r.get("name"), r.get("owner_userid"), r.get("updated_at")] for r in recent_contacts]
-    rows += [[r.get("respondent_key"), r.get("external_userid"), r.get("total_score"), r.get("submitted_at")] for r in recent_submissions]
-    if not rows and not _pg_available():
-        rows = [["local_contract_contact", "本地结构校验", "system", _now_iso()]]
-    return {
-        "source_status": _source_status(),
-        "cards": cards,
-        "sections": [{"title": "最近客户 / 问卷事件", "headers": ["标识", "名称/客户", "负责人/分数", "时间"], "rows": rows}],
-    }
+    return GetAdminFunnelPageQuery()()
 
 
 def wecom_tags_payload() -> dict[str, Any]:
-    rows = _query_rows(
-        """
-        SELECT tag_id, COALESCE(NULLIF(tag_name, ''), tag_id) AS tag_name, count(*) AS usage_count, max(created_at) AS updated_at
-        FROM contact_tags
-        GROUP BY tag_id, tag_name
-        ORDER BY usage_count DESC, updated_at DESC
-        LIMIT 50
-        """
-    )
-    cards = [
-        {"label": "本地标签缓存", "value": len(rows), "description": "contact_tags distinct tag_id"},
-        {"label": "标签使用记录", "value": sum(int(row.get("usage_count") or 0) for row in rows), "description": "contact_tags rows"},
-        {"label": "远程同步", "value": "需配置" if not rows else "有缓存", "description": "远程企微失败时仍展示本地缓存"},
-    ]
-    if not rows and not _pg_available():
-        rows = [{"tag_id": "local_contract_tag", "tag_name": "本地缓存结构校验", "usage_count": 1, "updated_at": _now_iso()}]
-    return {
-        "source_status": _source_status(),
-        "cards": cards,
-        "sections": [{"title": "标签缓存", "headers": ["tag_id", "标签名", "使用人数", "最近同步/写入"], "rows": [[r.get("tag_id"), r.get("tag_name"), r.get("usage_count"), r.get("updated_at")] for r in rows]}],
-        "empty_note": "生产数据为空：本地 contact_tags 暂无标签缓存，请检查企微标签同步配置和最近同步错误。",
-    }
+    return GetAdminWeComTagsPageQuery()()
 
 
 def products_payload() -> dict[str, Any]:
-    rows = _query_rows(
-        """
-        SELECT p.id, p.product_code, p.name, p.amount_total, p.currency, p.status, p.enabled,
-               p.created_at, p.updated_at, count(s.id) AS slice_count
-        FROM wechat_pay_products p
-        LEFT JOIN wechat_pay_product_page_slices s ON s.product_id = p.id AND s.enabled = TRUE
-        GROUP BY p.id
-        ORDER BY p.updated_at DESC, p.id DESC
-        LIMIT 100
-        """
-    )
-    if not rows and not _pg_available():
-        rows = [{"product_code": "local_contract_product", "name": "本地结构校验商品", "amount_total": 1, "currency": "CNY", "status": "available", "enabled": True, "slice_count": 1, "updated_at": _now_iso()}]
-    return {
-        "source_status": _source_status(),
-        "cards": [{"label": "商品数量", "value": len(rows), "description": "wechat_pay_products"}],
-        "sections": [{"title": "商品列表", "headers": ["编码", "名称", "价格", "状态", "页面切片", "更新时间"], "rows": [[r.get("product_code"), r.get("name"), f"{int(r.get('amount_total') or 0) / 100:.2f} {r.get('currency') or 'CNY'}", r.get("status") or r.get("enabled"), r.get("slice_count"), r.get("updated_at")] for r in rows]}],
-    }
+    return GetAdminProductsPageQuery()()
 
 
 def transactions_payload() -> dict[str, Any]:
-    rows = _query_rows(
-        """
-        SELECT out_trade_no, transaction_id, COALESCE(NULLIF(payer_name_snapshot, ''), NULLIF(external_userid, ''), respondent_key) AS customer,
-               product_name, product_code, amount_total, currency, status, trade_state, created_at
-        FROM wechat_pay_orders
-        ORDER BY created_at DESC, id DESC
-        LIMIT 50
-        """
-    )
-    if not rows and not _pg_available():
-        rows = [{"out_trade_no": "local_contract_order", "transaction_id": "local_contract_txn", "customer": "本地结构校验", "product_name": "结构校验商品", "product_code": "local_contract_product", "amount_total": 1, "currency": "CNY", "status": "available", "trade_state": "", "created_at": _now_iso()}]
-    return {
-        "source_status": _source_status(),
-        "cards": [{"label": "交易订单", "value": len(rows), "description": "wechat_pay_orders"}],
-        "sections": [{"title": "交易列表", "headers": ["创建时间", "商户单号", "微信单号", "客户", "商品", "金额", "状态"], "rows": [[r.get("created_at"), r.get("out_trade_no"), r.get("transaction_id") or "-", r.get("customer") or "-", f"{r.get('product_name') or ''} / {r.get('product_code') or ''}", f"{int(r.get('amount_total') or 0) / 100:.2f} {r.get('currency') or 'CNY'}", r.get("status") or r.get("trade_state")] for r in rows]}],
-    }
+    return GetAdminTransactionsPageQuery()()
 
 
 def media_payload(kind: str) -> dict[str, Any]:
-    if kind == "image":
-        rows = _query_rows("SELECT id, name, file_name, category, tags, enabled, updated_at FROM image_library ORDER BY updated_at DESC, id DESC LIMIT 100")
-        headers = ["ID", "名称", "文件", "分类", "标签", "状态", "更新时间"]
-        table_rows = [[r.get("id"), r.get("name"), r.get("file_name"), r.get("category") or "-", r.get("tags") or [], "启用" if r.get("enabled") else "停用", r.get("updated_at")] for r in rows]
-        label = "图片素材"
-    elif kind == "miniprogram":
-        rows = _query_rows("SELECT id, COALESCE(NULLIF(title, ''), name) AS title, appid, pagepath, enabled, updated_at FROM miniprogram_library ORDER BY updated_at DESC, id DESC LIMIT 100")
-        headers = ["ID", "标题", "appid", "页面路径", "状态", "更新时间"]
-        table_rows = [[r.get("id"), r.get("title"), r.get("appid"), r.get("pagepath"), "启用" if r.get("enabled") else "停用", r.get("updated_at")] for r in rows]
-        label = "小程序素材"
-    else:
-        rows = _query_rows("SELECT id, name, file_name, mime_type, file_size, tags, enabled, updated_at FROM attachment_library ORDER BY updated_at DESC, id DESC LIMIT 100")
-        headers = ["ID", "名称", "文件", "类型", "大小", "标签", "状态", "更新时间"]
-        table_rows = [[r.get("id"), r.get("name"), r.get("file_name"), r.get("mime_type"), r.get("file_size"), r.get("tags") or [], "启用" if r.get("enabled") else "停用", r.get("updated_at")] for r in rows]
-        label = "附件素材"
-    if not rows and not _pg_available():
-        table_rows = [["local_contract_media", f"{label}结构校验", "local_contract", "-", [], "启用", _now_iso()]]
-    return {
-        "source_status": _source_status(),
-        "cards": [{"label": label, "value": len(rows) or len(table_rows), "description": f"{kind}_library"}],
-        "sections": [{"title": f"{label}列表", "headers": headers, "rows": table_rows}],
-        "empty_note": f"生产数据为空：当前 {label} 表没有可显示记录。",
-    }
+    return GetAdminMediaPageQuery()(kind)
 
 
 def jobs_payload() -> dict[str, Any]:
-    sync_count = _count("sync_runs")
-    callback_count = _count("wecom_external_contact_event_logs")
-    batch_count = _count("reply_message_batch")
-    outbound_count = _count("outbound_tasks")
-    timer_rows = [
-        ["aicrm-reply-monitor-capture.timer", "server_observed", "capture only"],
-        ["aicrm-reply-monitor-run-due.timer", "server_observed", "item-level failure guarded"],
-        ["aicrm-automation-jobs-run-due.timer", "scheduled_safe_mode", "safe mode payload required"],
-        ["aicrm-campaign-run-due.timer", "scheduled_safe_mode", "safe mode payload required"],
-    ]
-    cards = [
-        {"label": "同步记录", "value": sync_count, "description": "sync_runs"},
-        {"label": "回调事件", "value": callback_count, "description": "wecom_external_contact_event_logs"},
-        {"label": "消息批次", "value": batch_count, "description": "reply_message_batch"},
-        {"label": "出站任务", "value": outbound_count, "description": "outbound_tasks"},
-    ]
-    if not _pg_available():
-        cards = [{**card, "value": card["value"] or 1, "description": "本地结构校验"} for card in cards]
-    return {"source_status": _source_status(), "cards": cards, "sections": [{"title": "Timer 状态", "headers": ["timer", "状态", "说明"], "rows": timer_rows}]}
+    return GetAdminJobsPageQuery()()
 
 
 def config_payload() -> dict[str, Any]:
-    health = runtime_health_state()
-    db_label = health.get("database_mode")
-    if db_label == "fixture":
-        db_label = "local_contract_probe"
-    rows = [
-        ["database_mode", db_label],
-        ["production_data_ready", health.get("production_data_ready")],
-        ["release_sha", os.getenv("AICRM_NEXT_RELEASE_SHA") or os.getenv("RELEASE_SHA") or "unknown"],
-        ["callback_fallback", "5013 retained until observation completes"],
-        ["wechat_callback_token", "configured" if os.getenv("WECOM_CALLBACK_TOKEN") else "missing"],
-        ["wechat_pay_config", "configured" if os.getenv("WECHAT_PAY_MCH_ID") else "missing"],
-        ["oauth_config", "configured" if os.getenv("WECHAT_OAUTH_APPID") or os.getenv("WECHAT_MP_APPID") else "missing"],
-    ]
-    return {
-        "source_status": _source_status(),
-        "cards": [
-            {"label": "数据库", "value": db_label, "description": "runtime health"},
-            {"label": "生产数据", "value": str(health.get("production_data_ready")), "description": "production_data_ready"},
-            {"label": "回调兜底", "value": "retained", "description": "5013 fallback observation"},
-        ],
-        "sections": [{"title": "运行配置", "headers": ["项目", "状态"], "rows": rows}],
-    }
+    return GetAdminConfigPageQuery()()
 
 
 def api_docs_payload() -> dict[str, Any]:
-    routes = [
-        ["后台 API", "GET", "/api/admin/dashboard/shell-context"],
-        ["后台 API", "GET", "/api/customers"],
-        ["后台 API", "GET", "/api/admin/questionnaires"],
-        ["企微回调", "POST", "/wecom/external-contact/callback"],
-        ["企微回调", "POST", "/api/wecom/events"],
-        ["支付回调", "POST", "/api/h5/wechat-pay/notify"],
-        ["支付回调", "POST", "/api/h5/wechat-pay/jsapi/orders"],
-        ["自动化任务", "POST", "/api/admin/automation-conversion/reply-monitor/run-due"],
-        ["自动化任务", "POST", "/api/admin/automation-conversion/jobs/run-due"],
-        ["自动化任务", "POST", "/api/admin/cloud-orchestrator/campaigns/run-due"],
-        ["素材 API", "GET", "/api/admin/image-library"],
-        ["素材 API", "GET", "/api/admin/miniprogram-library"],
-        ["素材 API", "GET", "/api/admin/attachment-library"],
-        ["商品/订单 API", "GET", "/api/admin/wechat-pay/products"],
-        ["商品/订单 API", "GET", "/api/admin/wechat-pay/orders"],
-    ]
-    return {
-        "source_status": "fastapi_route_registry",
-        "cards": [{"label": "API 路由", "value": len(routes), "description": "Next route groups"}],
-        "sections": [{"title": "API 分组", "headers": ["分组", "方法", "路径"], "rows": routes}],
-    }
-
-
-def page_row_count(payload: dict[str, Any]) -> int:
-    return sum(len(section.get("rows") or []) for section in payload.get("sections") or [])
+    return GetAdminApiDocsPageQuery()()

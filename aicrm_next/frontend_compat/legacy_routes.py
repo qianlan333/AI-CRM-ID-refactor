@@ -9,24 +9,24 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.shared.runtime import production_data_ready
+from aicrm_next.admin_read_model.application import (
+    GetAdminAiAssistantPageQuery,
+    GetAdminApiDocsPageQuery,
+    GetAdminConfigPageQuery,
+    GetAdminFunnelPageQuery,
+    GetAdminJobsPageQuery,
+    GetAdminMediaPageQuery,
+    GetAdminProductsPageQuery,
+    GetAdminTransactionsPageQuery,
+    GetAdminWeComTagsPageQuery,
+    page_row_count,
+)
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
 from aicrm_next.questionnaire.application import GetQuestionnairePreflightQuery
 from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
 from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import LegacyQuestionnaireDataUnavailable, list_questionnaires_from_legacy
-from .admin_real_data import (
-    ai_assistant_payload,
-    api_docs_payload,
-    config_payload,
-    funnel_payload,
-    jobs_payload,
-    media_payload,
-    page_row_count,
-    products_payload,
-    transactions_payload,
-    wecom_tags_payload,
-)
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -173,6 +173,8 @@ def _real_data_context(context: dict, *, payload: dict, title: str, summary: str
             "real_data_row_count": page_row_count(payload),
         }
     )
+    if payload.get("page_error"):
+        context["page_error"] = payload["page_error"]
     return context
 
 
@@ -270,7 +272,7 @@ def admin_user_ops_ui(request: Request):
         page_summary="客户激活与运营入口读取生产客户、问卷、交易与自动化统计。",
         active_endpoint="api.admin_console_customers",
     )
-    payload = funnel_payload()
+    payload = GetAdminFunnelPageQuery()()
     _real_data_context(
         context,
         payload=payload,
@@ -290,7 +292,7 @@ def admin_user_ops_funnel(request: Request):
     )
     _real_data_context(
         context,
-        payload=funnel_payload(),
+        payload=GetAdminFunnelPageQuery()(),
         title="漏斗 / 数据看板",
         summary="生产客户、问卷提交、订单、自动化成员、运营任务和工作流执行统计。",
     )
@@ -307,7 +309,7 @@ def admin_cloud_orchestrator(request: Request):
     )
     _real_data_context(
         context,
-        payload=ai_assistant_payload(),
+        payload=GetAdminAiAssistantPageQuery()(),
         title="AI 助手",
         summary="只读展示 automation_agent_config、run、output 与 LLM 调用日志；不触发外部调用。",
     )
@@ -324,7 +326,7 @@ def admin_wecom_tags(request: Request):
     )
     _real_data_context(
         context,
-        payload=wecom_tags_payload(),
+        payload=GetAdminWeComTagsPageQuery()(),
         title="企微标签管理",
         summary="展示本地已同步标签缓存、使用人数和同步前置状态；不调用远程企微接口。",
     )
@@ -440,7 +442,7 @@ def admin_wechat_pay_transactions(request: Request):
     )
     _real_data_context(
         context,
-        payload=transactions_payload(),
+        payload=GetAdminTransactionsPageQuery()(),
         title="交易管理",
         summary="生产 wechat_pay_orders 只读列表，包含商户单号、微信单号、客户、商品、金额和状态。",
     )
@@ -457,7 +459,7 @@ def admin_wechat_pay_products(request: Request):
     )
     _real_data_context(
         context,
-        payload=products_payload(),
+        payload=GetAdminProductsPageQuery()(),
         title="商品管理",
         summary="生产 wechat_pay_products 与 page slices 只读列表。",
     )
@@ -474,7 +476,7 @@ def admin_alipay_transactions(request: Request):
     )
     _real_data_context(
         context,
-        payload=transactions_payload(),
+        payload=GetAdminTransactionsPageQuery()(),
         title="支付宝交易兼容入口",
         summary="当前交易页展示统一生产订单只读视图；不触发支付外呼。",
     )
@@ -491,7 +493,7 @@ def admin_image_library(request: Request):
     )
     _real_data_context(
         context,
-        payload=media_payload("image"),
+        payload=GetAdminMediaPageQuery()("image"),
         title="图片素材库",
         summary="生产 image_library 首屏只读列表；上传入口保留但不在本页触发外部动作。",
     )
@@ -508,7 +510,7 @@ def admin_miniprogram_library(request: Request):
     )
     _real_data_context(
         context,
-        payload=media_payload("miniprogram"),
+        payload=GetAdminMediaPageQuery()("miniprogram"),
         title="小程序素材库",
         summary="生产 miniprogram_library 首屏只读列表。",
     )
@@ -525,7 +527,7 @@ def admin_attachment_library(request: Request):
     )
     _real_data_context(
         context,
-        payload=media_payload("attachment"),
+        payload=GetAdminMediaPageQuery()("attachment"),
         title="附件素材库",
         summary="生产 attachment_library 首屏只读列表，生产表为空时展示明确空状态。",
     )
@@ -563,7 +565,7 @@ def admin_jobs(request: Request):
     )
     _real_data_context(
         context,
-        payload=jobs_payload(),
+        payload=GetAdminJobsPageQuery()(),
         title="同步任务配置 / 同步任务",
         summary="展示同步记录、回调事件、消息批次、出站任务和四个 timer 的 safe mode 状态。",
     )
@@ -580,7 +582,7 @@ def admin_config(request: Request):
     )
     _real_data_context(
         context,
-        payload=config_payload(),
+        payload=GetAdminConfigPageQuery()(),
         title="运行配置",
         summary="展示数据库模式、release、callback fallback、OAuth、企微和支付配置预检状态；不展示 secrets。",
     )
@@ -597,7 +599,7 @@ def admin_api_docs(request: Request):
     )
     _real_data_context(
         context,
-        payload=api_docs_payload(),
+        payload=GetAdminApiDocsPageQuery()(),
         title="API 文档",
         summary="按后台 API、企微回调、支付回调、自动化任务、素材 API 和商品/订单 API 分组展示。",
     )
