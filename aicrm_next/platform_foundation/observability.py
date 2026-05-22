@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from aicrm_next.shared.runtime import runtime_health_state
+
 
 def health_payload() -> dict:
-    return {"ok": True, "status": "ok", "service": "aicrm-next", "database": "fixture"}
+    return runtime_health_state()
