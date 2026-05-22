@@ -6,6 +6,7 @@ import logging
 import os
 from functools import lru_cache
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
@@ -88,6 +89,23 @@ def _public_base_url() -> str:
     if production:
         return "https://www.youcangogogo.com"
     return "http://localhost"
+
+
+def _cookie_domain_candidates(request: Request, base_url: str) -> list[str]:
+    domains: list[str] = []
+    for candidate in (urlparse(base_url).hostname, request.url.hostname):
+        value = str(candidate or "").strip()
+        if value and value not in domains:
+            domains.append(value)
+    return domains or ["localhost"]
+
+
+def _copy_request_cookies_to_legacy_client(client: Any, request: Request, *, base_url: str) -> None:
+    if not request.cookies:
+        return
+    for domain in _cookie_domain_candidates(request, base_url):
+        for key, value in request.cookies.items():
+            client.set_cookie(str(key), str(value), domain=domain, origin_only=False, path="/")
 
 
 def normalize_legacy_response(raw_response: Any) -> Response:
@@ -547,7 +565,7 @@ async def forward_to_legacy_flask(request: Request) -> Response:
     headers = {
         key: value
         for key, value in request.headers.items()
-        if key.lower() not in {"host", "content-length"}
+        if key.lower() not in {"host", "content-length", "cookie"}
     }
     LOGGER.info(
         "legacy facade forwarding method=%s path=%s query=%s",
@@ -572,12 +590,14 @@ async def forward_to_legacy_flask(request: Request) -> Response:
                 "X-AICRM-Compatibility-Facade": LEGACY_COMPATIBILITY_BOUNDARY,
             },
         )
+    base_url = _public_base_url()
+    _copy_request_cookies_to_legacy_client(client, request, base_url=base_url)
     legacy_response = client.open(
         path=request.url.path,
         method=request.method,
         query_string=query_string,
         headers=headers,
         data=body,
-        base_url=_public_base_url(),
+        base_url=base_url,
     )
     return normalize_legacy_response(legacy_response)

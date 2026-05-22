@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
+from flask import Flask, jsonify, request as flask_request
 
 from aicrm_next.integration_gateway import legacy_flask_facade
 from aicrm_next.main import create_app
@@ -136,6 +139,29 @@ def test_legacy_flask_facade_uses_public_base_url_in_production(monkeypatch):
     monkeypatch.setenv("WECHAT_PAY_NOTIFY_URL", "http://localhost/api/h5/wechat-pay/notify")
 
     assert legacy_flask_facade._public_base_url() == "https://www.youcangogogo.com"
+
+
+def test_legacy_flask_facade_forwards_request_cookies(monkeypatch):
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "http://testserver")
+    legacy_app = Flask(__name__)
+
+    @legacy_app.get("/legacy-cookie-probe")
+    def legacy_cookie_probe():
+        return jsonify({"session": flask_request.cookies.get("session", "")})
+
+    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", lambda: legacy_app)
+    app = FastAPI()
+
+    @app.get("/legacy-cookie-probe")
+    async def probe(request: Request) -> Response:
+        return await legacy_flask_facade.forward_to_legacy_flask(request)
+
+    client = TestClient(app)
+    client.cookies.set("session", "signed-session")
+    response = client.get("/legacy-cookie-probe")
+
+    assert response.status_code == 200
+    assert response.json()["session"] == "signed-session"
 
 
 def test_cutover_checker_contract(monkeypatch):
