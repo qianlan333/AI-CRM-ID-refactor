@@ -1,8 +1,8 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `195`
-- production_compat_route_count: `74`
+- route_count: `199`
+- production_compat_route_count: `78`
 - production_compat_catch_all_count: `44`
 - blockers: `0`
 
@@ -19,7 +19,7 @@
 - GET /admin/questionnaires/21: `next` -> `aicrm_next.frontend_compat.legacy_routes.admin_questionnaire_detail` (manifest `/admin/questionnaires/{questionnaire_id}` / `readonly_facade`)
 - GET /api/admin/questionnaires/21: `next` -> `aicrm_next.questionnaire.api.get_questionnaire` (manifest `/api/admin/questionnaires*` / `guarded_preview`)
 - GET /api/h5/questionnaires/hxc-activation-v1: `next` -> `aicrm_next.questionnaire.api.public_get_questionnaire` (manifest `/api/h5/questionnaires*` / `guarded_preview`)
-- GET /api/h5/wechat/oauth/start: `next` -> `aicrm_next.questionnaire.api.wechat_oauth_start` (manifest `/api/h5/wechat/oauth*` / `fake_adapter`)
+- GET /api/h5/wechat/oauth/start: `production_compat` -> `aicrm_next.production_compat.api.legacy_questionnaire_oauth_routes` (manifest `/api/h5/wechat/oauth*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/overview: `next` -> `aicrm_next.automation_engine.api.automation_overview` (manifest `/api/admin/automation-conversion*` / `guarded_preview`)
 - POST /api/admin/automation-conversion/programs/3/setup/basic: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/programs*` / `legacy_forward`)
 - POST /api/admin/automation-conversion/settings/default-channel/generate: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/settings*` / `legacy_forward`)
@@ -52,6 +52,9 @@
 - POST /api/sidebar/bind-mobile: `production_compat` -> `aicrm_next.production_compat.api.legacy_production_compat_routes` (manifest `/api/sidebar*` / `legacy_forward`)
 
 ## Shadowed Exact Routes
+- POST /api/h5/questionnaires/{slug}/submit caught by `/api/h5/questionnaires/{slug}/submit`
+- GET /api/h5/wechat/oauth/start caught by `/api/h5/wechat/oauth/start`
+- GET /api/h5/wechat/oauth/callback caught by `/api/h5/wechat/oauth/callback`
 - GET /api/admin/wechat-pay/products caught by `/api/admin/wechat-pay/products`
 - GET /api/admin/wechat-pay/products/{product_id} caught by `/api/admin/wechat-pay/products/{path:path}`
 - POST /api/admin/wechat-pay/products caught by `/api/admin/wechat-pay/products`

@@ -45,6 +45,18 @@ async def legacy_production_compat_timer_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/h5/wechat/oauth/start", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/h5/wechat/oauth/callback", methods=["GET", "OPTIONS", "HEAD"])
+async def legacy_questionnaire_oauth_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
+@router.api_route("/api/h5/questionnaires/{slug}/submit", methods=["POST", "OPTIONS"])
+@router.api_route("/api/h5/questionnaires/{slug}/client-diagnostics", methods=["POST", "OPTIONS"])
+async def legacy_questionnaire_public_write_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @router.api_route("/api/admin/automation-conversion/settings", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/settings/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/default-channel-settings", methods=_ALL_METHODS)

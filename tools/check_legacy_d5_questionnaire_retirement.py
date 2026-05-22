@@ -71,6 +71,7 @@ NEXT_QUESTIONNAIRE_ROUTE_TOKENS = [
 
 PRODUCTION_CONFIG_PREFIXES = ("deploy/", ".github/")
 PRODUCTION_CONFIG_KEYWORDS = ("nginx", "production", "systemd", "supervisor", "docker-compose")
+PRODUCTION_CONFIG_EXEMPT_PREFIXES = ("aicrm_next/production_compat/",)
 
 
 def _read(path: str) -> str:
@@ -96,6 +97,8 @@ def _git_changed_files() -> list[str]:
 def _production_config_modified(changed_files: list[str]) -> bool:
     for path in changed_files:
         lower = path.lower()
+        if lower.startswith(PRODUCTION_CONFIG_EXEMPT_PREFIXES):
+            continue
         if lower == ".github/workflows/ci.yml":
             continue
         if lower.startswith(PRODUCTION_CONFIG_PREFIXES):

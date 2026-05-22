@@ -235,7 +235,29 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_d7_2_questionnaire_adapter_contract.py
-    notes: Public questionnaire routes are Next exact; submit/external push behavior remains guarded.
+    notes: Public questionnaire read routes are Next exact; submit and diagnostics POSTs forward to legacy Flask so OAuth session identity and production submit behavior are preserved.
+  - route_pattern: /api/h5/questionnaires/{slug}/submit
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Public questionnaire submit forwards to legacy Flask so production validation, identity session, external push, and redirect behavior stay intact.
+  - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Public H5 diagnostics POST remains on the legacy transport path.
   - route_pattern: /s/{slug}
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
@@ -246,18 +268,18 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_d7_2_questionnaire_adapter_contract.py
-    notes: Public H5 page rendered by Next frontend templates; real OAuth remains guarded.
+    notes: Public H5 page rendered by Next frontend templates; WeChat auth gate uses the retained legacy OAuth transport and session cookie.
   - route_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: next
-    production_behavior: fake_adapter
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
+    external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_d7_2_questionnaire_adapter_contract.py
-    notes: Next exact OAuth start/callback plus production_compat fallback; real OAuth provider calls remain blocked.
+    notes: OAuth start/callback forward to legacy Flask transport so configured公众号 OAuth redirects to WeChat and writes questionnaire_h5_identity into the legacy session cookie.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

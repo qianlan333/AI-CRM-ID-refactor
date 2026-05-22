@@ -130,12 +130,14 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
         item
         for item in result["shadowed_exact_routes"]
         if item["manifest_route_pattern"]
-        not in {
-            "/admin/wechat-pay/products*",
-            "/api/admin/wechat-pay/products*",
-            "/p/{page_slug}",
-            "/pay/{product_code}",
-            "/api/products*",
+            not in {
+                "/admin/wechat-pay/products*",
+                "/api/admin/wechat-pay/products*",
+                "/api/h5/questionnaires/{slug}/submit",
+                "/api/h5/wechat/oauth*",
+                "/p/{page_slug}",
+                "/pay/{product_code}",
+                "/api/products*",
         }
     ]
     assert unexpected_shadowed == []

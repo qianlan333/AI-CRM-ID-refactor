@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.integration_gateway.legacy_flask_facade import (
+    legacy_questionnaire_oauth_is_configured,
+    legacy_questionnaire_session_identity,
+)
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
 
@@ -39,6 +44,19 @@ router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
+_QUESTIONNAIRE_IDENTITY_HINT_FIELDS = (
+    "respondent_key",
+    "openid",
+    "unionid",
+    "external_userid",
+)
+_QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
+    "source_channel",
+    "campaign_id",
+    "staff_id",
+)
+_QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_IDENTITY_HINT_FIELDS + _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
+
 
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
@@ -46,6 +64,24 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _is_wechat_browser(request: Request) -> bool:
+    return "micromessenger" in str(request.headers.get("user-agent") or "").lower()
+
+
+def _request_values(request: Request, fields: tuple[str, ...]) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for key in fields:
+        value = str(request.query_params.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    return payload
+
+
+def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> str:
+    query = {"slug": str(slug or "").strip(), **source_params}
+    return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
 
 
 @router.get("/api/admin/questionnaires")
@@ -211,22 +247,34 @@ def public_questionnaire_h5_page(request: Request, slug: str):
         _raise_http(exc)
     questionnaire = jsonable_encoder(payload["questionnaire"])
     questions = jsonable_encoder(payload.get("questions") or [])
+    source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
+    request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
+    session_identity = legacy_questionnaire_session_identity(request.cookies)
+    is_wechat_browser = _is_wechat_browser(request)
+    is_authorized = bool(session_identity.get("openid"))
+    oauth_configured = legacy_questionnaire_oauth_is_configured()
+    page_mode = "auth_gate" if is_wechat_browser and not is_authorized else "questionnaire"
+    env_notice = ""
+    if page_mode == "auth_gate":
+        env_notice = "授权后即可填写问卷信息。" if oauth_configured else "当前微信登录配置未完成，请联系管理员。"
     page_state = {
-        "mode": "questionnaire",
+        "mode": page_mode,
         "slug": slug,
         "title": questionnaire["title"],
         "description": questionnaire.get("description") or "",
-        "env_notice": "AI-CRM Next fake OAuth 模式：真实微信 OAuth 尚未接入。",
-        "oauth_start_url": f"/api/h5/wechat/oauth/start?slug={slug}",
+        "env_notice": env_notice,
+        "oauth_start_url": _questionnaire_oauth_start_url(slug, source_params) if oauth_configured else "",
         "submit_url": f"/api/h5/questionnaires/{slug}/submit",
         "api_url": f"/api/h5/questionnaires/{slug}",
-        "diagnostics_url": "",
+        "diagnostics_url": f"/api/h5/questionnaires/{slug}/client-diagnostics",
         "submitted_url": f"/s/{slug}/submitted",
-        "request_hints": {},
-        "initial_questionnaire": {**questionnaire, "questions": questions},
-        "answer_display_mode": "all",
+        "request_hints": request_hints,
+        "initial_questionnaire": {**questionnaire, "questions": questions} if page_mode == "questionnaire" else None,
+        "answer_display_mode": questionnaire.get("answer_display_mode") or "all_in_one",
         "prefill_fields": {},
         "form_error": "",
+        "is_wechat_browser": is_wechat_browser,
+        "is_authorized": is_authorized,
     }
     return templates.TemplateResponse(
         request,

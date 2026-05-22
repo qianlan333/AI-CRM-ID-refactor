@@ -185,6 +185,87 @@ def test_public_h5_page_uses_production_facade_when_database_ready(monkeypatch) 
     assert "真实生产公开问卷" in response.text
     assert "请输入手机号" in response.text
     assert "InMemoryQuestionnaireRepository" not in response.text
+    assert "fake OAuth" not in response.text
+
+
+def test_public_h5_page_uses_legacy_wechat_oauth_gate_when_wechat_browser(monkeypatch) -> None:
+    testclient_module = pytest.importorskip("fastapi.testclient")
+    TestClient = testclient_module.TestClient
+    import aicrm_next.integration_gateway.legacy_flask_facade as legacy_facade
+    import aicrm_next.questionnaire.api as questionnaire_api
+    from aicrm_next.main import create_app
+
+    monkeypatch.setenv("SECRET_KEY", "questionnaire-oauth-test-secret")
+    monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-questionnaire-app")
+    monkeypatch.setenv("WECHAT_MP_APP_SECRET", "questionnaire-secret")
+    legacy_facade._legacy_app.cache_clear()
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        questionnaire_api,
+        "get_public_questionnaire_from_legacy",
+        lambda slug: {
+            "ok": True,
+            "questionnaire": {
+                "id": 21,
+                "slug": slug,
+                "title": "真实生产公开问卷",
+                "description": "生产 PostgreSQL facade 问卷",
+                "enabled": True,
+                "redirect_url": "",
+                "submit_button_text": "提交",
+                "created_at": datetime(2026, 5, 22, 0, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 5, 22, 0, 1, tzinfo=timezone.utc),
+            },
+            "questions": [
+                {
+                    "id": 348,
+                    "type": "mobile",
+                    "title": "请输入手机号",
+                    "required": True,
+                    "options": [],
+                    "placeholder_text": "请输入手机号",
+                }
+            ],
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = TestClient(create_app()).get(
+        "/s/q-20260414135818-5d8fba?campaign_id=cmp-001",
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger"},
+    )
+
+    assert response.status_code == 200
+    assert "授权后即可填写问卷信息。" in response.text
+    assert "/api/h5/wechat/oauth/start?slug=q-20260414135818-5d8fba&amp;campaign_id=cmp-001" in response.text
+    assert "fake OAuth" not in response.text
+
+
+def test_questionnaire_oauth_start_forwards_to_legacy_wechat_authorize(monkeypatch) -> None:
+    testclient_module = pytest.importorskip("fastapi.testclient")
+    TestClient = testclient_module.TestClient
+    import aicrm_next.integration_gateway.legacy_flask_facade as legacy_facade
+    from aicrm_next.main import create_app
+
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://route:route@127.0.0.1:1/aicrm_route")
+    monkeypatch.setenv("SECRET_KEY", "questionnaire-oauth-test-secret")
+    monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-questionnaire-app")
+    monkeypatch.setenv("WECHAT_MP_APP_SECRET", "questionnaire-secret")
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "https://www.youcangogogo.com")
+    legacy_facade._legacy_app.cache_clear()
+
+    response = TestClient(create_app()).get(
+        "/api/h5/wechat/oauth/start?slug=q-20260414135818-5d8fba&campaign_id=cmp-001",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert response.headers["location"].startswith("https://open.weixin.qq.com/connect/oauth2/authorize?")
+    assert "appid=wx-questionnaire-app" in response.headers["location"]
+    assert "redirect_uri=https%3A%2F%2Fwww.youcangogogo.com%2Fapi%2Fh5%2Fwechat%2Foauth%2Fcallback" in response.headers["location"]
 
 
 def test_questionnaire_readonly_smoke_declares_submit_oauth_and_external_paths_not_executed() -> None:

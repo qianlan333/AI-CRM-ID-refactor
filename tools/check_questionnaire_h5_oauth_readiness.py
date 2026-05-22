@@ -117,12 +117,21 @@ def production_probe_env():
             "AICRM_NEXT_WECHAT_OAUTH_MODE": "fake",
             "DATABASE_URL": "postgresql://probe:probe@127.0.0.1:1/aicrm_probe",
             "SECRET_KEY": "questionnaire-h5-oauth-readiness-production",
+            "WECHAT_MP_APP_ID": "wx-questionnaire-probe",
+            "WECHAT_MP_APP_SECRET": "questionnaire-probe-secret",
+            "AICRM_PUBLIC_BASE_URL": "https://www.youcangogogo.com",
         }
     ):
         yield
 
 
 def _client() -> TestClient:
+    try:
+        from aicrm_next.integration_gateway import legacy_flask_facade
+
+        legacy_flask_facade._legacy_app.cache_clear()
+    except Exception:
+        pass
     module = importlib.import_module("aicrm_next.main")
     return TestClient(module.create_app())
 
@@ -243,10 +252,21 @@ def _oauth_blockers(probes: dict[str, Any], *, production: bool) -> list[str]:
         probe = probes.get(route_key) or {}
         status = int(probe.get("status_code") or 0)
         payload = probe.get("json")
+        location = str(((probe.get("headers") or {}).get("location")) or "")
         if status == 404:
             blockers.append(f"oauth_route_404:{route_key}")
         if status >= 500:
             blockers.append(f"oauth_route_5xx:{route_key}:{status}")
+        if route_key.endswith("/oauth/start?slug=hxc-activation-v1") and 300 <= status < 400:
+            if not location.startswith("https://open.weixin.qq.com/connect/oauth2/authorize?"):
+                blockers.append(f"oauth_unexpected_authorize_redirect:{route_key}:{location or '<missing>'}")
+            if production and _contains_localhost(location):
+                blockers.append(f"oauth_redirect_uri_localhost:{route_key}")
+            continue
+        if route_key.endswith("/oauth/callback?state=hxc-activation-v1") and status == 400:
+            error = str(payload.get("error") or "") if isinstance(payload, dict) else ""
+            if error == "code is required":
+                continue
         if not isinstance(payload, dict):
             blockers.append(f"oauth_payload_not_json:{route_key}")
             continue
