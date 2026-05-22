@@ -1,9 +1,9 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `199`
-- production_compat_route_count: `78`
-- production_compat_catch_all_count: `44`
+- route_count: `203`
+- production_compat_route_count: `82`
+- production_compat_catch_all_count: `46`
 - blockers: `0`
 
 ## Resolution Samples
@@ -20,6 +20,7 @@
 - GET /api/admin/questionnaires/21: `next` -> `aicrm_next.questionnaire.api.get_questionnaire` (manifest `/api/admin/questionnaires*` / `guarded_preview`)
 - GET /api/h5/questionnaires/hxc-activation-v1: `next` -> `aicrm_next.questionnaire.api.public_get_questionnaire` (manifest `/api/h5/questionnaires*` / `guarded_preview`)
 - GET /api/h5/wechat/oauth/start: `production_compat` -> `aicrm_next.production_compat.api.legacy_questionnaire_oauth_routes` (manifest `/api/h5/wechat/oauth*` / `legacy_forward`)
+- GET /api/admin/wecom/tags: `production_compat` -> `aicrm_next.production_compat.api.legacy_admin_wecom_tag_routes` (manifest `/api/admin/wecom/tags*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/overview: `next` -> `aicrm_next.automation_engine.api.automation_overview` (manifest `/api/admin/automation-conversion*` / `guarded_preview`)
 - POST /api/admin/automation-conversion/programs/3/setup/basic: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/programs*` / `legacy_forward`)
 - POST /api/admin/automation-conversion/settings/default-channel/generate: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/settings*` / `legacy_forward`)
@@ -28,7 +29,7 @@
 - GET /api/admin/automation-conversion/profile-segment-templates/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/profile-segment-templates*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/agents/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/agents*` / `legacy_forward`)
 - POST /api/customer-automation/activation-webhook: `next` -> `aicrm_next.automation_engine.api.activation_webhook` (manifest `/api/customer-automation*` / `guarded_preview`)
-- GET /admin/wechat-pay/products: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/admin/wechat-pay/products*` / `legacy_forward`)
+- GET /admin/wechat-pay/products: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/admin/wechat-pay/products` / `legacy_forward`)
 - GET /admin/wechat-pay/products/new: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /api/admin/wechat-pay/products: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /api/admin/wechat-pay/products/1: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
