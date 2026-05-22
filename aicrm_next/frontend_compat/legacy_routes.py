@@ -9,10 +9,11 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
-from aicrm_next.customer_read_model.application import ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
-from aicrm_next.questionnaire.application import GetQuestionnairePreflightQuery, ListQuestionnairesQuery
+from aicrm_next.questionnaire.application import GetQuestionnairePreflightQuery
+from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
 from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
+from aicrm_next.integration_gateway.legacy_questionnaire_facade import LegacyQuestionnaireDataUnavailable, list_questionnaires_from_legacy
 from .admin_real_data import (
     ai_assistant_payload,
     api_docs_payload,
@@ -208,17 +209,23 @@ def admin_dashboard(request: Request):
 @router.get("/admin/customers", name="api.admin_console_customers")
 def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile: str = "", tag: str = "", offset: int = 0):
     limit = 50
-    payload = ListCustomersQuery()(
-        ListCustomersRequest(
-            owner_userid=owner or None,
-            tag=tag or None,
-            mobile=mobile or None,
-            keyword=keyword or None,
-            limit=limit,
-            offset=offset,
-        )
+    customer_query = ListCustomersRequest(
+        owner_userid=owner or None,
+        tag=tag or None,
+        mobile=mobile or None,
+        keyword=keyword or None,
+        limit=limit,
+        offset=offset,
     )
-    if not production_data_ready():
+    if production_data_ready():
+        try:
+            payload = list_customers_via_legacy(customer_query)
+        except Exception as exc:
+            payload = {"customers": [], "total": 0}
+            page_error = f"生产客户数据读取失败：{exc}"
+        else:
+            page_error = ""
+    else:
         payload = {
             "customers": [
                 {
@@ -231,6 +238,7 @@ def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile
             ],
             "total": 1,
         }
+        page_error = ""
     customer_payload = {
         "filters": {"keyword": keyword, "owner": owner, "mobile": mobile, "tag": tag},
         "customers": payload["customers"],
@@ -248,6 +256,7 @@ def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile
         page_summary="查看客户列表、筛选客户并打开客户档案。",
         active_endpoint="api.admin_console_customers",
     )
+    context["page_error"] = page_error
     context["customer_payload"] = customer_payload
     return templates.TemplateResponse(request, "admin_console/customers.html", context)
 
@@ -324,7 +333,35 @@ def admin_wecom_tags(request: Request):
 @router.get("/admin/questionnaires", name="api.admin_questionnaires")
 @router.get("/admin/questionnaires/ui", name="api.admin_console_questionnaires")
 def admin_questionnaires(request: Request):
-    list_payload = ListQuestionnairesQuery()(limit=100, offset=0)
+    if production_data_ready():
+        try:
+            list_payload = list_questionnaires_from_legacy(limit=100, offset=0)
+        except LegacyQuestionnaireDataUnavailable as exc:
+            list_payload = {"questionnaires": [], "items": [], "total": 0}
+            preflight_error = f"生产问卷数据读取失败：{exc}"
+        else:
+            preflight_error = ""
+    else:
+        list_payload = {
+            "questionnaires": [
+                {
+                    "id": "local_contract_questionnaire",
+                    "slug": "local-contract-questionnaire",
+                    "title": "本地结构校验问卷",
+                    "name": "本地结构校验问卷",
+                    "enabled": True,
+                    "is_disabled": False,
+                    "created_at": "2026-05-20T00:00:00Z",
+                    "updated_at": "2026-05-20T00:00:00Z",
+                    "submission_count": 0,
+                    "assessment_enabled": False,
+                    "public_path": "/s/local-contract-questionnaire",
+                }
+            ],
+            "total": 1,
+            "source_status": "local_contract_probe",
+        }
+        preflight_error = ""
     preflight_payload = GetQuestionnairePreflightQuery()()
     context = _shell_context(
         request=request,
@@ -335,7 +372,9 @@ def admin_questionnaires(request: Request):
     context["questionnaire_payload"] = {
         "questionnaires": list_payload["questionnaires"],
         "preflight": preflight_payload["checks"],
-        "preflight_error": "",
+        "preflight_error": preflight_error,
+        "total": list_payload.get("total", len(list_payload["questionnaires"])),
+        "source_status": list_payload.get("source_status", "local_contract_probe"),
     }
     return templates.TemplateResponse(request, "admin_console/questionnaires.html", context)
 
