@@ -5,10 +5,11 @@ import importlib
 import logging
 import os
 from functools import lru_cache
-from typing import Iterable
+from typing import Any, Iterable
 
 from fastapi import Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
+from starlette.responses import Response as StarletteResponse
 
 LOGGER = logging.getLogger("aicrm_next.legacy_flask_facade")
 
@@ -44,6 +45,81 @@ def _filtered_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:
     result["X-AICRM-Route-Owner"] = "ai_crm_next"
     result["X-AICRM-Compatibility-Facade"] = LEGACY_COMPATIBILITY_BOUNDARY
     return result
+
+
+def _public_base_url() -> str:
+    env_values = {
+        str(os.getenv("AICRM_NEXT_ENV", "") or "").strip().lower(),
+        str(os.getenv("ENVIRONMENT", "") or "").strip().lower(),
+        str(os.getenv("APP_ENV", "") or "").strip().lower(),
+        str(os.getenv("FLASK_ENV", "") or "").strip().lower(),
+    }
+    production = bool(env_values & {"prod", "production"})
+    for key in (
+        "AICRM_PUBLIC_BASE_URL",
+        "PUBLIC_BASE_URL",
+        "EXTERNAL_BASE_URL",
+        "APP_EXTERNAL_BASE_URL",
+        "NEXT_PUBLIC_BASE_URL",
+    ):
+        value = str(os.getenv(key, "") or "").strip().rstrip("/")
+        if value:
+            if production and "localhost" in value:
+                continue
+            return value
+    notify_url = str(os.getenv("WECHAT_PAY_NOTIFY_URL", "") or "").strip()
+    if notify_url.startswith(("http://", "https://")):
+        parts = notify_url.split("/", 3)
+        if len(parts) >= 3:
+            candidate = f"{parts[0]}//{parts[2]}"
+            if not production or "localhost" not in candidate:
+                return candidate
+    if production:
+        return "https://www.youcangogogo.com"
+    return "http://localhost"
+
+
+def normalize_legacy_response(raw_response: Any) -> Response:
+    if isinstance(raw_response, StarletteResponse):
+        raw_response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
+        raw_response.headers.setdefault("X-AICRM-Compatibility-Facade", LEGACY_COMPATIBILITY_BOUNDARY)
+        return raw_response
+
+    status_code = 200
+    headers: dict[str, str] = {}
+    body = raw_response
+
+    if isinstance(raw_response, tuple):
+        values = list(raw_response)
+        if values:
+            body = values[0]
+        if len(values) >= 2:
+            if isinstance(values[1], int):
+                status_code = int(values[1])
+            elif isinstance(values[1], dict):
+                headers.update({str(key): str(value) for key, value in values[1].items()})
+        if len(values) >= 3:
+            if isinstance(values[2], dict):
+                headers.update({str(key): str(value) for key, value in values[2].items()})
+
+    if isinstance(body, int):
+        status_code = int(body)
+        body = b""
+
+    if hasattr(body, "get_data") and hasattr(body, "status_code"):
+        return Response(
+            content=body.get_data(),
+            status_code=int(getattr(body, "status_code", status_code) or status_code),
+            headers=_filtered_headers(body.headers.items()),
+            media_type=getattr(body, "mimetype", None) or None,
+        )
+
+    headers = _filtered_headers(headers.items())
+    if isinstance(body, (dict, list)):
+        return JSONResponse(content=body, status_code=status_code, headers=headers)
+    if body is None:
+        body = b""
+    return Response(content=body, status_code=status_code, headers=headers)
 
 
 def _timer_token_guard(request: Request) -> Response | None:
@@ -117,7 +193,7 @@ async def forward_to_legacy_flask(request: Request) -> Response:
         return dry_run_response
 
     body = await request.body()
-    query_string = request.url.query.encode("utf-8")
+    query_string = request.url.query
     headers = {
         key: value
         for key, value in request.headers.items()
@@ -152,10 +228,6 @@ async def forward_to_legacy_flask(request: Request) -> Response:
         query_string=query_string,
         headers=headers,
         data=body,
+        base_url=_public_base_url(),
     )
-    return Response(
-        content=legacy_response.get_data(),
-        status_code=legacy_response.status_code,
-        headers=_filtered_headers(legacy_response.headers.items()),
-        media_type=legacy_response.mimetype or None,
-    )
+    return normalize_legacy_response(legacy_response)

@@ -28,9 +28,58 @@ def test_timer_routes_are_next_owned_and_guarded(monkeypatch):
 def test_timer_readiness_checker_returns_ok():
     result = checker.run_check()
 
+    assert result["safe_to_enable_timers"] is False
+    assert "automation_production_data_not_ready" in result["blockers"]
+
+
+def test_timer_readiness_safe_only_after_automation_data_ready(monkeypatch):
+    monkeypatch.setattr(
+        checker,
+        "timer_probe_env",
+        lambda: _NoopContext(),
+    )
+
+    class FakeResponse:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
+        def json(self):
+            return dict(self._payload)
+
+    class FakeClient:
+        def post(self, route, json=None, headers=None, follow_redirects=False):
+            if headers:
+                return FakeResponse(200)
+            return FakeResponse(401)
+
+        def get(self, route, follow_redirects=False):
+            return FakeResponse(
+                200,
+                {
+                    "ok": True,
+                    "generated_at": "2026-05-22T00:00:00Z",
+                    "status": "live",
+                    "source_status": "production_postgres",
+                },
+            )
+
+    monkeypatch.setattr(checker, "_client", lambda: FakeClient())
+
+    result = checker.run_check()
+
     assert result["ok"] is True
     assert result["safe_to_enable_timers"] is True
+    assert result["automation_production_data_ready"] is True
     assert result["blockers"] == []
+
+
+class _NoopContext:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, *args):
+        return False
 
 
 def test_timer_readiness_docs_do_not_use_forbidden_status_markers():

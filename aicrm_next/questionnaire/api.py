@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.runtime import production_data_ready
 
 from .application import (
     CompleteWechatOAuthCallbackCommand,
@@ -24,6 +25,14 @@ from .application import (
     UpsertQuestionnaireCommand,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
+from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
+    LegacyQuestionnaireDataUnavailable,
+    export_questionnaire_from_legacy,
+    get_public_questionnaire_from_legacy,
+    get_questionnaire_detail_from_legacy,
+    latest_submit_debug_from_legacy,
+    list_questionnaires_from_legacy,
+)
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
@@ -40,6 +49,11 @@ def _raise_http(exc: Exception) -> None:
 
 @router.get("/api/admin/questionnaires")
 def list_questionnaires(limit: int = 50, offset: int = 0) -> dict:
+    if production_data_ready():
+        try:
+            return list_questionnaires_from_legacy(limit=limit, offset=offset)
+        except LegacyQuestionnaireDataUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f"legacy questionnaire production data unavailable: {exc}") from exc
     return ListQuestionnairesQuery()(limit=limit, offset=offset)
 
 
@@ -59,6 +73,8 @@ def create_questionnaire(payload: QuestionnaireUpsertRequest) -> dict:
 @router.get("/api/admin/questionnaires/{questionnaire_id}")
 def get_questionnaire(questionnaire_id: int) -> dict:
     try:
+        if production_data_ready():
+            return get_questionnaire_detail_from_legacy(questionnaire_id)
         return GetQuestionnaireDetailQuery()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
@@ -100,6 +116,8 @@ def delete_questionnaire(questionnaire_id: int) -> dict:
 @router.get("/api/admin/questionnaires/{questionnaire_id}/export")
 def export_questionnaire(questionnaire_id: int) -> dict:
     try:
+        if production_data_ready():
+            return export_questionnaire_from_legacy(questionnaire_id)
         return ExportQuestionnaireQuery()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
@@ -108,6 +126,8 @@ def export_questionnaire(questionnaire_id: int) -> dict:
 @router.get("/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug")
 def latest_submit_debug(questionnaire_id: int) -> dict:
     try:
+        if production_data_ready():
+            return latest_submit_debug_from_legacy(questionnaire_id)
         return LatestSubmitDebugQuery()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
@@ -116,6 +136,8 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 @router.get("/api/h5/questionnaires/{slug}")
 def public_get_questionnaire(slug: str) -> dict:
     try:
+        if production_data_ready():
+            return get_public_questionnaire_from_legacy(slug)
         return GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)

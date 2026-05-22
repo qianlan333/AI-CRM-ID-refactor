@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.integration_gateway import legacy_flask_facade
 from aicrm_next.main import create_app
 from tools import check_next_production_cutover_readiness as cutover_checker
 from tools import check_next_production_runtime_gaps as gap_checker
@@ -67,10 +68,95 @@ def test_runtime_gap_checker_returns_ok():
     assert result["ok"] is True
     assert result["database_mode"] == "postgres"
     assert result["route_404_blockers"] == []
+    assert result["content_blockers"] == []
+    assert result["oauth_blockers"] == []
     assert result["callback_currently_has_5013_fallback"] is True
 
 
-def test_cutover_checker_contract():
+def test_runtime_gap_checker_flags_fixture_questionnaire_payload():
+    routes = {
+        "GET /api/admin/questionnaires": {
+            "status_code": 200,
+            "json": {"questionnaires": [{"slug": "hxc-activation-v1"}, {"slug": "disabled-demo"}]},
+        }
+    }
+
+    blockers, warnings = gap_checker._questionnaire_content_blockers(routes, local_probe_database=False)
+
+    assert warnings == []
+    assert "questionnaire_fixture_demo_only" in blockers
+
+
+def test_runtime_gap_checker_flags_fixture_automation_payload():
+    routes = {
+        "GET /api/admin/automation-conversion/overview": {
+            "status_code": 200,
+            "json": {"generated_at": "fixture", "status": "partial"},
+        }
+    }
+
+    blockers, warnings = gap_checker._automation_content_blockers(routes, local_probe_database=False)
+
+    assert warnings == []
+    assert "automation_generated_at_fixture" in blockers
+    assert "automation_status_partial" in blockers
+
+
+def test_runtime_gap_checker_flags_oauth_500_and_localhost_redirect():
+    routes = {
+        "GET /api/h5/wechat/oauth/start?next=/admin": {
+            "status_code": 500,
+            "json": {},
+            "location": "",
+        },
+        "GET /api/h5/wechat-pay/oauth/start?next=/admin": {
+            "status_code": 302,
+            "json": {},
+            "location": "https://open.weixin.qq.com/connect/oauth2/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fapi%2Fh5%2Fwechat-pay%2Foauth%2Fcallback",
+        },
+    }
+
+    blockers = gap_checker._oauth_blockers(routes)
+
+    assert any(item.startswith("oauth_start_500:/api/h5/wechat/oauth/start") for item in blockers)
+    assert "oauth_redirect_uri_localhost:/api/h5/wechat-pay/oauth/start" in blockers
+
+
+def test_legacy_flask_facade_normalizes_int_status_response():
+    response = legacy_flask_facade.normalize_legacy_response(204)
+
+    assert response.status_code == 204
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+
+
+def test_legacy_flask_facade_uses_public_base_url_in_production(monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    for key in ["AICRM_PUBLIC_BASE_URL", "PUBLIC_BASE_URL", "EXTERNAL_BASE_URL", "APP_EXTERNAL_BASE_URL"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("WECHAT_PAY_NOTIFY_URL", "http://localhost/api/h5/wechat-pay/notify")
+
+    assert legacy_flask_facade._public_base_url() == "https://www.youcangogogo.com"
+
+
+def test_cutover_checker_contract(monkeypatch):
+    monkeypatch.setattr(
+        cutover_checker,
+        "run_gap_check",
+        lambda: {
+            "ok": True,
+            "database_mode": "postgres",
+            "route_404_blockers": [],
+            "content_blockers": [],
+            "oauth_blockers": [],
+            "automation_production_data_ready": True,
+            "production_config_modified": False,
+        },
+    )
+    monkeypatch.setattr(
+        cutover_checker,
+        "run_timer_check",
+        lambda: {"ok": True, "safe_to_enable_timers": True},
+    )
     result = cutover_checker.run_check()
 
     assert result["ok"] is True
