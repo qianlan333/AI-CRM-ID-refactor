@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
@@ -33,11 +34,15 @@ from .application import (
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     LegacyQuestionnaireDataUnavailable,
+    create_questionnaire_in_legacy,
+    delete_questionnaire_in_legacy,
     export_questionnaire_from_legacy,
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
     latest_submit_debug_from_legacy,
     list_questionnaires_from_legacy,
+    set_questionnaire_enabled_in_legacy,
+    update_questionnaire_in_legacy,
 )
 
 router = APIRouter()
@@ -100,9 +105,11 @@ def questionnaire_preflight() -> dict:
 
 
 @router.post("/api/admin/questionnaires")
-def create_questionnaire(payload: QuestionnaireUpsertRequest) -> dict:
+def create_questionnaire(payload: dict[str, Any]) -> dict:
     try:
-        return UpsertQuestionnaireCommand()(payload)
+        if production_data_ready():
+            return create_questionnaire_in_legacy(payload)
+        return UpsertQuestionnaireCommand()(QuestionnaireUpsertRequest.model_validate(payload))
     except Exception as exc:
         _raise_http(exc)
 
@@ -118,9 +125,11 @@ def get_questionnaire(questionnaire_id: int) -> dict:
 
 
 @router.put("/api/admin/questionnaires/{questionnaire_id}")
-def update_questionnaire(questionnaire_id: int, payload: QuestionnaireUpsertRequest) -> dict:
+def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict:
     try:
-        return UpsertQuestionnaireCommand()(payload, questionnaire_id)
+        if production_data_ready():
+            return update_questionnaire_in_legacy(questionnaire_id, payload)
+        return UpsertQuestionnaireCommand()(QuestionnaireUpsertRequest.model_validate(payload), questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
 
@@ -129,6 +138,8 @@ def update_questionnaire(questionnaire_id: int, payload: QuestionnaireUpsertRequ
 def disable_questionnaire(questionnaire_id: int, payload: dict | None = None) -> dict:
     try:
         enabled = not bool((payload or {}).get("is_disabled", True))
+        if production_data_ready():
+            return set_questionnaire_enabled_in_legacy(questionnaire_id, enabled=enabled)
         return SetQuestionnaireEnabledCommand()(questionnaire_id, enabled=enabled)
     except Exception as exc:
         _raise_http(exc)
@@ -137,6 +148,8 @@ def disable_questionnaire(questionnaire_id: int, payload: dict | None = None) ->
 @router.post("/api/admin/questionnaires/{questionnaire_id}/enable")
 def enable_questionnaire(questionnaire_id: int) -> dict:
     try:
+        if production_data_ready():
+            return set_questionnaire_enabled_in_legacy(questionnaire_id, enabled=True)
         return SetQuestionnaireEnabledCommand()(questionnaire_id, enabled=True)
     except Exception as exc:
         _raise_http(exc)
@@ -145,6 +158,8 @@ def enable_questionnaire(questionnaire_id: int) -> dict:
 @router.delete("/api/admin/questionnaires/{questionnaire_id}")
 def delete_questionnaire(questionnaire_id: int) -> dict:
     try:
+        if production_data_ready():
+            return delete_questionnaire_in_legacy(questionnaire_id)
         return DeleteQuestionnaireCommand()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)

@@ -36,6 +36,7 @@ def normalize_question(question: dict[str, Any]) -> dict[str, Any]:
         "type": str(question.get("type") or "single_choice"),
         "title": str(question.get("title") or "").strip(),
         "required": bool(question.get("required", False)),
+        "sidebar_profile_field": str(question.get("sidebar_profile_field") or "").strip(),
         "options": [normalize_option(option) for option in question.get("options", [])],
         "placeholder_text": str(question.get("placeholder_text") or ""),
     }
@@ -78,8 +79,10 @@ def summary_projection(item: dict[str, Any]) -> dict[str, Any]:
 
 def admin_detail_projection(item: dict[str, Any]) -> dict[str, Any]:
     questionnaire = normalize_questionnaire(item)
+    admin_questionnaire = {key: value for key, value in questionnaire.items() if key != "questions"}
+    admin_questionnaire["questions"] = questionnaire["questions"]
     return {
-        "questionnaire": {key: value for key, value in questionnaire.items() if key != "questions"},
+        "questionnaire": admin_questionnaire,
         "questions": questionnaire["questions"],
         "external_push_config": questionnaire["external_push_config"],
     }
@@ -101,7 +104,11 @@ def public_projection(item: dict[str, Any]) -> dict[str, Any]:
             "updated_at",
         ]
     }
-    return {"questionnaire": public_questionnaire, "questions": questionnaire["questions"]}
+    public_questions = [
+        {key: value for key, value in question.items() if key != "sidebar_profile_field"}
+        for question in questionnaire["questions"]
+    ]
+    return {"questionnaire": public_questionnaire, "questions": public_questions}
 
 
 def validate_required_answers(questionnaire: dict[str, Any], answers: dict[str, Any]) -> None:

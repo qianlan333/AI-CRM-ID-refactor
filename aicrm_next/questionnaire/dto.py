@@ -18,6 +18,7 @@ class QuestionnaireQuestionInput(BaseModel):
     type: str = "single_choice"
     title: str
     required: bool = False
+    sidebar_profile_field: str = ""
     options: list[QuestionnaireOptionInput] = Field(default_factory=list)
 
 

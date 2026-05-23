@@ -261,6 +261,10 @@ def _questionnaire_editor_response(
             return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
 
     questionnaire = jsonable_encoder((payload or {}).get("questionnaire")) if payload else None
+    if questionnaire is not None and isinstance(payload, dict):
+        questionnaire["questions"] = jsonable_encoder(
+            questionnaire.get("questions") or payload.get("questions") or []
+        )
     default_assessment = (
         (questionnaire_id is None and str(request.query_params.get("mode") or "").strip() == "assessment")
         or _is_assessment_template_asset(questionnaire)

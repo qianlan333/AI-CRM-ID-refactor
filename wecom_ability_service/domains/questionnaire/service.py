@@ -264,6 +264,8 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
     if not existing:
         return None
     normalized = _normalize_questionnaire_payload(payload, questionnaire_id=int(questionnaire_id), existing=existing)
+    if not normalized["questions"] and _load_questionnaire_questions(int(questionnaire_id)):
+        raise ValueError("questions cannot be empty when updating an existing questionnaire with questions")
     db = get_db()
     try:
         db.execute(

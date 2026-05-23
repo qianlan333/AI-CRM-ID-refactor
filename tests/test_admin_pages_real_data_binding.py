@@ -157,6 +157,47 @@ def test_questionnaire_page_uses_production_facade_when_database_ready(monkeypat
     assert "disabled-demo" not in response.text
 
 
+def test_questionnaire_editor_nests_production_questions_for_legacy_editor(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        legacy_routes,
+        "get_questionnaire_detail_from_legacy",
+        lambda questionnaire_id: {
+            "ok": True,
+            "questionnaire": {
+                "id": questionnaire_id,
+                "slug": "real-questionnaire",
+                "title": "真实生产问卷",
+                "name": "真实生产问卷",
+                "enabled": True,
+                "is_disabled": False,
+            },
+            "questions": [
+                {
+                    "id": 501,
+                    "type": "textarea",
+                    "title": "真实生产题目",
+                    "required": True,
+                    "options": [],
+                    "placeholder_text": "请填写",
+                    "sidebar_profile_field": "needs_blockers_followup",
+                }
+            ],
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = _client(monkeypatch).get("/admin/questionnaires/101")
+
+    assert response.status_code == 200
+    assert "真实生产问卷" in response.text
+    assert "真实生产题目" in response.text
+    assert "needs_blockers_followup" in response.text
+    assert "侧边栏核心画像映射" in response.text
+
+
 def test_wechat_pay_transactions_page_uses_legacy_management_when_database_ready(monkeypatch):
     from fastapi.responses import HTMLResponse
 

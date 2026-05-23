@@ -188,6 +188,48 @@ def test_public_h5_page_uses_production_facade_when_database_ready(monkeypatch) 
     assert "fake OAuth" not in response.text
 
 
+def test_next_admin_questionnaire_detail_keeps_questions_nested_and_public_hides_sidebar_mapping(monkeypatch) -> None:
+    testclient_module = pytest.importorskip("fastapi.testclient")
+    TestClient = testclient_module.TestClient
+    import aicrm_next.questionnaire.api as questionnaire_api
+    from aicrm_next.main import create_app
+
+    legacy_payload = {
+        "ok": True,
+        "questionnaire": {
+            "id": 21,
+            "slug": "real-questionnaire",
+            "title": "真实生产问卷",
+            "description": "生产 PostgreSQL facade 问卷",
+            "enabled": True,
+        },
+        "questions": [
+            {
+                "id": 348,
+                "type": "textarea",
+                "title": "真实生产题目",
+                "required": True,
+                "options": [],
+                "placeholder_text": "请输入",
+                "sidebar_profile_field": "needs_blockers_followup",
+            }
+        ],
+        "source_status": "production_postgres",
+    }
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(questionnaire_api, "get_questionnaire_detail_from_legacy", lambda questionnaire_id: legacy_payload)
+    monkeypatch.setattr(questionnaire_api, "get_public_questionnaire_from_legacy", lambda slug: legacy_payload)
+
+    client = TestClient(create_app())
+    admin_payload = client.get("/api/admin/questionnaires/21").json()
+    public_payload = client.get("/api/h5/questionnaires/real-questionnaire").json()
+
+    assert admin_payload["questionnaire"]["questions"][0]["title"] == "真实生产题目"
+    assert admin_payload["questionnaire"]["questions"][0]["sidebar_profile_field"] == "needs_blockers_followup"
+    assert "questions" in admin_payload
+    assert "sidebar_profile_field" not in public_payload["questions"][0]
+
+
 def test_public_h5_page_uses_legacy_wechat_oauth_gate_when_wechat_browser(monkeypatch) -> None:
     testclient_module = pytest.importorskip("fastapi.testclient")
     TestClient = testclient_module.TestClient
