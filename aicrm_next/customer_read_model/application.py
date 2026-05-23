@@ -99,6 +99,23 @@ def _customer_timeline_unavailable_payload(query: CustomerTimelineRequest, exc: 
     }
 
 
+def _recent_messages_unavailable_payload(query: RecentMessagesRequest, exc: Exception) -> JsonDict:
+    return {
+        "ok": False,
+        "degraded": True,
+        "messages": [],
+        "items": [],
+        "count": 0,
+        "external_userid": query.external_userid,
+        "limit": query.limit,
+        "source_status": "production_unavailable",
+        "error_code": "recent_messages_read_unavailable",
+        "page_error": str(exc),
+        "route_owner": "ai_crm_next",
+        "status_code": 503,
+    }
+
+
 def _normalize_bool_filter(value: str | None) -> bool | None:
     normalized = str(value or "").strip().lower()
     if normalized in {"", "all"}:
@@ -325,25 +342,48 @@ class GetCustomerTimelineQuery:
 
 class ListRecentMessagesQuery:
     def __init__(self, repo: CustomerReadRepository | None = None, archive_adapter=None, projection_gateway=None) -> None:
-        self._repo = repo or build_customer_read_model_repository()
-        self._archive_adapter = archive_adapter or build_archive_sync_adapter()
-        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
+        self._repo = repo
+        self._archive_adapter = archive_adapter
+        self._projection_gateway = projection_gateway
 
     def execute(self, query: RecentMessagesRequest) -> JsonDict:
-        archive_contract = self._archive_adapter.fetch_recent_messages(
+        if _production_customer_data_required():
+            if not _production_customer_facade_enabled():
+                return _recent_messages_unavailable_payload(
+                    query,
+                    RuntimeError("production customer facade disabled"),
+                )
+            try:
+                from aicrm_next.integration_gateway.legacy_customer_read_facade import recent_messages_via_legacy
+
+                payload = dict(recent_messages_via_legacy(query) or {})
+            except NotFoundError:
+                raise
+            except Exception as exc:
+                return _recent_messages_unavailable_payload(query, exc)
+            payload.setdefault("ok", True)
+            payload.setdefault("source_status", "legacy_production_facade")
+            payload.setdefault("route_owner", "ai_crm_next")
+            payload.setdefault("status_code", 200)
+            return payload
+
+        repo = self._repo or build_customer_read_model_repository()
+        archive_adapter = self._archive_adapter or build_archive_sync_adapter()
+        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+        archive_contract = archive_adapter.fetch_recent_messages(
             external_userid=query.external_userid,
             limit=query.limit,
         )
-        projection_contract = self._projection_gateway.update_recent_messages_projection(
+        projection_contract = projection_gateway.update_recent_messages_projection(
             external_userid=query.external_userid,
             sync_cursor=f"limit:{query.limit}",
         )
-        customer = self._repo.get_customer(query.external_userid)
+        customer = repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
         return {
             "ok": True,
-            "messages": self._repo.list_recent_messages(query.external_userid)[: query.limit],
+            "messages": repo.list_recent_messages(query.external_userid)[: query.limit],
             "adapter_contract": {
                 "archive_sync": archive_contract,
                 "customer_projection": projection_contract,

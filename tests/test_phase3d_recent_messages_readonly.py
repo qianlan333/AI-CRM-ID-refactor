@@ -7,12 +7,12 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKER_PATH = ROOT / "tools/check_phase3c_customer_read_model_readonly.py"
+CHECKER_PATH = ROOT / "tools/check_phase3d_recent_messages_readonly.py"
 
 
 def _load_checker():
     spec = importlib.util.spec_from_file_location(
-        "check_phase3c_customer_read_model_readonly",
+        "check_phase3d_recent_messages_readonly",
         CHECKER_PATH,
     )
     module = importlib.util.module_from_spec(spec)
@@ -24,7 +24,7 @@ def _load_checker():
 def _client_and_checker():
     pytest.importorskip("fastapi")
     checker = _load_checker()
-    with checker.production_customer_read_model_probe_env():
+    with checker.production_recent_messages_probe_env():
         return checker._make_client(), checker
 
 
@@ -35,64 +35,56 @@ def test_checker_current_repo_passes_when_fastapi_available():
     assert report["overall"] == "PASS", report
 
 
-def test_endpoint_modules_are_exact_next_readonly_owners():
+def test_endpoint_module_is_exact_next_readonly_owner():
     client, checker = _client_and_checker()
-    expected = "aicrm_next.customer_read_model.api"
-    for path in (
-        "/api/customers",
-        "/api/customers/external-phase3c-probe",
-        "/api/customers/external-phase3c-probe/timeline",
-    ):
-        assert checker.first_matching_endpoint_module(client.app, method="GET", path=path) == expected
+    assert (
+        checker.first_matching_endpoint_module(
+            client.app,
+            method="GET",
+            path="/api/messages/external-phase3d-probe/recent",
+        )
+        == "aicrm_next.customer_read_model.api"
+    )
 
 
 def test_production_probe_does_not_return_200_fake_success():
     client, checker = _client_and_checker()
-    for path in (
-        "/api/customers?limit=1",
-        "/api/customers/external-phase3c-probe",
-        "/api/customers/external-phase3c-probe/timeline",
-    ):
-        response = client.get(path)
-        body = response.text
-        assert not (response.status_code == 200 and checker._contains_fixture_marker(body))
-        if response.status_code == 200:
-            payload = response.json()
-            assert payload.get("source_status") not in {"fixture", "local_contract", "demo"}
+    response = client.get("/api/messages/external-phase3d-probe/recent?limit=2")
+    body = response.text
+    assert not (response.status_code == 200 and checker._contains_fixture_marker(body))
+    if response.status_code == 200:
+        payload = response.json()
+        assert payload.get("source_status") not in {"fixture", "local_contract", "demo"}
 
 
-def test_target_handlers_call_application_queries_only():
+def test_target_handler_calls_application_query_only():
     checker = _load_checker()
     report = checker.check_static_boundaries()
     assert report["ok"], report
     api_source = (ROOT / "aicrm_next/customer_read_model/api.py").read_text(encoding="utf-8")
-    expected = {
-        "list_customers": "ListCustomersQuery",
-        "get_customer": "GetCustomerDetailQuery",
-        "get_customer_timeline": "GetCustomerTimelineQuery",
-    }
-    for function_name, query_name in expected.items():
-        source = checker._function_source(api_source, function_name)
-        assert query_name in source
-        assert "JSONResponse" in source
-        for forbidden in checker.FORBIDDEN_TARGET_HANDLER_CALLS:
-            assert forbidden not in source
+    source = checker._function_source(api_source, "get_recent_messages")
+    assert "ListRecentMessagesQuery" in source
+    assert "JSONResponse" in source
+    for forbidden in checker.FORBIDDEN_HANDLER_CALLS:
+        assert forbidden not in source
 
 
-def test_recent_messages_route_has_readonly_owner_marker():
-    checker = _load_checker()
-    api_source = (ROOT / "aicrm_next/customer_read_model/api.py").read_text(encoding="utf-8")
-    recent_source = checker._function_source(api_source, "get_recent_messages")
-    assert "recent_messages_via_legacy" in recent_source or "ListRecentMessagesQuery" in recent_source
+def test_api_does_not_directly_import_recent_messages_legacy_facade():
+    source = (ROOT / "aicrm_next/customer_read_model/api.py").read_text(encoding="utf-8")
+    assert "recent_messages_via_legacy" not in source
+    assert "legacy_customer_read_facade" not in source
 
 
-def test_phase3a_and_phase3b_routes_still_resolve_to_next_exact_owners():
+def test_phase3a_3b_3c_routes_still_resolve_to_next_exact_owners():
     client, checker = _client_and_checker()
     expected = {
         "/api/sidebar/contact-binding-status": "aicrm_next.identity_contact.api",
         "/api/sidebar/customer-context": "aicrm_next.customer_read_model.api",
         "/api/admin/customers/profile": "aicrm_next.customer_read_model.api",
         "/api/admin/customers/profile/tags": "aicrm_next.customer_read_model.api",
+        "/api/customers": "aicrm_next.customer_read_model.api",
+        "/api/customers/external-phase3d-probe": "aicrm_next.customer_read_model.api",
+        "/api/customers/external-phase3d-probe/timeline": "aicrm_next.customer_read_model.api",
     }
     for path, endpoint_module in expected.items():
         assert checker.first_matching_endpoint_module(client.app, method="GET", path=path) == endpoint_module
@@ -100,14 +92,12 @@ def test_phase3a_and_phase3b_routes_still_resolve_to_next_exact_owners():
 
 def test_production_compat_runtime_behavior_is_preserved():
     source = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-    assert '@wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)' in source
-    assert '@wildcard_router.api_route("/api/admin/customers/profile/{path:path}", methods=_ALL_METHODS)' in source
-    assert '@wildcard_router.api_route("/api/customer-automation/{path:path}", methods=_ALL_METHODS)' in source
+    assert '@wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)' in source
     assert "async def legacy_production_compat_routes" in source
     assert "return await forward_to_legacy_flask(request)" in source
 
 
-def test_phase3c_checker_does_not_enable_real_external_calls():
+def test_phase3d_does_not_enable_real_external_calls():
     changed_sources = [
         ROOT / "aicrm_next/customer_read_model/api.py",
         ROOT / "aicrm_next/customer_read_model/application.py",
@@ -124,3 +114,13 @@ def test_phase3c_checker_does_not_enable_real_external_calls():
         "real_enabled",
     )
     assert not any(marker in combined for marker in forbidden_markers)
+
+
+def test_not_found_still_returns_404(monkeypatch):
+    pytest.importorskip("fastapi")
+    checker = _load_checker()
+    monkeypatch.setenv("AICRM_NEXT_ENV", "development")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    client = checker._make_client()
+    response = client.get("/api/messages/external-phase3d-not-found/recent?limit=2")
+    assert response.status_code == 404

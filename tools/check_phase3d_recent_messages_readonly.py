@@ -15,34 +15,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-TARGET_ROUTES = {
-    "/api/customers": {
-        "route_path": "/api/customers",
-        "probe_path": "/api/customers?limit=1",
-        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
-    },
-    "/api/customers/{external_userid}": {
-        "route_path": "/api/customers/{external_userid}",
-        "probe_path": "/api/customers/external-phase3c-probe",
-        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
-    },
-    "/api/customers/{external_userid}/timeline": {
-        "route_path": "/api/customers/{external_userid}/timeline",
-        "probe_path": "/api/customers/external-phase3c-probe/timeline",
-        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
-    },
-}
+TARGET_ROUTE = "/api/messages/{external_userid}/recent"
+TARGET_PROBE_PATH = "/api/messages/external-phase3d-probe/recent?limit=2"
+EXPECTED_ENDPOINT_MODULE = "aicrm_next.customer_read_model.api"
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 FIXTURE_MARKERS = ("fixture", "local_contract", "demo")
 PRODUCTION_PROBE_DATABASE_URL = (
-    "postgresql://customer:customer@127.0.0.1:1/aicrm_customer_read_model_phase3c_probe"
+    "postgresql://messages:messages@127.0.0.1:1/aicrm_recent_messages_phase3d_probe"
 )
-FORBIDDEN_TARGET_HANDLER_CALLS = (
+FORBIDDEN_HANDLER_CALLS = (
+    "recent_messages_via_legacy",
     "list_customers_via_legacy",
     "get_customer_via_legacy",
     "get_timeline_via_legacy",
-    "recent_messages_via_legacy",
     "_use_production_customer_facade",
+    "_service_unavailable",
 )
 
 
@@ -66,7 +53,7 @@ def _contains_fixture_marker(value: str | bytes | dict[str, Any] | list[Any]) ->
 
 
 @contextmanager
-def production_customer_read_model_probe_env():
+def production_recent_messages_probe_env():
     keys = {
         "AICRM_NEXT_ENV": os.environ.get("AICRM_NEXT_ENV"),
         "DATABASE_URL": os.environ.get("DATABASE_URL"),
@@ -76,6 +63,9 @@ def production_customer_read_model_probe_env():
         "AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE": os.environ.get(
             "AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE"
         ),
+        "AICRM_NEXT_ENABLE_REAL_ARCHIVE_SYNC": os.environ.get(
+            "AICRM_NEXT_ENABLE_REAL_ARCHIVE_SYNC"
+        ),
         "SECRET_KEY": os.environ.get("SECRET_KEY"),
         "AUTOMATION_INTERNAL_API_TOKEN": os.environ.get("AUTOMATION_INTERNAL_API_TOKEN"),
     }
@@ -83,10 +73,11 @@ def production_customer_read_model_probe_env():
     os.environ["DATABASE_URL"] = PRODUCTION_PROBE_DATABASE_URL
     os.environ["AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE"] = "1"
     os.environ.pop("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", None)
-    os.environ.setdefault("SECRET_KEY", "phase3c-customer-read-model-readonly")
+    os.environ.pop("AICRM_NEXT_ENABLE_REAL_ARCHIVE_SYNC", None)
+    os.environ.setdefault("SECRET_KEY", "phase3d-recent-messages-readonly")
     os.environ.setdefault(
         "AUTOMATION_INTERNAL_API_TOKEN",
-        "phase3c-customer-read-model-readonly",
+        "phase3d-recent-messages-readonly",
     )
     try:
         yield
@@ -147,60 +138,56 @@ def matching_route_methods(app: Any, *, route_path: str, endpoint_module: str) -
     return methods
 
 
-def check_exact_route_owners(app: Any) -> dict[str, Any]:
+def check_exact_route_owner(app: Any) -> dict[str, Any]:
     blockers: list[str] = []
-    routes: list[dict[str, str]] = []
-    for label, config in TARGET_ROUTES.items():
-        probe_path = str(config["probe_path"]).split("?", 1)[0]
-        expected_module = str(config["expected_endpoint_module"])
-        actual_module = first_matching_endpoint_module(app, method="GET", path=probe_path)
-        routes.append(
-            {
-                "route": label,
-                "probe_path": probe_path,
-                "expected_module": expected_module,
-                "actual_module": actual_module,
-            }
+    probe_path = TARGET_PROBE_PATH.split("?", 1)[0]
+    actual_module = first_matching_endpoint_module(app, method="GET", path=probe_path)
+    if actual_module != EXPECTED_ENDPOINT_MODULE:
+        blockers.append(
+            f"{TARGET_ROUTE} resolved to {actual_module or 'no endpoint'}, expected {EXPECTED_ENDPOINT_MODULE}"
         )
-        if actual_module != expected_module:
-            blockers.append(
-                f"{label} resolved to {actual_module or 'no endpoint'}, expected {expected_module}"
-            )
-        if actual_module in {
-            "aicrm_next.production_compat.api",
-            "aicrm_next.integration_gateway.legacy_flask_facade",
-        }:
-            blockers.append(f"{label} is shadowed by compatibility facade endpoint {actual_module}")
+    if actual_module in {
+        "aicrm_next.production_compat.api",
+        "aicrm_next.integration_gateway.legacy_flask_facade",
+    }:
+        blockers.append(f"{TARGET_ROUTE} is shadowed by compatibility facade endpoint {actual_module}")
 
-        methods = matching_route_methods(
-            app,
-            route_path=str(config["route_path"]),
-            endpoint_module=expected_module,
-        )
-        state_methods = sorted(methods & STATE_CHANGING_METHODS)
-        if state_methods:
-            blockers.append(f"{label} exposes state-changing methods: {', '.join(state_methods)}")
-    return {"ok": not blockers, "blockers": blockers, "routes": routes}
+    methods = matching_route_methods(
+        app,
+        route_path=TARGET_ROUTE,
+        endpoint_module=EXPECTED_ENDPOINT_MODULE,
+    )
+    state_methods = sorted(methods & STATE_CHANGING_METHODS)
+    if state_methods:
+        blockers.append(f"{TARGET_ROUTE} exposes state-changing methods: {', '.join(state_methods)}")
+
+    return {
+        "ok": not blockers,
+        "blockers": blockers,
+        "route": {
+            "path": TARGET_ROUTE,
+            "probe_path": probe_path,
+            "expected_module": EXPECTED_ENDPOINT_MODULE,
+            "actual_module": actual_module,
+            "methods": sorted(methods),
+        },
+    }
 
 
 def check_response_headers(client: Any) -> dict[str, Any]:
+    response = client.get(TARGET_PROBE_PATH)
+    record = {
+        "path": TARGET_PROBE_PATH,
+        "status_code": response.status_code,
+        "route_owner_header": response.headers.get("X-AICRM-Route-Owner", ""),
+        "compatibility_facade": response.headers.get("X-AICRM-Compatibility-Facade", ""),
+    }
     blockers: list[str] = []
-    probes: list[dict[str, Any]] = []
-    for label, config in TARGET_ROUTES.items():
-        response = client.get(str(config["probe_path"]))
-        record = {
-            "route": label,
-            "path": config["probe_path"],
-            "status_code": response.status_code,
-            "route_owner_header": response.headers.get("X-AICRM-Route-Owner", ""),
-            "compatibility_facade": response.headers.get("X-AICRM-Compatibility-Facade", ""),
-        }
-        probes.append(record)
-        if record["route_owner_header"] != "ai_crm_next":
-            blockers.append(f"{label} missing X-AICRM-Route-Owner=ai_crm_next")
-        if record["compatibility_facade"] == "legacy_flask_facade":
-            blockers.append(f"{label} returned legacy_flask_facade compatibility header")
-    return {"ok": not blockers, "blockers": blockers, "probes": probes}
+    if record["route_owner_header"] != "ai_crm_next":
+        blockers.append(f"{TARGET_ROUTE} missing X-AICRM-Route-Owner=ai_crm_next")
+    if record["compatibility_facade"] == "legacy_flask_facade":
+        blockers.append(f"{TARGET_ROUTE} returned legacy_flask_facade compatibility header")
+    return {"ok": not blockers, "blockers": blockers, "probe": record}
 
 
 def _json_or_text(response: Any) -> Any:
@@ -211,35 +198,31 @@ def _json_or_text(response: Any) -> Any:
 
 
 def check_production_unavailable_behavior(client: Any) -> dict[str, Any]:
+    response = client.get(TARGET_PROBE_PATH)
+    body = _json_or_text(response)
+    body_text = (
+        json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if not isinstance(body, str)
+        else body
+    )
+    source_status = body.get("source_status", "") if isinstance(body, dict) else ""
+    record = {
+        "path": TARGET_PROBE_PATH,
+        "status_code": response.status_code,
+        "source_status": source_status,
+        "degraded": bool(body.get("degraded")) if isinstance(body, dict) else False,
+        "fixture_marker_present": _contains_fixture_marker(body_text),
+    }
     blockers: list[str] = []
-    probes: list[dict[str, Any]] = []
-    for label, config in TARGET_ROUTES.items():
-        response = client.get(str(config["probe_path"]))
-        body = _json_or_text(response)
-        body_text = (
-            json.dumps(body, ensure_ascii=False, sort_keys=True)
-            if not isinstance(body, str)
-            else body
+    if response.status_code == 200 and record["fixture_marker_present"]:
+        blockers.append(
+            f"{TARGET_ROUTE} returned 200 with fixture/local_contract/demo marker in production probe"
         )
-        source_status = body.get("source_status", "") if isinstance(body, dict) else ""
-        record = {
-            "route": label,
-            "path": config["probe_path"],
-            "status_code": response.status_code,
-            "source_status": source_status,
-            "degraded": bool(body.get("degraded")) if isinstance(body, dict) else False,
-            "fixture_marker_present": _contains_fixture_marker(body_text),
-        }
-        probes.append(record)
-        if response.status_code == 200 and record["fixture_marker_present"]:
-            blockers.append(
-                f"{label} returned 200 with fixture/local_contract/demo marker in production probe"
-            )
-        if response.status_code == 200 and source_status in {"fixture", "local_contract", "demo"}:
-            blockers.append(f"{label} returned 200 fake success source_status={source_status}")
-        if response.status_code >= 500 and record["fixture_marker_present"]:
-            blockers.append(f"{label} degraded/error response contains fixture/local_contract/demo marker")
-    return {"ok": not blockers, "blockers": blockers, "probes": probes}
+    if response.status_code == 200 and source_status in {"fixture", "local_contract", "demo"}:
+        blockers.append(f"{TARGET_ROUTE} returned 200 fake success source_status={source_status}")
+    if response.status_code >= 500 and record["fixture_marker_present"]:
+        blockers.append(f"{TARGET_ROUTE} degraded/error response contains fixture/local_contract/demo marker")
+    return {"ok": not blockers, "blockers": blockers, "probe": record}
 
 
 def _function_source(source: str, function_name: str) -> str:
@@ -265,72 +248,58 @@ def _function_source(source: str, function_name: str) -> str:
 def check_static_boundaries() -> dict[str, Any]:
     blockers: list[str] = []
     customer_api = ROOT / "aicrm_next/customer_read_model/api.py"
-    customer_source = _read(customer_api)
-    expected_queries = {
-        "list_customers": "ListCustomersQuery",
-        "get_customer": "GetCustomerDetailQuery",
-        "get_customer_timeline": "GetCustomerTimelineQuery",
-    }
-    for function_name, query_name in expected_queries.items():
-        source = _function_source(customer_source, function_name)
-        if not source:
-            blockers.append(f"{_rel(customer_api)} missing {function_name} endpoint")
-            continue
-        for forbidden in FORBIDDEN_TARGET_HANDLER_CALLS:
-            if forbidden in source:
-                blockers.append(f"{_rel(customer_api)} {function_name} directly calls {forbidden}")
-        if query_name not in source or "JSONResponse" not in source:
-            blockers.append(f"{_rel(customer_api)} {function_name} must call {query_name} and serialize JSONResponse")
-
-    recent_source = _function_source(customer_source, "get_recent_messages")
-    if recent_source and (
-        "recent_messages_via_legacy" in recent_source
-        or "ListRecentMessagesQuery" in recent_source
-    ):
-        pass
+    api_source = _read(customer_api)
+    handler_source = _function_source(api_source, "get_recent_messages")
+    if not handler_source:
+        blockers.append(f"{_rel(customer_api)} missing get_recent_messages endpoint")
     else:
-        blockers.append(
-            "get_recent_messages readonly owner marker missing; expected Phase 3C legacy marker or Phase 3D query boundary"
-        )
+        for forbidden in FORBIDDEN_HANDLER_CALLS:
+            if forbidden in handler_source:
+                blockers.append(f"{_rel(customer_api)} get_recent_messages directly calls {forbidden}")
+        if "ListRecentMessagesQuery" not in handler_source or "JSONResponse" not in handler_source:
+            blockers.append(
+                f"{_rel(customer_api)} get_recent_messages must call ListRecentMessagesQuery and serialize JSONResponse"
+            )
+
+    forbidden_import = (
+        "from aicrm_next.integration_gateway.legacy_customer_read_facade import"
+    )
+    if forbidden_import in api_source or "recent_messages_via_legacy" in api_source:
+        blockers.append(f"{_rel(customer_api)} must not directly import recent_messages_via_legacy after Phase 3D")
 
     application = ROOT / "aicrm_next/customer_read_model/application.py"
     application_source = _read(application)
     for marker in (
-        "class ListCustomersQuery",
-        "class GetCustomerDetailQuery",
-        "class GetCustomerTimelineQuery",
-        "legacy_production_facade",
+        "class ListRecentMessagesQuery",
+        "_recent_messages_unavailable_payload",
+        "recent_messages_read_unavailable",
         "production_unavailable",
-        "customer_list_read_unavailable",
-        "customer_detail_read_unavailable",
-        "customer_timeline_read_unavailable",
+        "legacy_production_facade",
+        "recent_messages_via_legacy",
     ):
         if marker not in application_source:
-            blockers.append(f"{_rel(application)} missing production-aware marker {marker}")
+            blockers.append(f"{_rel(application)} missing production-aware recent messages marker {marker}")
 
     production_compat = ROOT / "aicrm_next/production_compat/api.py"
     production_compat_source = _read(production_compat)
     required_snippets = (
-        '@wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)',
-        '@wildcard_router.api_route("/api/admin/customers/profile/{path:path}", methods=_ALL_METHODS)',
-        '@wildcard_router.api_route("/api/customers/automation/{path:path}", methods=_ALL_METHODS)',
-        '@wildcard_router.api_route("/api/customer-automation/{path:path}", methods=_ALL_METHODS)',
+        '@wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)',
         "async def legacy_production_compat_routes",
         "return await forward_to_legacy_flask(request)",
     )
     for snippet in required_snippets:
         if snippet not in production_compat_source:
-            blockers.append(f"{_rel(production_compat)} missing expected wildcard behavior: {snippet}")
+            blockers.append(f"{_rel(production_compat)} missing expected messages wildcard behavior: {snippet}")
 
     return {"ok": not blockers, "blockers": blockers}
 
 
 def run_fastapi_probes() -> dict[str, Any]:
     try:
-        with production_customer_read_model_probe_env():
+        with production_recent_messages_probe_env():
             client = _make_client()
             checks = {
-                "exact_route_owners": check_exact_route_owners(client.app),
+                "exact_route_owner": check_exact_route_owner(client.app),
                 "response_headers": check_response_headers(client),
                 "production_unavailable_behavior": check_production_unavailable_behavior(client),
             }
@@ -356,11 +325,10 @@ def build_report() -> dict[str, Any]:
         "target_routes": [
             {
                 "method": "GET",
-                "route": route,
-                "probe_path": config["probe_path"],
-                "expected_endpoint_module": config["expected_endpoint_module"],
+                "route": TARGET_ROUTE,
+                "probe_path": TARGET_PROBE_PATH,
+                "expected_endpoint_module": EXPECTED_ENDPOINT_MODULE,
             }
-            for route, config in TARGET_ROUTES.items()
         ],
         "blockers": blockers,
         "static": static,
@@ -370,7 +338,7 @@ def build_report() -> dict[str, Any]:
 
 def write_markdown_report(report: dict[str, Any], path: Path) -> None:
     lines = [
-        "# Phase 3C Customer Read Model Readonly Check",
+        "# Phase 3D Recent Messages Readonly Check",
         "",
         f"- overall: {report['overall']}",
         f"- blockers: {len(report.get('blockers', []))}",
