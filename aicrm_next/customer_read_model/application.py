@@ -9,7 +9,13 @@ from aicrm_next.integration_gateway.customer_sync_adapters import (
     customer_sync_side_effect_safety,
 )
 
-from .dto import CustomerContextRequest, CustomerDetailRequest, CustomerTimelineRequest, ListCustomersRequest, RecentMessagesRequest
+from .dto import (
+    CustomerContextRequest,
+    CustomerDetailRequest,
+    CustomerTimelineRequest,
+    ListCustomersRequest,
+    RecentMessagesRequest,
+)
 from .projections import detail_projection, list_item_projection
 from .repo import CustomerReadRepository, build_customer_read_model_repository
 
@@ -263,6 +269,61 @@ def _production_unavailable_payload(external_userid: str, exc: Exception) -> Jso
     }
 
 
+def _admin_profile_input_error(message: str) -> JsonDict:
+    return {
+        "ok": False,
+        "error": message,
+        "source_status": "input_error",
+        "route_owner": "ai_crm_next",
+        "status_code": 400,
+    }
+
+
+def _admin_profile_payload(
+    context: JsonDict,
+    *,
+    resolved_by: str = "external_userid",
+) -> JsonDict:
+    profile = dict(context.get("customer") or context.get("profile") or {})
+    external_userid = str(profile.get("external_userid") or profile.get("user_id") or "")
+    normalized_profile = {
+        **profile,
+        "external_userid": external_userid,
+        "user_id": profile.get("user_id") or external_userid,
+        "tags": list(profile.get("tags") or []),
+        "binding": dict(profile.get("binding") or {}),
+        "identity": dict(profile.get("identity") or {}),
+        "marketing_profile": dict(profile.get("marketing_profile") or {}),
+        "sidebar_context": dict(profile.get("sidebar_context") or {}),
+    }
+    return {
+        "ok": True,
+        "profile": normalized_profile,
+        "customer": normalized_profile,
+        "lookup": {"resolved_by": resolved_by, "external_userid": external_userid},
+        "source_status": context.get("source_status"),
+        "route_owner": "ai_crm_next",
+        "context": context,
+        "identity_binding_summary": dict(context.get("identity_binding_summary") or {}),
+        "degraded": bool(context.get("degraded")),
+        "page_error": context.get("page_error") or "",
+        "status_code": 200,
+    }
+
+
+def _admin_profile_tags_payload(customer: JsonDict, *, source_status: str) -> JsonDict:
+    tags = list(customer.get("tags") or [])
+    return {
+        "ok": True,
+        "tags": tags,
+        "count": len(tags),
+        "external_userid": str(customer.get("external_userid") or ""),
+        "source_status": source_status,
+        "route_owner": "ai_crm_next",
+        "status_code": 200,
+    }
+
+
 class GetCustomerContextQuery:
     def __init__(self, repo: CustomerReadRepository | None = None) -> None:
         self._repo = repo
@@ -368,6 +429,101 @@ class GetCustomerContextQuery:
                 "timeline": timeline.get("adapter_contract", {}),
                 "recent_messages": messages.get("adapter_contract", {}),
             },
+        )
+
+    __call__ = execute
+
+
+class GetAdminCustomerProfileQuery:
+    def __init__(self, context_query: GetCustomerContextQuery | None = None) -> None:
+        self._context_query = context_query or GetCustomerContextQuery()
+
+    def execute(
+        self,
+        *,
+        external_userid: str | None = None,
+        mobile: str | None = None,
+        user_id: str | None = None,
+    ) -> JsonDict:
+        resolved_external_userid = str(external_userid or user_id or "").strip()
+        resolved_mobile = str(mobile or "").strip()
+        if not resolved_external_userid and not resolved_mobile:
+            return _admin_profile_input_error("external_userid is required")
+
+        request = CustomerContextRequest(
+            external_userid=resolved_external_userid or None,
+            mobile=resolved_mobile or None,
+            user_id=str(user_id or "").strip() or None,
+        )
+        try:
+            context = self._context_query(request)
+        except NotFoundError:
+            return _admin_profile_input_error("customer not found")
+        except Exception as exc:
+            fallback_external_userid = resolved_external_userid
+            context = _production_unavailable_payload(fallback_external_userid, exc)
+
+        if not context.get("ok"):
+            payload = dict(context)
+            payload.setdefault("route_owner", "ai_crm_next")
+            payload["status_code"] = 503 if payload.get("degraded") else 400
+            return payload
+
+        customer = dict(context.get("customer") or {})
+        if not customer:
+            return _admin_profile_input_error("customer not found")
+
+        if resolved_mobile and not resolved_external_userid:
+            resolved_by = "mobile"
+        else:
+            resolved_by = (
+                "user_id_fallback_external_userid"
+                if user_id and not external_userid
+                else "external_userid"
+            )
+        return _admin_profile_payload(context, resolved_by=resolved_by)
+
+    __call__ = execute
+
+
+class GetAdminCustomerProfileTagsQuery:
+    def __init__(self, context_query: GetCustomerContextQuery | None = None) -> None:
+        self._context_query = context_query or GetCustomerContextQuery()
+
+    def execute(
+        self,
+        *,
+        external_userid: str | None = None,
+        user_id: str | None = None,
+    ) -> JsonDict:
+        resolved_external_userid = str(external_userid or user_id or "").strip()
+        if not resolved_external_userid:
+            return _admin_profile_input_error("external_userid is required")
+
+        try:
+            context = self._context_query(
+                CustomerContextRequest(
+                    external_userid=resolved_external_userid,
+                    user_id=str(user_id or "").strip() or None,
+                )
+            )
+        except NotFoundError:
+            return _admin_profile_input_error("customer not found")
+        except Exception as exc:
+            context = _production_unavailable_payload(resolved_external_userid, exc)
+
+        if not context.get("ok"):
+            payload = dict(context)
+            payload.setdefault("route_owner", "ai_crm_next")
+            payload["status_code"] = 503 if payload.get("degraded") else 400
+            return payload
+
+        customer = dict(context.get("customer") or {})
+        if not customer:
+            return _admin_profile_input_error("customer not found")
+        return _admin_profile_tags_payload(
+            customer,
+            source_status=str(context.get("source_status") or ""),
         )
 
     __call__ = execute
