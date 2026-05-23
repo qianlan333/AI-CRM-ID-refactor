@@ -12,6 +12,14 @@ from .admin_console import _breadcrumb_items, _render_admin_template
 from .admin_questionnaire_console import _questionnaire_not_found_response
 
 
+def _questionnaires_page_path() -> str:
+    return "/admin/questionnaires"
+
+
+def _questionnaire_detail_path(questionnaire_id: int) -> str:
+    return f"/admin/questionnaires/{int(questionnaire_id)}"
+
+
 def admin_console_questionnaire_external_push_logs(questionnaire_id: int):
     status = str(request.args.get("status") or "").strip()
     limit = request.args.get("limit", 50)
@@ -32,10 +40,10 @@ def admin_console_questionnaire_external_push_logs(questionnaire_id: int):
         page_summary="查看问卷提交成功后的外部推送结果，重点排查失败记录和返回信息。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
-            ("问卷", url_for("api.admin_console_questionnaires")),
+            ("问卷", _questionnaires_page_path()),
             (
                 questionnaire.get("title") or questionnaire.get("name") or str(questionnaire_id),
-                url_for("api.admin_console_questionnaire_detail", questionnaire_id=questionnaire_id),
+                _questionnaire_detail_path(questionnaire_id),
             ),
             ("外部推送记录", None),
         ),
@@ -61,7 +69,7 @@ def admin_console_global_questionnaire_external_push_logs():
         page_summary="跨问卷查看当前外推状态，集中排查待补发失败项并直接处理。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
-            ("问卷", url_for("api.admin_console_questionnaires")),
+            ("问卷", _questionnaires_page_path()),
             ("外部推送总览", None),
         ),
         logs_payload=payload,
