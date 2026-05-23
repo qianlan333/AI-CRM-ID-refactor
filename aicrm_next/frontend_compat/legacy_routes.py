@@ -43,6 +43,12 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires",
     "/admin/questionnaires/new",
     "/admin/questionnaires/{questionnaire_id}",
+    "/admin/questionnaires/external-push-logs",
+    "/admin/questionnaires/external-push-logs/retry-batch",
+    "/admin/questionnaires/external-push-logs/{push_log_id}/retry",
+    "/admin/questionnaires/{questionnaire_id}/external-push-logs",
+    "/admin/questionnaires/{questionnaire_id}/external-push-logs/retry-batch",
+    "/admin/questionnaires/{questionnaire_id}/external-push-logs/{push_log_id}/retry",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/hxc-dashboard",
@@ -113,6 +119,22 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
+        "api.admin_console_global_questionnaire_external_push_logs": "/admin/questionnaires/external-push-logs",
+        "api.admin_console_global_questionnaire_external_push_logs_retry_batch": "/admin/questionnaires/external-push-logs/retry-batch",
+        "api.admin_console_global_questionnaire_external_push_logs_retry": "/admin/questionnaires/external-push-logs/"
+        + str(path_params.get("push_log_id", "")).strip()
+        + "/retry",
+        "api.admin_console_questionnaire_external_push_logs": "/admin/questionnaires/"
+        + str(path_params.get("questionnaire_id", "")).strip()
+        + "/external-push-logs",
+        "api.admin_console_questionnaire_external_push_logs_retry_batch": "/admin/questionnaires/"
+        + str(path_params.get("questionnaire_id", "")).strip()
+        + "/external-push-logs/retry-batch",
+        "api.admin_console_questionnaire_external_push_logs_retry": "/admin/questionnaires/"
+        + str(path_params.get("questionnaire_id", "")).strip()
+        + "/external-push-logs/"
+        + str(path_params.get("push_log_id", "")).strip()
+        + "/retry",
         "api.admin_automation_conversion": "/admin/automation-conversion",
         "api.admin_jobs": "/admin/jobs",
         "api.admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
@@ -603,6 +625,40 @@ def admin_questionnaire_new(request: Request):
 @router.get("/admin/questionnaires/{questionnaire_id:int}", name="api.admin_console_questionnaire_detail")
 def admin_questionnaire_detail(request: Request, questionnaire_id: int):
     return _questionnaire_editor_response(request, questionnaire_id=questionnaire_id)
+
+
+@router.api_route(
+    "/admin/questionnaires/external-push-logs",
+    methods=["GET"],
+    name="api.admin_console_global_questionnaire_external_push_logs",
+)
+@router.api_route(
+    "/admin/questionnaires/external-push-logs/retry-batch",
+    methods=["POST"],
+    name="api.admin_console_global_questionnaire_external_push_logs_retry_batch",
+)
+@router.api_route(
+    "/admin/questionnaires/external-push-logs/{push_log_id:int}/retry",
+    methods=["POST"],
+    name="api.admin_console_global_questionnaire_external_push_logs_retry",
+)
+@router.api_route(
+    "/admin/questionnaires/{questionnaire_id:int}/external-push-logs",
+    methods=["GET"],
+    name="api.admin_console_questionnaire_external_push_logs",
+)
+@router.api_route(
+    "/admin/questionnaires/{questionnaire_id:int}/external-push-logs/retry-batch",
+    methods=["POST"],
+    name="api.admin_console_questionnaire_external_push_logs_retry_batch",
+)
+@router.api_route(
+    "/admin/questionnaires/{questionnaire_id:int}/external-push-logs/{push_log_id:int}/retry",
+    methods=["POST"],
+    name="api.admin_console_questionnaire_external_push_logs_retry",
+)
+async def admin_questionnaire_external_push_logs(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
 
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.integration_gateway.legacy_flask_facade import (
@@ -71,6 +73,87 @@ def _raise_http(exc: Exception) -> None:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _build_excel_xml(headers: list[Any], rows: list[list[Any]]) -> bytes:
+    def _render_row(values: list[Any]) -> str:
+        cells = "".join(
+            f'<Cell><Data ss:Type="String">{xml_escape(str(value or ""))}</Data></Cell>'
+            for value in values
+        )
+        return f"<Row>{cells}</Row>"
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<?mso-application progid="Excel.Sheet"?>',
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
+        ' xmlns:o="urn:schemas-microsoft-com:office:office"',
+        ' xmlns:x="urn:schemas-microsoft-com:office:excel"',
+        ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+        '<Worksheet ss:Name="Questionnaire">',
+        "<Table>",
+        _render_row(headers),
+    ]
+    lines.extend(_render_row(row) for row in rows)
+    lines.extend(["</Table>", "</Worksheet>", "</Workbook>"])
+    return "\n".join(lines).encode("utf-8")
+
+
+def _download_export_response(questionnaire_id: int, payload: dict[str, Any]) -> Response:
+    export_payload = payload.get("export") if isinstance(payload.get("export"), dict) else payload
+    filename = str(
+        export_payload.get("filename") or f"questionnaire_{questionnaire_id}_submissions.xls"
+    ).strip()
+    headers = export_payload.get("headers")
+    rows = export_payload.get("rows")
+    if isinstance(headers, list) and isinstance(rows, list):
+        content = _build_excel_xml(headers, rows)
+        media_type = "application/vnd.ms-excel"
+    else:
+        if not filename.endswith(".json"):
+            filename = f"questionnaire_{questionnaire_id}_submissions.json"
+        content = json.dumps(export_payload, ensure_ascii=False, default=str).encode("utf-8")
+        media_type = "application/json"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _questionnaire_payload_with_nested_questions(payload: dict[str, Any]) -> dict[str, Any]:
+    questionnaire = payload.get("questionnaire")
+    questions = payload.get("questions")
+    if not isinstance(questionnaire, dict) or not isinstance(questions, list):
+        return payload
+    if isinstance(questionnaire.get("questions"), list):
+        return payload
+    return {**payload, "questionnaire": {**questionnaire, "questions": questions}}
+
+
+def _public_questionnaire_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = _questionnaire_payload_with_nested_questions(payload)
+    questions = normalized.get("questions")
+    if not isinstance(questions, list):
+        return normalized
+    public_questions = [
+        {key: value for key, value in question.items() if key != "sidebar_profile_field"}
+        if isinstance(question, dict)
+        else question
+        for question in questions
+    ]
+    questionnaire = normalized.get("questionnaire")
+    if isinstance(questionnaire, dict):
+        questionnaire = {
+            **questionnaire,
+            "questions": [
+                {key: value for key, value in question.items() if key != "sidebar_profile_field"}
+                if isinstance(question, dict)
+                else question
+                for question in questionnaire.get("questions", [])
+            ],
+        }
+    return {**normalized, "questionnaire": questionnaire, "questions": public_questions}
+
+
 def _is_wechat_browser(request: Request) -> bool:
     return "micromessenger" in str(request.headers.get("user-agent") or "").lower()
 
@@ -118,7 +201,9 @@ def create_questionnaire(payload: dict[str, Any]) -> dict:
 def get_questionnaire(questionnaire_id: int) -> dict:
     try:
         if production_data_ready():
-            return get_questionnaire_detail_from_legacy(questionnaire_id)
+            return _questionnaire_payload_with_nested_questions(
+                get_questionnaire_detail_from_legacy(questionnaire_id)
+            )
         return GetQuestionnaireDetailQuery()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
@@ -166,11 +251,14 @@ def delete_questionnaire(questionnaire_id: int) -> dict:
 
 
 @router.get("/api/admin/questionnaires/{questionnaire_id}/export")
-def export_questionnaire(questionnaire_id: int) -> dict:
+def export_questionnaire(questionnaire_id: int) -> Response:
     try:
         if production_data_ready():
-            return export_questionnaire_from_legacy(questionnaire_id)
-        return ExportQuestionnaireQuery()(questionnaire_id)
+            return _download_export_response(
+                questionnaire_id,
+                export_questionnaire_from_legacy(questionnaire_id),
+            )
+        return _download_export_response(questionnaire_id, ExportQuestionnaireQuery()(questionnaire_id))
     except Exception as exc:
         _raise_http(exc)
 
@@ -189,7 +277,7 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 def public_get_questionnaire(slug: str) -> dict:
     try:
         if production_data_ready():
-            return get_public_questionnaire_from_legacy(slug)
+            return _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
         return GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
@@ -255,7 +343,7 @@ def wechat_oauth_callback(
 def public_questionnaire_h5_page(request: Request, slug: str):
     try:
         if production_data_ready():
-            payload = get_public_questionnaire_from_legacy(slug)
+            payload = _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
         else:
             payload = GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:

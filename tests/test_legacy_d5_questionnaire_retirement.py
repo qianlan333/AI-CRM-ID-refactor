@@ -140,6 +140,10 @@ def test_aicrm_next_questionnaire_readonly_routes_are_served_by_ai_crm_next() ->
         assert response.status_code == 200, path
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
 
+    export_response = client.get(f"/api/admin/questionnaires/{questionnaire_id}/export")
+    assert export_response.status_code == 200
+    assert export_response.headers["Content-Disposition"].startswith('attachment; filename="')
+
 
 def test_public_h5_page_uses_production_facade_when_database_ready(monkeypatch) -> None:
     testclient_module = pytest.importorskip("fastapi.testclient")
