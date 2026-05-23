@@ -1457,6 +1457,96 @@ def _questionnaire_sidebar_profile_answer_text(item: dict[str, Any]) -> str:
     return ""
 
 
+QUESTIONNAIRE_SIDEBAR_PROFILE_MAPPING_FIELDS = {"source", "industry", "industry_description", "needs_blockers_followup"}
+
+
+def _questionnaire_sidebar_profile_title_key(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _questionnaire_sidebar_profile_mapping_indexes(
+    *,
+    questionnaire_id: int,
+    question_ids: list[int],
+) -> tuple[dict[int, str], dict[tuple[str, str], str]]:
+    mapping_by_question_id: dict[int, str] = {}
+    mapping_by_title: dict[tuple[str, str], str] = {}
+    db = get_db()
+    if question_ids:
+        placeholders = ",".join("?" for _ in question_ids)
+        rows = db.execute(
+            f"""
+            SELECT id, type, title, sidebar_profile_field
+            FROM questionnaire_questions
+            WHERE id IN ({placeholders})
+            """,
+            tuple(question_ids),
+        ).fetchall()
+        for row in rows:
+            field = str(row.get("sidebar_profile_field") or "").strip()
+            if field in QUESTIONNAIRE_SIDEBAR_PROFILE_MAPPING_FIELDS:
+                mapping_by_question_id[int(row["id"])] = field
+
+    if int(questionnaire_id or 0) > 0:
+        rows = db.execute(
+            """
+            SELECT type, title, sidebar_profile_field
+            FROM questionnaire_questions
+            WHERE questionnaire_id = ?
+              AND sidebar_profile_field IN ('source', 'industry', 'industry_description', 'needs_blockers_followup')
+            ORDER BY sort_order ASC, id ASC
+            """,
+            (int(questionnaire_id),),
+        ).fetchall()
+        for row in rows:
+            field = str(row.get("sidebar_profile_field") or "").strip()
+            title_key = _questionnaire_sidebar_profile_title_key(row.get("title"))
+            question_type = str(row.get("type") or "").strip()
+            if field in QUESTIONNAIRE_SIDEBAR_PROFILE_MAPPING_FIELDS and title_key:
+                mapping_by_title.setdefault((question_type, title_key), field)
+                mapping_by_title.setdefault(("", title_key), field)
+    return mapping_by_question_id, mapping_by_title
+
+
+def _questionnaire_sidebar_profile_field_for_answer(
+    item: dict[str, Any],
+    *,
+    mapping_by_question_id: dict[int, str],
+    mapping_by_title: dict[tuple[str, str], str],
+) -> str:
+    question_id = int(item["question_id"])
+    field = mapping_by_question_id.get(question_id, "")
+    if field:
+        return field
+    title_key = _questionnaire_sidebar_profile_title_key(item.get("question_title_snapshot"))
+    question_type = str(item.get("question_type") or "").strip()
+    return mapping_by_title.get((question_type, title_key), "") or mapping_by_title.get(("", title_key), "")
+
+
+def _build_questionnaire_sidebar_profile_patch(
+    submission: dict[str, Any],
+    answer_snapshots: list[dict[str, Any]],
+) -> dict[str, str]:
+    question_ids = [int(item["question_id"]) for item in answer_snapshots if item.get("question_id") not in (None, "")]
+    mapping_by_question_id, mapping_by_title = _questionnaire_sidebar_profile_mapping_indexes(
+        questionnaire_id=int((submission or {}).get("questionnaire_id") or 0),
+        question_ids=question_ids,
+    )
+    patch: dict[str, str] = {}
+    for item in answer_snapshots:
+        field = _questionnaire_sidebar_profile_field_for_answer(
+            item,
+            mapping_by_question_id=mapping_by_question_id,
+            mapping_by_title=mapping_by_title,
+        )
+        if field not in QUESTIONNAIRE_SIDEBAR_PROFILE_MAPPING_FIELDS:
+            continue
+        answer_text = _questionnaire_sidebar_profile_answer_text(item)
+        if answer_text:
+            patch[field] = answer_text
+    return patch
+
+
 def apply_questionnaire_sidebar_profile_mapping(
     submission: dict[str, Any],
     computed_result: dict[str, Any],
@@ -1470,30 +1560,7 @@ def apply_questionnaire_sidebar_profile_mapping(
     if not question_ids:
         return {"applied": False, "reason": "answers_missing", "patch": {}}
 
-    placeholders = ",".join("?" for _ in question_ids)
-    rows = get_db().execute(
-        f"""
-        SELECT id, sidebar_profile_field
-        FROM questionnaire_questions
-        WHERE id IN ({placeholders})
-        """,
-        tuple(question_ids),
-    ).fetchall()
-    mapping_by_question_id = {
-        int(row["id"]): str(row.get("sidebar_profile_field") or "").strip()
-        for row in rows
-    }
-
-    patch: dict[str, str] = {}
-    for item in answer_snapshots:
-        question_id = int(item["question_id"])
-        field = mapping_by_question_id.get(question_id, "")
-        if field not in {"source", "industry", "industry_description", "needs_blockers_followup"}:
-            continue
-        answer_text = _questionnaire_sidebar_profile_answer_text(item)
-        if answer_text:
-            patch[field] = answer_text
-
+    patch = _build_questionnaire_sidebar_profile_patch(submission, answer_snapshots)
     if not patch:
         return {"applied": False, "reason": "patch_empty", "patch": {}}
 
@@ -1595,22 +1662,26 @@ def _load_questionnaire_submission_answer_snapshots(submission_id: int) -> list[
     return snapshots
 
 
-def _preview_questionnaire_sidebar_profile_mapping_fields(answer_snapshots: list[dict[str, Any]]) -> list[str]:
+def _preview_questionnaire_sidebar_profile_mapping_fields(
+    answer_snapshots: list[dict[str, Any]],
+    *,
+    questionnaire_id: int = 0,
+) -> list[str]:
     question_ids = [int(item["question_id"]) for item in answer_snapshots if item.get("question_id") not in (None, "")]
-    if not question_ids:
-        return []
-    placeholders = ",".join("?" for _ in question_ids)
-    rows = get_db().execute(
-        f"""
-        SELECT sidebar_profile_field
-        FROM questionnaire_questions
-        WHERE id IN ({placeholders})
-          AND sidebar_profile_field IN ('source', 'industry', 'industry_description', 'needs_blockers_followup')
-        ORDER BY sort_order ASC, id ASC
-        """,
-        tuple(question_ids),
-    ).fetchall()
-    return _dedupe_strings([str(row.get("sidebar_profile_field") or "").strip() for row in rows])
+    mapping_by_question_id, mapping_by_title = _questionnaire_sidebar_profile_mapping_indexes(
+        questionnaire_id=int(questionnaire_id or 0),
+        question_ids=question_ids,
+    )
+    fields = []
+    for item in answer_snapshots:
+        fields.append(
+            _questionnaire_sidebar_profile_field_for_answer(
+                item,
+                mapping_by_question_id=mapping_by_question_id,
+                mapping_by_title=mapping_by_title,
+            )
+        )
+    return _dedupe_strings([field for field in fields if field in QUESTIONNAIRE_SIDEBAR_PROFILE_MAPPING_FIELDS])
 
 
 def _resolve_questionnaire_backfill_identity(row: Any) -> tuple[dict[str, Any] | None, str, str]:
@@ -1730,7 +1801,10 @@ def backfill_questionnaire_submission_identities(
         elif matched_by == "mobile":
             mobile_resolvable_count += 1
         answer_snapshots = _load_questionnaire_submission_answer_snapshots(int(row["id"]))
-        sidebar_fields = _preview_questionnaire_sidebar_profile_mapping_fields(answer_snapshots)
+        sidebar_fields = _preview_questionnaire_sidebar_profile_mapping_fields(
+            answer_snapshots,
+            questionnaire_id=int(row["questionnaire_id"]),
+        )
         item.update(
             {
                 "status": "resolvable",
@@ -1812,6 +1886,114 @@ def backfill_questionnaire_submission_identities(
             "mobile_resolvable_count": mobile_resolvable_count,
             "unresolved_count": unresolved_count,
             "applied_count": applied_count,
+        },
+        "items": items,
+    }
+
+
+def replay_questionnaire_sidebar_profile_mappings(
+    *,
+    questionnaire_id: int,
+    external_userid: str = "",
+    submission_id: int | None = None,
+    since: str = "",
+    until: str = "",
+    limit: int = 50,
+    apply: bool = False,
+) -> dict[str, Any]:
+    normalized_questionnaire_id = int(questionnaire_id)
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_submission_id = int(submission_id) if submission_id is not None else None
+    normalized_limit = max(1, min(int(limit or 50), 500))
+    filters = [
+        "questionnaire_id = ?",
+        "(external_userid IS NOT NULL AND external_userid <> '')",
+    ]
+    params: list[Any] = [normalized_questionnaire_id]
+    if normalized_external_userid:
+        filters.append("external_userid = ?")
+        params.append(normalized_external_userid)
+    if normalized_submission_id:
+        filters.append("id = ?")
+        params.append(normalized_submission_id)
+    if since:
+        filters.append("submitted_at >= ?")
+        params.append(str(since).strip())
+    if until:
+        filters.append("submitted_at <= ?")
+        params.append(str(until).strip())
+    params.append(normalized_limit)
+    rows = get_db().execute(
+        f"""
+        SELECT id, questionnaire_id, identity_map_id, respondent_key, openid, unionid,
+               external_userid, follow_user_userid, matched_by, mobile_snapshot,
+               source_channel, campaign_id, staff_id, total_score, final_tags,
+               assessment_result_snapshot, result_token, redirect_url_snapshot, submitted_at
+        FROM questionnaire_submissions
+        WHERE {" AND ".join(filters)}
+        ORDER BY submitted_at ASC, id ASC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    applicable_count = 0
+    applied_count = 0
+    skipped_count = 0
+    for row in rows:
+        submission = dict(row)
+        answer_snapshots = _load_questionnaire_submission_answer_snapshots(int(row["id"]))
+        patch = _build_questionnaire_sidebar_profile_patch(submission, answer_snapshots)
+        item = {
+            "submission_id": int(row["id"]),
+            "questionnaire_id": int(row["questionnaire_id"]),
+            "submitted_at": _format_iso_datetime(row.get("submitted_at")),
+            "external_userid_present": True,
+            "external_userid_masked": _mask_questionnaire_backfill_value(row.get("external_userid")),
+            "patch_fields": sorted(patch.keys()),
+            "status": "applicable" if patch else "skipped",
+            "reason": "patch_ready" if patch else "patch_empty",
+        }
+        if not patch:
+            skipped_count += 1
+            items.append(item)
+            continue
+        applicable_count += 1
+        if apply:
+            result = apply_questionnaire_sidebar_profile_mapping(
+                submission,
+                {"answer_snapshots": answer_snapshots},
+            )
+            if result.get("applied"):
+                applied_count += 1
+                item.update(
+                    {
+                        "status": "applied",
+                        "reason": "applied",
+                        "patch_fields": sorted((result.get("patch") or {}).keys()),
+                    }
+                )
+            else:
+                skipped_count += 1
+                item.update({"status": "skipped", "reason": str(result.get("reason") or "not_applied")})
+        items.append(item)
+
+    return {
+        "ok": True,
+        "mode": "questionnaire_sidebar_profile_mapping_replay",
+        "dry_run": not bool(apply),
+        "questionnaire_id": normalized_questionnaire_id,
+        "external_userid_present": bool(normalized_external_userid),
+        "submission_id": normalized_submission_id,
+        "since": str(since or "").strip(),
+        "until": str(until or "").strip(),
+        "limit": normalized_limit,
+        "summary": {
+            "candidate_count": len(rows),
+            "applicable_count": applicable_count,
+            "applied_count": applied_count,
+            "skipped_count": skipped_count,
         },
         "items": items,
     }

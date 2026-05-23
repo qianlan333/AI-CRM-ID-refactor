@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from wecom_ability_service.db import get_db
-from wecom_ability_service.domains.questionnaire import backfill_questionnaire_submission_identities
+from wecom_ability_service.domains.questionnaire import (
+    backfill_questionnaire_submission_identities,
+    replay_questionnaire_sidebar_profile_mappings,
+)
 
 
 def _seed_questionnaire(app) -> int:
@@ -273,4 +276,81 @@ def test_questionnaire_identity_backfill_apply_updates_submission_and_sidebar_pr
             assert union_profile["needs_blockers_followup"] == "UnionID 直接同步"
             assert union_profile["updated_by"] == "questionnaire_submit"
             assert profile["needs_blockers_followup"] == "需要侧边栏同步"
+            assert profile["updated_by"] == "questionnaire_submit"
+
+
+def test_questionnaire_sidebar_profile_replay_matches_recreated_questions_by_title(tmp_path):
+    from tests.conftest import build_pg_test_app
+
+    with build_pg_test_app(tmp_path) as app:
+        questionnaire_id = _seed_questionnaire(app)
+        with app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO questionnaire_submissions (
+                    id, questionnaire_id, respondent_key, external_userid, mobile_snapshot,
+                    total_score, final_tags, assessment_result_snapshot, redirect_url_snapshot, submitted_at
+                )
+                VALUES (
+                    710201, ?, 'resp-recreated-question', 'wm_recreated_question_001', '13800137201',
+                    0, '[]', '{}', '', '2026-05-23 14:00:00+08'
+                )
+                """,
+                (questionnaire_id,),
+            )
+            db.execute(
+                """
+                INSERT INTO questionnaire_submission_answers (
+                    submission_id, question_id, question_type, question_title_snapshot,
+                    selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                    selected_option_tags_snapshot, text_value, score_contribution, created_at
+                )
+                VALUES (
+                    710201, 999002, 'textarea', '跟进诉求',
+                    '[]', '[]', '[]', '[]', '旧题 ID 的答案也要同步', 0, CURRENT_TIMESTAMP
+                )
+                """
+            )
+            db.commit()
+
+            dry_run = replay_questionnaire_sidebar_profile_mappings(
+                questionnaire_id=questionnaire_id,
+                submission_id=710201,
+                apply=False,
+            )
+            assert dry_run["summary"] == {
+                "candidate_count": 1,
+                "applicable_count": 1,
+                "applied_count": 0,
+                "skipped_count": 0,
+            }
+            assert dry_run["items"][0]["patch_fields"] == ["needs_blockers_followup"]
+            assert (
+                get_db()
+                .execute(
+                    """
+                    SELECT needs_blockers_followup
+                    FROM sidebar_customer_profile_fields
+                    WHERE external_userid = 'wm_recreated_question_001'
+                    """
+                )
+                .fetchone()
+                is None
+            )
+
+            applied = replay_questionnaire_sidebar_profile_mappings(
+                questionnaire_id=questionnaire_id,
+                submission_id=710201,
+                apply=True,
+            )
+            assert applied["summary"]["applied_count"] == 1
+            profile = get_db().execute(
+                """
+                SELECT needs_blockers_followup, updated_by
+                FROM sidebar_customer_profile_fields
+                WHERE external_userid = 'wm_recreated_question_001'
+                """
+            ).fetchone()
+            assert profile["needs_blockers_followup"] == "旧题 ID 的答案也要同步"
             assert profile["updated_by"] == "questionnaire_submit"
