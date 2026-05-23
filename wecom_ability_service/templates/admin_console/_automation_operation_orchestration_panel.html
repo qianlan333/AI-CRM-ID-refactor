@@ -87,7 +87,8 @@
           <label class="op-task-field" data-scheduled-trigger-field><span>每天触发时间</span><input data-field="send_time" type="time"></label>
           <label class="op-task-field"><span>触达对象所在阶段</span><select data-field="target_stage_code">
             {% for stage in targetable_stages %}
-              <option value="{{ stage.stage_code }}" data-audience-code="{{ stage.compat_audience_code or '' }}">{{ stage.label }}{% if stage.description %} · {{ stage.description }}{% endif %}</option>
+              {% set stage_description = '已通过前置条件' if stage.stage_code == 'operating' else '已确认成交' if stage.stage_code == 'converted' else stage.description %}
+              <option value="{{ stage.stage_code }}" data-audience-code="{{ stage.compat_audience_code or '' }}">{{ stage.label }}{% if stage_description %} · {{ stage_description }}{% endif %}</option>
             {% else %}
               <option value="operating" data-audience-code="operating">运营中 · 已通过前置条件</option>
             {% endfor %}
