@@ -21,9 +21,9 @@
     </div>
     <div class="admin-toolbar">
       {% if logs_payload.is_global %}
-      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_console_questionnaires') }}">返回问卷管理</a>
+      <a class="admin-button admin-button--ghost" href="/admin/questionnaires">返回问卷管理</a>
       {% else %}
-      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_console_questionnaire_detail', questionnaire_id=logs_payload.questionnaire.id) }}">返回问卷编辑</a>
+      <a class="admin-button admin-button--ghost" href="/admin/questionnaires/{{ logs_payload.questionnaire.id }}">返回问卷编辑</a>
       <a class="admin-button admin-button--secondary" href="{{ logs_payload.questionnaire.public_path }}">打开问卷</a>
       {% endif %}
     </div>
