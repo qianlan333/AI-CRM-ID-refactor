@@ -193,9 +193,47 @@ def test_questionnaire_editor_nests_production_questions_for_legacy_editor(monke
 
     assert response.status_code == 200
     assert "真实生产问卷" in response.text
-    assert "真实生产题目" in response.text
+    assert (
+        "真实生产题目" in response.text
+        or "\\u771f\\u5b9e\\u751f\\u4ea7\\u9898\\u76ee" in response.text
+    )
     assert "needs_blockers_followup" in response.text
     assert "侧边栏核心画像映射" in response.text
+    assert "/admin/questionnaires/external-push-logs" in response.text
+    assert "/api/admin/questionnaires/${state.currentId}/export" in response.text
+    assert "/admin/questionnaires/${state.currentId}/external-push-logs" in response.text
+
+
+def test_questionnaire_external_push_log_routes_forward_to_legacy(monkeypatch):
+    from fastapi.responses import HTMLResponse
+
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    forwarded_paths: list[str] = []
+
+    async def fake_forward_to_legacy_flask(request):
+        forwarded_paths.append(request.url.path)
+        return HTMLResponse("<h1>问卷外部推送记录</h1>")
+
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+    client = _client(monkeypatch)
+
+    for method, path in [
+        ("get", "/admin/questionnaires/external-push-logs?status=failed"),
+        ("get", "/admin/questionnaires/101/external-push-logs?limit=10"),
+        ("post", "/admin/questionnaires/external-push-logs/1/retry"),
+        ("post", "/admin/questionnaires/101/external-push-logs/retry-batch"),
+    ]:
+        response = getattr(client, method)(path)
+        assert response.status_code == 200, path
+        assert "问卷外部推送记录" in response.text
+
+    assert forwarded_paths == [
+        "/admin/questionnaires/external-push-logs",
+        "/admin/questionnaires/101/external-push-logs",
+        "/admin/questionnaires/external-push-logs/1/retry",
+        "/admin/questionnaires/101/external-push-logs/retry-batch",
+    ]
 
 
 def test_wechat_pay_transactions_page_uses_legacy_management_when_database_ready(monkeypatch):
