@@ -3,11 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from aicrm_next.integration_gateway.legacy_customer_read_facade import (
-    recent_messages_via_legacy,
-)
 from aicrm_next.shared.errors import NotFoundError
-from aicrm_next.shared.runtime import legacy_production_facade_enabled, production_data_ready
 
 from .application import (
     GetAdminCustomerProfileQuery,
@@ -27,21 +23,6 @@ from .dto import (
 )
 
 router = APIRouter()
-
-
-def _use_production_customer_facade() -> bool:
-    return production_data_ready() and legacy_production_facade_enabled()
-
-
-def _service_unavailable(exc: Exception) -> None:
-    raise HTTPException(
-        status_code=503,
-        detail={
-            "error": "legacy_customer_read_facade_unavailable",
-            "message": str(exc),
-            "route_owner": "ai_crm_next",
-        },
-    ) from exc
 
 
 def _input_error(message: str) -> JSONResponse:
@@ -145,13 +126,11 @@ def get_customer_timeline(
 def get_recent_messages(external_userid: str, limit: int = 20) -> dict:
     try:
         query = RecentMessagesRequest(external_userid=external_userid, limit=limit)
-        if _use_production_customer_facade():
-            return recent_messages_via_legacy(query)
-        return ListRecentMessagesQuery()(query)
+        result = ListRecentMessagesQuery()(query)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        _service_unavailable(exc)
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
 
 
 @router.get("/api/sidebar/customer-context")
