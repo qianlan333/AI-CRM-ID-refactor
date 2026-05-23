@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion.channel_binding_service import (
@@ -172,12 +173,17 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     new_page = client.get("/admin/channels/new")
     assert new_page.status_code == 200
     new_html = new_page.get_data(as_text=True)
-    assert "普通二维码预览" in new_html
-    assert "保存后可下载二维码" in new_html
-    assert "已选小程序素材" in new_html
-    assert "已选图片/PDF素材" in new_html
-    assert "从素材库选择" in new_html
-    assert "data-material-search" in new_html
+    assert "普通二维码预览" not in new_html
+    assert "保存后可下载二维码" not in new_html
+    assert "状态" not in new_html
+    assert "普通二维码场景值" not in new_html
+    assert "二维码图片地址" not in new_html
+    assert "小程序素材" in new_html
+    assert "图片/PDF素材" in new_html
+    assert "预览并选择小程序" in new_html
+    assert "预览并选择图片/PDF" in new_html
+    assert "预览并选择标签" in new_html
+    assert "data-resource-picker-search" in new_html
     assert "小程序" in new_html
     assert "图片" in new_html
     assert "PDF" in new_html
@@ -187,6 +193,8 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     assert "<span>customer_channel</span>" not in new_html
     assert "<span>entry_tag_id</span>" not in new_html
     assert "<span>entry_tag_name</span>" not in new_html
+    assert "入渠标签编号" not in new_html
+    assert "入渠标签名称" not in new_html
     assert 'placeholder="sales_01"' not in new_html
     assert "选择负责人" in new_html
     assert "渠道负责人 01" in new_html
@@ -233,18 +241,27 @@ def test_entry_channels_page_displays_two_types_and_filters_active_bound_links(a
     assert "入池时间：使用导入时间" in html
 
 
-def test_qrcode_download_is_png_attachment_and_link_channel_rejects(app, client, monkeypatch):
+def test_qrcode_download_is_channel_qrcode_image_attachment_and_link_channel_rejects(app, client, monkeypatch):
     login_admin(client, app, monkeypatch)
     with app.app_context():
         ids = _seed_page_channels()
 
+    direct_qrcode_png = b"\x89PNG\r\n\x1a\nactual-channel-qrcode-image"
+
+    class FakeQrResponse:
+        status_code = 200
+        content = direct_qrcode_png
+        headers = {"Content-Type": "image/png"}
+
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: FakeQrResponse())
     qrcode_response = client.get(f"/api/admin/channels/{ids['qrcode_id']}/qrcode/download")
     assert qrcode_response.status_code == 200
     assert qrcode_response.content_type.startswith("image/png")
     disposition = qrcode_response.headers.get("Content-Disposition", "")
     assert "attachment" in disposition
     assert "CH-PAGE-QR" in disposition
-    assert qrcode_response.data.startswith(b"\x89PNG")
+    assert quote("页面普通二维码") in disposition
+    assert qrcode_response.data == direct_qrcode_png
 
     link_response = client.get(f"/api/admin/channels/{ids['bound_link_id']}/qrcode/download")
     assert link_response.status_code == 400
