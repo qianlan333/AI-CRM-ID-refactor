@@ -5,6 +5,10 @@ from pathlib import Path
 
 WORKBENCH_TEMPLATE = Path("wecom_ability_service/templates/sidebar_customer_workbench.html")
 WORKBENCH_JS = Path("wecom_ability_service/static/sidebar_workbench/sidebar_workbench.js")
+WORKBENCH_CSS = Path("wecom_ability_service/static/sidebar_workbench/sidebar_workbench.css")
+NEXT_WORKBENCH_TEMPLATE = Path("aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html")
+NEXT_WORKBENCH_JS = Path("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.js")
+NEXT_WORKBENCH_CSS = Path("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.css")
 
 
 def test_sidebar_workbench_v2_default_page_is_not_legacy_long_page(client):
@@ -28,7 +32,11 @@ def test_sidebar_workbench_v2_default_page_is_not_legacy_long_page(client):
 def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     template = WORKBENCH_TEMPLATE.read_text(encoding="utf-8")
     script = WORKBENCH_JS.read_text(encoding="utf-8")
-    combined = template + "\n" + script
+    next_template = NEXT_WORKBENCH_TEMPLATE.read_text(encoding="utf-8")
+    next_script = NEXT_WORKBENCH_JS.read_text(encoding="utf-8")
+    css = WORKBENCH_CSS.read_text(encoding="utf-8")
+    next_css = NEXT_WORKBENCH_CSS.read_text(encoding="utf-8")
+    combined = template + "\n" + script + "\n" + next_template + "\n" + next_script + "\n" + css + "\n" + next_css
 
     assert '["profile", "核心画像"]' in script
     assert '["questionnaires", "问卷"]' in script
@@ -59,14 +67,40 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "data-product-send" not in script
     assert "data-product-detail" not in script
     assert "image-thumb" in script
+    assert "material-thumb" in script
+    assert "material-thumb" in next_script
+    assert "material--image" in script
+    assert "material--image" in next_script
+    assert "material-main" in script
+    assert "material-title" in script
+    assert "material-tags" in script
     assert "thumbnail_url" in script
+    assert 'alt=""' in script
+    assert 'alt=""' in next_script
+    assert "data-material-thumb-img" in script
+    assert "data-material-thumb-img" in next_script
     assert "sendChatMessage" in script
     assert "delivery_mode" in script
     assert "chat_toolbar" in script
     assert ">发送</button>" in script
+    assert "发给客户" not in combined
+    assert "预览" not in combined
+    assert "更新时间" not in combined
+    assert "source_url" not in script
+    assert "source_url" not in next_script
+    assert "item.description" not in script
+    assert "item.description" not in next_script
+    assert "object-fit: cover" in css
+    assert "object-fit: cover" in next_css
+    assert ".material-thumb img" in css
+    assert ".material-thumb img" in next_css
+    assert ".thumb.image-thumb img" in css
+    assert ".thumb.image-thumb img" in next_css
+    assert "grid-column: 1 / 3" not in css
+    assert "grid-column: 1 / 3" not in next_css
     assert "data-order-detail-url" in script
     assert "window.open(link, \"_blank\", \"noopener\")" in script
-    assert "window.location.href = link" not in script
+    assert "window.location.href = link" not in combined
     assert "详情能力待接入" not in script
 
     forbidden = [
