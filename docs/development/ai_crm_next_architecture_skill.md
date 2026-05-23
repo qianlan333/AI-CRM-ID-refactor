@@ -54,3 +54,10 @@
 - Risk / rollback
 - Next action
 
+## F. Legacy Growth Freeze
+
+- 新功能默认使用 AI-CRM Next native implementation。
+- legacy facade 只能作为 production compatibility / rollback / hotfix 边界。
+- 修改 `production_compat` 必须同步 route ownership manifest 和 checker。
+- 禁止任何绕过 import guard 的动态 legacy import；唯一例外是
+  `aicrm_next/integration_gateway/legacy_flask_facade.py`。

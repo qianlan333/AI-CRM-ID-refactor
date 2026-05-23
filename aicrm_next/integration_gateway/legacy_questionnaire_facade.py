@@ -4,7 +4,7 @@ from typing import Any, Callable, TypeVar
 
 from aicrm_next.questionnaire.domain import admin_detail_projection, public_projection, summary_projection
 
-from .legacy_flask_facade import _legacy_app
+from .legacy_flask_facade import _legacy_app, legacy_questionnaire_service
 
 LEGACY_COMPATIBILITY_BOUNDARY = "legacy_questionnaire_facade"
 
@@ -26,8 +26,7 @@ def _with_legacy_app_context(callback: Callable[[], T]) -> T:
 
 def list_questionnaires_from_legacy(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         rows = legacy_service.list_questionnaires()
         total = len(rows)
         page = rows[int(offset) : int(offset) + int(limit)]
@@ -48,8 +47,7 @@ def list_questionnaires_from_legacy(*, limit: int = 50, offset: int = 0) -> dict
 
 def get_questionnaire_detail_from_legacy(questionnaire_id: int) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.get_questionnaire_detail(int(questionnaire_id))
         if not item:
             raise LookupError("questionnaire not found")
@@ -65,8 +63,7 @@ def get_questionnaire_detail_from_legacy(questionnaire_id: int) -> dict[str, Any
 
 def create_questionnaire_in_legacy(payload: dict[str, Any]) -> dict[str, Any]:
     def _save() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.create_questionnaire(dict(payload or {}))
         return {
             "ok": True,
@@ -80,8 +77,7 @@ def create_questionnaire_in_legacy(payload: dict[str, Any]) -> dict[str, Any]:
 
 def update_questionnaire_in_legacy(questionnaire_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     def _save() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.update_questionnaire(int(questionnaire_id), dict(payload or {}))
         if not item:
             raise LookupError("questionnaire not found")
@@ -97,8 +93,7 @@ def update_questionnaire_in_legacy(questionnaire_id: int, payload: dict[str, Any
 
 def set_questionnaire_enabled_in_legacy(questionnaire_id: int, *, enabled: bool) -> dict[str, Any]:
     def _save() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.disable_questionnaire(int(questionnaire_id), is_disabled=not bool(enabled))
         if not item:
             raise LookupError("questionnaire not found")
@@ -114,8 +109,7 @@ def set_questionnaire_enabled_in_legacy(questionnaire_id: int, *, enabled: bool)
 
 def delete_questionnaire_in_legacy(questionnaire_id: int) -> dict[str, Any]:
     def _delete() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         return {
             "ok": True,
             "deleted": legacy_service.delete_questionnaire(int(questionnaire_id)),
@@ -129,8 +123,7 @@ def delete_questionnaire_in_legacy(questionnaire_id: int) -> dict[str, Any]:
 
 def get_public_questionnaire_from_legacy(slug: str) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.get_public_questionnaire_by_slug(slug)
         if not item:
             raise LookupError("questionnaire not found")
@@ -146,8 +139,7 @@ def get_public_questionnaire_from_legacy(slug: str) -> dict[str, Any]:
 
 def latest_submit_debug_from_legacy(questionnaire_id: int) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         item = legacy_service.get_latest_questionnaire_submit_debug(int(questionnaire_id))
         return {
             "ok": True,
@@ -162,8 +154,7 @@ def latest_submit_debug_from_legacy(questionnaire_id: int) -> dict[str, Any]:
 
 def export_questionnaire_from_legacy(questionnaire_id: int) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.questionnaire import service as legacy_service
-
+        legacy_service = legacy_questionnaire_service()
         return {
             "ok": True,
             "export": legacy_service.export_questionnaire_submissions(int(questionnaire_id)),

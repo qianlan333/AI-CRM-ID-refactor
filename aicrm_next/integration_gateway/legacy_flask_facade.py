@@ -43,8 +43,33 @@ _HOP_BY_HOP_HEADERS = {
 
 @lru_cache(maxsize=1)
 def _legacy_app():
-    module = importlib.import_module("wecom_" + "ability_service")
+    module = _legacy_import_module()
     return module.create_app()
+
+
+def _legacy_import_module(suffix: str = "") -> Any:
+    module_name = "wecom_" + "ability_service" + suffix
+    return importlib.import_module(module_name)
+
+
+@lru_cache(maxsize=1)
+def _legacy_customer_read_model_module() -> Any:
+    return _legacy_import_module(".application.customer_read_model")
+
+
+@lru_cache(maxsize=1)
+def legacy_questionnaire_service() -> Any:
+    return _legacy_import_module(".domains.questionnaire.service")
+
+
+@lru_cache(maxsize=1)
+def legacy_automation_conversion_service() -> Any:
+    return _legacy_import_module(".domains.automation_conversion.service")
+
+
+@lru_cache(maxsize=1)
+def legacy_automation_conversion_module() -> Any:
+    return _legacy_import_module(".domains.automation_conversion")
 
 
 def legacy_questionnaire_oauth_is_configured() -> bool:

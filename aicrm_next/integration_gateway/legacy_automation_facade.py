@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
-from .legacy_flask_facade import _legacy_app
+from .legacy_flask_facade import (
+    _legacy_app,
+    legacy_automation_conversion_module,
+    legacy_automation_conversion_service,
+)
 
 LEGACY_COMPATIBILITY_BOUNDARY = "legacy_automation_facade"
 
@@ -25,8 +29,7 @@ def _with_legacy_app_context(callback: Callable[[], T]) -> T:
 
 def get_automation_overview_from_legacy() -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.automation_conversion import service as legacy_service
-
+        legacy_service = legacy_automation_conversion_service()
         payload = legacy_service.get_overview_payload()
         cards = list(payload.get("cards") or [])
         counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
@@ -48,8 +51,7 @@ def get_automation_overview_from_legacy() -> dict[str, Any]:
 
 def list_automation_pools_from_legacy() -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.automation_conversion import service as legacy_service
-
+        legacy_service = legacy_automation_conversion_service()
         payload = legacy_service.get_overview_payload()
         stage_columns = list(payload.get("stage_columns") or [])
         pools = [
@@ -78,9 +80,8 @@ def list_automation_pools_from_legacy() -> dict[str, Any]:
 
 def list_automation_programs_from_legacy() -> dict[str, Any]:
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.automation_conversion import list_automation_programs
-
-        payload = list_automation_programs(include_archived=False)
+        legacy_automation_conversion = legacy_automation_conversion_module()
+        payload = legacy_automation_conversion.list_automation_programs(include_archived=False)
         return {
             **payload,
             "ok": True,
@@ -98,8 +99,7 @@ def get_automation_member_detail_from_legacy(*, external_contact_id: str = "", p
         return {"ok": False, "error": "external_contact_id or phone is required"}
 
     def _load() -> dict[str, Any]:
-        from wecom_ability_service.domains.automation_conversion import service as legacy_service
-
+        legacy_service = legacy_automation_conversion_service()
         return {
             "ok": True,
             "detail": legacy_service.get_member_detail(external_contact_id=external_contact_id, phone=phone),
