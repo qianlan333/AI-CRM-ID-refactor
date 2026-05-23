@@ -63,6 +63,45 @@ def test_external_push_pages_do_not_link_via_retired_flask_questionnaire_get_end
     assert "/admin/questionnaires" in combined
 
 
+def test_next_admin_detail_projection_preserves_legacy_external_push_fields():
+    from aicrm_next.questionnaire.domain import admin_detail_projection
+
+    payload = admin_detail_projection(
+        {
+            "id": 21,
+            "slug": "q-legacy",
+            "title": "生产问卷",
+            "name": "生产问卷",
+            "description": "",
+            "is_disabled": False,
+            "redirect_url": "",
+            "created_at": "2026-05-23T00:00:00Z",
+            "updated_at": "2026-05-23T00:00:00Z",
+            "questions": [],
+            "external_push_enabled": True,
+            "external_push_url": "https://hooks.example.com/questionnaire",
+            "external_push_type": "premium",
+            "external_push_expires_at_ts": 1809100800,
+            "external_push_day": 30,
+            "external_push_frequency": 7,
+            "external_push_remark": "深度思考群用户",
+            "external_push_custom_params": [{"name": "source", "value": "questionnaire"}],
+            "submission_count": 0,
+            "assessment_enabled": False,
+        }
+    )
+
+    questionnaire = payload["questionnaire"]
+    assert questionnaire["external_push_enabled"] is True
+    assert questionnaire["external_push_url"] == "https://hooks.example.com/questionnaire"
+    assert questionnaire["external_push_type"] == "premium"
+    assert questionnaire["external_push_expires_at_ts"] == 1809100800
+    assert questionnaire["external_push_day"] == 30
+    assert questionnaire["external_push_frequency"] == 7
+    assert questionnaire["external_push_remark"] == "深度思考群用户"
+    assert questionnaire["external_push_custom_params"] == [{"name": "source", "value": "questionnaire"}]
+
+
 def test_global_external_push_payload_builds_next_questionnaire_paths_without_flask_url_for(monkeypatch):
     from wecom_ability_service.application.questionnaire import queries
 

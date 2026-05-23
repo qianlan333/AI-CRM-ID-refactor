@@ -5,8 +5,31 @@ from typing import Any
 from aicrm_next.shared.errors import ContractError
 
 
+def _item_has_key(item: dict[str, Any], key: str) -> bool:
+    return key in item and item.get(key) is not None
+
+
+def _external_push_bool(item: dict[str, Any], config: dict[str, Any], key: str, config_key: str) -> bool:
+    if _item_has_key(item, key):
+        return bool(item.get(key))
+    return bool(config.get(config_key))
+
+
+def _external_push_text(item: dict[str, Any], config: dict[str, Any], key: str, config_key: str) -> str:
+    if _item_has_key(item, key):
+        return str(item.get(key) or "").strip()
+    return str(config.get(config_key) or "").strip()
+
+
+def _external_push_value(item: dict[str, Any], config: dict[str, Any], key: str, config_key: str) -> Any:
+    if _item_has_key(item, key):
+        return item.get(key)
+    return config.get(config_key)
+
+
 def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
     enabled = bool(item.get("enabled", not bool(item.get("is_disabled", False))))
+    external_push_config = dict(item.get("external_push_config") or {})
     normalized = {
         "id": item["id"],
         "slug": str(item.get("slug") or "").strip(),
@@ -20,7 +43,28 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "created_at": item.get("created_at") or "",
         "updated_at": item.get("updated_at") or "",
         "questions": [normalize_question(question) for question in item.get("questions", [])],
-        "external_push_config": dict(item.get("external_push_config") or {}),
+        "external_push_config": external_push_config,
+        "external_push_enabled": _external_push_bool(item, external_push_config, "external_push_enabled", "enabled"),
+        "external_push_url": _external_push_text(item, external_push_config, "external_push_url", "webhook_url"),
+        "external_push_type": _external_push_text(item, external_push_config, "external_push_type", "type")
+        or "subscription",
+        "external_push_expires_at_ts": _external_push_value(
+            item,
+            external_push_config,
+            "external_push_expires_at_ts",
+            "expires_at_ts",
+        ),
+        "external_push_day": _external_push_value(item, external_push_config, "external_push_day", "day"),
+        "external_push_frequency": _external_push_value(
+            item,
+            external_push_config,
+            "external_push_frequency",
+            "frequency",
+        ),
+        "external_push_remark": _external_push_text(item, external_push_config, "external_push_remark", "remark"),
+        "external_push_custom_params": list(
+            _external_push_value(item, external_push_config, "external_push_custom_params", "custom_params") or []
+        ),
         "submission_count": int(item.get("submission_count") or 0),
         "assessment_enabled": bool(item.get("assessment_enabled", False)),
     }
