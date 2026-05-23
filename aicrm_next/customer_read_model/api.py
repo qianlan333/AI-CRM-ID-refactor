@@ -13,6 +13,8 @@ from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.runtime import legacy_production_facade_enabled, production_data_ready
 
 from .application import (
+    GetAdminCustomerProfileQuery,
+    GetAdminCustomerProfileTagsQuery,
     GetCustomerContextQuery,
     GetCustomerDetailQuery,
     GetCustomerTimelineQuery,
@@ -70,40 +72,6 @@ def _resolve_external_userid(external_userid: str | None = None, user_id: str | 
     return str(external_userid or user_id or "").strip()
 
 
-def _profile_payload(customer: dict, *, source_status: str, resolved_by: str = "external_userid") -> dict:
-    external_userid = str(customer.get("external_userid") or customer.get("user_id") or "")
-    profile = {
-        **customer,
-        "external_userid": external_userid,
-        "user_id": customer.get("user_id") or external_userid,
-        "tags": list(customer.get("tags") or []),
-        "binding": dict(customer.get("binding") or {}),
-        "identity": dict(customer.get("identity") or {}),
-        "marketing_profile": dict(customer.get("marketing_profile") or {}),
-        "sidebar_context": dict(customer.get("sidebar_context") or {}),
-    }
-    return {
-        "ok": True,
-        "profile": profile,
-        "customer": profile,
-        "lookup": {"resolved_by": resolved_by, "external_userid": external_userid},
-        "source_status": source_status,
-        "route_owner": "ai_crm_next",
-    }
-
-
-def _profile_tags_payload(customer: dict, *, source_status: str) -> dict:
-    tags = list(customer.get("tags") or [])
-    return {
-        "ok": True,
-        "tags": tags,
-        "count": len(tags),
-        "external_userid": str(customer.get("external_userid") or ""),
-        "source_status": source_status,
-        "route_owner": "ai_crm_next",
-    }
-
-
 def _context_for_external_userid(
     external_userid: str,
     *,
@@ -117,35 +85,6 @@ def _context_for_external_userid(
             timeline_limit=timeline_limit,
         )
     )
-
-
-def _context_for_lookup(
-    *,
-    external_userid: str | None = None,
-    mobile: str | None = None,
-    user_id: str | None = None,
-    recent_message_limit: int = 20,
-    timeline_limit: int = 20,
-) -> dict:
-    return GetCustomerContextQuery()(
-        CustomerContextRequest(
-            external_userid=external_userid or None,
-            mobile=mobile or None,
-            user_id=user_id or None,
-            recent_message_limit=recent_message_limit,
-            timeline_limit=timeline_limit,
-        )
-    )
-
-
-def _profile_payload_from_context(context: dict, *, resolved_by: str = "external_userid") -> dict:
-    profile = dict(context.get("customer") or context.get("profile") or {})
-    payload = _profile_payload(profile, source_status=str(context.get("source_status") or ""), resolved_by=resolved_by)
-    payload["context"] = context
-    payload["identity_binding_summary"] = dict(context.get("identity_binding_summary") or {})
-    payload["degraded"] = bool(context.get("degraded"))
-    payload["page_error"] = context.get("page_error") or ""
-    return payload
 
 
 @router.get("/api/customers")
@@ -274,44 +213,20 @@ def get_admin_customer_profile(
     mobile: str | None = None,
     user_id: str | None = None,
 ):
-    resolved_external_userid = _resolve_external_userid(external_userid, user_id)
-    if not resolved_external_userid and not mobile:
-        return _input_error("external_userid is required")
-    try:
-        if resolved_external_userid:
-            context = _context_for_lookup(external_userid=resolved_external_userid)
-        else:
-            context = _context_for_lookup(mobile=str(mobile or ""))
-        if not context.get("ok"):
-            return JSONResponse(context, status_code=503 if context.get("degraded") else 400)
-        customer = dict(context.get("customer") or {})
-        if not customer:
-            return _input_error("customer not found")
-        if mobile and not resolved_external_userid:
-            resolved_by = "mobile"
-        else:
-            resolved_by = "user_id_fallback_external_userid" if user_id and not external_userid else "external_userid"
-        return _profile_payload_from_context(context, resolved_by=resolved_by)
-    except NotFoundError:
-        return _input_error("customer not found")
-    except Exception as exc:
-        return _production_unavailable(exc)
+    result = GetAdminCustomerProfileQuery()(
+        external_userid=external_userid,
+        mobile=mobile,
+        user_id=user_id,
+    )
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
 
 
 @router.get("/api/admin/customers/profile/tags")
 def get_admin_customer_profile_tags(external_userid: str | None = None, user_id: str | None = None):
-    resolved_external_userid = _resolve_external_userid(external_userid, user_id)
-    if not resolved_external_userid:
-        return _input_error("external_userid is required")
-    try:
-        context = _context_for_external_userid(resolved_external_userid)
-        if not context.get("ok"):
-            return JSONResponse(context, status_code=503 if context.get("degraded") else 400)
-        customer = dict(context.get("customer") or {})
-        if not customer:
-            return _input_error("customer not found")
-        return _profile_tags_payload(customer, source_status=str(context.get("source_status") or ""))
-    except NotFoundError:
-        return _input_error("customer not found")
-    except Exception as exc:
-        return _production_unavailable(exc)
+    result = GetAdminCustomerProfileTagsQuery()(
+        external_userid=external_userid,
+        user_id=user_id,
+    )
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
