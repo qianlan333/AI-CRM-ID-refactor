@@ -1541,6 +1541,282 @@ def apply_questionnaire_sidebar_profile_mapping(
     return {"applied": True, "patch": patch, "profile": dict(row or {})}
 
 
+def _mask_questionnaire_backfill_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 4:
+        return "*" * len(text)
+    return f"{text[:2]}***{text[-2:]}"
+
+
+def _serialize_questionnaire_backfill_submission(row: Any) -> dict[str, Any]:
+    return {
+        "submission_id": int(row["id"]),
+        "questionnaire_id": int(row["questionnaire_id"]),
+        "submitted_at": _format_iso_datetime(row.get("submitted_at")),
+        "mobile_present": bool(str(row.get("mobile_snapshot") or "").strip()),
+        "mobile_masked": _mask_questionnaire_backfill_value(row.get("mobile_snapshot")),
+        "openid_present": bool(str(row.get("openid") or "").strip()),
+        "unionid_present": bool(str(row.get("unionid") or "").strip()),
+        "external_userid_present": bool(str(row.get("external_userid") or "").strip()),
+        "matched_by": str(row.get("matched_by") or "").strip(),
+    }
+
+
+def _load_questionnaire_submission_answer_snapshots(submission_id: int) -> list[dict[str, Any]]:
+    rows = get_db().execute(
+        """
+        SELECT question_id, question_type, question_title_snapshot,
+               selected_option_ids, selected_option_texts_snapshot,
+               selected_option_scores_snapshot, selected_option_tags_snapshot,
+               text_value, score_contribution
+        FROM questionnaire_submission_answers
+        WHERE submission_id = ?
+        ORDER BY id ASC
+        """,
+        (int(submission_id),),
+    ).fetchall()
+    snapshots: list[dict[str, Any]] = []
+    for row in rows:
+        snapshots.append(
+            {
+                "question_id": int(row["question_id"]),
+                "question_type": str(row.get("question_type") or "").strip(),
+                "question_title_snapshot": str(row.get("question_title_snapshot") or "").strip(),
+                "selected_option_ids": _json_loads(row.get("selected_option_ids"), default=[]),
+                "selected_option_texts_snapshot": _json_loads(row.get("selected_option_texts_snapshot"), default=[]),
+                "selected_option_scores_snapshot": _json_loads(row.get("selected_option_scores_snapshot"), default=[]),
+                "selected_option_tags_snapshot": _json_loads(row.get("selected_option_tags_snapshot"), default=[]),
+                "text_value": str(row.get("text_value") or ""),
+                "score_contribution": float(row.get("score_contribution") or 0),
+            }
+        )
+    return snapshots
+
+
+def _preview_questionnaire_sidebar_profile_mapping_fields(answer_snapshots: list[dict[str, Any]]) -> list[str]:
+    question_ids = [int(item["question_id"]) for item in answer_snapshots if item.get("question_id") not in (None, "")]
+    if not question_ids:
+        return []
+    placeholders = ",".join("?" for _ in question_ids)
+    rows = get_db().execute(
+        f"""
+        SELECT sidebar_profile_field
+        FROM questionnaire_questions
+        WHERE id IN ({placeholders})
+          AND sidebar_profile_field IN ('source', 'industry', 'industry_description', 'needs_blockers_followup')
+        ORDER BY sort_order ASC, id ASC
+        """,
+        tuple(question_ids),
+    ).fetchall()
+    return _dedupe_strings([str(row.get("sidebar_profile_field") or "").strip() for row in rows])
+
+
+def _resolve_questionnaire_backfill_identity(row: Any) -> tuple[dict[str, Any] | None, str, str]:
+    unionid = str(row.get("unionid") or "").strip()
+    if unionid:
+        identity = resolve_questionnaire_submit_identity(unionid=unionid)
+        if identity and str(identity.get("external_userid") or "").strip():
+            identity["matched_by"] = "unionid"
+            return identity, "resolvable_by_unionid", "resolved"
+        unionid_status = "unresolved"
+    else:
+        unionid_status = "missing"
+
+    mobile = str(row.get("mobile_snapshot") or "").strip()
+    if mobile:
+        identity = _resolve_questionnaire_submit_identity_by_mobile(
+            mobile,
+            openid=str(row.get("openid") or "").strip(),
+            unionid=unionid,
+        )
+        if identity and str(identity.get("external_userid") or "").strip():
+            identity["matched_by"] = "mobile"
+            return identity, "resolvable_by_mobile", unionid_status
+        return None, "identity_unresolved_by_mobile", unionid_status
+
+    if unionid_status == "unresolved":
+        return None, "identity_unresolved_by_unionid", unionid_status
+    return None, "missing_unionid_and_mobile_snapshot", unionid_status
+
+
+def backfill_questionnaire_submission_identities(
+    *,
+    questionnaire_id: int,
+    since: str = "",
+    until: str = "",
+    limit: int = 50,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Resolve orphan questionnaire submissions by unionid/mobile and optionally persist them.
+
+    The output intentionally avoids printing raw mobile/openid/external_userid values
+    because this command is meant for production incident handling.
+    """
+    normalized_questionnaire_id = int(questionnaire_id)
+    normalized_limit = max(1, min(int(limit or 50), 500))
+    normalized_since = str(since or "").strip()
+    normalized_until = str(until or "").strip()
+    db = get_db()
+    questionnaire = db.execute(
+        "SELECT id, slug, name, title FROM questionnaires WHERE id = ?",
+        (normalized_questionnaire_id,),
+    ).fetchone()
+    if not questionnaire:
+        return {
+            "ok": False,
+            "mode": "questionnaire_submission_identity_backfill",
+            "dry_run": not bool(apply),
+            "questionnaire_id": normalized_questionnaire_id,
+            "reason": "questionnaire_not_found",
+            "items": [],
+            "summary": {
+                "candidate_count": 0,
+                "resolvable_count": 0,
+                "unionid_resolvable_count": 0,
+                "mobile_resolvable_count": 0,
+                "unresolved_count": 0,
+                "applied_count": 0,
+            },
+        }
+
+    filters = [
+        "questionnaire_id = ?",
+        "(external_userid IS NULL OR external_userid = '')",
+    ]
+    params: list[Any] = [normalized_questionnaire_id]
+    if normalized_since:
+        filters.append("submitted_at >= ?")
+        params.append(normalized_since)
+    if normalized_until:
+        filters.append("submitted_at <= ?")
+        params.append(normalized_until)
+    params.append(normalized_limit)
+    rows = db.execute(
+        f"""
+        SELECT id, questionnaire_id, identity_map_id, respondent_key, openid, unionid, external_userid,
+               follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id, staff_id,
+               total_score, final_tags, assessment_result_snapshot, result_token,
+               redirect_url_snapshot, submitted_at
+        FROM questionnaire_submissions
+        WHERE {" AND ".join(filters)}
+        ORDER BY submitted_at ASC, id ASC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    resolvable_count = 0
+    unionid_resolvable_count = 0
+    mobile_resolvable_count = 0
+    unresolved_count = 0
+    applied_count = 0
+    for row in rows:
+        item = _serialize_questionnaire_backfill_submission(row)
+        identity, reason, unionid_status = _resolve_questionnaire_backfill_identity(row)
+        item["unionid_status"] = unionid_status
+        if not identity or not str(identity.get("external_userid") or "").strip():
+            item.update({"status": "unresolved", "reason": reason})
+            unresolved_count += 1
+            items.append(item)
+            continue
+
+        resolvable_count += 1
+        matched_by = str(identity.get("matched_by") or "").strip()
+        if matched_by == "unionid":
+            unionid_resolvable_count += 1
+        elif matched_by == "mobile":
+            mobile_resolvable_count += 1
+        answer_snapshots = _load_questionnaire_submission_answer_snapshots(int(row["id"]))
+        sidebar_fields = _preview_questionnaire_sidebar_profile_mapping_fields(answer_snapshots)
+        item.update(
+            {
+                "status": "resolvable",
+                "reason": reason,
+                "resolved_external_userid_present": True,
+                "resolved_external_userid_masked": _mask_questionnaire_backfill_value(identity.get("external_userid")),
+                "resolved_follow_user_userid_present": bool(str(identity.get("follow_user_userid") or "").strip()),
+                "sidebar_mapping_fields": sidebar_fields,
+            }
+        )
+        if apply:
+            updated_row = db.execute(
+                """
+                UPDATE questionnaire_submissions
+                SET external_userid = ?,
+                    follow_user_userid = ?,
+                    matched_by = ?,
+                    identity_map_id = COALESCE(?, identity_map_id),
+                    openid = CASE WHEN openid = '' THEN ? ELSE openid END,
+                    unionid = CASE WHEN unionid = '' THEN ? ELSE unionid END
+                WHERE id = ?
+                  AND (external_userid IS NULL OR external_userid = '')
+                RETURNING id, questionnaire_id, identity_map_id, respondent_key, openid, unionid,
+                          external_userid, follow_user_userid, matched_by, mobile_snapshot,
+                          source_channel, campaign_id, staff_id, total_score, final_tags,
+                          assessment_result_snapshot, result_token, redirect_url_snapshot, submitted_at
+                """,
+                (
+                    str(identity.get("external_userid") or "").strip(),
+                    str(identity.get("follow_user_userid") or "").strip(),
+                    matched_by,
+                    identity.get("identity_map_id"),
+                    str(identity.get("openid") or "").strip(),
+                    str(identity.get("unionid") or "").strip(),
+                    int(row["id"]),
+                ),
+            ).fetchone()
+            if not updated_row:
+                item.update({"status": "skipped", "reason": "already_has_external_userid"})
+                items.append(item)
+                continue
+            sidebar_result = apply_questionnaire_sidebar_profile_mapping(
+                dict(updated_row),
+                {"answer_snapshots": answer_snapshots},
+            )
+            db.commit()
+            applied_count += 1
+            item.update(
+                {
+                    "status": "applied",
+                    "reason": f"applied_by_{matched_by}",
+                    "sidebar_profile_mapping": {
+                        "applied": bool(sidebar_result.get("applied")),
+                        "reason": str(sidebar_result.get("reason") or ""),
+                        "fields": sorted((sidebar_result.get("patch") or {}).keys()),
+                    },
+                }
+            )
+        items.append(item)
+
+    return {
+        "ok": True,
+        "mode": "questionnaire_submission_identity_backfill",
+        "dry_run": not bool(apply),
+        "questionnaire": {
+            "id": int(questionnaire["id"]),
+            "slug": str(questionnaire.get("slug") or "").strip(),
+            "name": str(questionnaire.get("name") or "").strip(),
+            "title": str(questionnaire.get("title") or "").strip(),
+        },
+        "questionnaire_id": normalized_questionnaire_id,
+        "since": normalized_since,
+        "until": normalized_until,
+        "limit": normalized_limit,
+        "summary": {
+            "candidate_count": len(rows),
+            "resolvable_count": resolvable_count,
+            "unionid_resolvable_count": unionid_resolvable_count,
+            "mobile_resolvable_count": mobile_resolvable_count,
+            "unresolved_count": unresolved_count,
+            "applied_count": applied_count,
+        },
+        "items": items,
+    }
+
+
 def _questionnaire_submit_webhook_payload(submission: dict[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "mobile": str((submission or {}).get("mobile_snapshot") or "").strip(),
