@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib
-from functools import lru_cache
 from typing import Any
 
 from aicrm_next.customer_read_model.dto import (
@@ -11,15 +9,11 @@ from aicrm_next.customer_read_model.dto import (
     RecentMessagesRequest,
 )
 
-
-@lru_cache(maxsize=1)
-def _legacy_app():
-    module = importlib.import_module("wecom_" + "ability_service")
-    return module.create_app()
+from .legacy_flask_facade import _legacy_app, _legacy_customer_read_model_module
 
 
 def list_customers_via_legacy(query: ListCustomersRequest) -> dict[str, Any]:
-    module = importlib.import_module("wecom_" + "ability_service.application.customer_read_model")
+    module = _legacy_customer_read_model_module()
     CustomerListQueryDTO = module.CustomerListQueryDTO
     ListCustomersQuery = module.ListCustomersQuery
 
@@ -39,7 +33,7 @@ def list_customers_via_legacy(query: ListCustomersRequest) -> dict[str, Any]:
 
 
 def get_customer_via_legacy(query: CustomerDetailRequest) -> dict[str, Any] | None:
-    module = importlib.import_module("wecom_" + "ability_service.application.customer_read_model")
+    module = _legacy_customer_read_model_module()
     CustomerDetailQueryDTO = module.CustomerDetailQueryDTO
     GetCustomerDetailQuery = module.GetCustomerDetailQuery
 
@@ -48,7 +42,7 @@ def get_customer_via_legacy(query: CustomerDetailRequest) -> dict[str, Any] | No
 
 
 def get_timeline_via_legacy(query: CustomerTimelineRequest) -> dict[str, Any] | None:
-    module = importlib.import_module("wecom_" + "ability_service.application.customer_read_model")
+    module = _legacy_customer_read_model_module()
     CustomerTimelineQueryDTO = module.CustomerTimelineQueryDTO
     GetCustomerTimelineQuery = module.GetCustomerTimelineQuery
 
@@ -64,7 +58,7 @@ def get_timeline_via_legacy(query: CustomerTimelineRequest) -> dict[str, Any] | 
 
 
 def recent_messages_via_legacy(query: RecentMessagesRequest) -> dict[str, Any]:
-    module = importlib.import_module("wecom_" + "ability_service.application.customer_read_model")
+    module = _legacy_customer_read_model_module()
     ListRecentMessagesQuery = module.ListRecentMessagesQuery
     RecentMessagesQueryDTO = module.RecentMessagesQueryDTO
 
