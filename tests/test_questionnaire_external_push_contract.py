@@ -102,6 +102,73 @@ def test_next_admin_detail_projection_preserves_legacy_external_push_fields():
     assert questionnaire["external_push_custom_params"] == [{"name": "source", "value": "questionnaire"}]
 
 
+def test_next_admin_detail_projection_keeps_blank_external_push_values_blank():
+    from aicrm_next.questionnaire.domain import admin_detail_projection
+
+    payload = admin_detail_projection(
+        {
+            "id": 22,
+            "slug": "q-blank",
+            "title": "空外推配置问卷",
+            "name": "空外推配置问卷",
+            "description": "",
+            "is_disabled": False,
+            "redirect_url": "",
+            "created_at": "2026-05-23T00:00:00Z",
+            "updated_at": "2026-05-23T00:00:00Z",
+            "questions": [],
+            "external_push_enabled": False,
+            "external_push_url": "",
+            "external_push_type": "",
+            "external_push_expires_at_ts": "",
+            "external_push_day": "",
+            "external_push_frequency": "",
+            "external_push_remark": "",
+            "external_push_custom_params": [],
+            "submission_count": 0,
+            "assessment_enabled": False,
+        }
+    )
+
+    questionnaire = payload["questionnaire"]
+    assert questionnaire["external_push_enabled"] is False
+    assert questionnaire["external_push_url"] == ""
+    assert questionnaire["external_push_type"] == ""
+    assert questionnaire["external_push_expires_at_ts"] == ""
+    assert questionnaire["external_push_day"] == ""
+    assert questionnaire["external_push_frequency"] == ""
+    assert questionnaire["external_push_remark"] == ""
+    assert questionnaire["external_push_custom_params"] == []
+
+
+def test_next_questionnaire_editor_does_not_prefill_external_push_defaults():
+    root = Path(__file__).resolve().parents[1]
+    sources = [
+        root / "aicrm_next" / "frontend_compat" / "templates" / "admin_questionnaires.html",
+        root / "wecom_ability_service" / "templates" / "admin_questionnaires.html",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+
+    assert "external_push_type: 'subscription'" not in combined
+    assert "external_push_expires_at_ts: 1809100800" not in combined
+    assert "placeholder=\"1809100800\"" not in combined
+    assert "placeholder=\"20\"" not in combined
+
+
+def test_postgres_questionnaire_external_push_type_default_is_blank():
+    root = Path(__file__).resolve().parents[1]
+    schema = (root / "wecom_ability_service" / "schema_postgres.sql").read_text(encoding="utf-8")
+    migration = (
+        root / "wecom_ability_service" / "db" / "migrations" / "postgres_migrations.py"
+    ).read_text(encoding="utf-8")
+
+    assert "external_push_type TEXT NOT NULL DEFAULT ''" in schema
+    assert "ADD COLUMN IF NOT EXISTS external_push_type TEXT NOT NULL DEFAULT ''" in migration
+    assert "ALTER COLUMN external_push_type SET DEFAULT ''" in migration
+    assert "DEFAULT 'subscription'" not in schema
+    assert "SET external_push_type = 'subscription'" not in migration
+
+
 def test_global_external_push_payload_builds_next_questionnaire_paths_without_flask_url_for(monkeypatch):
     from wecom_ability_service.application.questionnaire import queries
 

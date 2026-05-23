@@ -1050,7 +1050,7 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     external_push_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     external_push_url TEXT NOT NULL DEFAULT '',
-    external_push_type TEXT NOT NULL DEFAULT 'subscription',
+    external_push_type TEXT NOT NULL DEFAULT '',
     external_push_expires_at_ts BIGINT,
     external_push_day INTEGER,
     external_push_frequency INTEGER,

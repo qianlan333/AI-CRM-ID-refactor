@@ -2970,7 +2970,7 @@
         assessment_builder: defaultAssessmentBuilder,
         external_push_enabled: false,
         external_push_url: '',
-        external_push_type: 'subscription',
+        external_push_type: '',
         external_push_expires_at_ts: '',
         external_push_day: '',
         external_push_frequency: '',
@@ -3022,7 +3022,7 @@
         assessment_builder: assessmentBuilder,
         external_push_enabled: Boolean(questionnaire.external_push_enabled),
         external_push_url: questionnaire.external_push_url || '',
-        external_push_type: questionnaire.external_push_type || 'subscription',
+        external_push_type: questionnaire.external_push_type || '',
         external_push_expires_at_ts: questionnaire.external_push_enabled
           ? questionnaire.external_push_expires_at_ts ?? ''
           : '',
@@ -3141,7 +3141,7 @@
           : buildAssessmentConfigFromBuilder(ensureAssessmentBuilder()),
         external_push_enabled: Boolean(state.questionnaire.external_push_enabled),
         external_push_url: state.questionnaire.external_push_url,
-        external_push_type: state.questionnaire.external_push_type || 'subscription',
+        external_push_type: state.questionnaire.external_push_type || '',
         external_push_expires_at_ts: state.questionnaire.external_push_expires_at_ts === '' ? '' : Number(state.questionnaire.external_push_expires_at_ts),
         external_push_day: state.questionnaire.external_push_day === '' ? '' : Number(state.questionnaire.external_push_day),
         external_push_frequency: state.questionnaire.external_push_frequency === '' ? '' : Number(state.questionnaire.external_push_frequency),
@@ -3712,20 +3712,21 @@
           <div class="field-grid compact">
             <label class="field">会员类型
               <select id="field-external-push-type">
-                <option value="subscription" ${(state.questionnaire.external_push_type || 'subscription') === 'subscription' ? 'selected' : ''}>订阅版</option>
+                <option value="" ${!state.questionnaire.external_push_type ? 'selected' : ''}></option>
+                <option value="subscription" ${state.questionnaire.external_push_type === 'subscription' ? 'selected' : ''}>订阅版</option>
                 <option value="premium" ${state.questionnaire.external_push_type === 'premium' ? 'selected' : ''}>私教版</option>
               </select>
             </label>
             <label class="field">到期时间戳
-              <input id="field-external-push-expires-at-ts" type="number" step="1" min="1" value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? ''))}" placeholder="可留空">
+              <input id="field-external-push-expires-at-ts" type="number" step="1" min="1" value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? ''))}">
             </label>
           </div>
           <div class="field-grid compact">
             <label class="field">开通天数
-              <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
+              <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}">
             </label>
             <label class="field">咨询次数额度
-              <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}" placeholder="20">
+              <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}">
             </label>
           </div>
           <label class="field">备注

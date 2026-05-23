@@ -2999,7 +2999,7 @@ def _build_questionnaire_payload(**overrides) -> dict:
         "redirect_url": "https://example.com/next",
         "external_push_enabled": False,
         "external_push_url": "",
-        "external_push_type": "subscription",
+        "external_push_type": "",
         "external_push_expires_at_ts": "",
         "external_push_day": "",
         "external_push_frequency": "",
@@ -4600,6 +4600,7 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         json=_build_questionnaire_payload_with_mobile(
             external_push_enabled=True,
             external_push_url="https://hooks.example.com/questionnaire/apply",
+            external_push_type="subscription",
             external_push_day=20,
             external_push_frequency=20,
             external_push_expires_at_ts=1809100800,
@@ -4729,6 +4730,7 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
     assert response.get_json()["success"] is True
     assert len(push_calls) == 1
     assert push_calls[0]["json"]["phone_number"] == "NULL"
+    assert "type" not in push_calls[0]["json"]
     assert "expires_at_ts" not in push_calls[0]["json"]
 
     with app.app_context():
@@ -4742,6 +4744,7 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
         ).fetchone()
         request_payload = row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"])
         assert request_payload["phone_number"] == "NULL"
+        assert "type" not in request_payload
         assert "expires_at_ts" not in request_payload
 
 
@@ -4780,6 +4783,17 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
     )
     assert blank_ts_response.status_code == 200
     assert blank_ts_response.get_json()["questionnaire"]["external_push_expires_at_ts"] == ""
+
+    blank_type_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_type="",
+        ),
+    )
+    assert blank_type_response.status_code == 200
+    assert blank_type_response.get_json()["questionnaire"]["external_push_type"] == ""
 
     invalid_type_response = client.post(
         "/api/admin/questionnaires",
