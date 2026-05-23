@@ -42,6 +42,20 @@ def test_target_admin_pages_are_not_404(monkeypatch):
         assert response.status_code != 404, route
 
 
+def test_next_channels_page_is_first_level_sidebar_entry(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/channels")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "渠道码中心" in html
+    assert 'href="/admin/channels"' in html
+    assert 'class="admin-nav-link is-active"' in html
+    assert "普通二维码支持下载二维码" in html
+    assert "企微获客助手链接支持复制链接和分享链接" in html
+
+
 def test_navigation_definition_matches_screenshot_target():
     assert [(group["title"], [item["label"] for item in group["items"]]) for group in ADMIN_NAV_GROUPS] == checker.TARGET_NAV_GROUPS
 

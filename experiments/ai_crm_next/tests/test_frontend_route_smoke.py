@@ -12,6 +12,7 @@ def test_frontend_route_manifest_covers_required_routes() -> None:
     assert "/admin/questionnaires" in routes
     assert "/admin/questionnaires/ui" in routes
     assert "/admin/automation-conversion" in routes
+    assert "/admin/channels" in routes
     assert "/admin/wechat-pay/products" in routes
     assert "/admin/wechat-pay/transactions" in routes
     assert "/admin/alipay/transactions" in routes
