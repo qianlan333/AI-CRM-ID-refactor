@@ -62,3 +62,15 @@ The checker is static and deterministic. It enforces the legacy import boundary,
 blocks direct SQL in `frontend_compat`, verifies this policy and route ownership
 documents exist, and rejects manifest entries that allow production fixtures or
 real external side effects.
+
+## Replacement Backlog
+
+Phase 2 backlog is the planning source for gradually replacing legacy facade and
+`production_compat` route families. Before any route family replacement starts,
+the backlog entry must name `replacement_owner`, `delete_condition`, and
+`rollback_path`.
+
+The backlog does not authorize runtime switching, fallback deletion, or real
+external calls. For routes with `daily_business_critical: true`, replacement
+work must use gray release, parity checks, and fallback retention so current
+daily business usage is not interrupted.
