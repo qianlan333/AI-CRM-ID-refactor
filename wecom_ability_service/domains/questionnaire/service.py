@@ -1232,6 +1232,49 @@ def resolve_questionnaire_submit_identity(
     return None
 
 
+def _resolve_questionnaire_submit_identity_by_mobile(
+    mobile: str = "",
+    *,
+    openid: str = "",
+    unionid: str = "",
+) -> dict[str, Any] | None:
+    normalized_mobile = _normalize_mobile(str(mobile or "").strip())
+    if not normalized_mobile:
+        return None
+    try:
+        person_identity = identity_domain_service.resolve_person_identity(
+            mobile=normalized_mobile,
+            unionid=str(unionid or "").strip(),
+            corp_id=str(current_app.config.get("WECOM_CORP_ID", "") or "").strip(),
+            resolve_signup_status_for_contact=lambda external_userid, owner_userid: "",
+        )
+    except Exception:
+        questionnaire_logger.exception("questionnaire mobile identity lookup failed mobile=%s", normalized_mobile)
+        return None
+
+    resolved_external_userid = str((person_identity or {}).get("external_userid") or "").strip()
+    if not resolved_external_userid:
+        return None
+
+    identity = resolve_questionnaire_submit_identity(external_userid=resolved_external_userid) or {}
+    identity = {
+        **identity,
+        "person_id": (person_identity or {}).get("person_id"),
+        "external_userid": resolved_external_userid,
+        "mobile": str((person_identity or {}).get("mobile") or normalized_mobile).strip(),
+        "openid": str(identity.get("openid") or openid or (person_identity or {}).get("openid") or "").strip(),
+        "unionid": str(identity.get("unionid") or unionid or (person_identity or {}).get("unionid") or "").strip(),
+        "follow_user_userid": str(
+            identity.get("follow_user_userid")
+            or (person_identity or {}).get("follow_user_userid")
+            or (person_identity or {}).get("owner_userid")
+            or ""
+        ).strip(),
+        "matched_by": "mobile",
+    }
+    return identity
+
+
 def _get_questionnaire_session_identity() -> dict[str, str]:
     if not has_request_context():
         return {}
@@ -2112,6 +2155,27 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
         str((identity or {}).get("follow_user_userid") or ""),
     )
 
+    validated_answers = validate_questionnaire_answers(questionnaire, answers)
+    computed_result = compute_questionnaire_submission_outcome(questionnaire, validated_answers)
+    computed_result["mobile_snapshot"] = _extract_mobile_snapshot_from_validated_answers(
+        computed_result.get("validated_answers") or validated_answers
+    )
+    if not str((identity or {}).get("external_userid") or "").strip() and computed_result.get("mobile_snapshot"):
+        mobile_identity = _resolve_questionnaire_submit_identity_by_mobile(
+            str(computed_result.get("mobile_snapshot") or ""),
+            openid=resolved_openid,
+            unionid=resolved_unionid,
+        )
+        if mobile_identity:
+            identity = mobile_identity
+            questionnaire_logger.info(
+                "questionnaire identity resolved_by_mobile slug=%s questionnaire_id=%s external_userid=%s follow_user_userid=%s",
+                slug_value,
+                int(questionnaire["id"]),
+                str(identity.get("external_userid") or ""),
+                str(identity.get("follow_user_userid") or ""),
+            )
+
     duplicate_identity = {
         "external_userid": str((identity or {}).get("external_userid") or payload_external_userid or "").strip(),
         "unionid": str((identity or {}).get("unionid") or resolved_unionid or "").strip(),
@@ -2128,11 +2192,6 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
             int(questionnaire["id"]),
         )
 
-    validated_answers = validate_questionnaire_answers(questionnaire, answers)
-    computed_result = compute_questionnaire_submission_outcome(questionnaire, validated_answers)
-    computed_result["mobile_snapshot"] = _extract_mobile_snapshot_from_validated_answers(
-        computed_result.get("validated_answers") or validated_answers
-    )
     submission = save_questionnaire_submission(
         questionnaire,
         identity,

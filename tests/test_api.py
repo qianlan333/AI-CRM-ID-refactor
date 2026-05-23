@@ -3756,6 +3756,87 @@ def test_questionnaire_text_mapping_without_external_userid_does_not_write_profi
         assert int(count) == 0
 
 
+def test_questionnaire_mobile_binding_resolves_external_userid_for_sidebar_profile(client, app, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.questionnaire.service.apply_questionnaire_submission_tags_to_scrm",
+        lambda submission_id: {"applied": False, "reason": "test"},
+    )
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_sidebar_mobile_resolved", "手机号绑定客户", "sales_mobile", "手机号线索", "wm_sidebar_mobile_resolved"),
+        )
+        db.execute(
+            """
+            INSERT INTO people (mobile, third_party_user_id, created_at, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("13800139999", "tp-mobile-resolved"),
+        )
+        person_id = db.execute("SELECT id FROM people WHERE mobile = ?", ("13800139999",)).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO external_contact_bindings (
+                external_userid, person_id, first_bound_by_userid, first_owner_userid,
+                last_owner_userid, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("wm_sidebar_mobile_resolved", person_id, "sales_mobile", "sales_mobile", "sales_mobile"),
+        )
+        db.commit()
+
+    payload = _build_questionnaire_payload_with_mobile(slug="sidebar-mobile-resolved")
+    payload["questions"][2]["sidebar_profile_field"] = "needs_blockers_followup"
+    create_response = client.post("/api/admin/questionnaires", json=payload)
+    questionnaire = create_response.get_json()["questionnaire"]
+    q1 = questionnaire["questions"][0]
+    q3 = questionnaire["questions"][2]
+    mobile_question = questionnaire["questions"][-1]
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "openid": "openid-mobile-resolved",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(q3["id"]): "预算待确认，需要后续跟进",
+                str(mobile_question["id"]): "13800139999",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        submission = get_db().execute(
+            """
+            SELECT external_userid, mobile_snapshot, matched_by, follow_user_userid
+            FROM questionnaire_submissions
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        profile = get_db().execute(
+            """
+            SELECT needs_blockers_followup, updated_by
+            FROM sidebar_customer_profile_fields
+            WHERE external_userid = ?
+            """,
+            ("wm_sidebar_mobile_resolved",),
+        ).fetchone()
+        assert submission["external_userid"] == "wm_sidebar_mobile_resolved"
+        assert submission["mobile_snapshot"] == "13800139999"
+        assert submission["matched_by"] == "mobile"
+        assert submission["follow_user_userid"] == "sales_mobile"
+        assert profile["needs_blockers_followup"] == "预算待确认，需要后续跟进"
+        assert profile["updated_by"] == "questionnaire_submit"
+
+
 def test_questionnaire_sidebar_profile_mapping_failure_does_not_block_submit(client, monkeypatch):
     payload = _build_questionnaire_payload(slug="sidebar-failure-nonblocking")
     payload["questions"][0]["sidebar_profile_field"] = "source"
