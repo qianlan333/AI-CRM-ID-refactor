@@ -478,7 +478,7 @@ def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
     db.execute(
         """
         ALTER TABLE IF EXISTS questionnaires
-        ADD COLUMN IF NOT EXISTS external_push_type TEXT NOT NULL DEFAULT 'subscription'
+        ADD COLUMN IF NOT EXISTS external_push_type TEXT NOT NULL DEFAULT ''
         """
     )
     db.execute(
@@ -489,15 +489,8 @@ def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
     )
     db.execute(
         """
-        UPDATE questionnaires
-        SET external_push_type = 'subscription'
-        WHERE COALESCE(external_push_type, '') = ''
-        """
-    )
-    db.execute(
-        """
         ALTER TABLE IF EXISTS questionnaires
-        ALTER COLUMN external_push_type SET DEFAULT 'subscription'
+        ALTER COLUMN external_push_type SET DEFAULT ''
         """
     )
     db.execute(

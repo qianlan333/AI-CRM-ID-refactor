@@ -57,7 +57,6 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
     "remark",
 }
 QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"subscription", "premium"}
-DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE = "subscription"
 QUESTIONNAIRE_ROW_SELECT = """
     SELECT id, slug, name, title, description, is_disabled, redirect_url,
            answer_display_mode,
@@ -321,11 +320,7 @@ def _normalize_questionnaire_payload(
     )
     external_push_url = str(payload.get("external_push_url") or "").strip()
     external_push_type = str(
-        payload.get(
-            "external_push_type",
-            (existing or {}).get("external_push_type") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE,
-        )
-        or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE
+        payload.get("external_push_type", (existing or {}).get("external_push_type") or "") or ""
     ).strip()
     raw_external_push_expires_at_ts = payload.get(
         "external_push_expires_at_ts",
@@ -515,7 +510,7 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
         "assessment_config": _normalize_questionnaire_assessment_config(row.get("assessment_config")),
         "external_push_enabled": _normalize_bool(row.get("external_push_enabled")),
         "external_push_url": row.get("external_push_url", "") or "",
-        "external_push_type": row.get("external_push_type", "") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE,
+        "external_push_type": row.get("external_push_type", "") or "",
         "external_push_expires_at_ts": int(row["external_push_expires_at_ts"])
         if row.get("external_push_expires_at_ts") is not None
         else "",

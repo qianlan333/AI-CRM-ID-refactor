@@ -46,8 +46,7 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "external_push_config": external_push_config,
         "external_push_enabled": _external_push_bool(item, external_push_config, "external_push_enabled", "enabled"),
         "external_push_url": _external_push_text(item, external_push_config, "external_push_url", "webhook_url"),
-        "external_push_type": _external_push_text(item, external_push_config, "external_push_type", "type")
-        or "subscription",
+        "external_push_type": _external_push_text(item, external_push_config, "external_push_type", "type"),
         "external_push_expires_at_ts": _external_push_value(
             item,
             external_push_config,
