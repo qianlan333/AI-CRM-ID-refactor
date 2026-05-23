@@ -4,9 +4,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from aicrm_next.integration_gateway.legacy_customer_read_facade import (
-    get_customer_via_legacy,
-    get_timeline_via_legacy,
-    list_customers_via_legacy,
     recent_messages_via_legacy,
 )
 from aicrm_next.shared.errors import NotFoundError
@@ -108,27 +105,19 @@ def list_customers(
         limit=limit,
         offset=offset,
     )
-    if _use_production_customer_facade():
-        try:
-            return list_customers_via_legacy(query)
-        except Exception as exc:
-            _service_unavailable(exc)
-    return ListCustomersQuery()(query)
+    result = ListCustomersQuery()(query)
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
 
 
 @router.get("/api/customers/{external_userid}")
 def get_customer(external_userid: str) -> dict:
     try:
-        if _use_production_customer_facade():
-            customer = get_customer_via_legacy(CustomerDetailRequest(external_userid=external_userid))
-            if not customer:
-                raise NotFoundError("customer not found")
-            return {"ok": True, "customer": customer, "source_status": "legacy_production_facade"}
-        return GetCustomerDetailQuery()(CustomerDetailRequest(external_userid=external_userid))
+        result = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid=external_userid))
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        _service_unavailable(exc)
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
 
 
 @router.get("/api/customers/{external_userid}/timeline")
@@ -145,18 +134,11 @@ def get_customer_timeline(
             limit=limit,
             offset=offset,
         )
-        if _use_production_customer_facade():
-            timeline = get_timeline_via_legacy(query)
-            if not timeline:
-                raise NotFoundError("customer timeline not found")
-            return {"ok": True, "timeline": timeline, "source_status": "legacy_production_facade"}
-        return GetCustomerTimelineQuery()(
-            query
-        )
+        result = GetCustomerTimelineQuery()(query)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        _service_unavailable(exc)
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)
 
 
 @router.get("/api/messages/{external_userid}/recent")

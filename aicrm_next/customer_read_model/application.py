@@ -20,6 +20,85 @@ from .projections import detail_projection, list_item_projection
 from .repo import CustomerReadRepository, build_customer_read_model_repository
 
 
+def _production_customer_facade_enabled() -> bool:
+    from aicrm_next.shared.runtime import legacy_production_facade_enabled, production_data_ready
+
+    return production_data_ready() and legacy_production_facade_enabled()
+
+
+def _production_customer_data_required() -> bool:
+    from aicrm_next.shared.runtime import production_data_ready
+
+    return production_data_ready()
+
+
+def _list_customers_unavailable_payload(query: ListCustomersRequest, exc: Exception) -> JsonDict:
+    return {
+        "ok": False,
+        "degraded": True,
+        "customers": [],
+        "items": [],
+        "count": 0,
+        "total": 0,
+        "limit": query.limit,
+        "offset": query.offset,
+        "filters": {
+            "owner_userid": query.owner_userid or "",
+            "tag": query.tag or "",
+            "status": query.status or "",
+            "is_bound": query.is_bound or "",
+            "mobile": query.mobile or "",
+            "keyword": query.keyword or "",
+            "limit": str(query.limit),
+            "offset": str(query.offset),
+        },
+        "source_status": "production_unavailable",
+        "error_code": "customer_list_read_unavailable",
+        "page_error": str(exc),
+        "route_owner": "ai_crm_next",
+        "status_code": 503,
+    }
+
+
+def _customer_detail_unavailable_payload(external_userid: str, exc: Exception) -> JsonDict:
+    return {
+        "ok": False,
+        "degraded": True,
+        "customer": {},
+        "source_status": "production_unavailable",
+        "error_code": "customer_detail_read_unavailable",
+        "page_error": str(exc),
+        "route_owner": "ai_crm_next",
+        "status_code": 503,
+        "external_userid": external_userid,
+    }
+
+
+def _customer_timeline_unavailable_payload(query: CustomerTimelineRequest, exc: Exception) -> JsonDict:
+    return {
+        "ok": False,
+        "degraded": True,
+        "timeline": {
+            "external_userid": query.external_userid,
+            "items": [],
+            "count": 0,
+            "limit": query.limit,
+            "offset": query.offset,
+            "filters": {
+                "event_type": query.event_type or "",
+                "limit": str(query.limit),
+                "offset": str(query.offset),
+            },
+            "total": 0,
+        },
+        "source_status": "production_unavailable",
+        "error_code": "customer_timeline_read_unavailable",
+        "page_error": str(exc),
+        "route_owner": "ai_crm_next",
+        "status_code": 503,
+    }
+
+
 def _normalize_bool_filter(value: str | None) -> bool | None:
     normalized = str(value or "").strip().lower()
     if normalized in {"", "all"}:
@@ -33,17 +112,38 @@ def _normalize_bool_filter(value: str | None) -> bool | None:
 
 class ListCustomersQuery:
     def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
-        self._repo = repo or build_customer_read_model_repository()
-        self._contacts_adapter = contacts_adapter or build_contacts_sync_adapter()
-        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
+        self._repo = repo
+        self._contacts_adapter = contacts_adapter
+        self._projection_gateway = projection_gateway
 
     def execute(self, query: ListCustomersRequest) -> JsonDict:
-        contacts_contract = self._contacts_adapter.fetch_external_contacts(
+        if _production_customer_data_required():
+            if not _production_customer_facade_enabled():
+                return _list_customers_unavailable_payload(
+                    query,
+                    RuntimeError("production customer facade disabled"),
+                )
+            try:
+                from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
+
+                payload = dict(list_customers_via_legacy(query) or {})
+            except Exception as exc:
+                return _list_customers_unavailable_payload(query, exc)
+            payload.setdefault("ok", True)
+            payload.setdefault("source_status", "legacy_production_facade")
+            payload.setdefault("route_owner", "ai_crm_next")
+            payload.setdefault("status_code", 200)
+            return payload
+
+        repo = self._repo or build_customer_read_model_repository()
+        contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
+        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+        contacts_contract = contacts_adapter.fetch_external_contacts(
             follow_user_userid=query.owner_userid or "",
             limit=query.limit,
             sync_cursor=f"offset:{query.offset}",
         )
-        projection_contract = self._projection_gateway.update_customer_list_projection(
+        projection_contract = projection_gateway.update_customer_list_projection(
             projection_name="customer_list",
             sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
         )
@@ -57,7 +157,7 @@ class ListCustomersQuery:
             "limit": str(query.limit),
             "offset": str(query.offset),
         }
-        rows = [list_item_projection(item) for item in self._repo.list_customers()]
+        rows = [list_item_projection(item) for item in repo.list_customers()]
         if query.owner_userid:
             rows = [item for item in rows if item.get("owner_userid") == query.owner_userid]
         if query.mobile:
@@ -111,14 +211,41 @@ class ListCustomersQuery:
 
 class GetCustomerDetailQuery:
     def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
-        self._repo = repo or build_customer_read_model_repository()
-        self._contacts_adapter = contacts_adapter or build_contacts_sync_adapter()
-        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
+        self._repo = repo
+        self._contacts_adapter = contacts_adapter
+        self._projection_gateway = projection_gateway
 
     def execute(self, query: CustomerDetailRequest) -> JsonDict:
-        contacts_contract = self._contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
-        projection_contract = self._projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
-        customer = self._repo.get_customer(query.external_userid)
+        if _production_customer_data_required():
+            if not _production_customer_facade_enabled():
+                return _customer_detail_unavailable_payload(
+                    query.external_userid,
+                    RuntimeError("production customer facade disabled"),
+                )
+            try:
+                from aicrm_next.integration_gateway.legacy_customer_read_facade import get_customer_via_legacy
+
+                customer = get_customer_via_legacy(query)
+                if not customer:
+                    raise NotFoundError("customer not found")
+            except NotFoundError:
+                raise
+            except Exception as exc:
+                return _customer_detail_unavailable_payload(query.external_userid, exc)
+            return {
+                "ok": True,
+                "customer": customer,
+                "source_status": "legacy_production_facade",
+                "route_owner": "ai_crm_next",
+                "status_code": 200,
+            }
+
+        repo = self._repo or build_customer_read_model_repository()
+        contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
+        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+        contacts_contract = contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
+        projection_contract = projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
+        customer = repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
         return {
@@ -136,18 +263,44 @@ class GetCustomerDetailQuery:
 
 class GetCustomerTimelineQuery:
     def __init__(self, repo: CustomerReadRepository | None = None, projection_gateway=None) -> None:
-        self._repo = repo or build_customer_read_model_repository()
-        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
+        self._repo = repo
+        self._projection_gateway = projection_gateway
 
     def execute(self, query: CustomerTimelineRequest) -> JsonDict:
-        projection_contract = self._projection_gateway.update_customer_timeline_projection(
+        if _production_customer_data_required():
+            if not _production_customer_facade_enabled():
+                return _customer_timeline_unavailable_payload(
+                    query,
+                    RuntimeError("production customer facade disabled"),
+                )
+            try:
+                from aicrm_next.integration_gateway.legacy_customer_read_facade import get_timeline_via_legacy
+
+                timeline = get_timeline_via_legacy(query)
+                if not timeline:
+                    raise NotFoundError("customer timeline not found")
+            except NotFoundError:
+                raise
+            except Exception as exc:
+                return _customer_timeline_unavailable_payload(query, exc)
+            return {
+                "ok": True,
+                "timeline": timeline,
+                "source_status": "legacy_production_facade",
+                "route_owner": "ai_crm_next",
+                "status_code": 200,
+            }
+
+        repo = self._repo or build_customer_read_model_repository()
+        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+        projection_contract = projection_gateway.update_customer_timeline_projection(
             external_userid=query.external_userid,
             sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
         )
-        customer = self._repo.get_customer(query.external_userid)
+        customer = repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
-        items = self._repo.list_timeline(query.external_userid)
+        items = repo.list_timeline(query.external_userid)
         if query.event_type:
             items = [item for item in items if item.get("event_type") == query.event_type]
         total = len(items)
