@@ -20,6 +20,8 @@ def test_sidebar_workbench_v2_default_page_is_not_legacy_long_page(client):
     assert "data-workbench-url=\"/api/sidebar/v2/workbench\"" in html
     assert "data-material-send-url=\"/api/sidebar/v2/materials/send\"" in html
     assert "sidebar_workbench/sidebar_workbench.js" in html
+    assert "customer-avatar" not in html
+    assert "class=\"avatar\"" not in html
     assert "加载中..." in html
     assert "自动化转化操作区" not in html
     assert "实时标签" not in html
@@ -48,6 +50,14 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "badge" not in combined.lower()
     assert "phone-state loading" in template
     assert "加载中..." in template
+    assert "20260523-top-card-no-avatar" in template
+    assert "20260523-top-card-no-avatar" in next_template
+    assert "customer-avatar" not in combined
+    assert "class=\"avatar\"" not in combined
+    assert ".avatar" not in css
+    assert ".avatar" not in next_css
+    assert "grid-template-columns: minmax(0, 1fr) auto" in css
+    assert "grid-template-columns: minmax(0, 1fr) auto" in next_css
 
     assert "用户来源" in script
     assert "行业信息" in script

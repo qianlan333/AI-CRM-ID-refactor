@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>客户侧边栏 V2 工作台</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='sidebar_workbench/sidebar_workbench.css') }}?v=20260523-material-card-fix">
+  <link rel="stylesheet" href="{{ url_for('static', filename='sidebar_workbench/sidebar_workbench.css') }}?v=20260523-top-card-no-avatar">
 </head>
 <body>
   <div
@@ -25,7 +25,6 @@
     <div class="top">
       <section class="profile-card" aria-label="客户信息">
         <div class="profile-main">
-          <div class="avatar" id="customer-avatar">客</div>
           <div class="identity">
             <div class="name-row">
               <div class="name" id="customer-name">识别中</div>
@@ -71,6 +70,6 @@
   <div id="debug-wrap" class="hidden"></div>
 
   <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
-  <script src="{{ url_for('static', filename='sidebar_workbench/sidebar_workbench.js') }}?v=20260523-material-card-fix"></script>
+  <script src="{{ url_for('static', filename='sidebar_workbench/sidebar_workbench.js') }}?v=20260523-top-card-no-avatar"></script>
 </body>
 </html>

@@ -68,33 +68,22 @@ button[disabled] {
 
 .profile-main {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.avatar {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: #dfeafe;
-  color: var(--blue-strong);
-  font-size: 18px;
-  font-weight: 850;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
 }
 
 .identity {
   min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .name-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .name {
@@ -127,11 +116,11 @@ button[disabled] {
 }
 
 .meta {
-  margin-top: 2px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.32;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .meta:empty,
@@ -142,7 +131,7 @@ button[disabled] {
 .workflow {
   display: inline-flex;
   max-width: 100%;
-  margin-top: 5px;
+  margin-top: 4px;
   padding: 3px 8px;
   border: 1px solid #e2e8f0;
   border-radius: 999px;
@@ -177,6 +166,8 @@ button[disabled] {
 
 .change {
   justify-self: end;
+  align-self: start;
+  margin-top: 2px;
 }
 
 .tabs {
@@ -655,15 +646,8 @@ button[disabled] {
   }
 
   .profile-main {
-    grid-template-columns: 36px minmax(0, 1fr) auto;
-    gap: 7px;
-  }
-
-  .avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 11px;
-    font-size: 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
   }
 
   .tabs {

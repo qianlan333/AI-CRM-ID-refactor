@@ -174,7 +174,6 @@
     const mobile = String(customer.mobile || "").trim();
     const externalUserid = String(customer.external_userid || state.external_userid || "").trim();
     const isBound = Boolean(customer.is_bound);
-    document.getElementById("customer-avatar").textContent = String(customer.avatar_text || name.slice(0, 1) || "客");
     document.getElementById("customer-name").textContent = name;
     document.getElementById("customer-mobile").textContent = mobile ? "手机号 " + mobile : "";
     document.getElementById("customer-external-userid").textContent = externalUserid ? "外部联系人 ID " + externalUserid : "";
