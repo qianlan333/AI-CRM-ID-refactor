@@ -91,6 +91,14 @@ FRONTEND_ROUTES: tuple[FrontendRouteSpec, ...] = (
         notes="Program list entry baseline; workspaces remain partial.",
     ),
     FrontendRouteSpec(
+        "/admin/channels",
+        200,
+        "legacy channel center entry via frontend_compat",
+        "partial adapter",
+        ("渠道码中心", "普通二维码", "企微获客助手链接"),
+        notes="First-level channel center route; production forwards to legacy Flask page.",
+    ),
+    FrontendRouteSpec(
         "/admin/wechat-pay/products",
         200,
         "legacy admin shell partial adapter",

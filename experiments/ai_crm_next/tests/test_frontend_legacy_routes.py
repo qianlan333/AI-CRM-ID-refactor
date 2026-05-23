@@ -55,6 +55,17 @@ def test_commerce_and_media_admin_routes_return_legacy_shells() -> None:
             assert forbidden not in response.text
 
 
+def test_admin_channels_route_returns_first_level_channel_center() -> None:
+    response = make_client().get("/admin/channels")
+    assert response.status_code == 200
+    text = response.text
+    assert "渠道码中心" in text
+    assert "普通二维码" in text
+    assert "企微获客助手链接" in text
+    for forbidden in ["New UI", "redesign", "TODO replace old frontend", "experimental replacement UI"]:
+        assert forbidden not in text
+
+
 def test_user_ops_frontend_adapter_stubs_exist() -> None:
     client = make_client()
     assert client.get("/api/admin/miniprogram-library").json()["ok"] is True

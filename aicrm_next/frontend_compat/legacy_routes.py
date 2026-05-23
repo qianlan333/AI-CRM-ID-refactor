@@ -57,7 +57,11 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/cloud-orchestrator/campaigns",
     "/admin/cloud-orchestrator/observability",
     "/admin/wecom-tags",
+    "/admin/channels",
+    "/admin/channels/new",
+    "/admin/channels/{channel_id}/edit",
     "/admin/automation-conversion",
+    "/admin/automation-conversion/programs/{program_id}/entry-channels",
     "/admin/jobs",
     "/admin/wechat-pay/transactions",
     "/admin/wechat-pay/transactions/{order_id}",
@@ -116,6 +120,12 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_cloud_orchestrator_campaigns_workspace": "/admin/cloud-orchestrator/campaigns",
         "api.admin_cloud_orchestrator_observability": "/admin/cloud-orchestrator/observability",
         "api.admin_wecom_tags_page": "/admin/wecom-tags",
+        "api.admin_channels_page": "/admin/channels",
+        "api.admin_channel_new_page": "/admin/channels/new",
+        "api.admin_channel_edit_page": "/admin/channels/" + str(path_params.get("channel_id", "")).strip() + "/edit",
+        "api.admin_automation_program_entry_channels": "/admin/automation-conversion/programs/"
+        + str(path_params.get("program_id", "")).strip()
+        + "/entry-channels",
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
@@ -163,6 +173,7 @@ ADMIN_NAV_GROUPS = [
         "title": "运营",
         "items": [
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
+            {"key": "channels", "label": "渠道码中心", "endpoint": "api.admin_channels_page"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
             {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
@@ -708,6 +719,131 @@ def admin_automation_conversion(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_console/automation_program_list.html", context)
+
+
+@router.get("/admin/channels", name="api.admin_channels_page")
+async def admin_channels_page(request: Request) -> Response:
+    if production_data_ready():
+        return await forward_to_legacy_flask(request)
+    context = _shell_context(
+        request=request,
+        page_title="渠道码中心",
+        page_summary="独立管理普通二维码和企微获客助手链接；绑定自动化运营请进入对应方案的入口渠道页。",
+        active_endpoint="api.admin_channels_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "渠道码中心"},
+            ],
+            "state_title": "渠道码中心",
+            "state_body": "渠道码中心是一级后台能力，用于查看、新建和维护独立获客渠道。",
+            "state_items": [
+                "普通二维码支持下载二维码",
+                "企微获客助手链接支持复制链接和分享链接",
+                "绑定自动化运营只在方案入口渠道页完成",
+            ],
+            "actions": [
+                {"label": "新建渠道", "href": request.url_for("api.admin_channel_new_page"), "variant": "primary"},
+                {"label": "自动化运营", "href": request.url_for("api.admin_automation_conversion"), "variant": "secondary"},
+            ],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/channels/new", name="api.admin_channel_new_page")
+async def admin_channel_new_page(request: Request) -> Response:
+    if production_data_ready():
+        return await forward_to_legacy_flask(request)
+    context = _shell_context(
+        request=request,
+        page_title="新建渠道",
+        page_summary="创建普通二维码或企微获客助手链接渠道；渠道绑定在自动化运营入口渠道页完成。",
+        active_endpoint="api.admin_channels_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "渠道码中心", "href": request.url_for("api.admin_channels_page")},
+                {"label": "新建渠道"},
+            ],
+            "state_title": "新建渠道",
+            "state_body": "生产环境会打开完整的新建渠道表单；本地兼容层保留入口和导航契约。",
+            "state_items": [
+                "支持普通二维码",
+                "支持企微获客助手链接",
+                "支持欢迎语、小程序、图片和 PDF 素材选择",
+            ],
+            "actions": [{"label": "返回渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/channels/{channel_id:int}/edit", name="api.admin_channel_edit_page")
+async def admin_channel_edit_page(request: Request, channel_id: int) -> Response:
+    if production_data_ready():
+        return await forward_to_legacy_flask(request)
+    context = _shell_context(
+        request=request,
+        page_title="编辑渠道",
+        page_summary="维护渠道本体、欢迎语和素材配置；不会在这里绑定自动化运营。",
+        active_endpoint="api.admin_channels_page",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "渠道码中心", "href": request.url_for("api.admin_channels_page")},
+                {"label": f"编辑渠道 {channel_id}"},
+            ],
+            "state_title": "编辑渠道",
+            "state_body": "生产环境会打开完整的渠道编辑表单；本地兼容层保留入口和导航契约。",
+            "state_items": [
+                "普通二维码不会被重新生成",
+                "企微获客助手链接不会被重新生成",
+                "绑定状态只在入口渠道页变更",
+            ],
+            "actions": [{"label": "返回渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get(
+    "/admin/automation-conversion/programs/{program_id:int}/entry-channels",
+    name="api.admin_automation_program_entry_channels",
+)
+async def admin_automation_program_entry_channels(request: Request, program_id: int) -> Response:
+    if production_data_ready():
+        return await forward_to_legacy_flask(request)
+    context = _shell_context(
+        request=request,
+        page_title="入口渠道",
+        page_summary="在自动化运营方案内绑定已有渠道码，渠道码中心不提供绑定入口。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "自动化运营", "href": request.url_for("api.admin_automation_conversion")},
+                {"label": f"方案 {program_id} 入口渠道"},
+            ],
+            "state_title": "入口渠道",
+            "state_body": "生产环境会打开当前方案的入口渠道页，用于绑定已有普通二维码或企微获客助手链接。",
+            "state_items": [
+                "一个渠道同一时间只能 active 绑定一个方案",
+                "绑定不会自动导入历史用户",
+                "扫码或人工导入后才产生入池清洗",
+            ],
+            "actions": [{"label": "渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
 
 
 @router.get("/admin/wechat-pay/transactions", name="api.admin_wechat_pay_transactions_page")
