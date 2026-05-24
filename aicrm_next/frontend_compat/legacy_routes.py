@@ -23,9 +23,9 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
+from aicrm_next.customer_read_model.application import ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
 from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
-from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
 from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     LegacyQuestionnaireDataUnavailable,
@@ -365,9 +365,40 @@ def admin_dashboard(request: Request):
     return templates.TemplateResponse(request, "admin_console/dashboard.html", context)
 
 
+def _admin_customer_payload_from_list_result(
+    *,
+    result: dict,
+    keyword: str,
+    owner: str,
+    mobile: str,
+    tag: str,
+    limit: int,
+    offset: int,
+) -> tuple[dict, str]:
+    degraded = bool(result.get("degraded")) or result.get("source_status") == "production_unavailable"
+    page_error = str(result.get("page_error") or "") if degraded or not result.get("ok", True) else ""
+    customers = [] if degraded else list(result.get("customers") or result.get("items") or [])
+    total = 0 if degraded else int(result.get("total") or result.get("count") or len(customers))
+    return (
+        {
+            "filters": {"keyword": keyword, "owner": owner, "mobile": mobile, "tag": tag},
+            "customers": customers,
+            "pagination": {
+                "total": total,
+                "has_prev": offset > 0,
+                "has_next": offset + limit < total,
+                "prev_offset": max(offset - limit, 0),
+                "next_offset": offset + limit,
+            },
+        },
+        page_error,
+    )
+
+
 @router.get("/admin/customers", name="api.admin_console_customers")
 def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile: str = "", tag: str = "", offset: int = 0):
     limit = 50
+    offset = max(int(offset or 0), 0)
     customer_query = ListCustomersRequest(
         owner_userid=owner or None,
         tag=tag or None,
@@ -376,39 +407,16 @@ def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile
         limit=limit,
         offset=offset,
     )
-    if production_data_ready():
-        try:
-            payload = list_customers_via_legacy(customer_query)
-        except Exception as exc:
-            payload = {"customers": [], "total": 0}
-            page_error = f"生产客户数据读取失败：{exc}"
-        else:
-            page_error = ""
-    else:
-        payload = {
-            "customers": [
-                {
-                    "external_userid": "local_contract_customer",
-                    "customer_name": "本地结构校验客户",
-                    "owner_display_name": "system",
-                    "owner_userid": "system",
-                    "mobile": "已脱敏",
-                }
-            ],
-            "total": 1,
-        }
-        page_error = ""
-    customer_payload = {
-        "filters": {"keyword": keyword, "owner": owner, "mobile": mobile, "tag": tag},
-        "customers": payload["customers"],
-        "pagination": {
-            "total": payload["total"],
-            "has_prev": offset > 0,
-            "has_next": offset + limit < payload["total"],
-            "prev_offset": max(offset - limit, 0),
-            "next_offset": offset + limit,
-        },
-    }
+    result = ListCustomersQuery()(customer_query)
+    customer_payload, page_error = _admin_customer_payload_from_list_result(
+        result=result,
+        keyword=keyword,
+        owner=owner,
+        mobile=mobile,
+        tag=tag,
+        limit=limit,
+        offset=offset,
+    )
     context = _shell_context(
         request=request,
         page_title="客户激活 / 客户列表",
