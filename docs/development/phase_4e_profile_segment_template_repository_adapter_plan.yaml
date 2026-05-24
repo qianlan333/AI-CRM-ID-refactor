@@ -1,0 +1,427 @@
+version: 1
+status: phase_4e_repository_adapter_planning_only_no_runtime_change
+production_repository_implementation_authorized: false
+migration_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+route_family: /api/admin/automation-conversion/profile-segment-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+legacy_discovery:
+  status: documented
+  route_registration:
+    - method: GET
+      path: /api/admin/automation-conversion/profile-segment-templates/catalog
+      handler: api_admin_automation_conversion_profile_segment_catalog
+      file: wecom_ability_service/http/automation_conversion.py
+    - method: GET
+      path: /api/admin/automation-conversion/profile-segment-templates
+      handler: api_admin_automation_conversion_profile_segment_templates
+      file: wecom_ability_service/http/automation_conversion.py
+    - method: GET
+      path: /api/admin/automation-conversion/profile-segment-templates/options
+      handler: api_admin_automation_conversion_profile_segment_template_options
+      file: wecom_ability_service/http/automation_conversion.py
+    - method: GET
+      path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
+      handler: api_admin_automation_conversion_profile_segment_template_detail
+      file: wecom_ability_service/http/automation_conversion.py
+    - method: POST
+      path: /api/admin/automation-conversion/profile-segment-templates
+      handler: api_admin_automation_conversion_profile_segment_template_create
+      file: wecom_ability_service/http/automation_conversion.py
+    - method: PUT
+      path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
+      handler: api_admin_automation_conversion_profile_segment_template_update
+      file: wecom_ability_service/http/automation_conversion.py
+  controllers:
+    - handler: api_admin_automation_conversion_profile_segment_catalog
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: catalog_read
+    - handler: api_admin_automation_conversion_profile_segment_templates
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: list_templates
+    - handler: api_admin_automation_conversion_profile_segment_template_options
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: list_options
+    - handler: api_admin_automation_conversion_profile_segment_template_detail
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: get_detail
+    - handler: api_admin_automation_conversion_profile_segment_template_create
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: create_template
+    - handler: api_admin_automation_conversion_profile_segment_template_update
+      file: wecom_ability_service/http/automation_conversion_templates.py
+      action: update_template
+  services:
+    - function: list_conversion_profile_segment_catalog
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Reads questionnaires, questions, and options for catalog payload.
+    - function: list_conversion_profile_segment_templates
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Reads template rows and builds bundle payloads.
+    - function: list_conversion_profile_segment_template_options
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Reads enabled valid template bundles for selector options.
+    - function: get_conversion_profile_segment_template_bundle
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Reads one template bundle or raises LookupError for not found.
+    - function: create_conversion_profile_segment_template
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Validates payload, inserts template/category/mapping rows, commits, returns bundle.
+    - function: update_conversion_profile_segment_template
+      file: wecom_ability_service/domains/automation_conversion/workflow_service.py
+      behavior: Validates payload, updates template row, replaces category/mapping rows, commits, returns bundle.
+  persistence:
+    status: documented
+    tables:
+      - name: automation_profile_segment_template
+        status: documented_in_schema_postgres
+        fields:
+          - name: id
+            type: BIGSERIAL
+            required: true
+            notes: Primary key.
+          - name: program_id
+            type: BIGINT
+            required: false
+            notes: Program scope.
+          - name: template_code
+            type: TEXT
+            required: true
+            notes: Unique code.
+          - name: template_name
+            type: TEXT
+            required: true
+            notes: Display name.
+          - name: questionnaire_id
+            type: BIGINT
+            required: false
+            notes: FK to questionnaires.
+          - name: segmentation_question_id
+            type: BIGINT
+            required: false
+            notes: FK to questionnaire_questions.
+          - name: description
+            type: TEXT
+            required: true
+            notes: Defaults to empty string.
+          - name: enabled
+            type: BOOLEAN
+            required: true
+            notes: Legacy enabled/status source.
+          - name: version
+            type: INTEGER
+            required: true
+            notes: Incremented when update state changes.
+          - name: created_by
+            type: TEXT
+            required: true
+            notes: Operator snapshot.
+          - name: updated_by
+            type: TEXT
+            required: true
+            notes: Operator snapshot.
+          - name: created_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: DB default current timestamp.
+          - name: updated_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: Updated by legacy SQL.
+        unknowns:
+          - item: production idempotency storage not present in this table
+          - item: dedicated audit storage not confirmed
+      - name: automation_profile_segment_category
+        status: documented_in_schema_postgres
+        fields:
+          - name: id
+            type: BIGSERIAL
+            required: true
+            notes: Primary key.
+          - name: template_id
+            type: BIGINT
+            required: true
+            notes: FK to automation_profile_segment_template.
+          - name: category_key
+            type: TEXT
+            required: true
+            notes: Unique per template.
+          - name: category_name
+            type: TEXT
+            required: true
+            notes: Category display name.
+          - name: description
+            type: TEXT
+            required: true
+            notes: Defaults to empty string.
+          - name: sort_order
+            type: INTEGER
+            required: true
+            notes: Category ordering.
+          - name: enabled
+            type: BOOLEAN
+            required: true
+            notes: Category enabled flag.
+          - name: created_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: DB default.
+          - name: updated_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: DB default.
+        unknowns:
+          - item: update currently deletes and reinserts category rows
+      - name: automation_profile_segment_option_mapping
+        status: documented_in_schema_postgres
+        fields:
+          - name: id
+            type: BIGSERIAL
+            required: true
+            notes: Primary key.
+          - name: template_id
+            type: BIGINT
+            required: true
+            notes: FK to automation_profile_segment_template.
+          - name: category_id
+            type: BIGINT
+            required: true
+            notes: FK to automation_profile_segment_category.
+          - name: question_id
+            type: BIGINT
+            required: true
+            notes: FK to questionnaire_questions.
+          - name: option_id
+            type: BIGINT
+            required: true
+            notes: FK to questionnaire_options.
+          - name: created_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: DB default.
+        unknowns:
+          - item: update currently deletes and reinserts mapping rows
+
+field_mapping:
+  - next_field: template_id / id
+    legacy_field: id
+    legacy_table: automation_profile_segment_template
+    direction: both
+    required: true
+    transform: integer identity mapping
+    default_behavior: generated by DB on create
+    unknowns: none
+  - next_field: name
+    legacy_field: template_name
+    legacy_table: automation_profile_segment_template
+    direction: both
+    required: true
+    transform: alias name to template_name
+    default_behavior: no empty name allowed on create
+    unknowns: length limit needs owner confirmation
+  - next_field: description
+    legacy_field: description
+    legacy_table: automation_profile_segment_template
+    direction: both
+    required: false
+    transform: empty string normalization
+    default_behavior: empty string
+    unknowns: length limit needs owner confirmation
+  - next_field: segment_key / code
+    legacy_field: template_code
+    legacy_table: automation_profile_segment_template
+    direction: both
+    required: true
+    transform: slug/code alias to template_code
+    default_behavior: legacy slugifies from template_name when omitted
+    unknowns: collision behavior must match legacy duplicate error
+  - next_field: conditions / rules
+    legacy_field: categories plus option mappings
+    legacy_table: automation_profile_segment_category + automation_profile_segment_option_mapping
+    direction: both
+    required: true
+    transform: map rules/conditions categories to category rows and option mappings
+    default_behavior: enabled template requires at least one enabled category with option binding
+    unknowns: exact Next JSON alias compatibility needs parity fixture
+  - next_field: status
+    legacy_field: enabled
+    legacy_table: automation_profile_segment_template
+    direction: both
+    required: true
+    transform: draft/active/inactive maps to enabled/status view
+    default_behavior: enabled true maps to active/enabled
+    unknowns: legacy has enabled/disabled, not draft; draft mapping needs owner approval
+  - next_field: sort_order
+    legacy_field: sort_order
+    legacy_table: automation_profile_segment_category
+    direction: both
+    required: false
+    transform: category sort order only
+    default_behavior: category index order
+    unknowns: no template-level sort_order found
+  - next_field: created_at
+    legacy_field: created_at
+    legacy_table: automation_profile_segment_template
+    direction: read
+    required: true
+    transform: timestamp string projection
+    default_behavior: DB default current timestamp
+    unknowns: timezone normalization needs parity check
+  - next_field: updated_at
+    legacy_field: updated_at
+    legacy_table: automation_profile_segment_template
+    direction: read
+    required: true
+    transform: timestamp string projection
+    default_behavior: DB updated current timestamp
+    unknowns: timezone normalization needs parity check
+  - next_field: operator / audit fields
+    legacy_field: created_by / updated_by
+    legacy_table: automation_profile_segment_template
+    direction: write
+    required: true
+    transform: operator identity snapshot
+    default_behavior: legacy _operator_from_request
+    unknowns: dedicated audit event storage not confirmed
+
+repository_strategy:
+  selected_strategy: reuse_legacy_tables
+  selection_status: pending_owner_approval
+  options:
+    - id: reuse_legacy_tables
+      recommendation: preferred_after_schema_confirmation
+      pros:
+        - preserves production source of truth
+        - avoids data copy and dual-source drift
+        - keeps fallback rollback straightforward
+      cons:
+        - requires faithful legacy bundle projection
+        - idempotency and audit gaps may need companion schema planning
+        - category update semantics delete and reinsert child rows
+      risks:
+        - production schema drift must be ruled out before implementation
+        - write rollback requires before snapshot capture
+    - id: legacy_service_adapter
+      recommendation: defer_except_as_integration_gateway_bridge
+      pros:
+        - fastest parity with existing legacy behavior
+        - avoids duplicating validation immediately
+      cons:
+        - couples Next repository to legacy service internals
+        - risks bypassing the intended Next domain/application boundary
+        - does not solve production ownership cleanly
+      risks:
+        - could expand legacy facade dependency instead of replacing it
+        - harder to test without legacy runtime
+    - id: new_next_tables
+      recommendation: defer_until_reuse_impossible
+      pros:
+        - can model idempotency and audit natively
+        - can isolate Next-owned contract
+      cons:
+        - requires migration and backfill
+        - introduces dual-source drift risk
+        - complicates fallback rollback
+      risks:
+        - higher production continuity risk
+        - requires separate schema planning, backup, migration smoke, and approval
+
+planned_repository_contract:
+  methods:
+    - name: list_profile_segment_templates
+      read_or_write: read
+      transaction_required: false
+      idempotency_required: false
+      audit_required: false
+      rollback_required: false
+      validation_boundary: query filters and pagination normalization
+      error_behavior: degraded production_unavailable if repository cannot connect
+    - name: get_profile_segment_template
+      read_or_write: read
+      transaction_required: false
+      idempotency_required: false
+      audit_required: false
+      rollback_required: false
+      validation_boundary: template_id normalization
+      error_behavior: 404 when not found, degraded production_unavailable if repository cannot connect
+    - name: create_profile_segment_template
+      read_or_write: write
+      transaction_required: true
+      idempotency_required: true
+      audit_required: true
+      rollback_required: true
+      validation_boundary: Next command validation plus legacy parity validation before insert
+      error_behavior: 400 validation, 409 idempotency conflict or duplicate, degraded production_unavailable if repository unavailable
+    - name: update_profile_segment_template
+      read_or_write: write
+      transaction_required: true
+      idempotency_required: false
+      audit_required: true
+      rollback_required: true
+      validation_boundary: Next patch validation plus legacy parity validation before update
+      error_behavior: 404 missing, 400 validation, 409 stale update conflict, degraded production_unavailable if repository unavailable
+    - name: list_catalog
+      read_or_write: read
+      transaction_required: false
+      idempotency_required: false
+      audit_required: false
+      rollback_required: false
+      validation_boundary: questionnaire catalog projection
+      error_behavior: degraded production_unavailable if repository cannot connect
+    - name: list_options
+      read_or_write: read
+      transaction_required: false
+      idempotency_required: false
+      audit_required: false
+      rollback_required: false
+      validation_boundary: enabled_only/program_id normalization
+      error_behavior: degraded production_unavailable if repository cannot connect
+
+idempotency_design:
+  required: true
+  storage_status: needs_confirmation_or_new_planning
+  key_scope: route_family + operator + idempotency_key
+  replay_behavior: same key returns original create result without inserting duplicate rows
+  duplicate_behavior: duplicate template_code/name with different key returns conflict
+  unknowns:
+    - item: no idempotency key column/table found in current profile segment schema
+    - item: owner must choose companion table, request log, or deterministic duplicate-only fallback
+
+audit_design:
+  required: true
+  operator_source: legacy _operator_from_request equivalent or authenticated admin identity
+  snapshot_required: true
+  storage_status: needs_confirmation_or_new_planning
+  unknowns:
+    - item: dedicated profile segment audit table not confirmed
+    - item: before/after snapshot storage location needs owner approval
+
+rollback_design:
+  required: true
+  create_rollback: use created template id and compensating disable/update unless delete is separately approved
+  update_rollback: restore before snapshot through compensating update
+  fallback_rollback: restore route owner to production_compat or disable future feature flag
+  backup_required_if_db_write: true
+
+parity_plan:
+  required:
+    - read_parity
+    - validation_parity
+    - create_dry_run_or_shadow_parity
+    - update_dry_run_or_shadow_parity
+    - error_shape_parity
+    - audit_rollback_parity
+
+phase_4f_recommendation:
+  recommended_next_step: schema_confirmation_only
+  direct_route_switch_allowed: false
+  production_repository_allowed_without_owner_approval: false
+  migration_allowed_without_owner_approval: false
+  notes: Phase 4F should confirm production schema and idempotency/audit storage choices before implementing a production repository adapter; do not switch production route owner.
