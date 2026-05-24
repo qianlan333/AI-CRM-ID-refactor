@@ -27,6 +27,9 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "phase_execution_state.yaml" in prompt_text
     assert "check_autonomous_development_loop.py" in prompt_text
     assert "check_automerge_eligibility.py" in prompt_text
+    assert "bounded low-risk work package" in prompt_text
+    assert "10-13 minutes" in prompt_text
+    assert "phase_4am_approval_config_closure" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -70,22 +73,69 @@ def test_script_uses_configurable_codex_command_and_logs() -> None:
     assert "tools/run_codex_autopilot_tick.py" in text
 
 
-def test_runner_admin_merge_is_env_gated(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED", raising=False)
-    prompt = tmp_path / "prompt.md"
-    args = runner.parse_args(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
+def test_runner_admin_merges_safe_green_open_pr(monkeypatch, tmp_path: Path) -> None:
+    def fake_fetch_open_autopilot_prs(skip_github: bool):
+        return (
+            [
+                {
+                    "number": 123,
+                    "url": "https://github.com/qianlan333/AI-CRM/pull/123",
+                    "labels": [{"name": "autopilot-safe"}],
+                    "statusCheckRollup": [
+                        {"name": "pr-smoke", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                    ],
+                }
+            ],
+            [],
+        )
+
+    calls: list[list[str]] = []
+
+    def fake_run_command(args: list[str], timeout: int = 60):
+        calls.append(args)
+        if args[:3] == ["gh", "pr", "merge"]:
+            return 0, "merged", ""
+        return 0, "", ""
+
+    monkeypatch.setattr(runner, "fetch_open_autopilot_prs", fake_fetch_open_autopilot_prs)
+    monkeypatch.setattr(runner, "run_command", fake_run_command)
+    args = runner.parse_args(["--skip-github", "--lock-file", str(tmp_path / "lock")])
     report = runner.build_tick_report(args)
-    assert report["admin_merge_allowed"] is False
-    monkeypatch.setenv("AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED", "1")
-    report = runner.build_tick_report(args)
+    assert report["result_status"] == "open_autopilot_pr_admin_merged"
+    assert report["auto_merge_allowed"] is True
     assert report["admin_merge_allowed"] is True
+    assert any(call[:3] == ["gh", "pr", "merge"] for call in calls)
+
+
+def test_runner_does_not_admin_merge_owner_decision_pr(monkeypatch, tmp_path: Path) -> None:
+    def fake_fetch_open_autopilot_prs(skip_github: bool):
+        return (
+            [
+                {
+                    "number": 124,
+                    "url": "https://github.com/qianlan333/AI-CRM/pull/124",
+                    "labels": [{"name": "owner-decision-required"}, {"name": "autopilot-safe"}],
+                    "statusCheckRollup": [
+                        {"name": "pr-smoke", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                    ],
+                }
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(runner, "fetch_open_autopilot_prs", fake_fetch_open_autopilot_prs)
+    args = runner.parse_args(["--skip-github", "--lock-file", str(tmp_path / "lock")])
+    report = runner.build_tick_report(args)
+    assert report["result_status"] == "owner_decision_required"
+    assert report["admin_merge_allowed"] is False
 
 
 def test_runbook_declares_runtime_boundaries() -> None:
     text = RUNBOOK.read_text(encoding="utf-8")
     for phrase in (
         "does not change production routes",
-        "Default behavior is PR creation only",
+        "may use admin merge for eligible low-risk PRs",
+        "10-13 minute work packages",
         "does not authorize production route switch",
         "Risk / rollback",
         "Autopilot runtime decision",

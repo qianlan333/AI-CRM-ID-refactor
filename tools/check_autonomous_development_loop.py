@@ -27,6 +27,7 @@ REQUIRED_STATE_FIELDS = {
     "next_allowed_actions",
     "forbidden_without_owner_approval",
     "action_templates_readiness",
+    "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
     "phase_4am_staging_execution",
@@ -59,6 +60,13 @@ STOP_IDS = {
     "destructive_migration",
     "delete_ready",
     "canary_approval",
+}
+REQUIRED_WORK_PACKAGE_POLICY_TRUE = {
+    "state_only_pr_requires_explanation",
+    "avoid_repeated_blocked_evidence_review",
+    "low_risk_admin_merge_allowed",
+    "admin_merge_requires_eligible_true",
+    "admin_merge_requires_required_checks_green",
 }
 
 
@@ -219,8 +227,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must remain /api/admin/automation-conversion/action-templates*")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#637":
-        blockers.append("last_merged_pr must initialize to #637")
+    if state.get("last_merged_pr") != "#641":
+        blockers.append("last_merged_pr must record latest completed autopilot low-risk PR #641")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -235,6 +243,19 @@ def build_report() -> dict[str, Any]:
     missing_forbidden = sorted(REQUIRED_FORBIDDEN - forbidden)
     if missing_forbidden:
         blockers.append(f"forbidden_without_owner_approval missing high-risk actions: {missing_forbidden}")
+
+    work_package_policy = state.get("work_package_policy") if isinstance(state.get("work_package_policy"), dict) else {}
+    if work_package_policy.get("selection_unit") != "bounded_low_risk_work_package":
+        blockers.append("work_package_policy.selection_unit must be bounded_low_risk_work_package")
+    if work_package_policy.get("target_duration_minutes_min") != 10:
+        blockers.append("work_package_policy.target_duration_minutes_min must be 10")
+    if work_package_policy.get("target_duration_minutes_max") != 13:
+        blockers.append("work_package_policy.target_duration_minutes_max must be 13")
+    for field in sorted(REQUIRED_WORK_PACKAGE_POLICY_TRUE):
+        if work_package_policy.get(field) is not True:
+            blockers.append(f"work_package_policy.{field} must be true")
+    if work_package_policy.get("admin_merge_for_owner_decision_package_allowed") is not False:
+        blockers.append("work_package_policy.admin_merge_for_owner_decision_package_allowed must be false")
 
     stop_conditions = _as_list(stop.get("high_risk_stop_conditions"))
     stop_ids = {str(item.get("id")) for item in stop_conditions if isinstance(item, dict)}
@@ -281,6 +302,7 @@ def build_report() -> dict[str, Any]:
 
     details["next_allowed_actions"] = sorted(next_allowed)
     details["forbidden_without_owner_approval"] = sorted(forbidden)
+    details["work_package_policy"] = work_package_policy
     details["changed_files"] = sorted(changed)
     return {"overall": "PASS" if not blockers else "FAIL", "ok": not blockers, "blockers": blockers, "warnings": warnings, "details": details}
 

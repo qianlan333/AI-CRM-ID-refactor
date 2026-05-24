@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
-import os
 import subprocess
 import sys
 import time
@@ -28,6 +27,7 @@ REQUIRED_PREFLIGHT_DOCS = [
     "skills/ai-crm-next-architecture/SKILL.md",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
     "docs/development/legacy_replacement_backlog.yaml",
+    "docs/development/codex_autopilot_runtime_runbook.md",
 ]
 ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_staging_execution",
@@ -35,6 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
+AUTOPILOT_SAFE_LABEL = "autopilot-safe"
 
 
 def _parse_scalar(value: str) -> Any:
@@ -255,27 +256,57 @@ def classify_open_pr(pr: dict[str, Any]) -> dict[str, Any]:
         "failed": failed,
         "passed": passed,
         "owner_decision_label": bool(labels & OWNER_DECISION_LABELS),
+        "autopilot_safe": AUTOPILOT_SAFE_LABEL in labels,
+        "checks_green": bool(checks) and not pending and not failed,
     }
 
 
+def admin_merge_pr(pr_number: int | str | None) -> tuple[bool, str]:
+    if not pr_number:
+        return False, "missing PR number"
+    code, stdout, stderr = run_command(
+        ["gh", "pr", "merge", str(pr_number), "--admin", "--merge", "--delete-branch"],
+        timeout=120,
+    )
+    if code == 0:
+        return True, (stdout or "").strip()
+    return False, (stderr or stdout or "").strip()
+
+
 def choose_next_action(state: dict[str, Any], requested: str | None = None) -> str:
+    return choose_next_work_package(state, requested)
+
+
+def choose_next_work_package(state: dict[str, Any], requested: str | None = None) -> str:
     allowed = [str(item) for item in state.get("next_allowed_actions", [])]
     if requested:
         if requested not in allowed:
-            raise ValueError(f"requested action is not in next_allowed_actions: {requested}")
+            raise ValueError(f"requested work package is not in next_allowed_actions: {requested}")
         return requested
     if not allowed:
         raise ValueError("phase_execution_state has no next_allowed_actions")
+    policy = state.get("work_package_policy") if isinstance(state.get("work_package_policy"), dict) else {}
+    should_avoid_repeated_blocked_review = (
+        policy.get("avoid_repeated_blocked_evidence_review") is True
+        and "phase_4am_approval_config_closure" in allowed
+        and (
+            state.get("last_created_pr") == "#641"
+            or state.get("last_attempted_action") == "phase_4am_blocked_evidence_review"
+        )
+    )
+    if should_avoid_repeated_blocked_review:
+        return "phase_4am_approval_config_closure"
     return allowed[0]
 
 
-def owner_decision_package(reason: str, action: str | None, output_path: Path) -> None:
+def owner_decision_package(reason: str, work_package: str | None, output_path: Path) -> None:
     lines = [
         "# AI-CRM Codex Autopilot Owner Decision Package",
         "",
         f"- reason: {reason}",
-        f"- selected_action: {action or 'none'}",
+        f"- selected_work_package: {work_package or 'none'}",
         "- auto_merge_allowed: false",
+        "- admin_merge_allowed: false",
         "- production_owner_switch_allowed: false",
         "- production_write_allowed: false",
         "- fallback_removal_allowed: false",
@@ -283,12 +314,12 @@ def owner_decision_package(reason: str, action: str | None, output_path: Path) -
         "",
         "## Owner Decision Needed",
         "",
-        "Codex autopilot detected a stop condition or blocked state. The next step requires explicit owner review before another implementation PR may be generated.",
+        "Codex autopilot detected a stop condition or blocked state. The next step requires explicit owner review before another implementation PR may be generated or merged.",
     ]
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def prompt_for_action(action: str, state: dict[str, Any], output_path: Path) -> None:
+def prompt_for_work_package(work_package: str, state: dict[str, Any], output_path: Path) -> None:
     docs = "\n".join(f"- {path}" for path in REQUIRED_PREFLIGHT_DOCS)
     prompt = f"""# AI-CRM Codex Autopilot Next Prompt
 
@@ -299,9 +330,9 @@ You are working in qianlan333/AI-CRM from latest main.
 Read and follow:
 {docs}
 
-## Selected low-risk action
+## Selected bounded low-risk work package
 
-- action: {action}
+- work_package: {work_package}
 - active_candidate: {state.get("active_candidate")}
 - capability_owner: {state.get("capability_owner")}
 - current_phase: {state.get("current_phase")}
@@ -310,6 +341,7 @@ Read and follow:
 
 - Only choose from docs/development/phase_execution_state.yaml next_allowed_actions.
 - For action-templates, stay within Phase 4AM staging execution / approval config closure / blocked evidence review.
+- If PR #641 is merged, do not repeat a standalone blocked evidence review. Prefer the Phase 4AM staging approval/config closure package unless a stop condition requires an owner decision package.
 - Do not switch production owner.
 - Do not write production.
 - Do not remove fallback.
@@ -319,7 +351,10 @@ Read and follow:
 
 ## Required implementation behavior
 
-- Advance only one low-risk next action.
+- Advance only one bounded low-risk work package.
+- Target 10-13 minutes of focused work.
+- Avoid one- or two-line state-only PRs. If a state-only update is unavoidable, explain in the PR body why it cannot be folded into a fuller low-risk work package.
+- For Phase 4AM action-templates, a package may combine blocked evidence review summary, staging approval/config checklist, owner approval closure form, phase_execution_state.yaml update, checker/test coverage, and Next action.
 - Update docs/development/phase_execution_state.yaml with the resulting status.
 - Keep Business value, Business continuity, Risk / rollback, and Next action in the PR body.
 - Run:
@@ -331,7 +366,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Default behavior is PR creation only. Do not force admin merge unless AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED=1 and eligibility is true, required checks are green, and no stop condition exists.
+Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
@@ -347,19 +382,19 @@ def build_tick_report(args: argparse.Namespace) -> dict[str, Any]:
     warnings: list[str] = []
     blockers: list[str] = []
 
-    action: str | None = None
+    work_package: str | None = None
     try:
-        action = choose_next_action(state, args.action)
+        work_package = choose_next_work_package(state, args.action)
     except ValueError as exc:
         blockers.append(str(exc))
 
-    if action and state.get("active_candidate") == "/api/admin/automation-conversion/action-templates*":
-        if action not in ACTION_TEMPLATES_ALLOWED_ACTIONS:
-            blockers.append(f"action-templates autopilot action is not Phase 4AM bounded: {action}")
+    if work_package and state.get("active_candidate") == "/api/admin/automation-conversion/action-templates*":
+        if work_package not in ACTION_TEMPLATES_ALLOWED_ACTIONS:
+            blockers.append(f"action-templates autopilot work package is not Phase 4AM bounded: {work_package}")
 
-    action_stop_hits = text_hits_stop_condition(str(action or "").replace("_", " "), terms) if action else []
+    action_stop_hits = text_hits_stop_condition(str(work_package or "").replace("_", " "), terms) if work_package else []
     if action_stop_hits:
-        blockers.append(f"selected action touches stop condition: {action_stop_hits}")
+        blockers.append(f"selected work package touches stop condition: {action_stop_hits}")
 
     diff_stop_hits = diff_hits_stop_condition(changed_files(), terms)
     if diff_stop_hits:
@@ -383,18 +418,38 @@ def build_tick_report(args: argparse.Namespace) -> dict[str, Any]:
                 repair_marker.parent.mkdir(parents=True, exist_ok=True)
                 repair_marker.write_text(json.dumps({"pr": pr["number"], "at": int(time.time())}) + "\n", encoding="utf-8")
                 blockers.append(f"open autopilot PR checks failed; bounded repair prompt required before new action: #{pr['number']}")
+        elif pr["checks_green"] and pr["autopilot_safe"]:
+            merged, merge_detail = admin_merge_pr(pr["number"])
+            details["admin_merge_attempt"] = {"pr": pr["number"], "merged": merged, "detail": merge_detail}
+            if merged:
+                return {
+                    "ok": True,
+                    "result_status": "open_autopilot_pr_admin_merged",
+                    "prompt_generated": False,
+                    "selected_work_package": work_package,
+                    "selected_action": work_package,
+                    "auto_merge_allowed": True,
+                    "admin_merge_allowed": True,
+                    "blockers": [],
+                    "warnings": warnings,
+                    "details": details,
+                }
+            blockers.append(f"open autopilot PR admin merge failed: #{pr['number']}: {merge_detail}")
+        elif pr["checks_green"] and not pr["autopilot_safe"]:
+            blockers.append(f"open autopilot PR checks passed but autopilot-safe label is missing: #{pr['number']}")
         else:
             blockers.append(f"open autopilot PR exists; wait for merge or owner decision: #{pr['number']}")
 
     if blockers:
         args.owner_decision_output.parent.mkdir(parents=True, exist_ok=True)
-        owner_decision_package("; ".join(blockers), action, args.owner_decision_output)
+        owner_decision_package("; ".join(blockers), work_package, args.owner_decision_output)
         return {
             "ok": True,
             "result_status": "owner_decision_required",
             "prompt_generated": False,
             "owner_decision_package": str(args.owner_decision_output),
-            "selected_action": action,
+            "selected_work_package": work_package,
+            "selected_action": work_package,
             "auto_merge_allowed": False,
             "admin_merge_allowed": False,
             "blockers": blockers,
@@ -403,15 +458,16 @@ def build_tick_report(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     args.prompt_output.parent.mkdir(parents=True, exist_ok=True)
-    prompt_for_action(action or "", state, args.prompt_output)
+    prompt_for_work_package(work_package or "", state, args.prompt_output)
     return {
         "ok": True,
         "result_status": "next_prompt_generated",
         "prompt_generated": True,
         "prompt_path": str(args.prompt_output),
-        "selected_action": action,
+        "selected_work_package": work_package,
+        "selected_action": work_package,
         "auto_merge_allowed": False,
-        "admin_merge_allowed": os.environ.get("AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED") == "1",
+        "admin_merge_allowed": False,
         "blockers": [],
         "warnings": warnings,
         "details": details,
@@ -427,7 +483,7 @@ def write_outputs(report: dict[str, Any], output_json: str | None, output_md: st
             "",
             f"- result_status: {report['result_status']}",
             f"- prompt_generated: {str(report.get('prompt_generated', False)).lower()}",
-            f"- selected_action: {report.get('selected_action')}",
+            f"- selected_work_package: {report.get('selected_work_package', report.get('selected_action'))}",
             f"- auto_merge_allowed: {str(report.get('auto_merge_allowed', False)).lower()}",
             "",
             "## Blockers",

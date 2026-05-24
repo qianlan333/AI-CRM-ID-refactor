@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/action-templates*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#637"
+    assert data["last_merged_pr"] == "#641"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -41,6 +41,17 @@ def test_forbidden_without_owner_approval_covers_high_risk_actions() -> None:
     data = checker.load_yaml(STATE)
     forbidden = {item.lower() for item in data["forbidden_without_owner_approval"]}
     assert checker.REQUIRED_FORBIDDEN <= forbidden
+
+
+def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
+    data = checker.load_yaml(STATE)
+    policy = data["work_package_policy"]
+    assert policy["selection_unit"] == "bounded_low_risk_work_package"
+    assert policy["target_duration_minutes_min"] == 10
+    assert policy["target_duration_minutes_max"] == 13
+    for field in checker.REQUIRED_WORK_PACKAGE_POLICY_TRUE:
+        assert policy[field] is True
+    assert policy["admin_merge_for_owner_decision_package_allowed"] is False
 
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
