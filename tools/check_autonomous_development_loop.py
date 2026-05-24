@@ -34,7 +34,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision",
+    "phase_4az_next_internal_write_candidate_selection",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -51,6 +51,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4av_workflow_nodes_metadata_planning_completed",
     "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed",
     "phase_4ax_workflow_nodes_fixture_native_contract_planning_completed",
+    "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -247,8 +248,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflow-nodes* after workflows pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#654":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #654")
+    if state.get("last_merged_pr") != "#655":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #655")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -335,6 +336,14 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must include workflows awaiting fixture/native runtime owner decision")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
+        and item.get("owner_approval_required") is True
+        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must include workflow-nodes awaiting fixture/native runtime owner decision")
 
     task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
     if task_groups_readiness.get("native_contract_planning_started") is not True:
@@ -406,6 +415,10 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow_nodes_readiness.fixture_native_implementation_requires_owner_decision must be true")
     if workflow_nodes_readiness.get("owner_decision_required") is not True:
         blockers.append("workflow_nodes_readiness.owner_decision_required must be true")
+    if workflow_nodes_readiness.get("paused") is not True:
+        blockers.append("workflow_nodes_readiness.paused must be true")
+    if not str(workflow_nodes_readiness.get("paused_by_pr", "")).strip():
+        blockers.append("workflow_nodes_readiness.paused_by_pr must be recorded or pending")
     for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",

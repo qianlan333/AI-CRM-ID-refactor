@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/workflow-nodes*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#654"
-last_attempted_action: phase_4ax_workflow_nodes_fixture_native_contract_planning
-last_created_pr: "#655"
-recommended_next_pr: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
+last_merged_pr: "#655"
+last_attempted_action: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
+last_created_pr: "#656"
+recommended_next_pr: phase_4az_next_internal_write_candidate_selection
 owner_approval_required: true
 
 work_package_policy:
@@ -52,9 +52,10 @@ completed_steps:
   - phase_4av_workflow_nodes_metadata_planning_completed
   - phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed
   - phase_4ax_workflow_nodes_fixture_native_contract_planning_completed
+  - phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed
 
 next_allowed_actions:
-  - phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
+  - phase_4az_next_internal_write_candidate_selection
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -96,6 +97,11 @@ paused_candidates:
     paused_by_pr: "#652"
     owner_approval_required: true
     resume_condition: explicit_owner_approval_for_workflows_fixture_native_runtime_implementation
+  - route_family: /api/admin/automation-conversion/workflow-nodes*
+    status: awaiting_fixture_native_runtime_owner_decision
+    paused_by_pr: "#656"
+    owner_approval_required: true
+    resume_condition: explicit_owner_approval_for_workflow_nodes_fixture_native_runtime_implementation
 
 task_groups_readiness:
   native_contract_planning_started: true
@@ -138,6 +144,8 @@ workflow_nodes_readiness:
   fixture_native_contract_planning_completed: true
   fixture_native_implementation_requires_owner_decision: true
   owner_decision_required: true
+  paused: true
+  paused_by_pr: "#656"
   runtime_implementation_ready: false
   production_owner_switch_ready: false
   production_write_ready: false

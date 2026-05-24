@@ -1,0 +1,92 @@
+version: 1
+status: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_no_runtime_change
+
+decision_package:
+  type: owner_decision_and_candidate_deferral
+  auto_merge_under_throughput_allowed: true
+  docs_tools_tests_state_only: true
+  runtime_implementation_included: false
+
+paused_candidate:
+  route_family: /api/admin/automation-conversion/workflow-nodes*
+  capability_owner: aicrm_next.automation_engine
+  current_runtime_owner: production_compat
+  production_behavior: legacy_forward
+  paused_reason: fixture_native_runtime_implementation_requires_owner_approval
+  paused_by_phase: phase_4ay
+  paused_by_pr: "#656"
+  owner_approval_required: true
+  resume_condition: explicit_owner_approval_for_workflow_nodes_fixture_native_runtime_implementation
+  completed_assets:
+    - phase_4av_workflow_nodes_metadata_planning_completed
+    - phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed
+    - phase_4ax_workflow_nodes_fixture_native_contract_planning_completed
+
+owner_decision_required:
+  - approve_or_decline_workflow_nodes_fixture_native_runtime_implementation
+  - confirm_list_create_metadata_only_scope
+  - confirm_no_update_delete_detail_route_expansion
+  - confirm_no_node_transition_runtime
+  - confirm_workflow_execution_timer_run_due_outbound_send_forbidden
+  - confirm_idempotency_audit_rollback_required
+  - confirm_dangerous_field_rejection_required
+  - confirm_rollback_owner
+
+safe_next_options:
+  - pause_workflow_nodes_and_select_next_internal_write_candidate
+  - owner_approves_phase_4az_fixture_native_runtime_implementation_package
+  - owner_defers_workflow_nodes_until_transition_runtime_plan_exists
+
+rejected_actions:
+  production_route_owner_switch: true
+  production_write: true
+  fallback_removal: true
+  production_compat_change: true
+  staging_smoke_execution: true
+  workflow_execution: true
+  node_transition_runtime: true
+  timer_execution: true
+  outbound_send: true
+  real_external_call: true
+  update_delete_detail_route_expansion: true
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  workflow_execution_authorized: false
+  node_transition_runtime_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/workflow-nodes*
+  last_merged_pr: "#655"
+  last_attempted_action: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
+  last_created_pr: "#656"
+  recommended_next_pr: phase_4az_next_internal_write_candidate_selection
+  owner_approval_required: true
+  phase_4ay_completed_step: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed
+  paused_candidate:
+    route_family: /api/admin/automation-conversion/workflow-nodes*
+    status: awaiting_fixture_native_runtime_owner_decision
+    paused_by_pr: "#656"
+    owner_approval_required: true
+    resume_condition: explicit_owner_approval_for_workflow_nodes_fixture_native_runtime_implementation
+
+phase_4az_recommendation:
+  recommended_next_step: select_next_low_risk_internal_write_candidate
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Pause workflow-nodes until owner approval; next autopilot package should select a fresh low-risk Phase 4 internal_write candidate from backlog/manifest and begin with planning only.
