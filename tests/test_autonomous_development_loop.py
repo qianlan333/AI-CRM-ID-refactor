@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#659"
+    assert data["last_merged_pr"] == "#660"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -47,9 +47,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4ba_tasks_metadata_planning_completed" in set(data["completed_steps"])
     assert "phase_4bb_tasks_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
     assert "phase_4bc_tasks_fixture_native_contract_planning_completed" in set(data["completed_steps"])
+    assert "phase_4bd_tasks_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
+def test_next_allowed_actions_are_phase_4be_agents_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -172,18 +173,47 @@ def test_workflow_nodes_selected_for_metadata_planning_without_production_readin
 
 def test_tasks_selected_for_next_metadata_planning_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/tasks*"
+        and item["owner_approval_required"] is True
+        and str(item["paused_by_pr"]).strip()
+        for item in data["paused_candidates"]
+    )
     readiness = data["tasks_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness["fixture_native_contract_planning_completed"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
+    assert readiness["owner_decision_required"] is True
+    assert readiness["paused"] is True
+    assert str(readiness["paused_by_pr"]).strip()
     assert readiness["run_due_excluded"] is True
     assert readiness["task_execution_excluded"] is True
     assert readiness["workflow_execution_excluded"] is True
     assert readiness["timer_execution_excluded"] is True
     assert readiness["outbound_send_excluded"] is True
+    assert readiness["runtime_implementation_ready"] is False
+    assert readiness["production_owner_switch_ready"] is False
+    assert readiness["production_write_ready"] is False
+    assert readiness["fallback_removal_ready"] is False
+    assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["delete_ready"] is False
+
+
+def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> None:
+    data = checker.load_yaml(STATE)
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
+    readiness = data["agents_readiness"]
+    assert readiness["metadata_planning_ready"] is True
+    assert readiness["metadata_planning_completed"] is False
+    assert readiness["agent_run_execution_excluded"] is True
+    assert readiness["llm_generation_excluded"] is True
+    assert readiness["deepseek_adapter_excluded"] is True
+    assert readiness["openclaw_mcp_excluded"] is True
+    assert readiness["external_call_excluded"] is True
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
