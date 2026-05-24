@@ -17,6 +17,15 @@
     }
   }
 
+  function setSaveFeedback(message, tone) {
+    const node = root.querySelector("[data-channel-save-feedback]");
+    if (!node) return;
+    const text = String(message || "").trim();
+    node.textContent = text;
+    node.hidden = !text;
+    node.classList.toggle("is-error", tone === "error");
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -310,6 +319,7 @@
       shareText(root.querySelector("[data-link-preview]")?.textContent);
     });
     root.querySelector("[data-save-channel]")?.addEventListener("click", () => {
+      const saveButton = root.querySelector("[data-save-channel]");
       const isEdit = root.dataset.isEdit === "1";
       const url = isEdit ? root.dataset.apiDetail : root.dataset.apiCreate;
       const method = isEdit ? "PATCH" : "POST";
@@ -318,16 +328,33 @@
         payload = channelFormPayload();
       } catch (error) {
         toast(error.message || "保存失败");
+        setSaveFeedback(error.message || "保存失败", "error");
         return;
       }
+      if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.textContent = "保存中...";
+      }
+      setSaveFeedback("正在保存渠道配置...");
       apiJson(url, { method, body: JSON.stringify(payload) }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {
           toast(data.error || data.reason || "保存失败");
+          setSaveFeedback(data.error || data.reason || "保存失败", "error");
           return;
         }
+        const savedAt = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         toast("渠道已保存");
+        setSaveFeedback("保存成功，欢迎语和素材已更新。" + (savedAt ? " " + savedAt : ""));
         if (!isEdit && data.channel && data.channel.id) {
           window.location.href = "/admin/channels/" + data.channel.id + "/edit";
+        }
+      }).catch((error) => {
+        toast(error.message || "保存失败");
+        setSaveFeedback(error.message || "保存失败", "error");
+      }).finally(() => {
+        if (saveButton) {
+          saveButton.disabled = false;
+          saveButton.textContent = "保存渠道";
         }
       });
     });

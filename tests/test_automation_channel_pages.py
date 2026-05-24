@@ -201,6 +201,7 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     assert "sales_owner_channel_01" in new_html
     assert "data-channel-owner-pick" in new_html
     assert "选择自动化运营计划" not in new_html
+    assert "data-channel-save-feedback" in new_html
     materials = client.get("/api/admin/channel-welcome-materials?type=all&keyword=欢迎")
     assert materials.status_code == 200
     material_types = {item["type"] for item in materials.get_json()["materials"]}
