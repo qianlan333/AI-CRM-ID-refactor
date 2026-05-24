@@ -68,6 +68,10 @@ ALLOWED_CHANGED_FILES = {
     "tools/run_phase4k_profile_segment_template_local_parity.py",
     "tools/check_phase4k_profile_segment_template_local_parity_harness.py",
     "tests/test_phase4k_profile_segment_template_local_parity_harness.py",
+    "docs/development/phase_4l_profile_segment_template_staging_smoke_plan.md",
+    "docs/development/phase_4l_profile_segment_template_staging_smoke_plan.yaml",
+    "tools/check_phase4l_profile_segment_template_staging_smoke_plan.py",
+    "tests/test_phase4l_profile_segment_template_staging_smoke_plan.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
