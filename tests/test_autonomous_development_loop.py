@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#661"
+    assert data["last_merged_pr"] == "#662"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -49,9 +49,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bc_tasks_fixture_native_contract_planning_completed" in set(data["completed_steps"])
     assert "phase_4bd_tasks_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
     assert "phase_4be_agents_metadata_planning_completed" in set(data["completed_steps"])
+    assert "phase_4bf_agents_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4bf_agents_only() -> None:
+def test_next_allowed_actions_are_phase_4bg_agents_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -211,6 +212,8 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["agent_run_execution_excluded"] is True
     assert readiness["llm_generation_excluded"] is True
     assert readiness["deepseek_adapter_excluded"] is True

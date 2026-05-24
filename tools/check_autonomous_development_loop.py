@@ -36,7 +36,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bf_agents_schema_route_surface_confirmation",
+    "phase_4bg_agents_fixture_native_contract_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -60,6 +60,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bc_tasks_fixture_native_contract_planning_completed",
     "phase_4bd_tasks_fixture_native_implementation_owner_decision_completed",
     "phase_4be_agents_metadata_planning_completed",
+    "phase_4bf_agents_schema_route_surface_confirmation_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -256,8 +257,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/agents* after tasks pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#661":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #661")
+    if state.get("last_merged_pr") != "#662":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #662")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -483,6 +484,8 @@ def build_report() -> dict[str, Any]:
         "metadata_planning_ready",
         "metadata_planning_completed",
         "schema_route_surface_confirmation_ready",
+        "schema_route_surface_confirmed",
+        "fixture_native_contract_planning_ready",
         "agent_run_execution_excluded",
         "llm_generation_excluded",
         "deepseek_adapter_excluded",
@@ -492,7 +495,6 @@ def build_report() -> dict[str, Any]:
         if agents_readiness.get(field) is not True:
             blockers.append(f"agents_readiness.{field} must be true")
     for field in (
-        "fixture_native_contract_planning_ready",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
         "runtime_implementation_ready",
