@@ -93,8 +93,13 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4i_profile_segment_template_repository_adapter.md",
     "docs/development/phase_4j_profile_segment_template_parity_smoke_plan.md",
     "docs/development/phase_4j_profile_segment_template_parity_smoke_plan.yaml",
+    "docs/development/phase_4k_profile_segment_template_local_parity_harness.md",
+    "docs/development/phase_4k_profile_segment_template_local_parity_harness.yaml",
     "tests/test_phase4i_profile_segment_template_repository_adapter.py",
     "tests/test_phase4j_profile_segment_template_parity_smoke_plan.py",
+    "tests/test_phase4k_profile_segment_template_local_parity_harness.py",
+    "tools/run_phase4k_profile_segment_template_local_parity.py",
+    "tools/check_phase4k_profile_segment_template_local_parity_harness.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
