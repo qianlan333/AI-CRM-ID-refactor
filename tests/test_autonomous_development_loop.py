@@ -22,17 +22,19 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/action-templates*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#641"
+    assert data["last_merged_pr"] == "#644"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     data = checker.load_yaml(STATE)
     assert "phase_4al_staging_execution_readiness_gate_completed" in set(data["completed_steps"])
+    assert "action_templates_staging_owner_decision_package_created" in set(data["completed_steps"])
+    assert "phase_4an_task_groups_native_contract_planning_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4am_only() -> None:
+def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -66,6 +68,28 @@ def test_action_templates_not_ready_for_production_switch_or_write() -> None:
     assert readiness["production_write_ready"] is False
     assert readiness["fallback_removal_ready"] is False
     assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["paused"] is True
+    assert readiness["paused_by_pr"] == "#644"
+    assert readiness["owner_decision_required"] is True
+
+
+def test_action_templates_paused_and_task_groups_not_ready_for_production() -> None:
+    data = checker.load_yaml(STATE)
+    paused = data["paused_candidates"]
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/action-templates*"
+        and item["paused_by_pr"] == "#644"
+        and item["owner_approval_required"] is True
+        for item in paused
+    )
+    readiness = data["task_groups_readiness"]
+    assert readiness["native_contract_planning_started"] is True
+    assert readiness["native_contract_planning_completed"] is True
+    assert readiness["production_owner_switch_ready"] is False
+    assert readiness["production_write_ready"] is False
+    assert readiness["fallback_removal_ready"] is False
+    assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["delete_ready"] is False
 
 
 def test_stop_conditions_complete() -> None:

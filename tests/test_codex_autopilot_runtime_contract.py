@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "bounded low-risk work package" in prompt_text
     assert "10-13 minutes" in prompt_text
-    assert "phase_4am_approval_config_closure" in prompt_text
+    assert "phase_4ao_task_groups_schema_route_surface_confirmation" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -84,6 +84,24 @@ def test_runner_treats_phase4am_owner_decision_artifacts_as_policy_files() -> No
         "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
         "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tests/test_phase4am_action_templates_staging_owner_decision_package.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4an_task_groups_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4an_task_groups_native_contract_plan.md",
+        "docs/development/phase_4an_task_groups_native_contract_plan.yaml",
+        "tools/check_phase4an_task_groups_native_contract_plan.py",
+        "tests/test_phase4an_task_groups_native_contract_plan.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 

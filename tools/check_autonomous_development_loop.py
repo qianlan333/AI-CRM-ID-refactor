@@ -27,15 +27,18 @@ REQUIRED_STATE_FIELDS = {
     "next_allowed_actions",
     "forbidden_without_owner_approval",
     "action_templates_readiness",
+    "paused_candidates",
+    "task_groups_readiness",
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4am_staging_execution",
-    "phase_4am_approval_config_closure",
-    "phase_4am_blocked_evidence_review",
+    "phase_4ao_task_groups_schema_route_surface_confirmation",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
+    "action_templates_staging_approval_config_closure_package_created",
+    "action_templates_staging_owner_decision_package_created",
+    "phase_4an_task_groups_native_contract_planning_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -189,7 +192,12 @@ def _run_git(args: list[str]) -> tuple[bool, str, str]:
 
 def _changed_files() -> set[str]:
     changed: set[str] = set()
-    for args in (["diff", "--name-only", "origin/main...HEAD"], ["diff", "--name-only", "--cached"], ["ls-files", "--others", "--exclude-standard"]):
+    for args in (
+        ["diff", "--name-only", "origin/main...HEAD"],
+        ["diff", "--name-only"],
+        ["diff", "--name-only", "--cached"],
+        ["ls-files", "--others", "--exclude-standard"],
+    ):
         ok, stdout, _ = _run_git(args)
         if ok:
             changed.update(line.strip() for line in stdout.splitlines() if line.strip())
@@ -223,12 +231,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/action-templates*":
-        blockers.append("active_candidate must remain /api/admin/automation-conversion/action-templates*")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/task-groups* after action-templates pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#641":
-        blockers.append("last_merged_pr must record latest completed autopilot low-risk PR #641")
+    if state.get("last_merged_pr") != "#644":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #644")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -284,6 +292,37 @@ def build_report() -> dict[str, Any]:
     for field in ("production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready"):
         if readiness.get(field) is not False:
             blockers.append(f"action_templates_readiness must not declare {field}")
+    if readiness.get("paused") is not True:
+        blockers.append("action_templates_readiness.paused must be true after owner decision package #644")
+    if readiness.get("paused_by_pr") != "#644":
+        blockers.append("action_templates_readiness.paused_by_pr must be #644")
+    if readiness.get("owner_decision_required") is not True:
+        blockers.append("action_templates_readiness.owner_decision_required must be true")
+
+    paused_candidates = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/action-templates*"
+        and item.get("paused_by_pr") == "#644"
+        and item.get("owner_approval_required") is True
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must include action-templates awaiting owner decision from #644")
+
+    task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
+    if task_groups_readiness.get("native_contract_planning_started") is not True:
+        blockers.append("task_groups_readiness.native_contract_planning_started must be true")
+    if task_groups_readiness.get("native_contract_planning_completed") is not True:
+        blockers.append("task_groups_readiness.native_contract_planning_completed must be true")
+    for field in (
+        "production_owner_switch_ready",
+        "production_write_ready",
+        "fallback_removal_ready",
+        "production_repository_route_enablement_ready",
+        "delete_ready",
+    ):
+        if task_groups_readiness.get(field) is not False:
+            blockers.append(f"task_groups_readiness.{field} must be false")
 
     changed = _changed_files()
     runtime_changed = [
