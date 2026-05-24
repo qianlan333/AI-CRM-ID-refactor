@@ -100,8 +100,12 @@ PROTECTED_SUBSTRINGS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4a_internal_write_candidate_selection.md",
     "docs/development/phase_4a_internal_write_candidate_selection.yaml",
+    "docs/development/phase_4b_profile_segment_template_implementation_plan.md",
+    "docs/development/phase_4b_profile_segment_template_implementation_plan.yaml",
     "tools/check_phase4a_internal_write_candidate_selection.py",
+    "tools/check_phase4b_profile_segment_template_plan.py",
     "tests/test_phase4a_internal_write_candidate_selection.py",
+    "tests/test_phase4b_profile_segment_template_plan.py",
 }
 
 
