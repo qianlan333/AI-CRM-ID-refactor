@@ -57,6 +57,11 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
     "tools/check_phase4af_action_templates_local_parity_harness.py",
     "tools/check_phase4ae_action_templates_native_fixture_contract.py",
+    "tools/run_phase4ai_action_templates_test_db_parity.py",
+    "docs/development/phase_4ai_action_templates_test_db_parity.md",
+    "docs/development/phase_4ai_action_templates_test_db_parity.yaml",
+    "tools/check_phase4ai_action_templates_test_db_parity.py",
+    "tests/test_phase4ai_action_templates_test_db_parity.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
