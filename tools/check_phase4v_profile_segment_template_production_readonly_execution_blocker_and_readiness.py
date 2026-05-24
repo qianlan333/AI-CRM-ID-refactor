@@ -90,6 +90,10 @@ ALLOWED_CHANGED_FILES = {
     "tools/run_phase4y_profile_segment_template_production_readonly_preflight.py",
     "tools/check_phase4y_profile_segment_template_production_readonly_preflight.py",
     "tests/test_phase4y_profile_segment_template_production_readonly_preflight.py",
+    "docs/development/phase_4z_profile_segment_template_approval_wait_and_next_candidate.md",
+    "docs/development/phase_4z_profile_segment_template_approval_wait_and_next_candidate.yaml",
+    "tools/check_phase4z_profile_segment_template_approval_wait_and_next_candidate.py",
+    "tests/test_phase4z_profile_segment_template_approval_wait_and_next_candidate.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
