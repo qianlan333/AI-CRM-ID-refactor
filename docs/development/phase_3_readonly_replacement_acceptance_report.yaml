@@ -1,0 +1,173 @@
+version: 1
+status: acceptance_report_only_no_runtime_change
+routes:
+  - phase: phase_3a_sidebar_readonly
+    route_pattern: /api/sidebar/contact-binding-status
+    method: GET
+    capability_owner: aicrm_next.identity_contact
+    endpoint_module: aicrm_next.identity_contact.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3_sidebar_readonly_replacement.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current sidebar binding-status daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3A sidebar readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3a_sidebar_readonly
+    route_pattern: /api/sidebar/customer-context
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3_sidebar_readonly_replacement.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current sidebar customer-context daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3A sidebar readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3b_customer_profile_readonly
+    route_pattern: /api/admin/customers/profile
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3b_customer_profile_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer profile daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3B customer profile readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3b_customer_profile_readonly
+    route_pattern: /api/admin/customers/profile/tags
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3b_customer_profile_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer profile tags daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3B customer profile readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3c_customer_read_model_readonly
+    route_pattern: /api/customers
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3c_customer_read_model_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer list daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3C customer read-model readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3c_customer_read_model_readonly
+    route_pattern: /api/customers/{external_userid}
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3c_customer_read_model_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer detail daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3C customer read-model readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3c_customer_read_model_readonly
+    route_pattern: /api/customers/{external_userid}/timeline
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly
+    production_behavior: readonly_facade
+    checker: tools/check_phase3c_customer_read_model_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer timeline daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3C customer read-model readonly PR; route registration and legacy fallback remain available.
+  - phase: phase_3d_recent_messages_readonly
+    route_pattern: /api/messages/{external_userid}/recent
+    method: GET
+    capability_owner: aicrm_next.customer_read_model
+    endpoint_module: aicrm_next.customer_read_model.api
+    category: readonly_customer_archive
+    production_behavior: readonly_facade
+    checker: tools/check_phase3d_recent_messages_readonly.py
+    legacy_fallback_retained: true
+    production_compat_unchanged: true
+    delete_ready: false
+    exact_next_owner_required: true
+    compatibility_facade_header_allowed: false
+    production_unavailable_must_degrade: true
+    fixture_success_blocked: true
+    real_external_calls_allowed: false
+    business_continuity_requirement: Keep current customer recent messages daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    rollback: Revert Phase 3D recent messages readonly PR; route registration and legacy fallback remain available.
+next_candidates:
+  - route_pattern: /admin
+    category: shell_or_navigation
+    recommendation: evaluate_only
+    reason: Low-risk shell/navigation candidate with no direct external side effect; still daily-business-critical and must keep fallback until parity, checker, smoke, rollback, and owner approval are complete.
+    excluded_side_effects: [write, payment, oauth, wecom, archive_sync, timer, automation_execution]
+  - route_pattern: /admin/customers
+    category: shell_or_navigation
+    recommendation: evaluate_only
+    reason: Customer admin shell/navigation candidate; touches daily customer operations, so fallback must remain until parity, checker, smoke, rollback, and owner approval are complete.
+    excluded_side_effects: [write, payment, oauth, wecom, archive_sync, timer, automation_execution]
+  - route_pattern: /sidebar/bind-mobile
+    category: shell_or_navigation
+    recommendation: evaluate_only
+    reason: Readonly shell/page candidate, but adjacent bind-mobile write API remains out of scope; fallback must remain until parity, checker, smoke, rollback, and owner approval are complete.
+    excluded_side_effects: [write, payment, oauth, wecom, archive_sync, timer, automation_execution]
+  - route_pattern: /admin/questionnaires
+    category: readonly_admin_page
+    recommendation: evaluate_only
+    reason: Admin questionnaire page can be evaluated as readonly navigation; submit, OAuth, public H5 write, and diagnostics write paths are explicitly excluded.
+    excluded_side_effects: [questionnaire_submit, oauth, write, payment, wecom, timer, automation_execution]
+  - route_pattern: Payment / OAuth / WeCom / media upload / timer / automation execution
+    category: defer
+    recommendation: defer
+    reason: These route families include external side effects, upload, write, timer, or automation execution risk and must remain outside Phase 3 acceptance scope.
+    excluded_side_effects: [payment, oauth, wecom, media_upload, timer, automation_execution, archive_sync]
