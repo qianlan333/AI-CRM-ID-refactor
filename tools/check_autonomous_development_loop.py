@@ -37,7 +37,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bj_agent_outputs_schema_route_surface_confirmation",
+    "phase_4bk_agent_outputs_fixture_native_contract_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -65,6 +65,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bg_agents_fixture_native_contract_planning_completed",
     "phase_4bh_agents_fixture_native_implementation_owner_decision_completed",
     "phase_4bi_agent_outputs_metadata_planning_completed",
+    "phase_4bj_agent_outputs_schema_route_surface_confirmation_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -261,8 +262,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-outputs* after agents pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#665":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #665")
+    if state.get("last_merged_pr") != "#666":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #666")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -528,6 +529,8 @@ def build_report() -> dict[str, Any]:
         "metadata_planning_ready",
         "metadata_planning_completed",
         "schema_route_surface_confirmation_ready",
+        "schema_route_surface_confirmed",
+        "fixture_native_contract_planning_ready",
         "export_job_creation_excluded",
         "file_download_excluded",
         "agent_run_execution_excluded",
@@ -537,7 +540,6 @@ def build_report() -> dict[str, Any]:
         if agent_outputs_readiness.get(field) is not True:
             blockers.append(f"agent_outputs_readiness.{field} must be true")
     for field in (
-        "fixture_native_contract_planning_ready",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
         "runtime_implementation_ready",
