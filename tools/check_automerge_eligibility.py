@@ -47,6 +47,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.yaml",
         "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.md",
         "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.yaml",
+        "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.md",
+        "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
@@ -57,6 +59,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4an_task_groups_native_contract_plan.py",
         "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
         "tools/check_phase4ap_task_groups_fixture_native_contract_plan.py",
+        "tools/check_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -65,6 +68,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4an_task_groups_native_contract_plan.py",
         "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
         "tests/test_phase4ap_task_groups_fixture_native_contract_plan.py",
+        "tests/test_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
 PROTECTED_EXACT = {

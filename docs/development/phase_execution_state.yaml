@@ -8,13 +8,13 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/task-groups*
+active_candidate: /api/admin/automation-conversion/workflows*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#646"
-last_attempted_action: phase_4ap_task_groups_fixture_native_contract_planning
-last_created_pr: "#647"
-recommended_next_pr: phase_4aq_task_groups_fixture_native_implementation_owner_decision
-owner_approval_required: true
+last_merged_pr: "#647"
+last_attempted_action: phase_4aq_task_groups_fixture_native_implementation_owner_decision
+last_created_pr: "#648"
+recommended_next_pr: phase_4ar_workflows_metadata_planning
+owner_approval_required: false
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -44,9 +44,10 @@ completed_steps:
   - phase_4an_task_groups_native_contract_planning_completed
   - phase_4ao_task_groups_schema_route_surface_confirmation_completed
   - phase_4ap_task_groups_fixture_native_contract_planning_completed
+  - phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed
 
 next_allowed_actions:
-  - phase_4aq_task_groups_fixture_native_implementation_owner_decision
+  - phase_4ar_workflows_metadata_planning
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -78,6 +79,11 @@ paused_candidates:
     paused_by_pr: "#644"
     owner_approval_required: true
     resume_condition: staging_approval_config_complete
+  - route_family: /api/admin/automation-conversion/task-groups*
+    status: awaiting_fixture_native_runtime_owner_decision
+    paused_by_pr: "#648"
+    owner_approval_required: true
+    resume_condition: explicit_owner_approval_for_fixture_native_runtime_implementation
 
 task_groups_readiness:
   native_contract_planning_started: true
@@ -86,6 +92,15 @@ task_groups_readiness:
   fixture_native_contract_planning_ready: true
   fixture_native_contract_planning_completed: true
   fixture_native_implementation_requires_owner_decision: true
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_repository_route_enablement_ready: false
+  delete_ready: false
+
+workflows_readiness:
+  metadata_planning_ready: true
+  runtime_implementation_ready: false
   production_owner_switch_ready: false
   production_write_ready: false
   fallback_removal_ready: false

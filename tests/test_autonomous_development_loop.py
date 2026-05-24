@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#646"
+    assert data["last_merged_pr"] == "#647"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -34,6 +34,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4an_task_groups_native_contract_planning_completed" in set(data["completed_steps"])
     assert "phase_4ao_task_groups_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
     assert "phase_4ap_task_groups_fixture_native_contract_planning_completed" in set(data["completed_steps"])
+    assert "phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
@@ -84,6 +85,12 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
         and item["owner_approval_required"] is True
         for item in paused
     )
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/task-groups*"
+        and item["owner_approval_required"] is True
+        and str(item["paused_by_pr"]).strip()
+        for item in paused
+    )
     readiness = data["task_groups_readiness"]
     assert readiness["native_contract_planning_started"] is True
     assert readiness["native_contract_planning_completed"] is True
@@ -91,6 +98,18 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
     assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is True
+    assert readiness["production_owner_switch_ready"] is False
+    assert readiness["production_write_ready"] is False
+    assert readiness["fallback_removal_ready"] is False
+    assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["delete_ready"] is False
+
+
+def test_workflows_selected_for_next_metadata_planning_without_production_readiness() -> None:
+    data = checker.load_yaml(STATE)
+    readiness = data["workflows_readiness"]
+    assert readiness["metadata_planning_ready"] is True
+    assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
     assert readiness["fallback_removal_ready"] is False

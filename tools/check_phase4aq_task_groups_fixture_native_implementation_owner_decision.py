@@ -9,27 +9,14 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.md"
-PLAN_YAML = ROOT / "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.yaml"
+DOC = ROOT / "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.md"
+PLAN_YAML = ROOT / "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 BACKLOG = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 
-ROUTE = "/api/admin/automation-conversion/task-groups*"
-MAIN_TABLE = "automation_operation_task_group"
-RELATED_TABLE = "automation_operation_task"
-REQUIRED_LEGACY_METHODS = {"GET", "POST", "PUT", "DELETE"}
-REQUIRED_COLUMNS = {
-    "id",
-    "program_id",
-    "group_name",
-    "sort_order",
-    "created_by",
-    "updated_by",
-    "created_at",
-    "updated_at",
-    "archived_at",
-}
+TASK_GROUPS = "/api/admin/automation-conversion/task-groups*"
+WORKFLOWS = "/api/admin/automation-conversion/workflows*"
 AUTH_FALSE_FIELDS = {
     "runtime_implementation_authorized",
     "staging_smoke_execution_authorized",
@@ -46,60 +33,48 @@ AUTH_FALSE_FIELDS = {
     "canary_approval_authorized",
     "delete_ready",
 }
-EXCLUDED_TRUE_FIELDS = {
-    "tasks_route_family",
-    "run_due",
-    "task_activate_pause_copy",
-    "preview_audience",
-    "workflow_execution",
-    "timer_execution",
-    "outbound_send",
-    "real_external_call",
-    "production_write",
-    "production_route_switch",
-    "fallback_removal",
-    "production_compat_change",
+REQUIRED_DECISIONS = {
+    "approve_or_decline_task_groups_fixture_native_runtime_implementation",
+    "confirm_list_create_only_scope",
+    "confirm_update_delete_archive_deferred",
+    "confirm_production_fixture_success_blocked",
+    "confirm_idempotency_audit_rollback_required",
+    "confirm_dangerous_field_rejection_required",
+}
+REQUIRED_GUARDRAILS = {
+    "planning_only",
+    "metadata_only_subset",
+    "no_runtime_implementation",
+    "no_workflow_execution",
+    "no_timer_execution",
+    "no_outbound_send",
+    "no_external_calls",
+    "keep_legacy_fallback",
+    "no_production_owner_switch",
+    "no_production_write",
 }
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml",
-    "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.md",
-    "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.yaml",
-    "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.md",
-    "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
-    "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tools/check_phase4ap_task_groups_fixture_native_contract_plan.py",
+    "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tools/check_phase4an_task_groups_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
-    "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tests/test_phase4ap_task_groups_fixture_native_contract_plan.py",
+    "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tests/test_phase4an_task_groups_native_contract_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
 }
-PROTECTED_PREFIXES = (
-    "aicrm_next/",
-    "wecom_ability_service/",
-    "migrations/",
-    "deploy/",
-    "systemd/",
-    "nginx/",
-)
+PROTECTED_PREFIXES = ("aicrm_next/", "wecom_ability_service/", "migrations/", "deploy/", "systemd/", "nginx/")
 PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
-FORBIDDEN_DOC_CLAIMS = {
-    "production_ready",
-    "delete_ready true",
-    "delete_ready: true",
-    "canary_approved",
-    "canary approved",
-    "route_switch_ready=true",
-}
+FORBIDDEN_DOC_CLAIMS = {"production_ready", "delete_ready true", "delete_ready: true", "canary_approved", "canary approved", "route_switch_ready=true"}
 
 
 def _parse_scalar(value: str) -> Any:
@@ -211,11 +186,7 @@ def _run_git(args: list[str]) -> tuple[bool, str, str]:
 def _changed_files() -> tuple[set[str], list[str]]:
     changed: set[str] = set()
     warnings: list[str] = []
-    for args in (
-        ["diff", "--name-only", "origin/main...HEAD"],
-        ["diff", "--name-only"],
-        ["diff", "--name-only", "--cached"],
-    ):
+    for args in (["diff", "--name-only", "origin/main...HEAD"], ["diff", "--name-only"], ["diff", "--name-only", "--cached"]):
         ok, stdout, stderr = _run_git(args)
         if ok:
             changed.update(line.strip() for line in stdout.splitlines() if line.strip())
@@ -243,91 +214,60 @@ def build_report() -> dict[str, Any]:
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
 
-    if data.get("status") != "phase_4ao_task_groups_schema_route_surface_confirmation_no_runtime_change":
-        blockers.append("status must be phase_4ao_task_groups_schema_route_surface_confirmation_no_runtime_change")
-    if data.get("route_family") != ROUTE:
-        blockers.append("route_family must be task-groups wildcard")
-    if ROUTE not in manifest_text or ROUTE not in backlog_text:
-        blockers.append("task-groups route must exist in manifest and backlog")
-    if data.get("current_runtime_owner") != "production_compat":
-        blockers.append("current_runtime_owner must remain production_compat")
-    if data.get("production_behavior") != "legacy_forward":
-        blockers.append("production_behavior must remain legacy_forward")
-    if data.get("legacy_fallback_retained") is not True:
-        blockers.append("legacy_fallback_retained must be true")
-    if data.get("fixture_allowed_in_production") is not False:
-        blockers.append("fixture_allowed_in_production must be false")
+    if data.get("status") != "phase_4aq_task_groups_fixture_native_implementation_owner_decision_no_runtime_change":
+        blockers.append("status must be Phase 4AQ owner decision no runtime change")
+    package = data.get("decision_package") if isinstance(data.get("decision_package"), dict) else {}
+    if package.get("runtime_implementation_included") is not False or package.get("docs_tools_tests_state_only") is not True:
+        blockers.append("decision_package must be docs/tools/tests/state only with no runtime implementation")
 
-    previous = data.get("previous_phase") if isinstance(data.get("previous_phase"), dict) else {}
-    if previous.get("merged_pr") != "#645" or previous.get("completed") is not True:
-        blockers.append("previous_phase must record Phase 4AN merged in #645")
+    paused = data.get("paused_candidate") if isinstance(data.get("paused_candidate"), dict) else {}
+    if paused.get("route_family") != TASK_GROUPS or paused.get("owner_approval_required") is not True:
+        blockers.append("task-groups paused candidate must require owner approval")
+    if paused.get("current_runtime_owner") != "production_compat" or paused.get("production_behavior") != "legacy_forward":
+        blockers.append("task-groups production owner must remain legacy-forwarded")
 
-    surface = data.get("confirmed_route_surface") if isinstance(data.get("confirmed_route_surface"), dict) else {}
-    production_patterns = set(surface.get("production_compat_patterns") or [])
-    if "/api/admin/automation-conversion/task-groups" not in production_patterns:
-        blockers.append("production_compat task-groups base pattern missing")
-    if "/api/admin/automation-conversion/task-groups/wildcard_path" not in production_patterns:
-        blockers.append("production_compat task-groups wildcard pattern missing")
-    methods = {str(item.get("method")) for item in surface.get("legacy_registered_routes") or [] if isinstance(item, dict)}
-    if methods != REQUIRED_LEGACY_METHODS:
-        blockers.append(f"legacy registered methods must be exactly {sorted(REQUIRED_LEGACY_METHODS)}")
+    if not REQUIRED_DECISIONS <= set(data.get("owner_decision_required") or []):
+        blockers.append("owner_decision_required list incomplete")
 
-    schema = data.get("confirmed_schema") if isinstance(data.get("confirmed_schema"), dict) else {}
-    if schema.get("main_table") != MAIN_TABLE:
-        blockers.append("confirmed_schema.main_table must be automation_operation_task_group")
-    if not REQUIRED_COLUMNS <= set(schema.get("columns") or []):
-        blockers.append("confirmed_schema.columns incomplete")
-    if "idx_automation_operation_task_group_program" not in set(schema.get("index") or []):
-        blockers.append("confirmed_schema.index missing idx_automation_operation_task_group_program")
-    if RELATED_TABLE not in set(schema.get("related_tables") or []):
-        blockers.append("confirmed_schema.related_tables must include automation_operation_task")
-    relationship = schema.get("relationship_behavior") if isinstance(schema.get("relationship_behavior"), dict) else {}
-    if relationship.get("delete_contract") != "archive_group_and_ungroup_tasks":
-        blockers.append("delete contract must be archive_group_and_ungroup_tasks")
-
-    contract = data.get("confirmed_contract") if isinstance(data.get("confirmed_contract"), dict) else {}
-    if contract.get("list", {}).get("archived_groups_excluded_by_default") is not True:
-        blockers.append("list contract must exclude archived groups by default")
-    if contract.get("create", {}).get("success_status") != 201:
-        blockers.append("create.success_status must be 201")
-    if "group_name" not in set(contract.get("create", {}).get("required_payload") or []):
-        blockers.append("create.required_payload must include group_name")
-    if contract.get("delete", {}).get("behavior") != "archive_group_and_ungroup_tasks":
-        blockers.append("delete behavior must be archive_group_and_ungroup_tasks")
-
-    if set(data.get("recommended_first_native_subset") or []) != {"list_task_groups", "create_task_group"}:
-        blockers.append("recommended_first_native_subset must be list/create only")
-    if not {"update_task_group", "delete_or_archive_task_group", "task_routes", "run_due"} <= set(data.get("deferred_to_separate_pr") or []):
-        blockers.append("deferred_to_separate_pr incomplete")
+    candidate = data.get("next_candidate") if isinstance(data.get("next_candidate"), dict) else {}
+    if candidate.get("selected_route_family") != WORKFLOWS:
+        blockers.append("next_candidate must select workflows route family")
+    if candidate.get("replacement_phase") != "phase_4_internal_write" or candidate.get("replacement_category") != "internal_write":
+        blockers.append("next_candidate must remain Phase 4 internal_write")
+    if WORKFLOWS not in manifest_text or WORKFLOWS not in backlog_text:
+        blockers.append("workflows route must exist in manifest and backlog")
+    if not REQUIRED_GUARDRAILS <= set(candidate.get("required_guardrails") or []):
+        blockers.append("next_candidate.required_guardrails incomplete")
 
     authorizations = data.get("authorizations") if isinstance(data.get("authorizations"), dict) else {}
-    for field in sorted(AUTH_FALSE_FIELDS):
+    for field in AUTH_FALSE_FIELDS:
         if authorizations.get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
 
-    excluded = data.get("excluded_scope") if isinstance(data.get("excluded_scope"), dict) else {}
-    for field in sorted(EXCLUDED_TRUE_FIELDS):
-        if excluded.get(field) is not True:
-            blockers.append(f"excluded_scope.{field} must be true")
-
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state_update.get("phase_4ao_completed_step") not in set(state.get("completed_steps") or []):
-        blockers.append("phase_execution_state.completed_steps must include Phase 4AO completed step")
-    readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
-    if readiness.get("schema_route_surface_confirmed") is not True:
-        blockers.append("task_groups_readiness.schema_route_surface_confirmed must be true")
-    if readiness.get("fixture_native_contract_planning_ready") is not True:
-        blockers.append("task_groups_readiness.fixture_native_contract_planning_ready must be true")
-    for field in ("production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
-        if readiness.get(field) is not False:
-            blockers.append(f"task_groups_readiness.{field} must be false")
+    for field in ("active_candidate", "last_merged_pr", "last_attempted_action", "recommended_next_pr", "owner_approval_required"):
+        if state.get(field) != state_update.get(field):
+            blockers.append(f"phase_execution_state.{field} must match Phase 4AQ plan")
+    if state_update.get("phase_4aq_completed_step") not in set(state.get("completed_steps") or []):
+        blockers.append("phase_execution_state.completed_steps must include Phase 4AQ completed step")
+    if set(state.get("next_allowed_actions") or []) != {"phase_4ar_workflows_metadata_planning"}:
+        blockers.append("next_allowed_actions must advance to Phase 4AR workflows planning")
+    paused_state = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
+    if not any(isinstance(item, dict) and item.get("route_family") == TASK_GROUPS and item.get("owner_approval_required") is True for item in paused_state):
+        blockers.append("phase_execution_state.paused_candidates must include task-groups owner decision pause")
+    workflows = state.get("workflows_readiness") if isinstance(state.get("workflows_readiness"), dict) else {}
+    if workflows.get("metadata_planning_ready") is not True:
+        blockers.append("workflows_readiness.metadata_planning_ready must be true")
+    for field in ("runtime_implementation_ready", "production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
+        if workflows.get(field) is not False:
+            blockers.append(f"workflows_readiness.{field} must be false")
 
-    rec = data.get("phase_4ap_recommendation") if isinstance(data.get("phase_4ap_recommendation"), dict) else {}
-    if rec.get("recommended_next_step") != "task_groups_fixture_native_contract_planning":
-        blockers.append("phase_4ap_recommendation must recommend fixture/native contract planning")
+    rec = data.get("phase_4ar_recommendation") if isinstance(data.get("phase_4ar_recommendation"), dict) else {}
+    if rec.get("recommended_next_step") != "workflows_metadata_planning":
+        blockers.append("phase_4ar_recommendation must recommend workflows metadata planning")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4ap_recommendation.{field} must be false")
+            blockers.append(f"phase_4ar_recommendation.{field} must be false")
 
     doc_text = DOC.read_text(encoding="utf-8").lower()
     for phrase in sorted(FORBIDDEN_DOC_CLAIMS):
@@ -338,36 +278,19 @@ def build_report() -> dict[str, Any]:
     warnings.extend(git_warnings)
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
     if unexpected:
-        blockers.append(f"unexpected changed files for Phase 4AO package: {unexpected}")
+        blockers.append(f"unexpected changed files for Phase 4AQ package: {unexpected}")
     protected = sorted(path for path in changed if path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES))
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
 
-    return {
-        "overall": "PASS" if not blockers else "FAIL",
-        "ok": not blockers,
-        "blockers": blockers,
-        "warnings": warnings,
-        "details": {"changed_files": sorted(changed)},
-    }
+    return {"overall": "PASS" if not blockers else "FAIL", "ok": not blockers, "blockers": blockers, "warnings": warnings, "details": {"changed_files": sorted(changed)}}
 
 
 def _write_outputs(report: dict[str, Any], output_json: str | None, output_md: str | None) -> None:
     if output_json:
         Path(output_json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if output_md:
-        lines = [
-            "# Phase 4AO Task Groups Schema Route Surface Check",
-            "",
-            f"- overall: {report['overall']}",
-            f"- ok: {str(report['ok']).lower()}",
-            "",
-            "## Blockers",
-            *(f"- {item}" for item in report["blockers"]),
-            "",
-            "## Warnings",
-            *(f"- {item}" for item in report["warnings"]),
-        ]
+        lines = ["# Phase 4AQ Task Groups Owner Decision Check", "", f"- overall: {report['overall']}", f"- ok: {str(report['ok']).lower()}", "", "## Blockers", *(f"- {item}" for item in report["blockers"]), "", "## Warnings", *(f"- {item}" for item in report["warnings"])]
         Path(output_md).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

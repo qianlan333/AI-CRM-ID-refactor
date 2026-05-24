@@ -52,14 +52,9 @@ def test_high_risk_authorizations_and_side_effects_are_false() -> None:
         assert data["side_effect_safety"][field] is False
 
 
-def test_phase_execution_state_advances_to_phase_4aq_owner_decision() -> None:
+def test_phase_execution_state_keeps_phase_4ap_completed_after_later_progress() -> None:
     state = checker.load_yaml(STATE)
-    assert state["last_merged_pr"] == "#646"
-    assert state["last_attempted_action"] == "phase_4ap_task_groups_fixture_native_contract_planning"
-    assert state["recommended_next_pr"] == "phase_4aq_task_groups_fixture_native_implementation_owner_decision"
-    assert state["owner_approval_required"] is True
     assert "phase_4ap_task_groups_fixture_native_contract_planning_completed" in state["completed_steps"]
-    assert state["next_allowed_actions"] == ["phase_4aq_task_groups_fixture_native_implementation_owner_decision"]
     readiness = state["task_groups_readiness"]
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is True
