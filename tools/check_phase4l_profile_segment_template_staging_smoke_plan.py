@@ -84,6 +84,10 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4j_profile_segment_template_parity_smoke_plan.py",
     "tools/check_phase4i_profile_segment_template_repository_adapter.py",
     "tools/check_phase4h_profile_segment_template_companion_migration.py",
+    "docs/development/phase_4n_profile_segment_template_staging_smoke_approval.md",
+    "docs/development/phase_4n_profile_segment_template_staging_smoke_approval.yaml",
+    "tools/check_phase4n_profile_segment_template_staging_smoke_approval.py",
+    "tests/test_phase4n_profile_segment_template_staging_smoke_approval.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
