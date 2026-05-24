@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#654"
+    assert data["last_merged_pr"] == "#655"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -42,6 +42,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4av_workflow_nodes_metadata_planning_completed" in set(data["completed_steps"])
     assert "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
     assert "phase_4ax_workflow_nodes_fixture_native_contract_planning_completed" in set(data["completed_steps"])
+    assert "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
@@ -138,12 +139,23 @@ def test_workflows_selected_for_next_metadata_planning_without_production_readin
 def test_workflow_nodes_selected_for_metadata_planning_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
     assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/workflow-nodes*"
+        and item["owner_approval_required"] is True
+        and str(item["paused_by_pr"]).strip()
+        for item in data["paused_candidates"]
+    )
     readiness = data["workflow_nodes_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness["fixture_native_contract_planning_completed"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
+    assert readiness["owner_decision_required"] is True
+    assert readiness["paused"] is True
+    assert str(readiness["paused_by_pr"]).strip()
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False

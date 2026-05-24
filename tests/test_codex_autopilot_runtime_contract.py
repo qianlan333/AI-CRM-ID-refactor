@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "bounded low-risk work package" in prompt_text
     assert "10-13 minutes" in prompt_text
-    assert "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision" in prompt_text
+    assert "phase_4az_next_internal_write_candidate_selection" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -282,6 +282,24 @@ def test_runner_treats_phase4ax_workflow_nodes_fixture_contract_artifacts_as_pol
         "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.yaml",
         "tools/check_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
         "tests/test_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4ay_workflow_nodes_owner_decision_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.md",
+        "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.yaml",
+        "tools/check_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
+        "tests/test_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 

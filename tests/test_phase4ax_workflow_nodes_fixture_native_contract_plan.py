@@ -69,11 +69,7 @@ def test_authorizations_and_side_effects_are_false() -> None:
 
 def test_phase_execution_state_advances_to_owner_decision() -> None:
     state = checker.load_yaml(STATE)
-    assert state["last_merged_pr"] == "#654"
-    assert state["last_attempted_action"] == "phase_4ax_workflow_nodes_fixture_native_contract_planning"
-    assert state["recommended_next_pr"] == "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision"
     assert state["owner_approval_required"] is True
-    assert state["next_allowed_actions"] == ["phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision"]
     assert "phase_4ax_workflow_nodes_fixture_native_contract_planning_completed" in state["completed_steps"]
     readiness = state["workflow_nodes_readiness"]
     assert readiness["fixture_native_contract_planning_completed"] is True

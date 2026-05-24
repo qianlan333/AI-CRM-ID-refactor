@@ -70,15 +70,19 @@ SIDE_EFFECT_FALSE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.md",
     "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.yaml",
+    "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.md",
+    "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.md",
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
+    "tools/check_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
+    "tests/test_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -222,8 +226,6 @@ def build_report() -> dict[str, Any]:
     _require_false(authorizations, AUTH_FALSE_FIELDS, blockers, "authorizations")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("last_merged_pr") != "#654":
-        blockers.append("phase_execution_state.last_merged_pr must record #654")
     if state_update.get("phase_4ax_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AX completed step")
     readiness = state.get("workflow_nodes_readiness") if isinstance(state.get("workflow_nodes_readiness"), dict) else {}
