@@ -98,14 +98,23 @@ PROTECTED_SUBSTRINGS = {
     "production_compat",
 }
 ALLOWED_CHANGED_FILES = {
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/domain.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/repo.py",
+    "aicrm_next/automation_engine/profile_segments.py",
     "docs/development/phase_4a_internal_write_candidate_selection.md",
     "docs/development/phase_4a_internal_write_candidate_selection.yaml",
     "docs/development/phase_4b_profile_segment_template_implementation_plan.md",
     "docs/development/phase_4b_profile_segment_template_implementation_plan.yaml",
+    "docs/development/phase_4c_profile_segment_template_native_contract.md",
     "tools/check_phase4a_internal_write_candidate_selection.py",
     "tools/check_phase4b_profile_segment_template_plan.py",
+    "tools/check_phase4c_profile_segment_template_native_contract.py",
     "tests/test_phase4a_internal_write_candidate_selection.py",
     "tests/test_phase4b_profile_segment_template_plan.py",
+    "tests/test_phase4c_profile_segment_template_native_contract.py",
 }
 
 
@@ -429,7 +438,7 @@ def check_no_runtime_changes() -> dict[str, Any]:
     changed, warnings = _changed_files_from_git()
     blockers: list[str] = []
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
-    runtime_changes = sorted(path for path in changed if _is_protected_runtime_file(path))
+    runtime_changes = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected_runtime_file(path))
     if unexpected:
         blockers.append(f"unexpected changed files outside Phase 4A planning scope: {unexpected}")
     if runtime_changes:

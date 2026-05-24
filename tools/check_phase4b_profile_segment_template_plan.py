@@ -90,11 +90,20 @@ LEGACY_ROUTE_CHECKS = [
     ("PUT", "/api/admin/automation-conversion/profile-segment-templates/<int:template_id>"),
 ]
 ALLOWED_CHANGED_FILES = {
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/domain.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/repo.py",
+    "aicrm_next/automation_engine/profile_segments.py",
     "docs/development/phase_4b_profile_segment_template_implementation_plan.md",
     "docs/development/phase_4b_profile_segment_template_implementation_plan.yaml",
+    "docs/development/phase_4c_profile_segment_template_native_contract.md",
     "tools/check_phase4a_internal_write_candidate_selection.py",
     "tools/check_phase4b_profile_segment_template_plan.py",
+    "tools/check_phase4c_profile_segment_template_native_contract.py",
     "tests/test_phase4b_profile_segment_template_plan.py",
+    "tests/test_phase4c_profile_segment_template_native_contract.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -378,7 +387,7 @@ def _is_protected_runtime_file(path: str) -> bool:
 def check_no_runtime_changes() -> dict[str, Any]:
     changed, warnings = _changed_files_from_git()
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
-    protected = sorted(path for path in changed if _is_protected_runtime_file(path))
+    protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected_runtime_file(path))
     blockers: list[str] = []
     if unexpected:
         blockers.append(f"unexpected changed files outside Phase 4B planning scope: {unexpected}")

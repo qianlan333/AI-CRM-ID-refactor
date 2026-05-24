@@ -15,6 +15,8 @@ from aicrm_next.integration_gateway.automation_adapters import (
 )
 from aicrm_next.integration_gateway.mcp_openclaw_adapters import build_openclaw_legacy_bridge_adapter
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.repository_provider import blocked_production_payload
+from aicrm_next.shared.runtime import production_data_ready, production_environment
 
 from .domain import execution_record_projection, overview_cards, pool_summary
 from .dto import (
@@ -24,8 +26,12 @@ from .dto import (
     ApplyTrialOpenedFactRequest,
     AutomationActionRequest,
     OverrideFollowupTypeRequest,
+    ProfileSegmentTemplateCreateRequest,
+    ProfileSegmentTemplateListRequest,
+    ProfileSegmentTemplateUpdateRequest,
     PushOpenClawContextRequest,
 )
+from .profile_segments import profile_segment_side_effect_safety
 from .repo import AutomationRepository, build_automation_repository
 from .state_machine import apply_transition, normalize_followup_type
 from .workflow import default_workflow_registry
@@ -39,6 +45,13 @@ def _automation_side_effect_safety(**overrides: bool) -> dict[str, bool]:
     safety = {
         "real_automation_write_executed": False,
         "real_activation_webhook_executed": False,
+        "real_external_call_executed": False,
+        "real_wecom_call_executed": False,
+        "real_openclaw_call_executed": False,
+        "real_mcp_call_executed": False,
+        "real_timer_executed": False,
+        "real_outbound_send_executed": False,
+        "real_customer_pool_state_changed": False,
         "real_openclaw_push_executed": False,
         "real_workflow_runtime_executed": False,
         "real_agent_runtime_executed": False,
@@ -48,12 +61,169 @@ def _automation_side_effect_safety(**overrides: bool) -> dict[str, bool]:
     return safety
 
 
+def _profile_segment_production_unavailable_payload() -> dict[str, Any]:
+    payload = blocked_production_payload(
+        capability_owner="aicrm_next.automation_engine",
+        detail="profile segment template production repository is not available in Phase 4C pre-cutover.",
+    )
+    payload.update(
+        {
+            "status_code": 503,
+            "route_owner": "ai_crm_next",
+            "side_effect_safety": profile_segment_side_effect_safety(),
+        }
+    )
+    return payload
+
+
+def _profile_segment_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source_status": "fixture_local_contract",
+        "route_owner": "ai_crm_next",
+        "status_code": status_code,
+        "side_effect_safety": profile_segment_side_effect_safety(),
+        **payload,
+    }
+
+
+def _request_dump(request: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
+    dump = getattr(request, "model_dump", None)
+    if callable(dump):
+        return dump(exclude_unset=exclude_unset)
+    return request.dict(exclude_unset=exclude_unset)
+
+
+class _ProfileSegmentRepositoryOwner:
+    def __init__(self, repo: AutomationRepository | None = None) -> None:
+        self._repo = repo
+
+    def _repo_or_none(self) -> AutomationRepository | None:
+        if (production_environment() or production_data_ready()) and self._repo is None:
+            return None
+        if self._repo is None:
+            self._repo = build_automation_repository()
+        return self._repo
+
+
 class GetAutomationRuntimeContractQuery:
     def __init__(self, repo: AutomationRepository | None = None) -> None:
         self._repo = repo or build_automation_repository()
 
     def execute(self) -> dict[str, Any]:
         return {"ok": True, "pools": self._repo.list_pools(), "workflows": default_workflow_registry(), "status": "partial"}
+
+    __call__ = execute
+
+
+class GetProfileSegmentTemplateCatalogQuery(_ProfileSegmentRepositoryOwner):
+    def execute(self) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        return _profile_segment_response(repo.profile_segment_template_catalog())
+
+    __call__ = execute
+
+
+class ListProfileSegmentTemplatesQuery(_ProfileSegmentRepositoryOwner):
+    def execute(self, request: ProfileSegmentTemplateListRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        rows, total = repo.list_profile_segment_templates(
+            enabled_only=request.enabled_only,
+            program_id=request.program_id,
+            limit=request.limit,
+            offset=request.offset,
+        )
+        return _profile_segment_response(
+            {
+                "items": rows,
+                "templates": rows,
+                "total": total,
+                "count": len(rows),
+                "limit": request.limit,
+                "offset": request.offset,
+                "filters": {"enabled_only": request.enabled_only, "program_id": request.program_id},
+            }
+        )
+
+    __call__ = execute
+
+
+class GetProfileSegmentTemplateOptionsQuery(_ProfileSegmentRepositoryOwner):
+    def execute(self, request: ProfileSegmentTemplateListRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        rows, total = repo.list_profile_segment_templates(
+            enabled_only=request.enabled_only,
+            program_id=request.program_id,
+            limit=request.limit,
+            offset=request.offset,
+        )
+        options = [
+            {
+                "id": item["id"],
+                "template_id": item["template_id"],
+                "label": item["name"],
+                "name": item["name"],
+                "value": item["id"],
+                "code": item["code"],
+                "status": item["status"],
+            }
+            for item in rows
+        ]
+        return _profile_segment_response({"items": options, "options": options, "total": total, "count": len(options)})
+
+    __call__ = execute
+
+
+class GetProfileSegmentTemplateQuery(_ProfileSegmentRepositoryOwner):
+    def execute(self, template_id: int) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        template = repo.get_profile_segment_template(template_id)
+        if not template:
+            raise NotFoundError("profile segment template not found")
+        return _profile_segment_response({"template": template, "template_bundle": {"template": template}})
+
+    __call__ = execute
+
+
+class CreateProfileSegmentTemplateCommand(_ProfileSegmentRepositoryOwner):
+    def execute(self, request: ProfileSegmentTemplateCreateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        payload = _request_dump(request)
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if not idempotency_key:
+            raise ContractError("idempotency_key is required")
+        result = repo.create_profile_segment_template(
+            payload,
+            idempotency_key=idempotency_key,
+            operator=str(payload.get("operator") or "system"),
+        )
+        return _profile_segment_response(result, status_code=201)
+
+    __call__ = execute
+
+
+class UpdateProfileSegmentTemplateCommand(_ProfileSegmentRepositoryOwner):
+    def execute(self, template_id: int, request: ProfileSegmentTemplateUpdateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _profile_segment_production_unavailable_payload()
+        payload = _request_dump(request, exclude_unset=True)
+        result = repo.update_profile_segment_template(
+            int(template_id),
+            payload,
+            operator=str(payload.get("operator") or "system"),
+        )
+        return _profile_segment_response(result)
 
     __call__ = execute
 

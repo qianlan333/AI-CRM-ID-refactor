@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -57,3 +59,36 @@ class ActivationWebhookRequest(BaseModel):
 class PushOpenClawContextRequest(BaseModel):
     operator: str = "system"
     reason: str = "manual_fake_push"
+
+
+class ProfileSegmentTemplateListRequest(BaseModel):
+    enabled_only: bool = False
+    program_id: int | None = None
+    limit: int = 50
+    offset: int = 0
+
+
+class ProfileSegmentTemplateCreateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    segment_key: str | None = None
+    code: str | None = None
+    conditions: dict[str, Any] | list[Any] = Field(default_factory=dict)
+    rules: dict[str, Any] | list[Any] = Field(default_factory=dict)
+    status: str = "draft"
+    sort_order: int = 0
+    idempotency_key: str | None = None
+    operator: str = "system"
+
+
+class ProfileSegmentTemplateUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    segment_key: str | None = None
+    code: str | None = None
+    conditions: dict[str, Any] | list[Any] | None = None
+    rules: dict[str, Any] | list[Any] | None = None
+    status: str | None = None
+    sort_order: int | None = None
+    idempotency_key: str | None = None
+    operator: str = "system"
