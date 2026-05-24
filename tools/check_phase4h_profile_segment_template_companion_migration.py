@@ -10,16 +10,17 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN_MD = ROOT / "docs/development/phase_4g_profile_segment_template_companion_schema_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4g_profile_segment_template_companion_schema_plan.yaml"
+PLAN_MD = ROOT / "docs/development/phase_4h_profile_segment_template_companion_migration.md"
+PLAN_YAML = ROOT / "docs/development/phase_4h_profile_segment_template_companion_migration.yaml"
+SCHEMA_SQL = ROOT / "wecom_ability_service/schema_postgres.sql"
+POSTGRES_MIGRATIONS = ROOT / "wecom_ability_service/db/migrations/postgres_migrations.py"
 REQUIRED_DOCS = [
     PLAN_MD,
     PLAN_YAML,
-    ROOT / "docs/development/phase_4f_profile_segment_template_schema_confirmation.md",
-    ROOT / "docs/development/phase_4f_profile_segment_template_schema_confirmation.yaml",
+    ROOT / "docs/development/phase_4g_profile_segment_template_companion_schema_plan.md",
+    ROOT / "docs/development/phase_4g_profile_segment_template_companion_schema_plan.yaml",
 ]
 AUTH_FALSE_FIELDS = {
-    "migration_authorized",
     "production_repository_implementation_authorized",
     "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
@@ -27,11 +28,14 @@ AUTH_FALSE_FIELDS = {
     "real_external_call_authorized",
     "delete_ready",
 }
-EXPECTED_ROUTE_FAMILY = "/api/admin/automation-conversion/profile-segment-templates*"
-EXPECTED_CAPABILITY_OWNER = "aicrm_next.automation_engine"
-EXPECTED_FALLBACK_BOUNDARY = "aicrm_next.integration_gateway"
-ALLOWED_IDEMPOTENCY_STRATEGIES = {"new_companion_table", "reuse_existing_request_log", "needs_owner_decision"}
-ALLOWED_AUDIT_STRATEGIES = {"new_companion_table", "reuse_existing_admin_operation_log", "needs_owner_decision"}
+REQUIRED_SCOPE_TRUE = {
+    "additive_only",
+    "no_existing_table_mutation",
+    "no_backfill",
+    "no_runtime_usage",
+}
+IDEMPOTENCY_TABLE = "automation_profile_segment_template_idempotency"
+AUDIT_TABLE = "automation_profile_segment_template_audit_log"
 REQUIRED_IDEMPOTENCY_FIELDS = {
     "route_family",
     "operation",
@@ -43,6 +47,13 @@ REQUIRED_IDEMPOTENCY_FIELDS = {
     "resource_id",
     "status",
     "created_at",
+    "updated_at",
+}
+REQUIRED_IDEMPOTENCY_UNIQUE_FIELDS = {
+    "route_family",
+    "operation",
+    "operator",
+    "idempotency_key",
 }
 REQUIRED_AUDIT_FIELDS = {
     "route_family",
@@ -53,33 +64,49 @@ REQUIRED_AUDIT_FIELDS = {
     "before_snapshot",
     "after_snapshot",
     "request_payload",
+    "validation_result",
     "rollback_payload",
     "side_effect_safety",
     "created_at",
 }
-ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4g_profile_segment_template_companion_schema_plan.md",
-    "docs/development/phase_4g_profile_segment_template_companion_schema_plan.yaml",
-    "docs/development/phase_4h_profile_segment_template_companion_migration.md",
-    "docs/development/phase_4h_profile_segment_template_companion_migration.yaml",
-    "tools/check_phase4e_profile_segment_template_repository_adapter_plan.py",
-    "tools/check_phase4f_profile_segment_template_schema_confirmation.py",
-    "tools/check_phase4g_profile_segment_template_companion_schema_plan.py",
-    "tools/check_phase4h_profile_segment_template_companion_migration.py",
-    "tests/test_phase4g_profile_segment_template_companion_schema_plan.py",
-    "tests/test_phase4h_profile_segment_template_companion_migration.py",
+MIGRATION_ARTIFACTS = {
     "wecom_ability_service/schema_postgres.sql",
     "wecom_ability_service/db/migrations/postgres_migrations.py",
 }
+ALLOWED_CHANGED_FILES = {
+    "docs/development/phase_4h_profile_segment_template_companion_migration.md",
+    "docs/development/phase_4h_profile_segment_template_companion_migration.yaml",
+    "tools/check_phase4h_profile_segment_template_companion_migration.py",
+    "tests/test_phase4h_profile_segment_template_companion_migration.py",
+    "tools/check_phase4f_profile_segment_template_schema_confirmation.py",
+    "tools/check_phase4g_profile_segment_template_companion_schema_plan.py",
+    *MIGRATION_ARTIFACTS,
+}
 PROTECTED_PREFIXES = (
     "aicrm_next/",
-    "wecom_ability_service/",
-    "migrations/",
+    "wecom_ability_service/http/",
+    "wecom_ability_service/domains/",
     "deploy",
     "systemd",
     "nginx",
 )
-PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
+PROTECTED_EXACT = {
+    "aicrm_next/main.py",
+    "aicrm_next/production_compat/api.py",
+    "app.py",
+    "legacy_flask_app.py",
+}
+DESTRUCTIVE_PATTERNS = [
+    r"\bDROP\s+TABLE\b",
+    r"\bDROP\s+COLUMN\b",
+    r"\bALTER\s+TABLE\b.*\bDROP\b",
+    r"\bRENAME\s+TABLE\b",
+    r"\bRENAME\s+COLUMN\b",
+    r"\bDELETE\s+FROM\b",
+    r"\bUPDATE\s+automation_profile_segment_template\b",
+    r"\bUPDATE\s+automation_profile_segment_category\b",
+    r"\bUPDATE\s+automation_profile_segment_option_mapping\b",
+]
 
 
 def _read(path: Path) -> str:
@@ -201,7 +228,7 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def _run_git(args: list[str]) -> tuple[bool, set[str], str]:
+def _run_git(args: list[str]) -> tuple[bool, str, str]:
     proc = subprocess.run(
         ["git", *args],
         cwd=ROOT,
@@ -211,25 +238,37 @@ def _run_git(args: list[str]) -> tuple[bool, set[str], str]:
         check=False,
     )
     if proc.returncode != 0:
-        return False, set(), (proc.stderr or proc.stdout).strip()
-    return True, {line.strip() for line in proc.stdout.splitlines() if line.strip()}, ""
+        return False, proc.stdout, proc.stderr
+    return True, proc.stdout, proc.stderr
 
 
 def _changed_files_from_git() -> tuple[set[str], list[str]]:
     changed: set[str] = set()
     warnings: list[str] = []
     for args in (["diff", "--name-only", "origin/main...HEAD"], ["diff", "--name-only", "--cached"]):
-        ok, files, error = _run_git(args)
+        ok, stdout, stderr = _run_git(args)
         if ok:
-            changed.update(files)
+            changed.update(line.strip() for line in stdout.splitlines() if line.strip())
         else:
-            warnings.append(f"git {' '.join(args)} unavailable: {error}")
-    ok, files, error = _run_git(["ls-files", "--others", "--exclude-standard"])
+            warnings.append(f"git {' '.join(args)} unavailable: {(stderr or stdout).strip()}")
+    ok, stdout, stderr = _run_git(["ls-files", "--others", "--exclude-standard"])
     if ok:
-        changed.update(files)
+        changed.update(line.strip() for line in stdout.splitlines() if line.strip())
     else:
-        warnings.append(f"git ls-files --others unavailable: {error}")
+        warnings.append(f"git ls-files --others unavailable: {(stderr or stdout).strip()}")
     return changed, warnings
+
+
+def _git_diff_text() -> tuple[str, list[str]]:
+    warnings: list[str] = []
+    chunks: list[str] = []
+    for args in (["diff", "origin/main...HEAD"], ["diff", "--cached"]):
+        ok, stdout, stderr = _run_git(args)
+        if ok:
+            chunks.append(stdout)
+        else:
+            warnings.append(f"git {' '.join(args)} unavailable: {(stderr or stdout).strip()}")
+    return "\n".join(chunks), warnings
 
 
 def check_required_docs() -> dict[str, Any]:
@@ -240,85 +279,101 @@ def check_required_docs() -> dict[str, Any]:
 def check_top_level(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4g_companion_schema_planning_only_no_runtime_change":
-        blockers.append("status must be phase_4g_companion_schema_planning_only_no_runtime_change")
+    if data.get("status") != "phase_4h_companion_schema_migration_artifact_no_runtime_change":
+        blockers.append("status must be phase_4h_companion_schema_migration_artifact_no_runtime_change")
     for field in sorted(AUTH_FALSE_FIELDS):
         if data.get(field) is not False:
             blockers.append(f"{field} must be false")
-    if data.get("route_family") != EXPECTED_ROUTE_FAMILY:
-        blockers.append("route_family mismatch")
-    if data.get("capability_owner") != EXPECTED_CAPABILITY_OWNER:
-        blockers.append("capability_owner mismatch")
-    if data.get("integration_fallback_boundary") != EXPECTED_FALLBACK_BOUNDARY:
-        blockers.append("integration_fallback_boundary mismatch")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_schema_need(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_migration_scope(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
-    need = data.get("schema_need") or {}
-    blockers: list[str] = []
-    for field in ("idempotency_storage_required", "audit_storage_required", "before_after_snapshot_required"):
-        if need.get(field) is not True:
-            blockers.append(f"schema_need.{field} must be true")
-    if not _as_list(need.get("reason")):
-        blockers.append("schema_need.reason must be non-empty")
+    scope = data.get("migration_scope") or {}
+    blockers = [f"migration_scope.{field} must be true" for field in sorted(REQUIRED_SCOPE_TRUE) if scope.get(field) is not True]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def _field_names(plan: dict[str, Any]) -> set[str]:
-    return {str(item.get("name") or "") for item in _as_list(plan.get("required_fields")) if isinstance(item, dict)}
+def _table_by_name(data: dict[str, Any], table_name: str) -> dict[str, Any]:
+    for table in _as_list(data.get("tables")):
+        if isinstance(table, dict) and table.get("name") == table_name:
+            return table
+    return {}
 
 
-def check_idempotency_schema_plan(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def _field_names(table: dict[str, Any]) -> set[str]:
+    return {str(item.get("name") or "") for item in _as_list(table.get("fields")) if isinstance(item, dict)}
+
+
+def _constraint_field_sets(table: dict[str, Any]) -> list[set[str]]:
+    return [
+        {str(field) for field in _as_list(item.get("fields"))}
+        for item in _as_list(table.get("unique_constraints"))
+        if isinstance(item, dict)
+    ]
+
+
+def check_tables(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
-    plan = data.get("idempotency_schema_plan") or {}
     blockers: list[str] = []
-    strategy = str(plan.get("strategy") or "")
-    if strategy not in ALLOWED_IDEMPOTENCY_STRATEGIES:
-        blockers.append(f"idempotency_schema_plan.strategy invalid: {strategy!r}")
-    fields = _field_names(plan)
-    missing = sorted(REQUIRED_IDEMPOTENCY_FIELDS - fields)
-    if missing:
-        blockers.append(f"idempotency_schema_plan.required_fields missing {missing}")
-    if not _as_list(plan.get("unique_constraints")):
-        blockers.append("idempotency_schema_plan.unique_constraints missing")
-    for field in ("conflict_behavior", "replay_behavior", "retention_policy"):
-        if not plan.get(field):
-            blockers.append(f"idempotency_schema_plan.{field} missing")
+    idempotency = _table_by_name(data, IDEMPOTENCY_TABLE)
+    audit = _table_by_name(data, AUDIT_TABLE)
+    if not idempotency:
+        blockers.append(f"missing table entry: {IDEMPOTENCY_TABLE}")
+    if not audit:
+        blockers.append(f"missing table entry: {AUDIT_TABLE}")
+    if idempotency:
+        missing_fields = sorted(REQUIRED_IDEMPOTENCY_FIELDS - _field_names(idempotency))
+        if missing_fields:
+            blockers.append(f"{IDEMPOTENCY_TABLE} missing fields {missing_fields}")
+        if not any(REQUIRED_IDEMPOTENCY_UNIQUE_FIELDS <= field_set for field_set in _constraint_field_sets(idempotency)):
+            blockers.append(f"{IDEMPOTENCY_TABLE} unique constraint must include {sorted(REQUIRED_IDEMPOTENCY_UNIQUE_FIELDS)}")
+        if not _as_list(idempotency.get("indexes")):
+            blockers.append(f"{IDEMPOTENCY_TABLE} indexes missing")
+    if audit:
+        missing_fields = sorted(REQUIRED_AUDIT_FIELDS - _field_names(audit))
+        if missing_fields:
+            blockers.append(f"{AUDIT_TABLE} missing fields {missing_fields}")
+        if not _as_list(audit.get("indexes")):
+            blockers.append(f"{AUDIT_TABLE} indexes missing")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_audit_schema_plan(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_business_continuity(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
-    plan = data.get("audit_schema_plan") or {}
+    continuity = data.get("business_continuity") or {}
+    recommendation = data.get("phase_4i_recommendation") or {}
     blockers: list[str] = []
-    strategy = str(plan.get("strategy") or "")
-    if strategy not in ALLOWED_AUDIT_STRATEGIES:
-        blockers.append(f"audit_schema_plan.strategy invalid: {strategy!r}")
-    fields = _field_names(plan)
-    missing = sorted(REQUIRED_AUDIT_FIELDS - fields)
-    if missing:
-        blockers.append(f"audit_schema_plan.required_fields missing {missing}")
-    for field in ("snapshot_policy", "rollback_payload_policy", "retention_policy"):
-        if not plan.get(field):
-            blockers.append(f"audit_schema_plan.{field} missing")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_phase4h_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    data = data or load_yaml()
-    recommendation = data.get("phase_4h_recommendation") or {}
-    blockers: list[str] = []
+    for field in ("fallback_retained", "production_routes_unchanged", "production_compat_unchanged", "deploy_required_before_effective", "smoke_required_before_use"):
+        if continuity.get(field) is not True:
+            blockers.append(f"business_continuity.{field} must be true")
     if not recommendation.get("recommended_next_step"):
-        blockers.append("phase_4h_recommendation.recommended_next_step missing")
-    for field in (
-        "migration_allowed_without_owner_approval",
-        "production_repository_allowed_without_owner_approval",
-        "route_switch_allowed",
-    ):
+        blockers.append("phase_4i_recommendation.recommended_next_step missing")
+    for field in ("production_repository_allowed_without_owner_approval", "route_switch_allowed"):
         if recommendation.get(field) is not False:
-            blockers.append(f"phase_4h_recommendation.{field} must be false")
+            blockers.append(f"phase_4i_recommendation.{field} must be false")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_migration_artifacts() -> dict[str, Any]:
+    blockers: list[str] = []
+    text = "\n".join(_read(path) for path in (SCHEMA_SQL, POSTGRES_MIGRATIONS) if path.exists())
+    for table_name in (IDEMPOTENCY_TABLE, AUDIT_TABLE):
+        if table_name not in text:
+            blockers.append(f"{table_name} missing from schema/migration artifacts")
+    required_snippets = [
+        "CREATE TABLE IF NOT EXISTS automation_profile_segment_template_idempotency",
+        "CREATE TABLE IF NOT EXISTS automation_profile_segment_template_audit_log",
+        "UNIQUE (route_family, operation, operator, idempotency_key)",
+        "idx_profile_segment_template_idempotency_resource",
+        "idx_profile_segment_template_idempotency_status",
+        "idx_profile_segment_template_audit_resource",
+        "idx_profile_segment_template_audit_operator",
+        "idx_profile_segment_template_audit_operation",
+    ]
+    for snippet in required_snippets:
+        if snippet not in text:
+            blockers.append(f"migration artifact missing snippet: {snippet}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -328,33 +383,57 @@ def _is_protected_runtime_file(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
 
 
-def check_no_runtime_changes() -> dict[str, Any]:
+def check_change_scope() -> dict[str, Any]:
     changed, warnings = _changed_files_from_git()
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected_runtime_file(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4G schema planning scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4H migration readiness scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
 
 
+def _added_diff_lines(diff_text: str) -> str:
+    lines: list[str] = []
+    current_file = ""
+    for raw in diff_text.splitlines():
+        if raw.startswith("diff --git "):
+            parts = raw.split()
+            current_file = parts[-1][2:] if len(parts) >= 4 and parts[-1].startswith("b/") else ""
+            continue
+        if current_file not in MIGRATION_ARTIFACTS:
+            continue
+        if raw.startswith("+") and not raw.startswith("+++"):
+            lines.append(raw[1:])
+    return "\n".join(lines)
+
+
+def check_no_destructive_sql() -> dict[str, Any]:
+    diff_text, warnings = _git_diff_text()
+    added = _added_diff_lines(diff_text)
+    blockers: list[str] = []
+    for pattern in DESTRUCTIVE_PATTERNS:
+        if re.search(pattern, added, flags=re.IGNORECASE | re.DOTALL):
+            blockers.append(f"destructive SQL added in migration artifact: {pattern}")
+    return {"ok": not blockers, "blockers": blockers, "warnings": warnings}
+
+
 def check_doc_claims() -> dict[str, Any]:
     text = _read(PLAN_MD).lower()
     blockers: list[str] = []
-    forbidden_claims = [
-        "migration authorized",
-        "production repository implemented",
-        "production ownership switch authorized",
-        "fallback removal authorized",
-        "production approved",
-        "canary approved",
-        "delete_ready true",
+    forbidden_patterns = [
+        r"production repository implemented",
+        r"route switch authorized",
+        r"fallback removal authorized",
+        r"production approved",
+        r"canary approved",
+        r"delete_ready\s+true",
     ]
-    for claim in forbidden_claims:
-        if re.search(rf"(?<!not ){re.escape(claim)}", text):
-            blockers.append(f"doc appears to claim forbidden state: {claim}")
+    for pattern in forbidden_patterns:
+        if re.search(pattern, text):
+            blockers.append(f"doc appears to claim forbidden state: {pattern}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -363,11 +442,12 @@ def build_report() -> dict[str, Any]:
     checks = {
         "required_docs": check_required_docs(),
         "top_level": check_top_level(data),
-        "schema_need": check_schema_need(data),
-        "idempotency_schema_plan": check_idempotency_schema_plan(data),
-        "audit_schema_plan": check_audit_schema_plan(data),
-        "phase4h_recommendation": check_phase4h_recommendation(data),
-        "no_runtime_changes": check_no_runtime_changes(),
+        "migration_scope": check_migration_scope(data),
+        "tables": check_tables(data),
+        "business_continuity": check_business_continuity(data),
+        "migration_artifacts": check_migration_artifacts(),
+        "change_scope": check_change_scope(),
+        "no_destructive_sql": check_no_destructive_sql(),
         "doc_claims": check_doc_claims(),
     }
     blockers: list[str] = []
@@ -391,7 +471,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4G Profile Segment Template Companion Schema Plan Check",
+        "# Phase 4H Profile Segment Template Companion Migration Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -407,7 +487,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4G profile segment companion schema planning guardrails.")
+    parser = argparse.ArgumentParser(description="Check Phase 4H profile segment companion migration readiness.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)

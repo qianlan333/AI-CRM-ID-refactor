@@ -1,0 +1,142 @@
+version: 1
+status: phase_4h_companion_schema_migration_artifact_no_runtime_change
+production_repository_implementation_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+migration_scope:
+  additive_only: true
+  no_existing_table_mutation: true
+  no_backfill: true
+  no_runtime_usage: true
+
+tables:
+  - name: automation_profile_segment_template_idempotency
+    purpose: Store bounded create/update idempotency evidence for future profile segment template production repository usage.
+    fields:
+      - name: id
+        type: BIGSERIAL
+        required: true
+      - name: route_family
+        type: TEXT
+        required: true
+      - name: operation
+        type: TEXT
+        required: true
+      - name: operator
+        type: TEXT
+        required: true
+      - name: idempotency_key
+        type: TEXT
+        required: true
+      - name: request_hash
+        type: TEXT
+        required: true
+      - name: response_snapshot
+        type: JSONB
+        required: true
+      - name: resource_type
+        type: TEXT
+        required: true
+      - name: resource_id
+        type: BIGINT
+        required: false
+      - name: status
+        type: TEXT
+        required: true
+      - name: created_at
+        type: TIMESTAMPTZ
+        required: true
+      - name: updated_at
+        type: TIMESTAMPTZ
+        required: true
+    unique_constraints:
+      - name: uq_profile_segment_template_idempotency_scope
+        fields:
+          - route_family
+          - operation
+          - operator
+          - idempotency_key
+    indexes:
+      - name: idx_profile_segment_template_idempotency_resource
+        fields:
+          - resource_type
+          - resource_id
+          - created_at
+      - name: idx_profile_segment_template_idempotency_status
+        fields:
+          - status
+          - updated_at
+  - name: automation_profile_segment_template_audit_log
+    purpose: Store bounded audit, before/after snapshot, rollback payload, and side-effect safety evidence for future profile segment template writes.
+    fields:
+      - name: id
+        type: BIGSERIAL
+        required: true
+      - name: route_family
+        type: TEXT
+        required: true
+      - name: operation
+        type: TEXT
+        required: true
+      - name: operator
+        type: TEXT
+        required: true
+      - name: resource_type
+        type: TEXT
+        required: true
+      - name: resource_id
+        type: BIGINT
+        required: false
+      - name: before_snapshot
+        type: JSONB
+        required: true
+      - name: after_snapshot
+        type: JSONB
+        required: true
+      - name: request_payload
+        type: JSONB
+        required: true
+      - name: validation_result
+        type: JSONB
+        required: true
+      - name: rollback_payload
+        type: JSONB
+        required: true
+      - name: side_effect_safety
+        type: JSONB
+        required: true
+      - name: created_at
+        type: TIMESTAMPTZ
+        required: true
+    unique_constraints: []
+    indexes:
+      - name: idx_profile_segment_template_audit_resource
+        fields:
+          - resource_type
+          - resource_id
+          - created_at
+      - name: idx_profile_segment_template_audit_operator
+        fields:
+          - operator
+          - created_at
+      - name: idx_profile_segment_template_audit_operation
+        fields:
+          - operation
+          - created_at
+
+business_continuity:
+  fallback_retained: true
+  production_routes_unchanged: true
+  production_compat_unchanged: true
+  deploy_required_before_effective: true
+  smoke_required_before_use: true
+
+phase_4i_recommendation:
+  recommended_next_step: production_repository_adapter_implementation_planning_or_no_route_owner_switch_implementation
+  production_repository_allowed_without_owner_approval: false
+  route_switch_allowed: false
+  notes: Phase 4I may plan or implement a production repository adapter behind no route-owner switch only after owner approval; production route ownership and fallback narrowing remain out of scope.
