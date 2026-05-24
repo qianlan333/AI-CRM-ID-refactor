@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
@@ -15,16 +16,30 @@ from .application import (
     ConfirmConversionCommand,
     EnterSilentPoolCommand,
     ExitMarketingCommand,
+    CreateProfileSegmentTemplateCommand,
+    GetProfileSegmentTemplateCatalogQuery,
+    GetProfileSegmentTemplateOptionsQuery,
+    GetProfileSegmentTemplateQuery,
     GetAutomationMemberDetailQuery,
     GetAutomationOverviewQuery,
     GetAutomationRuntimeContractQuery,
+    ListProfileSegmentTemplatesQuery,
     ListAutomationExecutionRecordsQuery,
     ListAutomationMembersQuery,
     ListAutomationPoolsQuery,
     OverrideFollowupTypeCommand,
     PushMemberContextToOpenClawCommand,
+    UpdateProfileSegmentTemplateCommand,
 )
-from .dto import ActivationWebhookRequest, AutomationActionRequest, OverrideFollowupTypeRequest, PushOpenClawContextRequest
+from .dto import (
+    ActivationWebhookRequest,
+    AutomationActionRequest,
+    OverrideFollowupTypeRequest,
+    ProfileSegmentTemplateCreateRequest,
+    ProfileSegmentTemplateListRequest,
+    ProfileSegmentTemplateUpdateRequest,
+    PushOpenClawContextRequest,
+)
 
 router = APIRouter()
 
@@ -35,6 +50,11 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _json_result(payload: dict) -> JSONResponse:
+    status_code = int(payload.get("status_code") or 200)
+    return JSONResponse(payload, status_code=status_code)
 
 
 @router.get("/api/admin/automation-conversion/contract")
@@ -60,6 +80,67 @@ def automation_pools() -> dict:
         except LegacyAutomationDataUnavailable as exc:
             raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
     return ListAutomationPoolsQuery()()
+
+
+@router.get("/api/admin/automation-conversion/profile-segment-templates/catalog")
+def profile_segment_template_catalog() -> JSONResponse:
+    return _json_result(GetProfileSegmentTemplateCatalogQuery()())
+
+
+@router.get("/api/admin/automation-conversion/profile-segment-templates")
+def list_profile_segment_templates(
+    enabled_only: bool = False,
+    program_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = ProfileSegmentTemplateListRequest(
+        enabled_only=enabled_only,
+        program_id=program_id,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListProfileSegmentTemplatesQuery()(request))
+
+
+@router.get("/api/admin/automation-conversion/profile-segment-templates/options")
+def profile_segment_template_options(
+    enabled_only: bool = True,
+    program_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = ProfileSegmentTemplateListRequest(
+        enabled_only=enabled_only,
+        program_id=program_id,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(GetProfileSegmentTemplateOptionsQuery()(request))
+
+
+@router.get("/api/admin/automation-conversion/profile-segment-templates/{template_id}")
+def get_profile_segment_template(template_id: int) -> JSONResponse:
+    try:
+        return _json_result(GetProfileSegmentTemplateQuery()(template_id))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/automation-conversion/profile-segment-templates")
+def create_profile_segment_template(payload: ProfileSegmentTemplateCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateProfileSegmentTemplateCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/profile-segment-templates/{template_id}")
+def update_profile_segment_template(template_id: int, payload: ProfileSegmentTemplateUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(UpdateProfileSegmentTemplateCommand()(template_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/admin/automation-conversion/members")

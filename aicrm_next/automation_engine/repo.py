@@ -4,8 +4,10 @@ from copy import deepcopy
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import member_matches_filters
+from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
 
 
@@ -19,6 +21,19 @@ class AutomationRepository(Protocol):
     def list_history(self, member_id: str) -> list[dict[str, Any]]: ...
     def create_execution_record(self, record: dict[str, Any]) -> dict[str, Any]: ...
     def list_execution_records(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
+    def profile_segment_template_catalog(self) -> dict[str, Any]: ...
+    def list_profile_segment_templates(
+        self,
+        *,
+        enabled_only: bool = False,
+        program_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]: ...
+    def get_profile_segment_template(self, template_id: int) -> dict[str, Any] | None: ...
+    def create_profile_segment_template(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def update_profile_segment_template(self, template_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]: ...
+    def list_profile_segment_template_audit_events(self) -> list[dict[str, Any]]: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -114,6 +129,24 @@ class InMemoryAutomationRepository:
                 "created_at": "2026-05-20T09:30:00Z",
             }
         ]
+        self._profile_segment_templates: dict[int, dict[str, Any]] = {
+            1: profile_segment_template_projection(
+                {
+                    "id": 1,
+                    "name": "高意向用户画像模板",
+                    "description": "Fixture local contract profile segment template.",
+                    "code": "high_intent",
+                    "conditions": {"source": "fixture"},
+                    "rules": [{"field": "intent", "operator": "eq", "value": "high"}],
+                    "status": "draft",
+                    "sort_order": 10,
+                    "created_at": "2026-05-20T09:00:00Z",
+                    "updated_at": "2026-05-20T09:00:00Z",
+                }
+            )
+        }
+        self._profile_segment_idempotency: dict[str, dict[str, Any]] = {}
+        self._profile_segment_audit_events: list[dict[str, Any]] = []
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -186,6 +219,175 @@ class InMemoryAutomationRepository:
 
     def list_execution_records(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         return deepcopy(self._execution_records[offset : offset + limit]), len(self._execution_records)
+
+    def profile_segment_template_catalog(self) -> dict[str, Any]:
+        return {
+            "items": [
+                {
+                    "id": "fixture_questionnaire_001",
+                    "name": "Fixture 分层问卷",
+                    "slug": "fixture-profile-segment",
+                    "questions": [
+                        {
+                            "id": "fixture_question_001",
+                            "title": "用户意向",
+                            "type": "single_choice",
+                            "sort_order": 1,
+                            "options": [
+                                {"id": "fixture_option_high", "option_text": "高意向", "sort_order": 1},
+                                {"id": "fixture_option_normal", "option_text": "普通意向", "sort_order": 2},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "total": 1,
+        }
+
+    def list_profile_segment_templates(
+        self,
+        *,
+        enabled_only: bool = False,
+        program_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        rows = [profile_segment_template_projection(item) for item in self._profile_segment_templates.values()]
+        if enabled_only:
+            rows = [item for item in rows if item.get("status") == "active" or bool(item.get("enabled"))]
+        rows.sort(key=lambda item: (int(item.get("sort_order") or 0), int(item.get("id") or 0)))
+        total = len(rows)
+        return deepcopy(rows[offset : offset + limit]), total
+
+    def get_profile_segment_template(self, template_id: int) -> dict[str, Any] | None:
+        item = self._profile_segment_templates.get(int(template_id))
+        return profile_segment_template_projection(item) if item else None
+
+    def create_profile_segment_template(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
+        key = str(idempotency_key or "").strip()
+        if key and key in self._profile_segment_idempotency:
+            replay = deepcopy(self._profile_segment_idempotency[key])
+            replay["idempotent_replay"] = True
+            return replay
+
+        normalized = normalize_profile_segment_template_payload(payload)
+        self._assert_profile_segment_unique(normalized["name"], normalized["code"])
+        now = utc_now_iso()
+        template_id = max(self._profile_segment_templates) + 1 if self._profile_segment_templates else 1
+        saved = profile_segment_template_projection(
+            {
+                **normalized,
+                "id": template_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        self._profile_segment_templates[template_id] = deepcopy(saved)
+        audit_event = self._append_profile_segment_audit_event(
+            action="create",
+            template_id=template_id,
+            operator=operator,
+            idempotency_key=key,
+            before=None,
+            after=saved,
+        )
+        result = {
+            "template": deepcopy(saved),
+            "template_bundle": {"template": deepcopy(saved)},
+            "audit_event": audit_event,
+            "rollback": {
+                "strategy": "compensating_update_or_status_revert",
+                "created_template_id": template_id,
+                "delete_approved": False,
+            },
+            "idempotent_replay": False,
+        }
+        if key:
+            self._profile_segment_idempotency[key] = deepcopy(result)
+        return result
+
+    def update_profile_segment_template(self, template_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
+        existing = self.get_profile_segment_template(template_id)
+        if not existing:
+            raise NotFoundError("profile segment template not found")
+        normalized = normalize_profile_segment_template_payload(payload, partial=True, existing=existing)
+        duplicate = self._find_duplicate_profile_segment(normalized["name"], normalized["code"], exclude_id=int(template_id))
+        if duplicate:
+            raise ContractError("profile segment template name or code already exists")
+        now = utc_now_iso()
+        updated = profile_segment_template_projection(
+            {
+                **existing,
+                **normalized,
+                "id": int(template_id),
+                "created_at": existing.get("created_at"),
+                "updated_at": now,
+            }
+        )
+        self._profile_segment_templates[int(template_id)] = deepcopy(updated)
+        audit_event = self._append_profile_segment_audit_event(
+            action="update",
+            template_id=int(template_id),
+            operator=operator,
+            idempotency_key=str(payload.get("idempotency_key") or ""),
+            before=existing,
+            after=updated,
+        )
+        return {
+            "template": deepcopy(updated),
+            "template_bundle": {"template": deepcopy(updated)},
+            "audit_event": audit_event,
+            "rollback": {
+                "strategy": "restore_before_snapshot",
+                "template_id": int(template_id),
+                "before": deepcopy(existing),
+                "after": deepcopy(updated),
+            },
+        }
+
+    def list_profile_segment_template_audit_events(self) -> list[dict[str, Any]]:
+        return deepcopy(self._profile_segment_audit_events)
+
+    def _find_duplicate_profile_segment(self, name: str, code: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:
+        normalized_name = str(name or "").strip().lower()
+        normalized_code = str(code or "").strip().lower()
+        for template_id, template in self._profile_segment_templates.items():
+            if exclude_id is not None and int(template_id) == int(exclude_id):
+                continue
+            item = profile_segment_template_projection(template)
+            if normalized_name and str(item.get("name") or "").strip().lower() == normalized_name:
+                return item
+            if normalized_code and str(item.get("code") or "").strip().lower() == normalized_code:
+                return item
+        return None
+
+    def _assert_profile_segment_unique(self, name: str, code: str) -> None:
+        if self._find_duplicate_profile_segment(name, code):
+            raise ContractError("profile segment template name or code already exists")
+
+    def _append_profile_segment_audit_event(
+        self,
+        *,
+        action: str,
+        template_id: int,
+        operator: str,
+        idempotency_key: str,
+        before: dict[str, Any] | None,
+        after: dict[str, Any],
+    ) -> dict[str, Any]:
+        event = {
+            "action": action,
+            "route_family": "/api/admin/automation-conversion/profile-segment-templates*",
+            "template_id": int(template_id),
+            "operator_id": str(operator or "system"),
+            "idempotency_key": idempotency_key,
+            "before": deepcopy(before),
+            "after": deepcopy(after),
+            "created_at": utc_now_iso(),
+            "external_event_dispatched": False,
+        }
+        self._profile_segment_audit_events.insert(0, event)
+        return deepcopy(event)
 
 
 _fixture_repo = InMemoryAutomationRepository()
