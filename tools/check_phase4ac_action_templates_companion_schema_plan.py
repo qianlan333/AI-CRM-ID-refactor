@@ -102,6 +102,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ae_action_templates_native_fixture_contract.yaml",
     "tools/check_phase4ae_action_templates_native_fixture_contract.py",
     "tests/test_phase4ae_action_templates_native_fixture_contract.py",
+    "tools/run_phase4af_action_templates_local_parity.py",
+    "docs/development/phase_4af_action_templates_local_parity_harness.md",
+    "docs/development/phase_4af_action_templates_local_parity_harness.yaml",
+    "tools/check_phase4af_action_templates_local_parity_harness.py",
+    "tests/test_phase4af_action_templates_local_parity_harness.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",

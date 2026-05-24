@@ -74,6 +74,11 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4ad_action_templates_companion_migration.py",
     "tools/check_phase4ac_action_templates_companion_schema_plan.py",
     "tools/check_phase4ab_action_templates_schema_confirmation.py",
+    "tools/run_phase4af_action_templates_local_parity.py",
+    "docs/development/phase_4af_action_templates_local_parity_harness.md",
+    "docs/development/phase_4af_action_templates_local_parity_harness.yaml",
+    "tools/check_phase4af_action_templates_local_parity_harness.py",
+    "tests/test_phase4af_action_templates_local_parity_harness.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
