@@ -67,6 +67,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4aj_action_templates_staging_smoke_package.yaml",
     "tools/check_phase4aj_action_templates_staging_smoke_package.py",
     "tests/test_phase4aj_action_templates_staging_smoke_package.py",
+    "tools/run_phase4ak_action_templates_staging_smoke_evidence.py",
+    "docs/development/phase_4ak_action_templates_staging_smoke_evidence.md",
+    "docs/development/phase_4ak_action_templates_staging_smoke_evidence.yaml",
+    "tools/check_phase4ak_action_templates_staging_smoke_evidence.py",
+    "tests/test_phase4ak_action_templates_staging_smoke_evidence.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
