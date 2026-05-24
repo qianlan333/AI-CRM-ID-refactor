@@ -79,6 +79,10 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4af_action_templates_local_parity_harness.yaml",
     "tools/check_phase4af_action_templates_local_parity_harness.py",
     "tests/test_phase4af_action_templates_local_parity_harness.py",
+    "docs/development/phase_4ag_action_templates_repository_adapter_plan.md",
+    "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml",
+    "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
+    "tests/test_phase4ag_action_templates_repository_adapter_plan.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
