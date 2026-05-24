@@ -10,15 +10,15 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4s_profile_segment_template_production_readonly_dry_run_evidence.md"
-PLAN_YAML = ROOT / "docs/development/phase_4s_profile_segment_template_production_readonly_dry_run_evidence.yaml"
-TOOL = ROOT / "tools/run_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py"
+DOC = ROOT / "docs/development/phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.md"
+PLAN_YAML = ROOT / "docs/development/phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.yaml"
+TOOL = ROOT / "tools/run_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py"
 REQUIRED_DOCS = [
     DOC,
     PLAN_YAML,
     TOOL,
-    ROOT / "docs/development/phase_4r_profile_segment_template_production_readonly_dry_run_runner.md",
-    ROOT / "docs/development/phase_4q_profile_segment_template_production_dry_run_approval.md",
+    ROOT / "docs/development/phase_4t_profile_segment_template_readonly_dry_run_review.md",
+    ROOT / "docs/development/phase_4s_profile_segment_template_production_readonly_dry_run_evidence.md",
 ]
 AUTH_FALSE_FIELDS = {
     "production_write_authorized",
@@ -32,7 +32,8 @@ AUTH_FALSE_FIELDS = {
 }
 EXECUTION_FIELDS = {
     "result_status",
-    "read_only_dry_run_attempted",
+    "attempted",
+    "lower_runner_called",
     "read_only_dry_run_executed",
     "approval_present",
     "config_reviewed",
@@ -41,29 +42,31 @@ EXECUTION_FIELDS = {
     "not_executed_reason",
     "writes_attempted",
 }
-EVIDENCE_FALSE_FIELDS = {"route_owner_changed", "production_compat_changed"}
 SIDE_EFFECT_FALSE_FIELDS = {
     "external_calls_executed",
     "automation_execution_executed",
     "outbound_send_executed",
     "create_update_delete_executed",
 }
+REQUIRED_BEFORE_ROUTE_SWITCH_READY = {
+    "actual_production_readonly_dry_run_executed",
+    "read_parity_passed",
+    "no_writes_attempted",
+    "side_effect_safety_false",
+    "fallback_validation_passed",
+    "production_compat_unchanged",
+    "owner_approval_completed",
+    "rollback_owner_assigned",
+    "production_config_review_completed",
+}
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4s_profile_segment_template_production_readonly_dry_run_evidence.md",
-    "docs/development/phase_4s_profile_segment_template_production_readonly_dry_run_evidence.yaml",
-    "tools/run_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py",
-    "tools/check_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py",
-    "tests/test_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py",
-    "tools/check_phase4r_profile_segment_template_production_readonly_dry_run_runner.py",
-    "docs/development/phase_4t_profile_segment_template_readonly_dry_run_review.md",
-    "docs/development/phase_4t_profile_segment_template_readonly_dry_run_review.yaml",
-    "tools/check_phase4t_profile_segment_template_readonly_dry_run_review.py",
-    "tests/test_phase4t_profile_segment_template_readonly_dry_run_review.py",
     "docs/development/phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.md",
     "docs/development/phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.yaml",
     "tools/run_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py",
     "tools/check_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py",
     "tests/test_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py",
+    "tools/check_phase4t_profile_segment_template_readonly_dry_run_review.py",
+    "tools/check_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -185,6 +188,10 @@ def load_yaml(path: Path = PLAN_YAML) -> dict[str, Any]:
         return _load_yaml_without_dependency(text)
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _run(command: list[str]) -> tuple[int, str]:
     proc = subprocess.run(
         command,
@@ -221,8 +228,8 @@ def check_required_docs() -> dict[str, Any]:
 def check_top_level(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4s_production_readonly_dry_run_evidence_no_route_switch":
-        blockers.append("status must be phase_4s_production_readonly_dry_run_evidence_no_route_switch")
+    if data.get("status") != "phase_4u_production_readonly_dry_run_evidence_and_review_no_route_switch":
+        blockers.append("status must be phase_4u_production_readonly_dry_run_evidence_and_review_no_route_switch")
     for field in sorted(AUTH_FALSE_FIELDS):
         if data.get(field) is not False:
             blockers.append(f"{field} must be false")
@@ -245,13 +252,14 @@ def check_evidence(data: dict[str, Any] | None = None) -> dict[str, Any]:
     blockers: list[str] = []
     if evidence.get("db_url_secret_redacted") is not True:
         blockers.append("evidence.db_url_secret_redacted must be true")
+    if evidence.get("route_owner_changed") is not False:
+        blockers.append("evidence.route_owner_changed must be false")
+    if evidence.get("production_compat_changed") is not False:
+        blockers.append("evidence.production_compat_changed must be false")
     if evidence.get("fallback_retained") is not True:
         blockers.append("evidence.fallback_retained must be true")
     if evidence.get("side_effect_safety_present") is not True:
         blockers.append("evidence.side_effect_safety_present must be true")
-    for field in sorted(EVIDENCE_FALSE_FIELDS):
-        if evidence.get(field) is not False:
-            blockers.append(f"evidence.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -265,14 +273,41 @@ def check_side_effect_safety(data: dict[str, Any] | None = None) -> dict[str, An
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_phase4t_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    rec = (data or load_yaml()).get("phase_4t_recommendation") or {}
+def check_readiness(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = data or load_yaml()
+    execution = data.get("execution") or {}
+    readiness = data.get("readiness") or {}
+    blockers: list[str] = []
+    if readiness.get("fallback_removal_ready") is not False:
+        blockers.append("readiness.fallback_removal_ready must be false")
+    if readiness.get("production_write_ready") is not False:
+        blockers.append("readiness.production_write_ready must be false")
+    if execution.get("read_only_dry_run_executed") is False and readiness.get("route_switch_ready") is not False:
+        blockers.append("readiness.route_switch_ready must be false when read-only dry-run has not executed")
+    if execution.get("read_only_dry_run_executed") is False and readiness.get("production_repository_route_enablement_ready") is not False:
+        blockers.append("readiness.production_repository_route_enablement_ready must be false when read-only dry-run has not executed")
+    present = {str(item) for item in _as_list(readiness.get("required_before_route_switch_ready"))}
+    missing = sorted(REQUIRED_BEFORE_ROUTE_SWITCH_READY - present)
+    if missing:
+        blockers.append(f"readiness.required_before_route_switch_ready missing {missing}")
+    if not _as_list(readiness.get("blockers")):
+        blockers.append("readiness.blockers must be non-empty for current blocked evidence")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_phase4v_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    rec = (data or load_yaml()).get("phase_4v_recommendation") or {}
     blockers: list[str] = []
     if not rec.get("recommended_next_step"):
-        blockers.append("phase_4t_recommendation.recommended_next_step missing")
-    for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed"):
+        blockers.append("phase_4v_recommendation.recommended_next_step missing")
+    for field in (
+        "production_write_allowed",
+        "production_route_switch_allowed",
+        "fallback_removal_allowed",
+        "production_write_canary_allowed",
+    ):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4t_recommendation.{field} must be false")
+            blockers.append(f"phase_4v_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -321,7 +356,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4S production read-only dry-run evidence scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4U evidence/review scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -344,7 +379,8 @@ def build_report() -> dict[str, Any]:
         "execution": check_execution(data),
         "evidence": check_evidence(data),
         "side_effect_safety": check_side_effect_safety(data),
-        "phase4t_recommendation": check_phase4t_recommendation(data),
+        "readiness": check_readiness(data),
+        "phase4v_recommendation": check_phase4v_recommendation(data),
         "tool_source": check_tool_source(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
@@ -370,7 +406,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4S Profile Segment Template Production Read-Only Dry-Run Evidence Check",
+        "# Phase 4U Profile Segment Template Production Read-Only Dry-Run Evidence And Review Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -386,7 +422,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4S profile segment template production read-only dry-run evidence.")
+    parser = argparse.ArgumentParser(description="Check Phase 4U profile segment template production read-only dry-run evidence and review.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
