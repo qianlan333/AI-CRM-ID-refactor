@@ -1,0 +1,75 @@
+version: 1
+status: phase_4am_action_templates_staging_owner_decision_required
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+package:
+  type: owner_decision
+  auto_merge_allowed: false
+  autopilot_safe_label_allowed: false
+  required_labels:
+    - owner-decision-required
+    - automerge-blocked
+
+current_blocker:
+  reason: staging_approval_config_incomplete_after_phase_4am_closure
+  phase_4am_closure_pr: "#643"
+  closure_items_still_pending: true
+  action_templates_status: awaiting_staging_approval_config
+
+missing_owner_decisions:
+  - automation_engine_owner_approval
+  - integration_gateway_owner_approval
+  - staging_db_config_owner_approval
+  - smoke_operator_assigned
+  - rollback_owner_assigned
+  - evidence_path_agreed
+  - write_smoke_approval_decision
+  - safe_namespace_cleanup_strategy_confirmed
+  - side_effect_safety_confirmed
+
+missing_config:
+  - repo_backend_sqlalchemy_confirmed
+  - staging_db_env_confirmed
+  - staging_db_url_safety_confirmed
+  - no_database_url_fallback_confirmed
+  - no_action_templates_database_url_fallback_confirmed
+  - no_test_database_url_fallback_confirmed
+  - read_only_evidence_path_confirmed
+  - write_evidence_path_confirmed_if_needed
+
+safe_next_options:
+  - owner_approved_staging_smoke_evidence_after_all_closure_items_complete
+  - keep_action_templates_paused_and_select_different_low_risk_phase_4_package
+  - provide_partial_evidence_and_run_another_closure_update
+
+authorizations:
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  last_attempted_action: phase_4am_owner_decision_package
+  last_created_pr: "#644"
+  recommended_next_pr: owner_input_required_for_action_templates_or_new_low_risk_candidate
+  owner_approval_required: true
+  status_after_package: awaiting_staging_approval_config_owner_decision_required
+
+next_action:
+  user_must_choose_next_safe_path: true
+  production_dry_run_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  auto_merge_allowed: false

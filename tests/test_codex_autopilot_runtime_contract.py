@@ -70,6 +70,24 @@ def test_runner_treats_phase4am_closure_artifacts_as_policy_files() -> None:
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase4am_owner_decision_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
+        "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
+        "tests/test_phase4am_action_templates_staging_owner_decision_package.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
