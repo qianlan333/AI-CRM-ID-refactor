@@ -1,0 +1,480 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+STATE = ROOT / "docs/development/phase_execution_state.yaml"
+STOP = ROOT / "docs/development/autonomous_stop_conditions.yaml"
+PROMPT_DEFAULT = Path("/tmp/aicrm_codex_next_prompt.md")
+OWNER_DECISION_DEFAULT = Path("/tmp/aicrm_codex_owner_decision_package.md")
+LOG_DIR_DEFAULT = ROOT / "logs/codex-autopilot"
+
+REQUIRED_PREFLIGHT_DOCS = [
+    "docs/development/codex_architecture_operating_memory.md",
+    "docs/development/autonomous_development_loop.md",
+    "docs/development/phase_execution_state.yaml",
+    "docs/development/autonomous_stop_conditions.yaml",
+    "docs/development/ai_crm_next_architecture_skill.md",
+    "skills/ai-crm-next-architecture/SKILL.md",
+    "docs/route_ownership/production_route_ownership_manifest.yaml",
+    "docs/development/legacy_replacement_backlog.yaml",
+]
+ACTION_TEMPLATES_ALLOWED_ACTIONS = {
+    "phase_4am_staging_execution",
+    "phase_4am_approval_config_closure",
+    "phase_4am_blocked_evidence_review",
+}
+OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
+
+
+def _parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value in {"true", "false"}:
+        return value == "true"
+    if value == "[]":
+        return []
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _strip_yaml_comments(line: str) -> str:
+    in_single = False
+    in_double = False
+    for index, char in enumerate(line):
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double:
+            return line[:index].rstrip()
+    return line.rstrip()
+
+
+def _yaml_lines(text: str) -> list[tuple[int, str]]:
+    lines: list[tuple[int, str]] = []
+    for raw in text.splitlines():
+        stripped = _strip_yaml_comments(raw)
+        if stripped.strip():
+            lines.append((len(stripped) - len(stripped.lstrip(" ")), stripped.strip()))
+    return lines
+
+
+def _parse_yaml_block(lines: list[tuple[int, str]], index: int, indent: int) -> tuple[Any, int]:
+    if index >= len(lines):
+        return {}, index
+    current_indent, current_text = lines[index]
+    if current_indent < indent:
+        return {}, index
+    if current_text.startswith("- "):
+        result: list[Any] = []
+        while index < len(lines):
+            line_indent, text = lines[index]
+            if line_indent != indent or not text.startswith("- "):
+                break
+            item_text = text[2:].strip()
+            index += 1
+            if not item_text:
+                value, index = _parse_yaml_block(lines, index, indent + 2)
+                result.append(value)
+                continue
+            if ":" not in item_text:
+                result.append(_parse_scalar(item_text))
+                continue
+            key, raw_value = item_text.split(":", 1)
+            item: dict[str, Any] = {}
+            raw_value = raw_value.strip()
+            if raw_value:
+                item[key.strip()] = _parse_scalar(raw_value)
+            else:
+                value, index = _parse_yaml_block(lines, index, indent + 2)
+                item[key.strip()] = value
+            while index < len(lines) and lines[index][0] > indent:
+                nested_value, index = _parse_yaml_block(lines, index, indent + 2)
+                if isinstance(nested_value, dict):
+                    item.update(nested_value)
+            result.append(item)
+        return result, index
+    result: dict[str, Any] = {}
+    while index < len(lines):
+        line_indent, text = lines[index]
+        if line_indent != indent or text.startswith("- "):
+            break
+        if ":" not in text:
+            index += 1
+            continue
+        key, raw_value = text.split(":", 1)
+        raw_value = raw_value.strip()
+        index += 1
+        if raw_value:
+            result[key.strip()] = _parse_scalar(raw_value)
+        else:
+            value, index = _parse_yaml_block(lines, index, indent + 2)
+            result[key.strip()] = value
+    return result, index
+
+
+def load_yaml(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    try:
+        import yaml  # type: ignore
+
+        return yaml.safe_load(text) or {}
+    except ModuleNotFoundError:
+        data, _ = _parse_yaml_block(_yaml_lines(text), 0, 0)
+        return data if isinstance(data, dict) else {}
+
+
+def run_command(args: list[str], timeout: int = 60) -> tuple[int, str, str]:
+    proc = subprocess.run(
+        args,
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def changed_files() -> set[str]:
+    changed: set[str] = set()
+    for args in (
+        ["git", "diff", "--name-only", "origin/main...HEAD"],
+        ["git", "diff", "--name-only", "--cached"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    ):
+        code, stdout, _ = run_command(args)
+        if code == 0:
+            changed.update(line.strip() for line in stdout.splitlines() if line.strip())
+    return changed
+
+
+def stop_terms(stop: dict[str, Any]) -> set[str]:
+    terms: set[str] = set()
+    for item in stop.get("high_risk_stop_conditions", []):
+        if isinstance(item, dict):
+            terms.update(str(term).lower() for term in item.get("terms", []))
+    return terms
+
+
+def text_hits_stop_condition(text: str, terms: set[str]) -> list[str]:
+    lowered = text.lower()
+    return sorted(term for term in terms if term and term in lowered)
+
+
+def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
+    hits: list[str] = []
+    policy_paths = {
+        "docs/development/autonomous_development_loop.md",
+        "docs/development/autonomous_stop_conditions.yaml",
+        "docs/development/phase_execution_state.yaml",
+        "tools/check_autonomous_development_loop.py",
+        "tools/check_automerge_eligibility.py",
+        "tools/run_codex_autopilot_tick.py",
+        "docs/development/codex_autopilot_runtime_runbook.md",
+        "scripts/codex_autopilot_tick.sh",
+        "tests/test_autonomous_development_loop.py",
+        "tests/test_automerge_eligibility.py",
+        "tests/test_codex_autopilot_runtime_contract.py",
+    }
+    for path in sorted(paths):
+        if path in policy_paths:
+            continue
+        full = ROOT / path
+        if not full.exists() or not full.is_file():
+            continue
+        matched = text_hits_stop_condition(full.read_text(encoding="utf-8", errors="ignore"), terms)
+        hits.extend(f"{path}: {term}" for term in matched)
+    return hits
+
+
+def fetch_open_autopilot_prs(skip_github: bool) -> tuple[list[dict[str, Any]], list[str]]:
+    if skip_github:
+        return [], ["github inspection skipped"]
+    code, stdout, stderr = run_command(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--json",
+            "number,title,headRefName,labels,statusCheckRollup,url",
+            "--limit",
+            "50",
+        ],
+        timeout=45,
+    )
+    if code != 0:
+        return [], [f"gh pr list unavailable: {(stderr or stdout).strip()}"]
+    try:
+        prs = json.loads(stdout)
+    except json.JSONDecodeError:
+        return [], ["gh pr list returned invalid JSON"]
+    autopilot = [
+        pr
+        for pr in prs
+        if "autopilot" in str(pr.get("headRefName", "")).lower()
+        or "autopilot" in str(pr.get("title", "")).lower()
+        or any("autopilot" in str(label.get("name", "")).lower() for label in pr.get("labels", []))
+    ]
+    return autopilot, []
+
+
+def classify_open_pr(pr: dict[str, Any]) -> dict[str, Any]:
+    labels = {str(label.get("name", "")).lower() for label in pr.get("labels", [])}
+    checks = pr.get("statusCheckRollup", [])
+    pending = [item.get("name") for item in checks if item.get("status") != "COMPLETED"]
+    failed = [
+        item.get("name")
+        for item in checks
+        if item.get("status") == "COMPLETED" and item.get("conclusion") not in {"SUCCESS", "SKIPPED", "NEUTRAL"}
+    ]
+    passed = [item.get("name") for item in checks if item.get("status") == "COMPLETED" and item.get("conclusion") == "SUCCESS"]
+    return {
+        "number": pr.get("number"),
+        "url": pr.get("url"),
+        "labels": sorted(labels),
+        "pending": pending,
+        "failed": failed,
+        "passed": passed,
+        "owner_decision_label": bool(labels & OWNER_DECISION_LABELS),
+    }
+
+
+def choose_next_action(state: dict[str, Any], requested: str | None = None) -> str:
+    allowed = [str(item) for item in state.get("next_allowed_actions", [])]
+    if requested:
+        if requested not in allowed:
+            raise ValueError(f"requested action is not in next_allowed_actions: {requested}")
+        return requested
+    if not allowed:
+        raise ValueError("phase_execution_state has no next_allowed_actions")
+    return allowed[0]
+
+
+def owner_decision_package(reason: str, action: str | None, output_path: Path) -> None:
+    lines = [
+        "# AI-CRM Codex Autopilot Owner Decision Package",
+        "",
+        f"- reason: {reason}",
+        f"- selected_action: {action or 'none'}",
+        "- auto_merge_allowed: false",
+        "- production_owner_switch_allowed: false",
+        "- production_write_allowed: false",
+        "- fallback_removal_allowed: false",
+        "- real_external_call_allowed: false",
+        "",
+        "## Owner Decision Needed",
+        "",
+        "Codex autopilot detected a stop condition or blocked state. The next step requires explicit owner review before another implementation PR may be generated.",
+    ]
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def prompt_for_action(action: str, state: dict[str, Any], output_path: Path) -> None:
+    docs = "\n".join(f"- {path}" for path in REQUIRED_PREFLIGHT_DOCS)
+    prompt = f"""# AI-CRM Codex Autopilot Next Prompt
+
+You are working in qianlan333/AI-CRM from latest main.
+
+## Required preflight
+
+Read and follow:
+{docs}
+
+## Selected low-risk action
+
+- action: {action}
+- active_candidate: {state.get("active_candidate")}
+- capability_owner: {state.get("capability_owner")}
+- current_phase: {state.get("current_phase")}
+
+## Hard boundaries
+
+- Only choose from docs/development/phase_execution_state.yaml next_allowed_actions.
+- For action-templates, stay within Phase 4AM staging execution / approval config closure / blocked evidence review.
+- Do not switch production owner.
+- Do not write production.
+- Do not remove fallback.
+- Do not modify production_compat, aicrm_next/main.py, business routes, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
+- Do not enable real external calls, timer, automation execution, or outbound send.
+- If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
+
+## Required implementation behavior
+
+- Advance only one low-risk next action.
+- Update docs/development/phase_execution_state.yaml with the resulting status.
+- Keep Business value, Business continuity, Risk / rollback, and Next action in the PR body.
+- Run:
+  - python3 tools/check_autonomous_development_loop.py --output-md /tmp/autonomous_development_loop.md --output-json /tmp/autonomous_development_loop.json
+  - python3 tools/check_automerge_eligibility.py --output-md /tmp/automerge_eligibility.md --output-json /tmp/automerge_eligibility.json
+  - python3 tools/check_legacy_facade_growth_freeze.py --output-md /tmp/legacy_facade_growth_freeze.md --output-json /tmp/legacy_facade_growth_freeze.json
+  - python3 tools/generate_legacy_replacement_backlog.py --check --output-json /tmp/legacy_replacement_backlog_check.json
+  - git diff --check
+
+## Auto-merge boundary
+
+Default behavior is PR creation only. Do not force admin merge unless AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED=1 and eligibility is true, required checks are green, and no stop condition exists.
+"""
+    output_path.write_text(prompt, encoding="utf-8")
+
+
+def build_tick_report(args: argparse.Namespace) -> dict[str, Any]:
+    state = load_yaml(STATE)
+    stop = load_yaml(STOP)
+    terms = stop_terms(stop)
+    details: dict[str, Any] = {
+        "prompt_output": str(args.prompt_output),
+        "owner_decision_output": str(args.owner_decision_output),
+    }
+    warnings: list[str] = []
+    blockers: list[str] = []
+
+    action: str | None = None
+    try:
+        action = choose_next_action(state, args.action)
+    except ValueError as exc:
+        blockers.append(str(exc))
+
+    if action and state.get("active_candidate") == "/api/admin/automation-conversion/action-templates*":
+        if action not in ACTION_TEMPLATES_ALLOWED_ACTIONS:
+            blockers.append(f"action-templates autopilot action is not Phase 4AM bounded: {action}")
+
+    action_stop_hits = text_hits_stop_condition(str(action or "").replace("_", " "), terms) if action else []
+    if action_stop_hits:
+        blockers.append(f"selected action touches stop condition: {action_stop_hits}")
+
+    diff_stop_hits = diff_hits_stop_condition(changed_files(), terms)
+    if diff_stop_hits:
+        blockers.append(f"current diff touches stop condition: {diff_stop_hits}")
+
+    open_prs, pr_warnings = fetch_open_autopilot_prs(args.skip_github)
+    warnings.extend(pr_warnings)
+    pr_classifications = [classify_open_pr(pr) for pr in open_prs]
+    details["open_autopilot_prs"] = pr_classifications
+    for pr in pr_classifications:
+        if pr["owner_decision_label"]:
+            blockers.append(f"open autopilot PR has owner-decision/automerge-blocked label: #{pr['number']}")
+        elif pr["pending"]:
+            blockers.append(f"open autopilot PR checks pending: #{pr['number']}")
+        elif pr["failed"]:
+            repair_marker = LOG_DIR_DEFAULT / f"repair-attempt-pr-{pr['number']}.json"
+            if repair_marker.exists():
+                blockers.append(f"open autopilot PR checks failed and bounded repair already attempted: #{pr['number']}")
+            else:
+                details["bounded_repair_allowed_for_pr"] = pr["number"]
+                repair_marker.parent.mkdir(parents=True, exist_ok=True)
+                repair_marker.write_text(json.dumps({"pr": pr["number"], "at": int(time.time())}) + "\n", encoding="utf-8")
+                blockers.append(f"open autopilot PR checks failed; bounded repair prompt required before new action: #{pr['number']}")
+        else:
+            blockers.append(f"open autopilot PR exists; wait for merge or owner decision: #{pr['number']}")
+
+    if blockers:
+        args.owner_decision_output.parent.mkdir(parents=True, exist_ok=True)
+        owner_decision_package("; ".join(blockers), action, args.owner_decision_output)
+        return {
+            "ok": True,
+            "result_status": "owner_decision_required",
+            "prompt_generated": False,
+            "owner_decision_package": str(args.owner_decision_output),
+            "selected_action": action,
+            "auto_merge_allowed": False,
+            "admin_merge_allowed": False,
+            "blockers": blockers,
+            "warnings": warnings,
+            "details": details,
+        }
+
+    args.prompt_output.parent.mkdir(parents=True, exist_ok=True)
+    prompt_for_action(action or "", state, args.prompt_output)
+    return {
+        "ok": True,
+        "result_status": "next_prompt_generated",
+        "prompt_generated": True,
+        "prompt_path": str(args.prompt_output),
+        "selected_action": action,
+        "auto_merge_allowed": False,
+        "admin_merge_allowed": os.environ.get("AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED") == "1",
+        "blockers": [],
+        "warnings": warnings,
+        "details": details,
+    }
+
+
+def write_outputs(report: dict[str, Any], output_json: str | None, output_md: str | None) -> None:
+    if output_json:
+        Path(output_json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if output_md:
+        lines = [
+            "# Codex Autopilot Tick Report",
+            "",
+            f"- result_status: {report['result_status']}",
+            f"- prompt_generated: {str(report.get('prompt_generated', False)).lower()}",
+            f"- selected_action: {report.get('selected_action')}",
+            f"- auto_merge_allowed: {str(report.get('auto_merge_allowed', False)).lower()}",
+            "",
+            "## Blockers",
+            *(f"- {item}" for item in report.get("blockers", [])),
+            "",
+            "## Warnings",
+            *(f"- {item}" for item in report.get("warnings", [])),
+        ]
+        Path(output_md).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--action")
+    parser.add_argument("--prompt-output", type=Path, default=PROMPT_DEFAULT)
+    parser.add_argument("--owner-decision-output", type=Path, default=OWNER_DECISION_DEFAULT)
+    parser.add_argument("--output-json")
+    parser.add_argument("--output-md")
+    parser.add_argument("--lock-file", type=Path, default=LOG_DIR_DEFAULT / "tick.lock")
+    parser.add_argument("--skip-github", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv or sys.argv[1:])
+    args.lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with args.lock_file.open("w", encoding="utf-8") as lock_handle:
+        try:
+            fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            report = {
+                "ok": True,
+                "result_status": "already_running",
+                "prompt_generated": False,
+                "auto_merge_allowed": False,
+                "admin_merge_allowed": False,
+                "blockers": ["single-flight lock is held"],
+                "warnings": [],
+                "details": {"lock_file": str(args.lock_file)},
+            }
+            write_outputs(report, args.output_json, args.output_md)
+            print(json.dumps(report, ensure_ascii=False))
+            return 0
+        report = build_tick_report(args)
+        write_outputs(report, args.output_json, args.output_md)
+        print(json.dumps(report, ensure_ascii=False))
+        return 0 if report.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
