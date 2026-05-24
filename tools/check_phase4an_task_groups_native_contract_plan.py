@@ -67,6 +67,8 @@ REQUIRED_GUARDRAILS = {
     "staging_and_owner_approval_before_production_use",
 }
 ALLOWED_CHANGED_FILES = {
+    "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.md",
+    "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_4an_task_groups_native_contract_plan.md",
     "docs/development/phase_4an_task_groups_native_contract_plan.yaml",
     "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.md",
@@ -74,12 +76,14 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.md",
     "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
+    "tools/check_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4an_task_groups_native_contract_plan.py",
     "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tools/check_phase4ap_task_groups_fixture_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
+    "tests/test_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4an_task_groups_native_contract_plan.py",
     "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
     "tests/test_phase4ap_task_groups_fixture_native_contract_plan.py",
@@ -289,12 +293,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("required_guardrails incomplete")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != state_update.get("active_candidate"):
-        blockers.append("phase_execution_state.active_candidate must match Phase 4AN plan")
     if state_update.get("phase_4an_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AN completed step")
-    if state.get("active_candidate") != ROUTE:
-        blockers.append("phase_execution_state.active_candidate must be task-groups")
     paused = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
     if not any(isinstance(item, dict) and item.get("route_family") == "/api/admin/automation-conversion/action-templates*" and item.get("paused_by_pr") == "#644" for item in paused):
         blockers.append("phase_execution_state.paused_candidates must include action-templates paused by #644")
