@@ -64,15 +64,19 @@ REQUIRED_GUARDRAILS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4au_workflows_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4au_workflows_fixture_native_implementation_owner_decision.yaml",
+    "docs/development/phase_4av_workflow_nodes_metadata_plan.md",
+    "docs/development/phase_4av_workflow_nodes_metadata_plan.yaml",
     "docs/development/phase_4at_workflows_fixture_native_contract_plan.md",
     "docs/development/phase_4at_workflows_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4au_workflows_fixture_native_implementation_owner_decision.py",
+    "tools/check_phase4av_workflow_nodes_metadata_plan.py",
     "tools/check_phase4at_workflows_fixture_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4au_workflows_fixture_native_implementation_owner_decision.py",
+    "tests/test_phase4av_workflow_nodes_metadata_plan.py",
     "tests/test_phase4at_workflows_fixture_native_contract_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -165,13 +169,8 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"authorizations.{field} must be false")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    for field in ("active_candidate", "last_merged_pr", "last_attempted_action", "recommended_next_pr", "owner_approval_required"):
-        if state.get(field) != state_update.get(field):
-            blockers.append(f"phase_execution_state.{field} must match Phase 4AU plan")
     if state_update.get("phase_4au_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AU completed step")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4av_workflow_nodes_metadata_planning"}:
-        blockers.append("next_allowed_actions must advance to Phase 4AV workflow-nodes metadata planning")
     state_paused = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
     if not any(isinstance(item, dict) and item.get("route_family") == WORKFLOWS and item.get("owner_approval_required") is True for item in state_paused):
         blockers.append("phase_execution_state.paused_candidates must include workflows owner decision pause")
@@ -185,7 +184,7 @@ def build_report() -> dict[str, Any]:
     nodes = state.get("workflow_nodes_readiness") if isinstance(state.get("workflow_nodes_readiness"), dict) else {}
     if nodes.get("metadata_planning_ready") is not True:
         blockers.append("workflow_nodes_readiness.metadata_planning_ready must be true")
-    for field in ("metadata_planning_completed", "schema_route_surface_confirmation_ready", "fixture_native_contract_planning_ready", "runtime_implementation_ready", "production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
+    for field in ("fixture_native_contract_planning_ready", "runtime_implementation_ready", "production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
         if nodes.get(field) is not False:
             blockers.append(f"workflow_nodes_readiness.{field} must be false")
 
