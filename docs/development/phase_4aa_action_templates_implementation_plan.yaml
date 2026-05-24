@@ -1,0 +1,321 @@
+version: 1
+status: phase_4aa_action_templates_planning_only_no_runtime_change
+
+authorizations:
+  runtime_change_authorized: false
+  production_repository_authorized: false
+  migration_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  delete_ready: false
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+legacy_discovery:
+  status: documented
+  routes:
+    - method: GET
+      path: /api/admin/automation-conversion/action-templates
+      handler: api_admin_automation_conversion_action_templates
+      file: wecom_ability_service/http/automation_conversion.py
+      action: list_action_templates
+    - method: POST
+      path: /api/admin/automation-conversion/action-templates
+      handler: api_admin_automation_conversion_action_templates
+      file: wecom_ability_service/http/automation_conversion.py
+      action: create_action_template
+    - method: POST
+      path: /api/admin/automation-conversion/action-templates/generate
+      handler: api_admin_automation_conversion_action_template_generate
+      file: wecom_ability_service/http/automation_conversion.py
+      action: out_of_scope_ai_generation
+    - method: POST
+      path: /api/admin/automation-conversion/action-templates/from-workflow
+      handler: api_admin_automation_conversion_action_template_from_workflow
+      file: wecom_ability_service/http/automation_conversion.py
+      action: needs_legacy_confirmation
+  services:
+    - function: list_action_templates
+      file: wecom_ability_service/domains/automation_conversion/action_template_service.py
+      behavior: Reads builtin templates and automation_operation_templates rows with source, category, keyword, and include_archived filters.
+      validation: Rejects invalid template_source.
+      transaction_behavior: read_only_no_commit
+      error_behavior: ValueError maps to HTTP 400.
+      unknowns:
+        - item: detail route is not registered for action-templates.
+        - item: options/catalog route is not registered for action-templates.
+    - function: create_action_template
+      file: wecom_ability_service/domains/automation_conversion/action_template_service.py
+      behavior: Normalizes CRM local or AI generated template payload and inserts automation_operation_templates row.
+      validation: Requires template_name, restricts template_source to crm_local or ai_generated, restricts status to active or archived, and generates a unique template_code.
+      transaction_behavior: insert_operation_template_row then get_db().commit().
+      error_behavior: ValueError maps to HTTP 400.
+      unknowns:
+        - item: no HTTP update route is registered even though update_operation_template_row exists in workflow_repo.
+        - item: no HTTP delete route is registered; archive behavior exists through status only.
+    - function: generate_action_template
+      file: wecom_ability_service/domains/automation_conversion/action_template_service.py
+      behavior: Calls central_router_agent through DeepSeek to generate template payload before insert.
+      validation: Requires business_goal and validates generated default_config, workflow_blueprint, and node_blueprints.
+      transaction_behavior: insert_operation_template_row then commit; rollback on generation failure.
+      error_behavior: External or validation failures are wrapped as ValueError and map to HTTP 400.
+      unknowns:
+        - item: out of Phase 4AA scope because it can invoke a real LLM/external adapter path.
+    - function: create_action_template_from_workflow
+      file: wecom_ability_service/domains/automation_conversion/action_template_service.py
+      behavior: Reads workflow model bundle and stores a CRM local operation template derived from it.
+      validation: Requires workflow_id and template_name.
+      transaction_behavior: insert_operation_template_row then get_db().commit().
+      error_behavior: LookupError maps to HTTP 404; ValueError maps to HTTP 400.
+      unknowns:
+        - item: future scope must confirm whether deriving templates from workflow state is still bounded metadata write only.
+  persistence:
+    status: documented
+    tables:
+      - name: automation_operation_templates
+        status: documented
+        fields:
+          - name: id
+            type: BIGSERIAL
+            required: true
+            notes: primary key
+          - name: template_code
+            type: TEXT
+            required: true
+            notes: unique; generated with duplicate protection in service
+          - name: template_name
+            type: TEXT
+            required: true
+            notes: required by service for create
+          - name: template_source
+            type: TEXT
+            required: true
+            notes: builtin, crm_local, or ai_generated
+          - name: category
+            type: TEXT
+            required: true
+            notes: filterable metadata
+          - name: description
+            type: TEXT
+            required: true
+            notes: descriptive metadata
+          - name: status
+            type: TEXT
+            required: true
+            notes: active or archived
+          - name: default_config_json
+            type: JSONB
+            required: true
+            notes: action default config payload
+          - name: ui_schema_json
+            type: JSONB
+            required: true
+            notes: UI behavior metadata
+          - name: workflow_blueprint_json
+            type: JSONB
+            required: true
+            notes: template workflow blueprint; not an execution authorization
+          - name: node_blueprints_json
+            type: JSONB
+            required: true
+            notes: template node blueprint list; not an execution authorization
+          - name: created_by
+            type: TEXT
+            required: true
+            notes: operator identity source
+          - name: updated_by
+            type: TEXT
+            required: true
+            notes: operator identity source
+          - name: created_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: defaults to CURRENT_TIMESTAMP
+          - name: updated_at
+            type: TIMESTAMPTZ
+            required: true
+            notes: updated by row write SQL
+          - name: archived_at
+            type: TIMESTAMPTZ
+            required: false
+            notes: set when status becomes archived in update helper
+        unknowns:
+          - item: no separate idempotency/audit table exists for action templates in the visible schema.
+
+scope:
+  in_scope:
+    - item: action template list/read through GET /api/admin/automation-conversion/action-templates
+    - item: action template create planning through POST /api/admin/automation-conversion/action-templates if bounded CRM local metadata write remains confirmed
+    - item: action template detail planning only if later legacy confirmation identifies an exposed detail path
+    - item: action template update planning only if later legacy confirmation identifies an exposed update path
+    - item: options/catalog planning only if later legacy confirmation identifies an exposed options path
+  out_of_scope:
+    - run_due
+    - automation_execution
+    - outbound_send
+    - wecom_external_call
+    - openclaw_call
+    - mcp_real_call
+    - timer
+    - workflow_activation
+    - customer_pool_state_change
+    - agent_runtime_execution
+    - fallback_removal
+    - production_compat_narrowing
+
+native_contract:
+  status: proposed
+  fields:
+    - next_field: id
+      legacy_field: id
+      direction: read
+      validation: integer identifier, required for detail/update only if those routes are later confirmed
+      default: none
+      status: documented
+      unknowns: []
+    - next_field: code
+      legacy_field: template_code
+      direction: read_write
+      validation: generated unique slug if omitted; duplicate protection required
+      default: slugified template_name
+      status: documented
+      unknowns: []
+    - next_field: name
+      legacy_field: template_name
+      direction: read_write
+      validation: required non-empty text
+      default: none
+      status: documented
+      unknowns: []
+    - next_field: template_source
+      legacy_field: template_source
+      direction: read_write
+      validation: crm_local or ai_generated for create; builtin is read-only
+      default: crm_local
+      status: documented
+      unknowns: []
+    - next_field: category
+      legacy_field: category
+      direction: read_write
+      validation: text metadata; exact allowed values need owner confirmation
+      default: empty string
+      status: needs_legacy_confirmation
+      unknowns:
+        - category enum is not visible in schema
+    - next_field: description
+      legacy_field: description
+      direction: read_write
+      validation: bounded text length to be defined by native contract
+      default: empty string
+      status: documented
+      unknowns: []
+    - next_field: status
+      legacy_field: status
+      direction: read_write
+      validation: active or archived
+      default: active
+      status: documented
+      unknowns: []
+    - next_field: default_config
+      legacy_field: default_config_json
+      direction: read_write
+      validation: JSON object; dangerous side-effect fields must be rejected
+      default: {}
+      status: documented
+      unknowns: []
+    - next_field: ui_schema
+      legacy_field: ui_schema_json
+      direction: read_write
+      validation: JSON object; UI-only metadata
+      default: {}
+      status: documented
+      unknowns: []
+    - next_field: workflow_blueprint
+      legacy_field: workflow_blueprint_json
+      direction: read_write
+      validation: JSON object; planning must not authorize activation or execution
+      default: {}
+      status: documented
+      unknowns: []
+    - next_field: node_blueprints
+      legacy_field: node_blueprints_json
+      direction: read_write
+      validation: JSON list; planning must not authorize sends or execution
+      default: []
+      status: documented
+      unknowns: []
+    - next_field: created_by
+      legacy_field: created_by
+      direction: read
+      validation: operator identity required on create
+      default: operator_id
+      status: documented
+      unknowns: []
+    - next_field: updated_by
+      legacy_field: updated_by
+      direction: read
+      validation: operator identity required on update if update is later confirmed
+      default: operator_id
+      status: documented
+      unknowns: []
+    - next_field: created_at
+      legacy_field: created_at
+      direction: read
+      validation: server timestamp
+      default: CURRENT_TIMESTAMP
+      status: documented
+      unknowns: []
+    - next_field: updated_at
+      legacy_field: updated_at
+      direction: read
+      validation: server timestamp
+      default: CURRENT_TIMESTAMP
+      status: documented
+      unknowns: []
+
+required_guardrails:
+  idempotency_required_for_create: true
+  duplicate_protection_required: true
+  audit_operator_identity_required: true
+  before_after_snapshot_required_for_update: true
+  rollback_payload_required: true
+  dangerous_fields_rejected: true
+  no_real_external_side_effect: true
+  no_automation_execution: true
+  fallback_retained: true
+  checker_required: true
+  smoke_required: true
+
+repository_strategy:
+  selected_strategy: reuse_legacy_tables_after_schema_confirmation
+  selection_status: tentative_requires_phase_4ab_schema_confirmation
+  options:
+    - id: reuse_legacy_tables
+      recommendation: preferred_if_schema_confirmed
+      pros: uses existing automation_operation_templates table and current legacy payload shape
+      cons: native idempotency/audit may need companion planning; update/delete route exposure is not confirmed
+      risks: JSON blueprint fields may contain behavior that must remain metadata-only
+    - id: legacy_service_adapter
+      recommendation: evaluate_as_transitional_only
+      pros: preserves current validation and serialization behavior
+      cons: risks keeping new Next code tied to legacy service internals and external generation branches
+      risks: generate_action_template path calls a real LLM adapter and must stay excluded
+    - id: new_next_tables
+      recommendation: not_recommended_without_separate_approval
+      pros: cleaner Next ownership boundary in the future
+      cons: migration, dual-write, and cutover complexity
+      risks: unnecessary schema churn and higher rollback risk
+
+phase_4ab_recommendation:
+  recommended_next_step: schema_confirmation_only
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Confirm action-template schema, route surface, and whether update/detail/options exist before any native contract implementation.
