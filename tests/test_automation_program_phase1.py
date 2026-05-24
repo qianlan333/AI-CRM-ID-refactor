@@ -2270,6 +2270,149 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
         assert item["error_message"] == ""
 
 
+def test_operation_task_agent_mode_generates_content_before_send(app, monkeypatch):
+    from datetime import datetime
+
+    from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+        create_operation_task,
+        run_due_operation_tasks,
+    )
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
+
+    program_id = _default_program_id(app)
+    captured_dispatch: dict[str, object] = {}
+    captured_generation: dict[str, object] = {}
+
+    def fake_generate_content_with_agent(**kwargs):
+        captured_generation.update(kwargs)
+        return {
+            "content_text": "Agent 已按问卷上下文生成的话术",
+            "content_source": "agent_generated",
+            "fallback_reason": "",
+            "agent_run_id": "run-operation-task-agent",
+            "agent_output_id": "output-operation-task-agent",
+            "agent_code": "questionnaire_agent",
+        }
+
+    def fake_dispatch(task_type, fn_name, payload):
+        captured_dispatch["task_type"] = task_type
+        captured_dispatch["fn_name"] = fn_name
+        captured_dispatch["payload"] = payload
+        return {"task_id": 7789, "wecom_result": {"errcode": 0, "fail_list": []}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.sync_all_conversion_member_audiences",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime._generate_content_with_agent",
+        fake_generate_content_with_agent,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
+        lambda task_type, fn_name, payload, **kwargs: fake_dispatch(task_type, fn_name, payload),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM automation_channel WHERE program_id = ?", (program_id,))
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, 'Agent 群发渠道', 'agent_channel_sender', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_default_qrcode"),
+            ).fetchone()["id"]
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    current_audience_entered_at, behavior_tier_key, source_channel_id
+                )
+                VALUES ('ext-operation-task-agent', '13800000003', 'agent_member_owner', 'operating', CURRENT_DATE::text, 'lt_2', ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, is_current, entry_source
+            )
+            VALUES (?, 'operating', CURRENT_DATE::text, TRUE, 'test')
+            """,
+            (member_id,),
+        )
+        task = create_operation_task(
+            program_id,
+            {
+                "task_name": "Agent 个性化群发",
+                "status": "active",
+                "trigger_type": "scheduled_daily",
+                "send_time": "15:00",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "none",
+                "content_mode": "agent",
+                "agent_config_json": {
+                    "agent_code": "questionnaire_agent",
+                    "requirement": "结合问卷回答生成一条关怀话术",
+                },
+            },
+            operator_id="pytest",
+        )["task"]
+
+        scheduled_now = datetime.now().replace(hour=15, minute=1, second=0, microsecond=0)
+        due_result = run_due_operation_tasks(program_id=program_id, now=scheduled_now, operator_id="pytest-runner")
+        assert due_result["ok"] is True
+        assert due_result["enqueued_count"] >= 1
+
+        claimed = queue_service.claim_due_jobs(limit=10, now=scheduled_now.replace(minute=2))
+        operation_jobs = [item for item in claimed if item["source_type"] == "operation_task"]
+        assert len(operation_jobs) == 1
+
+        outcome = execute_job(operation_jobs[0])
+        assert outcome["ok"] is True, outcome
+        assert outcome["sent_count"] == 1
+        assert captured_dispatch["fn_name"] == "create_private_message_task"
+        assert captured_dispatch["payload"]["sender"] == "agent_channel_sender"
+        assert captured_dispatch["payload"]["external_userid"] == ["ext-operation-task-agent"]
+        assert captured_dispatch["payload"]["text"]["content"] == "Agent 已按问卷上下文生成的话术"
+        assert captured_generation["agent_binding"]["agent_code"] == "questionnaire_agent"
+        assert captured_generation["standard_content_text"] == "结合问卷回答生成一条关怀话术"
+        assert captured_generation["generation_source"] == "automation_operation_task"
+
+        item = db.execute(
+            """
+            SELECT status, rendered_content_text, content_snapshot_json
+            FROM automation_operation_task_execution_item
+            WHERE task_id = ?
+            LIMIT 1
+            """,
+            (task["id"],),
+        ).fetchone()
+        assert item["status"] == "sent"
+        assert item["rendered_content_text"] == "Agent 已按问卷上下文生成的话术"
+        assert item["content_snapshot_json"]["content_source"] == "agent_generated"
+        assert item["content_snapshot_json"]["agent_run_id"] == "run-operation-task-agent"
+
+
 def test_operation_task_audience_entered_trigger_enqueues_immediate_broadcast(app, monkeypatch):
     from datetime import datetime
 
