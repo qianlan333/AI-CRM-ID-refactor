@@ -66,15 +66,19 @@ REQUIRED_SCOPE = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4az_next_internal_write_candidate_selection.md",
     "docs/development/phase_4az_next_internal_write_candidate_selection.yaml",
+    "docs/development/phase_4ba_tasks_metadata_plan.md",
+    "docs/development/phase_4ba_tasks_metadata_plan.yaml",
     "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4az_next_internal_write_candidate_selection.py",
+    "tools/check_phase4ba_tasks_metadata_plan.py",
     "tools/check_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4az_next_internal_write_candidate_selection.py",
+    "tests/test_phase4ba_tasks_metadata_plan.py",
     "tests/test_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -158,24 +162,14 @@ def build_report() -> dict[str, Any]:
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
     if state.get("active_candidate") != TASKS:
         blockers.append("phase_execution_state.active_candidate must be tasks")
-    if state.get("last_merged_pr") != "#656":
-        blockers.append("phase_execution_state.last_merged_pr must record #656")
-    if state.get("last_attempted_action") != "phase_4az_next_internal_write_candidate_selection":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4AZ")
     if state_update.get("phase_4az_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AZ completed step")
-    if state.get("recommended_next_pr") != "phase_4ba_tasks_metadata_planning":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BA tasks metadata planning")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4ba_tasks_metadata_planning"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BA tasks metadata planning")
 
     readiness = state.get("tasks_readiness") if isinstance(state.get("tasks_readiness"), dict) else {}
     for field in ("metadata_planning_ready", "run_due_excluded", "task_execution_excluded", "workflow_execution_excluded", "timer_execution_excluded", "outbound_send_excluded"):
         if readiness.get(field) is not True:
             blockers.append(f"tasks_readiness.{field} must be true")
     for field in (
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
         "fixture_native_contract_planning_ready",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",

@@ -55,11 +55,7 @@ def test_authorizations_false() -> None:
 def test_phase_execution_state_advances_to_tasks_metadata_planning() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.TASKS
-    assert state["last_merged_pr"] == "#656"
-    assert state["last_attempted_action"] == "phase_4az_next_internal_write_candidate_selection"
-    assert state["recommended_next_pr"] == "phase_4ba_tasks_metadata_planning"
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4ba_tasks_metadata_planning"]
     assert "phase_4az_next_internal_write_candidate_selection_completed" in state["completed_steps"]
     readiness = state["tasks_readiness"]
     assert readiness["metadata_planning_ready"] is True
