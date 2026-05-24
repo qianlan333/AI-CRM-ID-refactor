@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "bounded low-risk work package" in prompt_text
     assert "10-13 minutes" in prompt_text
-    assert "phase_4ar_workflows_metadata_planning" in prompt_text
+    assert "phase_4as_workflows_schema_route_surface_confirmation" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -156,6 +156,24 @@ def test_runner_treats_phase4aq_task_groups_owner_decision_artifacts_as_policy_f
         "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml",
         "tools/check_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4ar_workflows_metadata_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4ar_workflows_metadata_plan.md",
+        "docs/development/phase_4ar_workflows_metadata_plan.yaml",
+        "tools/check_phase4ar_workflows_metadata_plan.py",
+        "tests/test_phase4ar_workflows_metadata_plan.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 

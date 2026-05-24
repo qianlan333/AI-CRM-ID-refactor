@@ -1,0 +1,99 @@
+version: 1
+status: phase_4ar_workflows_metadata_planning_no_runtime_change
+
+route_family: /api/admin/automation-conversion/workflows*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+
+previous_candidate:
+  route_family: /api/admin/automation-conversion/task-groups*
+  status: paused_awaiting_fixture_native_runtime_owner_decision
+  paused_by_pr: "#648"
+  owner_approval_required: true
+
+selected_candidate:
+  route_family: /api/admin/automation-conversion/workflows*
+  replacement_phase: phase_4_internal_write
+  replacement_category: internal_write
+  priority: P1
+  daily_business_critical: true
+  why_selected: Bounded automation workflow metadata route family selected after task-groups paused for owner approval.
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  workflow_execution_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+planned_contract_scope:
+  - route_surface_confirmation
+  - metadata_only_subset_decision
+  - request_response_field_mapping
+  - validation_boundary_plan
+  - idempotency_plan
+  - audit_plan
+  - rollback_payload_plan
+  - fixture_local_contract_plan
+  - checker_and_test_plan
+
+excluded_scope:
+  payment: true
+  oauth: true
+  wecom_external_call: true
+  openclaw_mcp_real_call: true
+  workflow_execution: true
+  timer_execution: true
+  run_due: true
+  automation_execution: true
+  outbound_send: true
+  workflow_nodes_runtime: true
+  task_runtime: true
+  media_upload: true
+  production_write: true
+  production_route_switch: true
+  fallback_removal: true
+  production_compat_change: true
+
+required_guardrails:
+  - keep_legacy_fallback
+  - no_production_owner_switch
+  - no_production_write
+  - no_external_calls
+  - no_workflow_execution
+  - no_timer_execution
+  - no_outbound_send
+  - fixture_local_evidence_not_production_success
+  - metadata_contract_before_runtime
+  - staging_and_owner_approval_before_production_use
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/workflows*
+  last_merged_pr: "#648"
+  last_attempted_action: phase_4ar_workflows_metadata_planning
+  last_created_pr: "#649"
+  recommended_next_pr: phase_4as_workflows_schema_route_surface_confirmation
+  owner_approval_required: false
+  task_groups_paused: true
+  phase_4ar_completed_step: phase_4ar_workflows_metadata_planning_completed
+
+phase_4as_recommendation:
+  recommended_next_step: workflows_schema_route_surface_confirmation
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Confirm workflows legacy route surface, schema/table references, and metadata-only subset before fixture/native contract planning.

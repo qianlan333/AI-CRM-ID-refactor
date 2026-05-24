@@ -54,12 +54,7 @@ def test_high_risk_authorizations_are_false() -> None:
 def test_phase_execution_state_marks_task_groups_paused_and_workflows_active() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.WORKFLOWS
-    assert state["last_merged_pr"] == "#647"
-    assert state["last_attempted_action"] == "phase_4aq_task_groups_fixture_native_implementation_owner_decision"
-    assert state["recommended_next_pr"] == "phase_4ar_workflows_metadata_planning"
-    assert state["owner_approval_required"] is False
     assert "phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed" in state["completed_steps"]
-    assert state["next_allowed_actions"] == ["phase_4ar_workflows_metadata_planning"]
     assert any(
         item["route_family"] == checker.TASK_GROUPS and item["owner_approval_required"] is True
         for item in state["paused_candidates"]

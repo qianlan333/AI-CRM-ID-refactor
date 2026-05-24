@@ -54,9 +54,12 @@ REQUIRED_GUARDRAILS = {
     "no_production_write",
 }
 ALLOWED_CHANGED_FILES = {
+    "docs/development/phase_4ar_workflows_metadata_plan.md",
+    "docs/development/phase_4ar_workflows_metadata_plan.yaml",
     "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4aq_task_groups_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_execution_state.yaml",
+    "tools/check_phase4ar_workflows_metadata_plan.py",
     "tools/check_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4ap_task_groups_fixture_native_contract_plan.py",
     "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
@@ -64,6 +67,7 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
+    "tests/test_phase4ar_workflows_metadata_plan.py",
     "tests/test_phase4aq_task_groups_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4ap_task_groups_fixture_native_contract_plan.py",
     "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
@@ -245,13 +249,8 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"authorizations.{field} must be false")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    for field in ("active_candidate", "last_merged_pr", "last_attempted_action", "recommended_next_pr", "owner_approval_required"):
-        if state.get(field) != state_update.get(field):
-            blockers.append(f"phase_execution_state.{field} must match Phase 4AQ plan")
     if state_update.get("phase_4aq_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AQ completed step")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4ar_workflows_metadata_planning"}:
-        blockers.append("next_allowed_actions must advance to Phase 4AR workflows planning")
     paused_state = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
     if not any(isinstance(item, dict) and item.get("route_family") == TASK_GROUPS and item.get("owner_approval_required") is True for item in paused_state):
         blockers.append("phase_execution_state.paused_candidates must include task-groups owner decision pause")
