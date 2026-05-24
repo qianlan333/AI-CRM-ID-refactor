@@ -23,6 +23,7 @@ from .action_template_repository import (
     ActionTemplateIdempotencyConflict,
     InMemoryActionTemplateRepository,
     build_action_template_repository,
+    action_template_sqlalchemy_enabled,
 )
 from .domain import execution_record_projection, overview_cards, pool_summary
 from .dto import (
@@ -155,12 +156,13 @@ class _ProfileSegmentRepositoryOwner:
 
 
 class _ActionTemplateRepositoryOwner:
-    def __init__(self, repo: InMemoryActionTemplateRepository | None = None) -> None:
+    def __init__(self, repo: Any | None = None) -> None:
         self._repo = repo
 
-    def _repo_or_none(self) -> InMemoryActionTemplateRepository | None:
-        if production_environment() or production_data_ready():
-            return None
+    def _repo_or_none(self) -> Any | None:
+        if (production_environment() or production_data_ready()) and self._repo is None:
+            if not action_template_sqlalchemy_enabled():
+                return None
         if self._repo is None:
             self._repo = build_action_template_repository()
         return self._repo
@@ -168,6 +170,15 @@ class _ActionTemplateRepositoryOwner:
     def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
         detail = str(exc) if exc else None
         return _action_template_production_unavailable_payload(detail)
+
+    def _repo_or_blocked_payload(self) -> Any | dict[str, Any]:
+        try:
+            repo = self._repo_or_none()
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        if repo is None:
+            return None
+        return repo
 
 
 class GetAutomationRuntimeContractQuery:
@@ -182,7 +193,9 @@ class GetAutomationRuntimeContractQuery:
 
 class ListActionTemplatesQuery(_ActionTemplateRepositoryOwner):
     def execute(self, request: ActionTemplateListRequest) -> dict[str, Any]:
-        repo = self._repo_or_none()
+        repo = self._repo_or_blocked_payload()
+        if isinstance(repo, dict):
+            return repo
         if repo is None:
             return _action_template_production_unavailable_payload()
         try:
@@ -211,7 +224,9 @@ class ListActionTemplatesQuery(_ActionTemplateRepositoryOwner):
 
 class CreateActionTemplateCommand(_ActionTemplateRepositoryOwner):
     def execute(self, request: ActionTemplateCreateRequest) -> dict[str, Any]:
-        repo = self._repo_or_none()
+        repo = self._repo_or_blocked_payload()
+        if isinstance(repo, dict):
+            return repo
         if repo is None:
             return _action_template_production_unavailable_payload()
         payload = _request_dump(request)

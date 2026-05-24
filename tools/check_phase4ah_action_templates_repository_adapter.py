@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -10,27 +11,30 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN_MD = ROOT / "docs/development/phase_4ag_action_templates_repository_adapter_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml"
-REQUIRED_DOCS = [PLAN_MD, PLAN_YAML]
+PLAN_MD = ROOT / "docs/development/phase_4ah_action_templates_repository_adapter.md"
+PLAN_YAML = ROOT / "docs/development/phase_4ah_action_templates_repository_adapter.yaml"
+ADAPTER = ROOT / "aicrm_next/automation_engine/action_template_sqlalchemy_repository.py"
+FACTORY = ROOT / "aicrm_next/automation_engine/action_template_repository.py"
+APPLICATION = ROOT / "aicrm_next/automation_engine/application.py"
+MAIN = ROOT / "aicrm_next/main.py"
+PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
+REQUIRED_ARTIFACTS = [PLAN_MD, PLAN_YAML, ADAPTER, FACTORY]
 AUTH_FALSE_FIELDS = {
-    "runtime_implementation_authorized",
-    "production_repository_authorized",
     "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
     "production_compat_change_authorized",
     "real_external_call_authorized",
     "automation_execution_authorized",
     "outbound_send_authorized",
-    "production_write_authorized",
+    "production_write_as_route_owner_authorized",
     "delete_ready",
 }
-REQUIRED_METHODS = {
+IMPLEMENTED_METHODS = {
     "list_action_templates",
     "create_action_template",
     "list_action_template_audit_events",
 }
-REQUIRED_EXCLUDED_METHODS = {
+EXCLUDED_METHODS = {
     "generate_action_template",
     "create_action_template_from_workflow",
     "update_action_template",
@@ -39,30 +43,34 @@ REQUIRED_EXCLUDED_METHODS = {
     "send_action_template",
 }
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4ag_action_templates_repository_adapter_plan.md",
-    "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml",
-    "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
-    "tests/test_phase4ag_action_templates_repository_adapter_plan.py",
-    "tools/check_phase4af_action_templates_local_parity_harness.py",
-    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
-    "tools/check_phase4ad_action_templates_companion_migration.py",
     "aicrm_next/automation_engine/action_template_repository.py",
+    "aicrm_next/automation_engine/action_templates.py",
     "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/repo.py",
+    "aicrm_next/automation_engine/dto.py",
     "aicrm_next/automation_engine/action_template_sqlalchemy_repository.py",
     "docs/development/phase_4ah_action_templates_repository_adapter.md",
     "docs/development/phase_4ah_action_templates_repository_adapter.yaml",
     "tools/check_phase4ah_action_templates_repository_adapter.py",
     "tests/test_phase4ah_action_templates_repository_adapter.py",
+    "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
+    "tools/check_phase4af_action_templates_local_parity_harness.py",
+    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
+}
+PROTECTED_EXACT = {
+    "aicrm_next/main.py",
+    "aicrm_next/production_compat/api.py",
+    "app.py",
+    "legacy_flask_app.py",
 }
 PROTECTED_PREFIXES = (
-    "aicrm_next/",
     "wecom_ability_service/",
     "migrations/",
     "deploy/",
     "systemd/",
     "nginx/",
 )
-PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
 
 
 def _read(path: Path) -> str:
@@ -210,82 +218,157 @@ def _changed_files_from_git() -> tuple[set[str], list[str]]:
     return changed, warnings
 
 
-def check_required_docs() -> dict[str, Any]:
-    missing = [str(path.relative_to(ROOT)) for path in REQUIRED_DOCS if not path.exists()]
-    return {"ok": not missing, "blockers": [f"missing required doc: {path}" for path in missing], "warnings": []}
+def check_required_artifacts() -> dict[str, Any]:
+    missing = [str(path.relative_to(ROOT)) for path in REQUIRED_ARTIFACTS if not path.exists()]
+    return {"ok": not missing, "blockers": [f"missing required artifact: {path}" for path in missing], "warnings": []}
 
 
 def check_yaml_contract(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4ag_action_templates_repository_adapter_planning_no_runtime_change":
-        blockers.append("status must be phase_4ag_action_templates_repository_adapter_planning_no_runtime_change")
+    if data.get("status") != "phase_4ah_action_templates_repository_adapter_behind_explicit_flag":
+        blockers.append("status must be phase_4ah_action_templates_repository_adapter_behind_explicit_flag")
     for field in sorted(AUTH_FALSE_FIELDS):
         if (data.get("authorizations") or {}).get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
-
-    planned_repository = data.get("planned_repository") or {}
-    if not planned_repository.get("class_name"):
-        blockers.append("planned_repository.class_name must be non-empty")
-    expected_repo = {
+    adapter = data.get("repository_adapter") or {}
+    expected = {
+        "class_name": "SqlAlchemyActionTemplateRepository",
         "backend_flag": "AICRM_ACTION_TEMPLATES_REPO_BACKEND",
         "database_url_flag": "AICRM_ACTION_TEMPLATES_DATABASE_URL",
         "default_backend": "fixture",
     }
-    for field, expected in expected_repo.items():
-        if planned_repository.get(field) != expected:
-            blockers.append(f"planned_repository.{field} must be {expected}")
-    if planned_repository.get("database_url_fallback_allowed") is not False:
-        blockers.append("planned_repository.database_url_fallback_allowed must be false")
-    if planned_repository.get("production_route_owner_unchanged") is not True:
-        blockers.append("planned_repository.production_route_owner_unchanged must be true")
-
+    for field, value in expected.items():
+        if adapter.get(field) != value:
+            blockers.append(f"repository_adapter.{field} must be {value}")
+    for field in (
+        "database_url_fallback_allowed",
+        "production_fixture_success_blocked",
+        "production_unavailable_if_db_missing",
+        "production_route_owner_unchanged",
+    ):
+        expected_value = False if field == "database_url_fallback_allowed" else True
+        if adapter.get(field) is not expected_value:
+            blockers.append(f"repository_adapter.{field} must be {str(expected_value).lower()}")
     tables = data.get("tables") or {}
-    expected_tables = {
-        "main": "automation_operation_templates",
-        "idempotency": "automation_operation_template_idempotency",
-        "audit": "automation_operation_template_audit_log",
-    }
-    for field, expected in expected_tables.items():
-        if tables.get(field) != expected:
-            blockers.append(f"tables.{field} must be {expected}")
-
-    methods = {str(item.get("name") or ""): item for item in _as_list(data.get("planned_methods")) if isinstance(item, dict)}
-    missing_methods = sorted(REQUIRED_METHODS - set(methods))
-    if missing_methods:
-        blockers.append(f"planned_methods missing {missing_methods}")
-    create = methods.get("create_action_template") or {}
-    for field in ("transaction_required", "idempotency_required", "audit_required", "rollback_required"):
-        if create.get(field) is not True:
-            blockers.append(f"planned_methods.create_action_template.{field} must be true")
-    for method_name, method in methods.items():
-        if method.get("external_side_effect_allowed") is not False:
-            blockers.append(f"planned_methods.{method_name}.external_side_effect_allowed must be false")
-
-    excluded = {str(item) for item in _as_list(data.get("excluded_methods"))}
-    missing_excluded = sorted(REQUIRED_EXCLUDED_METHODS - excluded)
+    if tables.get("main") != "automation_operation_templates":
+        blockers.append("tables.main must be automation_operation_templates")
+    if tables.get("idempotency") != "automation_operation_template_idempotency":
+        blockers.append("tables.idempotency must be automation_operation_template_idempotency")
+    if tables.get("audit") != "automation_operation_template_audit_log":
+        blockers.append("tables.audit must be automation_operation_template_audit_log")
+    if set(_as_list(data.get("implemented_methods"))) != IMPLEMENTED_METHODS:
+        blockers.append(f"implemented_methods must be exactly {sorted(IMPLEMENTED_METHODS)}")
+    missing_excluded = sorted(EXCLUDED_METHODS - {str(item) for item in _as_list(data.get("excluded_methods"))})
     if missing_excluded:
         blockers.append(f"excluded_methods missing {missing_excluded}")
-
-    for section_name in ("idempotency_strategy", "enablement_strategy", "parity_smoke_readiness"):
-        section = data.get(section_name) or {}
-        for field, value in section.items():
+    for section_name in ("idempotency",):
+        for field, value in (data.get(section_name) or {}).items():
             if value is not True:
                 blockers.append(f"{section_name}.{field} must be true")
-    audit = data.get("audit_strategy") or {}
+    audit = data.get("audit") or {}
     for field in ("audit_event_required", "after_snapshot_required", "rollback_payload_required", "side_effect_safety_required"):
         if audit.get(field) is not True:
-            blockers.append(f"audit_strategy.{field} must be true")
+            blockers.append(f"audit.{field} must be true")
     if audit.get("before_snapshot_for_create") != "empty_object":
-        blockers.append("audit_strategy.before_snapshot_for_create must be empty_object")
-
-    recommendation = data.get("phase_4ah_recommendation") or {}
+        blockers.append("audit.before_snapshot_for_create must be empty_object")
+    safety = data.get("side_effect_safety") or {}
+    for field, value in safety.items():
+        if value is not False:
+            blockers.append(f"side_effect_safety.{field} must be false")
+    recommendation = data.get("phase_4ai_recommendation") or {}
     if not recommendation.get("recommended_next_step"):
-        blockers.append("phase_4ah_recommendation.recommended_next_step missing")
+        blockers.append("phase_4ai_recommendation.recommended_next_step missing")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if recommendation.get(field) is not False:
-            blockers.append(f"phase_4ah_recommendation.{field} must be false")
+            blockers.append(f"phase_4ai_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_static_code() -> dict[str, Any]:
+    blockers: list[str] = []
+    adapter_text = _read(ADAPTER)
+    factory_text = _read(FACTORY)
+    app_text = _read(APPLICATION)
+    combined = "\n".join([adapter_text, factory_text, app_text])
+    if "wecom_ability_service" in combined:
+        blockers.append("adapter/factory must not import wecom_ability_service")
+    for token in ("DeepSeek", "deepseek", "LLM", "llm_adapter", "call_deepseek"):
+        if token in combined:
+            blockers.append(f"forbidden external adapter token present: {token}")
+    for token in (
+        "AICRM_ACTION_TEMPLATES_REPO_BACKEND",
+        "AICRM_ACTION_TEMPLATES_DATABASE_URL",
+        "automation_operation_templates",
+        "automation_operation_template_idempotency",
+        "automation_operation_template_audit_log",
+        "SqlAlchemyActionTemplateRepository",
+    ):
+        if token not in combined:
+            blockers.append(f"required adapter token missing: {token}")
+    forbidden_routes = ("action-templates/generate", "action-templates/from-workflow")
+    for token in forbidden_routes:
+        if token in adapter_text:
+            blockers.append(f"adapter must not reference route: {token}")
+    if "os.getenv(\"DATABASE_URL\"" in factory_text or "os.environ.get(\"DATABASE_URL\"" in factory_text:
+        blockers.append("factory must not use DATABASE_URL fallback")
+    if "get_settings().database_url" in factory_text or "AICRM_NEXT_TEST_DATABASE_URL" in factory_text:
+        blockers.append("factory must not use settings/test DB fallback")
+    for forbidden_method in EXCLUDED_METHODS:
+        if f"def {forbidden_method}" in adapter_text:
+            blockers.append(f"adapter must not implement {forbidden_method}")
+    if "production_compat" in adapter_text:
+        blockers.append("adapter must not reference production_compat")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_optional_probe() -> dict[str, Any]:
+    warnings: list[str] = []
+    blockers: list[str] = []
+    try:
+        from fastapi.testclient import TestClient  # type: ignore
+        from aicrm_next.automation_engine.action_template_repository import reset_action_template_fixture_state
+        from aicrm_next.main import create_app
+    except ModuleNotFoundError as exc:
+        warnings.append(f"fixture guard probe skipped: {exc}")
+        return {"ok": True, "blockers": [], "warnings": warnings}
+    old_env = {
+        key: os.environ.get(key)
+        for key in (
+            "AICRM_NEXT_ENV",
+            "DATABASE_URL",
+            "AICRM_ACTION_TEMPLATES_REPO_BACKEND",
+            "AICRM_ACTION_TEMPLATES_DATABASE_URL",
+            "AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE",
+            "AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE",
+        )
+    }
+    try:
+        os.environ["AICRM_NEXT_ENV"] = "production"
+        os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("AICRM_ACTION_TEMPLATES_REPO_BACKEND", None)
+        os.environ.pop("AICRM_ACTION_TEMPLATES_DATABASE_URL", None)
+        os.environ["AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE"] = "0"
+        os.environ["AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE"] = "1"
+        reset_action_template_fixture_state()
+        response = TestClient(create_app(), raise_server_exceptions=False).post(
+            "/api/admin/automation-conversion/action-templates",
+            json={"template_name": "Prod", "template_code": "prod", "idempotency_key": "prod", "operator": "checker"},
+        )
+        if response.status_code != 503 or response.json().get("error_code") != "production_repository_not_enabled":
+            blockers.append(f"production fixture POST must be blocked, got {response.status_code}: {response.text[:300]}")
+    finally:
+        for key, value in old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    test_url = os.getenv("AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL", "")
+    if test_url and any(marker in test_url.lower() for marker in ("test", "local", "dev", "127.0.0.1", "localhost")):
+        warnings.append("safe local adapter integration probe is available but not required by this checker")
+    else:
+        warnings.append("adapter integration probe skipped: AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL is not a safe local/test/dev URL")
+    return {"ok": not blockers, "blockers": blockers, "warnings": warnings}
 
 
 def _is_protected(path: str) -> bool:
@@ -298,7 +381,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4AG scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4AH scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -308,11 +391,10 @@ def check_doc_claims() -> dict[str, Any]:
     text = _read(PLAN_MD).lower()
     blockers: list[str] = []
     for pattern in (
-        r"repository implemented",
-        r"production repository enabled",
-        r"production write authorized",
-        r"route switch authorized",
+        r"production route owner switched",
         r"fallback removal authorized",
+        r"production write as route owner authorized",
+        r"external calls enabled",
         r"production approved",
         r"canary approved",
         r"delete_ready\s+true",
@@ -325,8 +407,10 @@ def check_doc_claims() -> dict[str, Any]:
 def build_report() -> dict[str, Any]:
     data = load_yaml()
     checks = {
-        "required_docs": check_required_docs(),
+        "required_artifacts": check_required_artifacts(),
         "yaml_contract": check_yaml_contract(data),
+        "static_code": check_static_code(),
+        "optional_probe": check_optional_probe(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -351,7 +435,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4AG Action Templates Repository Adapter Plan Check",
+        "# Phase 4AH Action Templates Repository Adapter Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -367,7 +451,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4AG action templates repository adapter planning.")
+    parser = argparse.ArgumentParser(description="Check Phase 4AH action templates repository adapter.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)

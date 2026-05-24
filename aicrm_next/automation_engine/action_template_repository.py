@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy import create_engine
+
 from aicrm_next.shared.errors import ContractError
-from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 
 from .action_templates import (
     ACTION_TEMPLATE_ROUTE_FAMILY,
@@ -19,6 +22,11 @@ from .state_machine import utc_now_iso
 
 class ActionTemplateIdempotencyConflict(ContractError):
     status_code = 409
+
+
+ACTION_TEMPLATE_BACKEND_ENV = "AICRM_ACTION_TEMPLATES_REPO_BACKEND"
+ACTION_TEMPLATE_DATABASE_URL_ENV = "AICRM_ACTION_TEMPLATES_DATABASE_URL"
+ACTION_TEMPLATE_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 def _json_dumps(value: Any) -> str:
@@ -206,7 +214,31 @@ class InMemoryActionTemplateRepository:
 _fixture_action_template_repo = InMemoryActionTemplateRepository()
 
 
-def build_action_template_repository() -> InMemoryActionTemplateRepository:
+def action_template_repository_backend() -> str:
+    return str(os.getenv(ACTION_TEMPLATE_BACKEND_ENV) or "fixture").strip().lower()
+
+
+def action_template_sqlalchemy_enabled() -> bool:
+    return action_template_repository_backend() in ACTION_TEMPLATE_SQL_BACKENDS
+
+
+def build_action_template_repository(*, backend: str | None = None, engine: Any | None = None) -> Any:
+    selected_backend = str(backend or action_template_repository_backend()).strip().lower()
+    if selected_backend in ACTION_TEMPLATE_SQL_BACKENDS:
+        if engine is None:
+            database_url = str(os.getenv(ACTION_TEMPLATE_DATABASE_URL_ENV) or "").strip()
+            if not database_url:
+                raise RepositoryProviderError(
+                    f"{ACTION_TEMPLATE_DATABASE_URL_ENV} is required when {ACTION_TEMPLATE_BACKEND_ENV}=sqlalchemy"
+                )
+            engine = create_engine(database_url, future=True)
+        from .action_template_sqlalchemy_repository import SqlAlchemyActionTemplateRepository
+
+        return assert_repository_allowed(
+            SqlAlchemyActionTemplateRepository(engine),
+            capability_owner="aicrm_next.automation_engine.action_templates",
+        )
+
     return assert_repository_allowed(
         _fixture_action_template_repo,
         capability_owner="aicrm_next.automation_engine",

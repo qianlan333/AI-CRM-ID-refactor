@@ -1,0 +1,75 @@
+version: 1
+status: phase_4ah_action_templates_repository_adapter_behind_explicit_flag
+
+authorizations:
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  production_write_as_route_owner_authorized: false
+  delete_ready: false
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+repository_adapter:
+  class_name: SqlAlchemyActionTemplateRepository
+  backend_flag: AICRM_ACTION_TEMPLATES_REPO_BACKEND
+  database_url_flag: AICRM_ACTION_TEMPLATES_DATABASE_URL
+  default_backend: fixture
+  database_url_fallback_allowed: false
+  production_fixture_success_blocked: true
+  production_unavailable_if_db_missing: true
+  production_route_owner_unchanged: true
+
+tables:
+  main: automation_operation_templates
+  idempotency: automation_operation_template_idempotency
+  audit: automation_operation_template_audit_log
+
+implemented_methods:
+  - list_action_templates
+  - create_action_template
+  - list_action_template_audit_events
+
+excluded_methods:
+  - generate_action_template
+  - create_action_template_from_workflow
+  - update_action_template
+  - delete_action_template
+  - execute_action_template
+  - send_action_template
+
+idempotency:
+  replay_same_hash: true
+  conflict_different_hash: true
+  response_snapshot_required: true
+  transaction_required: true
+  no_partial_write: true
+
+audit:
+  audit_event_required: true
+  before_snapshot_for_create: empty_object
+  after_snapshot_required: true
+  rollback_payload_required: true
+  side_effect_safety_required: true
+
+side_effect_safety:
+  external_calls_allowed: false
+  automation_execution_allowed: false
+  outbound_send_allowed: false
+  wecom_call_allowed: false
+  openclaw_call_allowed: false
+  mcp_call_allowed: false
+  llm_call_allowed: false
+
+phase_4ai_recommendation:
+  recommended_next_step: local_test_db_parity_harness_or_adapter_integration_smoke
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4AI may add local test DB parity harness or adapter integration smoke; production owner switch and external calls remain unauthorized.
