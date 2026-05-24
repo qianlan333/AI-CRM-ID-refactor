@@ -12,7 +12,7 @@ active_candidate: /api/admin/automation-conversion/action-templates*
 capability_owner: aicrm_next.automation_engine
 last_merged_pr: "#637"
 last_attempted_action: phase_4am_blocked_evidence_review
-last_created_pr: pending
+last_created_pr: "#641"
 recommended_next_pr: phase_4am_staging_approval_config_closure_or_owner_decision_package
 owner_approval_required: true
 
