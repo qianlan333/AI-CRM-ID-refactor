@@ -10,11 +10,11 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/workflow-nodes*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#653"
-last_attempted_action: phase_4aw_workflow_nodes_schema_route_surface_confirmation
-last_created_pr: "#654"
-recommended_next_pr: phase_4ax_workflow_nodes_fixture_native_contract_planning
-owner_approval_required: false
+last_merged_pr: "#654"
+last_attempted_action: phase_4ax_workflow_nodes_fixture_native_contract_planning
+last_created_pr: "#655"
+recommended_next_pr: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
+owner_approval_required: true
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -51,9 +51,10 @@ completed_steps:
   - phase_4au_workflows_fixture_native_implementation_owner_decision_completed
   - phase_4av_workflow_nodes_metadata_planning_completed
   - phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed
+  - phase_4ax_workflow_nodes_fixture_native_contract_planning_completed
 
 next_allowed_actions:
-  - phase_4ax_workflow_nodes_fixture_native_contract_planning
+  - phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -103,6 +104,7 @@ task_groups_readiness:
   fixture_native_contract_planning_ready: true
   fixture_native_contract_planning_completed: true
   fixture_native_implementation_requires_owner_decision: true
+  owner_decision_required: true
   production_owner_switch_ready: false
   production_write_ready: false
   fallback_removal_ready: false
@@ -133,6 +135,9 @@ workflow_nodes_readiness:
   schema_route_surface_confirmation_ready: true
   schema_route_surface_confirmed: true
   fixture_native_contract_planning_ready: true
+  fixture_native_contract_planning_completed: true
+  fixture_native_implementation_requires_owner_decision: true
+  owner_decision_required: true
   runtime_implementation_ready: false
   production_owner_switch_ready: false
   production_write_ready: false

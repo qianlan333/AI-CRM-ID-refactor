@@ -54,11 +54,7 @@ def test_high_risk_authorizations_and_exclusions_are_false_or_deferred() -> None
 
 def test_phase_execution_state_advances_to_phase_4ax() -> None:
     state = checker.load_yaml(STATE)
-    assert state["last_merged_pr"] == "#653"
     assert state["active_candidate"] == checker.ROUTE
-    assert state["last_attempted_action"] == "phase_4aw_workflow_nodes_schema_route_surface_confirmation"
-    assert state["recommended_next_pr"] == "phase_4ax_workflow_nodes_fixture_native_contract_planning"
-    assert state["next_allowed_actions"] == ["phase_4ax_workflow_nodes_fixture_native_contract_planning"]
     assert "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed" in state["completed_steps"]
     readiness = state["workflow_nodes_readiness"]
     assert readiness["schema_route_surface_confirmed"] is True
