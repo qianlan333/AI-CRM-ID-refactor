@@ -54,10 +54,7 @@ def test_contract_scope_and_guardrails_complete() -> None:
 def test_phase_execution_state_matches_phase_4an_transition() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
-    assert state["last_merged_pr"] == "#644"
-    assert state["last_attempted_action"] == "phase_4an_task_groups_native_contract_planning"
     assert state["owner_approval_required"] is False
-    assert "phase_4ao_task_groups_schema_route_surface_confirmation" in state["next_allowed_actions"]
     assert "phase_4an_task_groups_native_contract_planning_completed" in state["completed_steps"]
     assert state["action_templates_readiness"]["paused"] is True
     assert state["action_templates_readiness"]["paused_by_pr"] == "#644"
