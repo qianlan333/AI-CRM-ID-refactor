@@ -10,10 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs/development/autonomous_development_loop.md"
 
 
-def test_checker_current_repo_passes_and_is_eligible_for_low_risk_protocol_pr() -> None:
+def test_checker_current_repo_passes_and_reports_expected_eligibility() -> None:
     report = checker.build_report()
     assert report["overall"] == "PASS", json.dumps(report["blockers"], ensure_ascii=False, indent=2)
-    assert report["eligible"] is True
+    if any(path in checker.OWNER_DECISION_PACKAGE_PATHS for path in report["details"]["changed_files"]):
+        assert report["eligible"] is False
+        assert report["manual_merge_required"]
+    else:
+        assert report["eligible"] is True
 
 
 def test_pr_body_sections_required() -> None:
@@ -25,7 +29,7 @@ def test_pr_body_sections_required() -> None:
 def test_low_risk_changed_files_are_docs_tools_tests_only() -> None:
     report = checker.build_report()
     for path in report["details"]["changed_files"]:
-        assert path in checker.LOW_RISK_EXACT or path.startswith(("docs/development/", "tools/check_", "tests/test_"))
+        assert path in checker.LOW_RISK_EXACT or path in checker.OWNER_DECISION_PACKAGE_PATHS or path.startswith(("docs/development/", "tools/check_", "tests/test_"))
 
 
 def test_protected_runtime_path_requires_owner_approval() -> None:

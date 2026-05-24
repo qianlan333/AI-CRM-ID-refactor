@@ -187,6 +187,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
         "docs/development/codex_autopilot_runtime_runbook.md",
+        "docs/development/phase_4am_action_templates_owner_decision_package.md",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",

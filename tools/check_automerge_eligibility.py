@@ -28,9 +28,13 @@ LOW_RISK_EXACT = {
     "tools/run_codex_autopilot_tick.py",
     "scripts/codex_autopilot_tick.sh",
 }
+OWNER_DECISION_PACKAGE_PATHS = {
+    "docs/development/phase_4am_action_templates_owner_decision_package.md",
+}
 POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
+        "docs/development/phase_4am_action_templates_owner_decision_package.md",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
@@ -129,7 +133,7 @@ def _diff_text(paths: set[str], base_ref: str, head_ref: str) -> str:
 
 
 def _is_low_risk_path(path: str) -> bool:
-    return path in LOW_RISK_EXACT or path.startswith(LOW_RISK_PREFIXES)
+    return path in LOW_RISK_EXACT or path in OWNER_DECISION_PACKAGE_PATHS or path.startswith(LOW_RISK_PREFIXES)
 
 
 def _has_owner_approval(path: str | None) -> bool:
@@ -223,6 +227,9 @@ def build_report(
         else:
             blockers.extend(protected_hits + destructive_hits)
             blockers.append("protected/high-risk diff requires explicit owner approval file")
+    owner_decision_hits = sorted(path for path in changed if path in OWNER_DECISION_PACKAGE_PATHS)
+    if owner_decision_hits:
+        manual_merge_required.append(f"owner decision package is not auto-merge eligible: {owner_decision_hits}")
     if stop_hits:
         blockers.append(f"diff touches stop condition outside policy/checker files: {stop_hits}")
     if claim_hits:
