@@ -3,24 +3,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.md"
-PLAN_YAML = ROOT / "docs/development/phase_4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.yaml"
-TOOL = ROOT / "tools/run_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py"
+DOC = ROOT / "docs/development/phase_4y_profile_segment_template_production_readonly_preflight.md"
+PLAN_YAML = ROOT / "docs/development/phase_4y_profile_segment_template_production_readonly_preflight.yaml"
+TOOL = ROOT / "tools/run_phase4y_profile_segment_template_production_readonly_preflight.py"
 REQUIRED_DOCS = [
     DOC,
     PLAN_YAML,
     TOOL,
-    ROOT / "docs/development/phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.md",
-    ROOT / "docs/development/phase_4t_profile_segment_template_readonly_dry_run_review.md",
+    ROOT / "docs/development/phase_4x_profile_segment_template_production_readonly_final_gate.md",
+    ROOT / "docs/development/phase_4w_profile_segment_template_production_readonly_execution_ready_gate.md",
 ]
 AUTH_FALSE_FIELDS = {
+    "production_dry_run_execution_authorized",
+    "production_data_connection_authorized",
     "production_write_authorized",
     "production_repository_route_enablement_authorized",
     "production_route_ownership_switch_authorized",
@@ -30,66 +31,52 @@ AUTH_FALSE_FIELDS = {
     "real_external_call_authorized",
     "delete_ready",
 }
-EXECUTION_FIELDS = {
-    "result_status",
-    "attempted",
-    "lower_runner_called",
-    "read_only_dry_run_executed",
-    "approval_present",
-    "config_reviewed",
-    "production_db_present",
-    "read_only_flags_present",
-    "not_executed_reason",
-    "writes_attempted",
-}
-BLOCKER_FIELDS = {
-    "missing_approval",
-    "missing_config_review",
-    "missing_production_db",
-    "missing_read_only_flags",
-    "safety_failed",
-    "unblock_actions",
-}
-SIDE_EFFECT_FALSE_FIELDS = {
-    "external_calls_executed",
-    "automation_execution_executed",
-    "outbound_send_executed",
-    "create_update_delete_executed",
-}
-REQUIRED_BEFORE_ROUTE_SWITCH_READY = {
-    "actual_production_readonly_dry_run_executed",
-    "read_parity_passed",
-    "no_writes_attempted",
-    "side_effect_safety_false",
-    "fallback_validation_passed",
-    "production_compat_unchanged",
-    "owner_approval_completed",
+CLOSURE_ITEMS = {
+    "automation_engine_owner_approval",
+    "integration_gateway_owner_approval",
+    "db_config_owner_approval",
+    "business_owner_approval",
     "rollback_owner_assigned",
+    "dry_run_operator_assigned",
+    "release_config_reviewer_approval",
+    "security_data_reviewer_approval",
     "production_config_review_completed",
+    "production_db_env_confirmed",
+    "read_only_flags_confirmed",
+    "evidence_path_confirmed",
+    "fallback_validation_plan_confirmed",
+    "secret_redaction_confirmed",
+    "pii_redaction_confirmed",
+}
+ALLOWED_CLOSURE_STATUSES = {"pending", "completed", "blocked", "not_applicable"}
+PREFLIGHT_TRUE_FIELDS = {
+    "phase_4x_yaml_required",
+    "optional_closure_status_file_supported",
+    "env_flag_check_supported",
+    "cli_arg_check_supported",
+    "db_connection_forbidden",
+    "dry_run_execution_forbidden",
+}
+PHASE_4Z_CONSTRAINTS = {
+    "read_only_only",
+    "create_update_delete_forbidden",
+    "production_write_forbidden",
+    "route_switch_forbidden",
+    "fallback_removal_forbidden",
+    "production_compat_change_forbidden",
+    "external_calls_forbidden",
+    "raw_pii_export_forbidden",
+    "secret_export_forbidden",
 }
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.md",
-    "docs/development/phase_4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.yaml",
-    "tools/run_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py",
-    "tools/check_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py",
-    "tests/test_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py",
-    "tools/check_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py",
-    "tools/check_phase4t_profile_segment_template_readonly_dry_run_review.py",
-    "tools/check_phase4s_profile_segment_template_production_readonly_dry_run_evidence.py",
-    "tools/check_phase4r_profile_segment_template_production_readonly_dry_run_runner.py",
-    "docs/development/phase_4w_profile_segment_template_production_readonly_execution_ready_gate.md",
-    "docs/development/phase_4w_profile_segment_template_production_readonly_execution_ready_gate.yaml",
-    "tools/check_phase4w_profile_segment_template_production_readonly_execution_ready_gate.py",
-    "tests/test_phase4w_profile_segment_template_production_readonly_execution_ready_gate.py",
-    "docs/development/phase_4x_profile_segment_template_production_readonly_final_gate.md",
-    "docs/development/phase_4x_profile_segment_template_production_readonly_final_gate.yaml",
-    "tools/check_phase4x_profile_segment_template_production_readonly_final_gate.py",
-    "tests/test_phase4x_profile_segment_template_production_readonly_final_gate.py",
     "docs/development/phase_4y_profile_segment_template_production_readonly_preflight.md",
     "docs/development/phase_4y_profile_segment_template_production_readonly_preflight.yaml",
     "tools/run_phase4y_profile_segment_template_production_readonly_preflight.py",
     "tools/check_phase4y_profile_segment_template_production_readonly_preflight.py",
     "tests/test_phase4y_profile_segment_template_production_readonly_preflight.py",
+    "tools/check_phase4x_profile_segment_template_production_readonly_final_gate.py",
+    "tools/check_phase4w_profile_segment_template_production_readonly_execution_ready_gate.py",
+    "tools/check_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -101,6 +88,8 @@ PROTECTED_PREFIXES = (
 )
 PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
 FORBIDDEN_DOC_PHRASES = [
+    "production dry-run executed",
+    "production data connected",
     "production write executed",
     "production repository enabled as route owner",
     "route switch authorized",
@@ -251,92 +240,68 @@ def check_required_docs() -> dict[str, Any]:
 def check_top_level(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4v_production_readonly_execution_blocker_and_readiness_no_route_switch":
-        blockers.append("status must be phase_4v_production_readonly_execution_blocker_and_readiness_no_route_switch")
+    if data.get("status") != "phase_4y_production_readonly_preflight_no_execution":
+        blockers.append("status must be phase_4y_production_readonly_preflight_no_execution")
     for field in sorted(AUTH_FALSE_FIELDS):
         if data.get(field) is not False:
             blockers.append(f"{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_execution(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    execution = (data or load_yaml()).get("execution") or {}
+def check_closure_items(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    closure = (data or load_yaml()).get("closure_items") or {}
     blockers: list[str] = []
-    missing = sorted(field for field in EXECUTION_FIELDS if field not in execution)
+    missing = sorted(CLOSURE_ITEMS - set(closure))
     if missing:
-        blockers.append(f"execution missing {missing}")
-    if execution.get("writes_attempted") is not False:
-        blockers.append("execution.writes_attempted must be false")
+        blockers.append(f"closure_items missing {missing}")
+    for field in sorted(CLOSURE_ITEMS):
+        if closure.get(field) not in ALLOWED_CLOSURE_STATUSES:
+            blockers.append(f"closure_items.{field} must be one of {sorted(ALLOWED_CLOSURE_STATUSES)}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_blockers(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    blocker_data = (data or load_yaml()).get("blockers") or {}
-    blockers: list[str] = []
-    missing = sorted(field for field in BLOCKER_FIELDS if field not in blocker_data)
-    if missing:
-        blockers.append(f"blockers missing {missing}")
-    for field in ("missing_approval", "missing_config_review", "missing_production_db", "missing_read_only_flags", "safety_failed"):
-        if not isinstance(blocker_data.get(field), bool):
-            blockers.append(f"blockers.{field} must be boolean")
-    if not _as_list(blocker_data.get("unblock_actions")):
-        blockers.append("blockers.unblock_actions must be non-empty")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_evidence(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    evidence = (data or load_yaml()).get("evidence") or {}
-    blockers: list[str] = []
-    if evidence.get("db_url_secret_redacted") is not True:
-        blockers.append("evidence.db_url_secret_redacted must be true")
-    if evidence.get("route_owner_changed") is not False:
-        blockers.append("evidence.route_owner_changed must be false")
-    if evidence.get("production_compat_changed") is not False:
-        blockers.append("evidence.production_compat_changed must be false")
-    if evidence.get("fallback_retained") is not True:
-        blockers.append("evidence.fallback_retained must be true")
-    if evidence.get("side_effect_safety_present") is not True:
-        blockers.append("evidence.side_effect_safety_present must be true")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_side_effect_safety(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    safety = (data or load_yaml()).get("side_effect_safety") or {}
+def check_preflight_inputs(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    preflight = (data or load_yaml()).get("preflight_inputs") or {}
     blockers = [
-        f"side_effect_safety.{field} must be false"
-        for field in sorted(SIDE_EFFECT_FALSE_FIELDS)
-        if safety.get(field) is not False
+        f"preflight_inputs.{field} must be true"
+        for field in sorted(PREFLIGHT_TRUE_FIELDS)
+        if preflight.get(field) is not True
     ]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
 def check_readiness(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    data = data or load_yaml()
-    execution = data.get("execution") or {}
-    readiness = data.get("readiness") or {}
+    readiness = (data or load_yaml()).get("readiness") or {}
     blockers: list[str] = []
-    if readiness.get("fallback_removal_ready") is not False:
-        blockers.append("readiness.fallback_removal_ready must be false")
-    if readiness.get("production_write_ready") is not False:
-        blockers.append("readiness.production_write_ready must be false")
-    if execution.get("read_only_dry_run_executed") is False and readiness.get("route_switch_ready") is not False:
-        blockers.append("readiness.route_switch_ready must be false when read-only dry-run has not executed")
-    if execution.get("read_only_dry_run_executed") is False and readiness.get("production_repository_route_enablement_ready") is not False:
-        blockers.append("readiness.production_repository_route_enablement_ready must be false when read-only dry-run has not executed")
-    present = {str(item) for item in _as_list(readiness.get("required_before_route_switch_ready"))}
-    missing = sorted(REQUIRED_BEFORE_ROUTE_SWITCH_READY - present)
-    if missing:
-        blockers.append(f"readiness.required_before_route_switch_ready missing {missing}")
-    if not _as_list(readiness.get("blockers")):
-        blockers.append("readiness.blockers must be non-empty for current blocked evidence")
+    if readiness.get("ready_for_phase_4z_readonly_dry_run_execution") is not False:
+        blockers.append("readiness.ready_for_phase_4z_readonly_dry_run_execution must default to false")
+    for field in (
+        "missing_items",
+        "blockers",
+        "next_owner_actions",
+        "next_config_actions",
+        "next_evidence_actions",
+    ):
+        if not _as_list(readiness.get(field)):
+            blockers.append(f"readiness.{field} must be non-empty")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_phase4w_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    rec = (data or load_yaml()).get("phase_4w_recommendation") or {}
+def check_phase_4z_constraints(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    constraints = (data or load_yaml()).get("phase_4z_constraints") or {}
+    blockers = [
+        f"phase_4z_constraints.{field} must be true"
+        for field in sorted(PHASE_4Z_CONSTRAINTS)
+        if constraints.get(field) is not True
+    ]
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_phase_4z_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    rec = (data or load_yaml()).get("phase_4z_recommendation") or {}
     blockers: list[str] = []
     if not rec.get("recommended_next_step"):
-        blockers.append("phase_4w_recommendation.recommended_next_step missing")
+        blockers.append("phase_4z_recommendation.recommended_next_step missing")
     for field in (
         "production_write_allowed",
         "production_route_switch_allowed",
@@ -344,42 +309,35 @@ def check_phase4w_recommendation(data: dict[str, Any] | None = None) -> dict[str
         "production_write_canary_allowed",
     ):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4w_recommendation.{field} must be false")
+            blockers.append(f"phase_4z_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def _uses_forbidden_env_fallback(source: str) -> bool:
-    return bool(
-        re.search(r"os\.environ\.get\(\s*[\"']DATABASE_URL[\"']", source)
-        or re.search(r"os\.getenv\(\s*[\"']DATABASE_URL[\"']", source)
-    )
 
 
 def check_tool_source() -> dict[str, Any]:
     source = _read(TOOL)
     blockers: list[str] = []
+    forbidden_tokens = {
+        "create_engine": "must not reference SQLAlchemy create_engine",
+        "from sqlalchemy": "must not import DB engine",
+        "import sqlalchemy": "must not import DB engine",
+        "subprocess": "must not execute a dry-run subprocess",
+        "run_phase4r": "must not call Phase 4R runner",
+        "run_phase4u": "must not call Phase 4U runner",
+    }
+    for token, reason in forbidden_tokens.items():
+        if token in source:
+            blockers.append(reason)
     for token in (
-        "AICRM_PHASE4R_PRODUCTION_READONLY_DRY_RUN_APPROVED",
-        "AICRM_PHASE4R_PRODUCTION_CONFIG_REVIEWED",
-        "AICRM_PROFILE_SEGMENT_TEMPLATE_PRODUCTION_DATABASE_URL",
+        "--closure-status-file",
         "--read-only",
         "--confirm-no-writes",
         "--output-json",
         "--output-md",
     ):
         if token not in source:
-            blockers.append(f"evidence tool must reference {token}")
-    if _uses_forbidden_env_fallback(source):
-        blockers.append("evidence tool must not fallback to DATABASE_URL")
-    for forbidden_call in (
-        ".create_profile_segment_template(",
-        ".update_profile_segment_template(",
-        ".delete_profile_segment_template(",
-    ):
-        if forbidden_call in source:
-            blockers.append(f"evidence tool must not call {forbidden_call}")
-    if "_redact_url" not in source or "db_url_redacted" not in source:
-        blockers.append("evidence tool must redact secrets")
+            blockers.append(f"tool must support {token}")
+    if "db_url_secret_redacted" not in source or "_redacted_db_presence" not in source:
+        blockers.append("tool must redact secrets")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -393,7 +351,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4V scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4Y scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -413,12 +371,11 @@ def build_report() -> dict[str, Any]:
     checks = {
         "required_docs": check_required_docs(),
         "top_level": check_top_level(data),
-        "execution": check_execution(data),
-        "blockers": check_blockers(data),
-        "evidence": check_evidence(data),
-        "side_effect_safety": check_side_effect_safety(data),
+        "closure_items": check_closure_items(data),
+        "preflight_inputs": check_preflight_inputs(data),
         "readiness": check_readiness(data),
-        "phase4w_recommendation": check_phase4w_recommendation(data),
+        "phase_4z_constraints": check_phase_4z_constraints(data),
+        "phase_4z_recommendation": check_phase_4z_recommendation(data),
         "tool_source": check_tool_source(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
@@ -444,7 +401,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4V Profile Segment Template Production Read-Only Execution Blocker And Readiness Check",
+        "# Phase 4Y Profile Segment Template Production Read-Only Preflight Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -460,7 +417,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4V profile segment template production read-only execution blocker and readiness package.")
+    parser = argparse.ArgumentParser(description="Check Phase 4Y profile segment template production read-only preflight.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
