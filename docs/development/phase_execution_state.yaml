@@ -10,11 +10,22 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/action-templates*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#637"
+last_merged_pr: "#641"
 last_attempted_action: phase_4am_blocked_evidence_review
 last_created_pr: "#641"
-recommended_next_pr: phase_4am_staging_approval_config_closure_or_owner_decision_package
+recommended_next_pr: phase_4am_staging_approval_config_closure_package
 owner_approval_required: true
+
+work_package_policy:
+  selection_unit: bounded_low_risk_work_package
+  target_duration_minutes_min: 10
+  target_duration_minutes_max: 13
+  state_only_pr_requires_explanation: true
+  avoid_repeated_blocked_evidence_review: true
+  low_risk_admin_merge_allowed: true
+  admin_merge_requires_eligible_true: true
+  admin_merge_requires_required_checks_green: true
+  admin_merge_for_owner_decision_package_allowed: false
 
 completed_steps:
   - phase_4al_staging_execution_readiness_gate_completed
@@ -30,8 +41,8 @@ completed_steps:
   - action_templates_staging_execution_readiness_gate_completed
 
 next_allowed_actions:
-  - phase_4am_staging_execution
   - phase_4am_approval_config_closure
+  - phase_4am_staging_execution
   - phase_4am_blocked_evidence_review
 
 forbidden_without_owner_approval:

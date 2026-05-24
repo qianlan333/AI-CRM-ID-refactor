@@ -6,11 +6,11 @@ This runbook describes the local/server runtime runner for the AI-CRM Codex auto
 
 ## Architecture boundary
 
-The runner is a local orchestration wrapper. It reads repository protocol files, checks for open autopilot PRs, chooses one low-risk `next_allowed_actions` entry, and writes a Codex prompt to `/tmp/aicrm_codex_next_prompt.md`. It does not implement business behavior inside Python and does not modify runtime code.
+The runner is a local orchestration wrapper. It reads repository protocol files, checks for open autopilot PRs, chooses one bounded low-risk work package from `next_allowed_actions`, and writes a Codex prompt to `/tmp/aicrm_codex_next_prompt.md`. It does not implement business behavior inside Python and does not modify runtime code.
 
 ## Business value
 
-The runner lets AI-CRM continue safe low-risk Phase 4 housekeeping without manual polling. It prevents action-templates from advancing past staging approval/config gaps while still preparing blocked evidence or owner decision packages.
+The runner lets AI-CRM continue safe low-risk Phase 4 housekeeping without manual polling. It prevents action-templates from advancing past staging approval/config gaps while still preparing useful 10-13 minute work packages instead of repeated tiny state-only updates.
 
 ## Business continuity
 
@@ -41,23 +41,26 @@ Each tick:
 - Allows only one bounded repair marker for failed checks.
 - Exits if `owner-decision-required` or `automerge-blocked` labels exist.
 - Reads `docs/development/phase_execution_state.yaml`.
-- Selects only one action from `next_allowed_actions`.
+- Selects only one bounded low-risk work package from `next_allowed_actions`.
 - Reads `docs/development/autonomous_stop_conditions.yaml`.
 - Generates an owner decision package instead of an implementation prompt when a stop condition appears.
 
+Each work package should be completable in 10-13 minutes. A package may include a blocked evidence summary, approval/config checklist, owner closure form, state updates, checker/test coverage, and a concrete next action. State-only updates are allowed only when the PR explains why they cannot be merged into a fuller package.
+
 ## Auto-Merge Boundary
 
-GitHub native auto-merge is not forced by this runner. If native auto-merge is unavailable, the runner must not use admin merge by default.
+GitHub native auto-merge may be enabled when available. If native auto-merge is unavailable, the runner may use admin merge for eligible low-risk PRs.
 
 Admin merge is allowed only when all are true:
 
-- `AICRM_AUTOPILOT_ADMIN_MERGE_APPROVED=1`.
 - `tools/check_automerge_eligibility.py` reports `eligible=true`.
 - Required GitHub checks are green.
 - No stop condition is present.
 - No owner decision package is required.
+- The diff is limited to docs/tools/tests/checker/state files.
+- The diff does not touch runtime, `production_compat`, business routes, schema/migrations, deploy/nginx/systemd, real external calls, or legacy fallback.
 
-Default behavior is PR creation only.
+Owner-decision packages remain manual and must not be auto-merged.
 
 ## Safety / non-goals
 
@@ -91,7 +94,7 @@ Risk is limited to local orchestration behavior or prompt generation. Rollback i
 
 ## Autopilot runtime decision
 
-The runtime runner is approved only as a local/server tick generator. It may generate prompts and owner decision packages, but it does not authorize production route switch, production writes, fallback removal, real external calls, or admin merge by default.
+The runtime runner is approved only as a local/server tick generator and low-risk PR steward. It may generate prompts, owner decision packages, and admin-merge eligible low-risk PRs after checks pass, but it does not authorize production route switch, production writes, fallback removal, or real external calls.
 
 ## Next action
 
