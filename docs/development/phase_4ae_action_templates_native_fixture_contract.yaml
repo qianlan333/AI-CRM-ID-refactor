@@ -1,0 +1,70 @@
+version: 1
+status: phase_4ae_action_templates_native_fixture_contract_no_production_change
+
+authorizations:
+  production_repository_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+implemented_routes:
+  - method: GET
+    path: /api/admin/automation-conversion/action-templates
+    scope: fixture_local_list
+  - method: POST
+    path: /api/admin/automation-conversion/action-templates
+    scope: fixture_local_crm_local_create
+
+excluded_routes:
+  - path: /api/admin/automation-conversion/action-templates/generate
+    method: POST
+    reason: deepseek_llm_adapter_path
+  - path: /api/admin/automation-conversion/action-templates/from-workflow
+    method: POST
+    reason: deferred_workflow_state_dependency
+  - path: /api/admin/automation-conversion/action-templates/{template_id}
+    method: GET
+    reason: detail_route_not_confirmed
+  - path: /api/admin/automation-conversion/action-templates/{template_id}
+    method: PUT
+    reason: update_route_not_confirmed
+  - path: /api/admin/automation-conversion/action-templates/{template_id}
+    method: DELETE
+    reason: delete_route_not_confirmed
+
+contract_features:
+  deterministic_fixture_seed: true
+  create_idempotency: true
+  idempotency_conflict: true
+  duplicate_template_code_protection: true
+  audit_event: true
+  rollback_payload: true
+  dangerous_fields_rejected: true
+  side_effect_safety: true
+  production_fixture_success_blocked: true
+
+side_effect_safety:
+  real_external_call_allowed: false
+  automation_execution_allowed: false
+  outbound_send_allowed: false
+  wecom_call_allowed: false
+  openclaw_call_allowed: false
+  mcp_call_allowed: false
+  llm_call_allowed: false
+
+phase_4af_recommendation:
+  recommended_next_step: local_parity_harness_or_repository_adapter_planning
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4AF may add local parity harness or repository adapter planning; production owner switch and external calls remain unauthorized.

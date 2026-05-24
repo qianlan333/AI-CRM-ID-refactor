@@ -84,6 +84,15 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4ac_action_templates_companion_schema_plan.py",
     "tools/check_phase4ab_action_templates_schema_confirmation.py",
     "tools/check_phase4aa_action_templates_implementation_plan.py",
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/action_templates.py",
+    "aicrm_next/automation_engine/action_template_repository.py",
+    "docs/development/phase_4ae_action_templates_native_fixture_contract.md",
+    "docs/development/phase_4ae_action_templates_native_fixture_contract.yaml",
+    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
+    "tests/test_phase4ae_action_templates_native_fixture_contract.py",
     *MIGRATION_ARTIFACTS,
 }
 PROTECTED_PREFIXES = (

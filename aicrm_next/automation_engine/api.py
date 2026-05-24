@@ -16,7 +16,9 @@ from .application import (
     ConfirmConversionCommand,
     EnterSilentPoolCommand,
     ExitMarketingCommand,
+    CreateActionTemplateCommand,
     CreateProfileSegmentTemplateCommand,
+    ListActionTemplatesQuery,
     GetProfileSegmentTemplateCatalogQuery,
     GetProfileSegmentTemplateOptionsQuery,
     GetProfileSegmentTemplateQuery,
@@ -33,6 +35,8 @@ from .application import (
 )
 from .dto import (
     ActivationWebhookRequest,
+    ActionTemplateCreateRequest,
+    ActionTemplateListRequest,
     AutomationActionRequest,
     OverrideFollowupTypeRequest,
     ProfileSegmentTemplateCreateRequest,
@@ -80,6 +84,34 @@ def automation_pools() -> dict:
         except LegacyAutomationDataUnavailable as exc:
             raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
     return ListAutomationPoolsQuery()()
+
+
+@router.get("/api/admin/automation-conversion/action-templates")
+def list_action_templates(
+    template_source: str = "",
+    category: str = "",
+    keyword: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = ActionTemplateListRequest(
+        template_source=template_source,
+        category=category,
+        keyword=keyword,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListActionTemplatesQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/action-templates")
+def create_action_template(payload: ActionTemplateCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateActionTemplateCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/admin/automation-conversion/profile-segment-templates/catalog")
