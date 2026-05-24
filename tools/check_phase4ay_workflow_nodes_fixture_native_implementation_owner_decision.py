@@ -71,15 +71,19 @@ REJECTED_TRUE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision.yaml",
+    "docs/development/phase_4az_next_internal_write_candidate_selection.md",
+    "docs/development/phase_4az_next_internal_write_candidate_selection.yaml",
     "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.md",
     "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
+    "tools/check_phase4az_next_internal_write_candidate_selection.py",
     "tools/check_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
+    "tests/test_phase4az_next_internal_write_candidate_selection.py",
     "tests/test_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -170,16 +174,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow-nodes route must exist in manifest and backlog")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("last_merged_pr") != "#655":
-        blockers.append("phase_execution_state.last_merged_pr must record #655")
-    if state.get("last_attempted_action") != "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4AY")
     if state_update.get("phase_4ay_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AY completed step")
-    if state.get("recommended_next_pr") != "phase_4az_next_internal_write_candidate_selection":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4AZ candidate selection")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4az_next_internal_write_candidate_selection"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4AZ candidate selection")
 
     state_paused = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
     if not any(isinstance(item, dict) and item.get("route_family") == ROUTE and item.get("owner_approval_required") is True for item in state_paused):

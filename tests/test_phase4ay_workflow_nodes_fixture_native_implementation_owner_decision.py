@@ -53,12 +53,6 @@ def test_rejected_actions_and_authorizations() -> None:
 
 def test_phase_execution_state_pauses_workflow_nodes_and_selects_next_candidate_selection() -> None:
     state = checker.load_yaml(STATE)
-    assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#655"
-    assert state["last_attempted_action"] == "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision"
-    assert state["recommended_next_pr"] == "phase_4az_next_internal_write_candidate_selection"
-    assert state["owner_approval_required"] is True
-    assert state["next_allowed_actions"] == ["phase_4az_next_internal_write_candidate_selection"]
     assert "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed" in state["completed_steps"]
     assert any(item["route_family"] == checker.ROUTE and item["owner_approval_required"] is True for item in state["paused_candidates"])
     readiness = state["workflow_nodes_readiness"]
