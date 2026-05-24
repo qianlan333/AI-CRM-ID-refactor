@@ -5,21 +5,16 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-PLAN_MD = ROOT / "docs/development/phase_4af_action_templates_local_parity_harness.md"
-PLAN_YAML = ROOT / "docs/development/phase_4af_action_templates_local_parity_harness.yaml"
-HARNESS = ROOT / "tools/run_phase4af_action_templates_local_parity.py"
-MAIN = ROOT / "aicrm_next/main.py"
-PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
-REQUIRED_DOCS = [PLAN_MD, PLAN_YAML, HARNESS]
+PLAN_MD = ROOT / "docs/development/phase_4ag_action_templates_repository_adapter_plan.md"
+PLAN_YAML = ROOT / "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml"
+REQUIRED_DOCS = [PLAN_MD, PLAN_YAML]
 AUTH_FALSE_FIELDS = {
+    "runtime_implementation_authorized",
     "production_repository_authorized",
     "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
@@ -30,62 +25,37 @@ AUTH_FALSE_FIELDS = {
     "production_write_authorized",
     "delete_ready",
 }
-REQUIRED_READ_MATRIX = {
-    "list_ok",
-    "deterministic_fixture_seed",
-    "side_effect_safety_present",
+REQUIRED_METHODS = {
+    "list_action_templates",
+    "create_action_template",
+    "list_action_template_audit_events",
 }
-REQUIRED_CREATE_MATRIX = {
-    "create_with_idempotency",
-    "idempotency_replay",
-    "idempotency_conflict",
-    "duplicate_template_code_rejected",
-    "missing_name_rejected",
-    "invalid_status_rejected",
-    "dangerous_fields_rejected",
-    "audit_event_emitted",
-    "rollback_payload_present",
-    "side_effect_safety_false",
-    "production_fixture_write_blocked",
-}
-REQUIRED_EXCLUDED_TRUE = {
-    "generate_route_excluded",
-    "from_workflow_route_excluded",
-    "detail_route_excluded",
-    "update_route_excluded",
-    "delete_route_excluded",
-    "deepseek_llm_adapter_excluded",
-    "workflow_execution_excluded",
-    "outbound_send_excluded",
-    "wecom_openclaw_mcp_excluded",
+REQUIRED_EXCLUDED_METHODS = {
+    "generate_action_template",
+    "create_action_template_from_workflow",
+    "update_action_template",
+    "delete_action_template",
+    "execute_action_template",
+    "send_action_template",
 }
 ALLOWED_CHANGED_FILES = {
-    "tools/run_phase4af_action_templates_local_parity.py",
-    "docs/development/phase_4af_action_templates_local_parity_harness.md",
-    "docs/development/phase_4af_action_templates_local_parity_harness.yaml",
-    "tools/check_phase4af_action_templates_local_parity_harness.py",
-    "tests/test_phase4af_action_templates_local_parity_harness.py",
-    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
-    "tools/check_phase4ad_action_templates_companion_migration.py",
-    "tools/check_phase4ac_action_templates_companion_schema_plan.py",
     "docs/development/phase_4ag_action_templates_repository_adapter_plan.md",
     "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml",
     "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
     "tests/test_phase4ag_action_templates_repository_adapter_plan.py",
-}
-PROTECTED_EXACT = {
-    "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py",
-    "app.py",
-    "legacy_flask_app.py",
+    "tools/check_phase4af_action_templates_local_parity_harness.py",
+    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
+    "tools/check_phase4ad_action_templates_companion_migration.py",
 }
 PROTECTED_PREFIXES = (
+    "aicrm_next/",
     "wecom_ability_service/",
     "migrations/",
     "deploy/",
     "systemd/",
     "nginx/",
 )
+PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
 
 
 def _read(path: Path) -> str:
@@ -235,116 +205,84 @@ def _changed_files_from_git() -> tuple[set[str], list[str]]:
 
 def check_required_docs() -> dict[str, Any]:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED_DOCS if not path.exists()]
-    return {"ok": not missing, "blockers": [f"missing required artifact: {path}" for path in missing], "warnings": []}
+    return {"ok": not missing, "blockers": [f"missing required doc: {path}" for path in missing], "warnings": []}
 
 
 def check_yaml_contract(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4af_action_templates_local_parity_harness_no_production_change":
-        blockers.append("status must be phase_4af_action_templates_local_parity_harness_no_production_change")
-    authorizations = data.get("authorizations") or {}
+    if data.get("status") != "phase_4ag_action_templates_repository_adapter_planning_no_runtime_change":
+        blockers.append("status must be phase_4ag_action_templates_repository_adapter_planning_no_runtime_change")
     for field in sorted(AUTH_FALSE_FIELDS):
-        if authorizations.get(field) is not False:
+        if (data.get("authorizations") or {}).get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
-    harness = data.get("harness") or {}
-    if harness.get("path") != "tools/run_phase4af_action_templates_local_parity.py":
-        blockers.append("harness.path must point to Phase 4AF harness")
-    if not (ROOT / str(harness.get("path") or "")).exists():
-        blockers.append("harness.path does not exist")
-    for field in ("db_connection_allowed", "legacy_service_call_allowed", "external_call_allowed"):
-        if harness.get(field) is not False:
-            blockers.append(f"harness.{field} must be false")
-    if harness.get("fixture_evidence_only") is not True:
-        blockers.append("harness.fixture_evidence_only must be true")
 
-    matrix = data.get("harness_matrix") or {}
-    read_items = {str(item) for item in _as_list(matrix.get("read"))}
-    create_items = {str(item) for item in _as_list(matrix.get("create"))}
-    missing_read = sorted(REQUIRED_READ_MATRIX - read_items)
-    missing_create = sorted(REQUIRED_CREATE_MATRIX - create_items)
-    if missing_read:
-        blockers.append(f"harness_matrix.read missing {missing_read}")
-    if missing_create:
-        blockers.append(f"harness_matrix.create missing {missing_create}")
+    planned_repository = data.get("planned_repository") or {}
+    if not planned_repository.get("class_name"):
+        blockers.append("planned_repository.class_name must be non-empty")
+    expected_repo = {
+        "backend_flag": "AICRM_ACTION_TEMPLATES_REPO_BACKEND",
+        "database_url_flag": "AICRM_ACTION_TEMPLATES_DATABASE_URL",
+        "default_backend": "fixture",
+    }
+    for field, expected in expected_repo.items():
+        if planned_repository.get(field) != expected:
+            blockers.append(f"planned_repository.{field} must be {expected}")
+    if planned_repository.get("database_url_fallback_allowed") is not False:
+        blockers.append("planned_repository.database_url_fallback_allowed must be false")
+    if planned_repository.get("production_route_owner_unchanged") is not True:
+        blockers.append("planned_repository.production_route_owner_unchanged must be true")
 
-    excluded = data.get("excluded") or {}
-    for field in sorted(REQUIRED_EXCLUDED_TRUE):
-        if excluded.get(field) is not True:
-            blockers.append(f"excluded.{field} must be true")
+    tables = data.get("tables") or {}
+    expected_tables = {
+        "main": "automation_operation_templates",
+        "idempotency": "automation_operation_template_idempotency",
+        "audit": "automation_operation_template_audit_log",
+    }
+    for field, expected in expected_tables.items():
+        if tables.get(field) != expected:
+            blockers.append(f"tables.{field} must be {expected}")
 
-    readiness = data.get("phase_4ag_readiness") or {}
-    if readiness.get("local_parity_required") is not True:
-        blockers.append("phase_4ag_readiness.local_parity_required must be true")
-    if readiness.get("production_adapter_planning_allowed_after_local_parity") is not True:
-        blockers.append("phase_4ag_readiness.production_adapter_planning_allowed_after_local_parity must be true")
-    for field in ("production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
-        if readiness.get(field) is not False:
-            blockers.append(f"phase_4ag_readiness.{field} must be false")
+    methods = {str(item.get("name") or ""): item for item in _as_list(data.get("planned_methods")) if isinstance(item, dict)}
+    missing_methods = sorted(REQUIRED_METHODS - set(methods))
+    if missing_methods:
+        blockers.append(f"planned_methods missing {missing_methods}")
+    create = methods.get("create_action_template") or {}
+    for field in ("transaction_required", "idempotency_required", "audit_required", "rollback_required"):
+        if create.get(field) is not True:
+            blockers.append(f"planned_methods.create_action_template.{field} must be true")
+    for method_name, method in methods.items():
+        if method.get("external_side_effect_allowed") is not False:
+            blockers.append(f"planned_methods.{method_name}.external_side_effect_allowed must be false")
 
-    recommendation = data.get("phase_4ag_recommendation") or {}
+    excluded = {str(item) for item in _as_list(data.get("excluded_methods"))}
+    missing_excluded = sorted(REQUIRED_EXCLUDED_METHODS - excluded)
+    if missing_excluded:
+        blockers.append(f"excluded_methods missing {missing_excluded}")
+
+    for section_name in ("idempotency_strategy", "enablement_strategy", "parity_smoke_readiness"):
+        section = data.get(section_name) or {}
+        for field, value in section.items():
+            if value is not True:
+                blockers.append(f"{section_name}.{field} must be true")
+    audit = data.get("audit_strategy") or {}
+    for field in ("audit_event_required", "after_snapshot_required", "rollback_payload_required", "side_effect_safety_required"):
+        if audit.get(field) is not True:
+            blockers.append(f"audit_strategy.{field} must be true")
+    if audit.get("before_snapshot_for_create") != "empty_object":
+        blockers.append("audit_strategy.before_snapshot_for_create must be empty_object")
+
+    recommendation = data.get("phase_4ah_recommendation") or {}
     if not recommendation.get("recommended_next_step"):
-        blockers.append("phase_4ag_recommendation.recommended_next_step missing")
+        blockers.append("phase_4ah_recommendation.recommended_next_step missing")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if recommendation.get(field) is not False:
-            blockers.append(f"phase_4ag_recommendation.{field} must be false")
+            blockers.append(f"phase_4ah_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_harness_static() -> dict[str, Any]:
-    text = _read(HARNESS)
-    blockers: list[str] = []
-    for required in ("--output-json", "--output-md"):
-        if required not in text:
-            blockers.append(f"harness missing CLI arg {required}")
-    forbidden_tokens = [
-        "wecom_ability_service",
-        "DeepSeek",
-        "deepseek",
-        "LLM",
-        "llm_adapter",
-        "action-templates/generate",
-        "action-templates/from-workflow",
-        "create_engine",
-        "DATABASE_URL",
-        "psycopg",
-        "sqlalchemy",
-    ]
-    for token in forbidden_tokens:
-        if token in text:
-            blockers.append(f"harness contains forbidden token: {token}")
-    route_calls = re.findall(r"\.([a-z]+)\(\s*ROUTE", text)
-    disallowed_methods = sorted({method for method in route_calls if method.lower() not in {"get", "post"}})
-    if disallowed_methods:
-        blockers.append(f"harness uses disallowed methods against action-template route: {disallowed_methods}")
-    if ".put(" in text or ".delete(" in text:
-        blockers.append("harness must not call update/delete routes")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_fastapi_probe() -> dict[str, Any]:
-    warnings: list[str] = []
-    blockers: list[str] = []
-    try:
-        import tools.run_phase4af_action_templates_local_parity as harness  # type: ignore
-    except ModuleNotFoundError as exc:
-        warnings.append(f"FastAPI harness probe skipped: {exc}")
-        return {"ok": True, "blockers": [], "warnings": warnings}
-    report = harness.run_harness()
-    if not report.get("ok"):
-        blockers.append(f"harness report failed: {report.get('details')}")
-    expected_names = REQUIRED_READ_MATRIX | REQUIRED_CREATE_MATRIX | {"idempotency_replay", "idempotency_conflict", "dangerous_fields_rejected"}
-    passed_names = {str(item.get("name")) for item in _as_list(report.get("details")) if isinstance(item, dict) and item.get("status") == "passed"}
-    missing = sorted(expected_names - passed_names)
-    if missing and report.get("skipped", 0) == 0:
-        blockers.append(f"harness probe missing passed matrix items: {missing}")
-    return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "report": report}
 
 
 def _is_protected(path: str) -> bool:
-    if path in PROTECTED_EXACT:
-        return True
-    return any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
+    return path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
 
 
 def check_change_scope() -> dict[str, Any]:
@@ -353,12 +291,9 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4AF scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4AG scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
-    for blocked in ("aicrm_next/main.py", "aicrm_next/production_compat/api.py"):
-        if blocked in changed:
-            blockers.append(f"{blocked} must remain unchanged")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
 
 
@@ -366,7 +301,7 @@ def check_doc_claims() -> dict[str, Any]:
     text = _read(PLAN_MD).lower()
     blockers: list[str] = []
     for pattern in (
-        r"production parity",
+        r"repository implemented",
         r"production repository enabled",
         r"production write authorized",
         r"route switch authorized",
@@ -385,8 +320,6 @@ def build_report() -> dict[str, Any]:
     checks = {
         "required_docs": check_required_docs(),
         "yaml_contract": check_yaml_contract(data),
-        "harness_static": check_harness_static(),
-        "fastapi_probe": check_fastapi_probe(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -411,7 +344,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4AF Action Templates Local Parity Harness Check",
+        "# Phase 4AG Action Templates Repository Adapter Plan Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -427,7 +360,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4AF action templates local fixture parity harness.")
+    parser = argparse.ArgumentParser(description="Check Phase 4AG action templates repository adapter planning.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
