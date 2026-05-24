@@ -1,0 +1,106 @@
+version: 1
+status: phase_4am_staging_wait_and_next_candidate_no_runtime_change
+
+action_templates:
+  status: awaiting_staging_approval_config
+  staging_smoke_executed: false
+  production_route_owner_switch_authorized: false
+  fallback_removal_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+  completed_assets:
+    - schema_route_service_confirmation
+    - companion_schema_planning
+    - additive_companion_migration_artifact
+    - fixture_native_contract
+    - local_fixture_parity_harness
+    - sql_alchemy_adapter_behind_flag
+    - local_test_db_adapter_parity_harness
+    - staging_smoke_package
+    - staging_smoke_evidence_gate
+    - staging_execution_readiness_gate
+  blockers:
+    - staging_db_config_owner_approval_missing
+    - staging_db_env_not_confirmed
+    - staging_db_url_safety_not_confirmed
+    - smoke_operator_not_assigned
+    - rollback_owner_not_assigned
+    - evidence_path_not_agreed
+    - write_smoke_approval_not_confirmed
+    - safe_namespace_cleanup_strategy_not_confirmed
+  resume_conditions:
+    - automation_engine_owner_approval
+    - integration_gateway_owner_approval
+    - staging_db_config_owner_approval
+    - rollback_owner_assigned
+    - smoke_operator_assigned
+    - staging_db_env_confirmed
+    - staging_db_url_safety_confirmed
+    - repo_backend_confirmed
+    - read_only_preflight_confirmed
+    - write_smoke_approval_confirmed_if_needed
+    - safe_namespace_confirmed
+    - evidence_path_confirmed
+    - cleanup_strategy_confirmed
+    - side_effect_safety_confirmed
+
+next_candidate:
+  selected_route_family: /api/admin/automation-conversion/task-groups*
+  capability_owner: aicrm_next.automation_engine
+  replacement_phase: phase_4_internal_write
+  replacement_category: internal_write
+  why_selected: Bounded internal task-group metadata family that can reuse the profile-segment-template and action-templates staged methodology while avoiding workflow runtime dispatch.
+  excluded_side_effects:
+    - item: payment
+    - item: oauth
+    - item: wecom external
+    - item: callback
+    - item: run-due
+    - item: timer
+    - item: execution
+    - item: send
+    - item: upload
+    - item: openclaw
+    - item: mcp
+    - item: public submit
+    - item: external push
+  required_guardrails:
+    - item: planning_only_first
+    - item: route_surface_confirmation_required
+    - item: metadata_only_scope_required
+    - item: idempotency_audit_rollback_required
+    - item: fixture_local_evidence_not_production_success
+    - item: legacy_fallback_retained
+  phase_4an_scope:
+    - item: task_groups_route_surface_confirmation
+    - item: legacy_payload_and_table_mapping_discovery
+    - item: metadata_only_scope_decision
+    - item: idempotency_audit_rollback_planning
+    - item: checker_and_test_plan
+    - item: fallback_boundary_plan
+  risks:
+    - item: task_group_validation_drift
+    - item: wildcard_scope_may_cover_task_runtime_if_not_checked
+    - item: update_delete_semantics_need_later_approval
+  rollback_requirement: Keep or restore legacy production_compat fallback ownership; revert the candidate PR if checker, parity, smoke, or owner approval fails.
+  business_continuity_requirement: Do not interrupt current automation operations setup; keep the production path on legacy fallback until parity, checker, smoke, rollback, and owner approval are complete.
+
+authorizations:
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  delete_ready: false
+
+phase_4an_recommendation:
+  recommended_next_step: task_groups_native_contract_planning
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4AN should plan task-groups native contract and guardrails only; do not change production owner, execute external calls, or remove fallback.
