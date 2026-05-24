@@ -15,24 +15,44 @@ if str(ROOT) not in sys.path:
 
 from tools.check_phase4aq_task_groups_fixture_native_implementation_owner_decision import load_yaml
 
-DOC = ROOT / "docs/development/phase_4av_workflow_nodes_metadata_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4av_workflow_nodes_metadata_plan.yaml"
+DOC = ROOT / "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.md"
+PLAN_YAML = ROOT / "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.yaml"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 BACKLOG = ROOT / "docs/development/legacy_replacement_backlog.yaml"
+SCHEMA = ROOT / "wecom_ability_service/schema_postgres.sql"
+PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
 
 ROUTE = "/api/admin/automation-conversion/workflow-nodes*"
-WORKFLOWS = "/api/admin/automation-conversion/workflows*"
-REQUIRED_SCOPE = {
-    "route_surface_confirmation",
-    "metadata_only_subset_decision",
-    "request_response_field_mapping",
-    "validation_boundary_plan",
-    "idempotency_plan",
-    "audit_plan",
-    "rollback_payload_plan",
-    "fixture_local_contract_plan",
-    "checker_and_test_plan",
+MAIN_TABLE = "automation_workflow_node"
+REQUIRED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
+REQUIRED_COLUMNS = {
+    "id",
+    "workflow_id",
+    "node_code",
+    "node_name",
+    "target_audience_code",
+    "trigger_mode",
+    "day_offset",
+    "send_time",
+    "timezone",
+    "position_index",
+    "enabled",
+    "created_at",
+    "updated_at",
+}
+REQUIRED_INDEXES = {
+    "uq_automation_workflow_node_code",
+    "idx_automation_workflow_node_position",
+    "idx_automation_workflow_node_schedule",
+}
+DEFERRED_TABLES = {
+    "automation_workflow_node_content",
+    "automation_workflow_node_content_variant",
+    "automation_workflow_node_transition",
+    "automation_workflow_execution",
+    "automation_workflow_execution_item",
+    "automation_frequency_budget",
 }
 AUTH_FALSE_FIELDS = {
     "runtime_implementation_authorized",
@@ -51,55 +71,45 @@ AUTH_FALSE_FIELDS = {
     "canary_approval_authorized",
     "delete_ready",
 }
+BOUNDARY_TRUE_FIELDS = {
+    "list_create_metadata_planning_allowed",
+    "update_delete_deferred",
+    "workflow_activation_deferred",
+    "workflow_execution_deferred",
+    "node_transition_runtime_deferred",
+    "timer_execution_deferred",
+    "outbound_send_deferred",
+    "execution_records_deferred",
+}
 EXCLUDED_TRUE_FIELDS = {
-    "payment",
-    "oauth",
-    "wecom_external_call",
-    "openclaw_mcp_real_call",
-    "workflow_execution",
-    "workflow_activation",
-    "workflow_transition_runtime",
-    "timer_execution",
+    "workflows_route_family",
+    "tasks_route_family",
     "run_due",
+    "workflow_activation",
+    "workflow_execution",
+    "node_transition_runtime",
+    "timer_execution",
     "automation_execution",
     "outbound_send",
-    "task_runtime",
-    "media_upload",
+    "real_external_call",
     "production_write",
     "production_route_switch",
     "fallback_removal",
     "production_compat_change",
 }
-REQUIRED_GUARDRAILS = {
-    "keep_legacy_fallback",
-    "no_production_owner_switch",
-    "no_production_write",
-    "no_external_calls",
-    "no_workflow_execution",
-    "no_workflow_activation",
-    "no_timer_execution",
-    "no_outbound_send",
-    "fixture_local_evidence_not_production_success",
-    "metadata_contract_before_runtime",
-    "staging_and_owner_approval_before_production_use",
-}
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4av_workflow_nodes_metadata_plan.md",
-    "docs/development/phase_4av_workflow_nodes_metadata_plan.yaml",
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.md",
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.yaml",
-    "docs/development/phase_4au_workflows_fixture_native_implementation_owner_decision.md",
-    "docs/development/phase_4au_workflows_fixture_native_implementation_owner_decision.yaml",
+    "docs/development/phase_4av_workflow_nodes_metadata_plan.md",
+    "docs/development/phase_4av_workflow_nodes_metadata_plan.yaml",
     "docs/development/phase_execution_state.yaml",
-    "tools/check_phase4av_workflow_nodes_metadata_plan.py",
     "tools/check_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
-    "tools/check_phase4au_workflows_fixture_native_implementation_owner_decision.py",
+    "tools/check_phase4av_workflow_nodes_metadata_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
-    "tests/test_phase4av_workflow_nodes_metadata_plan.py",
     "tests/test_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
-    "tests/test_phase4au_workflows_fixture_native_implementation_owner_decision.py",
+    "tests/test_phase4av_workflow_nodes_metadata_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -134,7 +144,7 @@ def _changed_files() -> tuple[set[str], list[str]]:
 def build_report() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
-    for path in (DOC, PLAN_YAML, STATE, MANIFEST, BACKLOG):
+    for path in (DOC, PLAN_YAML, STATE, MANIFEST, BACKLOG, SCHEMA, PRODUCTION_COMPAT):
         if not path.exists():
             blockers.append(f"missing required file: {path.relative_to(ROOT)}")
     if blockers:
@@ -144,67 +154,87 @@ def build_report() -> dict[str, Any]:
     state = load_yaml(STATE)
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
+    schema_text = SCHEMA.read_text(encoding="utf-8")
+    compat_text = PRODUCTION_COMPAT.read_text(encoding="utf-8")
 
-    if data.get("status") != "phase_4av_workflow_nodes_metadata_planning_no_runtime_change":
-        blockers.append("status must be Phase 4AV workflow-nodes metadata planning no runtime change")
+    if data.get("status") != "phase_4aw_workflow_nodes_schema_route_surface_confirmation_no_runtime_change":
+        blockers.append("status must be Phase 4AW workflow-nodes schema route surface confirmation no runtime change")
     if data.get("route_family") != ROUTE:
         blockers.append("route_family must be workflow-nodes wildcard")
     if ROUTE not in manifest_text or ROUTE not in backlog_text:
         blockers.append("workflow-nodes route must exist in manifest and backlog")
     if data.get("current_runtime_owner") != "production_compat" or data.get("production_behavior") != "legacy_forward":
         blockers.append("production owner must remain production_compat legacy_forward")
-    if data.get("legacy_fallback_retained") is not True:
-        blockers.append("legacy fallback must be retained")
+    if data.get("legacy_fallback_retained") is not True or data.get("fixture_allowed_in_production") is not False:
+        blockers.append("legacy fallback must be retained and fixture production use must be false")
+    if "@router.api_route(\"/api/admin/automation-conversion/workflow-nodes/{path:path}\"" not in compat_text:
+        blockers.append("production_compat must still register workflow-nodes wildcard legacy route")
 
-    previous = data.get("previous_candidate") if isinstance(data.get("previous_candidate"), dict) else {}
-    if previous.get("route_family") != WORKFLOWS or previous.get("paused_by_pr") != "#652":
-        blockers.append("previous_candidate must record workflows paused by #652")
-    if previous.get("owner_approval_required") is not True:
-        blockers.append("previous_candidate.owner_approval_required must be true")
+    previous = data.get("previous_phase") if isinstance(data.get("previous_phase"), dict) else {}
+    if previous.get("merged_pr") != "#653" or previous.get("completed") is not True:
+        blockers.append("previous_phase must record Phase 4AV merged in #653")
 
-    selected = data.get("selected_candidate") if isinstance(data.get("selected_candidate"), dict) else {}
-    if selected.get("route_family") != ROUTE or selected.get("replacement_phase") != "phase_4_internal_write":
-        blockers.append("selected_candidate must be workflow-nodes Phase 4 internal_write")
-    if selected.get("replacement_category") != "internal_write":
-        blockers.append("selected_candidate.replacement_category must be internal_write")
+    route_surface = data.get("confirmed_legacy_route_surface") if isinstance(data.get("confirmed_legacy_route_surface"), list) else []
+    paths = {str(item.get("path")) for item in route_surface if isinstance(item, dict)}
+    if paths != {"/api/admin/automation-conversion/workflow-nodes/{path:path}"}:
+        blockers.append("confirmed_legacy_route_surface must include workflow-nodes wildcard route")
+    for item in route_surface:
+        if isinstance(item, dict) and set(item.get("methods") or []) != REQUIRED_METHODS:
+            blockers.append(f"legacy route methods incomplete for {item.get('path')}")
+        if isinstance(item, dict) and item.get("production_behavior") != "legacy_forward":
+            blockers.append(f"legacy route production behavior must be legacy_forward for {item.get('path')}")
 
-    if not REQUIRED_SCOPE <= set(data.get("planned_contract_scope") or []):
-        blockers.append("planned_contract_scope incomplete")
-    excluded = data.get("excluded_scope") if isinstance(data.get("excluded_scope"), dict) else {}
-    for field in sorted(EXCLUDED_TRUE_FIELDS):
-        if excluded.get(field) is not True:
-            blockers.append(f"excluded_scope.{field} must be true")
-    if not REQUIRED_GUARDRAILS <= set(data.get("required_guardrails") or []):
-        blockers.append("required_guardrails incomplete")
+    table = data.get("primary_table") if isinstance(data.get("primary_table"), dict) else {}
+    if table.get("name") != MAIN_TABLE:
+        blockers.append("primary_table.name must be automation_workflow_node")
+    if f"CREATE TABLE IF NOT EXISTS {MAIN_TABLE}" not in schema_text:
+        blockers.append("schema_postgres.sql must define automation_workflow_node")
+    if not REQUIRED_COLUMNS <= set(table.get("required_columns") or []):
+        blockers.append("primary_table.required_columns incomplete")
+    if not REQUIRED_INDEXES <= set(table.get("required_indexes") or []):
+        blockers.append("primary_table.required_indexes incomplete")
+    for item in sorted(REQUIRED_COLUMNS | REQUIRED_INDEXES | DEFERRED_TABLES):
+        if item not in schema_text:
+            blockers.append(f"schema_postgres.sql missing referenced workflow-node artifact: {item}")
+    if not DEFERRED_TABLES <= set(data.get("deferred_related_tables") or []):
+        blockers.append("deferred_related_tables incomplete")
+
+    boundary = data.get("metadata_only_boundary") if isinstance(data.get("metadata_only_boundary"), dict) else {}
+    for field in sorted(BOUNDARY_TRUE_FIELDS):
+        if boundary.get(field) is not True:
+            blockers.append(f"metadata_only_boundary.{field} must be true")
 
     authorizations = data.get("authorizations") if isinstance(data.get("authorizations"), dict) else {}
     for field in sorted(AUTH_FALSE_FIELDS):
         if authorizations.get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
+    excluded = data.get("excluded_scope") if isinstance(data.get("excluded_scope"), dict) else {}
+    for field in sorted(EXCLUDED_TRUE_FIELDS):
+        if excluded.get(field) is not True:
+            blockers.append(f"excluded_scope.{field} must be true")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != state_update.get("active_candidate"):
-        blockers.append("phase_execution_state.active_candidate must remain workflow-nodes")
-    if state.get("owner_approval_required") is not False:
-        blockers.append("phase_execution_state.owner_approval_required must remain false for workflow-nodes planning packages")
-    if state_update.get("phase_4av_completed_step") not in set(state.get("completed_steps") or []):
-        blockers.append("phase_execution_state.completed_steps must include Phase 4AV completed step")
-    paused = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
-    if not any(isinstance(item, dict) and item.get("route_family") == WORKFLOWS and item.get("paused_by_pr") == "#652" for item in paused):
-        blockers.append("phase_execution_state.paused_candidates must include workflows paused by #652")
+    if state.get("active_candidate") != ROUTE:
+        blockers.append("phase_execution_state.active_candidate must remain workflow-nodes while Phase 4AX advances")
+    if state.get("last_merged_pr") != "#653":
+        blockers.append("phase_execution_state.last_merged_pr must record #653")
+    if state_update.get("phase_4aw_completed_step") not in set(state.get("completed_steps") or []):
+        blockers.append("phase_execution_state.completed_steps must include Phase 4AW completed step")
+    if set(state.get("next_allowed_actions") or []) != {"phase_4ax_workflow_nodes_fixture_native_contract_planning"}:
+        blockers.append("phase_execution_state.next_allowed_actions must advance to Phase 4AX")
     readiness = state.get("workflow_nodes_readiness") if isinstance(state.get("workflow_nodes_readiness"), dict) else {}
-    if readiness.get("metadata_planning_completed") is not True or readiness.get("schema_route_surface_confirmation_ready") is not True:
-        blockers.append("workflow_nodes_readiness must mark metadata planning complete and schema confirmation ready")
+    if readiness.get("schema_route_surface_confirmed") is not True or readiness.get("fixture_native_contract_planning_ready") is not True:
+        blockers.append("workflow_nodes_readiness must confirm schema surface and mark fixture planning ready")
     for field in ("runtime_implementation_ready", "production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
         if readiness.get(field) is not False:
             blockers.append(f"workflow_nodes_readiness.{field} must be false")
 
-    rec = data.get("phase_4aw_recommendation") if isinstance(data.get("phase_4aw_recommendation"), dict) else {}
-    if rec.get("recommended_next_step") != "workflow_nodes_schema_route_surface_confirmation":
-        blockers.append("phase_4aw_recommendation must recommend workflow-nodes schema route surface confirmation")
+    rec = data.get("phase_4ax_recommendation") if isinstance(data.get("phase_4ax_recommendation"), dict) else {}
+    if rec.get("recommended_next_step") != "workflow_nodes_fixture_native_contract_planning":
+        blockers.append("phase_4ax_recommendation must recommend workflow-nodes fixture/native contract planning")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4aw_recommendation.{field} must be false")
+            blockers.append(f"phase_4ax_recommendation.{field} must be false")
 
     doc_text = DOC.read_text(encoding="utf-8").lower()
     for phrase in sorted(FORBIDDEN_DOC_CLAIMS):
@@ -215,7 +245,7 @@ def build_report() -> dict[str, Any]:
     warnings.extend(git_warnings)
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
     if unexpected:
-        blockers.append(f"unexpected changed files for Phase 4AV package: {unexpected}")
+        blockers.append(f"unexpected changed files for Phase 4AW package: {unexpected}")
     protected = sorted(path for path in changed if path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES))
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
@@ -227,7 +257,7 @@ def _write_outputs(report: dict[str, Any], output_json: str | None, output_md: s
     if output_json:
         Path(output_json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if output_md:
-        lines = ["# Phase 4AV Workflow Nodes Metadata Planning Check", "", f"- overall: {report['overall']}", f"- ok: {str(report['ok']).lower()}", "", "## Blockers", *(f"- {item}" for item in report["blockers"]), "", "## Warnings", *(f"- {item}" for item in report["warnings"])]
+        lines = ["# Phase 4AW Workflow Nodes Schema Route Surface Check", "", f"- overall: {report['overall']}", f"- ok: {str(report['ok']).lower()}", "", "## Blockers", *(f"- {item}" for item in report["blockers"]), "", "## Warnings", *(f"- {item}" for item in report["warnings"])]
         Path(output_md).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

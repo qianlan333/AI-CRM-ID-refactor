@@ -34,7 +34,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4aw_workflow_nodes_schema_route_surface_confirmation",
+    "phase_4ax_workflow_nodes_fixture_native_contract_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -49,6 +49,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4at_workflows_fixture_native_contract_planning_completed",
     "phase_4au_workflows_fixture_native_implementation_owner_decision_completed",
     "phase_4av_workflow_nodes_metadata_planning_completed",
+    "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -245,8 +246,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflow-nodes* after workflows pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#652":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #652")
+    if state.get("last_merged_pr") != "#653":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #653")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -394,8 +395,11 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow_nodes_readiness.metadata_planning_completed must be true")
     if workflow_nodes_readiness.get("schema_route_surface_confirmation_ready") is not True:
         blockers.append("workflow_nodes_readiness.schema_route_surface_confirmation_ready must be true")
+    if workflow_nodes_readiness.get("schema_route_surface_confirmed") is not True:
+        blockers.append("workflow_nodes_readiness.schema_route_surface_confirmed must be true")
+    if workflow_nodes_readiness.get("fixture_native_contract_planning_ready") is not True:
+        blockers.append("workflow_nodes_readiness.fixture_native_contract_planning_ready must be true")
     for field in (
-        "fixture_native_contract_planning_ready",
         "runtime_implementation_ready",
         "production_owner_switch_ready",
         "production_write_ready",
