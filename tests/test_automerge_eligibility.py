@@ -67,6 +67,19 @@ def test_phase4am_closure_artifacts_can_define_stop_terms_as_policy() -> None:
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4am_owner_decision_package_is_manual_merge_only() -> None:
+    expected_owner_paths = {
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
+    }
+    expected_policy_paths = expected_owner_paths | {
+        "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
+        "tests/test_phase4am_action_templates_staging_owner_decision_package.py",
+    }
+    assert expected_owner_paths <= checker.OWNER_DECISION_PACKAGE_PATHS
+    assert expected_policy_paths <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

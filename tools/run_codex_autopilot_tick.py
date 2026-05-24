@@ -189,13 +189,17 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_codex_autopilot_tick.py",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/phase_4am_action_templates_owner_decision_package.md",
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
+        "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
         "docs/development/phase_4am_action_templates_staging_approval_config_closure.md",
         "docs/development/phase_4am_action_templates_staging_approval_config_closure.yaml",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
+        "tests/test_phase4am_action_templates_staging_owner_decision_package.py",
         "tests/test_phase4am_action_templates_staging_approval_config_closure.py",
         "tests/test_codex_autopilot_runtime_contract.py",
+        "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
     }
     for path in sorted(paths):
