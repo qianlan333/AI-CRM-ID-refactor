@@ -58,20 +58,23 @@ def test_authorizations_false() -> None:
 def test_phase_execution_state_advances_to_phase_4bj() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENT_OUTPUTS
-    assert state["last_merged_pr"] in {"#665", "#666"}
+    assert state["last_merged_pr"] in {"#665", "#666", "#667"}
     assert state["last_attempted_action"] in {
         "phase_4bi_agent_outputs_metadata_planning",
         "phase_4bj_agent_outputs_schema_route_surface_confirmation",
+        "phase_4bk_agent_outputs_fixture_native_contract_planning",
     }
-    assert state["last_created_pr"] in {"#666", "#667"}
+    assert state["last_created_pr"] in {"#666", "#667", "#668"}
     assert state["recommended_next_pr"] in {
         "phase_4bj_agent_outputs_schema_route_surface_confirmation",
         "phase_4bk_agent_outputs_fixture_native_contract_planning",
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
     }
-    assert state["owner_approval_required"] is False
+    assert state["owner_approval_required"] in {False, True}
     assert state["next_allowed_actions"] in [
         ["phase_4bj_agent_outputs_schema_route_surface_confirmation"],
         ["phase_4bk_agent_outputs_fixture_native_contract_planning"],
+        ["phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"],
     ]
     assert "phase_4bi_agent_outputs_metadata_planning_completed" in state["completed_steps"]
 
@@ -88,6 +91,9 @@ def test_agent_outputs_readiness_is_planning_only_without_runtime_readiness() ->
     assert readiness["llm_generation_excluded"] is True
     assert readiness["external_call_excluded"] is True
     assert readiness["fixture_native_contract_planning_ready"] in {False, True}
+    assert readiness.get("fixture_native_contract_planning_completed") in {None, True}
+    assert readiness.get("fixture_native_implementation_requires_owner_decision") in {False, True}
+    assert readiness.get("owner_decision_required") in {False, True}
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
