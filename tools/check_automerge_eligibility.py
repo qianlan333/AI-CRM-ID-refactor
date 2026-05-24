@@ -83,6 +83,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4bg_agents_fixture_native_contract_plan.yaml",
         "docs/development/phase_4bh_agents_fixture_native_implementation_owner_decision.md",
         "docs/development/phase_4bh_agents_fixture_native_implementation_owner_decision.yaml",
+        "docs/development/phase_4bi_agent_outputs_metadata_plan.md",
+        "docs/development/phase_4bi_agent_outputs_metadata_plan.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
@@ -111,6 +113,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4bf_agents_schema_route_surface_confirmation.py",
         "tools/check_phase4bg_agents_fixture_native_contract_plan.py",
         "tools/check_phase4bh_agents_fixture_native_implementation_owner_decision.py",
+        "tools/check_phase4bi_agent_outputs_metadata_plan.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -137,6 +140,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4bf_agents_schema_route_surface_confirmation.py",
         "tests/test_phase4bg_agents_fixture_native_contract_plan.py",
         "tests/test_phase4bh_agents_fixture_native_implementation_owner_decision.py",
+        "tests/test_phase4bi_agent_outputs_metadata_plan.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
 PROTECTED_EXACT = {
