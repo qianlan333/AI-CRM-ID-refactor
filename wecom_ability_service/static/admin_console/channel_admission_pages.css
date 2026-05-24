@@ -63,6 +63,22 @@
   margin-top: 14px;
 }
 
+.channel-save-feedback {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #b7e6cb;
+  border-radius: 8px;
+  background: #ecfdf3;
+  color: #067647;
+  font-weight: 700;
+}
+
+.channel-save-feedback.is-error {
+  border-color: #f4b9b2;
+  background: #fff3f0;
+  color: #b42318;
+}
+
 .channel-search {
   min-width: 260px;
   min-height: 40px;
