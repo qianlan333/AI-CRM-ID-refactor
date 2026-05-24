@@ -276,6 +276,78 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
     )
 
 
+def _ensure_postgres_profile_segment_template_companion_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_profile_segment_template_idempotency (
+            id BIGSERIAL PRIMARY KEY,
+            route_family TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            operator TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            response_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            resource_type TEXT NOT NULL DEFAULT 'profile_segment_template',
+            resource_id BIGINT,
+            status TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_profile_segment_template_idempotency_scope
+                UNIQUE (route_family, operation, operator, idempotency_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_profile_segment_template_idempotency_resource
+        ON automation_profile_segment_template_idempotency (resource_type, resource_id, created_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_profile_segment_template_idempotency_status
+        ON automation_profile_segment_template_idempotency (status, updated_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_profile_segment_template_audit_log (
+            id BIGSERIAL PRIMARY KEY,
+            route_family TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            operator TEXT NOT NULL,
+            resource_type TEXT NOT NULL DEFAULT 'profile_segment_template',
+            resource_id BIGINT,
+            before_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            after_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            validation_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+            rollback_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            side_effect_safety JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_resource
+        ON automation_profile_segment_template_audit_log (resource_type, resource_id, created_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_operator
+        ON automation_profile_segment_template_audit_log (operator, created_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_operation
+        ON automation_profile_segment_template_audit_log (operation, created_at)
+        """
+    )
+
+
 def _ensure_postgres_automation_operation_templates(db) -> None:
     db.execute(
         """
@@ -2008,6 +2080,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_attachment_library(db)
     _ensure_postgres_sidebar_customer_profile_fields(db)
     _ensure_postgres_automation_agent_config_tables(db)
+    _ensure_postgres_profile_segment_template_companion_tables(db)
     _ensure_postgres_automation_operation_templates(db)
     db.execute(
         """

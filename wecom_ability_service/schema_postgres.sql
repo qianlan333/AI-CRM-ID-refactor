@@ -1831,6 +1831,54 @@ ON automation_profile_segment_option_mapping (category_id, question_id, option_i
 CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_option_mapping_template
 ON automation_profile_segment_option_mapping (template_id, question_id, option_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_profile_segment_template_idempotency (
+    id BIGSERIAL PRIMARY KEY,
+    route_family TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    resource_type TEXT NOT NULL DEFAULT 'profile_segment_template',
+    resource_id BIGINT,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_profile_segment_template_idempotency_scope
+        UNIQUE (route_family, operation, operator, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_segment_template_idempotency_resource
+ON automation_profile_segment_template_idempotency (resource_type, resource_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_profile_segment_template_idempotency_status
+ON automation_profile_segment_template_idempotency (status, updated_at);
+
+CREATE TABLE IF NOT EXISTS automation_profile_segment_template_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    route_family TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    resource_type TEXT NOT NULL DEFAULT 'profile_segment_template',
+    resource_id BIGINT,
+    before_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    validation_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rollback_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    side_effect_safety JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_resource
+ON automation_profile_segment_template_audit_log (resource_type, resource_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_operator
+ON automation_profile_segment_template_audit_log (operator, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_profile_segment_template_audit_operation
+ON automation_profile_segment_template_audit_log (operation, created_at);
+
 CREATE TABLE IF NOT EXISTS automation_program (
     id BIGSERIAL PRIMARY KEY,
     program_code TEXT NOT NULL UNIQUE,
