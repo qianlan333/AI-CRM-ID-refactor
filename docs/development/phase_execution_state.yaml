@@ -8,13 +8,13 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/workflow-nodes*
+active_candidate: /api/admin/automation-conversion/tasks*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#655"
-last_attempted_action: phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision
-last_created_pr: "#656"
-recommended_next_pr: phase_4az_next_internal_write_candidate_selection
-owner_approval_required: true
+last_merged_pr: "#656"
+last_attempted_action: phase_4az_next_internal_write_candidate_selection
+last_created_pr: "#657"
+recommended_next_pr: phase_4ba_tasks_metadata_planning
+owner_approval_required: false
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -53,9 +53,10 @@ completed_steps:
   - phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed
   - phase_4ax_workflow_nodes_fixture_native_contract_planning_completed
   - phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed
+  - phase_4az_next_internal_write_candidate_selection_completed
 
 next_allowed_actions:
-  - phase_4az_next_internal_write_candidate_selection
+  - phase_4ba_tasks_metadata_planning
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -146,6 +147,25 @@ workflow_nodes_readiness:
   owner_decision_required: true
   paused: true
   paused_by_pr: "#656"
+  runtime_implementation_ready: false
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_repository_route_enablement_ready: false
+  delete_ready: false
+
+tasks_readiness:
+  metadata_planning_ready: true
+  metadata_planning_completed: false
+  schema_route_surface_confirmation_ready: false
+  fixture_native_contract_planning_ready: false
+  fixture_native_implementation_requires_owner_decision: false
+  owner_decision_required: false
+  run_due_excluded: true
+  task_execution_excluded: true
+  workflow_execution_excluded: true
+  timer_execution_excluded: true
+  outbound_send_excluded: true
   runtime_implementation_ready: false
   production_owner_switch_ready: false
   production_write_ready: false

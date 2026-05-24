@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#655"
+    assert data["last_merged_pr"] == "#656"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -43,6 +43,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
     assert "phase_4ax_workflow_nodes_fixture_native_contract_planning_completed" in set(data["completed_steps"])
     assert "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
+    assert "phase_4az_next_internal_write_candidate_selection_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
@@ -138,7 +139,6 @@ def test_workflows_selected_for_next_metadata_planning_without_production_readin
 
 def test_workflow_nodes_selected_for_metadata_planning_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     assert any(
         item["route_family"] == "/api/admin/automation-conversion/workflow-nodes*"
         and item["owner_approval_required"] is True
@@ -156,6 +156,24 @@ def test_workflow_nodes_selected_for_metadata_planning_without_production_readin
     assert readiness["owner_decision_required"] is True
     assert readiness["paused"] is True
     assert str(readiness["paused_by_pr"]).strip()
+    assert readiness["runtime_implementation_ready"] is False
+    assert readiness["production_owner_switch_ready"] is False
+    assert readiness["production_write_ready"] is False
+    assert readiness["fallback_removal_ready"] is False
+    assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["delete_ready"] is False
+
+
+def test_tasks_selected_for_next_metadata_planning_without_runtime_readiness() -> None:
+    data = checker.load_yaml(STATE)
+    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
+    readiness = data["tasks_readiness"]
+    assert readiness["metadata_planning_ready"] is True
+    assert readiness["run_due_excluded"] is True
+    assert readiness["task_execution_excluded"] is True
+    assert readiness["workflow_execution_excluded"] is True
+    assert readiness["timer_execution_excluded"] is True
+    assert readiness["outbound_send_excluded"] is True
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
