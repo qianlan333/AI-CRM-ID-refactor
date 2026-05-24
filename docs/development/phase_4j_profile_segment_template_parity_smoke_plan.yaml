@@ -1,0 +1,203 @@
+version: 1
+status: phase_4j_parity_smoke_planning_only_no_runtime_change
+production_repository_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_smoke_execution_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+route_family: /api/admin/automation-conversion/profile-segment-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+parity_matrix:
+  read:
+    - name: catalog
+      legacy_source: wecom_ability_service.http.automation_conversion_templates.api_admin_automation_conversion_profile_segment_catalog + workflow_service.list_conversion_profile_segment_catalog
+      next_source: aicrm_next.automation_engine.profile_segment_repository.SqlAlchemyProfileSegmentTemplateRepository.profile_segment_template_catalog
+      comparison_method: compare response keys, item count, template identity fields, category projection, and warnings
+      acceptable_differences:
+        - Next may expose side_effect_safety and route_owner fields absent from legacy.
+        - Draft/enabled mapping remains owner-review difference.
+      blockers:
+        - missing catalog item identity fields
+        - fixture/local_contract/demo treated as production success
+    - name: list
+      legacy_source: workflow_service.list_conversion_profile_segment_templates
+      next_source: SqlAlchemyProfileSegmentTemplateRepository.list_profile_segment_templates
+      comparison_method: compare filters, ordering, pagination, id/code/name/status fields, and total count
+      acceptable_differences:
+        - Next may expose template_id aliases and source_status.
+        - Legacy-specific UI labels may remain legacy-only until parity fixture confirms them.
+      blockers:
+        - count mismatch not explained
+        - status/enabled mapping mismatch without owner approval
+    - name: options
+      legacy_source: workflow_service.list_conversion_profile_segment_template_options
+      next_source: GetProfileSegmentTemplateOptionsQuery using SqlAlchemyProfileSegmentTemplateRepository
+      comparison_method: compare option id/value/label/name/code/status fields for enabled-only and program filters
+      acceptable_differences:
+        - Next may include route_owner and side_effect_safety metadata.
+      blockers:
+        - option label/value mismatch
+        - enabled_only behavior mismatch
+    - name: detail
+      legacy_source: workflow_service.get_conversion_profile_segment_template_bundle
+      next_source: SqlAlchemyProfileSegmentTemplateRepository.get_profile_segment_template
+      comparison_method: compare parent template fields, categories, option mappings, and missing-template behavior
+      acceptable_differences:
+        - Next may normalize category rows into rules.categories.
+        - Next may include conservative warnings for draft/status mapping.
+      blockers:
+        - missing categories or option mappings
+        - missing template does not map to equivalent not-found behavior
+  write:
+    - name: create_validation
+      legacy_source: workflow_service.create_conversion_profile_segment_template
+      next_source: SqlAlchemyProfileSegmentTemplateRepository.create_profile_segment_template + profile_segments validation
+      comparison_method: compare required fields, invalid status, dangerous field rejection, and error shape
+      acceptable_differences:
+        - Next requires idempotency key; legacy may not.
+      blockers:
+        - dangerous fields accepted
+        - missing name accepted
+    - name: create_idempotency_replay
+      legacy_source: no dedicated legacy idempotency storage confirmed
+      next_source: automation_profile_segment_template_idempotency response_snapshot replay
+      comparison_method: same operator/key/request_hash returns same resource and replay marker
+      acceptable_differences:
+        - Next has stronger idempotency than legacy.
+      blockers:
+        - duplicate row created on replay
+    - name: create_idempotency_conflict
+      legacy_source: no dedicated legacy idempotency storage confirmed
+      next_source: automation_profile_segment_template_idempotency request_hash conflict
+      comparison_method: same operator/key with different payload returns conflict and no main-table write
+      acceptable_differences:
+        - Conflict response is Next-specific safety improvement.
+      blockers:
+        - conflict writes main data
+    - name: create_duplicate_template
+      legacy_source: automation_profile_segment_template.template_code unique behavior and legacy service duplicate handling
+      next_source: SqlAlchemyProfileSegmentTemplateRepository duplicate name/code guard
+      comparison_method: compare duplicate template_code/name response and no partial category/mapping rows
+      acceptable_differences:
+        - Next may reject duplicate name in addition to template_code.
+      blockers:
+        - duplicate template_code creates a second active template
+    - name: update_validation
+      legacy_source: workflow_service.update_conversion_profile_segment_template
+      next_source: SqlAlchemyProfileSegmentTemplateRepository.update_profile_segment_template + profile_segments validation
+      comparison_method: compare invalid status, dangerous field rejection, field preservation, and error shape
+      acceptable_differences:
+        - Next may report optimistic locking warning until owner-approved stale update policy exists.
+      blockers:
+        - dangerous fields accepted
+    - name: update_missing_template
+      legacy_source: workflow_service.update_conversion_profile_segment_template
+      next_source: SqlAlchemyProfileSegmentTemplateRepository.update_profile_segment_template
+      comparison_method: compare missing-template not-found behavior
+      acceptable_differences:
+        - Error envelope may differ while status/category is equivalent.
+      blockers:
+        - missing template creates a new template
+    - name: update_before_after_snapshot
+      legacy_source: legacy service current row/category/mapping state
+      next_source: automation_profile_segment_template_audit_log before_snapshot and after_snapshot
+      comparison_method: verify update audit captures parent, category, and mapping state before and after change
+      acceptable_differences:
+        - Next audit is stronger than legacy created_by/updated_by snapshot.
+      blockers:
+        - missing before snapshot
+        - missing after snapshot
+    - name: update_child_replacement
+      legacy_source: workflow_service update deletes and reinserts category/mapping children
+      next_source: SqlAlchemyProfileSegmentTemplateRepository._replace_categories
+      comparison_method: compare final category/mapping set and transaction rollback on failure
+      acceptable_differences:
+        - Internal child row ids may differ.
+      blockers:
+        - stale child mappings remain
+        - partial child replacement commits on error
+    - name: audit_log_shape
+      legacy_source: created_by/updated_by and any owner-approved operation log
+      next_source: automation_profile_segment_template_audit_log
+      comparison_method: compare operation, operator, resource, request_payload, validation_result, side_effect_safety
+      acceptable_differences:
+        - Dedicated Next audit table may contain more fields than legacy.
+      blockers:
+        - side_effect_safety missing or true for real external effects
+    - name: rollback_payload_shape
+      legacy_source: owner-defined rollback playbook for profile segment template writes
+      next_source: create/update rollback payload returned by SqlAlchemyProfileSegmentTemplateRepository
+      comparison_method: compare created-template compensating action and update restore-before-snapshot payload
+      acceptable_differences:
+        - Delete remains unapproved; rollback may use status/field revert.
+      blockers:
+        - rollback payload missing before/after or created id
+
+smoke_levels:
+  - level: 0
+    name: static_checker_only
+    authorized_now: true
+    requires_owner_approval: false
+    production_data_allowed: false
+    writes_allowed: false
+  - level: 1
+    name: local_test_db
+    authorized_now: false
+    requires_owner_approval: true
+    production_data_allowed: false
+    writes_allowed: true
+  - level: 2
+    name: staging
+    authorized_now: false
+    requires_owner_approval: true
+    production_data_allowed: false
+    writes_allowed: true
+  - level: 3
+    name: production_dry_run_read_only
+    authorized_now: false
+    requires_owner_approval: true
+    production_data_allowed: true
+    writes_allowed: false
+  - level: 4
+    name: production_write_canary
+    authorized_now: false
+    requires_owner_approval: true
+    production_data_allowed: true
+    writes_allowed: true
+
+feature_flags:
+  default_backend: memory
+  sql_backend_flags:
+    - AICRM_PROFILE_SEGMENT_TEMPLATE_REPO_BACKEND
+    - PROFILE_SEGMENT_TEMPLATE_REPO_BACKEND
+  database_url_flags:
+    - AICRM_PROFILE_SEGMENT_TEMPLATE_DATABASE_URL
+    - AICRM_NEXT_TEST_DATABASE_URL
+  production_auto_enable: false
+
+safe_namespace:
+  template_code_prefix: phase4j_smoke_
+  operator: phase4j_smoke_operator
+  idempotency_key_prefix: phase4j_smoke_
+  cleanup_strategy: rollback via status/field revert in safe namespace; delete requires separate owner approval
+  delete_required: false
+
+owner_approval:
+  automation_engine_owner: pending
+  integration_gateway_owner: pending
+  business_owner: pending
+  db_config_owner: pending
+  rollback_owner: pending
+  smoke_operator: pending
+
+phase_4k_recommendation:
+  recommended_next_step: local_test_db_parity_harness_implementation
+  direct_route_switch_allowed: false
+  production_write_canary_allowed: false
+  production_repository_enablement_without_owner_approval: false
+  notes: Phase 4K should implement a local test DB parity harness only; it must not connect production data or switch route ownership.
