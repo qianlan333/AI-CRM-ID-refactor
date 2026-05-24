@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#665"
+    assert data["last_merged_pr"] == "#666"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -53,9 +53,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bg_agents_fixture_native_contract_planning_completed" in set(data["completed_steps"])
     assert "phase_4bh_agents_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
     assert "phase_4bi_agent_outputs_metadata_planning_completed" in set(data["completed_steps"])
+    assert "phase_4bj_agent_outputs_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4bj_agent_outputs_surface_only() -> None:
+def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -243,13 +244,15 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
     assert readiness["delete_ready"] is False
 
 
-def test_agent_outputs_selected_for_surface_confirmation_without_runtime_readiness() -> None:
+def test_agent_outputs_selected_for_fixture_contract_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
     assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["export_job_creation_excluded"] is True
     assert readiness["file_download_excluded"] is True
     assert readiness["agent_run_execution_excluded"] is True
