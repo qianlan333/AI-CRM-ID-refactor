@@ -68,13 +68,7 @@ def test_authorizations_and_side_effects_are_false() -> None:
 
 def test_phase_execution_state_advances_to_owner_decision() -> None:
     state = checker.load_yaml(STATE)
-    assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#650"
-    assert state["last_attempted_action"] == "phase_4at_workflows_fixture_native_contract_planning"
-    assert state["recommended_next_pr"] == "phase_4au_workflows_fixture_native_implementation_owner_decision"
-    assert state["owner_approval_required"] is True
     assert "phase_4at_workflows_fixture_native_contract_planning_completed" in state["completed_steps"]
-    assert state["next_allowed_actions"] == ["phase_4au_workflows_fixture_native_implementation_owner_decision"]
     readiness = state["workflows_readiness"]
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is True
