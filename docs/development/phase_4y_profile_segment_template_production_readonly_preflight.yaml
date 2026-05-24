@@ -1,0 +1,95 @@
+version: 1
+status: phase_4y_production_readonly_preflight_no_execution
+production_dry_run_execution_authorized: false
+production_data_connection_authorized: false
+production_write_authorized: false
+production_repository_route_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_write_canary_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+closure_items:
+  automation_engine_owner_approval: pending
+  integration_gateway_owner_approval: pending
+  db_config_owner_approval: pending
+  business_owner_approval: pending
+  rollback_owner_assigned: pending
+  dry_run_operator_assigned: pending
+  release_config_reviewer_approval: pending
+  security_data_reviewer_approval: pending
+  production_config_review_completed: pending
+  production_db_env_confirmed: pending
+  read_only_flags_confirmed: pending
+  evidence_path_confirmed: pending
+  fallback_validation_plan_confirmed: pending
+  secret_redaction_confirmed: pending
+  pii_redaction_confirmed: pending
+
+preflight_inputs:
+  phase_4x_yaml_required: true
+  optional_closure_status_file_supported: true
+  env_flag_check_supported: true
+  cli_arg_check_supported: true
+  db_connection_forbidden: true
+  dry_run_execution_forbidden: true
+
+readiness:
+  ready_for_phase_4z_readonly_dry_run_execution: false
+  missing_items:
+    - item: automation_engine_owner_approval_pending
+    - item: integration_gateway_owner_approval_pending
+    - item: db_config_owner_approval_pending
+    - item: business_owner_approval_pending
+    - item: rollback_owner_assigned_pending
+    - item: dry_run_operator_assigned_pending
+    - item: release_config_reviewer_approval_pending
+    - item: security_data_reviewer_approval_pending
+    - item: production_config_review_completed_pending
+    - item: production_db_env_confirmed_pending
+    - item: read_only_flags_confirmed_pending
+    - item: evidence_path_confirmed_pending
+    - item: fallback_validation_plan_confirmed_pending
+    - item: secret_redaction_confirmed_pending
+    - item: pii_redaction_confirmed_pending
+  blockers:
+    - item: closure_items_pending
+  next_owner_actions:
+    - item: Complete automation_engine owner approval.
+    - item: Complete integration_gateway owner approval.
+    - item: Complete DB/config owner approval.
+    - item: Complete business/ops owner approval.
+    - item: Assign rollback owner and dry-run operator.
+    - item: Complete release/config and security/data review.
+  next_config_actions:
+    - item: Confirm AICRM_PHASE4R_PRODUCTION_READONLY_DRY_RUN_APPROVED=1.
+    - item: Confirm AICRM_PHASE4R_PRODUCTION_CONFIG_REVIEWED=1.
+    - item: Confirm AICRM_PROFILE_SEGMENT_TEMPLATE_REPO_BACKEND=sqlalchemy.
+    - item: Confirm AICRM_PROFILE_SEGMENT_TEMPLATE_PRODUCTION_DATABASE_URL is present only in the scoped manual environment.
+    - item: Confirm --read-only and --confirm-no-writes are used.
+  next_evidence_actions:
+    - item: Confirm redacted JSON and Markdown evidence paths.
+    - item: Confirm fallback validation plan.
+    - item: Confirm secret redaction and PII redaction.
+    - item: Keep raw payload export forbidden.
+
+phase_4z_constraints:
+  read_only_only: true
+  create_update_delete_forbidden: true
+  production_write_forbidden: true
+  route_switch_forbidden: true
+  fallback_removal_forbidden: true
+  production_compat_change_forbidden: true
+  external_calls_forbidden: true
+  raw_pii_export_forbidden: true
+  secret_export_forbidden: true
+
+phase_4z_recommendation:
+  recommended_next_step: continue_closure_status_or_execute_readonly_dry_run_only_if_preflight_ready
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Preflight evidence is not production dry-run success; Phase 4Z needs explicit owner confirmation before any read-only execution.
