@@ -83,6 +83,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml",
     "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
     "tests/test_phase4ag_action_templates_repository_adapter_plan.py",
+    "aicrm_next/automation_engine/action_template_sqlalchemy_repository.py",
+    "docs/development/phase_4ah_action_templates_repository_adapter.md",
+    "docs/development/phase_4ah_action_templates_repository_adapter.yaml",
+    "tools/check_phase4ah_action_templates_repository_adapter.py",
+    "tests/test_phase4ah_action_templates_repository_adapter.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
