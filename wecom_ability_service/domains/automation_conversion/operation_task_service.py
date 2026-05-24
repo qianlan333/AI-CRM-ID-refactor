@@ -12,9 +12,12 @@ from . import workflow_repo
 from . import workflow_runtime
 from .private_message_dispatch import _dispatch_private_message_batch
 from .workflow_definitions import (
+    AGENT_BINDING_SCOPE_PERSONALIZED,
     AUDIENCE_CONVERTED,
     AUDIENCE_OPERATING,
     AUDIENCE_PENDING_QUESTIONNAIRE,
+    GENERATION_MODE_PERSONALIZED_SINGLE,
+    SEGMENTATION_BASIS_NONE,
     STAGE_COMPAT_AUDIENCE,
     STAGE_COMPAT_ENTRY_REASON,
     STAGE_CONVERTED,
@@ -460,7 +463,63 @@ def _segment_content(task: dict[str, Any], segment_key: str) -> dict[str, Any]:
     return {}
 
 
-def _render_for_member(task: dict[str, Any], member: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
+def _render_agent_for_member(
+    *,
+    task: dict[str, Any],
+    member: dict[str, Any],
+    request_id: str,
+) -> tuple[str, str, dict[str, Any]]:
+    config = dict(task.get("agent_config_json") or {})
+    standard_content_text = _text(config.get("fallback_content")) or _text(config.get("requirement")) or _text(task.get("description"))
+    workflow_bundle = {
+        "workflow": {
+            "workflow_code": f"operation_task_{int(task.get('program_id') or 0)}",
+            "workflow_name": "自动化运营任务",
+            "generation_mode": GENERATION_MODE_PERSONALIZED_SINGLE,
+            "segmentation_basis": SEGMENTATION_BASIS_NONE,
+        }
+    }
+    node = {
+        "node_code": f"operation_task_{int(task.get('id') or 0)}",
+        "node_name": _text(task.get("task_name")) or "自动化运营任务",
+        "target_audience_code": _text(task.get("target_audience_code")),
+        "trigger_mode": _text(task.get("trigger_type")),
+        "day_offset": _int(task.get("audience_day_offset"), default=1, minimum=1),
+        "send_time": _text(task.get("send_time")),
+        "content_mode": "personalized_single",
+        "segmentation_basis": SEGMENTATION_BASIS_NONE,
+        "standard_content_text": standard_content_text,
+    }
+    agent_code = _text(config.get("agent_code"))
+    behavior_match = workflow_runtime._resolve_behavior_segment_match(member)
+    generated = workflow_runtime._generate_content_with_agent(
+        member=member,
+        workflow_bundle=workflow_bundle,
+        node=node,
+        agent_binding={
+            "agent_code": agent_code,
+            "binding_scope": AGENT_BINDING_SCOPE_PERSONALIZED,
+        },
+        standard_content_text=standard_content_text,
+        segment_match={"matched": False, "segment_key": "", "segment_label": "", "reason": "operation_task_personalized"},
+        behavior_match=behavior_match,
+        request_id=_text(request_id) or f"operation-task-{int(task.get('id') or 0)}-{int(member.get('id') or 0)}",
+        generation_source="automation_operation_task",
+    )
+    content = {
+        **config,
+        "agent_config": config,
+        "agent_code": _text(generated.get("agent_code")) or agent_code,
+        "content_source": _text(generated.get("content_source")) or "standard_content",
+        "fallback_reason": _text(generated.get("fallback_reason")),
+        "agent_run_id": _text(generated.get("agent_run_id")),
+        "agent_output_id": _text(generated.get("agent_output_id")),
+        "behavior_match": behavior_match,
+    }
+    return "agent", _text(generated.get("content_text")) or standard_content_text, content
+
+
+def _render_for_member(task: dict[str, Any], member: dict[str, Any], *, request_id: str = "") -> tuple[str, str, dict[str, Any]]:
     mode = _text(task.get("content_mode")) or "unified"
     if mode == "behavior_layered":
         segment_key = _behavior_key(member)
@@ -471,9 +530,7 @@ def _render_for_member(task: dict[str, Any], member: dict[str, Any]) -> tuple[st
         content = _segment_content(task, segment_key)
         return segment_key, _text(content.get("content_text")), content
     if mode == "agent":
-        config = dict(task.get("agent_config_json") or {})
-        content_text = _text(config.get("fallback_content")) or _text(config.get("requirement")) or _text(task.get("description"))
-        return "agent", content_text, {**config, "agent_config": config}
+        return _render_agent_for_member(task=task, member=member, request_id=request_id)
     content = dict(task.get("unified_content_json") or {})
     return "unified", _text(content.get("content_text")), content
 
@@ -619,7 +676,8 @@ def _materialize_operation_task_execution(
     failed_count = 0
     for entry in entries:
         member = dict(entry.get("member") or {})
-        segment_key, content_text, content = _render_for_member(task, member)
+        render_request_id = f"{execution_id}:{int(entry.get('id') or 0) or int(member.get('id') or 0)}"
+        segment_key, content_text, content = _render_for_member(task, member, request_id=render_request_id)
         if not _content_has_send_body(content_text, content) or not _text(member.get("external_contact_id")):
             failed_count += 1
             continue
