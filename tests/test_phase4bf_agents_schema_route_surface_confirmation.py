@@ -4,12 +4,12 @@ import json
 import subprocess
 from pathlib import Path
 
-import tools.check_phase4be_agents_metadata_plan as checker
+import tools.check_phase4bf_agents_schema_route_surface_confirmation as checker
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4be_agents_metadata_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4be_agents_metadata_plan.yaml"
+DOC = ROOT / "docs/development/phase_4bf_agents_schema_route_surface_confirmation.md"
+PLAN_YAML = ROOT / "docs/development/phase_4bf_agents_schema_route_surface_confirmation.yaml"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 
 
@@ -18,29 +18,39 @@ def test_checker_current_repo_passes() -> None:
     assert report["overall"] == "PASS", json.dumps(report["blockers"], ensure_ascii=False, indent=2)
 
 
-def test_plan_is_agents_metadata_only() -> None:
+def test_plan_confirms_agents_route_surface_without_owner_change() -> None:
     data = checker.load_yaml(PLAN_YAML)
-    assert data["status"] == "phase_4be_agents_metadata_planning_no_runtime_change"
+    assert data["status"] == "phase_4bf_agents_schema_route_surface_confirmation_no_runtime_change"
     assert data["route_family"] == checker.AGENTS
     assert data["current_runtime_owner"] == "production_compat"
     assert data["production_behavior"] == "legacy_forward"
     assert data["legacy_fallback_retained"] is True
-    assert data["planning_scope"]["selected_subset"] == "agents_metadata_only"
-    assert set(data["planning_scope"]["allowed_methods_for_future_contract_planning"]) == {"GET", "POST"}
+    surface = data["confirmed_route_surface"]
+    assert checker.REQUIRED_PRODUCTION_PATTERNS <= set(surface["production_compat_patterns"])
+    assert checker.REQUIRED_LEGACY_ROUTES <= checker._legacy_route_pairs(surface["legacy_api_routes"])
 
 
-def test_excluded_routes_and_behaviors_cover_runtime_paths() -> None:
+def test_schema_surface_records_metadata_and_defers_runtime_tables() -> None:
     data = checker.load_yaml(PLAN_YAML)
-    scope = data["planning_scope"]
-    assert checker.REQUIRED_EXCLUDED_ROUTES <= set(scope["excluded_routes"])
-    assert checker.REQUIRED_EXCLUDED_BEHAVIORS <= set(scope["excluded_behaviors"])
+    schema = data["confirmed_schema_surface"]
+    assert schema["metadata_table"] == "automation_agent_config"
+    assert checker.REQUIRED_READ_MODEL_COLUMNS <= set(schema["read_model_columns"])
+    assert checker.REQUIRED_METADATA_FIELDS <= set(schema["legacy_metadata_contract_fields"])
+    assert checker.REQUIRED_RELATED_RUNTIME_TABLES <= set(schema["related_runtime_tables_deferred"])
+    relationships = schema["relationship_boundaries"]
+    assert relationships["agent_run_tables_excluded_from_metadata_subset"] is True
+    assert relationships["output_tables_excluded_from_metadata_subset"] is True
+    assert relationships["llm_call_log_excluded_from_metadata_subset"] is True
 
 
-def test_metadata_model_and_contract_planning_complete() -> None:
+def test_native_boundary_is_metadata_only_and_deferred_scope_complete() -> None:
     data = checker.load_yaml(PLAN_YAML)
-    assert checker.REQUIRED_METADATA_FIELDS <= set(data["candidate_metadata_model"]["required_fields"])
-    for field in checker.REQUIRED_CONTRACT_TRUE:
-        assert data["contract_planning"][field] is True
+    boundary = data["native_contract_boundary"]
+    assert checker.REQUIRED_FIRST_NATIVE_SUBSET <= set(boundary["first_native_subset"])
+    assert checker.REQUIRED_DEFERRED_SCOPE <= set(boundary["deferred_to_separate_pr"])
+    assert "no_agent_run_execution" in boundary["next_contract_planning_requirements"]
+    assert "no_llm_generation" in boundary["next_contract_planning_requirements"]
+    assert "no_external_calls" in boundary["next_contract_planning_requirements"]
 
 
 def test_authorizations_false() -> None:
@@ -49,33 +59,25 @@ def test_authorizations_false() -> None:
         assert data["authorizations"][field] is False
 
 
-def test_phase_execution_state_advances_to_phase_4bf() -> None:
+def test_phase_execution_state_advances_to_phase_4bg() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENTS
-    assert state["last_merged_pr"] in {"#661", "#662"}
-    assert state["last_attempted_action"] in {
-        "phase_4be_agents_metadata_planning",
-        "phase_4bf_agents_schema_route_surface_confirmation",
-    }
-    assert state["last_created_pr"] in {"#662", "#663"}
-    assert state["recommended_next_pr"] in {
-        "phase_4bf_agents_schema_route_surface_confirmation",
-        "phase_4bg_agents_fixture_native_contract_planning",
-    }
+    assert state["last_merged_pr"] == "#662"
+    assert state["last_attempted_action"] == "phase_4bf_agents_schema_route_surface_confirmation"
+    assert state["last_created_pr"] == "#663"
+    assert state["recommended_next_pr"] == "phase_4bg_agents_fixture_native_contract_planning"
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] in [
-        ["phase_4bf_agents_schema_route_surface_confirmation"],
-        ["phase_4bg_agents_fixture_native_contract_planning"],
-    ]
-    assert "phase_4be_agents_metadata_planning_completed" in state["completed_steps"]
+    assert state["next_allowed_actions"] == ["phase_4bg_agents_fixture_native_contract_planning"]
+    assert "phase_4bf_agents_schema_route_surface_confirmation_completed" in state["completed_steps"]
 
 
-def test_agents_readiness_is_planning_only_without_runtime_readiness() -> None:
+def test_agents_readiness_allows_next_contract_planning_only() -> None:
     readiness = checker.load_yaml(STATE)["agents_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
-    assert readiness["fixture_native_contract_planning_ready"] in {False, True}
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["agent_run_execution_excluded"] is True
     assert readiness["llm_generation_excluded"] is True
     assert readiness["deepseek_adapter_excluded"] is True
@@ -89,9 +91,9 @@ def test_agents_readiness_is_planning_only_without_runtime_readiness() -> None:
     assert readiness["delete_ready"] is False
 
 
-def test_phase_4bf_recommendation_does_not_allow_production_actions() -> None:
-    rec = checker.load_yaml(PLAN_YAML)["phase_4bf_recommendation"]
-    assert rec["recommended_next_step"] == "agents_schema_route_surface_confirmation"
+def test_phase_4bg_recommendation_does_not_allow_production_actions() -> None:
+    rec = checker.load_yaml(PLAN_YAML)["phase_4bg_recommendation"]
+    assert rec["recommended_next_step"] == "agents_fixture_native_contract_planning"
     assert rec["production_write_allowed"] is False
     assert rec["production_route_switch_allowed"] is False
     assert rec["fallback_removal_allowed"] is False
