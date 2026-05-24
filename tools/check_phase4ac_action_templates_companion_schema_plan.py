@@ -93,6 +93,15 @@ ALLOWED_CHANGED_FILES = {
     "tests/test_phase4ad_action_templates_companion_migration.py",
     "wecom_ability_service/schema_postgres.sql",
     "wecom_ability_service/db/migrations/postgres_migrations.py",
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/action_templates.py",
+    "aicrm_next/automation_engine/action_template_repository.py",
+    "docs/development/phase_4ae_action_templates_native_fixture_contract.md",
+    "docs/development/phase_4ae_action_templates_native_fixture_contract.yaml",
+    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
+    "tests/test_phase4ae_action_templates_native_fixture_contract.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",

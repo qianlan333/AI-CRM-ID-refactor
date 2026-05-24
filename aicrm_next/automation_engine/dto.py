@@ -92,3 +92,33 @@ class ProfileSegmentTemplateUpdateRequest(BaseModel):
     sort_order: int | None = None
     idempotency_key: str | None = None
     operator: str = "system"
+
+
+class ActionTemplateListRequest(BaseModel):
+    template_source: str = ""
+    category: str = ""
+    keyword: str = ""
+    include_archived: bool = False
+    limit: int = 50
+    offset: int = 0
+
+
+class ActionTemplateCreateRequest(BaseModel):
+    name: str | None = None
+    template_name: str | None = None
+    code: str | None = None
+    template_code: str | None = None
+    template_source: str = "crm_local"
+    category: str = ""
+    description: str = ""
+    status: str = "active"
+    default_config: dict[str, Any] = Field(default_factory=dict)
+    ui_schema: dict[str, Any] = Field(default_factory=dict)
+    workflow_blueprint: dict[str, Any] = Field(default_factory=dict)
+    node_blueprints: list[Any] = Field(default_factory=list)
+    idempotency_key: str | None = None
+    operator: str = "system"
+
+
+class ActionTemplateValidationError(ValueError):
+    pass
