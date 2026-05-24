@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#663"
+    assert data["last_merged_pr"] == "#664"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -51,9 +51,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4be_agents_metadata_planning_completed" in set(data["completed_steps"])
     assert "phase_4bf_agents_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
     assert "phase_4bg_agents_fixture_native_contract_planning_completed" in set(data["completed_steps"])
+    assert "phase_4bh_agents_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4bh_agents_only() -> None:
+def test_next_allowed_actions_are_phase_4bi_agent_outputs_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -211,17 +212,46 @@ def test_tasks_selected_for_next_metadata_planning_without_runtime_readiness() -
 
 def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/agents*"
+        and item["owner_approval_required"] is True
+        and str(item["paused_by_pr"]).strip()
+        for item in data["paused_candidates"]
+    )
     readiness = data["agents_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness["fixture_native_contract_planning_completed"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
+    assert readiness["owner_decision_required"] is True
+    assert readiness["paused"] is True
+    assert readiness["paused_by_pr"] == "#665"
     assert readiness["agent_run_execution_excluded"] is True
     assert readiness["llm_generation_excluded"] is True
     assert readiness["deepseek_adapter_excluded"] is True
     assert readiness["openclaw_mcp_excluded"] is True
+    assert readiness["external_call_excluded"] is True
+    assert readiness["runtime_implementation_ready"] is False
+    assert readiness["production_owner_switch_ready"] is False
+    assert readiness["production_write_ready"] is False
+    assert readiness["fallback_removal_ready"] is False
+    assert readiness["production_repository_route_enablement_ready"] is False
+    assert readiness["delete_ready"] is False
+
+
+def test_agent_outputs_selected_for_metadata_planning_without_runtime_readiness() -> None:
+    data = checker.load_yaml(STATE)
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
+    readiness = data["agent_outputs_readiness"]
+    assert readiness["metadata_planning_ready"] is True
+    assert readiness["metadata_planning_completed"] is False
+    assert readiness["export_job_creation_excluded"] is True
+    assert readiness["file_download_excluded"] is True
+    assert readiness["agent_run_execution_excluded"] is True
+    assert readiness["llm_generation_excluded"] is True
     assert readiness["external_call_excluded"] is True
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False

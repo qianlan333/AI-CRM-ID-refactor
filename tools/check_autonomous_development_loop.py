@@ -33,10 +33,11 @@ REQUIRED_STATE_FIELDS = {
     "workflow_nodes_readiness",
     "tasks_readiness",
     "agents_readiness",
+    "agent_outputs_readiness",
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bh_agents_fixture_native_implementation_owner_decision",
+    "phase_4bi_agent_outputs_metadata_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -62,6 +63,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4be_agents_metadata_planning_completed",
     "phase_4bf_agents_schema_route_surface_confirmation_completed",
     "phase_4bg_agents_fixture_native_contract_planning_completed",
+    "phase_4bh_agents_fixture_native_implementation_owner_decision_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -254,12 +256,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agents*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agents* after tasks pause")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-outputs* after agents pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#663":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #663")
+    if state.get("last_merged_pr") != "#664":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #664")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -362,6 +364,14 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must include tasks awaiting fixture/native runtime owner decision")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/agents*"
+        and item.get("owner_approval_required") is True
+        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must include agents awaiting fixture/native runtime owner decision")
 
     task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
     if task_groups_readiness.get("native_contract_planning_started") is not True:
@@ -490,6 +500,7 @@ def build_report() -> dict[str, Any]:
         "fixture_native_contract_planning_completed",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
+        "paused",
         "agent_run_execution_excluded",
         "llm_generation_excluded",
         "deepseek_adapter_excluded",
@@ -508,6 +519,35 @@ def build_report() -> dict[str, Any]:
     ):
         if agents_readiness.get(field) is not False:
             blockers.append(f"agents_readiness.{field} must be false")
+    if agents_readiness.get("paused_by_pr") != "#665":
+        blockers.append("agents_readiness.paused_by_pr must be #665")
+
+    agent_outputs_readiness = state.get("agent_outputs_readiness") if isinstance(state.get("agent_outputs_readiness"), dict) else {}
+    for field in (
+        "metadata_planning_ready",
+        "export_job_creation_excluded",
+        "file_download_excluded",
+        "agent_run_execution_excluded",
+        "llm_generation_excluded",
+        "external_call_excluded",
+    ):
+        if agent_outputs_readiness.get(field) is not True:
+            blockers.append(f"agent_outputs_readiness.{field} must be true")
+    for field in (
+        "metadata_planning_completed",
+        "schema_route_surface_confirmation_ready",
+        "fixture_native_contract_planning_ready",
+        "fixture_native_implementation_requires_owner_decision",
+        "owner_decision_required",
+        "runtime_implementation_ready",
+        "production_owner_switch_ready",
+        "production_write_ready",
+        "fallback_removal_ready",
+        "production_repository_route_enablement_ready",
+        "delete_ready",
+    ):
+        if agent_outputs_readiness.get(field) is not False:
+            blockers.append(f"agent_outputs_readiness.{field} must be false")
 
     changed = _changed_files()
     runtime_changed = [
