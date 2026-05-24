@@ -35,14 +35,18 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/phase_4am_action_templates_owner_decision_package.md",
+        "docs/development/phase_4am_action_templates_staging_approval_config_closure.md",
+        "docs/development/phase_4am_action_templates_staging_approval_config_closure.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
+        "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
+        "tests/test_phase4am_action_templates_staging_approval_config_closure.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
 PROTECTED_EXACT = {

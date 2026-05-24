@@ -11,9 +11,9 @@ current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/action-templates*
 capability_owner: aicrm_next.automation_engine
 last_merged_pr: "#641"
-last_attempted_action: phase_4am_blocked_evidence_review
-last_created_pr: "#641"
-recommended_next_pr: phase_4am_staging_approval_config_closure_package
+last_attempted_action: phase_4am_approval_config_closure
+last_created_pr: "#643"
+recommended_next_pr: phase_4am_owner_decision_or_staging_smoke_evidence_after_closure
 owner_approval_required: true
 
 work_package_policy:
@@ -39,6 +39,7 @@ completed_steps:
   - action_templates_staging_smoke_package_completed
   - action_templates_staging_smoke_evidence_gate_completed
   - action_templates_staging_execution_readiness_gate_completed
+  - action_templates_staging_approval_config_closure_package_created
 
 next_allowed_actions:
   - phase_4am_approval_config_closure
