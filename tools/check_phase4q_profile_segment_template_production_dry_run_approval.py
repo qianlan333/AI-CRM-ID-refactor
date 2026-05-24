@@ -3,74 +3,105 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4o_profile_segment_template_staging_smoke_evidence.md"
-PLAN_YAML = ROOT / "docs/development/phase_4o_profile_segment_template_staging_smoke_evidence.yaml"
-RUNNER = ROOT / "tools/run_phase4o_profile_segment_template_staging_smoke_evidence.py"
+DOC = ROOT / "docs/development/phase_4q_profile_segment_template_production_dry_run_approval.md"
+PLAN_YAML = ROOT / "docs/development/phase_4q_profile_segment_template_production_dry_run_approval.yaml"
 REQUIRED_DOCS = [
     DOC,
     PLAN_YAML,
-    RUNNER,
-    ROOT / "docs/development/phase_4n_profile_segment_template_staging_smoke_approval.md",
-    ROOT / "docs/development/phase_4m_profile_segment_template_staging_smoke_package.md",
+    ROOT / "docs/development/phase_4p_profile_segment_template_production_dry_run_plan.md",
+    ROOT / "docs/development/phase_4o_profile_segment_template_staging_smoke_evidence.md",
 ]
 AUTH_FALSE_FIELDS = {
-    "production_data_used",
+    "production_dry_run_execution_authorized",
+    "production_data_connection_authorized",
     "production_repository_enablement_authorized",
     "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
     "production_compat_change_authorized",
-    "production_dry_run_authorized",
     "production_write_canary_authorized",
     "real_external_call_authorized",
     "delete_ready",
 }
-EXECUTION_FIELDS = {
-    "result_status",
-    "dry_run_attempted",
-    "dry_run_passed",
-    "write_smoke_attempted",
-    "write_smoke_passed",
-    "write_smoke_owner_approved",
-    "not_executed_reason",
+APPROVAL_FIELDS = {
+    "automation_engine_owner",
+    "integration_gateway_owner",
+    "db_config_owner",
+    "business_owner",
+    "rollback_owner",
+    "dry_run_operator",
+    "release_config_reviewer",
+    "security_data_reviewer",
 }
-DB_SAFETY_FIELDS = {
-    "checked",
-    "safe",
-    "allowed_marker_present",
-    "forbidden_marker_present",
-    "secret_redacted",
-    "production_data_used",
+ALLOWED_LEVEL_FIELDS = {
+    "level_1_read_only_parity_can_be_requested": True,
+    "level_2_validation_shadow_can_be_requested": True,
+    "level_3_safe_namespace_write_dry_run_can_be_requested": False,
+    "level_4_write_canary_can_be_requested": False,
 }
-SIDE_EFFECT_FALSE_FIELDS = {
-    "external_calls_executed",
-    "automation_execution_executed",
-    "outbound_send_executed",
+ENVIRONMENT_TRUE_FIELDS = {
+    "production_config_review_required",
+    "secret_redaction_required",
+    "pii_redaction_required",
+    "route_owner_must_remain_legacy_fallback",
+    "production_compat_must_remain_unchanged",
+    "fallback_validation_required",
+    "sql_backend_must_not_be_default",
+    "dry_run_flag_must_be_temporary_and_scoped",
+}
+EXECUTION_TRUE_FIELDS = {
+    "manual_execution_required",
+    "read_only_first_required",
+    "evidence_required",
+}
+STOP_CONDITIONS = {
+    "owner_approval_missing",
+    "production_config_review_incomplete",
     "route_owner_changed",
     "production_compat_changed",
+    "fallback_validation_failed",
+    "external_call_detected",
+    "write_attempted_in_read_only_dry_run",
+    "secret_redaction_failed",
+    "pii_redaction_failed",
+    "side_effect_safety_failed",
+    "unexpected_production_data_mutation",
+}
+ROLLBACK_TRUE_FIELDS = {
+    "dry_run_flag_disable_required",
+    "production_compat_fallback_validation_required",
+    "route_owner_verification_required",
+    "evidence_preservation_required",
+    "owner_notification_required",
+    "incident_review_required_if_write_detected",
+}
+EVIDENCE_REQUIRED = {
+    "runner_json_report",
+    "runner_markdown_report",
+    "approval_snapshot",
+    "config_summary_without_secrets",
+    "route_owner_unchanged_evidence",
+    "production_compat_retained_evidence",
+    "fallback_validation",
+    "read_parity_summary",
+    "validation_shadow_summary_if_applicable",
+    "skipped_write_blocked_summary",
+    "side_effect_safety_summary",
+    "redaction_summary",
+    "operator_timestamp",
+    "owner_signoff",
 }
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4o_profile_segment_template_staging_smoke_evidence.md",
-    "docs/development/phase_4o_profile_segment_template_staging_smoke_evidence.yaml",
-    "tools/run_phase4o_profile_segment_template_staging_smoke_evidence.py",
-    "tools/check_phase4o_profile_segment_template_staging_smoke_evidence.py",
-    "tests/test_phase4o_profile_segment_template_staging_smoke_evidence.py",
-    "tools/check_phase4m_profile_segment_template_staging_smoke_package.py",
-    "tools/check_phase4n_profile_segment_template_staging_smoke_approval.py",
-    "docs/development/phase_4p_profile_segment_template_production_dry_run_plan.md",
-    "docs/development/phase_4p_profile_segment_template_production_dry_run_plan.yaml",
-    "tools/check_phase4p_profile_segment_template_production_dry_run_plan.py",
-    "tests/test_phase4p_profile_segment_template_production_dry_run_plan.py",
     "docs/development/phase_4q_profile_segment_template_production_dry_run_approval.md",
     "docs/development/phase_4q_profile_segment_template_production_dry_run_approval.yaml",
     "tools/check_phase4q_profile_segment_template_production_dry_run_approval.py",
     "tests/test_phase4q_profile_segment_template_production_dry_run_approval.py",
+    "tools/check_phase4p_profile_segment_template_production_dry_run_plan.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -82,28 +113,14 @@ PROTECTED_PREFIXES = (
 )
 PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
 FORBIDDEN_DOC_PHRASES = [
-    "production dry-run authorized",
+    "production dry-run executed",
+    "production data connected",
     "production repository enabled",
     "route switch authorized",
     "fallback removal authorized",
     "production approved",
     "canary approved",
     "delete_ready true",
-]
-FORBIDDEN_RUNNER_PATTERNS = [
-    r"\bwecom_ability_service\b",
-    r"\bimport\s+.*openclaw",
-    r"\bfrom\s+.*openclaw",
-    r"\bimport\s+.*mcp",
-    r"\bfrom\s+.*mcp",
-    r"\bimport\s+.*payment",
-    r"\bfrom\s+.*payment",
-    r"\bimport\s+.*oauth",
-    r"\bfrom\s+.*oauth",
-    r"\bimport\s+.*timer",
-    r"\bfrom\s+.*timer",
-    r"\bimport\s+.*send",
-    r"\bfrom\s+.*send",
 ]
 
 
@@ -222,6 +239,10 @@ def load_yaml(path: Path = PLAN_YAML) -> dict[str, Any]:
         return _load_yaml_without_dependency(text)
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _run(command: list[str]) -> tuple[int, str]:
     proc = subprocess.run(
         command,
@@ -250,10 +271,6 @@ def _changed_files_from_git() -> tuple[set[str], list[str]]:
     return changed, warnings
 
 
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
 def check_required_docs() -> dict[str, Any]:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED_DOCS if not path.exists()]
     return {"ok": not missing, "blockers": [f"missing required file: {path}" for path in missing], "warnings": []}
@@ -262,81 +279,83 @@ def check_required_docs() -> dict[str, Any]:
 def check_top_level(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4o_staging_smoke_evidence_no_production_change":
-        blockers.append("status must be phase_4o_staging_smoke_evidence_no_production_change")
+    if data.get("status") != "phase_4q_production_dry_run_approval_only_no_execution":
+        blockers.append("status must be phase_4q_production_dry_run_approval_only_no_execution")
     for field in sorted(AUTH_FALSE_FIELDS):
         if data.get(field) is not False:
             blockers.append(f"{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_execution(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    execution = (data or load_yaml()).get("execution") or {}
-    missing = sorted(field for field in EXECUTION_FIELDS if field not in execution)
-    blockers = [f"execution missing fields {missing}"] if missing else []
+def check_approval(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    approval = (data or load_yaml()).get("approval") or {}
+    blockers = [f"approval.{field} must be pending" for field in sorted(APPROVAL_FIELDS) if approval.get(field) != "pending"]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_db_url_safety(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    safety = (data or load_yaml()).get("db_url_safety") or {}
-    missing = sorted(field for field in DB_SAFETY_FIELDS if field not in safety)
-    blockers = [f"db_url_safety missing fields {missing}"] if missing else []
-    if safety.get("checked") is not True:
-        blockers.append("db_url_safety.checked must be true")
-    if safety.get("secret_redacted") is not True:
-        blockers.append("db_url_safety.secret_redacted must be true")
-    if safety.get("production_data_used") is not False:
-        blockers.append("db_url_safety.production_data_used must be false")
+def check_allowed_future_levels(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    levels = (data or load_yaml()).get("allowed_future_levels") or {}
+    blockers = [
+        f"allowed_future_levels.{field} must be {expected}"
+        for field, expected in sorted(ALLOWED_LEVEL_FIELDS.items())
+        if levels.get(field) is not expected
+    ]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_side_effect_safety(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    safety = (data or load_yaml()).get("side_effect_safety") or {}
-    blockers = [f"side_effect_safety.{field} must be false" for field in sorted(SIDE_EFFECT_FALSE_FIELDS) if safety.get(field) is not False]
+def check_environment_confirmation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    env = (data or load_yaml()).get("environment_confirmation") or {}
+    blockers = [f"environment_confirmation.{field} must be true" for field in sorted(ENVIRONMENT_TRUE_FIELDS) if env.get(field) is not True]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_phase4p_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    rec = (data or load_yaml()).get("phase_4p_recommendation") or {}
+def check_execution_plan(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    plan = (data or load_yaml()).get("execution_plan") or {}
     blockers: list[str] = []
-    if not rec.get("recommended_next_step"):
-        blockers.append("phase_4p_recommendation.recommended_next_step missing")
-    for field in ("production_dry_run_allowed", "production_route_switch_allowed", "production_write_canary_allowed"):
+    for field in sorted(EXECUTION_TRUE_FIELDS):
+        if plan.get(field) is not True:
+            blockers.append(f"execution_plan.{field} must be true")
+    if plan.get("run_in_ci_by_default") is not False:
+        blockers.append("execution_plan.run_in_ci_by_default must be false")
+    if plan.get("writes_allowed") is not False:
+        blockers.append("execution_plan.writes_allowed must be false")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_stop_conditions(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    present = {str(item) for item in _as_list((data or load_yaml()).get("stop_conditions"))}
+    missing = sorted(STOP_CONDITIONS - present)
+    blockers = [f"stop_conditions missing {missing}"] if missing else []
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_rollback_abort_plan(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    plan = (data or load_yaml()).get("rollback_abort_plan") or {}
+    blockers = [f"rollback_abort_plan.{field} must be true" for field in sorted(ROLLBACK_TRUE_FIELDS) if plan.get(field) is not True]
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_evidence_package(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    package = (data or load_yaml()).get("evidence_package") or {}
+    present = {str(item) for item in _as_list(package.get("required"))}
+    missing = sorted(EVIDENCE_REQUIRED - present)
+    blockers = [f"evidence_package.required missing {missing}"] if missing else []
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_phase4r_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    rec = (data or load_yaml()).get("phase_4r_recommendation") or {}
+    blockers: list[str] = []
+    if rec.get("recommended_next_step") != "production_read_only_dry_run_runner_implementation":
+        blockers.append("phase_4r_recommendation.recommended_next_step must be production_read_only_dry_run_runner_implementation")
+    for field in (
+        "production_dry_run_execution_allowed_without_owner_approval",
+        "production_route_switch_allowed",
+        "production_write_canary_allowed",
+        "fallback_removal_allowed",
+    ):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4p_recommendation.{field} must be false")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_runner_source() -> dict[str, Any]:
-    source = _read(RUNNER)
-    blockers: list[str] = []
-    required_markers = [
-        "AICRM_PHASE4O_STAGING_WRITE_APPROVED",
-        "--execute-writes",
-        "AICRM_PROFILE_SEGMENT_TEMPLATE_STAGING_DATABASE_URL",
-        "FORBIDDEN_DB_MARKERS",
-        "--output-json",
-        "--output-md",
-        "_redact_url",
-        "not_executed_missing_staging_db",
-        "not_executed_db_url_safety_failed",
-        "not_executed_missing_approval",
-    ]
-    for marker in required_markers:
-        if marker not in source:
-            blockers.append(f"runner missing marker: {marker}")
-    forbidden_fallbacks = [
-        'os.environ.get("DATABASE_URL"',
-        "os.getenv(\"DATABASE_URL\"",
-        "get_settings(",
-    ]
-    for marker in forbidden_fallbacks:
-        if marker in source:
-            blockers.append(f"runner must not use production DB fallback: {marker}")
-    lowered = source.lower()
-    for pattern in FORBIDDEN_RUNNER_PATTERNS:
-        if re.search(pattern, lowered):
-            blockers.append(f"runner includes forbidden external side-effect marker: {pattern}")
+            blockers.append(f"phase_4r_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -350,7 +369,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4O staging smoke evidence scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4Q production dry-run approval scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -370,11 +389,14 @@ def build_report() -> dict[str, Any]:
     checks = {
         "required_docs": check_required_docs(),
         "top_level": check_top_level(data),
-        "execution": check_execution(data),
-        "db_url_safety": check_db_url_safety(data),
-        "side_effect_safety": check_side_effect_safety(data),
-        "phase4p_recommendation": check_phase4p_recommendation(data),
-        "runner_source": check_runner_source(),
+        "approval": check_approval(data),
+        "allowed_future_levels": check_allowed_future_levels(data),
+        "environment_confirmation": check_environment_confirmation(data),
+        "execution_plan": check_execution_plan(data),
+        "stop_conditions": check_stop_conditions(data),
+        "rollback_abort_plan": check_rollback_abort_plan(data),
+        "evidence_package": check_evidence_package(data),
+        "phase4r_recommendation": check_phase4r_recommendation(data),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -399,7 +421,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4O Profile Segment Template Staging Smoke Evidence Check",
+        "# Phase 4Q Profile Segment Template Production Dry-Run Approval Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -415,7 +437,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4O profile segment template staging smoke evidence package.")
+    parser = argparse.ArgumentParser(description="Check Phase 4Q profile segment template production dry-run approval package.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
