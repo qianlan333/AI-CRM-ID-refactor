@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#645"
+    assert data["last_merged_pr"] == "#646"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -33,6 +33,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "action_templates_staging_owner_decision_package_created" in set(data["completed_steps"])
     assert "phase_4an_task_groups_native_contract_planning_completed" in set(data["completed_steps"])
     assert "phase_4ao_task_groups_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
+    assert "phase_4ap_task_groups_fixture_native_contract_planning_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
@@ -88,6 +89,8 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
     assert readiness["native_contract_planning_completed"] is True
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness["fixture_native_contract_planning_completed"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
     assert readiness["fallback_removal_ready"] is False
