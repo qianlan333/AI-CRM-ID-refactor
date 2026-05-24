@@ -92,6 +92,10 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4aa_action_templates_implementation_plan.yaml",
     "tools/check_phase4aa_action_templates_implementation_plan.py",
     "tests/test_phase4aa_action_templates_implementation_plan.py",
+    "docs/development/phase_4ab_action_templates_schema_confirmation.md",
+    "docs/development/phase_4ab_action_templates_schema_confirmation.yaml",
+    "tools/check_phase4ab_action_templates_schema_confirmation.py",
+    "tests/test_phase4ab_action_templates_schema_confirmation.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
