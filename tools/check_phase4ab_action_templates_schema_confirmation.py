@@ -9,13 +9,13 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4aa_action_templates_implementation_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4aa_action_templates_implementation_plan.yaml"
+DOC = ROOT / "docs/development/phase_4ab_action_templates_schema_confirmation.md"
+PLAN_YAML = ROOT / "docs/development/phase_4ab_action_templates_schema_confirmation.yaml"
 REQUIRED_DOCS = [
     DOC,
     PLAN_YAML,
-    ROOT / "docs/development/phase_4z_profile_segment_template_approval_wait_and_next_candidate.md",
-    ROOT / "docs/development/legacy_replacement_backlog.yaml",
+    ROOT / "docs/development/phase_4aa_action_templates_implementation_plan.md",
+    ROOT / "docs/development/phase_4aa_action_templates_implementation_plan.yaml",
 ]
 SOURCE_FILES = [
     ROOT / "wecom_ability_service/http/automation_conversion.py",
@@ -23,6 +23,7 @@ SOURCE_FILES = [
     ROOT / "wecom_ability_service/domains/automation_conversion/action_template_service.py",
     ROOT / "wecom_ability_service/domains/automation_conversion/workflow_repo.py",
     ROOT / "wecom_ability_service/schema_postgres.sql",
+    ROOT / "wecom_ability_service/db/migrations/postgres_migrations.py",
 ]
 AUTH_FALSE_FIELDS = {
     "runtime_change_authorized",
@@ -36,48 +37,61 @@ AUTH_FALSE_FIELDS = {
     "outbound_send_authorized",
     "delete_ready",
 }
-OUT_OF_SCOPE_REQUIRED = {
-    "run_due",
-    "automation_execution",
-    "outbound_send",
-    "wecom_external_call",
-    "openclaw_call",
-    "mcp_real_call",
-    "timer",
-    "workflow_activation",
-    "customer_pool_state_change",
-    "agent_runtime_execution",
-    "fallback_removal",
-    "production_compat_narrowing",
+REQUIRED_SERVICES = {
+    "list_action_templates",
+    "create_action_template",
+    "generate_action_template",
+    "create_action_template_from_workflow",
 }
-GUARDRAIL_TRUE_FIELDS = {
-    "idempotency_required_for_create",
-    "duplicate_protection_required",
-    "audit_operator_identity_required",
-    "before_after_snapshot_required_for_update",
-    "rollback_payload_required",
-    "dangerous_fields_rejected",
-    "no_real_external_side_effect",
-    "no_automation_execution",
-    "fallback_retained",
-    "checker_required",
-    "smoke_required",
+REQUIRED_SCHEMA_FIELDS = {
+    "id",
+    "template_code",
+    "template_name",
+    "template_source",
+    "category",
+    "description",
+    "status",
+    "default_config_json",
+    "ui_schema_json",
+    "workflow_blueprint_json",
+    "node_blueprints_json",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+    "archived_at",
 }
-REPOSITORY_OPTIONS = {
-    "reuse_legacy_tables",
-    "legacy_service_adapter",
-    "new_next_tables",
+REQUIRED_FIELD_MAPPINGS = {
+    "id",
+    "code",
+    "name",
+    "template_source",
+    "category",
+    "description",
+    "status",
+    "default_config",
+    "ui_schema",
+    "workflow_blueprint",
+    "node_blueprints",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+    "archived_at",
+}
+READINESS_DECISIONS = {
+    "ready_for_fixture_native_contract",
+    "needs_companion_idempotency_audit_planning",
+    "needs_more_legacy_confirmation",
+    "defer_due_to_external_side_effect_risk",
 }
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4aa_action_templates_implementation_plan.md",
-    "docs/development/phase_4aa_action_templates_implementation_plan.yaml",
-    "tools/check_phase4aa_action_templates_implementation_plan.py",
-    "tests/test_phase4aa_action_templates_implementation_plan.py",
-    "tools/check_phase4z_profile_segment_template_approval_wait_and_next_candidate.py",
     "docs/development/phase_4ab_action_templates_schema_confirmation.md",
     "docs/development/phase_4ab_action_templates_schema_confirmation.yaml",
     "tools/check_phase4ab_action_templates_schema_confirmation.py",
     "tests/test_phase4ab_action_templates_schema_confirmation.py",
+    "tools/check_phase4aa_action_templates_implementation_plan.py",
+    "tools/check_phase4z_profile_segment_template_approval_wait_and_next_candidate.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -110,6 +124,11 @@ def _parse_scalar(value: str) -> Any:
         return value == "true"
     if value == "[]":
         return []
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [part.strip().strip("\"'") for part in inner.split(",")]
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     try:
@@ -215,14 +234,16 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def _item_values(value: Any) -> set[str]:
-    result: set[str] = set()
-    for item in _as_list(value):
+def _dict_values(values: Any, key: str) -> set[str]:
+    return {str(item.get(key)) for item in _as_list(values) if isinstance(item, dict) and item.get(key) is not None}
+
+
+def _route_values(values: Any) -> set[tuple[str, str]]:
+    routes: set[tuple[str, str]] = set()
+    for item in _as_list(values):
         if isinstance(item, dict):
-            result.add(str(item.get("item", "")))
-        else:
-            result.add(str(item))
-    return {item for item in result if item}
+            routes.add((str(item.get("method", "")).upper(), str(item.get("path", ""))))
+    return routes
 
 
 def _run(command: list[str]) -> tuple[int, str]:
@@ -280,76 +301,113 @@ def check_route_and_owner(data: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_legacy_discovery(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    discovery = (data or load_yaml()).get("legacy_discovery") or {}
+def check_route_surface(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    surface = (data or load_yaml()).get("route_surface") or {}
+    confirmed = _as_list(surface.get("confirmed_routes"))
     blockers: list[str] = []
-    if discovery.get("status") not in {"documented", "needs_legacy_confirmation"}:
-        blockers.append("legacy_discovery.status must be documented or needs_legacy_confirmation")
-    if discovery.get("status") == "documented":
-        if not _as_list(discovery.get("routes")):
-            blockers.append("legacy_discovery.routes must be non-empty when documented")
-        if not _as_list(discovery.get("services")):
-            blockers.append("legacy_discovery.services must be non-empty when documented")
-    persistence = discovery.get("persistence") or {}
-    if persistence.get("status") not in {"documented", "needs_legacy_confirmation"}:
-        blockers.append("legacy_discovery.persistence.status must be documented or needs_legacy_confirmation")
-    if persistence.get("status") == "documented" and not _as_list(persistence.get("tables")):
-        blockers.append("legacy_discovery.persistence.tables must be non-empty when documented")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_scope(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    scope = (data or load_yaml()).get("scope") or {}
-    blockers: list[str] = []
-    if not _item_values(scope.get("in_scope")):
-        blockers.append("scope.in_scope must be non-empty")
-    missing = sorted(OUT_OF_SCOPE_REQUIRED - set(_as_list(scope.get("out_of_scope"))))
-    if missing:
-        blockers.append(f"scope.out_of_scope missing {missing}")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_native_contract(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    contract = (data or load_yaml()).get("native_contract") or {}
-    blockers: list[str] = []
-    if contract.get("status") not in {"proposed", "needs_legacy_confirmation"}:
-        blockers.append("native_contract.status must be proposed or needs_legacy_confirmation")
-    fields = _as_list(contract.get("fields"))
-    if not fields:
-        blockers.append("native_contract.fields must be non-empty")
-    for item in fields:
-        if not isinstance(item, dict) or not item.get("next_field"):
-            blockers.append("native_contract.fields entries must include next_field")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_guardrails(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    guardrails = (data or load_yaml()).get("required_guardrails") or {}
-    blockers = [
-        f"required_guardrails.{field} must be true"
-        for field in sorted(GUARDRAIL_TRUE_FIELDS)
-        if guardrails.get(field) is not True
+    if not confirmed:
+        blockers.append("route_surface.confirmed_routes must be non-empty")
+    routes = _route_values(confirmed)
+    for required in (
+        ("GET", "/api/admin/automation-conversion/action-templates"),
+        ("POST", "/api/admin/automation-conversion/action-templates"),
+    ):
+        if required not in routes:
+            blockers.append(f"route_surface.confirmed_routes missing {required[0]} {required[1]}")
+    generate = [
+        route
+        for route in confirmed
+        if isinstance(route, dict) and str(route.get("path")) == "/api/admin/automation-conversion/action-templates/generate"
     ]
+    if not generate or all(str(route.get("phase_4ac_scope_decision")) != "out_of_scope" for route in generate):
+        out_routes = {str(item.get("route")) for item in _as_list(surface.get("out_of_scope")) if isinstance(item, dict)}
+        if "POST /api/admin/automation-conversion/action-templates/generate" not in out_routes:
+            blockers.append("generate route must be out_of_scope")
+    from_workflow = [
+        route
+        for route in confirmed
+        if isinstance(route, dict) and str(route.get("path")) == "/api/admin/automation-conversion/action-templates/from-workflow"
+    ]
+    if not from_workflow:
+        blockers.append("from-workflow route must be documented")
+    elif all(str(route.get("phase_4ac_scope_decision")) not in {"defer", "out_of_scope", "in_scope"} or not route.get("reason") for route in from_workflow):
+        blockers.append("from-workflow route must be deferred or documented with reason")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_repository_strategy(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    strategy = (data or load_yaml()).get("repository_strategy") or {}
+def check_services(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    services = _as_list((data or load_yaml()).get("services"))
     blockers: list[str] = []
-    if not strategy.get("selected_strategy") and not strategy.get("selection_status"):
-        blockers.append("repository_strategy selected_strategy or selection_status must be non-empty")
-    option_ids = {str(option.get("id")) for option in _as_list(strategy.get("options")) if isinstance(option, dict)}
-    missing = sorted(REPOSITORY_OPTIONS - option_ids)
+    functions = _dict_values(services, "function")
+    missing = sorted(REQUIRED_SERVICES - functions)
     if missing:
-        blockers.append(f"repository_strategy.options missing {missing}")
+        blockers.append(f"services missing {missing}")
+    for service in services:
+        if not isinstance(service, dict):
+            continue
+        function = service.get("function")
+        if function in REQUIRED_SERVICES:
+            if not service.get("side_effect_risk"):
+                blockers.append(f"services.{function}.side_effect_risk missing")
+            if not service.get("phase_4ac_scope_decision"):
+                blockers.append(f"services.{function}.phase_4ac_scope_decision missing")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_phase_4ab_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    rec = (data or load_yaml()).get("phase_4ab_recommendation") or {}
+def check_schema_confirmation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    schema = (data or load_yaml()).get("schema_confirmation") or {}
+    blockers: list[str] = []
+    if schema.get("table") != "automation_operation_templates":
+        blockers.append("schema_confirmation.table must be automation_operation_templates")
+    fields = _dict_values(schema.get("fields"), "name")
+    missing = sorted(REQUIRED_SCHEMA_FIELDS - fields)
+    if missing:
+        blockers.append(f"schema_confirmation.fields missing {missing}")
+    if not schema.get("timestamp_behavior"):
+        blockers.append("schema_confirmation.timestamp_behavior missing")
+    if not schema.get("status_archive_behavior"):
+        blockers.append("schema_confirmation.status_archive_behavior missing")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_field_mapping(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    mappings = _as_list((data or load_yaml()).get("field_mapping_confirmation"))
+    mapped = _dict_values(mappings, "next_field")
+    missing = sorted(REQUIRED_FIELD_MAPPINGS - mapped)
+    blockers = [f"field_mapping_confirmation missing {missing}"] if missing else []
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_idempotency_audit(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    section = (data or load_yaml()).get("idempotency_audit_confirmation") or {}
+    blockers: list[str] = []
+    for field in (
+        "dedicated_idempotency_storage_confirmed",
+        "dedicated_audit_storage_confirmed",
+        "before_after_snapshot_storage_confirmed",
+        "operator_snapshot_confirmed",
+        "companion_schema_may_be_required",
+    ):
+        if field not in section:
+            blockers.append(f"idempotency_audit_confirmation.{field} missing")
+    if not section.get("notes"):
+        blockers.append("idempotency_audit_confirmation.notes missing")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_phase_4ac_readiness(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    readiness = (data or load_yaml()).get("phase_4ac_readiness") or {}
+    blockers: list[str] = []
+    if readiness.get("decision") not in READINESS_DECISIONS:
+        blockers.append("phase_4ac_readiness.decision must be an allowed value")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_phase_4ac_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    rec = (data or load_yaml()).get("phase_4ac_recommendation") or {}
     blockers: list[str] = []
     if not rec.get("recommended_next_step"):
-        blockers.append("phase_4ab_recommendation.recommended_next_step missing")
+        blockers.append("phase_4ac_recommendation.recommended_next_step missing")
     for field in (
         "production_write_allowed",
         "production_route_switch_allowed",
@@ -357,19 +415,28 @@ def check_phase_4ab_recommendation(data: dict[str, Any] | None = None) -> dict[s
         "production_write_canary_allowed",
     ):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4ab_recommendation.{field} must be false")
+            blockers.append(f"phase_4ac_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
 def check_source_cross_reference(data: dict[str, Any] | None = None) -> dict[str, Any]:
-    discovery_status = ((data or load_yaml()).get("legacy_discovery") or {}).get("status")
-    source = "\n".join(_read(path).lower() for path in SOURCE_FILES if path.exists())
-    found = any(token in source for token in ("action-template", "action_templates", "action template", "action_template"))
+    data = data or load_yaml()
+    schema_status = ((data.get("schema_confirmation") or {}).get("status") or "")
+    source_text = "\n".join(_read(path).lower() for path in SOURCE_FILES if path.exists())
     blockers: list[str] = []
-    if not found and discovery_status != "needs_legacy_confirmation":
-        blockers.append("action-template source names not confirmed; legacy_discovery.status must be needs_legacy_confirmation")
-    if found and "automation_operation_templates" not in source:
-        blockers.append("source references action templates but not automation_operation_templates")
+    for token in (
+        "api_admin_automation_conversion_action_templates",
+        "api_admin_automation_conversion_action_template_generate",
+        "api_admin_automation_conversion_action_template_from_workflow",
+        "list_action_templates",
+        "create_action_template",
+        "generate_action_template",
+        "create_action_template_from_workflow",
+    ):
+        if token.lower() not in source_text:
+            blockers.append(f"source missing expected token: {token}")
+    if "automation_operation_templates" not in source_text and schema_status != "needs_more_confirmation":
+        blockers.append("source missing automation_operation_templates; schema_confirmation.status must be needs_more_confirmation")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -383,7 +450,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4AA scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4AB scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -404,12 +471,13 @@ def build_report() -> dict[str, Any]:
         "required_docs": check_required_docs(),
         "authorizations": check_authorizations(data),
         "route_and_owner": check_route_and_owner(data),
-        "legacy_discovery": check_legacy_discovery(data),
-        "scope": check_scope(data),
-        "native_contract": check_native_contract(data),
-        "guardrails": check_guardrails(data),
-        "repository_strategy": check_repository_strategy(data),
-        "phase_4ab_recommendation": check_phase_4ab_recommendation(data),
+        "route_surface": check_route_surface(data),
+        "services": check_services(data),
+        "schema_confirmation": check_schema_confirmation(data),
+        "field_mapping": check_field_mapping(data),
+        "idempotency_audit": check_idempotency_audit(data),
+        "phase_4ac_readiness": check_phase_4ac_readiness(data),
+        "phase_4ac_recommendation": check_phase_4ac_recommendation(data),
         "source_cross_reference": check_source_cross_reference(data),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
@@ -435,7 +503,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4AA Action Templates Implementation Plan Check",
+        "# Phase 4AB Action Templates Schema Confirmation Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -451,7 +519,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4AA action-templates implementation planning.")
+    parser = argparse.ArgumentParser(description="Check Phase 4AB action-templates schema confirmation.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
