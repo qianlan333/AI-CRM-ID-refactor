@@ -10,22 +10,23 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN_MD = ROOT / "docs/development/phase_4b_profile_segment_template_implementation_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4b_profile_segment_template_implementation_plan.yaml"
-LEGACY_AUTOMATION_ROUTES = ROOT / "wecom_ability_service/http/automation_conversion.py"
+PLAN_MD = ROOT / "docs/development/phase_4d_profile_segment_template_production_switch_plan.md"
+PLAN_YAML = ROOT / "docs/development/phase_4d_profile_segment_template_production_switch_plan.yaml"
+LEGACY_ROUTES = ROOT / "wecom_ability_service/http/automation_conversion.py"
 PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
 REQUIRED_DOCS = [
     PLAN_MD,
     PLAN_YAML,
+    ROOT / "docs/development/phase_4c_profile_segment_template_native_contract.md",
+    ROOT / "docs/development/phase_4b_profile_segment_template_implementation_plan.md",
     ROOT / "docs/development/phase_4a_internal_write_candidate_selection.md",
-    ROOT / "docs/development/phase_4a_internal_write_candidate_selection.yaml",
 ]
 AUTH_FALSE_FIELDS = {
-    "implementation_authorized",
-    "production_cutover_authorized",
+    "production_repository_implementation_authorized",
+    "migration_authorized",
+    "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
     "production_compat_change_authorized",
-    "db_schema_change_authorized",
     "real_external_call_authorized",
     "delete_ready",
 }
@@ -33,6 +34,7 @@ EXPECTED_ROUTE_FAMILY = "/api/admin/automation-conversion/profile-segment-templa
 EXPECTED_CAPABILITY_OWNER = "aicrm_next.automation_engine"
 EXPECTED_FALLBACK_BOUNDARY = "aicrm_next.integration_gateway"
 REQUIRED_FORBIDDEN_SCOPE = {
+    "delete",
     "run_due",
     "automation_execution",
     "outbound_send",
@@ -52,34 +54,41 @@ EXPECTED_ROUTES = {
     ("POST", "/api/admin/automation-conversion/profile-segment-templates"),
     ("PUT", "/api/admin/automation-conversion/profile-segment-templates/{template_id}"),
 }
-WRITE_ROUTE_KEYS = {
-    ("POST", "/api/admin/automation-conversion/profile-segment-templates"),
-    ("PUT", "/api/admin/automation-conversion/profile-segment-templates/{template_id}"),
+REQUIRED_ROUTE_SEQUENCE = [
+    "keep_production_compat_owner",
+    "implement_or_plan_production_repository",
+    "parity_check",
+    "read_only_flag",
+    "write_flag",
+    "narrow_production_compat_later",
+]
+REQUIRED_PARITY = {
+    "list_parity",
+    "detail_parity",
+    "catalog_options_parity",
+    "validation_error_parity",
+    "idempotency_behavior_check",
+    "audit_rollback_check",
 }
-REQUIRED_GUARDRAILS = {
-    "idempotency_required",
-    "audit_operator_identity_required",
-    "validation_required",
-    "rollback_required",
-    "fallback_retained",
-    "production_compat_unchanged",
-    "checker_required",
-    "smoke_required",
-    "fixture_success_forbidden",
-    "no_real_external_side_effect",
+REQUIRED_SMOKE = {
+    "read_catalog",
+    "read_list",
+    "read_options",
+    "read_detail",
+    "create_dry_run_or_safe_namespace",
+    "update_dry_run_or_safe_template",
+    "invalid_payload_rejected",
+    "dangerous_fields_rejected",
+    "no_external_side_effect",
+    "fallback_available",
 }
-REQUIRED_ENTRY_CONDITIONS = {
-    "owner_approval_required",
-    "checker_required",
-    "smoke_required",
-    "rollback_owner_required",
-    "production_config_review_required",
-}
-REQUIRED_SIGNOFF_PENDING = {
-    "automation_engine_owner",
-    "integration_gateway_owner",
-    "business_owner",
-    "rollback_owner",
+REQUIRED_ROLLBACK = {
+    "route_owner_rollback_to_production_compat",
+    "feature_flag_disable_if_later_added",
+    "data_rollback_path",
+    "audit_review",
+    "backup_or_snapshot_if_db_write",
+    "rollback_owner_on_call",
 }
 LEGACY_ROUTE_CHECKS = [
     ("GET", "/api/admin/automation-conversion/profile-segment-templates/catalog"),
@@ -90,23 +99,10 @@ LEGACY_ROUTE_CHECKS = [
     ("PUT", "/api/admin/automation-conversion/profile-segment-templates/<int:template_id>"),
 ]
 ALLOWED_CHANGED_FILES = {
-    "aicrm_next/automation_engine/api.py",
-    "aicrm_next/automation_engine/application.py",
-    "aicrm_next/automation_engine/domain.py",
-    "aicrm_next/automation_engine/dto.py",
-    "aicrm_next/automation_engine/repo.py",
-    "aicrm_next/automation_engine/profile_segments.py",
-    "docs/development/phase_4b_profile_segment_template_implementation_plan.md",
-    "docs/development/phase_4b_profile_segment_template_implementation_plan.yaml",
-    "docs/development/phase_4c_profile_segment_template_native_contract.md",
     "docs/development/phase_4d_profile_segment_template_production_switch_plan.md",
     "docs/development/phase_4d_profile_segment_template_production_switch_plan.yaml",
-    "tools/check_phase4a_internal_write_candidate_selection.py",
-    "tools/check_phase4b_profile_segment_template_plan.py",
     "tools/check_phase4c_profile_segment_template_native_contract.py",
     "tools/check_phase4d_profile_segment_template_production_switch_plan.py",
-    "tests/test_phase4b_profile_segment_template_plan.py",
-    "tests/test_phase4c_profile_segment_template_native_contract.py",
     "tests/test_phase4d_profile_segment_template_production_switch_plan.py",
 }
 PROTECTED_PREFIXES = (
@@ -120,10 +116,6 @@ PROTECTED_PREFIXES = (
 PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
 
 
-def _rel(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix()
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -132,11 +124,6 @@ def _parse_scalar(value: str) -> Any:
     value = value.strip()
     if value in {"true", "false"}:
         return value == "true"
-    if value.startswith("[") and value.endswith("]"):
-        inner = value[1:-1].strip()
-        if not inner:
-            return []
-        return [_parse_scalar(item.strip()) for item in inner.split(",")]
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     try:
@@ -162,9 +149,8 @@ def _yaml_lines(text: str) -> list[tuple[int, str]]:
     lines: list[tuple[int, str]] = []
     for raw in text.splitlines():
         stripped = _strip_yaml_comments(raw)
-        if not stripped.strip():
-            continue
-        lines.append((len(stripped) - len(stripped.lstrip(" ")), stripped.strip()))
+        if stripped.strip():
+            lines.append((len(stripped) - len(stripped.lstrip(" ")), stripped.strip()))
     return lines
 
 
@@ -214,7 +200,6 @@ def _parse_yaml_block(lines: list[tuple[int, str]], index: int, indent: int) -> 
                     break
             result.append(item)
         return result, index
-
     result: dict[str, Any] = {}
     while index < len(lines):
         line_indent, text = lines[index]
@@ -250,125 +235,24 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def check_required_docs() -> dict[str, Any]:
-    blockers = [f"{_rel(path)} missing" for path in REQUIRED_DOCS if not path.exists()]
-    return {"ok": not blockers, "blockers": blockers}
-
-
-def check_plan_yaml() -> dict[str, Any]:
-    blockers: list[str] = []
-    if not PLAN_YAML.exists():
-        return {"ok": False, "blockers": [f"{_rel(PLAN_YAML)} missing"], "routes": []}
-    data = load_yaml()
-    if data.get("version") != 1:
-        blockers.append("version must be 1")
-    if data.get("status") != "phase_4b_planning_only_no_runtime_change":
-        blockers.append("status must be phase_4b_planning_only_no_runtime_change")
-    for field in sorted(AUTH_FALSE_FIELDS):
-        if data.get(field) is not False:
-            blockers.append(f"{field} must be false")
-    if data.get("route_family") != EXPECTED_ROUTE_FAMILY:
-        blockers.append(f"route_family must be {EXPECTED_ROUTE_FAMILY}")
-    if data.get("capability_owner") != EXPECTED_CAPABILITY_OWNER:
-        blockers.append(f"capability_owner must be {EXPECTED_CAPABILITY_OWNER}")
-    if data.get("integration_fallback_boundary") != EXPECTED_FALLBACK_BOUNDARY:
-        blockers.append(f"integration_fallback_boundary must be {EXPECTED_FALLBACK_BOUNDARY}")
-
-    scope = data.get("phase_4c_scope") or {}
-    forbidden_scope = {str(item) for item in _as_list(scope.get("forbidden"))}
-    missing_scope = sorted(REQUIRED_FORBIDDEN_SCOPE - forbidden_scope)
-    if missing_scope:
-        blockers.append(f"phase_4c_scope.forbidden missing {missing_scope}")
-
-    routes = [item for item in _as_list(data.get("routes")) if isinstance(item, dict)]
-    route_keys = {(str(route.get("method")), str(route.get("path"))) for route in routes}
-    if route_keys != EXPECTED_ROUTES:
-        blockers.append(f"routes mismatch expected={sorted(EXPECTED_ROUTES)} actual={sorted(route_keys)}")
-    for route in routes:
-        key = (str(route.get("method")), str(route.get("path")))
-        label = f"{key[0]} {key[1]}"
-        if route.get("external_side_effect_allowed") is not False:
-            blockers.append(f"{label} external_side_effect_allowed must be false")
-        if key in WRITE_ROUTE_KEYS:
-            for field in ("idempotency_required", "audit_required", "rollback_required"):
-                if route.get(field) is not True:
-                    blockers.append(f"{label} {field} must be true")
-
-    guardrails = data.get("required_guardrails") or {}
-    for field in sorted(REQUIRED_GUARDRAILS):
-        if guardrails.get(field) is not True:
-            blockers.append(f"required_guardrails.{field} must be true")
-
-    entry_conditions = data.get("phase_4c_entry_conditions") or {}
-    for field in sorted(REQUIRED_ENTRY_CONDITIONS):
-        if entry_conditions.get(field) is not True:
-            blockers.append(f"phase_4c_entry_conditions.{field} must be true")
-
-    signoff = data.get("owner_signoff") or {}
-    for field in sorted(REQUIRED_SIGNOFF_PENDING):
-        if signoff.get(field) != "pending":
-            blockers.append(f"owner_signoff.{field} must be pending")
-
-    return {"ok": not blockers, "blockers": blockers, "routes": sorted(route_keys)}
-
-
-def _legacy_route_registered(source: str, path: str, method: str) -> bool:
-    escaped_path = re.escape(path)
-    pattern = re.compile(
-        rf"bp\.route\(\s*[\"']{escaped_path}[\"']\s*,\s*methods\s*=\s*\[[^\]]*[\"']{method}[\"'][^\]]*\]",
-        re.MULTILINE,
+def _run_git(args: list[str]) -> tuple[bool, set[str], str]:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-    return bool(pattern.search(source))
-
-
-def check_legacy_route_registration() -> dict[str, Any]:
-    blockers: list[str] = []
-    if not LEGACY_AUTOMATION_ROUTES.exists():
-        return {"ok": False, "blockers": [f"{_rel(LEGACY_AUTOMATION_ROUTES)} missing"]}
-    source = _read(LEGACY_AUTOMATION_ROUTES)
-    for method, path in LEGACY_ROUTE_CHECKS:
-        if not _legacy_route_registered(source, path, method):
-            blockers.append(f"legacy route missing: {method} {path}")
-    return {"ok": not blockers, "blockers": blockers}
-
-
-def check_production_compat_fallback() -> dict[str, Any]:
-    blockers: list[str] = []
-    if not PRODUCTION_COMPAT.exists():
-        return {"ok": False, "blockers": [f"{_rel(PRODUCTION_COMPAT)} missing"]}
-    source = _read(PRODUCTION_COMPAT)
-    required_snippets = [
-        '@router.api_route("/api/admin/automation-conversion/profile-segment-templates"',
-        '@router.api_route("/api/admin/automation-conversion/profile-segment-templates/{path:path}"',
-        "forward_to_legacy_flask",
-    ]
-    for snippet in required_snippets:
-        if snippet not in source:
-            blockers.append(f"production_compat missing fallback snippet: {snippet}")
-    return {"ok": not blockers, "blockers": blockers}
-
-
-def _run_git(args: list[str]) -> tuple[bool, list[str], str]:
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=ROOT,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except Exception as exc:
-        return False, [], str(exc)
-    if completed.returncode != 0:
-        return False, [], completed.stderr.strip()
-    return True, [line.strip() for line in completed.stdout.splitlines() if line.strip()], ""
+    if proc.returncode != 0:
+        return False, set(), (proc.stderr or proc.stdout).strip()
+    return True, {line.strip() for line in proc.stdout.splitlines() if line.strip()}, ""
 
 
 def _changed_files_from_git() -> tuple[set[str], list[str]]:
-    warnings: list[str] = []
     changed: set[str] = set()
-    for args in (["diff", "--name-only", "origin/main...HEAD"], ["diff", "--name-only", "origin/main"]):
+    warnings: list[str] = []
+    for args in (["diff", "--name-only", "origin/main...HEAD"], ["diff", "--name-only", "--cached"]):
         ok, files, error = _run_git(args)
         if ok:
             changed.update(files)
@@ -380,6 +264,106 @@ def _changed_files_from_git() -> tuple[set[str], list[str]]:
     else:
         warnings.append(f"git ls-files --others unavailable: {error}")
     return changed, warnings
+
+
+def check_required_docs() -> dict[str, Any]:
+    missing = [str(path.relative_to(ROOT)) for path in REQUIRED_DOCS if not path.exists()]
+    return {"ok": not missing, "blockers": [f"missing required doc: {path}" for path in missing], "warnings": []}
+
+
+def check_plan_yaml(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = data or load_yaml()
+    blockers: list[str] = []
+    if data.get("status") != "phase_4d_planning_only_no_runtime_change":
+        blockers.append("status must be phase_4d_planning_only_no_runtime_change")
+    for field in sorted(AUTH_FALSE_FIELDS):
+        if data.get(field) is not False:
+            blockers.append(f"{field} must be false")
+    if data.get("route_family") != EXPECTED_ROUTE_FAMILY:
+        blockers.append("route_family mismatch")
+    if data.get("capability_owner") != EXPECTED_CAPABILITY_OWNER:
+        blockers.append("capability_owner mismatch")
+    if data.get("integration_fallback_boundary") != EXPECTED_FALLBACK_BOUNDARY:
+        blockers.append("integration_fallback_boundary mismatch")
+
+    scope = data.get("scope") or {}
+    forbidden = set(_as_list(scope.get("forbidden")))
+    missing_forbidden = sorted(REQUIRED_FORBIDDEN_SCOPE - forbidden)
+    if missing_forbidden:
+        blockers.append(f"missing forbidden scope: {missing_forbidden}")
+    routes = {
+        (str(item.get("method") or "").upper(), str(item.get("path") or ""))
+        for item in _as_list(scope.get("planned_routes"))
+        if isinstance(item, dict)
+    }
+    missing_routes = sorted(EXPECTED_ROUTES - routes)
+    if missing_routes:
+        blockers.append(f"missing planned routes: {missing_routes}")
+
+    strategy = data.get("repository_strategy") or {}
+    options = _as_list(strategy.get("options"))
+    option_by_id = {str(item.get("id") or ""): item for item in options if isinstance(item, dict)}
+    for option_id in ("reuse_legacy_tables", "new_next_tables"):
+        option = option_by_id.get(option_id)
+        if not option:
+            blockers.append(f"repository_strategy missing option {option_id}")
+            continue
+        for field in ("pros", "cons", "risks"):
+            if not _as_list(option.get(field)):
+                blockers.append(f"{option_id} missing {field}")
+    if not strategy.get("selected_strategy") and strategy.get("selection_status") != "pending_owner_approval":
+        blockers.append("selected_strategy must be non-empty or selection_status must be pending_owner_approval")
+
+    ownership = data.get("route_ownership_strategy") or {}
+    if ownership.get("production_switch_in_phase_4d") is not False:
+        blockers.append("production_switch_in_phase_4d must be false")
+    if ownership.get("fallback_retained") is not True:
+        blockers.append("fallback_retained must be true")
+    sequence = _as_list(ownership.get("recommended_sequence"))
+    for item in REQUIRED_ROUTE_SEQUENCE:
+        if item not in sequence:
+            blockers.append(f"route ownership sequence missing {item}")
+
+    parity = data.get("parity_plan") or {}
+    missing_parity = sorted(REQUIRED_PARITY - set(_as_list(parity.get("required"))))
+    if missing_parity:
+        blockers.append(f"parity_plan missing {missing_parity}")
+    if parity.get("write_dual_run_authorized") is not False:
+        blockers.append("write_dual_run_authorized must be false")
+
+    smoke = data.get("production_smoke_plan") or {}
+    missing_smoke = sorted(REQUIRED_SMOKE - set(_as_list(smoke.get("required"))))
+    if missing_smoke:
+        blockers.append(f"production_smoke_plan missing {missing_smoke}")
+
+    rollback = data.get("rollback_plan") or {}
+    missing_rollback = sorted(REQUIRED_ROLLBACK - set(_as_list(rollback.get("required"))))
+    if missing_rollback:
+        blockers.append(f"rollback_plan missing {missing_rollback}")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_legacy_route_registration() -> dict[str, Any]:
+    text = _read(LEGACY_ROUTES)
+    blockers: list[str] = []
+    for method, path in LEGACY_ROUTE_CHECKS:
+        if path not in text or f'methods=["{method}"]' not in text:
+            blockers.append(f"legacy route not registered for {method} {path}")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_production_compat_fallback() -> dict[str, Any]:
+    text = _read(PRODUCTION_COMPAT)
+    blockers: list[str] = []
+    for snippet in (
+        '"/api/admin/automation-conversion/profile-segment-templates"',
+        '"/api/admin/automation-conversion/profile-segment-templates/{path:path}"',
+        "legacy_automation_workspace_routes",
+        "forward_to_legacy_flask",
+    ):
+        if snippet not in text:
+            blockers.append(f"production_compat fallback missing snippet: {snippet}")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
 def _is_protected_runtime_file(path: str) -> bool:
@@ -394,19 +378,39 @@ def check_no_runtime_changes() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected_runtime_file(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4B planning scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4D planning scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
 
 
+def check_doc_claims() -> dict[str, Any]:
+    text = _read(PLAN_MD).lower()
+    blockers: list[str] = []
+    forbidden_claims = [
+        "production repository implemented",
+        "migration authorized",
+        "production ownership switch authorized",
+        "fallback removal authorized",
+        "production approved",
+        "canary approved",
+        "delete_ready true",
+    ]
+    for claim in forbidden_claims:
+        if re.search(rf"(?<!not ){re.escape(claim)}", text):
+            blockers.append(f"doc appears to claim forbidden state: {claim}")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
 def build_report() -> dict[str, Any]:
+    data = load_yaml()
     checks = {
         "required_docs": check_required_docs(),
-        "plan_yaml": check_plan_yaml(),
+        "plan_yaml": check_plan_yaml(data),
         "legacy_route_registration": check_legacy_route_registration(),
         "production_compat_fallback": check_production_compat_fallback(),
         "no_runtime_changes": check_no_runtime_changes(),
+        "doc_claims": check_doc_claims(),
     }
     blockers: list[str] = []
     warnings: list[str] = []
@@ -429,33 +433,26 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4B Profile Segment Template Plan Check",
+        "# Phase 4D Profile Segment Template Production Switch Plan Check",
         "",
         f"- overall: {report['overall']}",
         "",
         "## Blockers",
     ]
     blockers = report.get("blockers") or []
-    if blockers:
-        lines.extend(f"- {blocker}" for blocker in blockers)
-    else:
-        lines.append("- none")
-    lines.append("")
-    lines.append("## Warnings")
+    lines.extend(f"- {blocker}" for blocker in blockers) if blockers else lines.append("- none")
+    lines.extend(["", "## Warnings"])
     warnings = report.get("warnings") or []
-    if warnings:
-        lines.extend(f"- {warning}" for warning in warnings)
-    else:
-        lines.append("- none")
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    lines.extend(f"- {warning}" for warning in warnings) if warnings else lines.append("- none")
+    lines.append("")
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Check Phase 4D profile segment template production switch planning guardrails.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
-
     report = build_report()
     if args.output_json:
         _write_json(report, args.output_json)
