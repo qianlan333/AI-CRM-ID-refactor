@@ -35,7 +35,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bb_tasks_schema_route_surface_confirmation",
+    "phase_4bc_tasks_fixture_native_contract_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -55,6 +55,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed",
     "phase_4az_next_internal_write_candidate_selection_completed",
     "phase_4ba_tasks_metadata_planning_completed",
+    "phase_4bb_tasks_schema_route_surface_confirmation_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -251,8 +252,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/tasks* after workflow-nodes pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#657":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #657")
+    if state.get("last_merged_pr") != "#658":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #658")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -436,23 +437,19 @@ def build_report() -> dict[str, Any]:
     tasks_readiness = state.get("tasks_readiness") if isinstance(state.get("tasks_readiness"), dict) else {}
     for field in (
         "metadata_planning_ready",
+        "metadata_planning_completed",
+        "schema_route_surface_confirmation_ready",
         "run_due_excluded",
         "task_execution_excluded",
         "workflow_execution_excluded",
         "timer_execution_excluded",
         "outbound_send_excluded",
-    ):
-        if tasks_readiness.get(field) is not True:
-            blockers.append(f"tasks_readiness.{field} must be true")
-    for field in (
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-    ):
-        if tasks_readiness.get(field) is not True:
-            blockers.append(f"tasks_readiness.{field} must be true")
-    for field in (
         "schema_route_surface_confirmed",
         "fixture_native_contract_planning_ready",
+    ):
+        if tasks_readiness.get(field) is not True:
+            blockers.append(f"tasks_readiness.{field} must be true")
+    for field in (
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
         "runtime_implementation_ready",

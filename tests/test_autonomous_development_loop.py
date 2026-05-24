@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_4_internal_write"
     assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#657"
+    assert data["last_merged_pr"] == "#658"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -45,6 +45,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
     assert "phase_4az_next_internal_write_candidate_selection_completed" in set(data["completed_steps"])
     assert "phase_4ba_tasks_metadata_planning_completed" in set(data["completed_steps"])
+    assert "phase_4bb_tasks_schema_route_surface_confirmation_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4an_task_groups_only() -> None:
@@ -172,7 +173,8 @@ def test_tasks_selected_for_next_metadata_planning_without_runtime_readiness() -
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
-    assert readiness["schema_route_surface_confirmed"] is False
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["run_due_excluded"] is True
     assert readiness["task_execution_excluded"] is True
     assert readiness["workflow_execution_excluded"] is True

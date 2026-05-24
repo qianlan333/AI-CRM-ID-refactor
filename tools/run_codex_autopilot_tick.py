@@ -222,6 +222,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4az_next_internal_write_candidate_selection.yaml",
         "docs/development/phase_4ba_tasks_metadata_plan.md",
         "docs/development/phase_4ba_tasks_metadata_plan.yaml",
+        "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.md",
+        "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.yaml",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -241,6 +243,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4az_next_internal_write_candidate_selection.py",
         "tests/test_phase4ba_tasks_metadata_plan.py",
+        "tests/test_phase4bb_tasks_schema_route_surface_confirmation.py",
         "tests/test_codex_autopilot_runtime_contract.py",
         "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
@@ -258,6 +261,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase4ay_workflow_nodes_fixture_native_implementation_owner_decision.py",
         "tools/check_phase4az_next_internal_write_candidate_selection.py",
         "tools/check_phase4ba_tasks_metadata_plan.py",
+        "tools/check_phase4bb_tasks_schema_route_surface_confirmation.py",
     }
     for path in sorted(paths):
         if path in policy_paths:
