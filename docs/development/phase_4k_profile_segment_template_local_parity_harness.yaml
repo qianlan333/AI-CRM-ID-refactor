@@ -1,0 +1,45 @@
+version: 1
+status: phase_4k_local_test_db_parity_harness_no_production_change
+production_data_allowed: false
+production_repository_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+required_env:
+  - AICRM_NEXT_TEST_DATABASE_URL
+
+db_url_safety:
+  require_test_local_tmp_dev_marker: true
+  forbidden_fallback_to_database_url: true
+
+harness_matrix:
+  read:
+    - catalog
+    - list
+    - options
+    - detail
+  write:
+    - create_idempotency_replay
+    - create_idempotency_conflict
+    - duplicate_template
+    - update_existing
+    - update_missing
+    - invalid_payload
+    - dangerous_field_rejection
+    - audit_log_shape
+    - rollback_payload_shape
+
+side_effect_safety:
+  external_calls_allowed: false
+  automation_execution_allowed: false
+  outbound_send_allowed: false
+  route_owner_change_allowed: false
+
+phase_4l_recommendation:
+  recommended_next_step: staging_smoke_planning
+  production_route_switch_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4L may plan staging smoke only after owner approval; it must not connect production data or switch production route ownership.

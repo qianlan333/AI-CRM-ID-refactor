@@ -49,8 +49,13 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4h_profile_segment_template_companion_migration.py",
     "tools/check_phase4i_profile_segment_template_repository_adapter.py",
     "tools/check_phase4j_profile_segment_template_parity_smoke_plan.py",
+    "docs/development/phase_4k_profile_segment_template_local_parity_harness.md",
+    "docs/development/phase_4k_profile_segment_template_local_parity_harness.yaml",
+    "tools/run_phase4k_profile_segment_template_local_parity.py",
+    "tools/check_phase4k_profile_segment_template_local_parity_harness.py",
     "tests/test_phase4i_profile_segment_template_repository_adapter.py",
     "tests/test_phase4j_profile_segment_template_parity_smoke_plan.py",
+    "tests/test_phase4k_profile_segment_template_local_parity_harness.py",
 }
 FORBIDDEN_CHANGED_PREFIXES = (
     "wecom_ability_service/",
