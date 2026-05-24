@@ -1,0 +1,57 @@
+version: 1
+status: autonomous_phase_execution_state
+autopilot:
+  cadence_minutes: 15
+  auto_pr_allowed: true
+  automerge_requires_required_checks: true
+  automerge_requires_eligibility_gate: true
+  high_risk_requires_owner_decision_package: true
+
+current_phase: phase_4_internal_write
+active_candidate: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+last_merged_pr: "#637"
+
+completed_steps:
+  - phase_4al_staging_execution_readiness_gate_completed
+  - action_templates_schema_route_service_confirmation_completed
+  - action_templates_companion_schema_planning_completed
+  - action_templates_additive_companion_migration_artifact_completed
+  - action_templates_fixture_native_contract_completed
+  - action_templates_local_fixture_parity_harness_completed
+  - action_templates_repository_adapter_behind_explicit_flag_completed
+  - action_templates_local_test_db_adapter_parity_harness_completed
+  - action_templates_staging_smoke_package_completed
+  - action_templates_staging_smoke_evidence_gate_completed
+  - action_templates_staging_execution_readiness_gate_completed
+
+next_allowed_actions:
+  - phase_4am_staging_execution
+  - phase_4am_approval_config_closure
+  - phase_4am_blocked_evidence_review
+
+forbidden_without_owner_approval:
+  - production owner switch
+  - fallback removal
+  - production write
+  - real external call
+  - timer
+  - outbound send
+  - deploy config
+  - destructive migration
+  - delete_ready
+  - canary approval
+
+action_templates_readiness:
+  awaiting_staging_approval_config: true
+  staging_smoke_executed: false
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_repository_route_enablement_ready: false
+  delete_ready: false
+
+autopilot_notes:
+  - Action-templates must not continue to production dry-run planning while staging approval/config is missing.
+  - Fixture, local test DB, and staging evidence cannot be claimed as production success.
+  - If an autopilot cycle detects high-risk work, it must stop and produce an owner decision package only.
