@@ -1,0 +1,103 @@
+version: 1
+status: phase_4ak_action_templates_staging_smoke_evidence_no_production_change
+
+authorizations:
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+evidence_tool:
+  path: tools/run_phase4ak_action_templates_staging_smoke_evidence.py
+  mode: staging_smoke_evidence_gate
+  may_call_lower_runner: true
+  lower_runner: tools/run_phase4aj_action_templates_staging_smoke.py
+  required_env:
+    - AICRM_ACTION_TEMPLATES_STAGING_DATABASE_URL
+    - AICRM_ACTION_TEMPLATES_REPO_BACKEND
+    - AICRM_PHASE4AK_STAGING_SMOKE_APPROVED
+  write_approval_env:
+    - AICRM_PHASE4AK_STAGING_WRITE_APPROVED
+  forbidden_env_fallbacks:
+    - DATABASE_URL
+    - AICRM_ACTION_TEMPLATES_DATABASE_URL
+    - AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL
+  db_url_allowed_markers:
+    - staging
+    - stage
+    - test
+    - local
+    - dev
+  db_url_forbidden_markers:
+    - prod
+    - production
+    - primary
+    - master
+  production_data_allowed: false
+  route_owner_change_allowed: false
+
+result_statuses:
+  - not_executed_missing_staging_db
+  - not_executed_missing_approval
+  - not_executed_db_url_safety_failed
+  - not_executed_missing_repo_backend
+  - not_executed_write_approval_missing
+  - staging_smoke_executed_readonly
+  - staging_smoke_executed_write_safe_namespace
+
+safe_namespace:
+  template_code_prefix: phase4aj_staging_smoke_
+  operator: phase4aj_staging_smoke_operator
+  idempotency_key_prefix: phase4aj_staging_smoke_
+  delete_required: false
+
+evidence_matrix:
+  read:
+    - schema_available
+    - list_action_templates
+  write:
+    - create_with_idempotency
+    - idempotency_replay
+    - idempotency_conflict
+    - duplicate_template_code_rejected
+    - missing_name_rejected
+    - invalid_status_rejected
+    - dangerous_fields_rejected
+    - audit_event_emitted
+    - rollback_payload_present
+    - side_effect_safety_false
+
+excluded:
+  generate_route_excluded: true
+  from_workflow_route_excluded: true
+  detail_route_excluded: true
+  update_route_excluded: true
+  delete_route_excluded: true
+  deepseek_llm_adapter_excluded: true
+  workflow_execution_excluded: true
+  outbound_send_excluded: true
+  wecom_openclaw_mcp_excluded: true
+
+owner_approval:
+  automation_engine_owner: pending
+  integration_gateway_owner: pending
+  staging_db_config_owner: pending
+  rollback_owner: pending
+  smoke_operator: pending
+
+phase_4al_recommendation:
+  recommended_next_step: staging_approval_config_closure_or_production_dry_run_planning
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: If Phase 4AK evidence remains blocked, continue staging approval/config closure; if staging evidence passes, Phase 4AL may plan production dry-run without route owner switch.
