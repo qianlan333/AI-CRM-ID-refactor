@@ -1,0 +1,134 @@
+version: 1
+status: phase_4as_workflows_schema_route_surface_confirmation_no_runtime_change
+
+route_family: /api/admin/automation-conversion/workflows*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+fixture_allowed_in_production: false
+
+previous_phase:
+  phase: phase_4ar_workflows_metadata_planning
+  merged_pr: "#649"
+  completed: true
+
+confirmed_legacy_route_surface:
+  - path: /api/admin/automation-conversion/workflows
+    methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+      - HEAD
+    production_behavior: legacy_forward
+  - path: /api/admin/automation-conversion/workflows/{path:path}
+    methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+      - HEAD
+    production_behavior: legacy_forward
+
+primary_table:
+  name: automation_workflow
+  required_columns:
+    - id
+    - program_id
+    - workflow_code
+    - workflow_name
+    - description
+    - review_status
+    - created_by_agent
+    - status
+    - segmentation_basis
+    - generation_mode
+    - profile_segment_template_id
+    - behavior_tier_scheme
+    - fallback_to_standard_content
+    - enabled
+    - created_by
+    - updated_by
+    - created_at
+    - updated_at
+  required_indexes:
+    - idx_automation_workflow_status
+    - idx_automation_workflow_program
+    - idx_automation_workflow_enabled
+    - idx_automation_workflow_review
+
+deferred_related_tables:
+  - automation_workflow_node
+  - automation_workflow_node_content
+  - automation_workflow_node_content_variant
+  - automation_workflow_audience
+  - automation_workflow_agent_binding
+  - automation_workflow_execution
+  - automation_workflow_execution_item
+  - automation_workflow_goal
+  - automation_workflow_node_transition
+
+metadata_only_boundary:
+  list_create_metadata_planning_allowed: true
+  update_delete_deferred: true
+  workflow_activation_deferred: true
+  workflow_node_runtime_deferred: true
+  run_due_deferred: true
+  timer_execution_deferred: true
+  outbound_send_deferred: true
+  execution_records_deferred: true
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  workflow_execution_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+excluded_scope:
+  workflow_nodes_route_family: true
+  tasks_route_family: true
+  run_due: true
+  workflow_activation: true
+  workflow_execution: true
+  timer_execution: true
+  automation_execution: true
+  outbound_send: true
+  real_external_call: true
+  production_write: true
+  production_route_switch: true
+  fallback_removal: true
+  production_compat_change: true
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/workflows*
+  last_merged_pr: "#649"
+  last_attempted_action: phase_4as_workflows_schema_route_surface_confirmation
+  last_created_pr: "#650"
+  recommended_next_pr: phase_4at_workflows_fixture_native_contract_planning
+  owner_approval_required: false
+  phase_4as_completed_step: phase_4as_workflows_schema_route_surface_confirmation_completed
+
+phase_4at_recommendation:
+  recommended_next_step: workflows_fixture_native_contract_planning
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Plan workflows fixture/native metadata list/create contract only; keep execution, timers, outbound send, workflow-nodes, production write, and route switching out of scope.

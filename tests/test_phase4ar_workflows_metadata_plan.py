@@ -52,15 +52,10 @@ def test_high_risk_authorizations_are_false() -> None:
         assert data["authorizations"][field] is False
 
 
-def test_phase_execution_state_advances_to_phase_4as() -> None:
+def test_phase_execution_state_keeps_phase_4ar_complete_after_later_progress() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#648"
-    assert state["last_attempted_action"] == "phase_4ar_workflows_metadata_planning"
-    assert state["recommended_next_pr"] == "phase_4as_workflows_schema_route_surface_confirmation"
-    assert state["owner_approval_required"] is False
     assert "phase_4ar_workflows_metadata_planning_completed" in state["completed_steps"]
-    assert state["next_allowed_actions"] == ["phase_4as_workflows_schema_route_surface_confirmation"]
     workflows = state["workflows_readiness"]
     assert workflows["metadata_planning_completed"] is True
     assert workflows["schema_route_surface_confirmation_ready"] is True
