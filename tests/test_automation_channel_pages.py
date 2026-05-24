@@ -398,3 +398,16 @@ def test_entry_channel_binding_payload_is_channel_ids_only_and_old_setup_is_read
     assert "生成二维码" not in setup_html
     assert "重新生成二维码" not in setup_html
     assert "initial_audience_code" not in setup_html
+
+
+def test_next_frontend_channel_static_keeps_save_feedback_contract():
+    root = "/Users/qianlan/Documents/New project/AI-CRM-channel-admission"
+    with open(f"{root}/aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js", encoding="utf-8") as handle:
+        next_js = handle.read()
+    with open(f"{root}/aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.css", encoding="utf-8") as handle:
+        next_css = handle.read()
+
+    assert "data-channel-save-feedback" in next_js
+    assert "保存中..." in next_js
+    assert "保存成功，欢迎语和素材已更新。" in next_js
+    assert ".channel-save-feedback" in next_css
