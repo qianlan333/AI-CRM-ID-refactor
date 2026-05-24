@@ -82,6 +82,10 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4al_action_templates_staging_execution_ready_gate.yaml",
     "tools/check_phase4al_action_templates_staging_execution_ready_gate.py",
     "tests/test_phase4al_action_templates_staging_execution_ready_gate.py",
+    "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.md",
+    "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.yaml",
+    "tools/check_phase4am_action_templates_staging_wait_and_next_candidate.py",
+    "tests/test_phase4am_action_templates_staging_wait_and_next_candidate.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",

@@ -3,36 +3,38 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4al_action_templates_staging_execution_ready_gate.md"
-YAML_DOC = ROOT / "docs/development/phase_4al_action_templates_staging_execution_ready_gate.yaml"
-PREFLIGHT = ROOT / "tools/run_phase4al_action_templates_staging_execution_preflight.py"
-REQUIRED_DOCS = [DOC, YAML_DOC, PREFLIGHT]
-AUTH_FALSE_FIELDS = {
-    "staging_smoke_execution_authorized",
-    "production_repository_route_enablement_authorized",
-    "production_route_ownership_switch_authorized",
-    "fallback_removal_authorized",
-    "production_compat_change_authorized",
-    "real_external_call_authorized",
-    "automation_execution_authorized",
-    "outbound_send_authorized",
-    "production_write_authorized",
-    "delete_ready",
+DOC = ROOT / "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.md"
+PLAN_YAML = ROOT / "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.yaml"
+REQUIRED_DOCS = [DOC, PLAN_YAML]
+COMPLETED_ASSETS = {
+    "schema_route_service_confirmation",
+    "companion_schema_planning",
+    "additive_companion_migration_artifact",
+    "fixture_native_contract",
+    "local_fixture_parity_harness",
+    "sql_alchemy_adapter_behind_flag",
+    "local_test_db_adapter_parity_harness",
+    "staging_smoke_package",
+    "staging_smoke_evidence_gate",
+    "staging_execution_readiness_gate",
 }
-BLOCKER_HISTORY = {
-    "phase_4aj_package_exists": True,
-    "phase_4ak_evidence_gate_exists": True,
-    "phase_4ak_default_blocked_missing_staging_db": True,
-    "staging_smoke_executed": False,
+BLOCKERS = {
+    "staging_db_config_owner_approval_missing",
+    "staging_db_env_not_confirmed",
+    "staging_db_url_safety_not_confirmed",
+    "smoke_operator_not_assigned",
+    "rollback_owner_not_assigned",
+    "evidence_path_not_agreed",
+    "write_smoke_approval_not_confirmed",
+    "safe_namespace_cleanup_strategy_not_confirmed",
 }
-CLOSURE_FIELDS = {
+RESUME_CONDITIONS = {
     "automation_engine_owner_approval",
     "integration_gateway_owner_approval",
     "staging_db_config_owner_approval",
@@ -42,49 +44,65 @@ CLOSURE_FIELDS = {
     "staging_db_url_safety_confirmed",
     "repo_backend_confirmed",
     "read_only_preflight_confirmed",
-    "write_smoke_approval_confirmed",
+    "write_smoke_approval_confirmed_if_needed",
     "safe_namespace_confirmed",
     "evidence_path_confirmed",
     "cleanup_strategy_confirmed",
     "side_effect_safety_confirmed",
 }
-PHASE_4AM_CONSTRAINTS = {
-    "staging_only",
-    "production_data_forbidden",
-    "production_route_switch_forbidden",
-    "fallback_removal_forbidden",
-    "production_compat_change_forbidden",
-    "external_calls_forbidden",
-    "generate_from_workflow_forbidden",
-    "update_delete_forbidden",
+AUTH_FALSE_FIELDS = {
+    "staging_smoke_execution_authorized",
+    "production_dry_run_execution_authorized",
+    "production_data_connection_authorized",
+    "production_write_authorized",
+    "production_repository_route_enablement_authorized",
+    "production_route_ownership_switch_authorized",
+    "fallback_removal_authorized",
+    "production_compat_change_authorized",
+    "real_external_call_authorized",
+    "delete_ready",
 }
+FORBIDDEN_SCOPE_TERMS = (
+    "payment",
+    "oauth",
+    "wecom external",
+    "callback",
+    "run-due",
+    "timer",
+    "execution",
+    "send",
+    "upload",
+    "openclaw",
+    "mcp",
+    "public submit",
+    "external push",
+)
 ALLOWED_CHANGED_FILES = {
-    "tools/run_phase4al_action_templates_staging_execution_preflight.py",
-    "docs/development/phase_4al_action_templates_staging_execution_ready_gate.md",
-    "docs/development/phase_4al_action_templates_staging_execution_ready_gate.yaml",
-    "tools/check_phase4al_action_templates_staging_execution_ready_gate.py",
-    "tests/test_phase4al_action_templates_staging_execution_ready_gate.py",
     "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.md",
     "docs/development/phase_4am_action_templates_staging_wait_and_next_candidate.yaml",
     "tools/check_phase4am_action_templates_staging_wait_and_next_candidate.py",
     "tests/test_phase4am_action_templates_staging_wait_and_next_candidate.py",
+    "tools/check_phase4al_action_templates_staging_execution_ready_gate.py",
     "tools/check_phase4ak_action_templates_staging_smoke_evidence.py",
-    "tools/check_phase4aj_action_templates_staging_smoke_package.py",
-    "tools/check_phase4ai_action_templates_test_db_parity.py",
-}
-PROTECTED_EXACT = {
-    "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py",
-    "app.py",
-    "legacy_flask_app.py",
 }
 PROTECTED_PREFIXES = (
+    "aicrm_next/",
     "wecom_ability_service/",
     "migrations/",
     "deploy/",
     "systemd/",
     "nginx/",
 )
+PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
+FORBIDDEN_DOC_PHRASES = [
+    "action-templates staging smoke executed",
+    "production dry-run executed",
+    "production route switch authorized",
+    "fallback removal authorized",
+    "production approved",
+    "canary approved",
+    "delete_ready true",
+]
 
 
 def _read(path: Path) -> str:
@@ -95,8 +113,6 @@ def _parse_scalar(value: str) -> Any:
     value = value.strip()
     if value in {"true", "false"}:
         return value == "true"
-    if value == "[]":
-        return []
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     try:
@@ -179,7 +195,7 @@ def _load_yaml_without_dependency(text: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def load_yaml(path: Path = YAML_DOC) -> dict[str, Any]:
+def load_yaml(path: Path = PLAN_YAML) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     try:
         import yaml  # type: ignore
@@ -189,8 +205,11 @@ def load_yaml(path: Path = YAML_DOC) -> dict[str, Any]:
         return _load_yaml_without_dependency(text)
 
 
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+def _items(values: list[Any]) -> set[str]:
+    result: set[str] = set()
+    for item in values:
+        result.add(str(item.get("item") if isinstance(item, dict) else item).lower())
+    return result
 
 
 def _run_git(args: list[str]) -> tuple[bool, str, str]:
@@ -225,80 +244,55 @@ def check_required_docs() -> dict[str, Any]:
 def check_yaml_contract(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4al_action_templates_staging_execution_ready_gate_no_execution":
-        blockers.append("status must be phase_4al_action_templates_staging_execution_ready_gate_no_execution")
+    if data.get("status") != "phase_4am_staging_wait_and_next_candidate_no_runtime_change":
+        blockers.append("status must be phase_4am_staging_wait_and_next_candidate_no_runtime_change")
+    action = data.get("action_templates") or {}
+    if action.get("status") != "awaiting_staging_approval_config":
+        blockers.append("action_templates.status must be awaiting_staging_approval_config")
+    for field in ("staging_smoke_executed", "production_route_owner_switch_authorized", "fallback_removal_authorized", "production_write_authorized", "delete_ready"):
+        if action.get(field) is not False:
+            blockers.append(f"action_templates.{field} must be false")
+    if not COMPLETED_ASSETS <= set(action.get("completed_assets") or []):
+        blockers.append("action_templates.completed_assets incomplete")
+    if not BLOCKERS <= set(action.get("blockers") or []):
+        blockers.append("action_templates.blockers incomplete")
+    if not RESUME_CONDITIONS <= set(action.get("resume_conditions") or []):
+        blockers.append("action_templates.resume_conditions incomplete")
+    candidate = data.get("next_candidate") or {}
+    if not candidate.get("selected_route_family"):
+        blockers.append("next_candidate.selected_route_family missing")
+    if not candidate.get("capability_owner"):
+        blockers.append("next_candidate.capability_owner missing")
+    if candidate.get("replacement_phase") != "phase_4_internal_write":
+        blockers.append("next_candidate.replacement_phase must be phase_4_internal_write")
+    if candidate.get("replacement_category") not in {"internal_write", "shell_or_navigation", "readonly"}:
+        blockers.append("next_candidate.replacement_category invalid")
+    for field in ("excluded_side_effects", "required_guardrails", "phase_4an_scope", "risks"):
+        if not candidate.get(field):
+            blockers.append(f"next_candidate.{field} missing")
+    for field in ("rollback_requirement", "business_continuity_requirement"):
+        if not candidate.get(field):
+            blockers.append(f"next_candidate.{field} missing")
+    excluded = _items(candidate.get("excluded_side_effects") or [])
+    allowed_scope_text = " ".join(
+        str(candidate.get(field, "")).lower()
+        for field in ("selected_route_family", "capability_owner", "replacement_phase", "replacement_category", "why_selected", "rollback_requirement", "business_continuity_requirement")
+    )
+    allowed_scope_text += " " + " ".join(_items(candidate.get("required_guardrails") or []))
+    allowed_scope_text += " " + " ".join(_items(candidate.get("phase_4an_scope") or []))
+    allowed_scope_text += " " + " ".join(_items(candidate.get("risks") or []))
+    for term in FORBIDDEN_SCOPE_TERMS:
+        if term in allowed_scope_text and term not in excluded:
+            blockers.append(f"next_candidate actual scope contains forbidden term: {term}")
     for field in sorted(AUTH_FALSE_FIELDS):
         if (data.get("authorizations") or {}).get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
-    history = data.get("blocker_history") or {}
-    for field, expected in BLOCKER_HISTORY.items():
-        if history.get(field) is not expected:
-            blockers.append(f"blocker_history.{field} must be {expected}")
-    closure = data.get("closure_form") or {}
-    for field in sorted(CLOSURE_FIELDS):
-        if closure.get(field) != "pending":
-            blockers.append(f"closure_form.{field} must default pending")
-    tool = data.get("preflight_tool") or {}
-    if tool.get("path") != "tools/run_phase4al_action_templates_staging_execution_preflight.py":
-        blockers.append("preflight_tool.path must point to Phase 4AL preflight tool")
-    for field in ("db_connection_allowed", "lower_runner_call_allowed", "staging_smoke_execution_allowed"):
-        if tool.get(field) is not False:
-            blockers.append(f"preflight_tool.{field} must be false")
-    for field in ("supports_closure_status_file", "supports_env_check", "supports_cli_arg_check"):
-        if tool.get(field) is not True:
-            blockers.append(f"preflight_tool.{field} must be true")
-    gate = data.get("execution_gate") or {}
-    if gate.get("ready_for_phase_4am_staging_execution") is not False:
-        blockers.append("execution_gate.ready_for_phase_4am_staging_execution must default false")
-    for field in ("missing_items", "unblock_actions", "next_owner_actions", "next_config_actions", "next_evidence_actions"):
-        if not _as_list(gate.get(field)):
-            blockers.append(f"execution_gate.{field} must be non-empty")
-    constraints = data.get("phase_4am_constraints") or {}
-    for field in sorted(PHASE_4AM_CONSTRAINTS):
-        if constraints.get(field) is not True:
-            blockers.append(f"phase_4am_constraints.{field} must be true")
-    recommendation = data.get("phase_4am_recommendation") or {}
+    recommendation = data.get("phase_4an_recommendation") or {}
     if not recommendation.get("recommended_next_step"):
-        blockers.append("phase_4am_recommendation.recommended_next_step missing")
+        blockers.append("phase_4an_recommendation.recommended_next_step missing")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if recommendation.get(field) is not False:
-            blockers.append(f"phase_4am_recommendation.{field} must be false")
-    return {"ok": not blockers, "blockers": blockers, "warnings": []}
-
-
-def check_preflight_static() -> dict[str, Any]:
-    blockers: list[str] = []
-    text = _read(PREFLIGHT)
-    for token in (
-        "--closure-status-file",
-        "--read-only",
-        "--confirm-no-production",
-        "--confirm-no-external-calls",
-        "--output-json",
-        "--output-md",
-        "AICRM_ACTION_TEMPLATES_REPO_BACKEND",
-        "AICRM_ACTION_TEMPLATES_STAGING_DATABASE_URL",
-        "AICRM_PHASE4AK_STAGING_SMOKE_APPROVED",
-    ):
-        if token not in text:
-            blockers.append(f"preflight tool missing token: {token}")
-    for forbidden in (
-        "create_engine",
-        "run_phase4aj_action_templates_staging_smoke",
-        "run_phase4ak_action_templates_staging_smoke_evidence",
-        "wecom_ability_service",
-        "DeepSeek",
-        "deepseek",
-        "llm_adapter",
-        "action-templates/generate",
-        "action-templates/from-workflow",
-        ".delete(",
-        ".put(",
-        "update_action_template",
-        "delete_action_template",
-    ):
-        if forbidden in text:
-            blockers.append(f"preflight tool contains forbidden token: {forbidden}")
+            blockers.append(f"phase_4an_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -312,31 +306,15 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4AL scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4AM scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
-    for blocked in ("aicrm_next/main.py", "aicrm_next/production_compat/api.py"):
-        if blocked in changed:
-            blockers.append(f"{blocked} must remain unchanged")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
 
 
 def check_doc_claims() -> dict[str, Any]:
     text = _read(DOC).lower()
-    blockers: list[str] = []
-    for pattern in (
-        r"staging smoke executed",
-        r"production parity",
-        r"production repository enabled as route owner",
-        r"production write authorized",
-        r"route switch authorized",
-        r"fallback removal authorized",
-        r"production approved",
-        r"canary approved",
-        r"delete_ready\s+true",
-    ):
-        if re.search(pattern, text):
-            blockers.append(f"doc appears to claim forbidden state: {pattern}")
+    blockers = [f"doc appears to claim forbidden state: {phrase}" for phrase in FORBIDDEN_DOC_PHRASES if phrase in text]
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -345,7 +323,6 @@ def build_report() -> dict[str, Any]:
     checks = {
         "required_docs": check_required_docs(),
         "yaml_contract": check_yaml_contract(data),
-        "preflight_static": check_preflight_static(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -370,7 +347,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4AL Action Templates Staging Execution Ready Gate Check",
+        "# Phase 4AM Action Templates Staging Wait And Next Candidate Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -386,7 +363,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4AL action templates staging execution ready gate.")
+    parser = argparse.ArgumentParser(description="Check Phase 4AM action templates staging wait and next candidate.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
