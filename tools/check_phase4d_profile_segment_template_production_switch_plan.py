@@ -103,13 +103,17 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4d_profile_segment_template_production_switch_plan.yaml",
     "docs/development/phase_4e_profile_segment_template_repository_adapter_plan.md",
     "docs/development/phase_4e_profile_segment_template_repository_adapter_plan.yaml",
+    "docs/development/phase_4f_profile_segment_template_schema_confirmation.md",
+    "docs/development/phase_4f_profile_segment_template_schema_confirmation.yaml",
     "tools/check_phase4a_internal_write_candidate_selection.py",
     "tools/check_phase4b_profile_segment_template_plan.py",
     "tools/check_phase4c_profile_segment_template_native_contract.py",
     "tools/check_phase4d_profile_segment_template_production_switch_plan.py",
     "tools/check_phase4e_profile_segment_template_repository_adapter_plan.py",
+    "tools/check_phase4f_profile_segment_template_schema_confirmation.py",
     "tests/test_phase4d_profile_segment_template_production_switch_plan.py",
     "tests/test_phase4e_profile_segment_template_repository_adapter_plan.py",
+    "tests/test_phase4f_profile_segment_template_schema_confirmation.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
