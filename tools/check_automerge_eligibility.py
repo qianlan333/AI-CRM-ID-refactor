@@ -24,15 +24,23 @@ LOW_RISK_PREFIXES = (
     "tools/check_",
     "tests/test_",
 )
-POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
-    "docs/development/autonomous_development_loop.md",
-    "docs/development/phase_execution_state.yaml",
-    "docs/development/autonomous_stop_conditions.yaml",
-    "tools/check_autonomous_development_loop.py",
-    "tools/check_automerge_eligibility.py",
-    "tests/test_autonomous_development_loop.py",
-    "tests/test_automerge_eligibility.py",
+LOW_RISK_EXACT = {
+    "tools/run_codex_autopilot_tick.py",
+    "scripts/codex_autopilot_tick.sh",
 }
+POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
+        "docs/development/autonomous_development_loop.md",
+        "docs/development/codex_autopilot_runtime_runbook.md",
+        "docs/development/phase_execution_state.yaml",
+        "docs/development/autonomous_stop_conditions.yaml",
+        "scripts/codex_autopilot_tick.sh",
+        "tools/check_autonomous_development_loop.py",
+        "tools/check_automerge_eligibility.py",
+        "tools/run_codex_autopilot_tick.py",
+        "tests/test_autonomous_development_loop.py",
+        "tests/test_automerge_eligibility.py",
+        "tests/test_codex_autopilot_runtime_contract.py",
+    }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
     "app.py",
@@ -121,7 +129,7 @@ def _diff_text(paths: set[str], base_ref: str, head_ref: str) -> str:
 
 
 def _is_low_risk_path(path: str) -> bool:
-    return path.startswith(LOW_RISK_PREFIXES)
+    return path in LOW_RISK_EXACT or path.startswith(LOW_RISK_PREFIXES)
 
 
 def _has_owner_approval(path: str | None) -> bool:

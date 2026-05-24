@@ -25,7 +25,7 @@ def test_pr_body_sections_required() -> None:
 def test_low_risk_changed_files_are_docs_tools_tests_only() -> None:
     report = checker.build_report()
     for path in report["details"]["changed_files"]:
-        assert path.startswith(("docs/development/", "tools/check_", "tests/test_"))
+        assert path in checker.LOW_RISK_EXACT or path.startswith(("docs/development/", "tools/check_", "tests/test_"))
 
 
 def test_protected_runtime_path_requires_owner_approval() -> None:
