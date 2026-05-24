@@ -32,7 +32,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4ar_workflows_metadata_planning",
+    "phase_4as_workflows_schema_route_surface_confirmation",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -42,6 +42,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4ao_task_groups_schema_route_surface_confirmation_completed",
     "phase_4ap_task_groups_fixture_native_contract_planning_completed",
     "phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed",
+    "phase_4ar_workflows_metadata_planning_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -238,8 +239,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflows* after task-groups pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#647":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #647")
+    if state.get("last_merged_pr") != "#648":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #648")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -346,6 +347,10 @@ def build_report() -> dict[str, Any]:
     workflows_readiness = state.get("workflows_readiness") if isinstance(state.get("workflows_readiness"), dict) else {}
     if workflows_readiness.get("metadata_planning_ready") is not True:
         blockers.append("workflows_readiness.metadata_planning_ready must be true")
+    if workflows_readiness.get("metadata_planning_completed") is not True:
+        blockers.append("workflows_readiness.metadata_planning_completed must be true")
+    if workflows_readiness.get("schema_route_surface_confirmation_ready") is not True:
+        blockers.append("workflows_readiness.schema_route_surface_confirmation_ready must be true")
     for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",

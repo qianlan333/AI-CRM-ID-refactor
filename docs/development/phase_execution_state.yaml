@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/workflows*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#647"
-last_attempted_action: phase_4aq_task_groups_fixture_native_implementation_owner_decision
-last_created_pr: "#648"
-recommended_next_pr: phase_4ar_workflows_metadata_planning
+last_merged_pr: "#648"
+last_attempted_action: phase_4ar_workflows_metadata_planning
+last_created_pr: "#649"
+recommended_next_pr: phase_4as_workflows_schema_route_surface_confirmation
 owner_approval_required: false
 
 work_package_policy:
@@ -45,9 +45,10 @@ completed_steps:
   - phase_4ao_task_groups_schema_route_surface_confirmation_completed
   - phase_4ap_task_groups_fixture_native_contract_planning_completed
   - phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed
+  - phase_4ar_workflows_metadata_planning_completed
 
 next_allowed_actions:
-  - phase_4ar_workflows_metadata_planning
+  - phase_4as_workflows_schema_route_surface_confirmation
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -100,6 +101,8 @@ task_groups_readiness:
 
 workflows_readiness:
   metadata_planning_ready: true
+  metadata_planning_completed: true
+  schema_route_surface_confirmation_ready: true
   runtime_implementation_ready: false
   production_owner_switch_ready: false
   production_write_ready: false
