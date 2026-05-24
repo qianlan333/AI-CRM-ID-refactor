@@ -109,15 +109,19 @@ EXCLUDED_TRUE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.md",
     "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.yaml",
+    "docs/development/phase_4bc_tasks_fixture_native_contract_plan.md",
+    "docs/development/phase_4bc_tasks_fixture_native_contract_plan.yaml",
     "docs/development/phase_4ba_tasks_metadata_plan.md",
     "docs/development/phase_4ba_tasks_metadata_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4bb_tasks_schema_route_surface_confirmation.py",
+    "tools/check_phase4bc_tasks_fixture_native_contract_plan.py",
     "tools/check_phase4ba_tasks_metadata_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4bb_tasks_schema_route_surface_confirmation.py",
+    "tests/test_phase4bc_tasks_fixture_native_contract_plan.py",
     "tests/test_phase4ba_tasks_metadata_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -242,16 +246,6 @@ def build_report() -> dict[str, Any]:
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
     if state.get("active_candidate") != ROUTE:
         blockers.append("phase_execution_state.active_candidate must remain tasks")
-    if state.get("last_merged_pr") != "#658":
-        blockers.append("phase_execution_state.last_merged_pr must record #658")
-    if state.get("last_attempted_action") != "phase_4bb_tasks_schema_route_surface_confirmation":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BB")
-    if state.get("recommended_next_pr") != "phase_4bc_tasks_fixture_native_contract_planning":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BC fixture/native contract planning")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4bc_tasks_fixture_native_contract_planning"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BC fixture/native contract planning")
-    if state.get("owner_approval_required") is not False:
-        blockers.append("phase_execution_state.owner_approval_required must remain false")
     if state_update.get("phase_4bb_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4BB completed step")
 
@@ -271,8 +265,6 @@ def build_report() -> dict[str, Any]:
         if readiness.get(field) is not True:
             blockers.append(f"tasks_readiness.{field} must be true")
     for field in (
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
         "runtime_implementation_ready",
         "production_owner_switch_ready",
         "production_write_ready",

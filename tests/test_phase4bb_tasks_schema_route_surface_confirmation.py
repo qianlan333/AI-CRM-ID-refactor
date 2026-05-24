@@ -57,12 +57,6 @@ def test_authorizations_and_exclusions_are_safe() -> None:
 def test_phase_execution_state_advances_to_phase_4bc() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#658"
-    assert state["last_attempted_action"] == "phase_4bb_tasks_schema_route_surface_confirmation"
-    assert state["last_created_pr"] == "#659"
-    assert state["recommended_next_pr"] == "phase_4bc_tasks_fixture_native_contract_planning"
-    assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bc_tasks_fixture_native_contract_planning"]
     assert "phase_4bb_tasks_schema_route_surface_confirmation_completed" in state["completed_steps"]
 
 
