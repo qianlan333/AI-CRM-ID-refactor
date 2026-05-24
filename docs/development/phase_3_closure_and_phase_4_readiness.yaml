@@ -1,0 +1,152 @@
+version: 1
+status: phase_3_closure_phase_4_readiness_only_no_runtime_change
+phase_3:
+  closeable: true
+  fallback_removal_authorized: false
+  production_cutover_authorized: false
+  write_replacement_authorized: false
+  routes:
+    - phase: phase_3a_sidebar_readonly
+      route_pattern: /api/sidebar/contact-binding-status
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.identity_contact
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3_sidebar_readonly_replacement.py
+      business_continuity_requirement: Keep sidebar binding-status daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3a_sidebar_readonly
+      route_pattern: /api/sidebar/customer-context
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3_sidebar_readonly_replacement.py
+      business_continuity_requirement: Keep sidebar customer-context daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3b_customer_profile_readonly
+      route_pattern: /api/admin/customers/profile
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3b_customer_profile_readonly.py
+      business_continuity_requirement: Keep customer profile daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3b_customer_profile_readonly
+      route_pattern: /api/admin/customers/profile/tags
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3b_customer_profile_readonly.py
+      business_continuity_requirement: Keep customer profile tags daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3c_customer_read_model_readonly
+      route_pattern: /api/customers
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3c_customer_read_model_readonly.py
+      business_continuity_requirement: Keep customer list daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3c_customer_read_model_readonly
+      route_pattern: /api/customers/{external_userid}
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3c_customer_read_model_readonly.py
+      business_continuity_requirement: Keep customer detail daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3c_customer_read_model_readonly
+      route_pattern: /api/customers/{external_userid}/timeline
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3c_customer_read_model_readonly.py
+      business_continuity_requirement: Keep customer timeline daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3d_recent_messages_readonly
+      route_pattern: /api/messages/{external_userid}/recent
+      method: GET
+      kind: readonly_api
+      capability_owner: aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3d_recent_messages_readonly.py
+      business_continuity_requirement: Keep customer recent messages daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+    - phase: phase_3f_admin_customers_shell
+      route_pattern: /admin/customers
+      method: GET
+      kind: readonly_shell_navigation
+      capability_owner: aicrm_next.frontend_compat + aicrm_next.customer_read_model
+      exact_next_owner_confirmed: true
+      fallback_retained: true
+      production_compat_unchanged: true
+      delete_ready: false
+      checker: tools/check_phase3f_admin_customers_shell.py
+      business_continuity_requirement: Keep backend customer list page daily path available; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+phase_4_readiness:
+  can_start_after_this_report: false
+  requires_explicit_approval: true
+  forbidden_first_batch:
+    - payment
+    - oauth
+    - wecom_external_call
+    - timer
+    - automation_execution
+    - media_upload
+    - openclaw_mcp_real_external_call
+  first_batch_candidate_rules:
+    no_real_external_side_effect: true
+    bounded_internal_write_only: true
+    idempotency_required: true
+    audit_or_operator_identity_required: true
+    rollback_required: true
+    fallback_retained: true
+    production_smoke_required: true
+    checker_required: true
+next_candidates:
+  - capability_owner: aicrm_next.customer_read_model
+    route_family: customer profile readonly-adjacent internal metadata update
+    recommendation: evaluate_only_requires_owner_approval
+    why_candidate: Candidate only if it is bounded internal metadata write, has no real external side effect, and does not change sidebar/profile daily read availability.
+    excluded_side_effects: [payment, oauth, wecom_external_call, timer, automation_execution, media_upload, openclaw_mcp_real_external_call]
+    required_guardrails: [idempotency_or_duplicate_protection, audit_or_operator_identity, checker, production_smoke, dry_run_or_preview_if_business_impact, fallback_retained]
+    rollback_requirement: Define data rollback or compensating update before implementation; retain legacy fallback until rollback is proven.
+    daily_business_continuity_requirement: Must not block current customer, sidebar, profile, or customer-list daily use; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+  - capability_owner: aicrm_next.questionnaire
+    route_family: questionnaire admin draft save/update only
+    recommendation: evaluate_only_requires_owner_approval
+    why_candidate: Candidate only if scoped to bounded admin draft persistence and explicitly excludes external push, OAuth, public H5 submit, diagnostics write, and production cutover.
+    excluded_side_effects: [payment, oauth, wecom_external_call, external_push, public_submit, timer, automation_execution, media_upload, openclaw_mcp_real_external_call]
+    required_guardrails: [idempotency_or_duplicate_protection, audit_or_operator_identity, checker, production_smoke, dry_run_or_preview_if_business_impact, fallback_retained]
+    rollback_requirement: Define draft restore or revert path before implementation; retain legacy fallback until rollback is proven.
+    daily_business_continuity_requirement: Must not interrupt current questionnaire admin or public questionnaire daily paths; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
+  - capability_owner: aicrm_next.automation_engine
+    route_family: automation profile-segment-template internal CRUD only
+    recommendation: evaluate_only_requires_owner_approval
+    why_candidate: Candidate only if scoped to template metadata CRUD and explicitly excludes run-due, execution, send, external assistant calls, and timer behavior.
+    excluded_side_effects: [payment, oauth, wecom_external_call, run_due, send, timer, automation_execution, media_upload, openclaw_mcp_real_external_call]
+    required_guardrails: [idempotency_or_duplicate_protection, audit_or_operator_identity, checker, production_smoke, dry_run_or_preview_if_business_impact, fallback_retained]
+    rollback_requirement: Define template restore or revert path before implementation; retain legacy fallback until rollback is proven.
+    daily_business_continuity_requirement: Must not interrupt current automation workspace daily use or execution-safe mode; fallback remains until parity, checker, smoke, rollback, and owner approval are complete.
