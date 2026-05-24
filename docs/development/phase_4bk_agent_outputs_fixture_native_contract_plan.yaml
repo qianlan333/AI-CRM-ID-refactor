@@ -1,0 +1,167 @@
+version: 1
+status: phase_4bk_agent_outputs_fixture_native_contract_planning_no_runtime_change
+
+route_family: /api/admin/automation-conversion/agent-outputs*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+fixture_allowed_in_production: false
+
+previous_phase:
+  phase: phase_4bj_agent_outputs_schema_route_surface_confirmation
+  merged_pr: "#667"
+  completed: true
+
+planned_fixture_routes:
+  - method: GET
+    path: /api/admin/automation-conversion/agent-outputs
+    scope: fixture_local_metadata_list
+  - method: GET
+    path: "/api/admin/automation-conversion/agent-outputs/{output_id}"
+    scope: fixture_local_metadata_detail
+
+excluded_routes:
+  - path: /api/admin/automation-conversion/agent-outputs/export
+    method: POST
+    reason: export_job_creation_deferred
+  - path: "/api/admin/automation-conversion/agent-outputs/export/{job_id}"
+    method: GET
+    reason: export_status_and_file_download_deferred
+  - path: /api/admin/automation-conversion/agent-runs*
+    method: ALL
+    reason: agent_run_execution_deferred
+  - path: /api/admin/automation-conversion/agent-replay
+    method: ALL
+    reason: replay_runtime_path_deferred
+  - path: /api/admin/automation-conversion/agent-orchestration*
+    method: ALL
+    reason: orchestration_runtime_path_deferred
+
+fixture_seed:
+  deterministic: true
+  output_ids:
+    - phase4bk_output_reply_draft
+    - phase4bk_output_route_decision
+  required_fields:
+    - id
+    - output_id
+    - run_id
+    - request_id
+    - userid
+    - external_contact_id
+    - agent_code
+    - output_type
+    - rendered_output_text
+    - target_agent_code
+    - target_pool
+    - confidence
+    - reason
+    - need_human_review
+    - applied_status
+    - created_at
+  production_data_allowed: false
+
+list_contract:
+  query:
+    - page
+    - page_size
+    - request_id
+    - external_contact_id
+    - userid
+    - agent_code
+    - output_type
+    - applied_status
+    - min_confidence
+    - max_confidence
+    - has_error
+  response_keys:
+    - ok
+    - source_status
+    - route_owner
+    - page
+    - page_size
+    - total
+    - rows
+    - filters
+    - side_effect_safety
+  ordering: created_at_desc_id_desc
+  export_rows_excluded: true
+
+detail_contract:
+  path_params:
+    - output_id
+  response_keys:
+    - ok
+    - output
+    - run
+    - side_effect_safety
+  not_found_status: 404
+  not_found_response_keys:
+    - ok
+    - error
+  missing_output_rejected_without_side_effect: true
+
+visibility_contract:
+  masked_visibility_required: true
+  console_visibility_fixture_mode_allowed: true
+  raw_output_not_production_evidence: true
+  normalized_payload_not_production_evidence: true
+  production_data_allowed: false
+
+side_effect_safety:
+  real_external_call_allowed: false
+  export_job_creation_allowed: false
+  file_download_allowed: false
+  agent_run_execution_allowed: false
+  llm_generation_allowed: false
+  deepseek_adapter_allowed: false
+  openclaw_call_allowed: false
+  mcp_call_allowed: false
+  workflow_execution_allowed: false
+  timer_execution_allowed: false
+  outbound_send_allowed: false
+  production_data_allowed: false
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  export_job_creation_authorized: false
+  file_download_authorized: false
+  agent_run_execution_authorized: false
+  llm_generation_authorized: false
+  deepseek_adapter_authorized: false
+  openclaw_mcp_authorized: false
+  workflow_execution_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/agent-outputs*
+  last_merged_pr: "#667"
+  last_attempted_action: phase_4bk_agent_outputs_fixture_native_contract_planning
+  last_created_pr: "#668"
+  recommended_next_pr: phase_4bl_agent_outputs_fixture_native_implementation_owner_decision
+  owner_approval_required: true
+  phase_4bk_completed_step: phase_4bk_agent_outputs_fixture_native_contract_planning_completed
+  next_allowed_actions:
+    - phase_4bl_agent_outputs_fixture_native_implementation_owner_decision
+
+phase_4bl_recommendation:
+  recommended_next_step: agent_outputs_fixture_native_implementation_owner_decision
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Runtime implementation requires explicit owner confirmation because current autopilot low-risk scope is docs/tools/tests/state only.
