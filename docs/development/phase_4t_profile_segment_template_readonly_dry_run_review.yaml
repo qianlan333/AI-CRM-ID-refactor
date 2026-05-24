@@ -1,0 +1,50 @@
+version: 1
+status: phase_4t_readonly_dry_run_review_no_route_switch
+production_write_authorized: false
+production_repository_route_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_write_canary_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+evidence_review:
+  result_status: blocked_only_no_production_dry_run_executed
+  phase_4s_evidence_present: true
+  production_readonly_dry_run_executed: false
+  blocked_evidence_only: true
+  approval_present: false
+  config_reviewed: false
+  read_parity_summary_present: false
+  side_effect_safety_passed: true
+  writes_attempted: false
+  route_owner_changed: false
+  production_compat_changed: false
+  fallback_retained: true
+  blockers:
+    - item: Phase 4S evidence is blocked at not_executed_missing_approval.
+    - item: Production read-only dry-run has not actually executed.
+    - item: Owner approval and production config review are not recorded as complete.
+    - item: Read parity summary is not present because execution did not start.
+
+route_switch_readiness:
+  ready: false
+  required_before_ready:
+    - actual_production_readonly_dry_run_executed
+    - read_parity_passed
+    - no_writes_attempted
+    - side_effect_safety_false
+    - fallback_validation_passed
+    - production_compat_unchanged
+    - owner_approval_completed
+    - rollback_owner_assigned
+    - production_config_review_completed
+
+phase_4u_recommendation:
+  recommended_next_step: owner_approved_production_read_only_dry_run_execution_evidence
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4U should collect owner-approved production read-only dry-run execution evidence first; route ownership must remain unchanged.
