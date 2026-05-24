@@ -53,6 +53,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ah_action_templates_repository_adapter.yaml",
     "tools/check_phase4ah_action_templates_repository_adapter.py",
     "tests/test_phase4ah_action_templates_repository_adapter.py",
+    "tools/run_phase4ai_action_templates_test_db_parity.py",
+    "docs/development/phase_4ai_action_templates_test_db_parity.md",
+    "docs/development/phase_4ai_action_templates_test_db_parity.yaml",
+    "tools/check_phase4ai_action_templates_test_db_parity.py",
+    "tests/test_phase4ai_action_templates_test_db_parity.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",

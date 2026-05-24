@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -13,14 +14,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-PLAN_MD = ROOT / "docs/development/phase_4af_action_templates_local_parity_harness.md"
-PLAN_YAML = ROOT / "docs/development/phase_4af_action_templates_local_parity_harness.yaml"
-HARNESS = ROOT / "tools/run_phase4af_action_templates_local_parity.py"
+DOC = ROOT / "docs/development/phase_4ai_action_templates_test_db_parity.md"
+YAML_DOC = ROOT / "docs/development/phase_4ai_action_templates_test_db_parity.yaml"
+HARNESS = ROOT / "tools/run_phase4ai_action_templates_test_db_parity.py"
 MAIN = ROOT / "aicrm_next/main.py"
 PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
-REQUIRED_DOCS = [PLAN_MD, PLAN_YAML, HARNESS]
+REQUIRED_DOCS = [DOC, YAML_DOC, HARNESS]
 AUTH_FALSE_FIELDS = {
-    "production_repository_authorized",
+    "production_repository_route_enablement_authorized",
     "production_route_ownership_switch_authorized",
     "fallback_removal_authorized",
     "production_compat_change_authorized",
@@ -30,11 +31,8 @@ AUTH_FALSE_FIELDS = {
     "production_write_authorized",
     "delete_ready",
 }
-REQUIRED_READ_MATRIX = {
-    "list_ok",
-    "deterministic_fixture_seed",
-    "side_effect_safety_present",
-}
+REQUIRED_SCHEMA_MATRIX = {"main_table_available", "idempotency_table_available", "audit_table_available"}
+REQUIRED_READ_MATRIX = {"list_action_templates"}
 REQUIRED_CREATE_MATRIX = {
     "create_with_idempotency",
     "idempotency_replay",
@@ -46,7 +44,6 @@ REQUIRED_CREATE_MATRIX = {
     "audit_event_emitted",
     "rollback_payload_present",
     "side_effect_safety_false",
-    "production_fixture_write_blocked",
 }
 REQUIRED_EXCLUDED_TRUE = {
     "generate_route_excluded",
@@ -59,31 +56,17 @@ REQUIRED_EXCLUDED_TRUE = {
     "outbound_send_excluded",
     "wecom_openclaw_mcp_excluded",
 }
+ALLOWED_MARKERS = {"test", "local", "dev", "tmp"}
+FORBIDDEN_MARKERS = {"prod", "production", "primary", "master"}
 ALLOWED_CHANGED_FILES = {
-    "tools/run_phase4af_action_templates_local_parity.py",
-    "docs/development/phase_4af_action_templates_local_parity_harness.md",
-    "docs/development/phase_4af_action_templates_local_parity_harness.yaml",
-    "tools/check_phase4af_action_templates_local_parity_harness.py",
-    "tests/test_phase4af_action_templates_local_parity_harness.py",
-    "tools/check_phase4ae_action_templates_native_fixture_contract.py",
-    "tools/check_phase4ad_action_templates_companion_migration.py",
-    "tools/check_phase4ac_action_templates_companion_schema_plan.py",
-    "docs/development/phase_4ag_action_templates_repository_adapter_plan.md",
-    "docs/development/phase_4ag_action_templates_repository_adapter_plan.yaml",
-    "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
-    "tests/test_phase4ag_action_templates_repository_adapter_plan.py",
-    "aicrm_next/automation_engine/action_template_repository.py",
-    "aicrm_next/automation_engine/application.py",
-    "aicrm_next/automation_engine/action_template_sqlalchemy_repository.py",
-    "docs/development/phase_4ah_action_templates_repository_adapter.md",
-    "docs/development/phase_4ah_action_templates_repository_adapter.yaml",
-    "tools/check_phase4ah_action_templates_repository_adapter.py",
-    "tests/test_phase4ah_action_templates_repository_adapter.py",
     "tools/run_phase4ai_action_templates_test_db_parity.py",
     "docs/development/phase_4ai_action_templates_test_db_parity.md",
     "docs/development/phase_4ai_action_templates_test_db_parity.yaml",
     "tools/check_phase4ai_action_templates_test_db_parity.py",
     "tests/test_phase4ai_action_templates_test_db_parity.py",
+    "tools/check_phase4ah_action_templates_repository_adapter.py",
+    "tools/check_phase4ag_action_templates_repository_adapter_plan.py",
+    "tools/check_phase4af_action_templates_local_parity_harness.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
@@ -207,7 +190,7 @@ def _load_yaml_without_dependency(text: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def load_yaml(path: Path = PLAN_YAML) -> dict[str, Any]:
+def load_yaml(path: Path = YAML_DOC) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     try:
         import yaml  # type: ignore
@@ -253,110 +236,111 @@ def check_required_docs() -> dict[str, Any]:
 def check_yaml_contract(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4af_action_templates_local_parity_harness_no_production_change":
-        blockers.append("status must be phase_4af_action_templates_local_parity_harness_no_production_change")
-    authorizations = data.get("authorizations") or {}
+    if data.get("status") != "phase_4ai_action_templates_local_test_db_parity_no_production_change":
+        blockers.append("status must be phase_4ai_action_templates_local_test_db_parity_no_production_change")
     for field in sorted(AUTH_FALSE_FIELDS):
-        if authorizations.get(field) is not False:
+        if (data.get("authorizations") or {}).get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
     harness = data.get("harness") or {}
-    if harness.get("path") != "tools/run_phase4af_action_templates_local_parity.py":
-        blockers.append("harness.path must point to Phase 4AF harness")
-    if not (ROOT / str(harness.get("path") or "")).exists():
-        blockers.append("harness.path does not exist")
-    for field in ("db_connection_allowed", "legacy_service_call_allowed", "external_call_allowed"):
-        if harness.get(field) is not False:
-            blockers.append(f"harness.{field} must be false")
-    if harness.get("fixture_evidence_only") is not True:
-        blockers.append("harness.fixture_evidence_only must be true")
-
+    if harness.get("path") != "tools/run_phase4ai_action_templates_test_db_parity.py":
+        blockers.append("harness.path must point to Phase 4AI harness")
+    if harness.get("mode") != "local_test_db_adapter_parity":
+        blockers.append("harness.mode must be local_test_db_adapter_parity")
+    if "AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL" not in _as_list(harness.get("required_env")):
+        blockers.append("harness.required_env must include AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL")
+    fallbacks = set(str(item) for item in _as_list(harness.get("forbidden_env_fallbacks")))
+    for env_name in ("DATABASE_URL", "AICRM_ACTION_TEMPLATES_DATABASE_URL"):
+        if env_name not in fallbacks:
+            blockers.append(f"harness.forbidden_env_fallbacks must include {env_name}")
+    if not ALLOWED_MARKERS <= {str(item) for item in _as_list(harness.get("db_url_allowed_markers"))}:
+        blockers.append("harness.db_url_allowed_markers incomplete")
+    if not FORBIDDEN_MARKERS <= {str(item) for item in _as_list(harness.get("db_url_forbidden_markers"))}:
+        blockers.append("harness.db_url_forbidden_markers incomplete")
+    if harness.get("production_data_allowed") is not False:
+        blockers.append("harness.production_data_allowed must be false")
+    if harness.get("route_owner_change_allowed") is not False:
+        blockers.append("harness.route_owner_change_allowed must be false")
     matrix = data.get("harness_matrix") or {}
-    read_items = {str(item) for item in _as_list(matrix.get("read"))}
-    create_items = {str(item) for item in _as_list(matrix.get("create"))}
-    missing_read = sorted(REQUIRED_READ_MATRIX - read_items)
-    missing_create = sorted(REQUIRED_CREATE_MATRIX - create_items)
-    if missing_read:
-        blockers.append(f"harness_matrix.read missing {missing_read}")
-    if missing_create:
-        blockers.append(f"harness_matrix.create missing {missing_create}")
-
+    if not REQUIRED_SCHEMA_MATRIX <= set(_as_list(matrix.get("schema"))):
+        blockers.append("harness_matrix.schema incomplete")
+    if not REQUIRED_READ_MATRIX <= set(_as_list(matrix.get("read"))):
+        blockers.append("harness_matrix.read incomplete")
+    if not REQUIRED_CREATE_MATRIX <= set(_as_list(matrix.get("create"))):
+        blockers.append("harness_matrix.create incomplete")
     excluded = data.get("excluded") or {}
     for field in sorted(REQUIRED_EXCLUDED_TRUE):
         if excluded.get(field) is not True:
             blockers.append(f"excluded.{field} must be true")
-
-    readiness = data.get("phase_4ag_readiness") or {}
-    if readiness.get("local_parity_required") is not True:
-        blockers.append("phase_4ag_readiness.local_parity_required must be true")
-    if readiness.get("production_adapter_planning_allowed_after_local_parity") is not True:
-        blockers.append("phase_4ag_readiness.production_adapter_planning_allowed_after_local_parity must be true")
+    readiness = data.get("phase_4aj_readiness") or {}
+    if readiness.get("test_db_parity_required_before_staging") is not True:
+        blockers.append("phase_4aj_readiness.test_db_parity_required_before_staging must be true")
     for field in ("production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if readiness.get(field) is not False:
-            blockers.append(f"phase_4ag_readiness.{field} must be false")
-
-    recommendation = data.get("phase_4ag_recommendation") or {}
+            blockers.append(f"phase_4aj_readiness.{field} must be false")
+    recommendation = data.get("phase_4aj_recommendation") or {}
     if not recommendation.get("recommended_next_step"):
-        blockers.append("phase_4ag_recommendation.recommended_next_step missing")
+        blockers.append("phase_4aj_recommendation.recommended_next_step missing")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if recommendation.get(field) is not False:
-            blockers.append(f"phase_4ag_recommendation.{field} must be false")
+            blockers.append(f"phase_4aj_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
 def check_harness_static() -> dict[str, Any]:
-    text = _read(HARNESS)
     blockers: list[str] = []
-    for required in ("--output-json", "--output-md"):
-        if required not in text:
-            blockers.append(f"harness missing CLI arg {required}")
-    forbidden_tokens = [
+    text = _read(HARNESS)
+    for token in ("--output-json", "--output-md", "AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL"):
+        if token not in text:
+            blockers.append(f"harness missing token: {token}")
+    for forbidden in (
+        'os.getenv("DATABASE_URL"',
+        "os.getenv('DATABASE_URL'",
+        'os.environ.get("DATABASE_URL"',
+        "os.environ.get('DATABASE_URL'",
+        "AICRM_ACTION_TEMPLATES_DATABASE_URL",
+        "AICRM_PROFILE_SEGMENT_TEMPLATE_DATABASE_URL",
+        "get_settings().database_url",
+        "shared.database",
         "wecom_ability_service",
         "DeepSeek",
         "deepseek",
-        "LLM",
         "llm_adapter",
         "action-templates/generate",
         "action-templates/from-workflow",
-        "create_engine",
-        "DATABASE_URL",
-        "psycopg",
-        "sqlalchemy",
-    ]
-    for token in forbidden_tokens:
-        if token in text:
-            blockers.append(f"harness contains forbidden token: {token}")
-    route_calls = re.findall(r"\.([a-z]+)\(\s*ROUTE", text)
-    disallowed_methods = sorted({method for method in route_calls if method.lower() not in {"get", "post"}})
-    if disallowed_methods:
-        blockers.append(f"harness uses disallowed methods against action-template route: {disallowed_methods}")
-    if ".put(" in text or ".delete(" in text:
-        blockers.append("harness must not call update/delete routes")
+        ".delete(",
+        ".put(",
+        "update_action_template",
+        "delete_action_template",
+    ):
+        if forbidden in text:
+            blockers.append(f"harness contains forbidden token: {forbidden}")
+    for marker in FORBIDDEN_MARKERS:
+        if marker not in text:
+            blockers.append(f"harness must reject marker: {marker}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_fastapi_probe() -> dict[str, Any]:
+def check_optional_probe() -> dict[str, Any]:
     warnings: list[str] = []
     blockers: list[str] = []
     try:
-        import tools.run_phase4af_action_templates_local_parity as harness  # type: ignore
+        import tools.run_phase4ai_action_templates_test_db_parity as harness
     except ModuleNotFoundError as exc:
-        warnings.append(f"FastAPI harness probe skipped: {exc}")
-        return {"ok": True, "blockers": [], "warnings": warnings}
+        blockers.append(f"harness import failed: {exc}")
+        return {"ok": False, "blockers": blockers, "warnings": warnings}
     report = harness.run_harness()
-    if not report.get("ok"):
-        blockers.append(f"harness report failed: {report.get('details')}")
-    expected_names = REQUIRED_READ_MATRIX | REQUIRED_CREATE_MATRIX | {"idempotency_replay", "idempotency_conflict", "dangerous_fields_rejected"}
-    passed_names = {str(item.get("name")) for item in _as_list(report.get("details")) if isinstance(item, dict) and item.get("status") == "passed"}
-    missing = sorted(expected_names - passed_names)
-    if missing and report.get("skipped", 0) == 0:
-        blockers.append(f"harness probe missing passed matrix items: {missing}")
-    return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "report": report}
+    if os.getenv("AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL"):
+        if not report.get("ok"):
+            blockers.append(f"safe DB probe failed: {report.get('result_status')}")
+    else:
+        if report.get("result_status") != "not_executed_missing_test_db" or report.get("adapter_smoke_executed") is not False:
+            blockers.append("missing test DB must produce not_executed_missing_test_db evidence")
+        warnings.append("adapter integration smoke not executed: AICRM_ACTION_TEMPLATES_TEST_DATABASE_URL is not set")
+    return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "harness_result_status": report.get("result_status")}
 
 
 def _is_protected(path: str) -> bool:
-    if path in PROTECTED_EXACT:
-        return True
-    return any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
+    return path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
 
 
 def check_change_scope() -> dict[str, Any]:
@@ -365,7 +349,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4AF scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4AI scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     for blocked in ("aicrm_next/main.py", "aicrm_next/production_compat/api.py"):
@@ -375,11 +359,10 @@ def check_change_scope() -> dict[str, Any]:
 
 
 def check_doc_claims() -> dict[str, Any]:
-    text = _read(PLAN_MD).lower()
+    text = _read(DOC).lower()
     blockers: list[str] = []
     for pattern in (
-        r"production parity",
-        r"production repository enabled",
+        r"production repository enabled as route owner",
         r"production write authorized",
         r"route switch authorized",
         r"fallback removal authorized",
@@ -398,7 +381,7 @@ def build_report() -> dict[str, Any]:
         "required_docs": check_required_docs(),
         "yaml_contract": check_yaml_contract(data),
         "harness_static": check_harness_static(),
-        "fastapi_probe": check_fastapi_probe(),
+        "optional_probe": check_optional_probe(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -423,7 +406,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4AF Action Templates Local Parity Harness Check",
+        "# Phase 4AI Action Templates Test DB Parity Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -439,7 +422,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4AF action templates local fixture parity harness.")
+    parser = argparse.ArgumentParser(description="Check Phase 4AI action templates test DB parity harness.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
