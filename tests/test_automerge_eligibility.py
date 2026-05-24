@@ -57,6 +57,16 @@ def test_stop_condition_terms_are_not_allowed_outside_policy_files(tmp_path: Pat
     assert report["overall"] == "PASS"
 
 
+def test_phase4am_closure_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4am_action_templates_staging_approval_config_closure.md",
+        "docs/development/phase_4am_action_templates_staging_approval_config_closure.yaml",
+        "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
+        "tests/test_phase4am_action_templates_staging_approval_config_closure.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
