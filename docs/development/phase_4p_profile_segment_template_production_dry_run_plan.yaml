@@ -1,0 +1,111 @@
+version: 1
+status: phase_4p_production_dry_run_planning_only_no_execution
+production_dry_run_execution_authorized: false
+production_repository_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_write_canary_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+route_family: /api/admin/automation-conversion/profile-segment-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+preconditions:
+  staging_smoke_evidence_required: true
+  owner_approval_required: true
+  production_config_review_required: true
+  rollback_owner_required: true
+  db_config_owner_required: true
+  fallback_validation_required: true
+  production_compat_retained_required: true
+
+dry_run_levels:
+  - level: 0
+    name: planning_only
+    authorized_now: true
+    writes_allowed: false
+    production_data_access_allowed: false
+  - level: 1
+    name: production_read_only_parity
+    authorized_now: false
+    writes_allowed: false
+    production_data_access_allowed: true
+  - level: 2
+    name: production_validation_shadow
+    authorized_now: false
+    writes_allowed: false
+    production_data_access_allowed: true
+  - level: 3
+    name: production_safe_namespace_write_dry_run
+    authorized_now: false
+    writes_allowed: true
+    production_data_access_allowed: true
+  - level: 4
+    name: production_write_canary
+    authorized_now: false
+    writes_allowed: true
+    production_data_access_allowed: true
+
+future_scope:
+  read_only:
+    - catalog
+    - list
+    - options
+    - detail
+  write_shadow:
+    - create_validation_only
+    - update_validation_only
+    - idempotency_conflict_simulation
+    - rollback_payload_generation
+  forbidden:
+    - real_production_create
+    - real_production_update
+    - route_owner_switch
+    - fallback_removal
+    - production_write_canary
+    - external_call
+    - workflow_activation
+    - automation_execution
+    - customer_pool_state_change
+
+data_safety:
+  secret_redaction_required: true
+  pii_redaction_required: true
+  raw_payload_export_forbidden: true
+  safe_namespace_required_for_future_writes: true
+  delete_requires_separate_approval: true
+
+evidence_package:
+  required:
+    - command
+    - config_summary_without_secrets
+    - route_owner_unchanged_evidence
+    - production_compat_retained_evidence
+    - read_parity_summary
+    - validation_shadow_summary
+    - failed_skipped_details
+    - side_effect_safety_summary
+    - fallback_validation
+    - operator_timestamp
+    - owner_signoff
+
+stop_conditions:
+  - production_config_review_incomplete
+  - owner_approval_missing
+  - fallback_validation_failed
+  - side_effect_safety_failed
+  - external_call_detected
+  - route_owner_changed
+  - production_compat_changed
+  - unexpected_write_attempted
+  - secret_redaction_failed
+
+phase_4q_recommendation:
+  recommended_next_step: production_dry_run_approval_package
+  production_dry_run_execution_allowed_without_owner_approval: false
+  production_route_switch_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4Q should package production dry-run approval and config review only; it must not execute production dry-run or switch route ownership.

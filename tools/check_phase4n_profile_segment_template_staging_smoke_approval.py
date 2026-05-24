@@ -91,6 +91,10 @@ ALLOWED_CHANGED_FILES = {
     "tools/run_phase4o_profile_segment_template_staging_smoke_evidence.py",
     "tools/check_phase4o_profile_segment_template_staging_smoke_evidence.py",
     "tests/test_phase4o_profile_segment_template_staging_smoke_evidence.py",
+    "docs/development/phase_4p_profile_segment_template_production_dry_run_plan.md",
+    "docs/development/phase_4p_profile_segment_template_production_dry_run_plan.yaml",
+    "tools/check_phase4p_profile_segment_template_production_dry_run_plan.py",
+    "tests/test_phase4p_profile_segment_template_production_dry_run_plan.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
