@@ -1,0 +1,69 @@
+version: 1
+status: phase_4af_action_templates_local_parity_harness_no_production_change
+
+authorizations:
+  production_repository_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+route_family: /api/admin/automation-conversion/action-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+
+harness:
+  path: tools/run_phase4af_action_templates_local_parity.py
+  mode: local_fixture_parity
+  db_connection_allowed: false
+  legacy_service_call_allowed: false
+  external_call_allowed: false
+  fixture_evidence_only: true
+
+harness_matrix:
+  read:
+    - list_ok
+    - deterministic_fixture_seed
+    - side_effect_safety_present
+  create:
+    - create_with_idempotency
+    - idempotency_replay
+    - idempotency_conflict
+    - duplicate_template_code_rejected
+    - missing_name_rejected
+    - invalid_status_rejected
+    - dangerous_fields_rejected
+    - audit_event_emitted
+    - rollback_payload_present
+    - side_effect_safety_false
+    - production_fixture_write_blocked
+
+excluded:
+  generate_route_excluded: true
+  from_workflow_route_excluded: true
+  detail_route_excluded: true
+  update_route_excluded: true
+  delete_route_excluded: true
+  deepseek_llm_adapter_excluded: true
+  workflow_execution_excluded: true
+  outbound_send_excluded: true
+  wecom_openclaw_mcp_excluded: true
+
+phase_4ag_readiness:
+  local_parity_required: true
+  production_adapter_planning_allowed_after_local_parity: true
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+
+phase_4ag_recommendation:
+  recommended_next_step: production_repository_adapter_planning
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Phase 4AG may plan the action-templates production repository adapter after local parity passes; production route owner switch and external calls remain unauthorized.
