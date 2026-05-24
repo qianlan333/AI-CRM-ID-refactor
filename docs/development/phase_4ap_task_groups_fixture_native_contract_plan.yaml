@@ -1,0 +1,148 @@
+version: 1
+status: phase_4ap_task_groups_fixture_native_contract_planning_no_runtime_change
+
+route_family: /api/admin/automation-conversion/task-groups*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+fixture_allowed_in_production: false
+
+previous_phase:
+  phase: phase_4ao_task_groups_schema_route_surface_confirmation
+  merged_pr: "#646"
+  completed: true
+
+planned_fixture_routes:
+  - method: GET
+    path: /api/admin/automation-conversion/task-groups
+    scope: fixture_local_list
+  - method: POST
+    path: /api/admin/automation-conversion/task-groups
+    scope: fixture_local_metadata_create
+
+excluded_routes:
+  - path: /api/admin/automation-conversion/task-groups/{group_id}
+    method: PUT
+    reason: update_archive_relationship_change_deferred
+  - path: /api/admin/automation-conversion/task-groups/{group_id}
+    method: DELETE
+    reason: archive_and_ungroup_tasks_deferred
+  - path: /api/admin/automation-conversion/tasks*
+    method: ALL
+    reason: task_runtime_family_deferred
+  - path: /api/admin/automation-conversion/tasks/run-due
+    method: POST
+    reason: timer_execution_path_forbidden
+
+fixture_seed:
+  deterministic: true
+  group_codes:
+    - phase4ap_default_group
+    - phase4ap_followup_group
+  required_fields:
+    - id
+    - program_id
+    - group_name
+    - sort_order
+    - created_by
+    - updated_by
+    - created_at
+    - updated_at
+    - archived_at
+  production_data_allowed: false
+
+list_contract:
+  query:
+    - program_id
+    - include_archived
+  response_keys:
+    - ok
+    - source_status
+    - route_owner
+    - groups
+    - total
+    - count
+    - filters
+    - side_effect_safety
+  archived_groups_excluded_by_default: true
+  ordering: sort_order_asc_id_asc
+
+create_contract:
+  query:
+    - program_id
+  required_payload:
+    - group_name
+    - idempotency_key
+  optional_payload:
+    - sort_order
+    - operator
+  response_keys:
+    - ok
+    - group
+    - audit_event
+    - rollback_payload
+    - idempotent_replay
+    - side_effect_safety
+  missing_name_rejected: true
+  duplicate_group_name_rejected: true
+  dangerous_fields_rejected: true
+
+idempotency:
+  route_family_scope_required: true
+  operation_scope_required: true
+  operator_scope_required: true
+  idempotency_key_required: true
+  replay_same_hash: true
+  conflict_different_hash: true
+
+audit:
+  audit_event_required: true
+  before_snapshot_for_create: empty_object
+  after_snapshot_required: true
+  rollback_payload_required: true
+  side_effect_safety_required: true
+
+side_effect_safety:
+  real_external_call_allowed: false
+  automation_execution_allowed: false
+  outbound_send_allowed: false
+  wecom_call_allowed: false
+  openclaw_call_allowed: false
+  mcp_call_allowed: false
+  timer_execution_allowed: false
+  production_data_allowed: false
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/task-groups*
+  last_merged_pr: "#646"
+  last_attempted_action: phase_4ap_task_groups_fixture_native_contract_planning
+  last_created_pr: "#647"
+  recommended_next_pr: phase_4aq_task_groups_fixture_native_implementation_owner_decision
+  owner_approval_required: true
+  phase_4ap_completed_step: phase_4ap_task_groups_fixture_native_contract_planning_completed
+
+phase_4aq_recommendation:
+  recommended_next_step: task_groups_fixture_native_implementation_owner_decision
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Runtime implementation requires explicit owner confirmation because current autopilot low-risk scope is docs/tools/tests/state only.

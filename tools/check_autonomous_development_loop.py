@@ -32,7 +32,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4ap_task_groups_fixture_native_contract_planning",
+    "phase_4aq_task_groups_fixture_native_implementation_owner_decision",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -40,6 +40,7 @@ REQUIRED_COMPLETED_STEPS = {
     "action_templates_staging_owner_decision_package_created",
     "phase_4an_task_groups_native_contract_planning_completed",
     "phase_4ao_task_groups_schema_route_surface_confirmation_completed",
+    "phase_4ap_task_groups_fixture_native_contract_planning_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -236,8 +237,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/task-groups* after action-templates pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#645":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #645")
+    if state.get("last_merged_pr") != "#646":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #646")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -319,6 +320,10 @@ def build_report() -> dict[str, Any]:
         blockers.append("task_groups_readiness.schema_route_surface_confirmed must be true")
     if task_groups_readiness.get("fixture_native_contract_planning_ready") is not True:
         blockers.append("task_groups_readiness.fixture_native_contract_planning_ready must be true")
+    if task_groups_readiness.get("fixture_native_contract_planning_completed") is not True:
+        blockers.append("task_groups_readiness.fixture_native_contract_planning_completed must be true")
+    if task_groups_readiness.get("fixture_native_implementation_requires_owner_decision") is not True:
+        blockers.append("task_groups_readiness.fixture_native_implementation_requires_owner_decision must be true")
     for field in (
         "production_owner_switch_ready",
         "production_write_ready",

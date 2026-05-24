@@ -64,11 +64,7 @@ def test_all_high_risk_authorizations_false_and_exclusions_true() -> None:
 
 def test_phase_execution_state_advances_to_phase_4ap() -> None:
     state = checker.load_yaml(STATE)
-    assert state["last_merged_pr"] == "#645"
-    assert state["last_attempted_action"] == "phase_4ao_task_groups_schema_route_surface_confirmation"
-    assert state["recommended_next_pr"] == "phase_4ap_task_groups_fixture_native_contract_planning"
     assert "phase_4ao_task_groups_schema_route_surface_confirmation_completed" in state["completed_steps"]
-    assert state["next_allowed_actions"] == ["phase_4ap_task_groups_fixture_native_contract_planning"]
     assert state["task_groups_readiness"]["schema_route_surface_confirmed"] is True
     assert state["task_groups_readiness"]["fixture_native_contract_planning_ready"] is True
     assert state["task_groups_readiness"]["production_owner_switch_ready"] is False

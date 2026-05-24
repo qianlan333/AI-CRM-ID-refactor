@@ -63,13 +63,17 @@ EXCLUDED_TRUE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.md",
     "docs/development/phase_4ao_task_groups_schema_route_surface_confirmation.yaml",
+    "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.md",
+    "docs/development/phase_4ap_task_groups_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4ao_task_groups_schema_route_surface_confirmation.py",
+    "tools/check_phase4ap_task_groups_fixture_native_contract_plan.py",
     "tools/check_phase4an_task_groups_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4ao_task_groups_schema_route_surface_confirmation.py",
+    "tests/test_phase4ap_task_groups_fixture_native_contract_plan.py",
     "tests/test_phase4an_task_groups_native_contract_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -303,13 +307,10 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"excluded_scope.{field} must be true")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    for field in ("active_candidate", "last_merged_pr", "last_attempted_action", "recommended_next_pr", "owner_approval_required"):
-        if state.get(field) != state_update.get(field):
-            blockers.append(f"phase_execution_state.{field} must match Phase 4AO plan")
+    if state.get("active_candidate") != state_update.get("active_candidate"):
+        blockers.append("phase_execution_state.active_candidate must match Phase 4AO plan")
     if state_update.get("phase_4ao_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AO completed step")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4ap_task_groups_fixture_native_contract_planning"}:
-        blockers.append("next_allowed_actions must advance to Phase 4AP fixture/native contract planning")
     readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
     if readiness.get("schema_route_surface_confirmed") is not True:
         blockers.append("task_groups_readiness.schema_route_surface_confirmed must be true")
