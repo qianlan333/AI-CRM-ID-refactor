@@ -1,0 +1,180 @@
+version: 1
+status: phase_4bg_agents_fixture_native_contract_planning_no_runtime_change
+
+route_family: /api/admin/automation-conversion/agents*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+fixture_allowed_in_production: false
+
+previous_phase:
+  phase: phase_4bf_agents_schema_route_surface_confirmation
+  merged_pr: "#663"
+  completed: true
+
+planned_fixture_routes:
+  - method: GET
+    path: /api/admin/automation-conversion/agents/options
+    scope: fixture_local_metadata_list
+  - method: POST
+    path: /api/admin/automation-conversion/agents
+    scope: fixture_local_metadata_create
+
+excluded_routes:
+  - path: "/api/admin/automation-conversion/agents/{agent_code}"
+    method: GET
+    reason: detail_contract_deferred
+  - path: "/api/admin/automation-conversion/agents/{agent_code}/draft"
+    method: POST
+    reason: draft_contract_deferred
+  - path: "/api/admin/automation-conversion/agents/{agent_code}/publish"
+    method: POST
+    reason: publish_changes_runtime_state_deferred
+  - path: "/api/admin/automation-conversion/agents/{agent_code}"
+    method: DELETE
+    reason: delete_contract_deferred
+  - path: /api/admin/automation-conversion/agent-runs*
+    method: ALL
+    reason: agent_run_execution_deferred
+  - path: /api/admin/automation-conversion/agent-outputs*
+    method: ALL
+    reason: output_runtime_table_deferred
+  - path: /api/admin/automation-conversion/agent-replay
+    method: ALL
+    reason: replay_runtime_path_deferred
+  - path: /api/admin/automation-conversion/agent-orchestration*
+    method: ALL
+    reason: orchestration_runtime_path_deferred
+
+fixture_seed:
+  deterministic: true
+  agent_codes:
+    - phase4bg_conversion_followup_agent
+    - phase4bg_safety_review_agent
+  required_fields:
+    - id
+    - agent_code
+    - display_name
+    - description
+    - scenario_code
+    - enabled
+    - prompt_template_code
+    - tool_policy_code
+    - model_policy_code
+    - created_at
+    - updated_at
+  production_data_allowed: false
+
+list_contract:
+  query:
+    - enabled_only
+    - keyword
+    - scenario_code
+  response_keys:
+    - ok
+    - source_status
+    - route_owner
+    - agents
+    - options
+    - total
+    - count
+    - filters
+    - side_effect_safety
+  runtime_rows_excluded: true
+  ordering: enabled_desc_updated_at_desc_agent_code_asc
+
+create_contract:
+  required_payload:
+    - agent_code
+    - display_name
+    - idempotency_key
+  optional_payload:
+    - description
+    - scenario_code
+    - enabled
+    - prompt_template_code
+    - tool_policy_code
+    - model_policy_code
+    - operator
+  response_keys:
+    - ok
+    - agent
+    - audit_event
+    - rollback_payload
+    - idempotent_replay
+    - side_effect_safety
+  missing_agent_code_rejected: true
+  missing_display_name_rejected: true
+  invalid_enabled_rejected: true
+  dangerous_fields_rejected: true
+  execution_fields_rejected: true
+
+idempotency:
+  route_family_scope_required: true
+  operation_scope_required: true
+  operator_scope_required: true
+  idempotency_key_required: true
+  agent_code_scope_required: true
+  replay_same_hash: true
+  conflict_different_hash: true
+
+audit:
+  audit_event_required: true
+  before_snapshot_for_create: empty_object
+  after_snapshot_required: true
+  rollback_payload_required: true
+  side_effect_safety_required: true
+
+side_effect_safety:
+  real_external_call_allowed: false
+  agent_run_execution_allowed: false
+  llm_generation_allowed: false
+  deepseek_adapter_allowed: false
+  openclaw_call_allowed: false
+  mcp_call_allowed: false
+  workflow_execution_allowed: false
+  timer_execution_allowed: false
+  outbound_send_allowed: false
+  production_data_allowed: false
+
+authorizations:
+  runtime_implementation_authorized: false
+  staging_smoke_execution_authorized: false
+  production_dry_run_execution_authorized: false
+  production_data_connection_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  agent_run_execution_authorized: false
+  llm_generation_authorized: false
+  deepseek_adapter_authorized: false
+  openclaw_mcp_authorized: false
+  workflow_execution_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  canary_approval_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/agents*
+  last_merged_pr: "#663"
+  last_attempted_action: phase_4bg_agents_fixture_native_contract_planning
+  last_created_pr: "#664"
+  recommended_next_pr: phase_4bh_agents_fixture_native_implementation_owner_decision
+  owner_approval_required: true
+  phase_4bg_completed_step: phase_4bg_agents_fixture_native_contract_planning_completed
+  next_allowed_actions:
+    - phase_4bh_agents_fixture_native_implementation_owner_decision
+
+phase_4bh_recommendation:
+  recommended_next_step: agents_fixture_native_implementation_owner_decision
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  production_write_canary_allowed: false
+  notes: Runtime implementation requires explicit owner confirmation because current autopilot low-risk scope is docs/tools/tests/state only.

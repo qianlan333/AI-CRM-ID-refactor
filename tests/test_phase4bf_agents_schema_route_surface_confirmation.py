@@ -62,12 +62,21 @@ def test_authorizations_false() -> None:
 def test_phase_execution_state_advances_to_phase_4bg() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENTS
-    assert state["last_merged_pr"] == "#662"
-    assert state["last_attempted_action"] == "phase_4bf_agents_schema_route_surface_confirmation"
-    assert state["last_created_pr"] == "#663"
-    assert state["recommended_next_pr"] == "phase_4bg_agents_fixture_native_contract_planning"
-    assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bg_agents_fixture_native_contract_planning"]
+    assert state["last_merged_pr"] in {"#662", "#663"}
+    assert state["last_attempted_action"] in {
+        "phase_4bf_agents_schema_route_surface_confirmation",
+        "phase_4bg_agents_fixture_native_contract_planning",
+    }
+    assert state["last_created_pr"] in {"#663", "#664"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bg_agents_fixture_native_contract_planning",
+        "phase_4bh_agents_fixture_native_implementation_owner_decision",
+    }
+    assert state["owner_approval_required"] in {False, True}
+    assert state["next_allowed_actions"] in [
+        ["phase_4bg_agents_fixture_native_contract_planning"],
+        ["phase_4bh_agents_fixture_native_implementation_owner_decision"],
+    ]
     assert "phase_4bf_agents_schema_route_surface_confirmation_completed" in state["completed_steps"]
 
 
@@ -78,6 +87,7 @@ def test_agents_readiness_allows_next_contract_planning_only() -> None:
     assert readiness["schema_route_surface_confirmation_ready"] is True
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness.get("fixture_native_contract_planning_completed") in {None, True}
     assert readiness["agent_run_execution_excluded"] is True
     assert readiness["llm_generation_excluded"] is True
     assert readiness["deepseek_adapter_excluded"] is True

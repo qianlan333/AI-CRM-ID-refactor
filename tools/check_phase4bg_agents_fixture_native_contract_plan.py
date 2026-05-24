@@ -15,34 +15,15 @@ if str(ROOT) not in sys.path:
 
 from tools.check_phase4aq_task_groups_fixture_native_implementation_owner_decision import load_yaml
 
-DOC = ROOT / "docs/development/phase_4bf_agents_schema_route_surface_confirmation.md"
-PLAN_YAML = ROOT / "docs/development/phase_4bf_agents_schema_route_surface_confirmation.yaml"
+DOC = ROOT / "docs/development/phase_4bg_agents_fixture_native_contract_plan.md"
+PLAN_YAML = ROOT / "docs/development/phase_4bg_agents_fixture_native_contract_plan.yaml"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 BACKLOG = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 
-AGENTS = "/api/admin/automation-conversion/agents*"
-REQUIRED_PRODUCTION_PATTERNS = {
-    "/api/admin/automation-conversion/agents",
-    "/api/admin/automation-conversion/agents/wildcard_path",
-}
-REQUIRED_LEGACY_ROUTES = {
-    ("POST", "/api/admin/automation-conversion/agents"),
-    ("GET", "/api/admin/automation-conversion/agents/options"),
-    ("GET", "/api/admin/automation-conversion/agents/{agent_code}"),
-    ("POST", "/api/admin/automation-conversion/agents/{agent_code}/draft"),
-    ("POST", "/api/admin/automation-conversion/agents/{agent_code}/publish"),
-    ("DELETE", "/api/admin/automation-conversion/agents/{agent_code}"),
-}
-REQUIRED_READ_MODEL_COLUMNS = {
+ROUTE = "/api/admin/automation-conversion/agents*"
+REQUIRED_FIELDS = {
     "id",
-    "agent_code",
-    "display_name",
-    "scenario_code",
-    "enabled",
-    "updated_at",
-}
-REQUIRED_METADATA_FIELDS = {
     "agent_code",
     "display_name",
     "description",
@@ -51,31 +32,8 @@ REQUIRED_METADATA_FIELDS = {
     "prompt_template_code",
     "tool_policy_code",
     "model_policy_code",
-}
-REQUIRED_RELATED_RUNTIME_TABLES = {
-    "automation_agent_run",
-    "automation_agent_output",
-    "automation_agent_llm_call_log",
-}
-REQUIRED_FIRST_NATIVE_SUBSET = {
-    "list_agents_metadata",
-    "create_agent_metadata_only",
-}
-REQUIRED_DEFERRED_SCOPE = {
-    "agent_detail",
-    "agent_update",
-    "agent_delete",
-    "agent_draft_publish",
-    "agent_runs",
-    "agent_outputs",
-    "agent_replay",
-    "agent_orchestration",
-    "llm_generation",
-    "deepseek_adapter",
-    "openclaw_mcp_call",
-    "workflow_execution",
-    "timer_execution",
-    "outbound_send",
+    "created_at",
+    "updated_at",
 }
 AUTH_FALSE_FIELDS = {
     "runtime_implementation_authorized",
@@ -98,23 +56,31 @@ AUTH_FALSE_FIELDS = {
     "canary_approval_authorized",
     "delete_ready",
 }
+SIDE_EFFECT_FALSE_FIELDS = {
+    "real_external_call_allowed",
+    "agent_run_execution_allowed",
+    "llm_generation_allowed",
+    "deepseek_adapter_allowed",
+    "openclaw_call_allowed",
+    "mcp_call_allowed",
+    "workflow_execution_allowed",
+    "timer_execution_allowed",
+    "outbound_send_allowed",
+    "production_data_allowed",
+}
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4bf_agents_schema_route_surface_confirmation.md",
-    "docs/development/phase_4bf_agents_schema_route_surface_confirmation.yaml",
     "docs/development/phase_4bg_agents_fixture_native_contract_plan.md",
     "docs/development/phase_4bg_agents_fixture_native_contract_plan.yaml",
-    "docs/development/phase_4be_agents_metadata_plan.md",
-    "docs/development/phase_4be_agents_metadata_plan.yaml",
+    "docs/development/phase_4bf_agents_schema_route_surface_confirmation.md",
+    "docs/development/phase_4bf_agents_schema_route_surface_confirmation.yaml",
     "docs/development/phase_execution_state.yaml",
-    "tools/check_phase4bf_agents_schema_route_surface_confirmation.py",
     "tools/check_phase4bg_agents_fixture_native_contract_plan.py",
-    "tools/check_phase4be_agents_metadata_plan.py",
+    "tools/check_phase4bf_agents_schema_route_surface_confirmation.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
-    "tests/test_phase4bf_agents_schema_route_surface_confirmation.py",
     "tests/test_phase4bg_agents_fixture_native_contract_plan.py",
-    "tests/test_phase4be_agents_metadata_plan.py",
+    "tests/test_phase4bf_agents_schema_route_surface_confirmation.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -153,14 +119,6 @@ def _changed_files() -> tuple[set[str], list[str]]:
     return changed, warnings
 
 
-def _legacy_route_pairs(routes: list[Any]) -> set[tuple[str, str]]:
-    pairs: set[tuple[str, str]] = set()
-    for route in routes:
-        if isinstance(route, dict):
-            pairs.add((str(route.get("method", "")).strip(), str(route.get("path", "")).strip()))
-    return pairs
-
-
 def build_report() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -175,11 +133,11 @@ def build_report() -> dict[str, Any]:
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
 
-    if data.get("status") != "phase_4bf_agents_schema_route_surface_confirmation_no_runtime_change":
-        blockers.append("status must be Phase 4BF agents schema route surface confirmation no runtime change")
-    if data.get("route_family") != AGENTS:
+    if data.get("status") != "phase_4bg_agents_fixture_native_contract_planning_no_runtime_change":
+        blockers.append("status must be Phase 4BG agents fixture native contract planning no runtime change")
+    if data.get("route_family") != ROUTE:
         blockers.append("route_family must be agents wildcard")
-    if AGENTS not in manifest_text or AGENTS not in backlog_text:
+    if ROUTE not in manifest_text or ROUTE not in backlog_text:
         blockers.append("agents route must exist in manifest and backlog")
     if data.get("current_runtime_owner") != "production_compat" or data.get("production_behavior") != "legacy_forward":
         blockers.append("production owner must remain production_compat legacy_forward")
@@ -187,46 +145,63 @@ def build_report() -> dict[str, Any]:
         blockers.append("legacy fallback must be retained and fixture production use must be false")
 
     previous = data.get("previous_phase") if isinstance(data.get("previous_phase"), dict) else {}
-    if previous.get("phase") != "phase_4be_agents_metadata_planning" or previous.get("merged_pr") != "#662":
-        blockers.append("previous_phase must record Phase 4BE merged as #662")
+    if previous.get("phase") != "phase_4bf_agents_schema_route_surface_confirmation" or previous.get("merged_pr") != "#663":
+        blockers.append("previous_phase must record Phase 4BF merged in #663")
     if previous.get("completed") is not True:
         blockers.append("previous_phase.completed must be true")
 
-    surface = data.get("confirmed_route_surface") if isinstance(data.get("confirmed_route_surface"), dict) else {}
-    if not REQUIRED_PRODUCTION_PATTERNS <= set(surface.get("production_compat_patterns") or []):
-        blockers.append("confirmed_route_surface.production_compat_patterns incomplete")
-    if "/admin/automation-conversion/shared/agents" not in set(surface.get("legacy_admin_workspace") or []):
-        blockers.append("legacy admin workspace route must be recorded")
-    if not REQUIRED_LEGACY_ROUTES <= _legacy_route_pairs(surface.get("legacy_api_routes") or []):
-        blockers.append("confirmed_route_surface.legacy_api_routes incomplete")
+    route_scopes = {(item.get("method"), item.get("scope")) for item in data.get("planned_fixture_routes") or [] if isinstance(item, dict)}
+    if route_scopes != {("GET", "fixture_local_metadata_list"), ("POST", "fixture_local_metadata_create")}:
+        blockers.append("planned_fixture_routes must be GET metadata list and POST metadata create only")
 
-    schema = data.get("confirmed_schema_surface") if isinstance(data.get("confirmed_schema_surface"), dict) else {}
-    if schema.get("metadata_table") != "automation_agent_config":
-        blockers.append("metadata_table must be automation_agent_config")
-    if not REQUIRED_READ_MODEL_COLUMNS <= set(schema.get("read_model_columns") or []):
-        blockers.append("read_model_columns incomplete")
-    if not REQUIRED_METADATA_FIELDS <= set(schema.get("legacy_metadata_contract_fields") or []):
-        blockers.append("legacy_metadata_contract_fields incomplete")
-    if not REQUIRED_RELATED_RUNTIME_TABLES <= set(schema.get("related_runtime_tables_deferred") or []):
-        blockers.append("related runtime tables must be deferred")
-    relationships = schema.get("relationship_boundaries") if isinstance(schema.get("relationship_boundaries"), dict) else {}
-    for field in (
-        "agent_run_tables_excluded_from_metadata_subset",
-        "output_tables_excluded_from_metadata_subset",
-        "llm_call_log_excluded_from_metadata_subset",
-    ):
-        if relationships.get(field) is not True:
-            blockers.append(f"relationship_boundaries.{field} must be true")
+    excluded_paths = {str(item.get("path")) for item in data.get("excluded_routes") or [] if isinstance(item, dict)}
+    required_excluded = {
+        "/api/admin/automation-conversion/agents/{agent_code}",
+        "/api/admin/automation-conversion/agents/{agent_code}/draft",
+        "/api/admin/automation-conversion/agents/{agent_code}/publish",
+        "/api/admin/automation-conversion/agent-runs*",
+        "/api/admin/automation-conversion/agent-outputs*",
+        "/api/admin/automation-conversion/agent-replay",
+        "/api/admin/automation-conversion/agent-orchestration*",
+    }
+    if not required_excluded <= excluded_paths:
+        blockers.append("excluded_routes must include detail/draft/publish/delete plus agent runtime paths")
 
-    boundary = data.get("native_contract_boundary") if isinstance(data.get("native_contract_boundary"), dict) else {}
-    if not REQUIRED_FIRST_NATIVE_SUBSET <= set(boundary.get("first_native_subset") or []):
-        blockers.append("first native subset must be agents metadata list/create only")
-    if not REQUIRED_DEFERRED_SCOPE <= set(boundary.get("deferred_to_separate_pr") or []):
-        blockers.append("deferred_to_separate_pr incomplete")
-    requirements = set(boundary.get("next_contract_planning_requirements") or [])
-    for required in ("idempotency_key_or_agent_code_guard", "audit_trail_placeholder", "dangerous_field_rejection", "no_agent_run_execution", "no_llm_generation", "no_external_calls"):
-        if required not in requirements:
-            blockers.append(f"next_contract_planning_requirements missing {required}")
+    seed = data.get("fixture_seed") if isinstance(data.get("fixture_seed"), dict) else {}
+    if seed.get("deterministic") is not True or seed.get("production_data_allowed") is not False:
+        blockers.append("fixture_seed must be deterministic and forbid production data")
+    if not {"phase4bg_conversion_followup_agent", "phase4bg_safety_review_agent"} <= set(seed.get("agent_codes") or []):
+        blockers.append("fixture_seed.agent_codes incomplete")
+    if not REQUIRED_FIELDS <= set(seed.get("required_fields") or []):
+        blockers.append("fixture_seed.required_fields incomplete")
+
+    list_contract = data.get("list_contract") if isinstance(data.get("list_contract"), dict) else {}
+    if list_contract.get("runtime_rows_excluded") is not True:
+        blockers.append("list_contract must exclude runtime rows")
+    if not {"ok", "agents", "options", "side_effect_safety"} <= set(list_contract.get("response_keys") or []):
+        blockers.append("list_contract.response_keys incomplete")
+
+    create_contract = data.get("create_contract") if isinstance(data.get("create_contract"), dict) else {}
+    if not {"agent_code", "display_name", "idempotency_key"} <= set(create_contract.get("required_payload") or []):
+        blockers.append("create_contract.required_payload must include agent_code, display_name, and idempotency_key")
+    for field in ("missing_agent_code_rejected", "missing_display_name_rejected", "invalid_enabled_rejected", "dangerous_fields_rejected", "execution_fields_rejected"):
+        if create_contract.get(field) is not True:
+            blockers.append(f"create_contract.{field} must be true")
+
+    idempotency = data.get("idempotency") if isinstance(data.get("idempotency"), dict) else {}
+    for field in ("route_family_scope_required", "operation_scope_required", "operator_scope_required", "idempotency_key_required", "agent_code_scope_required", "replay_same_hash", "conflict_different_hash"):
+        if idempotency.get(field) is not True:
+            blockers.append(f"idempotency.{field} must be true")
+
+    audit = data.get("audit") if isinstance(data.get("audit"), dict) else {}
+    for field in ("audit_event_required", "after_snapshot_required", "rollback_payload_required", "side_effect_safety_required"):
+        if audit.get(field) is not True:
+            blockers.append(f"audit.{field} must be true")
+
+    side_effect = data.get("side_effect_safety") if isinstance(data.get("side_effect_safety"), dict) else {}
+    for field in SIDE_EFFECT_FALSE_FIELDS:
+        if side_effect.get(field) is not False:
+            blockers.append(f"side_effect_safety.{field} must be false")
 
     authorizations = data.get("authorizations") if isinstance(data.get("authorizations"), dict) else {}
     for field in sorted(AUTH_FALSE_FIELDS):
@@ -234,25 +209,22 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"authorizations.{field} must be false")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != AGENTS:
+    if state.get("active_candidate") != ROUTE:
         blockers.append("phase_execution_state.active_candidate must remain agents")
-    if state.get("last_merged_pr") not in {"#662", "#663"}:
-        blockers.append("phase_execution_state.last_merged_pr must record #662 or later Phase 4BG state #663")
-    if state.get("last_attempted_action") not in {"phase_4bf_agents_schema_route_surface_confirmation", "phase_4bg_agents_fixture_native_contract_planning"}:
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BF or later Phase 4BG")
-    if state.get("last_created_pr") not in {"#663", "#664"}:
-        blockers.append("phase_execution_state.last_created_pr must be #663 or later Phase 4BG PR #664")
-    if state.get("recommended_next_pr") not in {"phase_4bg_agents_fixture_native_contract_planning", "phase_4bh_agents_fixture_native_implementation_owner_decision"}:
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BG or later Phase 4BH")
-    if set(state.get("next_allowed_actions") or []) not in (
-        {"phase_4bg_agents_fixture_native_contract_planning"},
-        {"phase_4bh_agents_fixture_native_implementation_owner_decision"},
-    ):
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BG or later Phase 4BH")
-    if state.get("owner_approval_required") not in {False, True}:
-        blockers.append("phase_execution_state.owner_approval_required must be boolean")
-    if state_update.get("phase_4bf_completed_step") not in set(state.get("completed_steps") or []):
-        blockers.append("phase_execution_state.completed_steps must include Phase 4BF completed step")
+    if state.get("last_merged_pr") != "#663":
+        blockers.append("phase_execution_state.last_merged_pr must record #663")
+    if state.get("last_attempted_action") != "phase_4bg_agents_fixture_native_contract_planning":
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BG")
+    if state.get("last_created_pr") != "#664":
+        blockers.append("phase_execution_state.last_created_pr must be #664")
+    if state.get("recommended_next_pr") != "phase_4bh_agents_fixture_native_implementation_owner_decision":
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BH")
+    if set(state.get("next_allowed_actions") or []) != {"phase_4bh_agents_fixture_native_implementation_owner_decision"}:
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BH")
+    if state.get("owner_approval_required") is not True:
+        blockers.append("phase_execution_state.owner_approval_required must become true for runtime implementation decision")
+    if state_update.get("phase_4bg_completed_step") not in set(state.get("completed_steps") or []):
+        blockers.append("phase_execution_state.completed_steps must include Phase 4BG completed step")
 
     readiness = state.get("agents_readiness") if isinstance(state.get("agents_readiness"), dict) else {}
     for field in (
@@ -261,6 +233,9 @@ def build_report() -> dict[str, Any]:
         "schema_route_surface_confirmation_ready",
         "schema_route_surface_confirmed",
         "fixture_native_contract_planning_ready",
+        "fixture_native_contract_planning_completed",
+        "fixture_native_implementation_requires_owner_decision",
+        "owner_decision_required",
         "agent_run_execution_excluded",
         "llm_generation_excluded",
         "deepseek_adapter_excluded",
@@ -280,12 +255,12 @@ def build_report() -> dict[str, Any]:
         if readiness.get(field) is not False:
             blockers.append(f"agents_readiness.{field} must be false")
 
-    rec = data.get("phase_4bg_recommendation") if isinstance(data.get("phase_4bg_recommendation"), dict) else {}
-    if rec.get("recommended_next_step") != "agents_fixture_native_contract_planning":
-        blockers.append("phase_4bg_recommendation must recommend agents fixture/native contract planning")
+    rec = data.get("phase_4bh_recommendation") if isinstance(data.get("phase_4bh_recommendation"), dict) else {}
+    if rec.get("recommended_next_step") != "agents_fixture_native_implementation_owner_decision":
+        blockers.append("phase_4bh_recommendation must recommend owner decision before runtime implementation")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4bg_recommendation.{field} must be false")
+            blockers.append(f"phase_4bh_recommendation.{field} must be false")
 
     doc_text = DOC.read_text(encoding="utf-8").lower()
     for phrase in sorted(FORBIDDEN_DOC_CLAIMS):
@@ -296,7 +271,7 @@ def build_report() -> dict[str, Any]:
     warnings.extend(git_warnings)
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
     if unexpected:
-        blockers.append(f"unexpected changed files for Phase 4BF package: {unexpected}")
+        blockers.append(f"unexpected changed files for Phase 4BG package: {unexpected}")
     protected = sorted(path for path in changed if path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES))
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
@@ -319,7 +294,7 @@ def _write_outputs(report: dict[str, Any], output_json: str | None, output_md: s
         Path(output_json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if output_md:
         lines = [
-            "# Phase 4BF Agents Schema Route Surface Confirmation Check",
+            "# Phase 4BG Agents Fixture Native Contract Check",
             "",
             f"- overall: {report['overall']}",
             f"- ok: {str(report['ok']).lower()}",
