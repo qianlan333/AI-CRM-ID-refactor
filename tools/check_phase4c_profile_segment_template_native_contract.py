@@ -41,10 +41,14 @@ ALLOWED_CHANGED_FILES = {
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/profile_segments.py",
     "docs/development/phase_4c_profile_segment_template_native_contract.md",
+    "docs/development/phase_4d_profile_segment_template_production_switch_plan.md",
+    "docs/development/phase_4d_profile_segment_template_production_switch_plan.yaml",
     "tools/check_phase4a_internal_write_candidate_selection.py",
     "tools/check_phase4b_profile_segment_template_plan.py",
     "tools/check_phase4c_profile_segment_template_native_contract.py",
+    "tools/check_phase4d_profile_segment_template_production_switch_plan.py",
     "tests/test_phase4c_profile_segment_template_native_contract.py",
+    "tests/test_phase4d_profile_segment_template_production_switch_plan.py",
 }
 PROTECTED_DISALLOWED_PREFIXES = (
     "wecom_ability_service/",
