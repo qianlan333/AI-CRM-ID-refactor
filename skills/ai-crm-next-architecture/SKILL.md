@@ -8,11 +8,27 @@ description: Use before any AI-CRM coding task. Enforces the AI-CRM Next FastAPI
 Use this skill before changing code, docs, routes, checkers, tests, or runtime
 behavior in the AI-CRM repository.
 
-The canonical rules live in
-`docs/development/ai_crm_next_architecture_skill.md`. Treat that document as
-the source of truth. This repo-local `SKILL.md` exists so agents that discover
-`skills/*/SKILL.md` packages can recognize and invoke the architecture guardrail
-directly after cloning or downloading this repository.
+The canonical rules live in:
+
+- `docs/development/codex_architecture_operating_memory.md`
+- `docs/development/ai_crm_next_architecture_skill.md`
+
+Treat those documents as the source of truth. This repo-local `SKILL.md` exists
+so agents that discover `skills/*/SKILL.md` packages can recognize and invoke
+the architecture guardrail directly after cloning or downloading this
+repository.
+
+## Required Preflight Reading
+
+Before every AI-CRM development task, read and follow these files:
+
+1. `docs/development/codex_architecture_operating_memory.md`
+2. `docs/development/ai_crm_next_architecture_skill.md`
+3. `docs/route_ownership/production_route_ownership_manifest.yaml`
+4. `docs/development/legacy_replacement_backlog.yaml`
+
+Do not start code, docs, route, checker, test, production_compat, runtime, or
+business-route changes until this preflight has been completed.
 
 ## Start Every Task With These Questions
 
