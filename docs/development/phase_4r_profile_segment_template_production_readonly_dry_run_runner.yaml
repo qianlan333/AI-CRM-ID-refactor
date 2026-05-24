@@ -1,0 +1,59 @@
+version: 1
+status: phase_4r_production_readonly_dry_run_runner_no_execution
+production_dry_run_execution_authorized: false
+production_repository_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_write_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+runner:
+  path: tools/run_phase4r_profile_segment_template_production_readonly_dry_run.py
+  default_execution: blocked
+  required_approval_env:
+    - AICRM_PHASE4R_PRODUCTION_READONLY_DRY_RUN_APPROVED
+    - AICRM_PHASE4R_PRODUCTION_CONFIG_REVIEWED
+  required_db_env:
+    - AICRM_PROFILE_SEGMENT_TEMPLATE_PRODUCTION_DATABASE_URL
+  required_args:
+    - --read-only
+    - --confirm-no-writes
+  forbidden_env_fallbacks:
+    - DATABASE_URL
+    - AICRM_NEXT_TEST_DATABASE_URL
+    - AICRM_PROFILE_SEGMENT_TEMPLATE_STAGING_DATABASE_URL
+
+allowed_operations:
+  - catalog_read
+  - list_read
+  - options_read
+  - detail_read
+
+forbidden_operations:
+  - create
+  - update
+  - delete
+  - migration
+  - backfill
+  - idempotency_write
+  - audit_write
+  - external_call
+  - automation_execution
+  - outbound_send
+
+evidence:
+  secret_redaction_required: true
+  pii_redaction_required: true
+  raw_payload_export_allowed: false
+  route_owner_changed_allowed: false
+  production_compat_changed_allowed: false
+  fallback_must_remain: true
+
+phase_4s_recommendation:
+  recommended_next_step: production_read_only_dry_run_execution_evidence
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false
+  notes: Phase 4S may collect owner-approved production read-only dry-run execution evidence, but it must not write production data or switch route ownership.
