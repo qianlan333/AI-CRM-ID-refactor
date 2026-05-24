@@ -1,0 +1,105 @@
+version: 1
+status: phase_4b_planning_only_no_runtime_change
+implementation_authorized: false
+production_cutover_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+db_schema_change_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+route_family: /api/admin/automation-conversion/profile-segment-templates*
+capability_owner: aicrm_next.automation_engine
+integration_fallback_boundary: aicrm_next.integration_gateway
+phase_4c_scope:
+  allowed:
+    - read_parity
+    - create_internal_metadata_template
+    - update_internal_metadata_template
+  forbidden:
+    - run_due
+    - automation_execution
+    - outbound_send
+    - wecom_external_call
+    - openclaw_call
+    - mcp_real_call
+    - timer
+    - workflow_activation
+    - customer_pool_state_change
+    - fallback_removal
+routes:
+  - method: GET
+    path: /api/admin/automation-conversion/profile-segment-templates/catalog
+    action: catalog_read_parity
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: false
+    audit_required: false
+    rollback_required: false
+    external_side_effect_allowed: false
+    notes: Read-only catalog parity; production unavailable must degrade/error and fallback remains retained.
+  - method: GET
+    path: /api/admin/automation-conversion/profile-segment-templates
+    action: list_read_parity
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: false
+    audit_required: false
+    rollback_required: false
+    external_side_effect_allowed: false
+    notes: Read-only list parity with enabled_only/program_id query compatibility.
+  - method: GET
+    path: /api/admin/automation-conversion/profile-segment-templates/options
+    action: options_read_parity
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: false
+    audit_required: false
+    rollback_required: false
+    external_side_effect_allowed: false
+    notes: Read-only options parity for admin selectors.
+  - method: GET
+    path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
+    action: detail_read_parity
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: false
+    audit_required: false
+    rollback_required: false
+    external_side_effect_allowed: false
+    notes: Read-only detail parity; not found remains 404 and fixture success is forbidden in production.
+  - method: POST
+    path: /api/admin/automation-conversion/profile-segment-templates
+    action: create_internal_metadata_template
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: true
+    audit_required: true
+    rollback_required: true
+    external_side_effect_allowed: false
+    notes: Bounded internal metadata create only; no execution/send/timer/external-call behavior.
+  - method: PUT
+    path: /api/admin/automation-conversion/profile-segment-templates/{template_id}
+    action: update_internal_metadata_template
+    implementation_allowed_in_phase_4c: true
+    idempotency_required: true
+    audit_required: true
+    rollback_required: true
+    external_side_effect_allowed: false
+    notes: Bounded internal metadata update only; requires stale update protection and rollback snapshot.
+required_guardrails:
+  idempotency_required: true
+  audit_operator_identity_required: true
+  validation_required: true
+  rollback_required: true
+  fallback_retained: true
+  production_compat_unchanged: true
+  checker_required: true
+  smoke_required: true
+  fixture_success_forbidden: true
+  no_real_external_side_effect: true
+phase_4c_entry_conditions:
+  owner_approval_required: true
+  checker_required: true
+  smoke_required: true
+  rollback_owner_required: true
+  production_config_review_required: true
+owner_signoff:
+  automation_engine_owner: pending
+  integration_gateway_owner: pending
+  business_owner: pending
+  rollback_owner: pending
