@@ -10,17 +10,18 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs/development/phase_4k_profile_segment_template_local_parity_harness.md"
-PLAN_YAML = ROOT / "docs/development/phase_4k_profile_segment_template_local_parity_harness.yaml"
-HARNESS = ROOT / "tools/run_phase4k_profile_segment_template_local_parity.py"
+DOC = ROOT / "docs/development/phase_4m_profile_segment_template_staging_smoke_package.md"
+PLAN_YAML = ROOT / "docs/development/phase_4m_profile_segment_template_staging_smoke_package.yaml"
+RUNNER = ROOT / "tools/run_phase4m_profile_segment_template_staging_smoke.py"
 REQUIRED_DOCS = [
     DOC,
     PLAN_YAML,
-    HARNESS,
-    ROOT / "docs/development/phase_4j_profile_segment_template_parity_smoke_plan.md",
-    ROOT / "docs/development/phase_4i_profile_segment_template_repository_adapter.md",
+    RUNNER,
+    ROOT / "docs/development/phase_4l_profile_segment_template_staging_smoke_plan.md",
+    ROOT / "docs/development/phase_4k_profile_segment_template_local_parity_harness.md",
 ]
 AUTH_FALSE_FIELDS = {
+    "staging_smoke_execution_authorized",
     "production_data_allowed",
     "production_repository_enablement_authorized",
     "production_route_ownership_switch_authorized",
@@ -29,17 +30,25 @@ AUTH_FALSE_FIELDS = {
     "real_external_call_authorized",
     "delete_ready",
 }
+REQUIRED_ENV = {
+    "AICRM_PROFILE_SEGMENT_TEMPLATE_STAGING_DATABASE_URL",
+    "AICRM_PROFILE_SEGMENT_TEMPLATE_REPO_BACKEND",
+}
+ALLOWED_MARKERS = {"staging", "stage", "test", "local", "dev"}
+FORBIDDEN_MARKERS = {"prod", "production", "primary", "master"}
 READ_CASES = {"catalog", "list", "options", "detail"}
 WRITE_CASES = {
-    "create_idempotency_replay",
-    "create_idempotency_conflict",
-    "duplicate_template",
+    "create_with_idempotency",
+    "create_replay",
+    "create_conflict",
+    "duplicate_template_rejected",
     "update_existing",
     "update_missing",
-    "invalid_payload",
-    "dangerous_field_rejection",
-    "audit_log_shape",
-    "rollback_payload_shape",
+    "invalid_payload_rejected",
+    "dangerous_field_rejected",
+    "audit_log_created",
+    "rollback_payload_present",
+    "side_effect_safety_false",
 }
 SIDE_EFFECT_FALSE_FIELDS = {
     "external_calls_allowed",
@@ -48,23 +57,16 @@ SIDE_EFFECT_FALSE_FIELDS = {
     "route_owner_change_allowed",
 }
 ALLOWED_CHANGED_FILES = {
-    "tools/run_phase4k_profile_segment_template_local_parity.py",
-    "docs/development/phase_4k_profile_segment_template_local_parity_harness.md",
-    "docs/development/phase_4k_profile_segment_template_local_parity_harness.yaml",
-    "tools/check_phase4k_profile_segment_template_local_parity_harness.py",
-    "tests/test_phase4k_profile_segment_template_local_parity_harness.py",
-    "tools/check_phase4j_profile_segment_template_parity_smoke_plan.py",
-    "tools/check_phase4i_profile_segment_template_repository_adapter.py",
-    "tools/check_phase4h_profile_segment_template_companion_migration.py",
-    "docs/development/phase_4l_profile_segment_template_staging_smoke_plan.md",
-    "docs/development/phase_4l_profile_segment_template_staging_smoke_plan.yaml",
-    "tools/check_phase4l_profile_segment_template_staging_smoke_plan.py",
-    "tests/test_phase4l_profile_segment_template_staging_smoke_plan.py",
     "tools/run_phase4m_profile_segment_template_staging_smoke.py",
     "docs/development/phase_4m_profile_segment_template_staging_smoke_package.md",
     "docs/development/phase_4m_profile_segment_template_staging_smoke_package.yaml",
     "tools/check_phase4m_profile_segment_template_staging_smoke_package.py",
     "tests/test_phase4m_profile_segment_template_staging_smoke_package.py",
+    "tools/check_phase4l_profile_segment_template_staging_smoke_plan.py",
+    "tools/check_phase4k_profile_segment_template_local_parity_harness.py",
+    "tools/check_phase4j_profile_segment_template_parity_smoke_plan.py",
+    "tools/check_phase4i_profile_segment_template_repository_adapter.py",
+    "tools/check_phase4h_profile_segment_template_companion_migration.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
@@ -75,14 +77,16 @@ PROTECTED_PREFIXES = (
     "nginx/",
 )
 PROTECTED_EXACT = {"app.py", "legacy_flask_app.py"}
-FORBIDDEN_IMPORT_PATTERNS = [
+FORBIDDEN_RUNNER_PATTERNS = [
     r"\bwecom_ability_service\b",
-    r"\bopenclaw\b",
-    r"\bmcp\b",
-    r"\bpayment\b",
-    r"\boauth\b",
-    r"\brun_due\b",
-    r"\bworkflow_activation\b",
+    r"\bimport\s+.*openclaw",
+    r"\bfrom\s+.*openclaw",
+    r"\bimport\s+.*mcp",
+    r"\bfrom\s+.*mcp",
+    r"\bimport\s+.*payment",
+    r"\bfrom\s+.*payment",
+    r"\bimport\s+.*oauth",
+    r"\bfrom\s+.*oauth",
 ]
 
 
@@ -233,7 +237,7 @@ def _changed_files_from_git() -> tuple[set[str], list[str]]:
     return changed, warnings
 
 
-def check_required_files() -> dict[str, Any]:
+def check_required_docs() -> dict[str, Any]:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED_DOCS if not path.exists()]
     return {"ok": not missing, "blockers": [f"missing required file: {path}" for path in missing], "warnings": []}
 
@@ -241,39 +245,68 @@ def check_required_files() -> dict[str, Any]:
 def check_top_level(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
     blockers: list[str] = []
-    if data.get("status") != "phase_4k_local_test_db_parity_harness_no_production_change":
-        blockers.append("status must be phase_4k_local_test_db_parity_harness_no_production_change")
+    if data.get("status") != "phase_4m_staging_smoke_package_no_execution_no_production_change":
+        blockers.append("status must be phase_4m_staging_smoke_package_no_execution_no_production_change")
     for field in sorted(AUTH_FALSE_FIELDS):
         if data.get(field) is not False:
             blockers.append(f"{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_required_env_and_safety(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_runner_config(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
+    runner = data.get("runner") or {}
     blockers: list[str] = []
-    if "AICRM_NEXT_TEST_DATABASE_URL" not in {str(item) for item in _as_list(data.get("required_env"))}:
-        blockers.append("required_env must include AICRM_NEXT_TEST_DATABASE_URL")
-    safety = data.get("db_url_safety") or {}
-    if safety.get("require_test_local_tmp_dev_marker") is not True:
-        blockers.append("db_url_safety.require_test_local_tmp_dev_marker must be true")
-    if safety.get("forbidden_fallback_to_database_url") is not True:
-        blockers.append("db_url_safety.forbidden_fallback_to_database_url must be true")
+    if runner.get("path") != "tools/run_phase4m_profile_segment_template_staging_smoke.py":
+        blockers.append("runner.path mismatch")
+    if runner.get("default_mode") != "dry_run":
+        blockers.append("runner.default_mode must be dry_run")
+    if runner.get("execute_writes_requires_flag") is not True:
+        blockers.append("runner.execute_writes_requires_flag must be true")
+    if not REQUIRED_ENV <= {str(item) for item in _as_list(runner.get("required_env"))}:
+        blockers.append("runner.required_env missing required env vars")
+    if "DATABASE_URL" not in {str(item) for item in _as_list(runner.get("forbidden_env_fallbacks"))}:
+        blockers.append("runner.forbidden_env_fallbacks must include DATABASE_URL")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_harness_matrix(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_db_url_safety(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
-    matrix = data.get("harness_matrix") or {}
+    safety = data.get("db_url_safety") or {}
+    blockers: list[str] = []
+    if not ALLOWED_MARKERS <= {str(item) for item in _as_list(safety.get("allowed_markers"))}:
+        blockers.append("db_url_safety.allowed_markers missing required markers")
+    if not FORBIDDEN_MARKERS <= {str(item) for item in _as_list(safety.get("forbidden_markers"))}:
+        blockers.append("db_url_safety.forbidden_markers missing required markers")
+    if safety.get("fail_if_allowed_and_forbidden_both_present") is not True:
+        blockers.append("db_url_safety.fail_if_allowed_and_forbidden_both_present must be true")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_safe_namespace(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = data or load_yaml()
+    namespace = data.get("safe_namespace") or {}
+    blockers: list[str] = []
+    for field in ("template_code_prefix", "operator", "idempotency_key_prefix"):
+        if not namespace.get(field):
+            blockers.append(f"safe_namespace.{field} must be non-empty")
+    if namespace.get("delete_required") is not False:
+        blockers.append("safe_namespace.delete_required must be false")
+    return {"ok": not blockers, "blockers": blockers, "warnings": []}
+
+
+def check_smoke_matrix(data: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = data or load_yaml()
+    matrix = data.get("smoke_matrix") or {}
     read_cases = {str(item) for item in _as_list(matrix.get("read"))}
     write_cases = {str(item) for item in _as_list(matrix.get("write"))}
     blockers: list[str] = []
     missing_read = sorted(READ_CASES - read_cases)
     missing_write = sorted(WRITE_CASES - write_cases)
     if missing_read:
-        blockers.append(f"harness read cases missing {missing_read}")
+        blockers.append(f"smoke read cases missing {missing_read}")
     if missing_write:
-        blockers.append(f"harness write cases missing {missing_write}")
+        blockers.append(f"smoke write cases missing {missing_write}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -284,39 +317,50 @@ def check_side_effect_safety(data: dict[str, Any] | None = None) -> dict[str, An
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_phase4l_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_phase4n_recommendation(data: dict[str, Any] | None = None) -> dict[str, Any]:
     data = data or load_yaml()
-    rec = data.get("phase_4l_recommendation") or {}
+    rec = data.get("phase_4n_recommendation") or {}
     blockers: list[str] = []
     if not rec.get("recommended_next_step"):
-        blockers.append("phase_4l_recommendation.recommended_next_step missing")
-    if rec.get("production_route_switch_allowed") is not False:
-        blockers.append("phase_4l_recommendation.production_route_switch_allowed must be false")
-    if rec.get("production_write_canary_allowed") is not False:
-        blockers.append("phase_4l_recommendation.production_write_canary_allowed must be false")
+        blockers.append("phase_4n_recommendation.recommended_next_step missing")
+    for field in (
+        "staging_smoke_execution_allowed_without_owner_approval",
+        "production_dry_run_allowed",
+        "production_route_switch_allowed",
+    ):
+        if rec.get(field) is not False:
+            blockers.append(f"phase_4n_recommendation.{field} must be false")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
-def check_harness_static() -> dict[str, Any]:
-    source = _read(HARNESS)
+def check_runner_source() -> dict[str, Any]:
+    source = _read(RUNNER)
     blockers: list[str] = []
-    for marker in ("AICRM_NEXT_TEST_DATABASE_URL", "test", "local", "tmp", "dev", "--output-json", "--output-md"):
+    required_markers = [
+        "AICRM_PROFILE_SEGMENT_TEMPLATE_STAGING_DATABASE_URL",
+        "AICRM_PROFILE_SEGMENT_TEMPLATE_REPO_BACKEND",
+        "ALLOWED_DB_MARKERS",
+        "FORBIDDEN_DB_MARKERS",
+        "--execute-writes",
+        "--output-json",
+        "--output-md",
+        "dry_run = not execute_writes",
+    ]
+    for marker in required_markers:
         if marker not in source:
-            blockers.append(f"harness missing marker: {marker}")
+            blockers.append(f"runner missing marker: {marker}")
     forbidden_fallbacks = [
         'os.environ.get("DATABASE_URL"',
         "os.getenv(\"DATABASE_URL\"",
         "get_settings(",
-        "AICRM_PROFILE_SEGMENT_TEMPLATE_DATABASE_URL",
-        "PROFILE_SEGMENT_TEMPLATE_DATABASE_URL",
     ]
     for marker in forbidden_fallbacks:
         if marker in source:
-            blockers.append(f"harness must not use production DB fallback marker: {marker}")
+            blockers.append(f"runner must not use production DB fallback: {marker}")
     lowered = source.lower()
-    for pattern in FORBIDDEN_IMPORT_PATTERNS:
+    for pattern in FORBIDDEN_RUNNER_PATTERNS:
         if re.search(pattern, lowered):
-            blockers.append(f"harness includes forbidden external/runtime marker: {pattern}")
+            blockers.append(f"runner includes forbidden import/call marker: {pattern}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
@@ -330,7 +374,7 @@ def check_change_scope() -> dict[str, Any]:
     protected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES and _is_protected(path))
     blockers: list[str] = []
     if unexpected:
-        blockers.append(f"unexpected changed files outside Phase 4K local parity harness scope: {unexpected}")
+        blockers.append(f"unexpected changed files outside Phase 4M staging smoke package scope: {unexpected}")
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
     return {"ok": not blockers, "blockers": blockers, "warnings": warnings, "changed_files": sorted(changed)}
@@ -339,32 +383,34 @@ def check_change_scope() -> dict[str, Any]:
 def check_doc_claims() -> dict[str, Any]:
     text = _read(DOC).lower()
     blockers: list[str] = []
-    forbidden_patterns = [
-        r"production data used",
-        r"production repository enabled",
-        r"route switch authorized",
-        r"fallback removal authorized",
-        r"smoke executed",
-        r"production approved",
-        r"canary approved",
-        r"delete_ready\s+true",
+    forbidden_phrases = [
+        "staging smoke executed",
+        "production dry-run authorized",
+        "production repository enabled",
+        "route switch authorized",
+        "fallback removal authorized",
+        "production approved",
+        "canary approved",
+        "delete_ready true",
     ]
-    for pattern in forbidden_patterns:
-        if re.search(pattern, text):
-            blockers.append(f"doc appears to claim forbidden state: {pattern}")
+    for phrase in forbidden_phrases:
+        if phrase in text:
+            blockers.append(f"doc appears to claim forbidden state: {phrase}")
     return {"ok": not blockers, "blockers": blockers, "warnings": []}
 
 
 def build_report() -> dict[str, Any]:
     data = load_yaml()
     checks = {
-        "required_files": check_required_files(),
+        "required_docs": check_required_docs(),
         "top_level": check_top_level(data),
-        "required_env_and_safety": check_required_env_and_safety(data),
-        "harness_matrix": check_harness_matrix(data),
+        "runner_config": check_runner_config(data),
+        "db_url_safety": check_db_url_safety(data),
+        "safe_namespace": check_safe_namespace(data),
+        "smoke_matrix": check_smoke_matrix(data),
         "side_effect_safety": check_side_effect_safety(data),
-        "phase4l_recommendation": check_phase4l_recommendation(data),
-        "harness_static": check_harness_static(),
+        "phase4n_recommendation": check_phase4n_recommendation(data),
+        "runner_source": check_runner_source(),
         "change_scope": check_change_scope(),
         "doc_claims": check_doc_claims(),
     }
@@ -389,7 +435,7 @@ def _write_json(report: dict[str, Any], path: str) -> None:
 
 def _write_md(report: dict[str, Any], path: str) -> None:
     lines = [
-        "# Phase 4K Profile Segment Template Local Parity Harness Check",
+        "# Phase 4M Profile Segment Template Staging Smoke Package Check",
         "",
         f"- overall: {report['overall']}",
         "",
@@ -405,7 +451,7 @@ def _write_md(report: dict[str, Any], path: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Phase 4K profile segment template local test DB parity harness.")
+    parser = argparse.ArgumentParser(description="Check Phase 4M profile segment template staging smoke package.")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
     args = parser.parse_args(argv)
