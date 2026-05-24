@@ -1,0 +1,124 @@
+version: 1
+status: phase_4a_planning_only_no_runtime_change
+phase_4a:
+  implementation_authorized: false
+  production_cutover_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  db_schema_change_authorized: false
+  real_external_call_authorized: false
+forbidden_first_batch:
+  - payment
+  - oauth
+  - wecom_external_call
+  - timer
+  - automation_execution
+  - media_upload
+  - public_submit_external_push
+  - openclaw_mcp_real_external_call
+candidate_rules:
+  bounded_internal_write_only: true
+  no_real_external_side_effect: true
+  fallback_retained: true
+  rollback_required: true
+  idempotency_required: true
+  audit_or_operator_identity_required: true
+  checker_required: true
+  production_smoke_required: true
+  fixture_success_forbidden: true
+candidates:
+  - id: phase4a_questionnaire_admin_draft
+    route_family: /api/admin/questionnaires* narrowed to admin draft create/update only
+    capability_owner: aicrm_next.questionnaire
+    replacement_phase: phase_4_internal_write
+    replacement_category: internal_write
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    decision: evaluate_later
+    why_candidate: Backlog LRB-022 is phase_4_internal_write/internal_write; a draft-only admin slice could be bounded if public and external paths stay excluded.
+    risks: The family is adjacent to enable/delete/export, public submit, OAuth, diagnostics write, and external push, so it needs tighter slicing before implementation.
+    excluded_side_effects:
+      - public_submit_external_push
+      - oauth
+      - diagnostics_write
+      - enable_delete_export
+      - payment
+      - wecom_external_call
+      - timer
+      - automation_execution
+      - media_upload
+      - openclaw_mcp_real_external_call
+    required_idempotency: Draft create idempotency key or duplicate-title protection, plus update version checks.
+    required_audit_operator_identity: Admin operator identity required for every draft create/update command.
+    required_validation: Preserve validation errors for missing title, invalid schema, invalid visibility, duplicate draft, and stale update.
+    required_rollback: Draft restore or compensating update path must be documented and smoke-tested before implementation.
+    fallback_required_until: Next draft write parity, checker, smoke, rollback, and owner approval are complete.
+    required_checker: Phase 4B questionnaire draft checker blocks public submit/OAuth/external push and verifies idempotency/audit guards.
+    required_smoke: Admin draft create/update smoke in safe environment plus production-safe fallback/degraded smoke.
+    business_continuity_requirement: Current questionnaire admin and public questionnaire daily paths must keep working; fallback remains retained.
+  - id: phase4a_automation_profile_segment_templates
+    route_family: /api/admin/automation-conversion/profile-segment-templates*
+    capability_owner: aicrm_next.automation_engine
+    replacement_phase: phase_4_internal_write
+    replacement_category: internal_write
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    decision: recommended
+    why_candidate: Backlog LRB-037 is phase_4_internal_write/internal_write and can be narrowed to internal metadata CRUD away from execution, send, timer, and external provider calls.
+    risks: The route is daily-business-sensitive and currently legacy-forwarded, so Phase 4B must keep fallback, route owner checks, and production_compat unchanged.
+    excluded_side_effects:
+      - run_due
+      - workflow_execution
+      - outbound_send
+      - task_dispatch
+      - agent_orchestration
+      - wecom_external_call
+      - openclaw_mcp_real_external_call
+      - payment
+      - oauth
+      - timer
+      - media_upload
+    required_idempotency: Stable template identifier handling, duplicate name protection, and update version or last-modified checks.
+    required_audit_operator_identity: Admin operator identity required for create, update, and delete commands.
+    required_validation: Preserve validation errors for missing name, invalid segment criteria, invalid template payload, duplicate template, and stale update.
+    required_rollback: Template restore or compensating update/delete path must be documented and smoke-tested before fallback narrowing.
+    fallback_required_until: Next internal metadata CRUD parity, checker, smoke, rollback, and owner approval are complete.
+    required_checker: Phase 4B profile-segment-template checker blocks execution/send/timer/external-call changes and verifies idempotency/audit guards.
+    required_smoke: Admin template CRUD smoke in a safe environment plus production-safe fallback/degraded smoke without real external calls.
+    business_continuity_requirement: Current automation workspace daily use must not be interrupted; legacy fallback and production_compat remain retained.
+  - id: phase4a_automation_action_task_metadata
+    route_family: /api/admin/automation-conversion/action-templates* and /api/admin/automation-conversion/task-groups* narrowed to internal metadata CRUD only
+    capability_owner: aicrm_next.automation_engine
+    replacement_phase: phase_4_internal_write
+    replacement_category: internal_write
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    decision: evaluate_later
+    why_candidate: Backlog LRB-043 and LRB-044 are phase_4_internal_write/internal_write and may be bounded as metadata CRUD if execution and dispatch are excluded.
+    risks: Action templates and task groups are closer to workflow behavior and task dispatch, so they need stronger proof that no execution/send path is included.
+    excluded_side_effects:
+      - workflow_execution
+      - task_dispatch
+      - outbound_send
+      - run_due
+      - agent_orchestration
+      - wecom_external_call
+      - openclaw_mcp_real_external_call
+      - payment
+      - oauth
+      - timer
+      - media_upload
+    required_idempotency: Duplicate name protection, stable metadata IDs, and update version checks for both route families.
+    required_audit_operator_identity: Admin operator identity required for every create, update, and delete command.
+    required_validation: Preserve validation errors for missing action/task group name, invalid metadata payload, duplicate entry, and stale update.
+    required_rollback: Metadata restore or compensating update/delete path must be documented before implementation.
+    fallback_required_until: Next metadata CRUD parity, checker, smoke, rollback, and owner approval are complete.
+    required_checker: Phase 4B metadata checker proves execution, dispatch, send, timer, and external-call paths remain excluded.
+    required_smoke: Admin metadata CRUD smoke in a safe environment plus production-safe fallback/degraded smoke without real external calls.
+    business_continuity_requirement: Current automation workspace daily use and execution safe-mode must not be interrupted; fallback remains retained.
+recommended_phase_4b:
+  candidate_id: phase4a_automation_profile_segment_templates
+  route_family: /api/admin/automation-conversion/profile-segment-templates*
+  approval_required: true
+  implementation_pr_required: true
+  notes: Recommended only as a Phase 4B planning/implementation target after explicit owner approval; this Phase 4A PR does not authorize implementation.
