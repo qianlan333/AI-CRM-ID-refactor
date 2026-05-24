@@ -2124,6 +2124,54 @@ ON automation_operation_templates (template_source, status, updated_at DESC, id 
 CREATE INDEX IF NOT EXISTS idx_automation_operation_templates_category
 ON automation_operation_templates (category, status, updated_at DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_operation_template_idempotency (
+    id BIGSERIAL PRIMARY KEY,
+    route_family TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    resource_type TEXT NOT NULL DEFAULT 'action_template',
+    resource_id BIGINT,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_action_template_idempotency_key
+        UNIQUE (route_family, operation, operator, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_template_idempotency_resource
+ON automation_operation_template_idempotency (resource_type, resource_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_action_template_idempotency_status
+ON automation_operation_template_idempotency (status, updated_at);
+
+CREATE TABLE IF NOT EXISTS automation_operation_template_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    route_family TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    resource_type TEXT NOT NULL DEFAULT 'action_template',
+    resource_id BIGINT,
+    before_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    validation_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rollback_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    side_effect_safety JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_template_audit_resource
+ON automation_operation_template_audit_log (resource_type, resource_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_action_template_audit_operator
+ON automation_operation_template_audit_log (operator, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_action_template_audit_operation
+ON automation_operation_template_audit_log (operation, created_at);
+
 CREATE TABLE IF NOT EXISTS automation_workflow_audience (
     id BIGSERIAL PRIMARY KEY,
     workflow_id BIGINT NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
