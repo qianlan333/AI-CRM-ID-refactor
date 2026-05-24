@@ -1,0 +1,90 @@
+version: 1
+status: phase_4q_production_dry_run_approval_only_no_execution
+production_dry_run_execution_authorized: false
+production_data_connection_authorized: false
+production_repository_enablement_authorized: false
+production_route_ownership_switch_authorized: false
+fallback_removal_authorized: false
+production_compat_change_authorized: false
+production_write_canary_authorized: false
+real_external_call_authorized: false
+delete_ready: false
+
+approval:
+  automation_engine_owner: pending
+  integration_gateway_owner: pending
+  db_config_owner: pending
+  business_owner: pending
+  rollback_owner: pending
+  dry_run_operator: pending
+  release_config_reviewer: pending
+  security_data_reviewer: pending
+
+allowed_future_levels:
+  level_1_read_only_parity_can_be_requested: true
+  level_2_validation_shadow_can_be_requested: true
+  level_3_safe_namespace_write_dry_run_can_be_requested: false
+  level_4_write_canary_can_be_requested: false
+
+environment_confirmation:
+  production_config_review_required: true
+  secret_redaction_required: true
+  pii_redaction_required: true
+  route_owner_must_remain_legacy_fallback: true
+  production_compat_must_remain_unchanged: true
+  fallback_validation_required: true
+  sql_backend_must_not_be_default: true
+  dry_run_flag_must_be_temporary_and_scoped: true
+
+execution_plan:
+  manual_execution_required: true
+  run_in_ci_by_default: false
+  read_only_first_required: true
+  writes_allowed: false
+  evidence_required: true
+
+stop_conditions:
+  - owner_approval_missing
+  - production_config_review_incomplete
+  - route_owner_changed
+  - production_compat_changed
+  - fallback_validation_failed
+  - external_call_detected
+  - write_attempted_in_read_only_dry_run
+  - secret_redaction_failed
+  - pii_redaction_failed
+  - side_effect_safety_failed
+  - unexpected_production_data_mutation
+
+rollback_abort_plan:
+  dry_run_flag_disable_required: true
+  production_compat_fallback_validation_required: true
+  route_owner_verification_required: true
+  evidence_preservation_required: true
+  owner_notification_required: true
+  incident_review_required_if_write_detected: true
+
+evidence_package:
+  required:
+    - runner_json_report
+    - runner_markdown_report
+    - approval_snapshot
+    - config_summary_without_secrets
+    - route_owner_unchanged_evidence
+    - production_compat_retained_evidence
+    - fallback_validation
+    - read_parity_summary
+    - validation_shadow_summary_if_applicable
+    - skipped_write_blocked_summary
+    - side_effect_safety_summary
+    - redaction_summary
+    - operator_timestamp
+    - owner_signoff
+
+phase_4r_recommendation:
+  recommended_next_step: production_read_only_dry_run_runner_implementation
+  production_dry_run_execution_allowed_without_owner_approval: false
+  production_route_switch_allowed: false
+  production_write_canary_allowed: false
+  fallback_removal_allowed: false
+  notes: Phase 4R may implement a production read-only dry-run runner, but it must not execute production dry-run or switch route ownership.
