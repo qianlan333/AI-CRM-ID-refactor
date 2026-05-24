@@ -52,11 +52,7 @@ def test_authorizations_false() -> None:
 def test_phase_execution_state_advances_to_phase_4bb() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.TASKS
-    assert state["last_merged_pr"] == "#657"
-    assert state["last_attempted_action"] == "phase_4ba_tasks_metadata_planning"
-    assert state["recommended_next_pr"] == "phase_4bb_tasks_schema_route_surface_confirmation"
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bb_tasks_schema_route_surface_confirmation"]
     assert "phase_4ba_tasks_metadata_planning_completed" in state["completed_steps"]
 
 
@@ -65,7 +61,8 @@ def test_tasks_readiness_is_planning_only_without_runtime_readiness() -> None:
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
-    assert readiness["schema_route_surface_confirmed"] is False
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["run_due_excluded"] is True
     assert readiness["task_execution_excluded"] is True
     assert readiness["workflow_execution_excluded"] is True

@@ -15,56 +15,60 @@ if str(ROOT) not in sys.path:
 
 from tools.check_phase4aq_task_groups_fixture_native_implementation_owner_decision import load_yaml
 
-DOC = ROOT / "docs/development/phase_4ba_tasks_metadata_plan.md"
-PLAN_YAML = ROOT / "docs/development/phase_4ba_tasks_metadata_plan.yaml"
+DOC = ROOT / "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.md"
+PLAN_YAML = ROOT / "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.yaml"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 BACKLOG = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 
-TASKS = "/api/admin/automation-conversion/tasks*"
-REQUIRED_EXCLUDED_ROUTES = {
-    "/api/admin/automation-conversion/tasks/run-due",
-    "/api/admin/automation-conversion/executions*",
-    "/api/admin/automation-conversion/workflows*",
-    "/api/admin/automation-conversion/workflow-nodes*",
-    "/api/admin/automation-conversion/workflow-node-transitions*",
-    "/api/admin/automation-conversion/tasks/{task_id}",
+ROUTE = "/api/admin/automation-conversion/tasks*"
+MAIN_TABLE = "automation_operation_task"
+REQUIRED_LEGACY_ROUTES = {
+    ("GET", "/api/admin/automation-conversion/tasks"),
+    ("POST", "/api/admin/automation-conversion/tasks"),
+    ("GET", "/api/admin/automation-conversion/tasks/<task_id>"),
+    ("PUT", "/api/admin/automation-conversion/tasks/<task_id>"),
+    ("POST", "/api/admin/automation-conversion/tasks/<task_id>/copy"),
+    ("POST", "/api/admin/automation-conversion/tasks/<task_id>/activate"),
+    ("POST", "/api/admin/automation-conversion/tasks/<task_id>/pause"),
+    ("DELETE", "/api/admin/automation-conversion/tasks/<task_id>"),
+    ("POST", "/api/admin/automation-conversion/tasks/<task_id>/preview-audience"),
+    ("POST", "/api/admin/automation-conversion/tasks/run-due"),
 }
-REQUIRED_EXCLUDED_BEHAVIORS = {
-    "run_due_execution",
-    "task_execution",
-    "workflow_execution",
-    "timer_execution",
-    "outbound_send",
-    "real_external_call",
-    "production_write",
-    "production_route_owner_switch",
-    "fallback_removal",
-}
-REQUIRED_METADATA_FIELDS = {
+REQUIRED_COLUMNS = {
     "id",
-    "task_code",
+    "program_id",
+    "group_id",
     "task_name",
-    "task_group_id",
-    "workflow_id",
-    "task_type",
+    "description",
     "status",
-    "trigger_mode",
-    "schedule_policy",
-    "priority",
-    "owner_role",
+    "trigger_type",
+    "send_time",
+    "timezone",
+    "target_audience_code",
+    "target_stage_code",
+    "audience_day_offset",
+    "behavior_filter",
+    "content_mode",
+    "profile_segment_template_id",
+    "unified_content_json",
+    "segment_contents_json",
+    "agent_config_json",
+    "created_by",
+    "updated_by",
     "created_at",
     "updated_at",
+    "published_at",
 }
-REQUIRED_CONTRACT_TRUE = {
-    "list_contract_planning_ready",
-    "create_contract_planning_ready",
-    "idempotency_required",
-    "audit_required",
-    "rollback_required",
-    "dangerous_field_rejection_required",
-    "run_due_excluded",
-    "execution_side_effects_excluded",
+REQUIRED_INDEXES = {
+    "idx_automation_operation_task_program",
+    "idx_automation_operation_task_group",
+}
+REQUIRED_RELATED_TABLES = {
+    "automation_operation_task_group",
+    "automation_operation_task_execution",
+    "automation_operation_task_execution_item",
+    "automation_profile_segment_template",
 }
 AUTH_FALSE_FIELDS = {
     "runtime_implementation_authorized",
@@ -84,23 +88,37 @@ AUTH_FALSE_FIELDS = {
     "canary_approval_authorized",
     "delete_ready",
 }
+EXCLUDED_TRUE_FIELDS = {
+    "task_detail",
+    "task_update",
+    "task_copy",
+    "task_activate_pause",
+    "task_delete_archive",
+    "preview_audience",
+    "run_due",
+    "task_execution",
+    "workflow_execution",
+    "timer_execution",
+    "outbound_send",
+    "real_external_call",
+    "production_write",
+    "production_route_switch",
+    "fallback_removal",
+    "production_compat_change",
+}
 ALLOWED_CHANGED_FILES = {
-    "docs/development/phase_4ba_tasks_metadata_plan.md",
-    "docs/development/phase_4ba_tasks_metadata_plan.yaml",
     "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.md",
     "docs/development/phase_4bb_tasks_schema_route_surface_confirmation.yaml",
-    "docs/development/phase_4az_next_internal_write_candidate_selection.md",
-    "docs/development/phase_4az_next_internal_write_candidate_selection.yaml",
+    "docs/development/phase_4ba_tasks_metadata_plan.md",
+    "docs/development/phase_4ba_tasks_metadata_plan.yaml",
     "docs/development/phase_execution_state.yaml",
-    "tools/check_phase4ba_tasks_metadata_plan.py",
     "tools/check_phase4bb_tasks_schema_route_surface_confirmation.py",
-    "tools/check_phase4az_next_internal_write_candidate_selection.py",
+    "tools/check_phase4ba_tasks_metadata_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
-    "tests/test_phase4ba_tasks_metadata_plan.py",
     "tests/test_phase4bb_tasks_schema_route_surface_confirmation.py",
-    "tests/test_phase4az_next_internal_write_candidate_selection.py",
+    "tests/test_phase4ba_tasks_metadata_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -153,11 +171,11 @@ def build_report() -> dict[str, Any]:
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
 
-    if data.get("status") != "phase_4ba_tasks_metadata_planning_no_runtime_change":
-        blockers.append("status must be Phase 4BA tasks metadata planning no runtime change")
-    if data.get("route_family") != TASKS:
+    if data.get("status") != "phase_4bb_tasks_schema_route_surface_confirmation_no_runtime_change":
+        blockers.append("status must be Phase 4BB tasks schema route surface confirmation no runtime change")
+    if data.get("route_family") != ROUTE:
         blockers.append("route_family must be tasks wildcard")
-    if TASKS not in manifest_text or TASKS not in backlog_text:
+    if ROUTE not in manifest_text or ROUTE not in backlog_text:
         blockers.append("tasks route must exist in manifest and backlog")
     if data.get("current_runtime_owner") != "production_compat" or data.get("production_behavior") != "legacy_forward":
         blockers.append("production owner must remain production_compat legacy_forward")
@@ -167,48 +185,83 @@ def build_report() -> dict[str, Any]:
         blockers.append("fixture_allowed_in_production must be false")
 
     previous = data.get("previous_phase") if isinstance(data.get("previous_phase"), dict) else {}
-    if previous.get("phase") != "phase_4az_next_internal_write_candidate_selection" or previous.get("merged_pr") != "#657":
-        blockers.append("previous_phase must record Phase 4AZ merged as #657")
+    if previous.get("phase") != "phase_4ba_tasks_metadata_planning" or previous.get("merged_pr") != "#658":
+        blockers.append("previous_phase must record Phase 4BA merged as #658")
     if previous.get("completed") is not True:
         blockers.append("previous_phase.completed must be true")
 
-    scope = data.get("planning_scope") if isinstance(data.get("planning_scope"), dict) else {}
-    if scope.get("selected_subset") != "tasks_metadata_only":
-        blockers.append("planning_scope.selected_subset must be tasks_metadata_only")
-    if set(scope.get("allowed_methods_for_future_contract_planning") or []) != {"GET", "POST"}:
-        blockers.append("future contract planning methods must be GET/POST only")
-    if not REQUIRED_EXCLUDED_ROUTES <= set(scope.get("excluded_routes") or []):
-        blockers.append("planning_scope.excluded_routes incomplete")
-    if not REQUIRED_EXCLUDED_BEHAVIORS <= set(scope.get("excluded_behaviors") or []):
-        blockers.append("planning_scope.excluded_behaviors incomplete")
+    surface = data.get("confirmed_route_surface") if isinstance(data.get("confirmed_route_surface"), dict) else {}
+    patterns = set(surface.get("production_compat_patterns") or [])
+    if "/api/admin/automation-conversion/tasks" not in patterns:
+        blockers.append("production_compat tasks base pattern missing")
+    if "/api/admin/automation-conversion/tasks/wildcard_path" not in patterns:
+        blockers.append("production_compat tasks wildcard pattern missing")
+    routes = {
+        (str(item.get("method")), str(item.get("path")))
+        for item in surface.get("legacy_registered_routes") or []
+        if isinstance(item, dict)
+    }
+    if routes != REQUIRED_LEGACY_ROUTES:
+        blockers.append("legacy registered route surface must include base, detail, actions, preview, and run-due")
 
-    metadata = data.get("candidate_metadata_model") if isinstance(data.get("candidate_metadata_model"), dict) else {}
-    if not REQUIRED_METADATA_FIELDS <= set(metadata.get("required_fields") or []):
-        blockers.append("candidate_metadata_model.required_fields incomplete")
+    schema = data.get("confirmed_schema") if isinstance(data.get("confirmed_schema"), dict) else {}
+    if schema.get("main_table") != MAIN_TABLE:
+        blockers.append("confirmed_schema.main_table must be automation_operation_task")
+    if not REQUIRED_COLUMNS <= set(schema.get("columns") or []):
+        blockers.append("confirmed_schema.columns incomplete")
+    if not REQUIRED_INDEXES <= set(schema.get("indexes") or []):
+        blockers.append("confirmed_schema.indexes incomplete")
+    if not REQUIRED_RELATED_TABLES <= set(schema.get("related_tables") or []):
+        blockers.append("confirmed_schema.related_tables incomplete")
+    relationship = schema.get("relationship_behavior") if isinstance(schema.get("relationship_behavior"), dict) else {}
+    if relationship.get("execution_tables_excluded_from_metadata_subset") is not True:
+        blockers.append("execution tables must be confirmed as excluded from metadata subset")
 
-    contract = data.get("contract_planning") if isinstance(data.get("contract_planning"), dict) else {}
-    for field in sorted(REQUIRED_CONTRACT_TRUE):
-        if contract.get(field) is not True:
-            blockers.append(f"contract_planning.{field} must be true")
+    contract = data.get("confirmed_contract") if isinstance(data.get("confirmed_contract"), dict) else {}
+    if contract.get("list", {}).get("archived_tasks_excluded_by_default") is not True:
+        blockers.append("list contract must exclude archived tasks by default")
+    if contract.get("create", {}).get("success_status") != 201:
+        blockers.append("create.success_status must be 201")
+    if "task_name" not in set(contract.get("create", {}).get("required_payload") or []):
+        blockers.append("create.required_payload must include task_name")
+    if set(data.get("recommended_first_native_subset") or []) != {"list_operation_tasks", "create_operation_task_metadata_only"}:
+        blockers.append("recommended_first_native_subset must be list/create metadata only")
+    if not {"run_due_operation_tasks", "execution_tables", "outbound_send", "preview_operation_task_audience"} <= set(data.get("deferred_to_separate_pr") or []):
+        blockers.append("deferred_to_separate_pr incomplete")
 
     authorizations = data.get("authorizations") if isinstance(data.get("authorizations"), dict) else {}
     for field in sorted(AUTH_FALSE_FIELDS):
         if authorizations.get(field) is not False:
             blockers.append(f"authorizations.{field} must be false")
 
+    excluded = data.get("excluded_scope") if isinstance(data.get("excluded_scope"), dict) else {}
+    for field in sorted(EXCLUDED_TRUE_FIELDS):
+        if excluded.get(field) is not True:
+            blockers.append(f"excluded_scope.{field} must be true")
+
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != TASKS:
+    if state.get("active_candidate") != ROUTE:
         blockers.append("phase_execution_state.active_candidate must remain tasks")
+    if state.get("last_merged_pr") != "#658":
+        blockers.append("phase_execution_state.last_merged_pr must record #658")
+    if state.get("last_attempted_action") != "phase_4bb_tasks_schema_route_surface_confirmation":
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BB")
+    if state.get("recommended_next_pr") != "phase_4bc_tasks_fixture_native_contract_planning":
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BC fixture/native contract planning")
+    if set(state.get("next_allowed_actions") or []) != {"phase_4bc_tasks_fixture_native_contract_planning"}:
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BC fixture/native contract planning")
     if state.get("owner_approval_required") is not False:
-        blockers.append("phase_execution_state.owner_approval_required must remain false for planning")
-    if state_update.get("phase_4ba_completed_step") not in set(state.get("completed_steps") or []):
-        blockers.append("phase_execution_state.completed_steps must include Phase 4BA completed step")
+        blockers.append("phase_execution_state.owner_approval_required must remain false")
+    if state_update.get("phase_4bb_completed_step") not in set(state.get("completed_steps") or []):
+        blockers.append("phase_execution_state.completed_steps must include Phase 4BB completed step")
 
     readiness = state.get("tasks_readiness") if isinstance(state.get("tasks_readiness"), dict) else {}
     for field in (
         "metadata_planning_ready",
         "metadata_planning_completed",
         "schema_route_surface_confirmation_ready",
+        "schema_route_surface_confirmed",
+        "fixture_native_contract_planning_ready",
         "run_due_excluded",
         "task_execution_excluded",
         "workflow_execution_excluded",
@@ -230,12 +283,12 @@ def build_report() -> dict[str, Any]:
         if readiness.get(field) is not False:
             blockers.append(f"tasks_readiness.{field} must be false")
 
-    rec = data.get("phase_4bb_recommendation") if isinstance(data.get("phase_4bb_recommendation"), dict) else {}
-    if rec.get("recommended_next_step") != "tasks_schema_route_surface_confirmation":
-        blockers.append("phase_4bb_recommendation must recommend tasks schema route surface confirmation")
+    rec = data.get("phase_4bc_recommendation") if isinstance(data.get("phase_4bc_recommendation"), dict) else {}
+    if rec.get("recommended_next_step") != "tasks_fixture_native_contract_planning":
+        blockers.append("phase_4bc_recommendation must recommend tasks fixture/native contract planning")
     for field in ("production_write_allowed", "production_route_switch_allowed", "fallback_removal_allowed", "production_write_canary_allowed"):
         if rec.get(field) is not False:
-            blockers.append(f"phase_4bb_recommendation.{field} must be false")
+            blockers.append(f"phase_4bc_recommendation.{field} must be false")
 
     doc_text = DOC.read_text(encoding="utf-8").lower()
     for phrase in sorted(FORBIDDEN_DOC_CLAIMS):
@@ -246,7 +299,7 @@ def build_report() -> dict[str, Any]:
     warnings.extend(git_warnings)
     unexpected = sorted(path for path in changed if path not in ALLOWED_CHANGED_FILES)
     if unexpected:
-        blockers.append(f"unexpected changed files for Phase 4BA package: {unexpected}")
+        blockers.append(f"unexpected changed files for Phase 4BB package: {unexpected}")
     protected = sorted(path for path in changed if path in PROTECTED_EXACT or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES))
     if protected:
         blockers.append(f"runtime/protected files changed: {protected}")
@@ -259,7 +312,7 @@ def _write_outputs(report: dict[str, Any], output_json: str | None, output_md: s
         Path(output_json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if output_md:
         lines = [
-            "# Phase 4BA Tasks Metadata Planning Check",
+            "# Phase 4BB Tasks Schema Route Surface Check",
             "",
             f"- overall: {report['overall']}",
             f"- ok: {str(report['ok']).lower()}",
