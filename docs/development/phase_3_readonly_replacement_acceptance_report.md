@@ -86,3 +86,15 @@ changes.
   timer, or automation execution risk. They are daily business-sensitive route
   families, so fallback must remain until a later PR proves parity, checker,
   smoke, rollback, and owner approval for each specific family.
+
+## Phase 3F Shell/Navigation Spike
+
+`/admin/customers` is a shell/navigation hardening spike that reuses the
+Phase 3C `ListCustomersQuery` boundary for readonly customer list data loading.
+It does not change the Phase 3A-D acceptance matrix, does not enter Phase 4
+internal write scope, and does not mark the route as `delete_ready`.
+
+The page fallback remains retained. The `frontend_compat` page layer only parses
+request parameters, builds shell context, and renders the customer list
+template; customer data loading and production fallback stay in the
+`customer_read_model` application/use-case layer.
