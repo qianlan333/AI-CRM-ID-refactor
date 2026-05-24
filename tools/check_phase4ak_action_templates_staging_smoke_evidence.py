@@ -78,6 +78,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ak_action_templates_staging_smoke_evidence.yaml",
     "tools/check_phase4ak_action_templates_staging_smoke_evidence.py",
     "tests/test_phase4ak_action_templates_staging_smoke_evidence.py",
+    "tools/run_phase4al_action_templates_staging_execution_preflight.py",
+    "docs/development/phase_4al_action_templates_staging_execution_ready_gate.md",
+    "docs/development/phase_4al_action_templates_staging_execution_ready_gate.yaml",
+    "tools/check_phase4al_action_templates_staging_execution_ready_gate.py",
+    "tests/test_phase4al_action_templates_staging_execution_ready_gate.py",
     "tools/check_phase4aj_action_templates_staging_smoke_package.py",
     "tools/check_phase4ai_action_templates_test_db_parity.py",
 }
