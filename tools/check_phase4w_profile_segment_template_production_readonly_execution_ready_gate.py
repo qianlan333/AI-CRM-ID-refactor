@@ -84,6 +84,10 @@ ALLOWED_CHANGED_FILES = {
     "tools/check_phase4v_profile_segment_template_production_readonly_execution_blocker_and_readiness.py",
     "tools/check_phase4u_profile_segment_template_production_readonly_dry_run_evidence_and_review.py",
     "tools/check_phase4t_profile_segment_template_readonly_dry_run_review.py",
+    "docs/development/phase_4x_profile_segment_template_production_readonly_final_gate.md",
+    "docs/development/phase_4x_profile_segment_template_production_readonly_final_gate.yaml",
+    "tools/check_phase4x_profile_segment_template_production_readonly_final_gate.py",
+    "tests/test_phase4x_profile_segment_template_production_readonly_final_gate.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",
