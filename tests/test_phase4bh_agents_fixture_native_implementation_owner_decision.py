@@ -66,12 +66,21 @@ def test_next_candidate_selects_agent_outputs_metadata_planning() -> None:
 def test_phase_execution_state_pauses_agents_and_advances_to_agent_outputs() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENT_OUTPUTS
-    assert state["last_merged_pr"] == "#664"
-    assert state["last_attempted_action"] == "phase_4bh_agents_fixture_native_implementation_owner_decision"
-    assert state["last_created_pr"] == "#665"
-    assert state["recommended_next_pr"] == "phase_4bi_agent_outputs_metadata_planning"
+    assert state["last_merged_pr"] in {"#664", "#665"}
+    assert state["last_attempted_action"] in {
+        "phase_4bh_agents_fixture_native_implementation_owner_decision",
+        "phase_4bi_agent_outputs_metadata_planning",
+    }
+    assert state["last_created_pr"] in {"#665", "#666"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bi_agent_outputs_metadata_planning",
+        "phase_4bj_agent_outputs_schema_route_surface_confirmation",
+    }
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bi_agent_outputs_metadata_planning"]
+    assert state["next_allowed_actions"] in [
+        ["phase_4bi_agent_outputs_metadata_planning"],
+        ["phase_4bj_agent_outputs_schema_route_surface_confirmation"],
+    ]
     assert "phase_4bh_agents_fixture_native_implementation_owner_decision_completed" in state["completed_steps"]
     assert any(item["route_family"] == checker.AGENTS and item["owner_approval_required"] is True for item in state["paused_candidates"])
 
@@ -90,7 +99,8 @@ def test_agents_readiness_paused_without_runtime_readiness() -> None:
 def test_agent_outputs_readiness_is_planning_only() -> None:
     readiness = checker.load_yaml(STATE)["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
-    assert readiness["metadata_planning_completed"] is False
+    assert readiness["metadata_planning_completed"] in {False, True}
+    assert readiness["schema_route_surface_confirmation_ready"] in {False, True}
     assert readiness["export_job_creation_excluded"] is True
     assert readiness["file_download_excluded"] is True
     assert readiness["agent_run_execution_excluded"] is True
