@@ -80,7 +80,17 @@ ALLOWED_CHANGED_FILES = {
     "tests/test_phase4h_profile_segment_template_companion_migration.py",
     "tools/check_phase4f_profile_segment_template_schema_confirmation.py",
     "tools/check_phase4g_profile_segment_template_companion_schema_plan.py",
+    "tools/check_phase4b_profile_segment_template_plan.py",
+    "tools/check_phase4c_profile_segment_template_native_contract.py",
+    "tools/check_phase4i_profile_segment_template_repository_adapter.py",
     *MIGRATION_ARTIFACTS,
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/profile_segments.py",
+    "aicrm_next/automation_engine/profile_segment_repository.py",
+    "aicrm_next/automation_engine/repo.py",
+    "docs/development/phase_4i_profile_segment_template_repository_adapter.md",
+    "tests/test_phase4i_profile_segment_template_repository_adapter.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",

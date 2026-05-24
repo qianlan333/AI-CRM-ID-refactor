@@ -15,7 +15,7 @@ from aicrm_next.integration_gateway.automation_adapters import (
 )
 from aicrm_next.integration_gateway.mcp_openclaw_adapters import build_openclaw_legacy_bridge_adapter
 from aicrm_next.shared.errors import ContractError, NotFoundError
-from aicrm_next.shared.repository_provider import blocked_production_payload
+from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 from aicrm_next.shared.runtime import production_data_ready, production_environment
 
 from .domain import execution_record_projection, overview_cards, pool_summary
@@ -32,6 +32,11 @@ from .dto import (
     PushOpenClawContextRequest,
 )
 from .profile_segments import profile_segment_side_effect_safety
+from .profile_segment_repository import (
+    ProfileSegmentTemplateIdempotencyConflict,
+    build_profile_segment_template_repository,
+    profile_segment_template_sqlalchemy_enabled,
+)
 from .repo import AutomationRepository, build_automation_repository
 from .state_machine import apply_transition, normalize_followup_type
 from .workflow import default_workflow_registry
@@ -61,14 +66,16 @@ def _automation_side_effect_safety(**overrides: bool) -> dict[str, bool]:
     return safety
 
 
-def _profile_segment_production_unavailable_payload() -> dict[str, Any]:
+def _profile_segment_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:
     payload = blocked_production_payload(
         capability_owner="aicrm_next.automation_engine",
-        detail="profile segment template production repository is not available in Phase 4C pre-cutover.",
+        detail=detail
+        or "profile segment template production repository is not enabled; legacy production_compat fallback remains the production owner.",
     )
     payload.update(
         {
             "status_code": 503,
+            "error_code": "production_repository_not_enabled",
             "route_owner": "ai_crm_next",
             "side_effect_safety": profile_segment_side_effect_safety(),
         }
@@ -100,10 +107,15 @@ class _ProfileSegmentRepositoryOwner:
 
     def _repo_or_none(self) -> AutomationRepository | None:
         if (production_environment() or production_data_ready()) and self._repo is None:
-            return None
+            if not profile_segment_template_sqlalchemy_enabled():
+                return None
         if self._repo is None:
-            self._repo = build_automation_repository()
+            self._repo = build_profile_segment_template_repository()
         return self._repo
+
+    def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
+        detail = str(exc) if exc else None
+        return _profile_segment_production_unavailable_payload(detail)
 
 
 class GetAutomationRuntimeContractQuery:
@@ -121,7 +133,10 @@ class GetProfileSegmentTemplateCatalogQuery(_ProfileSegmentRepositoryOwner):
         repo = self._repo_or_none()
         if repo is None:
             return _profile_segment_production_unavailable_payload()
-        return _profile_segment_response(repo.profile_segment_template_catalog())
+        try:
+            return _profile_segment_response(repo.profile_segment_template_catalog())
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
 
     __call__ = execute
 
@@ -131,14 +146,19 @@ class ListProfileSegmentTemplatesQuery(_ProfileSegmentRepositoryOwner):
         repo = self._repo_or_none()
         if repo is None:
             return _profile_segment_production_unavailable_payload()
-        rows, total = repo.list_profile_segment_templates(
-            enabled_only=request.enabled_only,
-            program_id=request.program_id,
-            limit=request.limit,
-            offset=request.offset,
-        )
+        try:
+            rows, total = repo.list_profile_segment_templates(
+                enabled_only=request.enabled_only,
+                program_id=request.program_id,
+                limit=request.limit,
+                offset=request.offset,
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        source_status = getattr(repo, "source_status", "fixture_local_contract")
         return _profile_segment_response(
             {
+                "source_status": source_status,
                 "items": rows,
                 "templates": rows,
                 "total": total,
@@ -157,12 +177,16 @@ class GetProfileSegmentTemplateOptionsQuery(_ProfileSegmentRepositoryOwner):
         repo = self._repo_or_none()
         if repo is None:
             return _profile_segment_production_unavailable_payload()
-        rows, total = repo.list_profile_segment_templates(
-            enabled_only=request.enabled_only,
-            program_id=request.program_id,
-            limit=request.limit,
-            offset=request.offset,
-        )
+        try:
+            rows, total = repo.list_profile_segment_templates(
+                enabled_only=request.enabled_only,
+                program_id=request.program_id,
+                limit=request.limit,
+                offset=request.offset,
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        source_status = getattr(repo, "source_status", "fixture_local_contract")
         options = [
             {
                 "id": item["id"],
@@ -175,7 +199,7 @@ class GetProfileSegmentTemplateOptionsQuery(_ProfileSegmentRepositoryOwner):
             }
             for item in rows
         ]
-        return _profile_segment_response({"items": options, "options": options, "total": total, "count": len(options)})
+        return _profile_segment_response({"source_status": source_status, "items": options, "options": options, "total": total, "count": len(options)})
 
     __call__ = execute
 
@@ -185,10 +209,19 @@ class GetProfileSegmentTemplateQuery(_ProfileSegmentRepositoryOwner):
         repo = self._repo_or_none()
         if repo is None:
             return _profile_segment_production_unavailable_payload()
-        template = repo.get_profile_segment_template(template_id)
+        try:
+            template = repo.get_profile_segment_template(template_id)
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
         if not template:
             raise NotFoundError("profile segment template not found")
-        return _profile_segment_response({"template": template, "template_bundle": {"template": template}})
+        return _profile_segment_response(
+            {
+                "source_status": getattr(repo, "source_status", "fixture_local_contract"),
+                "template": template,
+                "template_bundle": {"template": template},
+            }
+        )
 
     __call__ = execute
 
@@ -202,11 +235,23 @@ class CreateProfileSegmentTemplateCommand(_ProfileSegmentRepositoryOwner):
         idempotency_key = str(payload.get("idempotency_key") or "").strip()
         if not idempotency_key:
             raise ContractError("idempotency_key is required")
-        result = repo.create_profile_segment_template(
-            payload,
-            idempotency_key=idempotency_key,
-            operator=str(payload.get("operator") or "system"),
-        )
+        try:
+            result = repo.create_profile_segment_template(
+                payload,
+                idempotency_key=idempotency_key,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except ProfileSegmentTemplateIdempotencyConflict as exc:
+            return {
+                "ok": False,
+                "status_code": 409,
+                "error_code": "idempotency_conflict",
+                "message": str(exc),
+                "route_owner": "ai_crm_next",
+                "side_effect_safety": profile_segment_side_effect_safety(),
+            }
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
         return _profile_segment_response(result, status_code=201)
 
     __call__ = execute
@@ -218,11 +263,14 @@ class UpdateProfileSegmentTemplateCommand(_ProfileSegmentRepositoryOwner):
         if repo is None:
             return _profile_segment_production_unavailable_payload()
         payload = _request_dump(request, exclude_unset=True)
-        result = repo.update_profile_segment_template(
-            int(template_id),
-            payload,
-            operator=str(payload.get("operator") or "system"),
-        )
+        try:
+            result = repo.update_profile_segment_template(
+                int(template_id),
+                payload,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
         return _profile_segment_response(result)
 
     __call__ = execute
