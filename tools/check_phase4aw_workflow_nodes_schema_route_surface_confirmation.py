@@ -100,15 +100,19 @@ EXCLUDED_TRUE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.md",
     "docs/development/phase_4aw_workflow_nodes_schema_route_surface_confirmation.yaml",
+    "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.md",
+    "docs/development/phase_4ax_workflow_nodes_fixture_native_contract_plan.yaml",
     "docs/development/phase_4av_workflow_nodes_metadata_plan.md",
     "docs/development/phase_4av_workflow_nodes_metadata_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
+    "tools/check_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
     "tools/check_phase4av_workflow_nodes_metadata_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4aw_workflow_nodes_schema_route_surface_confirmation.py",
+    "tests/test_phase4ax_workflow_nodes_fixture_native_contract_plan.py",
     "tests/test_phase4av_workflow_nodes_metadata_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -216,12 +220,8 @@ def build_report() -> dict[str, Any]:
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
     if state.get("active_candidate") != ROUTE:
         blockers.append("phase_execution_state.active_candidate must remain workflow-nodes while Phase 4AX advances")
-    if state.get("last_merged_pr") != "#653":
-        blockers.append("phase_execution_state.last_merged_pr must record #653")
     if state_update.get("phase_4aw_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4AW completed step")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4ax_workflow_nodes_fixture_native_contract_planning"}:
-        blockers.append("phase_execution_state.next_allowed_actions must advance to Phase 4AX")
     readiness = state.get("workflow_nodes_readiness") if isinstance(state.get("workflow_nodes_readiness"), dict) else {}
     if readiness.get("schema_route_surface_confirmed") is not True or readiness.get("fixture_native_contract_planning_ready") is not True:
         blockers.append("workflow_nodes_readiness must confirm schema surface and mark fixture planning ready")
