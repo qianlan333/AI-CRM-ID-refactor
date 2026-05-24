@@ -8,13 +8,13 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/action-templates*
+active_candidate: /api/admin/automation-conversion/task-groups*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#641"
-last_attempted_action: phase_4am_owner_decision_package
-last_created_pr: "#644"
-recommended_next_pr: owner_input_required_for_action_templates_or_new_low_risk_candidate
-owner_approval_required: true
+last_merged_pr: "#644"
+last_attempted_action: phase_4an_task_groups_native_contract_planning
+last_created_pr: "#645"
+recommended_next_pr: phase_4ao_task_groups_schema_route_surface_confirmation
+owner_approval_required: false
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -41,11 +41,10 @@ completed_steps:
   - action_templates_staging_execution_readiness_gate_completed
   - action_templates_staging_approval_config_closure_package_created
   - action_templates_staging_owner_decision_package_created
+  - phase_4an_task_groups_native_contract_planning_completed
 
 next_allowed_actions:
-  - phase_4am_approval_config_closure
-  - phase_4am_staging_execution
-  - phase_4am_blocked_evidence_review
+  - phase_4ao_task_groups_schema_route_surface_confirmation
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -68,6 +67,24 @@ action_templates_readiness:
   production_repository_route_enablement_ready: false
   delete_ready: false
   owner_decision_required: true
+  paused: true
+  paused_by_pr: "#644"
+
+paused_candidates:
+  - route_family: /api/admin/automation-conversion/action-templates*
+    status: awaiting_staging_owner_decision
+    paused_by_pr: "#644"
+    owner_approval_required: true
+    resume_condition: staging_approval_config_complete
+
+task_groups_readiness:
+  native_contract_planning_started: true
+  native_contract_planning_completed: true
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_repository_route_enablement_ready: false
+  delete_ready: false
 
 current_blockers:
   - staging_db_config_owner_approval_missing
