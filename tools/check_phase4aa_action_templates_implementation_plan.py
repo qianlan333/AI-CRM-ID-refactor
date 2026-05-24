@@ -82,6 +82,12 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ac_action_templates_companion_schema_plan.yaml",
     "tools/check_phase4ac_action_templates_companion_schema_plan.py",
     "tests/test_phase4ac_action_templates_companion_schema_plan.py",
+    "docs/development/phase_4ad_action_templates_companion_migration.md",
+    "docs/development/phase_4ad_action_templates_companion_migration.yaml",
+    "tools/check_phase4ad_action_templates_companion_migration.py",
+    "tests/test_phase4ad_action_templates_companion_migration.py",
+    "wecom_ability_service/schema_postgres.sql",
+    "wecom_ability_service/db/migrations/postgres_migrations.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/",

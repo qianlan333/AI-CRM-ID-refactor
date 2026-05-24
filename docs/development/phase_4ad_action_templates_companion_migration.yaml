@@ -1,0 +1,150 @@
+version: 1
+status: phase_4ad_action_templates_companion_schema_migration_artifact_no_runtime_change
+
+authorizations:
+  runtime_change_authorized: false
+  production_repository_authorized: false
+  production_route_ownership_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_change_authorized: false
+  real_external_call_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  delete_ready: false
+
+migration_scope:
+  additive_only: true
+  no_existing_table_mutation: true
+  no_backfill: true
+  no_runtime_usage: true
+  deployment_authorized: false
+
+tables:
+  - name: automation_operation_template_idempotency
+    purpose: Retry-safe idempotency storage for future bounded CRM-local action-template metadata create operations.
+    fields:
+      - name: id
+        type: bigserial
+        required: true
+      - name: route_family
+        type: text
+        required: true
+      - name: operation
+        type: text
+        required: true
+      - name: operator
+        type: text
+        required: true
+      - name: idempotency_key
+        type: text
+        required: true
+      - name: request_hash
+        type: text
+        required: true
+      - name: response_snapshot
+        type: jsonb
+        required: true
+      - name: resource_type
+        type: text
+        required: true
+      - name: resource_id
+        type: bigint
+        required: false
+      - name: status
+        type: text
+        required: true
+      - name: created_at
+        type: timestamptz
+        required: true
+      - name: updated_at
+        type: timestamptz
+        required: true
+    unique_constraints:
+      - name: uq_action_template_idempotency_key
+        fields:
+          - route_family
+          - operation
+          - operator
+          - idempotency_key
+    indexes:
+      - name: idx_action_template_idempotency_resource
+        fields:
+          - resource_type
+          - resource_id
+          - created_at
+      - name: idx_action_template_idempotency_status
+        fields:
+          - status
+          - updated_at
+  - name: automation_operation_template_audit_log
+    purpose: Redacted audit and rollback evidence storage for future bounded CRM-local action-template metadata writes.
+    fields:
+      - name: id
+        type: bigserial
+        required: true
+      - name: route_family
+        type: text
+        required: true
+      - name: operation
+        type: text
+        required: true
+      - name: operator
+        type: text
+        required: true
+      - name: resource_type
+        type: text
+        required: true
+      - name: resource_id
+        type: bigint
+        required: false
+      - name: before_snapshot
+        type: jsonb
+        required: true
+      - name: after_snapshot
+        type: jsonb
+        required: true
+      - name: request_payload
+        type: jsonb
+        required: true
+      - name: validation_result
+        type: jsonb
+        required: true
+      - name: rollback_payload
+        type: jsonb
+        required: true
+      - name: side_effect_safety
+        type: jsonb
+        required: true
+      - name: created_at
+        type: timestamptz
+        required: true
+    unique_constraints: []
+    indexes:
+      - name: idx_action_template_audit_resource
+        fields:
+          - resource_type
+          - resource_id
+          - created_at
+      - name: idx_action_template_audit_operator
+        fields:
+          - operator
+          - created_at
+      - name: idx_action_template_audit_operation
+        fields:
+          - operation
+          - created_at
+
+business_continuity:
+  fallback_retained: true
+  production_routes_unchanged: true
+  production_compat_unchanged: true
+  deploy_required_before_effective: true
+  smoke_required_before_use: true
+
+phase_4ae_recommendation:
+  recommended_next_step: action_templates_fixture_native_contract_behind_local_only_repository
+  runtime_implementation_allowed_without_owner_approval: false
+  production_repository_allowed_without_owner_approval: false
+  route_switch_allowed: false
+  fallback_removal_allowed: false
+  notes: Phase 4AE may use this schema shape for fixture/native contract work only; production repository enablement and route ownership remain unauthorized.
