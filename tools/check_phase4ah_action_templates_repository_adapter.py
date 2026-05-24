@@ -62,6 +62,11 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4ai_action_templates_test_db_parity.yaml",
     "tools/check_phase4ai_action_templates_test_db_parity.py",
     "tests/test_phase4ai_action_templates_test_db_parity.py",
+    "tools/run_phase4aj_action_templates_staging_smoke.py",
+    "docs/development/phase_4aj_action_templates_staging_smoke_package.md",
+    "docs/development/phase_4aj_action_templates_staging_smoke_package.yaml",
+    "tools/check_phase4aj_action_templates_staging_smoke_package.py",
+    "tests/test_phase4aj_action_templates_staging_smoke_package.py",
 }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
