@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#693"
+    assert data["last_merged_pr"] == "#694"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -77,6 +77,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4cf_agent_outputs_repository_adapter_parity_completed" in set(data["completed_steps"])
     assert "phase_4cg_agent_runs_repository_adapter_parity_completed" in set(data["completed_steps"])
     assert "phase_4ch_task_groups_staging_readiness_completed" in set(data["completed_steps"])
+    assert "phase_4ci_workflows_staging_readiness_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -250,6 +251,22 @@ def test_workflows_runtime_completed_without_production_readiness() -> None:
     assert readiness["fixture_native_list_create_runtime_completed"] is True
     assert readiness["owner_decision_required"] is False
     assert set(readiness["implemented_runtime_slices"]) == {"workflows_fixture_local_list", "workflows_fixture_local_metadata_create"}
+    assert readiness["repository_adapter_parity_completed"] is True
+    assert readiness["no_database_url_fallback"] is True
+    assert readiness["default_backend_fixture_local"] is True
+    assert readiness["test_db_parity_harness_completed"] is True
+    assert readiness["idempotency_audit_rollback_scaffold_completed"] is True
+    assert readiness["staging_readiness_bundle_completed"] is True
+    assert readiness["staging_readiness_preflight_completed"] is True
+    assert readiness["staging_evidence_gate_completed"] is True
+    assert readiness["staging_blocked_evidence_output_completed"] is True
+    assert readiness["staging_database_url_flag"] == "AICRM_WORKFLOWS_STAGING_DATABASE_URL"
+    assert readiness["staging_backend_flag"] == "AICRM_WORKFLOWS_REPO_BACKEND"
+    assert readiness["staging_approval_flag"] == "AICRM_PHASE4CI_STAGING_SMOKE_APPROVED"
+    assert readiness["staging_write_approval_flag"] == "AICRM_PHASE4CI_STAGING_WRITE_APPROVED"
+    assert readiness["staging_smoke_executed"] is False
+    assert readiness["staging_write_executed"] is False
+    assert readiness["staging_db_connection_attempted_by_default"] is False
     assert readiness["production_guard_blocks_fixture_success"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is False
@@ -261,6 +278,11 @@ def test_workflows_runtime_completed_without_production_readiness() -> None:
     assert readiness["fallback_removal_ready"] is False
     assert readiness["production_repository_route_enablement_ready"] is False
     assert readiness["delete_ready"] is False
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/workflows*"
+        and item["slice"] == "workflows_staging_readiness_preflight"
+        for item in data["staging_readiness_slices"]
+    )
 
 
 def test_workflow_nodes_runtime_completed_without_production_readiness() -> None:
@@ -392,7 +414,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
