@@ -6,7 +6,6 @@ from typing import Any
 from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import blocked_production_payload
-from aicrm_next.shared.runtime import production_data_ready
 
 from . import CAPABILITY_OWNER
 from .domain import (
@@ -54,10 +53,10 @@ def group_ops_side_effect_safety(**overrides: bool) -> dict[str, bool]:
     return safety
 
 
-def _response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
+def _response(payload: dict[str, Any], *, status_code: int = 200, repo: GroupOpsRepository | None = None) -> dict[str, Any]:
     return {
         "ok": True,
-        "source_status": "fixture_local_contract",
+        "source_status": str(getattr(repo, "source_status", "fixture_local_contract")),
         "route_owner": "ai_crm_next",
         "capability_owner": CAPABILITY_OWNER,
         "status_code": status_code,
@@ -82,8 +81,6 @@ def _production_unavailable() -> dict[str, Any]:
 
 
 def _repo_or_block(repo: GroupOpsRepository | None) -> GroupOpsRepository | None:
-    if repo is None and production_data_ready():
-        return None
     return repo or build_group_ops_repository()
 
 
@@ -123,7 +120,7 @@ class ListGroupOpsPlansQuery:
             plan_list_item(plan, groups=repo.list_bound_groups(int(plan["id"])), owner_name=clean_text(plan.get("owner_name")))
             for plan in rows
         ]
-        return _response({"items": items, "total": total})
+        return _response({"items": items, "total": total}, repo=repo)
 
 
 class CreateGroupOpsPlanCommand:
@@ -135,7 +132,7 @@ class CreateGroupOpsPlanCommand:
         if repo is None:
             return _production_unavailable()
         plan = repo.create_plan(request.model_dump())
-        return _response({"item": plan}, status_code=201)
+        return _response({"item": plan}, status_code=201, repo=repo)
 
 
 class GetGroupOpsPlanQuery:
@@ -152,7 +149,8 @@ class GetGroupOpsPlanQuery:
                 "item": plan,
                 "groups_summary": plan_binding_summary(repo, int(plan_id)),
                 "nodes": repo.list_nodes(int(plan_id)),
-            }
+            },
+            repo=repo,
         )
 
 
@@ -166,7 +164,7 @@ class UpdateGroupOpsPlanCommand:
             return _production_unavailable()
         _plan_or_404(repo, plan_id)
         plan = repo.update_plan(int(plan_id), request.model_dump(exclude_none=True))
-        return _response({"item": plan})
+        return _response({"item": plan}, repo=repo)
 
 
 class ListGroupOpsPlanGroupsQuery:
@@ -179,7 +177,7 @@ class ListGroupOpsPlanGroupsQuery:
             return _production_unavailable()
         _plan_or_404(repo, plan_id)
         groups = repo.list_bound_groups(int(plan_id))
-        return _response({"items": groups, "summary": binding_stats(groups), "total": len(groups)})
+        return _response({"items": groups, "summary": binding_stats(groups), "total": len(groups)}, repo=repo)
 
 
 class AddGroupOpsPlanGroupCommand:
@@ -197,7 +195,7 @@ class AddGroupOpsPlanGroupCommand:
         assert_group_owned_by_plan(group=group, plan=plan)
         item = repo.bind_group(int(plan_id), group)
         groups = repo.list_bound_groups(int(plan_id))
-        return _response({"item": item, "summary": binding_stats(groups)}, status_code=201)
+        return _response({"item": item, "summary": binding_stats(groups)}, status_code=201, repo=repo)
 
 
 class RemoveGroupOpsPlanGroupCommand:
@@ -212,7 +210,7 @@ class RemoveGroupOpsPlanGroupCommand:
         removed = repo.remove_group(int(plan_id), chat_id)
         if not removed:
             raise NotFoundError("group binding not found")
-        return _response({"removed": True, "summary": binding_stats(repo.list_bound_groups(int(plan_id)))})
+        return _response({"removed": True, "summary": binding_stats(repo.list_bound_groups(int(plan_id)))}, repo=repo)
 
 
 class ListGroupOpsNodesQuery:
@@ -225,7 +223,7 @@ class ListGroupOpsNodesQuery:
             return _production_unavailable()
         _plan_or_404(repo, plan_id)
         items = repo.list_nodes(int(plan_id))
-        return _response({"items": items, "total": len(items)})
+        return _response({"items": items, "total": len(items)}, repo=repo)
 
 
 class CreateGroupOpsNodeCommand:
@@ -238,7 +236,7 @@ class CreateGroupOpsNodeCommand:
             return _production_unavailable()
         _plan_or_404(repo, plan_id)
         item = repo.create_node(int(plan_id), normalize_node_payload(request.model_dump()))
-        return _response({"item": item}, status_code=201)
+        return _response({"item": item}, status_code=201, repo=repo)
 
 
 class UpdateGroupOpsNodeCommand:
@@ -254,7 +252,7 @@ class UpdateGroupOpsNodeCommand:
         if not existing:
             raise NotFoundError("group ops node not found")
         item = repo.update_node(int(plan_id), int(node_id), normalize_node_payload(request.model_dump(), existing=existing))
-        return _response({"item": item})
+        return _response({"item": item}, repo=repo)
 
 
 class DeleteGroupOpsNodeCommand:
@@ -268,7 +266,7 @@ class DeleteGroupOpsNodeCommand:
         _plan_or_404(repo, plan_id)
         if not repo.delete_node(int(plan_id), int(node_id)):
             raise NotFoundError("group ops node not found")
-        return _response({"deleted": True})
+        return _response({"deleted": True}, repo=repo)
 
 
 class ListGroupOpsGroupsQuery:
@@ -293,7 +291,7 @@ class ListGroupOpsGroupsQuery:
             group_asset_item(row, plan_name=clean_text(row.get("plan_name")), bind_status=clean_text(row.get("bind_status") or "unbound"))
             for row in rows
         ]
-        return _response({"items": items, "total": total})
+        return _response({"items": items, "total": total}, repo=repo)
 
 
 class GetGroupOpsWebhookConfigQuery:
@@ -313,7 +311,8 @@ class GetGroupOpsWebhookConfigQuery:
                 "method": "POST",
                 "webhook_url": f"{_public_base_url()}/api/automation/group-ops/webhooks/{webhook_key}",
                 "token_status": "generated" if plan.get("webhook_token_hash") else "missing",
-            }
+            },
+            repo=repo,
         )
 
 
@@ -363,7 +362,7 @@ class ReceiveGroupOpsWebhookCommand:
         if duplicate:
             duplicate = dict(duplicate)
             duplicate["status"] = "duplicate"
-            return _response({"status": "duplicate", "event": duplicate, "broadcast_job_ids": duplicate.get("broadcast_job_ids", [])})
+            return _response({"status": "duplicate", "event": duplicate, "broadcast_job_ids": duplicate.get("broadcast_job_ids", [])}, repo=repo)
         content = request.content or {}
         attachments = content.get("attachments") if isinstance(content.get("attachments"), list) else []
         normalized_content = normalize_message_content(
@@ -406,6 +405,6 @@ class ReceiveGroupOpsWebhookCommand:
                 int(event["id"]),
                 {"status": "failed", "error_message": str(exc), "broadcast_job_ids": []},
             )
-            return _response({"status": "failed", "event": failed, "broadcast_job_ids": []}, status_code=500)
+            return _response({"status": "failed", "event": failed, "broadcast_job_ids": []}, status_code=500, repo=repo)
         queued = repo.update_webhook_event(int(event["id"]), {"status": "queued", "broadcast_job_ids": [int(job_id)]})
-        return _response({"status": "queued", "event": queued, "broadcast_job_ids": [int(job_id)]}, status_code=202)
+        return _response({"status": "queued", "event": queued, "broadcast_job_ids": [int(job_id)]}, status_code=202, repo=repo)
