@@ -57,6 +57,8 @@ LOW_RISK_EXACT = {
     "tools/run_phase5f_wecom_tag_production_live_canary_execution.py",
     "tools/run_phase5f_wecom_tag_production_canary_cleanup.py",
     "tools/run_phase5h_wecom_customer_contact_adapter_contract_evidence.py",
+    "tools/run_phase5i_wecom_customer_contact_fake_stub_staging_smoke.py",
+    "tools/run_phase5i_wecom_customer_contact_fake_stub_production_dry_run.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -85,6 +87,9 @@ AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
     "aicrm_next/customer_tags/wecom_tag_contract.py",
     "aicrm_next/customer_tags/wecom_tag_live_adapter.py",
     "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
 }
 OWNER_DECISION_PACKAGE_PATHS = {
     "docs/development/phase_4am_action_templates_owner_decision_package.md",
@@ -224,6 +229,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5g_wecom_tag_family_acceptance.yaml",
         "docs/development/phase_5h_wecom_customer_contact_adapter_contract.md",
         "docs/development/phase_5h_wecom_customer_contact_adapter_contract.yaml",
+        "docs/development/phase_5i_wecom_customer_contact_fake_stub_adapter.md",
+        "docs/development/phase_5i_wecom_customer_contact_fake_stub_adapter.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -346,6 +353,10 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase5h_wecom_customer_contact_adapter_contract.py",
         "tools/run_phase5h_wecom_customer_contact_adapter_contract_evidence.py",
         "tests/test_phase5h_wecom_customer_contact_adapter_contract.py",
+        "tools/check_phase5i_wecom_customer_contact_fake_stub_adapter.py",
+        "tools/run_phase5i_wecom_customer_contact_fake_stub_staging_smoke.py",
+        "tools/run_phase5i_wecom_customer_contact_fake_stub_production_dry_run.py",
+        "tests/test_phase5i_wecom_customer_contact_fake_stub_adapter.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",

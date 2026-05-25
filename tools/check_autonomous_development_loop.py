@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5i_wecom_customer_contact_fake_stub_adapter_bundle",
+    "phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -118,6 +118,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5f_wecom_tag_production_live_canary_execution_completed",
     "phase_5g_wecom_tag_family_acceptance_completed",
     "phase_5h_wecom_customer_contact_adapter_contract_completed",
+    "phase_5i_wecom_customer_contact_fake_stub_adapter_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -176,6 +177,9 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/customer_tags/wecom_tag_contract.py",
     "aicrm_next/customer_tags/wecom_tag_live_adapter.py",
     "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
+    "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
 }
 
 
@@ -341,8 +345,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must select the Phase 5H WeCom customer contact callback contract candidate")
     if state.get("capability_owner") != "aicrm_next.integration_gateway":
         blockers.append("capability_owner must be aicrm_next.integration_gateway")
-    if state.get("last_merged_pr") != "#718":
-        blockers.append("last_merged_pr must record latest completed merged PR #718")
+    if state.get("last_merged_pr") != "#720":
+        blockers.append("last_merged_pr must record latest completed merged PR #720")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
