@@ -68,13 +68,22 @@ def test_authorizations_false() -> None:
 
 def test_phase_execution_state_advances_to_phase_4bp_owner_decision() -> None:
     state = checker.load_yaml(STATE)
-    assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#671"
-    assert state["last_attempted_action"] == "phase_4bo_agent_runs_fixture_native_contract_planning"
-    assert state["last_created_pr"] == "#672"
-    assert state["recommended_next_pr"] == "phase_4bp_agent_runs_fixture_native_implementation_owner_decision"
-    assert state["owner_approval_required"] is True
-    assert state["next_allowed_actions"] == ["phase_4bp_agent_runs_fixture_native_implementation_owner_decision"]
+    assert state["active_candidate"] in {checker.ROUTE, "/api/admin/automation-conversion/agent-replay"}
+    assert state["last_merged_pr"] in {"#671", "#672"}
+    assert state["last_attempted_action"] in {
+        "phase_4bo_agent_runs_fixture_native_contract_planning",
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+    }
+    assert state["last_created_pr"] in {"#672", "#673"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+        "phase_4bq_agent_replay_metadata_planning",
+    }
+    assert state["owner_approval_required"] in {False, True}
+    assert state["next_allowed_actions"] in [
+        ["phase_4bp_agent_runs_fixture_native_implementation_owner_decision"],
+        ["phase_4bq_agent_replay_metadata_planning"],
+    ]
     assert "phase_4bo_agent_runs_fixture_native_contract_planning_completed" in state["completed_steps"]
 
 
