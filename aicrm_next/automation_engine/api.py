@@ -23,8 +23,10 @@ from .application import (
     CreateActionTemplateCommand,
     CreateProfileSegmentTemplateCommand,
     CreateTaskGroupCommand,
+    GetAgentOutputDetailQuery,
     ListActionTemplatesQuery,
     ListAgentsQuery,
+    ListAgentOutputsQuery,
     ListTasksQuery,
     ListTaskGroupsQuery,
     ListWorkflowsQuery,
@@ -47,6 +49,8 @@ from .dto import (
     ActivationWebhookRequest,
     AgentCreateRequest,
     AgentListRequest,
+    AgentOutputDetailRequest,
+    AgentOutputListRequest,
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
@@ -278,6 +282,50 @@ def list_agents(
 def create_agent(payload: AgentCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateAgentCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/agent-outputs")
+def list_agent_outputs(
+    page: int = 1,
+    page_size: int = 50,
+    request_id: str = "",
+    external_contact_id: str = "",
+    userid: str = "",
+    agent_code: str = "",
+    output_type: str = "",
+    applied_status: str = "",
+    min_confidence: float | None = None,
+    max_confidence: float | None = None,
+    has_error: bool | None = None,
+    visibility: str = "masked",
+) -> JSONResponse:
+    request = AgentOutputListRequest(
+        page=page,
+        page_size=page_size,
+        request_id=request_id,
+        external_contact_id=external_contact_id,
+        userid=userid,
+        agent_code=agent_code,
+        output_type=output_type,
+        applied_status=applied_status,
+        min_confidence=min_confidence,
+        max_confidence=max_confidence,
+        has_error=has_error,
+        visibility=visibility,
+    )
+    try:
+        return _json_result(ListAgentOutputsQuery()(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/agent-outputs/{output_id}")
+def get_agent_output_detail(output_id: str, visibility: str = "masked") -> JSONResponse:
+    request = AgentOutputDetailRequest(output_id=output_id, visibility=visibility)
+    try:
+        return _json_result(GetAgentOutputDetailQuery()(request))
     except Exception as exc:
         _raise_http(exc)
 

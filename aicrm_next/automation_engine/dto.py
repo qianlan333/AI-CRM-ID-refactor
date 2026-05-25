@@ -249,5 +249,25 @@ class AgentCreateRequest(BaseModel):
     operator: str = "system"
 
 
+class AgentOutputListRequest(BaseModel):
+    page: int = 1
+    page_size: int = 50
+    request_id: str = ""
+    external_contact_id: str = ""
+    userid: str = ""
+    agent_code: str = ""
+    output_type: str = ""
+    applied_status: str = ""
+    min_confidence: float | None = None
+    max_confidence: float | None = None
+    has_error: bool | None = None
+    visibility: str = "masked"
+
+
+class AgentOutputDetailRequest(BaseModel):
+    output_id: str
+    visibility: str = "masked"
+
+
 class ActionTemplateValidationError(ValueError):
     pass
