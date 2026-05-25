@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_5_external_adapter
-active_candidate: /wecom/external-contact/callback
+active_candidate: /api/h5/wechat/oauth*
 capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#724"
-last_attempted_action: phase_5l_wecom_customer_contact_production_callback_canary_readiness_bundle
-last_created_pr: "#725"
-recommended_next_pr: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
+last_merged_pr: "#725"
+last_attempted_action: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
+last_created_pr: "#726"
+recommended_next_pr: phase_5n_oauth_identity_adapter_contract_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -253,9 +253,10 @@ completed_steps:
   - phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_completed
   - phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_completed
   - phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed
+  - phase_5m_wecom_customer_contact_callback_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
+  - phase_5n_oauth_identity_adapter_contract_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -600,6 +601,21 @@ phase5l_wecom_customer_contact_production_callback_canary_readiness:
   fallback_removal_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
+
+phase5m_wecom_customer_contact_callback_family_acceptance:
+  status: phase_5m_wecom_customer_contact_callback_family_acceptance_completed
+  route_family: /wecom/external-contact/callback
+  capability_owner: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_decision: accepted_with_blocked_evidence_only
+  production_callback_canary_passed: false
+  production_callback_cutover_enabled: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  delete_ready: false
+  selected_next_bundle: phase_5n_oauth_identity_adapter_contract_bundle
+  next_route_family: /api/h5/wechat/oauth*
 
 forbidden_without_owner_approval:
   - production owner switch

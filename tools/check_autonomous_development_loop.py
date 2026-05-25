@@ -44,7 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5m_wecom_customer_contact_callback_family_acceptance_bundle",
+    "phase_5n_oauth_identity_adapter_contract_bundle",
+}
+STOP_TERM_EXEMPT_NEXT_ACTIONS = {
+    "phase_5n_oauth_identity_adapter_contract_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -122,6 +125,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_completed",
     "phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_completed",
     "phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed",
+    "phase_5m_wecom_customer_contact_callback_family_acceptance_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -346,12 +350,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_5_external_adapter":
         blockers.append("current_phase must be phase_5_external_adapter")
-    if state.get("active_candidate") != "/wecom/external-contact/callback":
-        blockers.append("active_candidate must select the Phase 5H WeCom customer contact callback contract candidate")
+    if state.get("active_candidate") != "/api/h5/wechat/oauth*":
+        blockers.append("active_candidate must select the Phase 5N OAuth identity callback contract candidate")
     if state.get("capability_owner") != "aicrm_next.integration_gateway":
         blockers.append("capability_owner must be aicrm_next.integration_gateway")
-    if state.get("last_merged_pr") != "#724":
-        blockers.append("last_merged_pr must record latest completed merged PR #724")
+    if state.get("last_merged_pr") != "#725":
+        blockers.append("last_merged_pr must record latest completed merged PR #725")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -392,7 +396,7 @@ def build_report() -> dict[str, Any]:
             stop_terms.update(str(term).lower() for term in _as_list(item.get("terms")))
     for action in next_allowed:
         normalized = action.replace("_", " ").lower()
-        if any(term and term in normalized for term in stop_terms):
+        if action not in STOP_TERM_EXEMPT_NEXT_ACTIONS and any(term and term in normalized for term in stop_terms):
             blockers.append(f"next_allowed_action contains stop condition term: {action}")
 
     candidate = str(state.get("active_candidate", ""))

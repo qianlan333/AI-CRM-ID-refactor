@@ -1,0 +1,104 @@
+version: 1
+status: phase_5m_wecom_customer_contact_callback_family_acceptance_no_new_live_callback
+bundle_type: phase_5_external_adapter_family_acceptance_bundle
+route_family: /wecom/external-contact/callback
+capability_owner: aicrm_next.integration_gateway
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  new_live_callback_authorized: false
+  new_production_callback_write_authorized: false
+  production_callback_cutover_authorized: false
+  route_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  batch_customer_sync_authorized: false
+  oauth_callback_cutover_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+completed_stages:
+  - stage: phase_5h_contract
+    complete: true
+    pr: 720
+    merge_commit: f7984b67d83ec297fbef25d96ea10195d192b505
+  - stage: phase_5i_fake_stub_runtime
+    complete: true
+    pr: 722
+    merge_commit: a759d001b89825fbb386400e6bd9dd45481b2ad4
+  - stage: phase_5j_live_callback_behind_flag
+    complete: true
+    pr: 723
+    merge_commit: 9c3143db3718c49ade1700473ddd709b0713e2f1
+  - stage: phase_5k_staging_live_callback_canary_gate
+    complete: true
+    pr: 724
+    merge_commit: 73fb262f4acb8b75784145b1065f1ba4bdc7d76a
+  - stage: phase_5l_production_callback_canary_readiness
+    complete: true
+    pr: 725
+    merge_commit: 640429eb4c893ef4f0e947a93659a4e91456fa3c
+
+capability_matrix:
+  adapter_contract_complete: true
+  fake_stub_complete: true
+  live_callback_behind_flag_complete: true
+  staging_canary_gate_complete: true
+  production_canary_readiness_complete: true
+  production_callback_cutover_enabled: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  batch_customer_sync_enabled: false
+  outbound_send_enabled: false
+
+acceptance_decision:
+  status: accepted_with_blocked_evidence_only
+  allowed_values:
+    - accepted_for_controlled_canary_tooling
+    - accepted_with_blocked_evidence_only
+    - needs_followup_before_family_acceptance
+  production_callback_canary_passed: false
+  staging_callback_canary_passed: false
+  wider_rollout_authorized: false
+  notes: staging and production callback live evidence remain blocked without live approval evidence; tooling and gates are accepted.
+
+rollout_boundary:
+  wider_rollout_authorized: false
+  production_callback_cutover_deferred: true
+  route_owner_switch_deferred: true
+  fallback_removal_deferred: true
+  production_compat_change_deferred: true
+  delete_ready: false
+
+blockers:
+  - item: missing real staging callback canary evidence
+  - item: missing production callback canary execution evidence
+  - item: missing production target approval
+  - item: missing rollback cleanup evidence
+  - item: baseline legacy facade blockers
+  - item: local architecture yaml dependency
+
+next_family:
+  selected_next_bundle: phase_5n_oauth_identity_adapter_contract_bundle
+  route_family: /api/h5/wechat/oauth*
+  capability_owner: aicrm_next.integration_gateway
+  why_selected: OAuth identity callback is the next external callback boundary; contract-first keeps live cutover disabled.
+  live_external_call_allowed: false
+  first_safe_step: contract_and_fake_stub_evidence
+  required_guardrails:
+    - item: no production OAuth callback cutover
+    - item: no production route owner switch
+    - item: fake/stub path required
+    - item: checker/test required
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_wider_rollout_enabled: true
