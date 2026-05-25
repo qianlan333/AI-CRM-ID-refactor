@@ -39,9 +39,12 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
     "implemented_runtime_slices",
     "guarded_disabled_runtime_slices",
+    "repository_adapter_parity_slices",
+    "staging_readiness_slices",
+    "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4ch_task_groups_staging_readiness_bundle",
+    "phase_4ci_workflows_staging_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -92,6 +95,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4ce_agents_repository_adapter_parity_completed",
     "phase_4cf_agent_outputs_repository_adapter_parity_completed",
     "phase_4cg_agent_runs_repository_adapter_parity_completed",
+    "phase_4ch_task_groups_staging_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -304,12 +308,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
-        blockers.append("active_candidate must advance to task-groups for the next compressed staging readiness bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/workflows*":
+        blockers.append("active_candidate must advance to workflows for the next compressed staging readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#691":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #691")
+    if state.get("last_merged_pr") != "#693":
+        blockers.append("last_merged_pr must record latest completed merged PR #693")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -539,9 +543,32 @@ def build_report() -> dict[str, Any]:
         "default_backend_fixture_local",
         "test_db_parity_harness_completed",
         "idempotency_audit_rollback_scaffold_completed",
+        "staging_readiness_bundle_completed",
+        "staging_readiness_preflight_completed",
+        "staging_evidence_gate_completed",
+        "staging_blocked_evidence_output_completed",
     ):
         if task_groups_readiness.get(field) is not True:
             blockers.append(f"task_groups_readiness.{field} must be true")
+    if task_groups_readiness.get("staging_database_url_flag") != "AICRM_TASK_GROUPS_STAGING_DATABASE_URL":
+        blockers.append("task_groups_readiness.staging_database_url_flag must be AICRM_TASK_GROUPS_STAGING_DATABASE_URL")
+    if task_groups_readiness.get("staging_backend_flag") != "AICRM_TASK_GROUPS_REPO_BACKEND":
+        blockers.append("task_groups_readiness.staging_backend_flag must be AICRM_TASK_GROUPS_REPO_BACKEND")
+    if task_groups_readiness.get("staging_approval_flag") != "AICRM_PHASE4CH_STAGING_SMOKE_APPROVED":
+        blockers.append("task_groups_readiness.staging_approval_flag must be AICRM_PHASE4CH_STAGING_SMOKE_APPROVED")
+    if task_groups_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CH_STAGING_WRITE_APPROVED":
+        blockers.append("task_groups_readiness.staging_write_approval_flag must be AICRM_PHASE4CH_STAGING_WRITE_APPROVED")
+    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
+        if task_groups_readiness.get(field) is not False:
+            blockers.append(f"task_groups_readiness.{field} must be false")
+    staging_slices = state.get("staging_readiness_slices") if isinstance(state.get("staging_readiness_slices"), list) else []
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/task-groups*"
+        and item.get("slice") == "task_groups_staging_readiness_preflight"
+        for item in staging_slices
+    ):
+        blockers.append("staging_readiness_slices must record task-groups staging readiness preflight")
     if set(task_groups_readiness.get("implemented_runtime_slices") or []) != {
         "task_groups_fixture_local_list",
         "task_groups_fixture_local_metadata_create",
