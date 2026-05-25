@@ -1,0 +1,118 @@
+version: 1
+status: phase_5j_wecom_customer_contact_live_callback_adapter_behind_explicit_flag
+bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+route_family: /wecom/external-contact/callback
+capability_owner: aicrm_next.integration_gateway
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  live_callback_adapter_code_authorized: true
+  live_callback_processing_by_default_authorized: false
+  production_callback_cutover_authorized: false
+  production_callback_owner_switch_authorized: false
+  production_contact_write_by_default_authorized: false
+  production_identity_mapping_write_by_default_authorized: false
+  production_tag_write_authorized: false
+  outbound_send_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  oauth_callback_cutover_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  canary_approved: false
+  delete_ready: false
+
+live_adapter:
+  default_enabled: false
+  required_env:
+    - AICRM_WECOM_CONTACT_CALLBACK_LIVE_ADAPTER_ENABLED
+    - AICRM_WECOM_CONTACT_CALLBACK_LIVE_PROCESSING_APPROVED
+    - AICRM_WECOM_CONTACT_CALLBACK_CONFIG_REVIEWED
+  required_secret_presence_checks:
+    - AICRM_WECOM_CONTACT_CALLBACK_CORP_ID
+    - AICRM_WECOM_CONTACT_CALLBACK_TOKEN
+    - AICRM_WECOM_CONTACT_CALLBACK_AES_KEY
+  required_inputs:
+    - event
+    - operator
+    - idempotency_key
+  required_confirm_args:
+    - --confirm-live-wecom-callback
+  methods:
+    - verify_callback_live
+    - process_external_contact_callback_live
+    - record_contact_event_live
+    - record_identity_mapping_live
+
+error_mapping:
+  required_error_codes:
+    - live_adapter_not_enabled
+    - live_callback_not_approved
+    - callback_config_missing
+    - idempotency_key_required
+    - duplicate_idempotency_key
+    - event_type_unsupported
+    - external_userid_missing
+    - follow_user_userid_missing
+    - wecom_live_callback_failed
+    - adapter_unavailable
+    - forbidden_in_production_without_approval
+
+side_effect_safety:
+  production_callback_cutover_allowed: false
+  production_contact_write_by_default_allowed: false
+  production_identity_mapping_write_by_default_allowed: false
+  production_tag_write_allowed: false
+  outbound_send_allowed: false
+  oauth_callback_allowed: false
+  payment_allowed: false
+  media_upload_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+idempotency:
+  record_contact_event_live_requires_key: true
+  record_identity_mapping_live_requires_key: true
+  replay_same_hash: true
+  conflict_different_hash: true
+  no_partial_production_side_effect_when_blocked: true
+
+staging_evidence:
+  runner: tools/run_phase5j_wecom_customer_contact_live_callback_staging_evidence.py
+  default_blocked: true
+  dry_run_gate_supported: true
+  execute_live_staging_requires_approval: true
+  required_env:
+    - AICRM_WECOM_CONTACT_CALLBACK_LIVE_ADAPTER_ENABLED
+    - AICRM_WECOM_CONTACT_CALLBACK_LIVE_PROCESSING_APPROVED
+    - AICRM_WECOM_CONTACT_CALLBACK_CONFIG_REVIEWED
+    - AICRM_PHASE5J_WECOM_CONTACT_STAGING_LIVE_APPROVED
+  required_args:
+    - --dry-run-live-gate
+    - --execute-live-staging
+    - --confirm-live-wecom-callback
+
+production_dry_run_gate:
+  runner: tools/run_phase5j_wecom_customer_contact_live_callback_production_dry_run_gate.py
+  live_callback_processed: false
+  production_contact_write_executed: false
+  production_identity_mapping_write_executed: false
+  required_env:
+    - AICRM_PHASE5J_WECOM_CONTACT_PRODUCTION_DRY_RUN_APPROVED
+    - AICRM_WECOM_CONTACT_CALLBACK_CONFIG_REVIEWED
+  required_args:
+    - --dry-run
+    - --confirm-no-live-callback
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_bundle
+  route_family: /wecom/external-contact/callback

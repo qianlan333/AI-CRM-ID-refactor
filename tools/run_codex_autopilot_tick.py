@@ -213,6 +213,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
         "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
         "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
+        "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
+        "aicrm_next/integration_gateway/wecom_contact_callback_live_gateway.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -353,6 +355,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5i_wecom_customer_contact_fake_stub_staging_smoke.py",
         "tools/run_phase5i_wecom_customer_contact_fake_stub_production_dry_run.py",
         "tests/test_phase5i_wecom_customer_contact_fake_stub_adapter.py",
+        "docs/development/phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag.md",
+        "docs/development/phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag.yaml",
+        "tools/check_phase5j_wecom_customer_contact_live_callback_adapter_behind_flag.py",
+        "tools/run_phase5j_wecom_customer_contact_live_callback_staging_evidence.py",
+        "tools/run_phase5j_wecom_customer_contact_live_callback_production_dry_run_gate.py",
+        "tests/test_phase5j_wecom_customer_contact_live_callback_adapter_behind_flag.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -689,6 +697,7 @@ Read and follow:
 - Phase 5B WeCom tag fake/stub packages may touch explicitly selected aicrm_next/customer_tags files only; live WeCom calls remain forbidden.
 - Phase 5C WeCom tag live adapter packages may touch explicitly selected aicrm_next/customer_tags and aicrm_next/integration_gateway live-behind-flag files only; live calls must remain disabled by default.
 - Phase 5I WeCom contact callback fake/stub packages may touch explicitly selected aicrm_next/integration_gateway fake/stub callback files only; live callback cutover and production writes remain forbidden.
+- Phase 5J WeCom contact callback live adapter packages may touch explicitly selected aicrm_next/integration_gateway live-behind-flag callback files only; live callback processing must remain disabled by default.
 - Do not enable real external calls, timer, automation execution, or outbound send by default.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
@@ -709,7 +718,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files, explicitly selected fixture/native aicrm_next/automation_engine runtime files, explicitly selected aicrm_next/customer_tags fake/stub files, explicitly selected Phase 5C live-behind-flag adapter files, or explicitly selected Phase 5I fake/stub callback adapter files. Owner decision packages must not auto-merge.
+Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files, explicitly selected fixture/native aicrm_next/automation_engine runtime files, explicitly selected aicrm_next/customer_tags fake/stub files, explicitly selected Phase 5C live-behind-flag adapter files, explicitly selected Phase 5I fake/stub callback adapter files, or explicitly selected Phase 5J live-behind-flag callback adapter files. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
