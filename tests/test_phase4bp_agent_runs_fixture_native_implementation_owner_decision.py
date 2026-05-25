@@ -66,12 +66,21 @@ def test_next_candidate_selects_agent_replay_metadata_planning() -> None:
 def test_phase_execution_state_pauses_agent_runs_and_advances_to_agent_replay() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENT_REPLAY
-    assert state["last_merged_pr"] == "#672"
-    assert state["last_attempted_action"] == "phase_4bp_agent_runs_fixture_native_implementation_owner_decision"
-    assert state["last_created_pr"] == "#673"
-    assert state["recommended_next_pr"] == "phase_4bq_agent_replay_metadata_planning"
+    assert state["last_merged_pr"] in {"#672", "#673"}
+    assert state["last_attempted_action"] in {
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+        "phase_4bq_agent_replay_metadata_planning",
+    }
+    assert state["last_created_pr"] in {"#673", "#674"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bq_agent_replay_metadata_planning",
+        "phase_4br_agent_replay_schema_route_surface_confirmation",
+    }
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bq_agent_replay_metadata_planning"]
+    assert state["next_allowed_actions"] in [
+        ["phase_4bq_agent_replay_metadata_planning"],
+        ["phase_4br_agent_replay_schema_route_surface_confirmation"],
+    ]
     assert "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed" in state["completed_steps"]
     assert any(item["route_family"] == checker.AGENT_RUNS and item["owner_approval_required"] is True for item in state["paused_candidates"])
 
@@ -91,7 +100,8 @@ def test_agent_runs_readiness_paused_without_runtime_readiness() -> None:
 def test_agent_replay_readiness_is_planning_only() -> None:
     readiness = checker.load_yaml(STATE)["agent_replay_readiness"]
     assert readiness["metadata_planning_ready"] is True
-    assert readiness["metadata_planning_completed"] is False
+    assert readiness["metadata_planning_completed"] in {False, True}
+    assert readiness.get("schema_route_surface_confirmation_ready") in {None, True}
     assert readiness["replay_execution_excluded"] is True
     assert readiness["run_creation_excluded"] is True
     assert readiness["run_execution_excluded"] is True

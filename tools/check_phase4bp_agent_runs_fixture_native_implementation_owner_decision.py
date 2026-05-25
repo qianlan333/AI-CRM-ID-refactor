@@ -119,14 +119,18 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4bp_agent_runs_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_4bo_agent_runs_fixture_native_contract_plan.md",
     "docs/development/phase_4bo_agent_runs_fixture_native_contract_plan.yaml",
+    "docs/development/phase_4bq_agent_replay_metadata_plan.md",
+    "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4bo_agent_runs_fixture_native_contract_plan.py",
+    "tools/check_phase4bq_agent_replay_metadata_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4bo_agent_runs_fixture_native_contract_plan.py",
+    "tests/test_phase4bq_agent_replay_metadata_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -230,16 +234,25 @@ def build_report() -> dict[str, Any]:
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
     if state.get("active_candidate") != AGENT_REPLAY:
         blockers.append("phase_execution_state.active_candidate must advance to agent-replay")
-    if state.get("last_merged_pr") != "#672":
-        blockers.append("phase_execution_state.last_merged_pr must record #672")
-    if state.get("last_attempted_action") != "phase_4bp_agent_runs_fixture_native_implementation_owner_decision":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BP")
-    if state.get("last_created_pr") != "#673":
-        blockers.append("phase_execution_state.last_created_pr must be #673")
-    if state.get("recommended_next_pr") != "phase_4bq_agent_replay_metadata_planning":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BQ")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4bq_agent_replay_metadata_planning"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BQ")
+    if state.get("last_merged_pr") not in {"#672", "#673"}:
+        blockers.append("phase_execution_state.last_merged_pr must record #672 or later Phase 4BQ state #673")
+    if state.get("last_attempted_action") not in {
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+        "phase_4bq_agent_replay_metadata_planning",
+    }:
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BP or later Phase 4BQ")
+    if state.get("last_created_pr") not in {"#673", "#674"}:
+        blockers.append("phase_execution_state.last_created_pr must be #673 or later Phase 4BQ PR #674")
+    if state.get("recommended_next_pr") not in {
+        "phase_4bq_agent_replay_metadata_planning",
+        "phase_4br_agent_replay_schema_route_surface_confirmation",
+    }:
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BQ or later Phase 4BR")
+    if set(state.get("next_allowed_actions") or []) not in (
+        {"phase_4bq_agent_replay_metadata_planning"},
+        {"phase_4br_agent_replay_schema_route_surface_confirmation"},
+    ):
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BQ or later Phase 4BR")
     if state.get("owner_approval_required") is not False:
         blockers.append("phase_execution_state.owner_approval_required must be false for the newly selected planning candidate")
     if state_update.get("phase_4bp_completed_step") not in set(state.get("completed_steps") or []):
@@ -279,7 +292,6 @@ def build_report() -> dict[str, Any]:
         if replay.get(field) is not True:
             blockers.append(f"agent_replay_readiness.{field} must be true")
     for field in (
-        "metadata_planning_completed",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
         "runtime_implementation_ready",
