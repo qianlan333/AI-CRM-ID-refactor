@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_5_external_adapter"
     assert data["active_candidate"] == "/api/admin/wecom/tags*"
     assert data["capability_owner"] == "aicrm_next.customer_tags"
-    assert data["last_merged_pr"] == "#711"
+    assert data["last_merged_pr"] == "#712"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -92,9 +92,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4cu_internal_write_acceptance_review_completed" in set(data["completed_steps"])
     assert "phase_4cv_phase5_readiness_entry_completed" in set(data["completed_steps"])
     assert "phase_5a_wecom_tag_adapter_contract_completed" in set(data["completed_steps"])
+    assert "phase_5b_wecom_tag_fake_stub_adapter_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5a_wecom_tag_adapter_contract_only() -> None:
+def test_next_allowed_actions_are_phase_5c_wecom_tag_live_adapter_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 

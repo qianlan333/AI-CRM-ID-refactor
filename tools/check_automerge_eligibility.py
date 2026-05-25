@@ -47,6 +47,8 @@ LOW_RISK_EXACT = {
     "tools/run_phase4cs_agent_runs_production_readonly_dry_run.py",
     "tools/run_phase4ct_agent_outputs_production_readonly_dry_run.py",
     "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
+    "tools/run_phase5b_wecom_tag_fake_stub_staging_smoke.py",
+    "tools/run_phase5b_wecom_tag_fake_stub_production_dry_run.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -68,6 +70,11 @@ AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
     "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/workflows.py",
     "aicrm_next/automation_engine/workflow_nodes.py",
+    "aicrm_next/customer_tags/api.py",
+    "aicrm_next/customer_tags/application.py",
+    "aicrm_next/customer_tags/dto.py",
+    "aicrm_next/customer_tags/wecom_tag_adapter.py",
+    "aicrm_next/customer_tags/wecom_tag_contract.py",
 }
 OWNER_DECISION_PACKAGE_PATHS = {
     "docs/development/phase_4am_action_templates_owner_decision_package.md",
@@ -193,6 +200,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4cv_phase5_readiness_entry.yaml",
         "docs/development/phase_5a_wecom_tag_adapter_contract.md",
         "docs/development/phase_5a_wecom_tag_adapter_contract.yaml",
+        "docs/development/phase_5b_wecom_tag_fake_stub_adapter.md",
+        "docs/development/phase_5b_wecom_tag_fake_stub_adapter.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -291,6 +300,10 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase5a_wecom_tag_adapter_contract.py",
         "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
         "tests/test_phase5a_wecom_tag_adapter_contract.py",
+        "tools/check_phase5b_wecom_tag_fake_stub_adapter.py",
+        "tools/run_phase5b_wecom_tag_fake_stub_staging_smoke.py",
+        "tools/run_phase5b_wecom_tag_fake_stub_production_dry_run.py",
+        "tests/test_phase5b_wecom_tag_fake_stub_adapter.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
