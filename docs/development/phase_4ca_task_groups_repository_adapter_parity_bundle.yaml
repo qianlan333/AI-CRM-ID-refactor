@@ -1,0 +1,81 @@
+version: 1
+status: phase_4ca_task_groups_repository_adapter_parity_bundle
+
+bundle:
+  type: repository_adapter_parity_bundle
+  route_family: /api/admin/automation-conversion/task-groups*
+  replaces_smaller_prs:
+    - task_groups_repository_adapter_plan
+    - task_groups_sqlalchemy_adapter_behind_flag
+    - task_groups_test_db_parity_harness
+    - task_groups_idempotency_audit_rollback_scaffold
+    - standalone_checker_test_state_update
+  estimated_pr_count_reduction_percent: 55
+
+route_family: /api/admin/automation-conversion/task-groups*
+capability_owner: aicrm_next.automation_engine
+current_runtime_owner: production_compat
+production_behavior: legacy_forward
+legacy_fallback_retained: true
+fixture_allowed_in_production: false
+
+adapter:
+  backend_flag: AICRM_TASK_GROUPS_REPO_BACKEND
+  enabled_value: sqlalchemy
+  default_backend: fixture
+  database_url_flags:
+    - AICRM_TASK_GROUPS_TEST_DATABASE_URL
+    - AICRM_TASK_GROUPS_STAGING_DATABASE_URL
+  forbidden_database_url_fallbacks:
+    - DATABASE_URL
+    - AICRM_NEXT_DATABASE_URL
+  default_backend_remains_fixture_local: true
+  production_route_owner_enabled: false
+  production_write_authorized: false
+
+schema_contract:
+  tables:
+    - automation_task_groups
+    - automation_task_group_idempotency
+    - automation_task_group_audit_log
+  list_supported: true
+  create_supported: true
+  update_supported: false
+  archive_supported: false
+  delete_supported: false
+  idempotency_required_for_create: true
+  audit_required_for_create: true
+  rollback_payload_required_for_create: true
+
+safety:
+  no_database_url_fallback: true
+  route_specific_test_db_required: true
+  refuse_production_looking_urls: true
+  default_backend_fixture_local: true
+  production_owner_switch_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_write_authorized: false
+  fallback_removal_authorized: false
+  destructive_migration_authorized: false
+  real_external_call_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  delete_ready: false
+
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/workflows*
+  last_merged_pr: "#685"
+  last_attempted_action: phase_4ca_task_groups_repository_adapter_parity_bundle
+  last_created_pr: "#686"
+  recommended_next_pr: phase_4cb_workflows_repository_adapter_parity_bundle
+  completed_step: phase_4ca_task_groups_repository_adapter_parity_completed
+  next_allowed_actions:
+    - phase_4cb_workflows_repository_adapter_parity_bundle
+
+next_bundle_recommendation:
+  recommended_next_step: phase_4cb_workflows_repository_adapter_parity_bundle
+  route_family: /api/admin/automation-conversion/workflows*
+  bundle_type: repository_adapter_parity_bundle
+  production_write_allowed: false
+  production_route_switch_allowed: false
+  fallback_removal_allowed: false

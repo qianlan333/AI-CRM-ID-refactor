@@ -26,6 +26,7 @@ LOW_RISK_PREFIXES = (
 )
 LOW_RISK_EXACT = {
     "tools/run_codex_autopilot_tick.py",
+    "tools/run_phase4ca_task_groups_adapter_parity.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -33,6 +34,7 @@ AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
     "aicrm_next/automation_engine/application.py",
     "aicrm_next/automation_engine/dto.py",
     "aicrm_next/automation_engine/repo.py",
+    "aicrm_next/automation_engine/task_group_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/agents.py",
     "aicrm_next/automation_engine/agent_outputs.py",
     "aicrm_next/automation_engine/agent_runs.py",
@@ -119,6 +121,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
         "docs/development/phase_4by_agent_replay_discovery_contract_bundle.md",
         "docs/development/phase_4by_agent_replay_discovery_contract_bundle.yaml",
+        "docs/development/phase_4ca_task_groups_repository_adapter_parity_bundle.md",
+        "docs/development/phase_4ca_task_groups_repository_adapter_parity_bundle.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -164,6 +168,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
         "tools/check_phase4by_agent_replay_discovery_contract_bundle.py",
+        "tools/check_phase4ca_task_groups_repository_adapter_parity_bundle.py",
+        "tools/run_phase4ca_task_groups_adapter_parity.py",
         "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/check_phase4bs_workflows_fixture_runtime.py",
         "tools/check_phase4bt_workflow_nodes_fixture_runtime.py",
@@ -207,6 +213,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
         "tests/test_phase4by_agent_replay_discovery_contract_bundle.py",
+        "tests/test_phase4ca_task_groups_repository_adapter_parity_bundle.py",
         "tests/test_phase4br_task_groups_fixture_runtime.py",
         "tests/test_phase4bs_workflows_fixture_runtime.py",
         "tests/test_phase4bt_workflow_nodes_fixture_runtime.py",
