@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: phase_4_internal_write_aggregate
+active_candidate: phase_5_external_adapter_entry
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#708"
-last_attempted_action: phase_4ct_agent_outputs_production_dry_run_readiness_bundle
-last_created_pr: "#709"
-recommended_next_pr: phase_4cu_phase4_internal_write_acceptance_review
+last_merged_pr: "#709"
+last_attempted_action: phase_4cu_phase4_internal_write_acceptance_review
+last_created_pr: "#710"
+recommended_next_pr: phase_4cv_phase5_readiness_entry_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -185,9 +185,10 @@ completed_steps:
   - phase_4cr_tasks_production_dry_run_readiness_completed
   - phase_4cs_agent_runs_production_dry_run_readiness_completed
   - phase_4ct_agent_outputs_production_dry_run_readiness_completed
+  - phase_4cu_internal_write_acceptance_review_completed
 
 next_allowed_actions:
-  - phase_4cu_phase4_internal_write_acceptance_review
+  - phase_4cv_phase5_readiness_entry_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

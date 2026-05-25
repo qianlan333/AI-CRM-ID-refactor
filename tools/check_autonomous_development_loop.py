@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cu_phase4_internal_write_acceptance_review",
+    "phase_4cv_phase5_readiness_entry_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -108,6 +108,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cr_tasks_production_dry_run_readiness_completed",
     "phase_4cs_agent_runs_production_dry_run_readiness_completed",
     "phase_4ct_agent_outputs_production_dry_run_readiness_completed",
+    "phase_4cu_internal_write_acceptance_review_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -320,12 +321,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "phase_4_internal_write_aggregate":
-        blockers.append("active_candidate must advance to Phase 4 internal-write aggregate acceptance review")
+    if state.get("active_candidate") != "phase_5_external_adapter_entry":
+        blockers.append("active_candidate must advance to Phase 5 external adapter entry")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#708":
-        blockers.append("last_merged_pr must record latest completed merged PR #708")
+    if state.get("last_merged_pr") != "#709":
+        blockers.append("last_merged_pr must record latest completed merged PR #709")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -372,9 +373,9 @@ def build_report() -> dict[str, Any]:
     candidate = str(state.get("active_candidate", ""))
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
-    if candidate != "phase_4_internal_write_aggregate" and candidate not in manifest_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry"} and candidate not in manifest_text:
         blockers.append("active_candidate not found in production_route_ownership_manifest.yaml")
-    if candidate != "phase_4_internal_write_aggregate" and candidate not in backlog_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry"} and candidate not in backlog_text:
         blockers.append("active_candidate not found in legacy_replacement_backlog.yaml")
 
     readiness = state.get("action_templates_readiness") if isinstance(state.get("action_templates_readiness"), dict) else {}

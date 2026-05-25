@@ -1,0 +1,255 @@
+version: 1
+status: phase_4cu_internal_write_acceptance_review_no_runtime_change
+bundle_type: phase_4_internal_write_acceptance_review_bundle
+route_family: phase_4_internal_write_aggregate
+capability_owner: aicrm_next.automation_engine
+
+authorizations:
+  runtime_change_authorized: false
+  production_owner_switch_authorized: false
+  production_write_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  real_external_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  llm_deepseek_openclaw_mcp_authorized: false
+  destructive_migration_authorized: false
+  canary_approved: false
+  delete_ready: false
+
+route_families:
+  - route_family: /api/admin/automation-conversion/profile-segment-templates*
+    latest_stage: production_readonly_dry_run_evidence_and_review
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: production owner switch deferred to Phase 6 or later
+      - item: fallback removal deferred to Phase 6 or later
+  - route_family: /api/admin/automation-conversion/action-templates*
+    latest_stage: staging_owner_decision_package
+    phase_4_acceptance_status: awaiting_approval_or_config
+    blockers:
+      - item: missing staging owner approval and approval/config closure
+      - item: production dry-run readiness not claimed
+  - route_family: /api/admin/automation-conversion/task-groups*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: production owner switch deferred
+  - route_family: /api/admin/automation-conversion/tasks*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: task execution and run-due behavior deferred
+  - route_family: /api/admin/automation-conversion/workflows*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: workflow execution deferred
+  - route_family: /api/admin/automation-conversion/workflow-nodes*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: production owner switch deferred
+  - route_family: /api/admin/automation-conversion/agents*
+    latest_stage: staging_readiness
+    phase_4_acceptance_status: awaiting_approval_or_config
+    blockers:
+      - item: production read-only dry-run readiness not yet bundled
+      - item: agent execution and LLM adapter work deferred
+  - route_family: /api/admin/automation-conversion/agent-runs*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: agent-run execution, replay, and orchestration deferred
+  - route_family: /api/admin/automation-conversion/agent-outputs*
+    latest_stage: production_readonly_dry_run_readiness
+    phase_4_acceptance_status: accepted_for_phase4_readiness
+    blockers:
+      - item: missing production dry-run approval/config/DB URL for actual execution
+      - item: output export and file download behavior deferred
+
+acceptance_matrix:
+  required_fields:
+    - route_family
+    - capability_owner
+    - replacement_phase
+    - latest_phase_bundle
+    - has_fixture_native_contract
+    - has_repository_adapter
+    - has_local_or_test_parity
+    - has_staging_readiness
+    - has_production_readonly_dry_run_readiness
+    - production_owner_switched
+    - fallback_removed
+    - production_write_enabled
+    - phase_4_acceptance_status
+  rows:
+    - route_family: /api/admin/automation-conversion/profile-segment-templates*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4u_profile_segment_template_production_readonly_dry_run_evidence_and_review
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/action-templates*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4am_action_templates_staging_owner_decision_package
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: false
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: awaiting_approval_or_config
+    - route_family: /api/admin/automation-conversion/task-groups*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4co_task_groups_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/tasks*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4cr_tasks_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/workflows*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4cp_workflows_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/workflow-nodes*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4cq_workflow_nodes_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/agents*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4cl_agents_staging_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: false
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: awaiting_approval_or_config
+    - route_family: /api/admin/automation-conversion/agent-runs*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4cs_agent_runs_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+    - route_family: /api/admin/automation-conversion/agent-outputs*
+      capability_owner: aicrm_next.automation_engine
+      replacement_phase: phase_4_internal_write
+      latest_phase_bundle: phase_4ct_agent_outputs_production_dry_run_readiness_bundle
+      has_fixture_native_contract: true
+      has_repository_adapter: true
+      has_local_or_test_parity: true
+      has_staging_readiness: true
+      has_production_readonly_dry_run_readiness: true
+      production_owner_switched: false
+      fallback_removed: false
+      production_write_enabled: false
+      phase_4_acceptance_status: accepted_for_phase4_readiness
+
+blocked_approval_config_inventory:
+  missing_production_dry_run_approval: true
+  missing_production_config_review: true
+  missing_production_db_url: true
+  missing_staging_db_url: true
+  missing_owner_approval: true
+  missing_rollback_owner: true
+  baseline_legacy_facade_freeze_blockers: true
+  architecture_skill_compliance_local_yaml_dependency_relevant: true
+  notes:
+    - blocked does not equal failed
+    - blocked evidence must not be treated as production success
+    - production owner switch remains unauthorized
+
+phase_4_decision:
+  readiness_accepted: true
+  owner_switch_deferred: true
+  fallback_removal_deferred: true
+  production_compat_narrowing_deferred: true
+  notes: Option A selected. Phase 4 readiness is accepted for internal-write preparation, while production owner switch and fallback work remain deferred.
+
+phase_5_readiness:
+  ready_for_phase5_planning: true
+  external_live_calls_authorized: false
+  adapter_contract_first_required: true
+  notes: Phase 5 planning may start only after this acceptance review merges; adapter contracts come before live WeCom/OAuth/Payment/Media/OpenClaw/MCP calls.
+
+phase_6_7_deferral:
+  production_owner_switch_deferred: true
+  production_compat_narrowing_deferred: true
+  fallback_removal_deferred: true
+  timer_execution_deferred: true
+  legacy_retirement_deferred: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  fixture_local_demo_not_production_success: true
+  blocked_evidence_not_success: true
+
+next_bundle:
+  recommended_next_step: phase_4cv_phase5_readiness_entry_bundle
+  route_family: phase_5_external_adapter_entry
