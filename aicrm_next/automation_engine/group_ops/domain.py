@@ -1,0 +1,184 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timezone
+from typing import Any
+
+from aicrm_next.shared.errors import ContractError
+from wecom_ability_service.domains.tasks.private_message import build_private_message_request_payload
+
+PLAN_TYPES = {"standard", "webhook"}
+PLAN_STATUSES = {"draft", "active", "disabled"}
+NODE_STATUSES = {"draft", "active", "disabled"}
+GROUP_BINDING_STATUSES = {"active", "removed"}
+WEBHOOK_EVENT_STATUSES = {"accepted", "queued", "duplicate", "rejected", "failed"}
+WEBHOOK_SEND_MODES = {"queued"}
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def clamp_limit(value: int, *, default: int = 50, maximum: int = 200) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(1, min(number, maximum))
+
+
+def normalize_plan_type(value: Any) -> str:
+    plan_type = clean_text(value).lower()
+    if plan_type not in PLAN_TYPES:
+        raise ContractError("plan_type must be standard or webhook")
+    return plan_type
+
+
+def normalize_status(value: Any, *, allowed: set[str], default: str) -> str:
+    status = clean_text(value).lower() or default
+    if status not in allowed:
+        raise ContractError(f"invalid status: {status}")
+    return status
+
+
+def normalize_plan_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    existing = existing or {}
+    plan_name = clean_text(payload.get("plan_name") or payload.get("name") or existing.get("plan_name"))
+    if not plan_name:
+        raise ContractError("plan_name is required")
+    owner_userid = clean_text(payload.get("owner_userid") or existing.get("owner_userid"))
+    if not owner_userid:
+        raise ContractError("owner_userid is required")
+    plan_type = normalize_plan_type(payload.get("plan_type") or existing.get("plan_type") or "standard")
+    status = normalize_status(payload.get("status") or existing.get("status") or "draft", allowed=PLAN_STATUSES, default="draft")
+    plan_code = clean_text(payload.get("plan_code") or payload.get("code") or existing.get("plan_code"))
+    return {
+        "plan_code": plan_code,
+        "plan_name": plan_name,
+        "plan_type": plan_type,
+        "owner_userid": owner_userid,
+        "status": status,
+        "created_by": clean_text(payload.get("created_by") or existing.get("created_by") or payload.get("operator") or "system"),
+        "updated_by": clean_text(payload.get("updated_by") or payload.get("operator") or "system"),
+    }
+
+
+def normalize_attachments_for_builder(attachments: list[Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    normalized_attachments: list[dict[str, Any]] = []
+    image_media_ids: list[str] = []
+    for item in attachments or []:
+        if not isinstance(item, dict):
+            raise ContractError("attachments entries must be objects")
+        msgtype = clean_text(item.get("msgtype")).lower()
+        if msgtype == "image":
+            image_payload = item.get("image")
+            if not isinstance(image_payload, dict):
+                raise ContractError("image attachments must include image object")
+            media_id = clean_text(image_payload.get("media_id"))
+            if not media_id:
+                raise ContractError("image attachments must include media_id")
+            image_media_ids.append(media_id)
+        else:
+            normalized_attachments.append(dict(item))
+    return normalized_attachments, image_media_ids
+
+
+def normalize_message_content(*, text: Any = "", attachments: list[Any] | None = None, sender: str = "") -> dict[str, Any]:
+    builder_attachments, image_media_ids = normalize_attachments_for_builder(list(attachments or []))
+    payload: dict[str, Any] = {
+        "content": clean_text(text),
+        "attachments": builder_attachments,
+        "image_media_ids": image_media_ids,
+    }
+    if sender:
+        payload["sender"] = clean_text(sender)
+    try:
+        normalized, _image_count = build_private_message_request_payload(payload)
+    except ValueError as exc:
+        raise ContractError(str(exc)) from exc
+    if not normalized.get("text") and not normalized.get("attachments"):
+        raise ContractError("content.text or content.attachments is required")
+    return normalized
+
+
+def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    existing = existing or {}
+    day_index = int(payload.get("day_index", existing.get("day_index", 1)) or 1)
+    if day_index < 1:
+        raise ContractError("day_index must be >= 1")
+    trigger_time_label = clean_text(payload.get("trigger_time_label") or existing.get("trigger_time_label"))
+    if not trigger_time_label:
+        raise ContractError("trigger_time_label is required")
+    action_title = clean_text(payload.get("action_title") or existing.get("action_title"))
+    if not action_title:
+        raise ContractError("action_title is required")
+    attachments = payload.get("attachments", existing.get("attachments", []))
+    if not isinstance(attachments, list):
+        raise ContractError("attachments must be a list")
+    text_content = clean_text(payload.get("text_content") if "text_content" in payload else existing.get("text_content"))
+    normalized_content = normalize_message_content(text=text_content, attachments=attachments)
+    return {
+        "day_index": day_index,
+        "trigger_time_label": trigger_time_label,
+        "action_title": action_title,
+        "text_content": text_content,
+        "attachments": normalized_content.get("attachments", []),
+        "sort_order": int(payload.get("sort_order", existing.get("sort_order", 0)) or 0),
+        "status": normalize_status(payload.get("status", existing.get("status", "active")), allowed=NODE_STATUSES, default="active"),
+    }
+
+
+def assert_group_owned_by_plan(*, group: dict[str, Any], plan: dict[str, Any]) -> None:
+    group_owner = clean_text(group.get("owner_userid"))
+    plan_owner = clean_text(plan.get("owner_userid"))
+    if group_owner != plan_owner:
+        raise ContractError("group owner_userid must match plan owner_userid")
+
+
+def binding_stats(groups: list[dict[str, Any]]) -> dict[str, int]:
+    active = [item for item in groups if clean_text(item.get("status") or "active") == "active"]
+    internal = sum(int(item.get("internal_member_count_snapshot") or item.get("internal_member_count") or 0) for item in active)
+    external = sum(int(item.get("external_member_count_snapshot") or item.get("external_member_count") or 0) for item in active)
+    return {
+        "bound_group_count": len(active),
+        "internal_member_count": internal,
+        "external_member_count": external,
+        "estimated_reach": internal + external,
+    }
+
+
+def generate_webhook_key(plan_name: str) -> str:
+    base = clean_text(plan_name).lower().replace(" ", "-")[:32] or "group-ops"
+    safe = "".join(ch for ch in base if ch.isalnum() or ch == "-").strip("-") or "group-ops"
+    return f"{safe}-{secrets.token_hex(3)}"
+
+
+def generate_webhook_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_webhook_token(token: str) -> str:
+    normalized = clean_text(token)
+    if not normalized:
+        raise ContractError("webhook token is required")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def verify_webhook_token(*, provided_token: str, token_hash: str) -> bool:
+    if not provided_token or not token_hash:
+        return False
+    return hmac.compare_digest(hash_webhook_token(provided_token), token_hash)
+
+
+def extract_bearer_token(authorization: str | None) -> str:
+    value = clean_text(authorization)
+    prefix = "Bearer "
+    if not value.startswith(prefix):
+        return ""
+    return value[len(prefix):].strip()

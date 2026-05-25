@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
 from .automation_engine.api import router as automation_router
+from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
         reset_user_ops_fixture_state()
         reset_questionnaire_fixture_state()
         reset_automation_fixture_state()
+        reset_group_ops_fixture_state()
         reset_commerce_fixture_state()
         reset_media_library_fixture_state()
 
