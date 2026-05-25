@@ -867,6 +867,27 @@ def test_phase5h_wecom_customer_contact_contract_artifacts_can_define_stop_terms
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase5i_wecom_customer_contact_fake_stub_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5i_wecom_customer_contact_fake_stub_adapter.md",
+        "docs/development/phase_5i_wecom_customer_contact_fake_stub_adapter.yaml",
+        "tools/check_phase5i_wecom_customer_contact_fake_stub_adapter.py",
+        "tools/run_phase5i_wecom_customer_contact_fake_stub_staging_smoke.py",
+        "tools/run_phase5i_wecom_customer_contact_fake_stub_production_dry_run.py",
+        "tests/test_phase5i_wecom_customer_contact_fake_stub_adapter.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
+def test_phase5i_wecom_customer_contact_fake_stub_runtime_paths_are_automerge_deliverables() -> None:
+    expected = {
+        "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
+        "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
+        "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
+    }
+    assert expected <= checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
