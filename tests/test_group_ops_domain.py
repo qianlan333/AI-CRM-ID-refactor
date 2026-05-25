@@ -64,24 +64,17 @@ def test_webhook_token_hash_verification_does_not_require_plaintext_storage():
     assert verify_webhook_token(provided_token="wrong", token_hash=token_hash) is False
 
 
-def test_application_fixture_guardrail_blocks_implicit_production_repo(monkeypatch):
-    from aicrm_next.automation_engine.group_ops.application import CreateGroupOpsPlanCommand
-    from aicrm_next.automation_engine.group_ops.dto import GroupOpsPlanCreateRequest
+def test_repository_guardrail_uses_sql_repository_in_production_mode(monkeypatch):
+    from aicrm_next.automation_engine.group_ops.postgres_repo import PostgresGroupOpsRepository
+    from aicrm_next.automation_engine.group_ops.repo import build_group_ops_repository
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://group_ops:group_ops@127.0.0.1:1/aicrm")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.delenv("AICRM_GROUP_OPS_DATABASE_URL", raising=False)
+    monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
 
-    result = CreateGroupOpsPlanCommand()(
-        GroupOpsPlanCreateRequest(
-            plan_name="生产应被阻断",
-            plan_type="standard",
-            owner_userid="owner_001",
-            operator="pytest",
-        )
-    )
+    repo = build_group_ops_repository()
 
-    assert result["ok"] is False
-    assert result["status_code"] == 503
-    assert result["source_status"] == "production_unavailable"
-    assert result["side_effect_safety"]["real_wecom_call_executed"] is False
+    assert isinstance(repo, PostgresGroupOpsRepository)
+    assert repo.source_status == "postgres_group_ops_repository"

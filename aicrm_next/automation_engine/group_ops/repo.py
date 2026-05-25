@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from typing import Any, Protocol
 
-from aicrm_next.shared.errors import NotFoundError
+from sqlalchemy import create_engine
+
+from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .domain import (
     binding_stats,
@@ -14,6 +19,10 @@ from .domain import (
     normalize_plan_payload,
     utc_now_iso,
 )
+
+GROUP_OPS_BACKEND_ENV = "AICRM_GROUP_OPS_REPO_BACKEND"
+GROUP_OPS_DATABASE_URL_ENV = "AICRM_GROUP_OPS_DATABASE_URL"
+GROUP_OPS_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 class GroupOpsRepository(Protocol):
@@ -83,6 +92,8 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
 
 
 class InMemoryGroupOpsRepository:
+    source_status = "fixture_local_contract"
+
     def __init__(self) -> None:
         now = utc_now_iso()
         token = "fixture-webhook-token"
@@ -399,7 +410,26 @@ _fixture_repo = InMemoryGroupOpsRepository()
 
 
 def build_group_ops_repository() -> GroupOpsRepository:
-    return _fixture_repo
+    backend = clean_text(os.getenv(GROUP_OPS_BACKEND_ENV)).lower()
+    if production_data_ready() or backend in GROUP_OPS_SQL_BACKENDS:
+        database_url = clean_text(os.getenv(GROUP_OPS_DATABASE_URL_ENV)) or raw_database_url()
+        if not database_url:
+            raise ContractError(f"{GROUP_OPS_DATABASE_URL_ENV} or DATABASE_URL is required for group ops Postgres repository")
+        from .postgres_repo import PostgresGroupOpsRepository
+
+        return assert_repository_allowed(
+            PostgresGroupOpsRepository(create_engine(_sqlalchemy_database_url(database_url), future=True)),
+            capability_owner="aicrm_next.automation_engine.group_ops",
+        )
+    return assert_repository_allowed(_fixture_repo, capability_owner="aicrm_next.automation_engine.group_ops")
+
+
+def _sqlalchemy_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
 
 
 def reset_group_ops_fixture_state() -> None:
