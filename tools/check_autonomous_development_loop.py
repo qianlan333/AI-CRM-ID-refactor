@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cf_agent_outputs_repository_adapter_parity_bundle",
+    "phase_4cg_agent_runs_repository_adapter_parity_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -90,6 +90,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cc_workflow_nodes_repository_adapter_parity_completed",
     "phase_4cd_tasks_repository_adapter_parity_completed",
     "phase_4ce_agents_repository_adapter_parity_completed",
+    "phase_4cf_agent_outputs_repository_adapter_parity_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -132,6 +133,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/workflow_node_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/task_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/agent_sqlalchemy_repository.py",
+    "aicrm_next/automation_engine/agent_output_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/agents.py",
@@ -300,12 +302,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
-        blockers.append("active_candidate must advance to agent-outputs for the next compressed repository adapter parity bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-runs*":
+        blockers.append("active_candidate must advance to agent-runs for the next compressed repository adapter parity bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#689":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #689")
+    if state.get("last_merged_pr") != "#690":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #690")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -473,6 +475,15 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must record agent-outputs fixture/native list/detail runtime completion")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "repository_adapter_parity_completed"
+        and item.get("paused_by_pr") == "#691"
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must record agent-outputs repository adapter parity completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/agent-runs*"
@@ -745,9 +756,15 @@ def build_report() -> dict[str, Any]:
         "agent_run_execution_excluded",
         "llm_generation_excluded",
         "external_call_excluded",
+        "repository_adapter_parity_completed",
+        "no_database_url_fallback",
+        "default_backend_fixture_local",
+        "test_db_parity_harness_completed",
     ):
         if agent_outputs_readiness.get(field) is not True:
             blockers.append(f"agent_outputs_readiness.{field} must be true")
+    if agent_outputs_readiness.get("idempotency_audit_rollback_scaffold_completed") is not False:
+        blockers.append("agent_outputs_readiness.idempotency_audit_rollback_scaffold_completed must be false for read/detail-only scope")
     if agent_outputs_readiness.get("paused_by_pr") != "#683":
         blockers.append("agent_outputs_readiness.paused_by_pr must be #683")
     if set(agent_outputs_readiness.get("implemented_runtime_slices") or []) != {
