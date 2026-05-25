@@ -1,0 +1,18 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/group_ops.css') }}">
+{% endblock %}
+
+{% block content %}
+<div
+  id="group-ops-app"
+  class="group-ops"
+  data-page-mode="{{ group_ops_page_mode }}"
+  data-plan-id="{{ group_ops_plan_id }}"
+></div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/group_ops.js') }}"></script>
+{% endblock %}
