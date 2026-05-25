@@ -370,6 +370,16 @@ def test_phase4bp_agent_runs_owner_decision_artifacts_can_define_stop_terms_as_p
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4bq_agent_replay_metadata_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4bq_agent_replay_metadata_plan.md",
+        "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
+        "tools/check_phase4bq_agent_replay_metadata_plan.py",
+        "tests/test_phase4bq_agent_replay_metadata_plan.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

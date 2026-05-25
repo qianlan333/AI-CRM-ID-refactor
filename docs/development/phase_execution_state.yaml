@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/agent-replay
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#672"
-last_attempted_action: phase_4bp_agent_runs_fixture_native_implementation_owner_decision
-last_created_pr: "#673"
-recommended_next_pr: phase_4bq_agent_replay_metadata_planning
+last_merged_pr: "#673"
+last_attempted_action: phase_4bq_agent_replay_metadata_planning
+last_created_pr: "#674"
+recommended_next_pr: phase_4br_agent_replay_schema_route_surface_confirmation
 owner_approval_required: false
 
 work_package_policy:
@@ -70,9 +70,10 @@ completed_steps:
   - phase_4bn_agent_runs_schema_route_surface_confirmation_completed
   - phase_4bo_agent_runs_fixture_native_contract_planning_completed
   - phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed
+  - phase_4bq_agent_replay_metadata_planning_completed
 
 next_allowed_actions:
-  - phase_4bq_agent_replay_metadata_planning
+  - phase_4br_agent_replay_schema_route_surface_confirmation
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -287,7 +288,8 @@ agent_runs_readiness:
 
 agent_replay_readiness:
   metadata_planning_ready: true
-  metadata_planning_completed: false
+  metadata_planning_completed: true
+  schema_route_surface_confirmation_ready: true
   replay_execution_excluded: true
   run_creation_excluded: true
   run_execution_excluded: true

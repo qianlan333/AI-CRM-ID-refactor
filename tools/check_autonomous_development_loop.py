@@ -39,7 +39,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bq_agent_replay_metadata_planning",
+    "phase_4br_agent_replay_schema_route_surface_confirmation",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -74,6 +74,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bn_agent_runs_schema_route_surface_confirmation_completed",
     "phase_4bo_agent_runs_fixture_native_contract_planning_completed",
     "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed",
+    "phase_4bq_agent_replay_metadata_planning_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -270,8 +271,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-replay after agent-runs pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#672":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #672")
+    if state.get("last_merged_pr") != "#673":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #673")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -610,6 +611,8 @@ def build_report() -> dict[str, Any]:
     agent_replay_readiness = state.get("agent_replay_readiness") if isinstance(state.get("agent_replay_readiness"), dict) else {}
     for field in (
         "metadata_planning_ready",
+        "metadata_planning_completed",
+        "schema_route_surface_confirmation_ready",
         "replay_execution_excluded",
         "run_creation_excluded",
         "run_execution_excluded",
@@ -623,7 +626,6 @@ def build_report() -> dict[str, Any]:
         if agent_replay_readiness.get(field) is not True:
             blockers.append(f"agent_replay_readiness.{field} must be true")
     for field in (
-        "metadata_planning_completed",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
         "runtime_implementation_ready",
