@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
+from .agent_outputs import agent_output_projection, normalize_agent_output_filters
 from .agents import AGENT_ROUTE_FAMILY, agent_projection, agent_side_effect_safety, normalize_agent_create_payload
 from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
@@ -59,6 +60,8 @@ class AutomationRepository(Protocol):
     def list_agents(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def create_agent(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_agent_audit_events(self) -> list[dict[str, Any]]: ...
+    def list_agent_outputs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]: ...
+    def get_agent_output(self, output_id: str, filters: dict[str, Any] | None = None) -> dict[str, Any] | None: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -374,6 +377,48 @@ class InMemoryAutomationRepository:
         }
         self._agent_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._agent_audit_events: list[dict[str, Any]] = []
+        self._agent_outputs: dict[str, dict[str, Any]] = {
+            "phase4bk_output_reply_draft": {
+                "id": "phase4bk_output_reply_draft",
+                "output_id": "phase4bk_output_reply_draft",
+                "run_id": "phase4bo_run_draft",
+                "request_id": "req_phase4bk_reply",
+                "userid": "user_phase4_fixture",
+                "external_contact_id": "wm_external_001",
+                "agent_code": "phase4bg_review_agent",
+                "output_type": "reply_draft",
+                "rendered_output_text": "Fixture reply draft for console review only.",
+                "target_agent_code": "phase4bg_review_agent",
+                "target_pool": "unactivated_priority",
+                "confidence": 0.82,
+                "reason": "Fixture metadata output; no LLM or live delivery executed.",
+                "need_human_review": True,
+                "applied_status": "pending_review",
+                "error_code": "",
+                "error_message": "",
+                "created_at": "2026-05-20T09:50:00Z",
+            },
+            "phase4bk_output_route_decision": {
+                "id": "phase4bk_output_route_decision",
+                "output_id": "phase4bk_output_route_decision",
+                "run_id": "phase4bo_run_route",
+                "request_id": "req_phase4bk_route",
+                "userid": "user_phase4_fixture",
+                "external_contact_id": "wm_external_002",
+                "agent_code": "phase4bg_followup_agent",
+                "output_type": "route_decision",
+                "rendered_output_text": "Fixture route decision metadata for audit-only review.",
+                "target_agent_code": "phase4bg_followup_agent",
+                "target_pool": "silent",
+                "confidence": 0.74,
+                "reason": "Fixture local route metadata; no workflow, task, or agent-run execution.",
+                "need_human_review": False,
+                "applied_status": "draft",
+                "error_code": "",
+                "error_message": "",
+                "created_at": "2026-05-20T09:55:00Z",
+            },
+        }
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -953,6 +998,36 @@ class InMemoryAutomationRepository:
 
     def list_agent_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._agent_audit_events)
+
+    def list_agent_outputs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
+        normalized = normalize_agent_output_filters(filters)
+        rows = [deepcopy(item) for item in self._agent_outputs.values()]
+        for field in ("request_id", "external_contact_id", "userid", "agent_code", "output_type", "applied_status"):
+            value = str(normalized.get(field) or "").strip()
+            if value:
+                rows = [item for item in rows if str(item.get(field) or "") == value]
+        min_confidence = normalized.get("min_confidence")
+        if min_confidence is not None:
+            rows = [item for item in rows if float(item.get("confidence") or 0) >= float(min_confidence)]
+        max_confidence = normalized.get("max_confidence")
+        if max_confidence is not None:
+            rows = [item for item in rows if float(item.get("confidence") or 0) <= float(max_confidence)]
+        has_error = normalized.get("has_error")
+        if has_error is not None:
+            expected = bool(has_error)
+            rows = [item for item in rows if bool(str(item.get("error_code") or item.get("error_message") or "").strip()) is expected]
+        rows.sort(key=lambda item: (str(item.get("created_at") or ""), str(item.get("output_id") or "")), reverse=True)
+        total = len(rows)
+        page_rows = rows[normalized["offset"] : normalized["offset"] + normalized["page_size"]]
+        projected = [agent_output_projection(item, visibility=normalized["visibility"]) for item in page_rows]
+        return deepcopy(projected), total, deepcopy(normalized)
+
+    def get_agent_output(self, output_id: str, filters: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        normalized = normalize_agent_output_filters(filters)
+        item = self._agent_outputs.get(str(output_id or "").strip())
+        if not item:
+            return None
+        return agent_output_projection(item, visibility=normalized["visibility"])
 
     def _request_hash(self, payload: dict[str, Any]) -> str:
         import hashlib

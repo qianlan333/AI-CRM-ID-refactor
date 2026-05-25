@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bw_agent_outputs_fixture_native_list_detail_runtime",
+    "phase_4bx_agent_runs_fixture_native_list_detail_runtime",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -82,6 +82,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed",
     "phase_4bu_tasks_fixture_native_list_create_runtime_completed",
     "phase_4bv_agents_fixture_native_list_create_runtime_completed",
+    "phase_4bw_agent_outputs_fixture_native_list_detail_runtime_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -122,6 +123,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/agents.py",
+    "aicrm_next/automation_engine/agent_outputs.py",
     "aicrm_next/automation_engine/workflows.py",
     "aicrm_next/automation_engine/workflow_nodes.py",
 }
@@ -285,12 +287,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-outputs* after agents fixture runtime")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-runs*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-runs* after agent-outputs fixture runtime")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#680":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #680")
+    if state.get("last_merged_pr") != "#681":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #681")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -407,11 +409,12 @@ def build_report() -> dict[str, Any]:
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
-        and item.get("owner_approval_required") is True
-        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "fixture_native_list_detail_runtime_completed"
+        and item.get("paused_by_pr") == "#683"
         for item in paused_candidates
     ):
-        blockers.append("paused_candidates must include agent-outputs awaiting fixture/native runtime owner decision")
+        blockers.append("paused_candidates must record agent-outputs fixture/native list/detail runtime completion")
 
     task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
     if task_groups_readiness.get("native_contract_planning_started") is not True:
@@ -614,9 +617,8 @@ def build_report() -> dict[str, Any]:
         "schema_route_surface_confirmed",
         "fixture_native_contract_planning_ready",
         "fixture_native_contract_planning_completed",
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-        "paused",
+        "fixture_native_list_detail_runtime_completed",
+        "production_guard_blocks_fixture_success",
         "export_job_creation_excluded",
         "file_download_excluded",
         "agent_run_execution_excluded",
@@ -625,9 +627,17 @@ def build_report() -> dict[str, Any]:
     ):
         if agent_outputs_readiness.get(field) is not True:
             blockers.append(f"agent_outputs_readiness.{field} must be true")
-    if agent_outputs_readiness.get("paused_by_pr") != "#669":
-        blockers.append("agent_outputs_readiness.paused_by_pr must be #669")
+    if agent_outputs_readiness.get("paused_by_pr") != "#683":
+        blockers.append("agent_outputs_readiness.paused_by_pr must be #683")
+    if set(agent_outputs_readiness.get("implemented_runtime_slices") or []) != {
+        "agent_outputs_fixture_local_list",
+        "agent_outputs_fixture_local_detail",
+    }:
+        blockers.append("agent_outputs_readiness.implemented_runtime_slices must record fixture local list/detail")
     for field in (
+        "fixture_native_implementation_requires_owner_decision",
+        "owner_decision_required",
+        "paused",
         "runtime_implementation_ready",
         "production_owner_switch_ready",
         "production_write_ready",
