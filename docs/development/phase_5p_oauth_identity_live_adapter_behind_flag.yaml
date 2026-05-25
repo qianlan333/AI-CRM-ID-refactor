@@ -1,0 +1,73 @@
+version: 1
+status: phase_5p_oauth_identity_live_adapter_behind_explicit_flag
+bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+route_family: /api/h5/wechat/oauth*
+capability_owner: aicrm_next.integration_gateway
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  live_oauth_adapter_code_authorized: true
+  live_oauth_callback_by_default_authorized: false
+  production_callback_cutover_authorized: false
+  production_callback_owner_switch_authorized: false
+  production_session_write_authorized: false
+  production_identity_write_authorized: false
+  outbound_send_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  canary_approved: false
+  delete_ready: false
+
+live_adapter:
+  default_enabled: false
+  required_env:
+    - AICRM_OAUTH_IDENTITY_LIVE_ADAPTER_ENABLED
+    - AICRM_OAUTH_IDENTITY_LIVE_CALLBACK_APPROVED
+    - AICRM_OAUTH_IDENTITY_CONFIG_REVIEWED
+  required_inputs:
+    - code
+    - state
+    - operator
+    - idempotency_key
+  methods:
+    - build_authorize_url_live
+    - exchange_code_live
+
+side_effect_safety:
+  production_callback_cutover_allowed: false
+  production_session_write_allowed: false
+  production_identity_write_allowed: false
+  outbound_send_allowed: false
+  payment_allowed: false
+  media_upload_allowed: false
+  wecom_live_call_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+staging_evidence:
+  runner: tools/run_phase5p_oauth_identity_live_staging_evidence.py
+  default_blocked: true
+  dry_run_gate_supported: true
+  execute_live_staging_requires_approval: true
+
+production_dry_run_gate:
+  runner: tools/run_phase5p_oauth_identity_live_production_dry_run_gate.py
+  live_oauth_call_executed: false
+  production_session_write_executed: false
+  production_identity_write_executed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
+  route_family: /api/h5/wechat/oauth*
