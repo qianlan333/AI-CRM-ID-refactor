@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/tasks*
+active_candidate: /api/admin/automation-conversion/agent-runs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#705"
-last_attempted_action: phase_4cq_workflow_nodes_production_dry_run_readiness_bundle
-last_created_pr: "#706"
-recommended_next_pr: phase_4cr_tasks_production_dry_run_readiness_bundle
+last_merged_pr: "#706"
+last_attempted_action: phase_4cr_tasks_production_dry_run_readiness_bundle
+last_created_pr: "#707"
+recommended_next_pr: phase_4cs_agent_runs_production_dry_run_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -91,6 +91,9 @@ production_dry_run_readiness_slices:
     scope: blocked_by_default_readonly_dry_run_evidence
   - route_family: /api/admin/automation-conversion/workflow-nodes*
     slice: workflow_nodes_production_readonly_dry_run_readiness
+    scope: blocked_by_default_readonly_dry_run_evidence
+  - route_family: /api/admin/automation-conversion/tasks*
+    slice: tasks_production_readonly_dry_run_readiness
     scope: blocked_by_default_readonly_dry_run_evidence
 
 work_package_policy:
@@ -173,9 +176,10 @@ completed_steps:
   - phase_4co_task_groups_production_dry_run_readiness_completed
   - phase_4cp_workflows_production_dry_run_readiness_completed
   - phase_4cq_workflow_nodes_production_dry_run_readiness_completed
+  - phase_4cr_tasks_production_dry_run_readiness_completed
 
 next_allowed_actions:
-  - phase_4cr_tasks_production_dry_run_readiness_bundle
+  - phase_4cs_agent_runs_production_dry_run_readiness_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -468,6 +472,15 @@ tasks_readiness:
   staging_smoke_executed: false
   staging_write_executed: false
   staging_db_connection_attempted_by_default: false
+  production_dry_run_readiness_bundle_completed: true
+  production_readonly_dry_run_runner_completed: true
+  production_readonly_evidence_gate_completed: true
+  production_readonly_blocked_evidence_output_completed: true
+  production_readonly_dry_run_executed: false
+  production_readonly_db_url_flag: AICRM_TASKS_READONLY_DRY_RUN_DATABASE_URL
+  production_readonly_approval_flag: AICRM_PHASE4CR_PRODUCTION_READONLY_DRY_RUN_APPROVED
+  production_readonly_config_review_flag: AICRM_PHASE4CR_PRODUCTION_CONFIG_REVIEWED
+  production_readonly_db_connection_attempted_by_default: false
   production_guard_blocks_fixture_success: true
   paused: false
   paused_by_pr: "#680"
