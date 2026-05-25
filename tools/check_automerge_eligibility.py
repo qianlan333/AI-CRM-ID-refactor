@@ -34,6 +34,7 @@ AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
     "aicrm_next/automation_engine/dto.py",
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/task_groups.py",
+    "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/workflows.py",
     "aicrm_next/automation_engine/workflow_nodes.py",
 }
@@ -113,6 +114,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
+        "docs/development/phase_4bu_tasks_fixture_runtime.md",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
@@ -153,6 +155,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/check_phase4bs_workflows_fixture_runtime.py",
         "tools/check_phase4bt_workflow_nodes_fixture_runtime.py",
+        "tools/check_phase4bu_tasks_fixture_runtime.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -191,6 +194,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4br_task_groups_fixture_runtime.py",
         "tests/test_phase4bs_workflows_fixture_runtime.py",
         "tests/test_phase4bt_workflow_nodes_fixture_runtime.py",
+        "tests/test_phase4bu_tasks_fixture_runtime.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
 PROTECTED_EXACT = {
