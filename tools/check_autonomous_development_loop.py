@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bt_workflow_nodes_fixture_native_list_create_runtime",
+    "phase_4bu_tasks_fixture_native_list_create_runtime",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -79,6 +79,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bq_agent_replay_metadata_planning_completed",
     "phase_4br_task_groups_fixture_native_list_create_runtime_completed",
     "phase_4bs_workflows_fixture_native_list_create_runtime_completed",
+    "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -118,6 +119,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/workflows.py",
+    "aicrm_next/automation_engine/workflow_nodes.py",
 }
 
 
@@ -279,12 +281,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflow-nodes* after workflows fixture runtime")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/tasks*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/tasks* after workflow-nodes fixture runtime")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#675":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #675")
+    if state.get("last_merged_pr") != "#676":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #676")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -376,11 +378,11 @@ def build_report() -> dict[str, Any]:
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
-        and item.get("owner_approval_required") is True
-        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "fixture_native_list_create_runtime_completed"
         for item in paused_candidates
     ):
-        blockers.append("paused_candidates must include workflow-nodes awaiting fixture/native runtime owner decision")
+        blockers.append("paused_candidates must record workflow-nodes fixture/native list/create runtime completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/tasks*"
@@ -492,14 +494,21 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow_nodes_readiness.fixture_native_contract_planning_ready must be true")
     if workflow_nodes_readiness.get("fixture_native_contract_planning_completed") is not True:
         blockers.append("workflow_nodes_readiness.fixture_native_contract_planning_completed must be true")
-    if workflow_nodes_readiness.get("fixture_native_implementation_requires_owner_decision") is not True:
-        blockers.append("workflow_nodes_readiness.fixture_native_implementation_requires_owner_decision must be true")
-    if workflow_nodes_readiness.get("owner_decision_required") is not True:
-        blockers.append("workflow_nodes_readiness.owner_decision_required must be true")
-    if workflow_nodes_readiness.get("paused") is not True:
-        blockers.append("workflow_nodes_readiness.paused must be true")
-    if not str(workflow_nodes_readiness.get("paused_by_pr", "")).strip():
-        blockers.append("workflow_nodes_readiness.paused_by_pr must be recorded or pending")
+    if workflow_nodes_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
+        blockers.append("workflow_nodes_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
+    if workflow_nodes_readiness.get("owner_decision_required") is not False:
+        blockers.append("workflow_nodes_readiness.owner_decision_required must be false after safe fixture runtime")
+    if workflow_nodes_readiness.get("fixture_native_list_create_runtime_completed") is not True:
+        blockers.append("workflow_nodes_readiness.fixture_native_list_create_runtime_completed must be true")
+    if workflow_nodes_readiness.get("production_guard_blocks_fixture_success") is not True:
+        blockers.append("workflow_nodes_readiness.production_guard_blocks_fixture_success must be true")
+    if set(workflow_nodes_readiness.get("implemented_runtime_slices") or []) != {
+        "workflow_nodes_fixture_local_list",
+        "workflow_nodes_fixture_local_metadata_create",
+    }:
+        blockers.append("workflow_nodes_readiness.implemented_runtime_slices must record fixture local list/create")
+    if workflow_nodes_readiness.get("paused") is not False:
+        blockers.append("workflow_nodes_readiness.paused must be false after safe fixture runtime")
     for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",

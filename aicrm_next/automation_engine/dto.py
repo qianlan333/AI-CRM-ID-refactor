@@ -162,5 +162,32 @@ class WorkflowCreateRequest(BaseModel):
     operator: str = "system"
 
 
+class WorkflowNodeListRequest(BaseModel):
+    program_id: int | None = None
+    workflow_id: int | None = None
+    node_type: str = ""
+    status: str = ""
+    include_archived: bool = False
+    limit: int = 50
+    offset: int = 0
+
+
+class WorkflowNodeCreateRequest(BaseModel):
+    program_id: int = 0
+    workflow_id: int = 0
+    node_name: str | None = None
+    name: str | None = None
+    node_code: str | None = None
+    code: str | None = None
+    node_type: str = "manual"
+    status: str = "draft"
+    sort_order: int = 0
+    position: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = None
+    operator: str = "system"
+
+
 class ActionTemplateValidationError(ValueError):
     pass
