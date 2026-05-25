@@ -53,6 +53,7 @@ LOW_RISK_EXACT = {
     "tools/run_phase5c_wecom_tag_live_production_dry_run_gate.py",
     "tools/run_phase5d_wecom_tag_staging_live_canary_evidence.py",
     "tools/run_phase5d_wecom_tag_production_live_readiness_review.py",
+    "tools/run_phase5e_wecom_tag_production_canary_readiness.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -212,6 +213,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5c_wecom_tag_live_adapter_behind_flag.yaml",
         "docs/development/phase_5d_wecom_tag_staging_live_canary_evidence.md",
         "docs/development/phase_5d_wecom_tag_staging_live_canary_evidence.yaml",
+        "docs/development/phase_5e_wecom_tag_production_canary_readiness.md",
+        "docs/development/phase_5e_wecom_tag_production_canary_readiness.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -322,6 +325,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/run_phase5d_wecom_tag_staging_live_canary_evidence.py",
         "tools/run_phase5d_wecom_tag_production_live_readiness_review.py",
         "tests/test_phase5d_wecom_tag_staging_live_canary_evidence.py",
+        "tools/check_phase5e_wecom_tag_production_canary_readiness.py",
+        "tools/run_phase5e_wecom_tag_production_canary_readiness.py",
+        "tests/test_phase5e_wecom_tag_production_canary_readiness.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
