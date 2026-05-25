@@ -246,6 +246,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4bl_agent_outputs_fixture_native_implementation_owner_decision.yaml",
         "docs/development/phase_4bm_agent_runs_metadata_plan.md",
         "docs/development/phase_4bm_agent_runs_metadata_plan.yaml",
+        "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.md",
+        "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.yaml",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -277,6 +279,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4bk_agent_outputs_fixture_native_contract_plan.py",
         "tests/test_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4bm_agent_runs_metadata_plan.py",
+        "tests/test_phase4bn_agent_runs_schema_route_surface_confirmation.py",
         "tests/test_codex_autopilot_runtime_contract.py",
         "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
@@ -306,6 +309,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase4bk_agent_outputs_fixture_native_contract_plan.py",
         "tools/check_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
         "tools/check_phase4bm_agent_runs_metadata_plan.py",
+        "tools/check_phase4bn_agent_runs_schema_route_surface_confirmation.py",
     }
     for path in sorted(paths):
         if path in policy_paths:

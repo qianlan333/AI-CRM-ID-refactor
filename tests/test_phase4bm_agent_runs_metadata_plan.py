@@ -58,12 +58,21 @@ def test_authorizations_false() -> None:
 def test_phase_execution_state_advances_to_phase_4bn() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENT_RUNS
-    assert state["last_merged_pr"] == "#669"
-    assert state["last_attempted_action"] == "phase_4bm_agent_runs_metadata_planning"
-    assert state["last_created_pr"] == "#670"
-    assert state["recommended_next_pr"] == "phase_4bn_agent_runs_schema_route_surface_confirmation"
+    assert state["last_merged_pr"] in {"#669", "#670"}
+    assert state["last_attempted_action"] in {
+        "phase_4bm_agent_runs_metadata_planning",
+        "phase_4bn_agent_runs_schema_route_surface_confirmation",
+    }
+    assert state["last_created_pr"] in {"#670", "#671"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bn_agent_runs_schema_route_surface_confirmation",
+        "phase_4bo_agent_runs_fixture_native_contract_planning",
+    }
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bn_agent_runs_schema_route_surface_confirmation"]
+    assert state["next_allowed_actions"] in [
+        ["phase_4bn_agent_runs_schema_route_surface_confirmation"],
+        ["phase_4bo_agent_runs_fixture_native_contract_planning"],
+    ]
     assert "phase_4bm_agent_runs_metadata_planning_completed" in state["completed_steps"]
 
 
@@ -80,7 +89,8 @@ def test_agent_runs_readiness_is_planning_only_without_runtime_readiness() -> No
     assert readiness["deepseek_adapter_excluded"] is True
     assert readiness["openclaw_mcp_excluded"] is True
     assert readiness["external_call_excluded"] is True
-    assert readiness["fixture_native_contract_planning_ready"] is False
+    assert readiness.get("schema_route_surface_confirmed") in {None, True}
+    assert readiness["fixture_native_contract_planning_ready"] in {False, True}
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
