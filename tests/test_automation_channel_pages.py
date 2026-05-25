@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from urllib.parse import quote
 
 from wecom_ability_service.db import get_db
@@ -10,6 +11,10 @@ from wecom_ability_service.domains.automation_conversion.channel_binding_service
 )
 
 from automation_channel_admission_helpers import admin_action_token, create_program, login_admin
+
+
+ROOT = Path(__file__).resolve().parents[1]
+NEXT_CHANNEL_ADMISSION_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js"
 
 
 def _row_for(html: str, marker: str) -> str:
@@ -131,6 +136,7 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
             "channel_code": "CH-SAVE-LINK",
             "customer_channel": "wca_save_link",
             "link_url": "https://work.weixin.qq.com/ca/save",
+            "welcome_image_library_ids": [301],
             "welcome_miniprogram_library_ids": [201],
             "welcome_attachment_library_ids": [102, 108],
             "status": "active",
@@ -142,6 +148,7 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     assert saved["carrier_type"] == "link"
     assert saved["customer_channel"] == "wca_save_link"
     assert saved["final_url"].endswith("customer_channel=wca_save_link")
+    assert saved["welcome_image_library_ids"] == [301]
     assert saved["welcome_miniprogram_library_ids"] == [201]
     assert saved["welcome_attachment_library_ids"] == [102, 108]
 
@@ -163,9 +170,14 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
         )
         get_db().execute(
             """
+            INSERT INTO image_library (name, file_name, mime_type, enabled)
+            VALUES ('欢迎图片', 'welcome.png', 'image/png', TRUE)
+            """
+        )
+        get_db().execute(
+            """
             INSERT INTO attachment_library (name, file_name, mime_type, enabled)
-            VALUES ('欢迎图片', 'welcome.png', 'image/png', TRUE),
-                   ('欢迎PDF', 'welcome.pdf', 'application/pdf', TRUE)
+            VALUES ('欢迎PDF', 'welcome.pdf', 'application/pdf', TRUE)
             """
         )
         get_db().commit()
@@ -183,6 +195,7 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     assert "预览并选择小程序" in new_html
     assert "预览并选择图片/PDF" in new_html
     assert "预览并选择标签" in new_html
+    assert "data-image-ids" in new_html
     assert "data-resource-picker-search" in new_html
     assert "小程序" in new_html
     assert "图片" in new_html
@@ -206,6 +219,9 @@ def test_channel_create_and_link_edit_pages_render_type_specific_controls(app, c
     assert materials.status_code == 200
     material_types = {item["type"] for item in materials.get_json()["materials"]}
     assert {"miniprogram", "image", "pdf"}.issubset(material_types)
+    preview_materials = client.get("/api/admin/channel-welcome-materials?type=all").get_json()["materials"]
+    assert any(item["type"] == "image" and item.get("library") == "image_library" for item in preview_materials)
+    assert any(item["type"] == "pdf" and item.get("library") == "attachment_library" for item in preview_materials)
     pdf_materials = client.get("/api/admin/channel-welcome-materials?type=pdf&keyword=欢迎").get_json()["materials"]
     assert pdf_materials
     assert {item["type"] for item in pdf_materials} == {"pdf"}
@@ -401,13 +417,13 @@ def test_entry_channel_binding_payload_is_channel_ids_only_and_old_setup_is_read
 
 
 def test_next_frontend_channel_static_keeps_save_feedback_contract():
-    root = "/Users/qianlan/Documents/New project/AI-CRM-channel-admission"
-    with open(f"{root}/aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js", encoding="utf-8") as handle:
+    with open(NEXT_CHANNEL_ADMISSION_JS, encoding="utf-8") as handle:
         next_js = handle.read()
-    with open(f"{root}/aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.css", encoding="utf-8") as handle:
+    with open(ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.css", encoding="utf-8") as handle:
         next_css = handle.read()
 
     assert "data-channel-save-feedback" in next_js
+    assert "welcome_image_library_ids" in next_js
     assert "保存中..." in next_js
     assert "保存成功，欢迎语和素材已更新。" in next_js
     assert ".channel-save-feedback" in next_css
