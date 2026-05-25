@@ -36,6 +36,7 @@ LOW_RISK_EXACT = {
     "tools/run_phase4ch_task_groups_staging_readiness.py",
     "tools/run_phase4ci_workflows_staging_readiness.py",
     "tools/run_phase4cj_workflow_nodes_staging_readiness.py",
+    "tools/run_phase4ck_tasks_staging_readiness.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -156,6 +157,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4ci_workflows_staging_readiness_bundle.yaml",
         "docs/development/phase_4cj_workflow_nodes_staging_readiness_bundle.md",
         "docs/development/phase_4cj_workflow_nodes_staging_readiness_bundle.yaml",
+        "docs/development/phase_4ck_tasks_staging_readiness_bundle.md",
+        "docs/development/phase_4ck_tasks_staging_readiness_bundle.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -226,6 +229,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4cj_workflow_nodes_staging_readiness_bundle.py",
         "tools/run_phase4cj_workflow_nodes_staging_readiness.py",
         "tests/test_phase4cj_workflow_nodes_staging_readiness_bundle.py",
+        "tools/check_phase4ck_tasks_staging_readiness_bundle.py",
+        "tools/run_phase4ck_tasks_staging_readiness.py",
+        "tests/test_phase4ck_tasks_staging_readiness_bundle.py",
         "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/check_phase4bs_workflows_fixture_runtime.py",
         "tools/check_phase4bt_workflow_nodes_fixture_runtime.py",
