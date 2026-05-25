@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#685"
+    assert data["last_merged_pr"] == "#686"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -70,6 +70,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed" in set(data["completed_steps"])
     assert "phase_4by_agent_replay_discovery_contract_bundle_completed" in set(data["completed_steps"])
     assert "phase_4ca_task_groups_repository_adapter_parity_completed" in set(data["completed_steps"])
+    assert "phase_4cb_workflows_repository_adapter_parity_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -134,6 +135,13 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
         and item["paused_by_pr"] == "#686"
         for item in paused
     )
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/workflows*"
+        and item["owner_approval_required"] is False
+        and item["status"] == "repository_adapter_parity_completed"
+        and item["paused_by_pr"] == "#687"
+        for item in paused
+    )
     readiness = data["task_groups_readiness"]
     assert readiness["native_contract_planning_started"] is True
     assert readiness["native_contract_planning_completed"] is True
@@ -150,6 +158,11 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
     assert readiness["test_db_parity_harness_completed"] is True
     assert readiness["idempotency_audit_rollback_scaffold_completed"] is True
     assert readiness["production_guard_blocks_fixture_success"] is True
+    assert readiness["repository_adapter_parity_completed"] is True
+    assert readiness["no_database_url_fallback"] is True
+    assert readiness["default_backend_fixture_local"] is True
+    assert readiness["test_db_parity_harness_completed"] is True
+    assert readiness["idempotency_audit_rollback_scaffold_completed"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is False
     assert readiness["owner_decision_required"] is False
@@ -302,7 +315,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
