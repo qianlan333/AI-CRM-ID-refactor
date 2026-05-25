@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cm_agent_outputs_staging_readiness_bundle",
+    "phase_4cn_agent_runs_staging_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -100,6 +100,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cj_workflow_nodes_staging_readiness_completed",
     "phase_4ck_tasks_staging_readiness_completed",
     "phase_4cl_agents_staging_readiness_completed",
+    "phase_4cm_agent_outputs_staging_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -312,12 +313,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
-        blockers.append("active_candidate must advance to agent-outputs for the next compressed staging readiness bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-runs*":
+        blockers.append("active_candidate must advance to agent-runs for the next compressed staging readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#697":
-        blockers.append("last_merged_pr must record latest completed merged PR #697")
+    if state.get("last_merged_pr") != "#698":
+        blockers.append("last_merged_pr must record latest completed merged PR #698")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -816,14 +817,27 @@ def build_report() -> dict[str, Any]:
         "file_download_excluded",
         "agent_run_execution_excluded",
         "llm_generation_excluded",
+        "deepseek_adapter_excluded",
+        "openclaw_mcp_excluded",
         "external_call_excluded",
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
+        "staging_readiness_bundle_completed",
+        "staging_readiness_preflight_completed",
+        "staging_evidence_gate_completed",
+        "staging_blocked_evidence_output_completed",
     ):
         if agent_outputs_readiness.get(field) is not True:
             blockers.append(f"agent_outputs_readiness.{field} must be true")
+    if agent_outputs_readiness.get("staging_database_url_flag") != "AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL":
+        blockers.append("agent_outputs_readiness.staging_database_url_flag must be AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL")
+    if agent_outputs_readiness.get("staging_backend_flag") != "AICRM_AGENT_OUTPUTS_REPO_BACKEND":
+        blockers.append("agent_outputs_readiness.staging_backend_flag must be AICRM_AGENT_OUTPUTS_REPO_BACKEND")
+    if agent_outputs_readiness.get("staging_approval_flag") != "AICRM_PHASE4CM_STAGING_SMOKE_APPROVED":
+        blockers.append("agent_outputs_readiness.staging_approval_flag must be AICRM_PHASE4CM_STAGING_SMOKE_APPROVED")
+    if agent_outputs_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CM_STAGING_WRITE_APPROVED":
+        blockers.append("agent_outputs_readiness.staging_write_approval_flag must be AICRM_PHASE4CM_STAGING_WRITE_APPROVED")
+    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
+        if agent_outputs_readiness.get(field) is not False:
+            blockers.append(f"agent_outputs_readiness.{field} must be false")
     if agent_outputs_readiness.get("idempotency_audit_rollback_scaffold_completed") is not False:
         blockers.append("agent_outputs_readiness.idempotency_audit_rollback_scaffold_completed must be false for read/detail-only scope")
     if agent_outputs_readiness.get("paused_by_pr") != "#683":
