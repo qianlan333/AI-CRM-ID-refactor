@@ -24,9 +24,11 @@ from .application import (
     CreateProfileSegmentTemplateCommand,
     CreateTaskGroupCommand,
     GetAgentOutputDetailQuery,
+    GetAgentRunDetailQuery,
     ListActionTemplatesQuery,
     ListAgentsQuery,
     ListAgentOutputsQuery,
+    ListAgentRunsQuery,
     ListTasksQuery,
     ListTaskGroupsQuery,
     ListWorkflowsQuery,
@@ -51,6 +53,8 @@ from .dto import (
     AgentListRequest,
     AgentOutputDetailRequest,
     AgentOutputListRequest,
+    AgentRunDetailRequest,
+    AgentRunListRequest,
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
@@ -326,6 +330,56 @@ def get_agent_output_detail(output_id: str, visibility: str = "masked") -> JSONR
     request = AgentOutputDetailRequest(output_id=output_id, visibility=visibility)
     try:
         return _json_result(GetAgentOutputDetailQuery()(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/agent-runs")
+def list_agent_runs(
+    page: int = 1,
+    page_size: int = 50,
+    request_id: str = "",
+    run_id: str = "",
+    agent_code: str = "",
+    run_status: str = "",
+    trigger_source: str = "",
+    external_contact_id: str = "",
+    userid: str = "",
+    task_id: int | None = None,
+    workflow_id: int | None = None,
+    started_after: str = "",
+    started_before: str = "",
+    has_error: bool | None = None,
+    visibility: str = "masked",
+) -> JSONResponse:
+    request = AgentRunListRequest(
+        page=page,
+        page_size=page_size,
+        request_id=request_id,
+        run_id=run_id,
+        agent_code=agent_code,
+        run_status=run_status,
+        trigger_source=trigger_source,
+        external_contact_id=external_contact_id,
+        userid=userid,
+        task_id=task_id,
+        workflow_id=workflow_id,
+        started_after=started_after,
+        started_before=started_before,
+        has_error=has_error,
+        visibility=visibility,
+    )
+    try:
+        return _json_result(ListAgentRunsQuery()(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/agent-runs/{run_id}")
+def get_agent_run_detail(run_id: str, visibility: str = "masked") -> JSONResponse:
+    request = AgentRunDetailRequest(run_id=run_id, visibility=visibility)
+    try:
+        return _json_result(GetAgentRunDetailQuery()(request))
     except Exception as exc:
         _raise_http(exc)
 

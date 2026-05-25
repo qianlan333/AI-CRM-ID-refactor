@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "compressed bounded bundle" in prompt_text
     assert "20-35 minutes" in prompt_text
-    assert "phase_4bx_agent_runs_fixture_native_list_detail_runtime" in prompt_text
+    assert "phase_4by_agent_replay_discovery_contract_bundle" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -836,6 +836,46 @@ def test_runner_treats_phase4bw_agent_outputs_runtime_path_as_guarded_policy_fil
     }
     paths = {
         "aicrm_next/automation_engine/agent_outputs.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4bx_agent_runs_runtime_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "openclaw",
+        "mcp",
+        "timer",
+        "outbound send",
+        "run execution",
+        "replay execution",
+        "orchestration execution",
+        "llm generation",
+    }
+    paths = {
+        "docs/development/phase_4bx_agent_runs_fixture_runtime.md",
+        "tools/check_phase4bx_agent_runs_fixture_runtime.py",
+        "tests/test_phase4bx_agent_runs_fixture_runtime.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4bx_agent_runs_runtime_path_as_guarded_policy_file() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "openclaw",
+        "mcp",
+        "timer",
+        "outbound send",
+        "run execution",
+        "replay execution",
+        "orchestration execution",
+        "llm generation",
+    }
+    paths = {
+        "aicrm_next/automation_engine/agent_runs.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 

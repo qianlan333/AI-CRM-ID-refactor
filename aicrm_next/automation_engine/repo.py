@@ -7,6 +7,7 @@ from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .agent_outputs import agent_output_projection, normalize_agent_output_filters
+from .agent_runs import agent_run_projection, normalize_agent_run_filters
 from .agents import AGENT_ROUTE_FAMILY, agent_projection, agent_side_effect_safety, normalize_agent_create_payload
 from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
@@ -62,6 +63,8 @@ class AutomationRepository(Protocol):
     def list_agent_audit_events(self) -> list[dict[str, Any]]: ...
     def list_agent_outputs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]: ...
     def get_agent_output(self, output_id: str, filters: dict[str, Any] | None = None) -> dict[str, Any] | None: ...
+    def list_agent_runs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]: ...
+    def get_agent_run(self, run_id: str, filters: dict[str, Any] | None = None) -> dict[str, Any] | None: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -417,6 +420,50 @@ class InMemoryAutomationRepository:
                 "error_code": "",
                 "error_message": "",
                 "created_at": "2026-05-20T09:55:00Z",
+            },
+        }
+        self._agent_runs: dict[str, dict[str, Any]] = {
+            "phase4bo_run_completed_metadata": {
+                "id": "phase4bo_run_completed_metadata",
+                "run_id": "phase4bo_run_completed_metadata",
+                "request_id": "req_phase4bo_completed",
+                "agent_code": "phase4bg_review_agent",
+                "run_status": "completed",
+                "trigger_source": "fixture",
+                "external_contact_id": "wm_external_001",
+                "userid": "user_phase4_fixture",
+                "task_id": 1,
+                "workflow_id": 1,
+                "started_at": "2026-05-20T09:48:00Z",
+                "finished_at": "2026-05-20T09:49:00Z",
+                "duration_ms": 60000,
+                "error_code": "",
+                "error_message": "",
+                "output_count": 1,
+                "metadata": {"source": "fixture", "runtime_enabled": False},
+                "created_at": "2026-05-20T09:48:00Z",
+                "updated_at": "2026-05-20T09:49:00Z",
+            },
+            "phase4bo_run_failed_metadata": {
+                "id": "phase4bo_run_failed_metadata",
+                "run_id": "phase4bo_run_failed_metadata",
+                "request_id": "req_phase4bo_failed",
+                "agent_code": "phase4bg_followup_agent",
+                "run_status": "failed",
+                "trigger_source": "fixture",
+                "external_contact_id": "wm_external_002",
+                "userid": "user_phase4_fixture",
+                "task_id": 2,
+                "workflow_id": 1,
+                "started_at": "2026-05-20T09:52:00Z",
+                "finished_at": "2026-05-20T09:52:30Z",
+                "duration_ms": 30000,
+                "error_code": "fixture_agent_run_failed",
+                "error_message": "Fixture local metadata failure; no live runtime path was invoked.",
+                "output_count": 0,
+                "metadata": {"source": "fixture", "runtime_enabled": False},
+                "created_at": "2026-05-20T09:52:00Z",
+                "updated_at": "2026-05-20T09:52:30Z",
             },
         }
 
@@ -1028,6 +1075,38 @@ class InMemoryAutomationRepository:
         if not item:
             return None
         return agent_output_projection(item, visibility=normalized["visibility"])
+
+    def list_agent_runs(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
+        normalized = normalize_agent_run_filters(filters)
+        rows = [deepcopy(item) for item in self._agent_runs.values()]
+        for field in ("request_id", "run_id", "agent_code", "run_status", "trigger_source", "external_contact_id", "userid"):
+            value = str(normalized.get(field) or "").strip()
+            if value:
+                rows = [item for item in rows if str(item.get(field) or "") == value]
+        for field in ("task_id", "workflow_id"):
+            value = normalized.get(field)
+            if value not in (None, ""):
+                rows = [item for item in rows if int(item.get(field) or 0) == int(value)]
+        if normalized["started_after"]:
+            rows = [item for item in rows if str(item.get("started_at") or "") >= normalized["started_after"]]
+        if normalized["started_before"]:
+            rows = [item for item in rows if str(item.get("started_at") or "") <= normalized["started_before"]]
+        has_error = normalized.get("has_error")
+        if has_error is not None:
+            expected = bool(has_error)
+            rows = [item for item in rows if bool(str(item.get("error_code") or item.get("error_message") or "").strip()) is expected]
+        rows.sort(key=lambda item: (str(item.get("started_at") or ""), str(item.get("run_id") or "")), reverse=True)
+        total = len(rows)
+        page_rows = rows[normalized["offset"] : normalized["offset"] + normalized["page_size"]]
+        projected = [agent_run_projection(item, visibility=normalized["visibility"]) for item in page_rows]
+        return deepcopy(projected), total, deepcopy(normalized)
+
+    def get_agent_run(self, run_id: str, filters: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        normalized = normalize_agent_run_filters(filters)
+        item = self._agent_runs.get(str(run_id or "").strip())
+        if not item:
+            return None
+        return agent_run_projection(item, visibility=normalized["visibility"])
 
     def _request_hash(self, payload: dict[str, Any]) -> str:
         import hashlib

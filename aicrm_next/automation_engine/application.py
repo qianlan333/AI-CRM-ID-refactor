@@ -20,6 +20,7 @@ from aicrm_next.shared.runtime import production_data_ready, production_environm
 
 from .action_templates import action_template_side_effect_safety
 from .agent_outputs import agent_output_run_projection, agent_output_side_effect_safety
+from .agent_runs import agent_run_side_effect_safety
 from .action_template_repository import (
     ActionTemplateIdempotencyConflict,
     InMemoryActionTemplateRepository,
@@ -37,6 +38,8 @@ from .dto import (
     AgentListRequest,
     AgentOutputDetailRequest,
     AgentOutputListRequest,
+    AgentRunDetailRequest,
+    AgentRunListRequest,
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
@@ -229,6 +232,23 @@ def _agent_output_production_unavailable_payload(detail: str | None = None) -> d
     return payload
 
 
+def _agent_run_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:
+    payload = blocked_production_payload(
+        capability_owner="aicrm_next.automation_engine",
+        detail=detail
+        or "agent run production repository is not enabled; legacy production_compat fallback remains the production owner.",
+    )
+    payload.update(
+        {
+            "status_code": 503,
+            "error_code": "production_repository_not_enabled",
+            "route_owner": "ai_crm_next",
+            "side_effect_safety": agent_run_side_effect_safety(),
+        }
+    )
+    return payload
+
+
 def _profile_segment_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
     return {
         "ok": True,
@@ -313,6 +333,17 @@ def _agent_output_response(payload: dict[str, Any], *, status_code: int = 200) -
         "route_owner": "ai_crm_next",
         "status_code": status_code,
         "side_effect_safety": agent_output_side_effect_safety(),
+        **payload,
+    }
+
+
+def _agent_run_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source_status": "fixture_local_contract",
+        "route_owner": "ai_crm_next",
+        "status_code": status_code,
+        "side_effect_safety": agent_run_side_effect_safety(),
         **payload,
     }
 
@@ -461,6 +492,22 @@ class _AgentOutputRepositoryOwner:
     def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
         detail = str(exc) if exc else None
         return _agent_output_production_unavailable_payload(detail)
+
+
+class _AgentRunRepositoryOwner:
+    def __init__(self, repo: AutomationRepository | None = None) -> None:
+        self._repo = repo
+
+    def _repo_or_none(self) -> AutomationRepository | None:
+        if (production_environment() or production_data_ready()) and self._repo is None:
+            return None
+        if self._repo is None:
+            self._repo = build_automation_repository()
+        return self._repo
+
+    def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
+        detail = str(exc) if exc else None
+        return _agent_run_production_unavailable_payload(detail)
 
 
 class GetAutomationRuntimeContractQuery:
@@ -849,6 +896,61 @@ class GetAgentOutputDetailQuery(_AgentOutputRepositoryOwner):
                 "run": agent_output_run_projection(output, visibility=output.get("visibility") or "masked"),
             }
         )
+
+    __call__ = execute
+
+
+class ListAgentRunsQuery(_AgentRunRepositoryOwner):
+    def execute(self, request: AgentRunListRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _agent_run_production_unavailable_payload()
+        try:
+            rows, total, filters = repo.list_agent_runs(_request_dump(request))
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _agent_run_response(
+            {
+                "items": rows,
+                "rows": rows,
+                "runs": rows,
+                "total": total,
+                "count": len(rows),
+                "page": filters["page"],
+                "page_size": filters["page_size"],
+                "filters": {
+                    "request_id": filters["request_id"],
+                    "run_id": filters["run_id"],
+                    "agent_code": filters["agent_code"],
+                    "run_status": filters["run_status"],
+                    "trigger_source": filters["trigger_source"],
+                    "external_contact_id": filters["external_contact_id"],
+                    "userid": filters["userid"],
+                    "task_id": filters["task_id"],
+                    "workflow_id": filters["workflow_id"],
+                    "started_after": filters["started_after"],
+                    "started_before": filters["started_before"],
+                    "has_error": filters["has_error"],
+                    "visibility": filters["visibility"],
+                },
+            }
+        )
+
+    __call__ = execute
+
+
+class GetAgentRunDetailQuery(_AgentRunRepositoryOwner):
+    def execute(self, request: AgentRunDetailRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _agent_run_production_unavailable_payload()
+        try:
+            run = repo.get_agent_run(request.run_id, _request_dump(request))
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        if not run:
+            raise NotFoundError("agent run not found")
+        return _agent_run_response({"run": run})
 
     __call__ = execute
 
