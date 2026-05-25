@@ -44,10 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5o_oauth_identity_fake_stub_adapter_bundle",
+    "phase_5p_oauth_identity_live_adapter_behind_flag_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS = {
-    "phase_5o_oauth_identity_fake_stub_adapter_bundle",
+    "phase_5p_oauth_identity_live_adapter_behind_flag_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -127,6 +127,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed",
     "phase_5m_wecom_customer_contact_callback_family_acceptance_completed",
     "phase_5n_oauth_identity_adapter_contract_completed",
+    "phase_5o_oauth_identity_fake_stub_adapter_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -190,6 +191,9 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
     "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
     "aicrm_next/integration_gateway/wecom_contact_callback_live_gateway.py",
+    "aicrm_next/integration_gateway/oauth_identity_adapter.py",
+    "aicrm_next/integration_gateway/oauth_identity_application.py",
+    "aicrm_next/integration_gateway/oauth_identity_contract.py",
 }
 
 
@@ -355,8 +359,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must select the Phase 5N OAuth identity callback contract candidate")
     if state.get("capability_owner") != "aicrm_next.integration_gateway":
         blockers.append("capability_owner must be aicrm_next.integration_gateway")
-    if state.get("last_merged_pr") != "#726":
-        blockers.append("last_merged_pr must record latest completed merged PR #726")
+    if state.get("last_merged_pr") != "#727":
+        blockers.append("last_merged_pr must record latest completed merged PR #727")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)

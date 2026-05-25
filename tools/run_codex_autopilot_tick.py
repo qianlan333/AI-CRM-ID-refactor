@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5o_oauth_identity_fake_stub_adapter_bundle",
+    "phase_5p_oauth_identity_live_adapter_behind_flag_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -218,6 +218,9 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
         "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
         "aicrm_next/integration_gateway/wecom_contact_callback_live_gateway.py",
+        "aicrm_next/integration_gateway/oauth_identity_adapter.py",
+        "aicrm_next/integration_gateway/oauth_identity_application.py",
+        "aicrm_next/integration_gateway/oauth_identity_contract.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -384,6 +387,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase5n_oauth_identity_adapter_contract.py",
         "tools/run_phase5n_oauth_identity_adapter_contract_evidence.py",
         "tests/test_phase5n_oauth_identity_adapter_contract.py",
+        "docs/development/phase_5o_oauth_identity_fake_stub_adapter.md",
+        "docs/development/phase_5o_oauth_identity_fake_stub_adapter.yaml",
+        "tools/check_phase5o_oauth_identity_fake_stub_adapter.py",
+        "tools/run_phase5o_oauth_identity_fake_stub_staging_smoke.py",
+        "tools/run_phase5o_oauth_identity_fake_stub_production_dry_run.py",
+        "tests/test_phase5o_oauth_identity_fake_stub_adapter.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -725,6 +734,7 @@ Read and follow:
 - Phase 5L WeCom contact callback production readiness packages must stay docs/tools/tests/state only; production callback execution remains forbidden by default.
 - Phase 5M WeCom contact callback family acceptance packages must stay docs/tools/tests/state only; no new live callback is allowed.
 - Phase 5N OAuth identity adapter contract packages must stay docs/tools/tests/state only; no live OAuth callback cutover or token exchange is allowed.
+- Phase 5O OAuth identity fake/stub packages may touch explicitly selected aicrm_next/integration_gateway fake/stub OAuth files only; live OAuth callback and token exchange remain disabled.
 - Do not enable real external calls, timer, automation execution, or outbound send by default.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
