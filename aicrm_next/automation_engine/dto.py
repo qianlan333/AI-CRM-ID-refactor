@@ -139,5 +139,28 @@ class TaskGroupCreateRequest(BaseModel):
     operator: str = "system"
 
 
+class WorkflowListRequest(BaseModel):
+    program_id: int | None = None
+    status: str = ""
+    include_archived: bool = False
+    limit: int = 50
+    offset: int = 0
+
+
+class WorkflowCreateRequest(BaseModel):
+    program_id: int = 0
+    workflow_name: str | None = None
+    name: str | None = None
+    workflow_code: str | None = None
+    code: str | None = None
+    description: str = ""
+    status: str = "draft"
+    segmentation_basis: dict[str, Any] = Field(default_factory=dict)
+    behavior_tier_scheme: dict[str, Any] = Field(default_factory=dict)
+    profile_segment_template_id: int = 0
+    idempotency_key: str | None = None
+    operator: str = "system"
+
+
 class ActionTemplateValidationError(ValueError):
     pass

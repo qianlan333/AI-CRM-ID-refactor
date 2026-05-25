@@ -14,6 +14,7 @@ from aicrm_next.integration_gateway.legacy_automation_facade import (
 from .application import (
     ApplyActivationWebhookCommand,
     ConfirmConversionCommand,
+    CreateWorkflowCommand,
     EnterSilentPoolCommand,
     ExitMarketingCommand,
     CreateActionTemplateCommand,
@@ -21,6 +22,7 @@ from .application import (
     CreateTaskGroupCommand,
     ListActionTemplatesQuery,
     ListTaskGroupsQuery,
+    ListWorkflowsQuery,
     GetProfileSegmentTemplateCatalogQuery,
     GetProfileSegmentTemplateOptionsQuery,
     GetProfileSegmentTemplateQuery,
@@ -47,6 +49,8 @@ from .dto import (
     PushOpenClawContextRequest,
     TaskGroupCreateRequest,
     TaskGroupListRequest,
+    WorkflowCreateRequest,
+    WorkflowListRequest,
 )
 
 router = APIRouter()
@@ -138,6 +142,32 @@ def list_task_groups(
 def create_task_group(payload: TaskGroupCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateTaskGroupCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/workflows")
+def list_workflows(
+    program_id: int | None = None,
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = WorkflowListRequest(
+        program_id=program_id,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListWorkflowsQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/workflows")
+def create_workflow(payload: WorkflowCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateWorkflowCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 
