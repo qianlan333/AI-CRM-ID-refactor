@@ -10,11 +10,11 @@ autopilot:
 current_phase: phase_4_internal_write
 active_candidate: /api/admin/automation-conversion/agent-runs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#670"
-last_attempted_action: phase_4bn_agent_runs_schema_route_surface_confirmation
-last_created_pr: "#671"
-recommended_next_pr: phase_4bo_agent_runs_fixture_native_contract_planning
-owner_approval_required: false
+last_merged_pr: "#671"
+last_attempted_action: phase_4bo_agent_runs_fixture_native_contract_planning
+last_created_pr: "#672"
+recommended_next_pr: phase_4bp_agent_runs_fixture_native_implementation_owner_decision
+owner_approval_required: true
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -68,9 +68,10 @@ completed_steps:
   - phase_4bl_agent_outputs_fixture_native_implementation_owner_decision_completed
   - phase_4bm_agent_runs_metadata_planning_completed
   - phase_4bn_agent_runs_schema_route_surface_confirmation_completed
+  - phase_4bo_agent_runs_fixture_native_contract_planning_completed
 
 next_allowed_actions:
-  - phase_4bo_agent_runs_fixture_native_contract_planning
+  - phase_4bp_agent_runs_fixture_native_implementation_owner_decision
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -258,8 +259,9 @@ agent_runs_readiness:
   schema_route_surface_confirmation_ready: true
   schema_route_surface_confirmed: true
   fixture_native_contract_planning_ready: true
-  fixture_native_implementation_requires_owner_decision: false
-  owner_decision_required: false
+  fixture_native_contract_planning_completed: true
+  fixture_native_implementation_requires_owner_decision: true
+  owner_decision_required: true
   run_creation_excluded: true
   run_execution_excluded: true
   replay_execution_excluded: true
