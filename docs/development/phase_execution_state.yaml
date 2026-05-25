@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/task-groups*
+active_candidate: /api/admin/automation-conversion/workflows*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#684"
-last_attempted_action: phase_4by_agent_replay_discovery_contract_bundle
-last_created_pr: "#685"
-recommended_next_pr: phase_4ca_task_groups_repository_adapter_parity_bundle
+last_merged_pr: "#685"
+last_attempted_action: phase_4ca_task_groups_repository_adapter_parity_bundle
+last_created_pr: "#686"
+recommended_next_pr: phase_4cb_workflows_repository_adapter_parity_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -38,6 +38,10 @@ implemented_runtime_slices:
     slice: agent_runs_fixture_local_list_detail
     scope: fixture_local_only
 guarded_disabled_runtime_slices: []
+repository_adapter_parity_slices:
+  - route_family: /api/admin/automation-conversion/task-groups*
+    slice: task_groups_sqlalchemy_test_db_parity
+    scope: explicit_test_or_staging_db_only
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -102,9 +106,10 @@ completed_steps:
   - phase_4bw_agent_outputs_fixture_native_list_detail_runtime_completed
   - phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed
   - phase_4by_agent_replay_discovery_contract_bundle_completed
+  - phase_4ca_task_groups_repository_adapter_parity_completed
 
 next_allowed_actions:
-  - phase_4ca_task_groups_repository_adapter_parity_bundle
+  - phase_4cb_workflows_repository_adapter_parity_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -176,6 +181,11 @@ paused_candidates:
     paused_by_pr: "#685"
     owner_approval_required: true
     resume_condition: explicit_owner_approval_for_replay_orchestration_generation_runtime
+  - route_family: /api/admin/automation-conversion/task-groups*
+    status: repository_adapter_parity_completed
+    paused_by_pr: "#686"
+    owner_approval_required: false
+    resume_condition: completed_disabled_by_default_test_db_adapter_parity
 
 task_groups_readiness:
   native_contract_planning_started: true
@@ -190,6 +200,14 @@ task_groups_readiness:
     - task_groups_fixture_local_list
     - task_groups_fixture_local_metadata_create
   guarded_disabled_runtime_slices: []
+  repository_adapter_parity_completed: true
+  repository_adapter_backend_flag: AICRM_TASK_GROUPS_REPO_BACKEND
+  repository_adapter_test_db_url_flag: AICRM_TASK_GROUPS_TEST_DATABASE_URL
+  repository_adapter_staging_db_url_flag: AICRM_TASK_GROUPS_STAGING_DATABASE_URL
+  no_database_url_fallback: true
+  default_backend_fixture_local: true
+  test_db_parity_harness_completed: true
+  idempotency_audit_rollback_scaffold_completed: true
   production_guard_blocks_fixture_success: true
   production_owner_switch_ready: false
   production_write_ready: false

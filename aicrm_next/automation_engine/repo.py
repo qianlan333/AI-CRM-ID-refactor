@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from typing import Any, Protocol
+
+from sqlalchemy import create_engine
 
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.errors import ContractError, NotFoundError
@@ -21,6 +24,11 @@ from .workflow_nodes import (
     workflow_node_side_effect_safety,
 )
 from .workflows import WORKFLOW_ROUTE_FAMILY, normalize_workflow_create_payload, workflow_projection, workflow_side_effect_safety
+
+TASK_GROUP_BACKEND_ENV = "AICRM_TASK_GROUPS_REPO_BACKEND"
+TASK_GROUP_TEST_DATABASE_URL_ENV = "AICRM_TASK_GROUPS_TEST_DATABASE_URL"
+TASK_GROUP_STAGING_DATABASE_URL_ENV = "AICRM_TASK_GROUPS_STAGING_DATABASE_URL"
+TASK_GROUP_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 class AutomationRepository(Protocol):
@@ -1347,7 +1355,31 @@ class InMemoryAutomationRepository:
 _fixture_repo = InMemoryAutomationRepository()
 
 
-def build_automation_repository() -> AutomationRepository:
+def _task_group_repository_backend() -> str:
+    return str(os.getenv(TASK_GROUP_BACKEND_ENV) or "fixture").strip().lower()
+
+
+def _task_group_database_url() -> str:
+    return str(os.getenv(TASK_GROUP_TEST_DATABASE_URL_ENV) or os.getenv(TASK_GROUP_STAGING_DATABASE_URL_ENV) or "").strip()
+
+
+def build_automation_repository(*, task_group_backend: str | None = None, task_group_engine: Any | None = None) -> AutomationRepository:
+    selected_task_group_backend = str(task_group_backend or _task_group_repository_backend()).strip().lower()
+    if selected_task_group_backend in TASK_GROUP_SQL_BACKENDS:
+        engine = task_group_engine
+        if engine is None:
+            database_url = _task_group_database_url()
+            if not database_url:
+                raise ContractError(
+                    f"{TASK_GROUP_TEST_DATABASE_URL_ENV} or {TASK_GROUP_STAGING_DATABASE_URL_ENV} is required when {TASK_GROUP_BACKEND_ENV}=sqlalchemy"
+                )
+            engine = create_engine(database_url, future=True)
+        from .task_group_sqlalchemy_repository import SqlAlchemyTaskGroupRepository
+
+        return assert_repository_allowed(
+            SqlAlchemyTaskGroupRepository(engine),
+            capability_owner="automation_engine.task_groups",
+        )
     return assert_repository_allowed(_fixture_repo, capability_owner="automation_engine")
 
 
