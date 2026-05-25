@@ -12,3 +12,10 @@ class DryRunTagRequest(BaseModel):
     tag_ids: list[str] = Field(default_factory=list)
     operator: str = ""
     idempotency_key: str = ""
+
+
+class LiveTagRequest(BaseModel):
+    external_userid: str = ""
+    tag_ids: list[str] = Field(default_factory=list)
+    operator: str = ""
+    idempotency_key: str = ""

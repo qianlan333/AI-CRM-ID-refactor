@@ -28,3 +28,25 @@ class WeComTagAdapterContract(Protocol):
         operator: str,
         idempotency_key: str,
     ) -> Json: ...
+
+
+class WeComTagLiveAdapterContract(Protocol):
+    def list_wecom_tags_live(self) -> Json: ...
+
+    def mark_tags_live(
+        self,
+        *,
+        external_userid: str,
+        tag_ids: list[str],
+        operator: str,
+        idempotency_key: str,
+    ) -> Json: ...
+
+    def unmark_tags_live(
+        self,
+        *,
+        external_userid: str,
+        tag_ids: list[str],
+        operator: str,
+        idempotency_key: str,
+    ) -> Json: ...

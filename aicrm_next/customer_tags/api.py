@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from .application import build_wecom_tag_application_service
-from .dto import DryRunTagRequest, ValidateTagIdsRequest
+from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
 
 
 router = APIRouter()
@@ -32,6 +32,31 @@ def dry_run_mark_tags(payload: DryRunTagRequest) -> dict:
 @router.post("/api/admin/wecom/tags/fake-stub/dry-run/unmark")
 def dry_run_unmark_tags(payload: DryRunTagRequest) -> dict:
     return build_wecom_tag_application_service().dry_run_unmark_tags(
+        external_userid=payload.external_userid,
+        tag_ids=payload.tag_ids,
+        operator=payload.operator,
+        idempotency_key=payload.idempotency_key,
+    )
+
+
+@router.get("/api/admin/wecom/tags/live/gate")
+def list_wecom_tags_live_gate() -> dict:
+    return build_wecom_tag_application_service().list_wecom_tags_live()
+
+
+@router.post("/api/admin/wecom/tags/live/mark")
+def mark_tags_live(payload: LiveTagRequest) -> dict:
+    return build_wecom_tag_application_service().mark_tags_live(
+        external_userid=payload.external_userid,
+        tag_ids=payload.tag_ids,
+        operator=payload.operator,
+        idempotency_key=payload.idempotency_key,
+    )
+
+
+@router.post("/api/admin/wecom/tags/live/unmark")
+def unmark_tags_live(payload: LiveTagRequest) -> dict:
+    return build_wecom_tag_application_service().unmark_tags_live(
         external_userid=payload.external_userid,
         tag_ids=payload.tag_ids,
         operator=payload.operator,
