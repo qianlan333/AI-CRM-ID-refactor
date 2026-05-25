@@ -39,14 +39,37 @@ def _json_result(payload: dict) -> JSONResponse:
     return JSONResponse(payload, status_code=int(payload.get("status_code") or 200))
 
 
-def _raise_http(exc: Exception) -> None:
-    if isinstance(exc, ApplicationError):
-        raise HTTPException(status_code=int(exc.status_code), detail=str(exc)) from exc
+def _error_code_for(exc: Exception) -> str:
+    message = str(exc)
+    if "owner_userid must match" in message:
+        return "group_owner_mismatch"
+    if "content, images, or attachments is required" in message or "content.text or content.attachments" in message:
+        return "content_required"
+    if "webhook plan is not active" in message:
+        return "plan_not_active"
+    if "invalid webhook token" in message:
+        return "invalid_webhook_token"
     if isinstance(exc, NotFoundError):
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return "not_found"
     if isinstance(exc, ContractError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return "contract_error"
+    return "application_error"
+
+
+def _raise_http(exc: Exception) -> None:
+    detail = {
+        "ok": False,
+        "error_code": _error_code_for(exc),
+        "detail": str(exc),
+        "route_owner": "ai_crm_next",
+    }
+    if isinstance(exc, ApplicationError):
+        raise HTTPException(status_code=int(exc.status_code), detail=detail) from exc
+    if isinstance(exc, NotFoundError):
+        raise HTTPException(status_code=404, detail=detail) from exc
+    if isinstance(exc, ContractError):
+        raise HTTPException(status_code=400, detail=detail) from exc
+    raise HTTPException(status_code=400, detail=detail) from exc
 
 
 @router.get("/api/admin/automation-conversion/group-ops/plans")

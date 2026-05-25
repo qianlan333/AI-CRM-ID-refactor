@@ -134,6 +134,10 @@ class WeComGroupMessageAdapter:
 
 
 class LegacyBroadcastJobQueueGateway:
+    def __init__(self, *, legacy_app_factory=None, enqueue_job_fn=None) -> None:
+        self._legacy_app_factory = legacy_app_factory
+        self._enqueue_job_fn = enqueue_job_fn
+
     def enqueue_group_message(
         self,
         *,
@@ -147,13 +151,18 @@ class LegacyBroadcastJobQueueGateway:
         created_by: str = "group_ops_webhook",
     ) -> int:
         def _enqueue() -> int:
-            from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+            if self._enqueue_job_fn is None:
+                from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+
+                enqueue_job = queue_service.enqueue_job
+            else:
+                enqueue_job = self._enqueue_job_fn
 
             payload = dict(content_payload or {})
             payload["channel"] = "wecom_customer_group"
             payload["chat_ids"] = [str(item or "").strip() for item in chat_ids if str(item or "").strip()]
             payload["sender"] = str(owner_userid or "").strip()
-            return queue_service.enqueue_job(
+            return enqueue_job(
                 source_type="workflow",
                 source_table="automation_group_ops_plans",
                 source_id=str(source_id or plan_id),
@@ -167,9 +176,12 @@ class LegacyBroadcastJobQueueGateway:
                 allow_empty_targets=True,
             )
 
-        from .legacy_flask_facade import _legacy_app
+        if self._legacy_app_factory is None:
+            from .legacy_flask_facade import _legacy_app
 
-        app = _legacy_app()
+            app = _legacy_app()
+        else:
+            app = self._legacy_app_factory()
         with app.app_context():
             return _enqueue()
 
