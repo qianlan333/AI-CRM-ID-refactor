@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-runs*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#705"
+    assert data["last_merged_pr"] == "#706"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -86,9 +86,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4co_task_groups_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cp_workflows_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cq_workflow_nodes_production_dry_run_readiness_completed" in set(data["completed_steps"])
+    assert "phase_4cr_tasks_production_dry_run_readiness_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4co_task_groups_production_dry_run_only() -> None:
+def test_next_allowed_actions_are_phase_4cs_agent_runs_production_dry_run_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -430,6 +431,20 @@ def test_tasks_runtime_completed_without_production_readiness() -> None:
     assert readiness["staging_smoke_executed"] is False
     assert readiness["staging_write_executed"] is False
     assert readiness["staging_db_connection_attempted_by_default"] is False
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/tasks*"
+        and item["slice"] == "tasks_production_readonly_dry_run_readiness"
+        for item in data["production_dry_run_readiness_slices"]
+    )
+    assert readiness["production_dry_run_readiness_bundle_completed"] is True
+    assert readiness["production_readonly_dry_run_runner_completed"] is True
+    assert readiness["production_readonly_evidence_gate_completed"] is True
+    assert readiness["production_readonly_blocked_evidence_output_completed"] is True
+    assert readiness["production_readonly_dry_run_executed"] is False
+    assert readiness["production_readonly_db_url_flag"] == "AICRM_TASKS_READONLY_DRY_RUN_DATABASE_URL"
+    assert readiness["production_readonly_approval_flag"] == "AICRM_PHASE4CR_PRODUCTION_READONLY_DRY_RUN_APPROVED"
+    assert readiness["production_readonly_config_review_flag"] == "AICRM_PHASE4CR_PRODUCTION_CONFIG_REVIEWED"
+    assert readiness["production_readonly_db_connection_attempted_by_default"] is False
     assert readiness["paused"] is False
     assert str(readiness["paused_by_pr"]).strip()
     assert readiness["run_due_excluded"] is True
@@ -507,7 +522,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-runs*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
