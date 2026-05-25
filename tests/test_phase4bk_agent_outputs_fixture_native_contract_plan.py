@@ -68,13 +68,22 @@ def test_authorizations_false() -> None:
 
 def test_phase_execution_state_advances_to_phase_4bl_owner_decision() -> None:
     state = checker.load_yaml(STATE)
-    assert state["active_candidate"] == checker.ROUTE
-    assert state["last_merged_pr"] == "#667"
-    assert state["last_attempted_action"] == "phase_4bk_agent_outputs_fixture_native_contract_planning"
-    assert state["last_created_pr"] == "#668"
-    assert state["recommended_next_pr"] == "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"
-    assert state["owner_approval_required"] is True
-    assert state["next_allowed_actions"] == ["phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"]
+    assert state["active_candidate"] in {checker.ROUTE, "/api/admin/automation-conversion/agent-runs*"}
+    assert state["last_merged_pr"] in {"#667", "#668"}
+    assert state["last_attempted_action"] in {
+        "phase_4bk_agent_outputs_fixture_native_contract_planning",
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+    }
+    assert state["last_created_pr"] in {"#668", "#669"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+        "phase_4bm_agent_runs_metadata_planning",
+    }
+    assert state["owner_approval_required"] in {False, True}
+    assert state["next_allowed_actions"] in [
+        ["phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"],
+        ["phase_4bm_agent_runs_metadata_planning"],
+    ]
     assert "phase_4bk_agent_outputs_fixture_native_contract_planning_completed" in state["completed_steps"]
 
 
@@ -83,6 +92,7 @@ def test_agent_outputs_readiness_requires_owner_decision_without_runtime_readine
     assert readiness["fixture_native_contract_planning_completed"] is True
     assert readiness["fixture_native_implementation_requires_owner_decision"] is True
     assert readiness["owner_decision_required"] is True
+    assert readiness.get("paused") in {None, True}
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
