@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "compressed bounded bundle" in prompt_text
     assert "20-35 minutes" in prompt_text
-    assert "phase_4cl_agents_staging_readiness_bundle" in prompt_text
+    assert "phase_4cm_agent_outputs_staging_readiness_bundle" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -851,6 +851,25 @@ def test_runner_treats_phase4ck_tasks_staging_readiness_artifacts_as_policy_file
         "tools/check_phase4ck_tasks_staging_readiness_bundle.py",
         "tools/run_phase4ck_tasks_staging_readiness.py",
         "tests/test_phase4ck_tasks_staging_readiness_bundle.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4cl_agents_staging_readiness_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4cl_agents_staging_readiness_bundle.md",
+        "docs/development/phase_4cl_agents_staging_readiness_bundle.yaml",
+        "tools/check_phase4cl_agents_staging_readiness_bundle.py",
+        "tools/run_phase4cl_agents_staging_readiness.py",
+        "tests/test_phase4cl_agents_staging_readiness_bundle.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
