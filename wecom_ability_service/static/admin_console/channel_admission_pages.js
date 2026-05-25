@@ -280,17 +280,18 @@
     const miniprogramIds = intList(root.querySelector("[data-miniprogram-ids]")?.value);
     const imageIds = intList(root.querySelector("[data-image-ids]")?.value);
     const attachmentIds = intList(root.querySelector("[data-attachment-ids]")?.value);
+    const entryTagId = root.querySelector("[data-entry-tag-id]")?.value || "";
+    const entryTagName = root.querySelector("[data-entry-tag-name]")?.value || "";
+    const entryTagGroupName = root.querySelector("[data-entry-tag-group-name]")?.value || "";
     if (miniprogramIds.length + imageIds.length + attachmentIds.length > 9) {
       throw new Error("欢迎语素材最多选择 9 个");
     }
-    return {
+    const payload = {
       admin_action_token: adminToken,
       channel_type: isLink ? "wecom_customer_acquisition" : "qrcode",
       carrier_type: isLink ? "link" : "qrcode",
       channel_name: data.channel_name || "",
       channel_code: data.channel_code || "",
-      scene_value: isLink ? data.customer_channel || data.scene_value || "" : data.scene_value || data.channel_code || "",
-      customer_channel: isLink ? data.customer_channel || data.scene_value || "" : "",
       link_url: isLink ? data.link_url || "" : "",
       final_url: isLink ? data.final_url || finalUrl(data.link_url, data.customer_channel) : "",
       qr_url: isLink ? "" : data.qr_url || "",
@@ -298,12 +299,17 @@
       welcome_image_library_ids: imageIds,
       welcome_miniprogram_library_ids: miniprogramIds,
       welcome_attachment_library_ids: attachmentIds,
-      entry_tag_id: data.entry_tag_id || "",
-      entry_tag_name: data.entry_tag_name || "",
-      entry_tag_group_name: data.entry_tag_group_name || "",
+      entry_tag_id: entryTagId,
+      entry_tag_name: entryTagName,
+      entry_tag_group_name: entryTagGroupName,
       owner_staff_id: data.owner_staff_id || "",
       status: data.status || "active",
     };
+    if (isLink) {
+      payload.scene_value = data.customer_channel || data.scene_value || "";
+      payload.customer_channel = data.customer_channel || data.scene_value || "";
+    }
+    return payload;
   }
 
   function setupChannelForm() {
