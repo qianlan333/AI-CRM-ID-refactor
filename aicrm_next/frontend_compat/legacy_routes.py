@@ -61,6 +61,9 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/channels/new",
     "/admin/channels/{channel_id}/edit",
     "/admin/automation-conversion",
+    "/admin/automation-conversion/group-ops/ui",
+    "/admin/automation-conversion/group-ops/plans/{plan_id}",
+    "/admin/automation-conversion/group-ops/groups/ui",
     "/admin/automation-conversion/programs/{program_id}/entry-channels",
     "/admin/jobs",
     "/admin/wechat-pay/transactions",
@@ -146,6 +149,10 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         + str(path_params.get("push_log_id", "")).strip()
         + "/retry",
         "api.admin_automation_conversion": "/admin/automation-conversion",
+        "api.admin_group_ops_ui": "/admin/automation-conversion/group-ops/ui",
+        "api.admin_group_ops_plan_detail": "/admin/automation-conversion/group-ops/plans/"
+        + str(path_params.get("plan_id", "")).strip(),
+        "api.admin_group_ops_groups_ui": "/admin/automation-conversion/group-ops/groups/ui",
         "api.admin_jobs": "/admin/jobs",
         "api.admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
         "api.admin_wechat_pay_transaction_detail_page": "/admin/wechat-pay/transactions/"
@@ -173,6 +180,7 @@ ADMIN_NAV_GROUPS = [
         "title": "运营",
         "items": [
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
+            {"key": "group_ops", "label": "群运营计划", "endpoint": "api.admin_group_ops_ui"},
             {"key": "channels", "label": "渠道码中心", "endpoint": "api.admin_channels_page"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
@@ -727,6 +735,70 @@ def admin_automation_conversion(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_console/automation_program_list.html", context)
+
+
+def _group_ops_page_context(
+    request: Request,
+    *,
+    page_title: str,
+    page_summary: str,
+    page_mode: str,
+    plan_id: int | None = None,
+) -> dict:
+    context = _shell_context(
+        request=request,
+        page_title=page_title,
+        page_summary=page_summary,
+        active_endpoint="api.admin_group_ops_ui",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "群运营计划", "href": request.url_for("api.admin_group_ops_ui")},
+            ],
+            "group_ops_page_mode": page_mode,
+            "group_ops_plan_id": int(plan_id or 0),
+            "page_actions": [],
+        }
+    )
+    if page_mode != "list":
+        context["breadcrumbs"].append({"label": page_title})
+    return context
+
+
+@router.get("/admin/automation-conversion/group-ops/ui", name="api.admin_group_ops_ui")
+def admin_group_ops_ui(request: Request):
+    context = _group_ops_page_context(
+        request,
+        page_title="群运营计划",
+        page_summary="按计划管理客户群运营内容。",
+        page_mode="list",
+    )
+    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
+
+
+@router.get("/admin/automation-conversion/group-ops/plans/{plan_id:int}", name="api.admin_group_ops_plan_detail")
+def admin_group_ops_plan_detail(request: Request, plan_id: int):
+    context = _group_ops_page_context(
+        request,
+        page_title="群运营计划",
+        page_summary="配置运营成员、群包和计划内容。",
+        page_mode="detail",
+        plan_id=plan_id,
+    )
+    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
+
+
+@router.get("/admin/automation-conversion/group-ops/groups/ui", name="api.admin_group_ops_groups_ui")
+def admin_group_ops_groups_ui(request: Request):
+    context = _group_ops_page_context(
+        request,
+        page_title="查看所有群",
+        page_summary="按群名、群主、所属计划和状态查看客户群。",
+        page_mode="groups",
+    )
+    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
 
 
 @router.get("/admin/channels", name="api.admin_channels_page")
