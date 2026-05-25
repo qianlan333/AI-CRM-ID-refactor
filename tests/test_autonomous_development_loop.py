@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-replay"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#683"
+    assert data["last_merged_pr"] == "#684"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -68,6 +68,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bv_agents_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
     assert "phase_4bw_agent_outputs_fixture_native_list_detail_runtime_completed" in set(data["completed_steps"])
     assert "phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed" in set(data["completed_steps"])
+    assert "phase_4by_agent_replay_discovery_contract_bundle_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -288,7 +289,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-replay"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
@@ -366,10 +367,24 @@ def test_agent_runs_fixture_runtime_completed_without_production_readiness() -> 
 
 def test_agent_replay_selected_for_metadata_planning_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/agent-replay"
+        and item["owner_approval_required"] is True
+        and item["status"] == "discovery_contract_completed_replay_runtime_deferred"
+        and item["paused_by_pr"] == "#685"
+        for item in data["paused_candidates"]
+    )
     readiness = data["agent_replay_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
     assert readiness["schema_route_surface_confirmation_ready"] is True
+    assert readiness["schema_route_surface_confirmed"] is True
+    assert readiness["fixture_native_contract_planning_ready"] is True
+    assert readiness["fixture_native_contract_planning_completed"] is True
+    assert readiness["fixture_native_runtime_deferred"] is True
+    assert readiness["discovery_contract_bundle_completed"] is True
+    assert readiness["paused"] is True
+    assert readiness["paused_by_pr"] == "#685"
     assert readiness["replay_execution_excluded"] is True
     assert readiness["run_creation_excluded"] is True
     assert readiness["run_execution_excluded"] is True
@@ -379,6 +394,8 @@ def test_agent_replay_selected_for_metadata_planning_without_runtime_readiness()
     assert readiness["deepseek_adapter_excluded"] is True
     assert readiness["openclaw_mcp_excluded"] is True
     assert readiness["external_call_excluded"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
+    assert readiness["owner_decision_required"] is True
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False

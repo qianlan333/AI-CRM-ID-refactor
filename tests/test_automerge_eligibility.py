@@ -380,6 +380,16 @@ def test_phase4bq_agent_replay_metadata_artifacts_can_define_stop_terms_as_polic
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4by_agent_replay_discovery_contract_bundle_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4by_agent_replay_discovery_contract_bundle.md",
+        "docs/development/phase_4by_agent_replay_discovery_contract_bundle.yaml",
+        "tools/check_phase4by_agent_replay_discovery_contract_bundle.py",
+        "tests/test_phase4by_agent_replay_discovery_contract_bundle.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_phase4br_task_groups_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
     expected = {
         "docs/development/phase_4br_task_groups_fixture_runtime.md",

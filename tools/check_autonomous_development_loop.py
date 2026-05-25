@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4by_agent_replay_discovery_contract_bundle",
+    "phase_4ca_task_groups_repository_adapter_parity_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -84,6 +84,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bv_agents_fixture_native_list_create_runtime_completed",
     "phase_4bw_agent_outputs_fixture_native_list_detail_runtime_completed",
     "phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed",
+    "phase_4by_agent_replay_discovery_contract_bundle_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -289,12 +290,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-replay":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-replay after agent-runs fixture runtime")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
+        blockers.append("active_candidate must advance to task-groups for the next compressed repository adapter parity bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#683":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #683")
+    if state.get("last_merged_pr") != "#684":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #684")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -426,6 +427,15 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must record agent-runs fixture/native list/detail runtime completion")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/agent-replay"
+        and item.get("owner_approval_required") is True
+        and item.get("status") == "discovery_contract_completed_replay_runtime_deferred"
+        and item.get("paused_by_pr") == "#685"
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must record agent-replay discovery contract completion and runtime deferral")
 
     task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
     if task_groups_readiness.get("native_contract_planning_started") is not True:
@@ -706,6 +716,12 @@ def build_report() -> dict[str, Any]:
         "metadata_planning_ready",
         "metadata_planning_completed",
         "schema_route_surface_confirmation_ready",
+        "schema_route_surface_confirmed",
+        "fixture_native_contract_planning_ready",
+        "fixture_native_contract_planning_completed",
+        "fixture_native_runtime_deferred",
+        "discovery_contract_bundle_completed",
+        "paused",
         "replay_execution_excluded",
         "run_creation_excluded",
         "run_execution_excluded",
@@ -718,9 +734,15 @@ def build_report() -> dict[str, Any]:
     ):
         if agent_replay_readiness.get(field) is not True:
             blockers.append(f"agent_replay_readiness.{field} must be true")
+    if agent_replay_readiness.get("paused_by_pr") != "#685":
+        blockers.append("agent_replay_readiness.paused_by_pr must be #685")
     for field in (
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
+    ):
+        if agent_replay_readiness.get(field) is not True:
+            blockers.append(f"agent_replay_readiness.{field} must be true after replay runtime deferral")
+    for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",
         "production_write_ready",

@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "compressed bounded bundle" in prompt_text
     assert "20-35 minutes" in prompt_text
-    assert "phase_4by_agent_replay_discovery_contract_bundle" in prompt_text
+    assert "phase_4ca_task_groups_repository_adapter_parity_bundle" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -624,6 +624,24 @@ def test_runner_treats_phase4bq_agent_replay_metadata_artifacts_as_policy_files(
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4by_agent_replay_discovery_contract_bundle_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4by_agent_replay_discovery_contract_bundle.md",
+        "docs/development/phase_4by_agent_replay_discovery_contract_bundle.yaml",
+        "tools/check_phase4by_agent_replay_discovery_contract_bundle.py",
+        "tests/test_phase4by_agent_replay_discovery_contract_bundle.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
