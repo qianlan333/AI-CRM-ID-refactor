@@ -29,7 +29,7 @@ def test_pr_body_sections_required() -> None:
 def test_low_risk_changed_files_are_docs_tools_tests_only() -> None:
     report = checker.build_report()
     for path in report["details"]["changed_files"]:
-        assert path in checker.LOW_RISK_EXACT or path in checker.OWNER_DECISION_PACKAGE_PATHS or path.startswith(("docs/development/", "tools/check_", "tests/test_"))
+        assert checker._is_low_risk_path(path)
 
 
 def test_protected_runtime_path_requires_owner_approval() -> None:
@@ -378,6 +378,28 @@ def test_phase4bq_agent_replay_metadata_artifacts_can_define_stop_terms_as_polic
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
+def test_phase4br_task_groups_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4br_task_groups_fixture_runtime.md",
+        "tools/check_phase4br_task_groups_fixture_runtime.py",
+        "tests/test_phase4br_task_groups_fixture_runtime.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
+def test_phase4br_runtime_paths_are_autopilot_deliverable() -> None:
+    expected = {
+        "aicrm_next/automation_engine/api.py",
+        "aicrm_next/automation_engine/application.py",
+        "aicrm_next/automation_engine/dto.py",
+        "aicrm_next/automation_engine/repo.py",
+        "aicrm_next/automation_engine/task_groups.py",
+    }
+    assert expected <= checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+    for path in expected:
+        assert checker._is_low_risk_path(path)
 
 
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:

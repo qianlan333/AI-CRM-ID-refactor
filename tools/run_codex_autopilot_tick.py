@@ -185,6 +185,11 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/autonomous_development_loop.md",
         "docs/development/autonomous_stop_conditions.yaml",
         "docs/development/phase_execution_state.yaml",
+        "aicrm_next/automation_engine/api.py",
+        "aicrm_next/automation_engine/application.py",
+        "aicrm_next/automation_engine/dto.py",
+        "aicrm_next/automation_engine/repo.py",
+        "aicrm_next/automation_engine/task_groups.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -254,6 +259,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4bp_agent_runs_fixture_native_implementation_owner_decision.yaml",
         "docs/development/phase_4bq_agent_replay_metadata_plan.md",
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
+        "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -289,6 +295,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4bo_agent_runs_fixture_native_contract_plan.py",
         "tests/test_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
+        "tests/test_phase4br_task_groups_fixture_runtime.py",
         "tests/test_codex_autopilot_runtime_contract.py",
         "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
@@ -322,6 +329,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase4bo_agent_runs_fixture_native_contract_plan.py",
         "tools/check_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
+        "tools/check_phase4br_task_groups_fixture_runtime.py",
     }
     for path in sorted(paths):
         if path in policy_paths:
@@ -475,7 +483,8 @@ Read and follow:
 - Do not write production.
 - Do not remove fallback.
 - Do not modify production_compat, aicrm_next/main.py, business routes, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
-- Do not enable real external calls, timer, automation execution, or outbound send.
+- Phase 4 fixture/native packages may touch explicitly selected aicrm_next/automation_engine files only.
+- Do not enable real external calls, timer, automation execution, or outbound send by default.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
 ## Required implementation behavior
@@ -495,7 +504,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files. Owner decision packages must not auto-merge.
+Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files or explicitly selected fixture/native aicrm_next/automation_engine runtime files. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 

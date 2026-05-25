@@ -9,6 +9,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
+from .task_groups import TASK_GROUP_ROUTE_FAMILY, normalize_task_group_create_payload, task_group_projection, task_group_side_effect_safety
 
 
 class AutomationRepository(Protocol):
@@ -34,6 +35,9 @@ class AutomationRepository(Protocol):
     def create_profile_segment_template(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def update_profile_segment_template(self, template_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]: ...
     def list_profile_segment_template_audit_events(self) -> list[dict[str, Any]]: ...
+    def list_task_groups(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def create_task_group(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def list_task_group_audit_events(self) -> list[dict[str, Any]]: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -147,6 +151,38 @@ class InMemoryAutomationRepository:
         }
         self._profile_segment_idempotency: dict[str, dict[str, Any]] = {}
         self._profile_segment_audit_events: list[dict[str, Any]] = []
+        self._task_groups: dict[int, dict[str, Any]] = {
+            1: task_group_projection(
+                {
+                    "id": 1,
+                    "program_id": 1,
+                    "group_code": "phase4ap_default_group",
+                    "group_name": "Fixture 默认任务组",
+                    "sort_order": 10,
+                    "metadata": {"source": "fixture"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:00:00Z",
+                    "updated_at": "2026-05-20T09:00:00Z",
+                }
+            ),
+            2: task_group_projection(
+                {
+                    "id": 2,
+                    "program_id": 1,
+                    "group_code": "phase4ap_followup_group",
+                    "group_name": "Fixture 跟进任务组",
+                    "sort_order": 20,
+                    "metadata": {"source": "fixture"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:05:00Z",
+                    "updated_at": "2026-05-20T09:05:00Z",
+                }
+            ),
+        }
+        self._task_group_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._task_group_audit_events: list[dict[str, Any]] = []
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -347,6 +383,127 @@ class InMemoryAutomationRepository:
 
     def list_profile_segment_template_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._profile_segment_audit_events)
+
+    def list_task_groups(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        filters = filters or {}
+        program_id = filters.get("program_id")
+        include_archived = bool(filters.get("include_archived"))
+        limit = int(filters.get("limit") or 50)
+        offset = int(filters.get("offset") or 0)
+        rows = [task_group_projection(item) for item in self._task_groups.values()]
+        if program_id not in (None, ""):
+            rows = [item for item in rows if int(item.get("program_id") or 0) == int(program_id)]
+        if not include_archived:
+            rows = [item for item in rows if not str(item.get("archived_at") or "").strip()]
+        rows.sort(key=lambda item: (int(item.get("sort_order") or 0), int(item.get("id") or 0)))
+        total = len(rows)
+        return deepcopy(rows[offset : offset + limit]), total
+
+    def create_task_group(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            raise ContractError("idempotency_key is required")
+        operator_id = str(operator or "system").strip() or "system"
+        normalized = normalize_task_group_create_payload({**payload, "operator": operator_id})
+        idempotency_scope = (TASK_GROUP_ROUTE_FAMILY, "create", operator_id, key)
+        request_hash = self._request_hash(normalized)
+        replay = self._task_group_idempotency.get(idempotency_scope)
+        if replay:
+            if replay.get("request_hash") != request_hash:
+                raise ContractError("idempotency key conflicts with a different request payload")
+            response = deepcopy(replay.get("response_snapshot") or {})
+            response["idempotent_replay"] = True
+            return response
+        self._assert_unique_task_group(normalized["program_id"], normalized["group_name"], normalized["group_code"])
+        now = utc_now_iso()
+        group_id = max(self._task_groups) + 1 if self._task_groups else 1
+        saved = task_group_projection(
+            {
+                **normalized,
+                "id": group_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        self._task_groups[group_id] = deepcopy(saved)
+        rollback_payload = {
+            "strategy": "archive_created_group_in_later_approved_phase",
+            "created_group_id": group_id,
+            "group_code": saved["group_code"],
+            "delete_approved": False,
+        }
+        audit_event = self._append_task_group_audit_event(
+            operation="create",
+            operator=operator_id,
+            resource_id=group_id,
+            before={},
+            after=saved,
+            request_payload=normalized,
+            rollback_payload=rollback_payload,
+        )
+        result = {
+            "group": deepcopy(saved),
+            "groups": [deepcopy(saved)],
+            "audit_event": audit_event,
+            "rollback_payload": rollback_payload,
+            "idempotent_replay": False,
+        }
+        self._task_group_idempotency[idempotency_scope] = {
+            "request_hash": request_hash,
+            "response_snapshot": deepcopy(result),
+            "resource_id": group_id,
+            "status": "succeeded",
+        }
+        return result
+
+    def list_task_group_audit_events(self) -> list[dict[str, Any]]:
+        return deepcopy(self._task_group_audit_events)
+
+    def _request_hash(self, payload: dict[str, Any]) -> str:
+        import hashlib
+        import json
+
+        return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def _assert_unique_task_group(self, program_id: int, group_name: str, group_code: str) -> None:
+        normalized_name = str(group_name or "").strip().lower()
+        normalized_code = str(group_code or "").strip().lower()
+        for group in self._task_groups.values():
+            item = task_group_projection(group)
+            if int(item.get("program_id") or 0) != int(program_id):
+                continue
+            if str(item.get("group_name") or "").strip().lower() == normalized_name:
+                raise ContractError("task group name already exists for program")
+            if str(item.get("group_code") or "").strip().lower() == normalized_code:
+                raise ContractError("task group code already exists for program")
+
+    def _append_task_group_audit_event(
+        self,
+        *,
+        operation: str,
+        operator: str,
+        resource_id: int,
+        before: dict[str, Any],
+        after: dict[str, Any],
+        request_payload: dict[str, Any],
+        rollback_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        event = {
+            "route_family": TASK_GROUP_ROUTE_FAMILY,
+            "operation": operation,
+            "operator": str(operator or "system"),
+            "resource_type": "task_group",
+            "resource_id": int(resource_id),
+            "before_snapshot": deepcopy(before),
+            "after_snapshot": deepcopy(after),
+            "request_payload": deepcopy(request_payload),
+            "validation_result": {"ok": True},
+            "rollback_payload": deepcopy(rollback_payload),
+            "side_effect_safety": task_group_side_effect_safety(),
+            "created_at": utc_now_iso(),
+        }
+        self._task_group_audit_events.insert(0, event)
+        return deepcopy(event)
 
     def _find_duplicate_profile_segment(self, name: str, code: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:
         normalized_name = str(name or "").strip().lower()

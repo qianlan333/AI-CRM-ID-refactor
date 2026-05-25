@@ -18,7 +18,9 @@ from .application import (
     ExitMarketingCommand,
     CreateActionTemplateCommand,
     CreateProfileSegmentTemplateCommand,
+    CreateTaskGroupCommand,
     ListActionTemplatesQuery,
+    ListTaskGroupsQuery,
     GetProfileSegmentTemplateCatalogQuery,
     GetProfileSegmentTemplateOptionsQuery,
     GetProfileSegmentTemplateQuery,
@@ -43,6 +45,8 @@ from .dto import (
     ProfileSegmentTemplateListRequest,
     ProfileSegmentTemplateUpdateRequest,
     PushOpenClawContextRequest,
+    TaskGroupCreateRequest,
+    TaskGroupListRequest,
 )
 
 router = APIRouter()
@@ -110,6 +114,30 @@ def list_action_templates(
 def create_action_template(payload: ActionTemplateCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateActionTemplateCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/task-groups")
+def list_task_groups(
+    program_id: int | None = None,
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = TaskGroupListRequest(
+        program_id=program_id,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListTaskGroupsQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/task-groups")
+def create_task_group(payload: TaskGroupCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateTaskGroupCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 
