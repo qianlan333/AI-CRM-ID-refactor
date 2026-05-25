@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cb_workflows_repository_adapter_parity_bundle",
+    "phase_4cc_workflow_nodes_repository_adapter_parity_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -86,6 +86,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed",
     "phase_4by_agent_replay_discovery_contract_bundle_completed",
     "phase_4ca_task_groups_repository_adapter_parity_completed",
+    "phase_4cb_workflows_repository_adapter_parity_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -124,6 +125,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/dto.py",
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/task_group_sqlalchemy_repository.py",
+    "aicrm_next/automation_engine/workflow_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/agents.py",
@@ -292,12 +294,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/workflows*":
-        blockers.append("active_candidate must advance to workflows for the next compressed repository adapter parity bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
+        blockers.append("active_candidate must advance to workflow-nodes for the next compressed repository adapter parity bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#685":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #685")
+    if state.get("last_merged_pr") != "#686":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #686")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -395,6 +397,15 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must record workflows fixture/native list/create runtime completion")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/workflows*"
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "repository_adapter_parity_completed"
+        and item.get("paused_by_pr") == "#687"
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must record workflows repository adapter parity completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
@@ -512,6 +523,15 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflows_readiness.fixture_native_list_create_runtime_completed must be true")
     if workflows_readiness.get("production_guard_blocks_fixture_success") is not True:
         blockers.append("workflows_readiness.production_guard_blocks_fixture_success must be true")
+    for field in (
+        "repository_adapter_parity_completed",
+        "no_database_url_fallback",
+        "default_backend_fixture_local",
+        "test_db_parity_harness_completed",
+        "idempotency_audit_rollback_scaffold_completed",
+    ):
+        if workflows_readiness.get(field) is not True:
+            blockers.append(f"workflows_readiness.{field} must be true")
     if set(workflows_readiness.get("implemented_runtime_slices") or []) != {
         "workflows_fixture_local_list",
         "workflows_fixture_local_metadata_create",
