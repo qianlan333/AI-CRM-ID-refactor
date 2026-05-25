@@ -45,6 +45,10 @@ AGENT_BACKEND_ENV = "AICRM_AGENTS_REPO_BACKEND"
 AGENT_TEST_DATABASE_URL_ENV = "AICRM_AGENTS_TEST_DATABASE_URL"
 AGENT_STAGING_DATABASE_URL_ENV = "AICRM_AGENTS_STAGING_DATABASE_URL"
 AGENT_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
+AGENT_OUTPUT_BACKEND_ENV = "AICRM_AGENT_OUTPUTS_REPO_BACKEND"
+AGENT_OUTPUT_TEST_DATABASE_URL_ENV = "AICRM_AGENT_OUTPUTS_TEST_DATABASE_URL"
+AGENT_OUTPUT_STAGING_DATABASE_URL_ENV = "AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL"
+AGENT_OUTPUT_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 class AutomationRepository(Protocol):
@@ -1411,6 +1415,14 @@ def _agent_database_url() -> str:
     return str(os.getenv(AGENT_TEST_DATABASE_URL_ENV) or os.getenv(AGENT_STAGING_DATABASE_URL_ENV) or "").strip()
 
 
+def _agent_output_repository_backend() -> str:
+    return str(os.getenv(AGENT_OUTPUT_BACKEND_ENV) or "fixture").strip().lower()
+
+
+def _agent_output_database_url() -> str:
+    return str(os.getenv(AGENT_OUTPUT_TEST_DATABASE_URL_ENV) or os.getenv(AGENT_OUTPUT_STAGING_DATABASE_URL_ENV) or "").strip()
+
+
 def build_automation_repository(
     *,
     task_group_backend: str | None = None,
@@ -1423,6 +1435,8 @@ def build_automation_repository(
     task_engine: Any | None = None,
     agent_backend: str | None = None,
     agent_engine: Any | None = None,
+    agent_output_backend: str | None = None,
+    agent_output_engine: Any | None = None,
 ) -> AutomationRepository:
     selected_task_group_backend = str(task_group_backend or _task_group_repository_backend()).strip().lower()
     if selected_task_group_backend in TASK_GROUP_SQL_BACKENDS:
@@ -1503,6 +1517,22 @@ def build_automation_repository(
         return assert_repository_allowed(
             SqlAlchemyAgentRepository(engine),
             capability_owner="automation_engine.agents",
+        )
+    selected_agent_output_backend = str(agent_output_backend or _agent_output_repository_backend()).strip().lower()
+    if selected_agent_output_backend in AGENT_OUTPUT_SQL_BACKENDS:
+        engine = agent_output_engine
+        if engine is None:
+            database_url = _agent_output_database_url()
+            if not database_url:
+                raise ContractError(
+                    f"{AGENT_OUTPUT_TEST_DATABASE_URL_ENV} or {AGENT_OUTPUT_STAGING_DATABASE_URL_ENV} is required when {AGENT_OUTPUT_BACKEND_ENV}=sqlalchemy"
+                )
+            engine = create_engine(database_url, future=True)
+        from .agent_output_sqlalchemy_repository import SqlAlchemyAgentOutputRepository
+
+        return assert_repository_allowed(
+            SqlAlchemyAgentOutputRepository(engine),
+            capability_owner="automation_engine.agent_outputs",
         )
     return assert_repository_allowed(_fixture_repo, capability_owner="automation_engine")
 

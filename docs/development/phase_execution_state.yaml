@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/agent-outputs*
+active_candidate: /api/admin/automation-conversion/agent-runs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#689"
-last_attempted_action: phase_4ce_agents_repository_adapter_parity_bundle
-last_created_pr: "#690"
-recommended_next_pr: phase_4cf_agent_outputs_repository_adapter_parity_bundle
+last_merged_pr: "#690"
+last_attempted_action: phase_4cf_agent_outputs_repository_adapter_parity_bundle
+last_created_pr: "#691"
+recommended_next_pr: phase_4cg_agent_runs_repository_adapter_parity_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -53,6 +53,9 @@ repository_adapter_parity_slices:
     scope: explicit_test_or_staging_db_only
   - route_family: /api/admin/automation-conversion/agents*
     slice: agents_sqlalchemy_test_db_parity
+    scope: explicit_test_or_staging_db_only
+  - route_family: /api/admin/automation-conversion/agent-outputs*
+    slice: agent_outputs_sqlalchemy_test_db_parity
     scope: explicit_test_or_staging_db_only
 
 work_package_policy:
@@ -123,9 +126,10 @@ completed_steps:
   - phase_4cc_workflow_nodes_repository_adapter_parity_completed
   - phase_4cd_tasks_repository_adapter_parity_completed
   - phase_4ce_agents_repository_adapter_parity_completed
+  - phase_4cf_agent_outputs_repository_adapter_parity_completed
 
 next_allowed_actions:
-  - phase_4cf_agent_outputs_repository_adapter_parity_bundle
+  - phase_4cg_agent_runs_repository_adapter_parity_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -220,6 +224,11 @@ paused_candidates:
   - route_family: /api/admin/automation-conversion/agents*
     status: repository_adapter_parity_completed
     paused_by_pr: "#690"
+    owner_approval_required: false
+    resume_condition: completed_disabled_by_default_test_db_adapter_parity
+  - route_family: /api/admin/automation-conversion/agent-outputs*
+    status: repository_adapter_parity_completed
+    paused_by_pr: "#691"
     owner_approval_required: false
     resume_condition: completed_disabled_by_default_test_db_adapter_parity
 
@@ -403,6 +412,14 @@ agent_outputs_readiness:
     - agent_outputs_fixture_local_list
     - agent_outputs_fixture_local_detail
   guarded_disabled_runtime_slices: []
+  repository_adapter_parity_completed: true
+  repository_adapter_backend_flag: AICRM_AGENT_OUTPUTS_REPO_BACKEND
+  repository_adapter_test_db_url_flag: AICRM_AGENT_OUTPUTS_TEST_DATABASE_URL
+  repository_adapter_staging_db_url_flag: AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL
+  no_database_url_fallback: true
+  default_backend_fixture_local: true
+  test_db_parity_harness_completed: true
+  idempotency_audit_rollback_scaffold_completed: false
   production_guard_blocks_fixture_success: true
   paused: false
   paused_by_pr: "#683"
