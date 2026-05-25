@@ -118,6 +118,18 @@ def test_phase4cu_internal_write_acceptance_review_artifacts_are_low_risk_policy
         assert checker._is_low_risk_path(path)
 
 
+def test_phase4cv_phase5_readiness_entry_artifacts_are_low_risk_policy_files() -> None:
+    expected = {
+        "docs/development/phase_4cv_phase5_readiness_entry.md",
+        "docs/development/phase_4cv_phase5_readiness_entry.yaml",
+        "tools/check_phase4cv_phase5_readiness_entry.py",
+        "tests/test_phase4cv_phase5_readiness_entry.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+    for path in expected:
+        assert checker._is_low_risk_path(path)
+
+
 def test_phase4am_owner_decision_package_is_manual_merge_only() -> None:
     expected_owner_paths = {
         "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
