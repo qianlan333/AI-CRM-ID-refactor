@@ -37,6 +37,10 @@ WORKFLOW_NODE_BACKEND_ENV = "AICRM_WORKFLOW_NODES_REPO_BACKEND"
 WORKFLOW_NODE_TEST_DATABASE_URL_ENV = "AICRM_WORKFLOW_NODES_TEST_DATABASE_URL"
 WORKFLOW_NODE_STAGING_DATABASE_URL_ENV = "AICRM_WORKFLOW_NODES_STAGING_DATABASE_URL"
 WORKFLOW_NODE_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
+TASK_BACKEND_ENV = "AICRM_TASKS_REPO_BACKEND"
+TASK_TEST_DATABASE_URL_ENV = "AICRM_TASKS_TEST_DATABASE_URL"
+TASK_STAGING_DATABASE_URL_ENV = "AICRM_TASKS_STAGING_DATABASE_URL"
+TASK_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 class AutomationRepository(Protocol):
@@ -1387,6 +1391,14 @@ def _workflow_node_database_url() -> str:
     return str(os.getenv(WORKFLOW_NODE_TEST_DATABASE_URL_ENV) or os.getenv(WORKFLOW_NODE_STAGING_DATABASE_URL_ENV) or "").strip()
 
 
+def _task_repository_backend() -> str:
+    return str(os.getenv(TASK_BACKEND_ENV) or "fixture").strip().lower()
+
+
+def _task_database_url() -> str:
+    return str(os.getenv(TASK_TEST_DATABASE_URL_ENV) or os.getenv(TASK_STAGING_DATABASE_URL_ENV) or "").strip()
+
+
 def build_automation_repository(
     *,
     task_group_backend: str | None = None,
@@ -1395,6 +1407,8 @@ def build_automation_repository(
     workflow_engine: Any | None = None,
     workflow_node_backend: str | None = None,
     workflow_node_engine: Any | None = None,
+    task_backend: str | None = None,
+    task_engine: Any | None = None,
 ) -> AutomationRepository:
     selected_task_group_backend = str(task_group_backend or _task_group_repository_backend()).strip().lower()
     if selected_task_group_backend in TASK_GROUP_SQL_BACKENDS:
@@ -1443,6 +1457,22 @@ def build_automation_repository(
         return assert_repository_allowed(
             SqlAlchemyWorkflowNodeRepository(engine),
             capability_owner="automation_engine.workflow_nodes",
+        )
+    selected_task_backend = str(task_backend or _task_repository_backend()).strip().lower()
+    if selected_task_backend in TASK_SQL_BACKENDS:
+        engine = task_engine
+        if engine is None:
+            database_url = _task_database_url()
+            if not database_url:
+                raise ContractError(
+                    f"{TASK_TEST_DATABASE_URL_ENV} or {TASK_STAGING_DATABASE_URL_ENV} is required when {TASK_BACKEND_ENV}=sqlalchemy"
+                )
+            engine = create_engine(database_url, future=True)
+        from .task_sqlalchemy_repository import SqlAlchemyTaskRepository
+
+        return assert_repository_allowed(
+            SqlAlchemyTaskRepository(engine),
+            capability_owner="automation_engine.tasks",
         )
     return assert_repository_allowed(_fixture_repo, capability_owner="automation_engine")
 
