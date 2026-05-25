@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-runs*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#690"
+    assert data["last_merged_pr"] == "#691"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -75,6 +75,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4cd_tasks_repository_adapter_parity_completed" in set(data["completed_steps"])
     assert "phase_4ce_agents_repository_adapter_parity_completed" in set(data["completed_steps"])
     assert "phase_4cf_agent_outputs_repository_adapter_parity_completed" in set(data["completed_steps"])
+    assert "phase_4cg_agent_runs_repository_adapter_parity_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -172,6 +173,13 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
         and item["owner_approval_required"] is False
         and item["status"] == "repository_adapter_parity_completed"
         and item["paused_by_pr"] == "#691"
+        for item in paused
+    )
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/agent-runs*"
+        and item["owner_approval_required"] is False
+        and item["status"] == "repository_adapter_parity_completed"
+        and item["paused_by_pr"] == "#692"
         for item in paused
     )
     readiness = data["task_groups_readiness"]
@@ -367,7 +375,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-runs*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
@@ -420,6 +428,13 @@ def test_agent_runs_fixture_runtime_completed_without_production_readiness() -> 
         and item["paused_by_pr"] == "#684"
         for item in data["paused_candidates"]
     )
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/agent-runs*"
+        and item["owner_approval_required"] is False
+        and item["status"] == "repository_adapter_parity_completed"
+        and item["paused_by_pr"] == "#692"
+        for item in data["paused_candidates"]
+    )
     readiness = data["agent_runs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
@@ -432,6 +447,14 @@ def test_agent_runs_fixture_runtime_completed_without_production_readiness() -> 
     assert readiness["owner_decision_required"] is False
     assert set(readiness["implemented_runtime_slices"]) == {"agent_runs_fixture_local_list", "agent_runs_fixture_local_detail"}
     assert readiness["guarded_disabled_runtime_slices"] == []
+    assert readiness["repository_adapter_parity_completed"] is True
+    assert readiness["repository_adapter_backend_flag"] == "AICRM_AGENT_RUNS_REPO_BACKEND"
+    assert readiness["repository_adapter_test_db_url_flag"] == "AICRM_AGENT_RUNS_TEST_DATABASE_URL"
+    assert readiness["repository_adapter_staging_db_url_flag"] == "AICRM_AGENT_RUNS_STAGING_DATABASE_URL"
+    assert readiness["no_database_url_fallback"] is True
+    assert readiness["default_backend_fixture_local"] is True
+    assert readiness["test_db_parity_harness_completed"] is True
+    assert readiness["idempotency_audit_rollback_scaffold_completed"] is False
     assert readiness["production_guard_blocks_fixture_success"] is True
     assert readiness["paused"] is False
     assert readiness["paused_by_pr"] == "#684"
