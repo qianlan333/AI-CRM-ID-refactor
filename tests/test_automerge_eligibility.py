@@ -57,6 +57,17 @@ def test_stop_condition_terms_are_not_allowed_outside_policy_files(tmp_path: Pat
     assert report["overall"] == "PASS"
 
 
+def test_phase5a_wecom_tag_contract_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5a_wecom_tag_adapter_contract.md",
+        "docs/development/phase_5a_wecom_tag_adapter_contract.yaml",
+        "tools/check_phase5a_wecom_tag_adapter_contract.py",
+        "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
+        "tests/test_phase5a_wecom_tag_adapter_contract.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_phase4am_closure_artifacts_can_define_stop_terms_as_policy() -> None:
     expected = {
         "docs/development/phase_4am_action_templates_staging_approval_config_closure.md",
