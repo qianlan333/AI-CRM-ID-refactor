@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_5_external_adapter"
     assert data["active_candidate"] == "/wecom/external-contact/callback"
     assert data["capability_owner"] == "aicrm_next.integration_gateway"
-    assert data["last_merged_pr"] == "#722"
+    assert data["last_merged_pr"] == "#723"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -101,9 +101,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5h_wecom_customer_contact_adapter_contract_completed" in set(data["completed_steps"])
     assert "phase_5i_wecom_customer_contact_fake_stub_adapter_completed" in set(data["completed_steps"])
     assert "phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_completed" in set(data["completed_steps"])
+    assert "phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5k_wecom_customer_contact_staging_canary_only() -> None:
+def test_next_allowed_actions_are_phase_5l_wecom_customer_contact_production_readiness_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 

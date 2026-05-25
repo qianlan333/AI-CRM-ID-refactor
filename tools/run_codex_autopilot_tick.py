@@ -361,6 +361,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5j_wecom_customer_contact_live_callback_staging_evidence.py",
         "tools/run_phase5j_wecom_customer_contact_live_callback_production_dry_run_gate.py",
         "tests/test_phase5j_wecom_customer_contact_live_callback_adapter_behind_flag.py",
+        "docs/development/phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence.md",
+        "docs/development/phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence.yaml",
+        "tools/check_phase5k_wecom_customer_contact_staging_live_callback_canary_evidence.py",
+        "tools/run_phase5k_wecom_customer_contact_staging_live_callback_canary_evidence.py",
+        "tools/run_phase5k_wecom_customer_contact_production_callback_readiness_review.py",
+        "tests/test_phase5k_wecom_customer_contact_staging_live_callback_canary_evidence.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -698,6 +704,7 @@ Read and follow:
 - Phase 5C WeCom tag live adapter packages may touch explicitly selected aicrm_next/customer_tags and aicrm_next/integration_gateway live-behind-flag files only; live calls must remain disabled by default.
 - Phase 5I WeCom contact callback fake/stub packages may touch explicitly selected aicrm_next/integration_gateway fake/stub callback files only; live callback cutover and production writes remain forbidden.
 - Phase 5J WeCom contact callback live adapter packages may touch explicitly selected aicrm_next/integration_gateway live-behind-flag callback files only; live callback processing must remain disabled by default.
+- Phase 5K WeCom contact callback staging canary packages must stay docs/tools/tests/state only; production callback processing remains forbidden.
 - Do not enable real external calls, timer, automation execution, or outbound send by default.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
