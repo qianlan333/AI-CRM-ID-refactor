@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wecom/tags*
 capability_owner: aicrm_next.customer_tags
-last_merged_pr: "#714"
-last_attempted_action: phase_5d_wecom_tag_staging_live_canary_evidence_bundle
-last_created_pr: "#715"
-recommended_next_pr: phase_5e_wecom_tag_production_canary_readiness_bundle
+last_merged_pr: "#715"
+last_attempted_action: phase_5e_wecom_tag_production_canary_readiness_bundle
+last_created_pr: "#716"
+recommended_next_pr: phase_5f_wecom_tag_production_live_canary_execution_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -125,6 +125,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/admin/wecom/tags*
     slice: wecom_tag_production_live_readiness_review
     scope: review_only_no_live_call
+  - route_family: /api/admin/wecom/tags*
+    slice: wecom_tag_production_canary_readiness
+    scope: readiness_only_no_live_call_no_tag_write
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -215,9 +218,10 @@ completed_steps:
   - phase_5b_wecom_tag_fake_stub_adapter_completed
   - phase_5c_wecom_tag_live_adapter_behind_flag_completed
   - phase_5d_wecom_tag_staging_live_canary_evidence_completed
+  - phase_5e_wecom_tag_production_canary_readiness_completed
 
 next_allowed_actions:
-  - phase_5e_wecom_tag_production_canary_readiness_bundle
+  - phase_5f_wecom_tag_production_live_canary_execution_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -341,6 +345,36 @@ phase5d_wecom_tag_staging_live_canary_evidence:
   production_canary_approved: false
   delete_ready: false
   recommended_next_bundle: phase_5e_wecom_tag_production_canary_readiness_bundle
+
+phase5e_wecom_tag_production_canary_readiness:
+  status: phase_5e_wecom_tag_production_canary_readiness_completed
+  route_family: /api/admin/wecom/tags*
+  capability_owner: aicrm_next.customer_tags
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_production_canary_readiness_bundle
+  production_canary_readiness_gate_completed: true
+  production_owner_approval_package_completed: true
+  production_target_safety_package_completed: true
+  rollback_cleanup_package_completed: true
+  staging_evidence_requirement_checker_completed: true
+  production_canary_dry_run_review_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_canary_execution_authorized: false
+  production_live_wecom_call_authorized: false
+  production_tag_write_authorized: false
+  outbound_send_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  oauth_callback_cutover_ready: false
+  payment_behavior_ready: false
+  media_live_upload_ready: false
+  openclaw_mcp_live_call_ready: false
+  timer_execution_ready: false
+  automation_execution_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5f_wecom_tag_production_live_canary_execution_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
