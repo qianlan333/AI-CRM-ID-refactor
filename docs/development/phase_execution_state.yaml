@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/agents*
+active_candidate: /api/admin/automation-conversion/agent-outputs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#679"
-last_attempted_action: phase_4bu_tasks_fixture_native_list_create_runtime
-last_created_pr: "#680"
-recommended_next_pr: phase_4bv_agents_fixture_native_list_create_runtime
+last_merged_pr: "#680"
+last_attempted_action: phase_4bv_agents_fixture_native_list_create_runtime
+last_created_pr: "#681"
+recommended_next_pr: phase_4bw_agent_outputs_fixture_native_list_detail_runtime
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -28,12 +28,15 @@ implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/tasks*
     slice: tasks_fixture_local_list_create
     scope: fixture_local_only
+  - route_family: /api/admin/automation-conversion/agents*
+    slice: agents_fixture_local_list_create
+    scope: fixture_local_only
 guarded_disabled_runtime_slices: []
 
 work_package_policy:
-  selection_unit: bounded_low_risk_work_package
-  target_duration_minutes_min: 10
-  target_duration_minutes_max: 13
+  selection_unit: compressed_bounded_bundle
+  target_duration_minutes_min: 20
+  target_duration_minutes_max: 35
   state_only_pr_requires_explanation: true
   avoid_repeated_blocked_evidence_review: true
   low_risk_admin_merge_allowed: true
@@ -89,9 +92,10 @@ completed_steps:
   - phase_4bs_workflows_fixture_native_list_create_runtime_completed
   - phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed
   - phase_4bu_tasks_fixture_native_list_create_runtime_completed
+  - phase_4bv_agents_fixture_native_list_create_runtime_completed
 
 next_allowed_actions:
-  - phase_4bv_agents_fixture_native_list_create_runtime
+  - phase_4bw_agent_outputs_fixture_native_list_detail_runtime
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -144,10 +148,10 @@ paused_candidates:
     owner_approval_required: false
     resume_condition: completed_safe_fixture_native_list_create_runtime
   - route_family: /api/admin/automation-conversion/agents*
-    status: awaiting_fixture_native_runtime_owner_decision
-    paused_by_pr: "#665"
-    owner_approval_required: true
-    resume_condition: explicit_owner_approval_for_agents_fixture_native_runtime_implementation
+    status: fixture_native_list_create_runtime_completed
+    paused_by_pr: "#681"
+    owner_approval_required: false
+    resume_condition: completed_safe_fixture_native_list_create_runtime
   - route_family: /api/admin/automation-conversion/agent-outputs*
     status: awaiting_fixture_native_runtime_owner_decision
     paused_by_pr: "#669"
@@ -263,10 +267,16 @@ agents_readiness:
   schema_route_surface_confirmed: true
   fixture_native_contract_planning_ready: true
   fixture_native_contract_planning_completed: true
-  fixture_native_implementation_requires_owner_decision: true
-  owner_decision_required: true
-  paused: true
-  paused_by_pr: "#665"
+  fixture_native_implementation_requires_owner_decision: false
+  fixture_native_list_create_runtime_completed: true
+  owner_decision_required: false
+  implemented_runtime_slices:
+    - agents_fixture_local_list
+    - agents_fixture_local_metadata_create
+  guarded_disabled_runtime_slices: []
+  production_guard_blocks_fixture_success: true
+  paused: false
+  paused_by_pr: "#681"
   agent_run_execution_excluded: true
   llm_generation_excluded: true
   deepseek_adapter_excluded: true

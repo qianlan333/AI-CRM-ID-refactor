@@ -14,6 +14,7 @@ from aicrm_next.integration_gateway.legacy_automation_facade import (
 from .application import (
     ApplyActivationWebhookCommand,
     ConfirmConversionCommand,
+    CreateAgentCommand,
     CreateTaskCommand,
     CreateWorkflowCommand,
     CreateWorkflowNodeCommand,
@@ -23,6 +24,7 @@ from .application import (
     CreateProfileSegmentTemplateCommand,
     CreateTaskGroupCommand,
     ListActionTemplatesQuery,
+    ListAgentsQuery,
     ListTasksQuery,
     ListTaskGroupsQuery,
     ListWorkflowsQuery,
@@ -43,6 +45,8 @@ from .application import (
 )
 from .dto import (
     ActivationWebhookRequest,
+    AgentCreateRequest,
+    AgentListRequest,
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
@@ -240,6 +244,40 @@ def list_tasks(
 def create_task(payload: TaskCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateTaskCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/agents")
+def list_agents(
+    program_id: int | None = None,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    task_id: int | None = None,
+    agent_type: str = "",
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = AgentListRequest(
+        program_id=program_id,
+        workflow_id=workflow_id,
+        node_id=node_id,
+        task_id=task_id,
+        agent_type=agent_type,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListAgentsQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/agents")
+def create_agent(payload: AgentCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateAgentCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 
