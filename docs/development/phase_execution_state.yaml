@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wecom/tags*
 capability_owner: aicrm_next.customer_tags
-last_merged_pr: "#715"
-last_attempted_action: phase_5e_wecom_tag_production_canary_readiness_bundle
-last_created_pr: "#716"
-recommended_next_pr: phase_5f_wecom_tag_production_live_canary_execution_bundle
+last_merged_pr: "#716"
+last_attempted_action: phase_5f_wecom_tag_production_live_canary_execution_bundle
+last_created_pr: "#717"
+recommended_next_pr: phase_5g_wecom_tag_family_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -128,6 +128,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/admin/wecom/tags*
     slice: wecom_tag_production_canary_readiness
     scope: readiness_only_no_live_call_no_tag_write
+  - route_family: /api/admin/wecom/tags*
+    slice: wecom_tag_production_live_canary_execution_tooling
+    scope: blocked_by_default_single_target_single_tag_only
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -219,9 +222,10 @@ completed_steps:
   - phase_5c_wecom_tag_live_adapter_behind_flag_completed
   - phase_5d_wecom_tag_staging_live_canary_evidence_completed
   - phase_5e_wecom_tag_production_canary_readiness_completed
+  - phase_5f_wecom_tag_production_live_canary_execution_completed
 
 next_allowed_actions:
-  - phase_5f_wecom_tag_production_live_canary_execution_bundle
+  - phase_5g_wecom_tag_family_acceptance_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -375,6 +379,36 @@ phase5e_wecom_tag_production_canary_readiness:
   automation_execution_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5f_wecom_tag_production_live_canary_execution_bundle
+
+phase5f_wecom_tag_production_live_canary_execution:
+  status: phase_5f_wecom_tag_production_live_canary_execution_completed
+  route_family: /api/admin/wecom/tags*
+  capability_owner: aicrm_next.customer_tags
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_production_live_canary_execution_bundle
+  production_live_canary_tooling_completed: true
+  production_live_canary_default_blocked: true
+  single_target_guard_completed: true
+  single_tag_guard_completed: true
+  cleanup_runner_completed: true
+  cleanup_evidence_collector_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_live_canary_tooling_authorized: true
+  production_live_wecom_call_by_default_authorized: false
+  production_bulk_tag_write_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  outbound_send_authorized: false
+  oauth_callback_cutover_ready: false
+  payment_behavior_ready: false
+  media_live_upload_ready: false
+  openclaw_mcp_live_call_ready: false
+  timer_execution_ready: false
+  automation_execution_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5g_wecom_tag_family_acceptance_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
