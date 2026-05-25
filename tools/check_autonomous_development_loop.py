@@ -35,10 +35,11 @@ REQUIRED_STATE_FIELDS = {
     "agents_readiness",
     "agent_outputs_readiness",
     "agent_runs_readiness",
+    "agent_replay_readiness",
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+    "phase_4bq_agent_replay_metadata_planning",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -72,6 +73,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bm_agent_runs_metadata_planning_completed",
     "phase_4bn_agent_runs_schema_route_surface_confirmation_completed",
     "phase_4bo_agent_runs_fixture_native_contract_planning_completed",
+    "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -264,12 +266,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-runs*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-runs* after agent-outputs pause")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-replay":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-replay after agent-runs pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#671":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #671")
+    if state.get("last_merged_pr") != "#672":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #672")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -580,6 +582,7 @@ def build_report() -> dict[str, Any]:
         "fixture_native_contract_planning_completed",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
+        "paused",
         "run_creation_excluded",
         "run_execution_excluded",
         "replay_execution_excluded",
@@ -591,6 +594,8 @@ def build_report() -> dict[str, Any]:
     ):
         if agent_runs_readiness.get(field) is not True:
             blockers.append(f"agent_runs_readiness.{field} must be true")
+    if agent_runs_readiness.get("paused_by_pr") != "#673":
+        blockers.append("agent_runs_readiness.paused_by_pr must be #673")
     for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",
@@ -601,6 +606,35 @@ def build_report() -> dict[str, Any]:
     ):
         if agent_runs_readiness.get(field) is not False:
             blockers.append(f"agent_runs_readiness.{field} must be false")
+
+    agent_replay_readiness = state.get("agent_replay_readiness") if isinstance(state.get("agent_replay_readiness"), dict) else {}
+    for field in (
+        "metadata_planning_ready",
+        "replay_execution_excluded",
+        "run_creation_excluded",
+        "run_execution_excluded",
+        "orchestration_execution_excluded",
+        "agent_output_generation_excluded",
+        "llm_generation_excluded",
+        "deepseek_adapter_excluded",
+        "openclaw_mcp_excluded",
+        "external_call_excluded",
+    ):
+        if agent_replay_readiness.get(field) is not True:
+            blockers.append(f"agent_replay_readiness.{field} must be true")
+    for field in (
+        "metadata_planning_completed",
+        "fixture_native_implementation_requires_owner_decision",
+        "owner_decision_required",
+        "runtime_implementation_ready",
+        "production_owner_switch_ready",
+        "production_write_ready",
+        "fallback_removal_ready",
+        "production_repository_route_enablement_ready",
+        "delete_ready",
+    ):
+        if agent_replay_readiness.get(field) is not False:
+            blockers.append(f"agent_replay_readiness.{field} must be false")
 
     changed = _changed_files()
     runtime_changed = [

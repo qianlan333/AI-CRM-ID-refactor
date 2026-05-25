@@ -105,15 +105,19 @@ SIDE_EFFECT_FALSE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4bo_agent_runs_fixture_native_contract_plan.md",
     "docs/development/phase_4bo_agent_runs_fixture_native_contract_plan.yaml",
+    "docs/development/phase_4bp_agent_runs_fixture_native_implementation_owner_decision.md",
+    "docs/development/phase_4bp_agent_runs_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.md",
     "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4bo_agent_runs_fixture_native_contract_plan.py",
+    "tools/check_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4bn_agent_runs_schema_route_surface_confirmation.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4bo_agent_runs_fixture_native_contract_plan.py",
+    "tests/test_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4bn_agent_runs_schema_route_surface_confirmation.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -237,20 +241,29 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"authorizations.{field} must be false")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != ROUTE:
-        blockers.append("phase_execution_state.active_candidate must remain agent-runs")
-    if state.get("last_merged_pr") != "#671":
-        blockers.append("phase_execution_state.last_merged_pr must record #671")
-    if state.get("last_attempted_action") != "phase_4bo_agent_runs_fixture_native_contract_planning":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BO")
-    if state.get("last_created_pr") != "#672":
-        blockers.append("phase_execution_state.last_created_pr must be #672")
-    if state.get("recommended_next_pr") != "phase_4bp_agent_runs_fixture_native_implementation_owner_decision":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BP")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4bp_agent_runs_fixture_native_implementation_owner_decision"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BP")
-    if state.get("owner_approval_required") is not True:
-        blockers.append("phase_execution_state.owner_approval_required must be true after fixture contract planning")
+    if state.get("active_candidate") not in {ROUTE, "/api/admin/automation-conversion/agent-replay"}:
+        blockers.append("phase_execution_state.active_candidate must remain agent-runs or later agent-replay")
+    if state.get("last_merged_pr") not in {"#671", "#672"}:
+        blockers.append("phase_execution_state.last_merged_pr must record #671 or later Phase 4BP state #672")
+    if state.get("last_attempted_action") not in {
+        "phase_4bo_agent_runs_fixture_native_contract_planning",
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+    }:
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BO or later Phase 4BP")
+    if state.get("last_created_pr") not in {"#672", "#673"}:
+        blockers.append("phase_execution_state.last_created_pr must be #672 or later Phase 4BP PR #673")
+    if state.get("recommended_next_pr") not in {
+        "phase_4bp_agent_runs_fixture_native_implementation_owner_decision",
+        "phase_4bq_agent_replay_metadata_planning",
+    }:
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BP or later Phase 4BQ")
+    if set(state.get("next_allowed_actions") or []) not in (
+        {"phase_4bp_agent_runs_fixture_native_implementation_owner_decision"},
+        {"phase_4bq_agent_replay_metadata_planning"},
+    ):
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BP or later Phase 4BQ")
+    if state.get("owner_approval_required") not in {False, True}:
+        blockers.append("phase_execution_state.owner_approval_required must be boolean")
     if state_update.get("phase_4bo_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4BO completed step")
 
