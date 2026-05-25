@@ -59,6 +59,16 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
             "synced_at": "2026-05-25T08:00:00Z",
             "status": "active",
         },
+        "wrOgAAA003": {
+            "chat_id": "wrOgAAA003",
+            "group_name": "体验课 03 群",
+            "owner_userid": "owner_001",
+            "owner_name": "王小明",
+            "internal_member_count": 9,
+            "external_member_count": 176,
+            "synced_at": "2026-05-25T08:00:00Z",
+            "status": "active",
+        },
         "wrOgBBB001": {
             "chat_id": "wrOgBBB001",
             "group_name": "成交陪跑 01 群",
@@ -109,6 +119,22 @@ class InMemoryGroupOpsRepository:
                 "updated_at": now,
                 "archived_at": "",
             },
+            3: {
+                "id": 3,
+                "plan_code": "group_plan_002",
+                "plan_name": "成交陪跑 3 日群运营",
+                "plan_type": "standard",
+                "owner_userid": "owner_002",
+                "owner_name": "李小红",
+                "status": "draft",
+                "webhook_key": "",
+                "webhook_token_hash": "",
+                "created_by": "fixture",
+                "updated_by": "fixture",
+                "created_at": now,
+                "updated_at": now,
+                "archived_at": "",
+            },
         }
         self._groups = _fixture_groups()
         self._next_plan_group_id = 1
@@ -139,7 +165,7 @@ class InMemoryGroupOpsRepository:
             }
         }
         self._webhook_events: dict[int, dict[str, Any]] = {}
-        self._next_plan_id = 3
+        self._next_plan_id = 4
         self._next_node_id = 2
         self._next_event_id = 1
 
