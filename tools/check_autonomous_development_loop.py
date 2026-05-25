@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cl_agents_staging_readiness_bundle",
+    "phase_4cm_agent_outputs_staging_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -99,6 +99,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4ci_workflows_staging_readiness_completed",
     "phase_4cj_workflow_nodes_staging_readiness_completed",
     "phase_4ck_tasks_staging_readiness_completed",
+    "phase_4cl_agents_staging_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -311,12 +312,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agents*":
-        blockers.append("active_candidate must advance to agents for the next compressed staging readiness bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
+        blockers.append("active_candidate must advance to agent-outputs for the next compressed staging readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#696":
-        blockers.append("last_merged_pr must record latest completed merged PR #696")
+    if state.get("last_merged_pr") != "#697":
+        blockers.append("last_merged_pr must record latest completed merged PR #697")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -778,9 +779,24 @@ def build_report() -> dict[str, Any]:
         "default_backend_fixture_local",
         "test_db_parity_harness_completed",
         "idempotency_audit_rollback_scaffold_completed",
+        "staging_readiness_bundle_completed",
+        "staging_readiness_preflight_completed",
+        "staging_evidence_gate_completed",
+        "staging_blocked_evidence_output_completed",
     ):
         if agents_readiness.get(field) is not True:
             blockers.append(f"agents_readiness.{field} must be true")
+    if agents_readiness.get("staging_database_url_flag") != "AICRM_AGENTS_STAGING_DATABASE_URL":
+        blockers.append("agents_readiness.staging_database_url_flag must be AICRM_AGENTS_STAGING_DATABASE_URL")
+    if agents_readiness.get("staging_backend_flag") != "AICRM_AGENTS_REPO_BACKEND":
+        blockers.append("agents_readiness.staging_backend_flag must be AICRM_AGENTS_REPO_BACKEND")
+    if agents_readiness.get("staging_approval_flag") != "AICRM_PHASE4CL_STAGING_SMOKE_APPROVED":
+        blockers.append("agents_readiness.staging_approval_flag must be AICRM_PHASE4CL_STAGING_SMOKE_APPROVED")
+    if agents_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CL_STAGING_WRITE_APPROVED":
+        blockers.append("agents_readiness.staging_write_approval_flag must be AICRM_PHASE4CL_STAGING_WRITE_APPROVED")
+    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
+        if agents_readiness.get(field) is not False:
+            blockers.append(f"agents_readiness.{field} must be false")
 
     agent_outputs_readiness = state.get("agent_outputs_readiness") if isinstance(state.get("agent_outputs_readiness"), dict) else {}
     for field in (
