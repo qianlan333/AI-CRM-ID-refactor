@@ -53,7 +53,7 @@ def admin_wechat_pay_product_new_page():
         "wechat_pay_products.html",
         active_nav="wechat_pay_products",
         page_title="创建商品",
-        page_summary="配置商品基础信息、引流计划和全景贴图切片。",
+        page_summary="配置商品基础信息、引流渠道码和全景贴图切片。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("商品管理", url_for("api.admin_wechat_pay_products_page")),
@@ -69,7 +69,7 @@ def admin_wechat_pay_product_edit_page(product_id: int):
         "wechat_pay_products.html",
         active_nav="wechat_pay_products",
         page_title="编辑商品",
-        page_summary="维护商品基础信息、引流计划和全景贴图切片。",
+        page_summary="维护商品基础信息、引流渠道码和全景贴图切片。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("商品管理", url_for("api.admin_wechat_pay_products_page")),
@@ -153,6 +153,10 @@ def api_admin_wechat_pay_product_share(product_id: int):
 
 def api_admin_wechat_pay_product_lead_plans():
     return jsonify({"ok": True, "items": product_service.list_lead_plan_options()})
+
+
+def api_admin_wechat_pay_product_lead_channels():
+    return jsonify({"ok": True, "items": product_service.list_lead_channel_options()})
 
 
 def admin_wechat_pay_transactions_page():
@@ -282,6 +286,7 @@ def register_routes(bp) -> None:
     bp.route("/admin/wechat-pay/transactions/<int:order_id>", methods=["GET"])(admin_wechat_pay_transaction_detail_page)
     bp.route("/api/admin/wechat-pay/products", methods=["GET", "POST"])(api_admin_wechat_pay_products)
     bp.route("/api/admin/wechat-pay/products/lead-plans", methods=["GET"])(api_admin_wechat_pay_product_lead_plans)
+    bp.route("/api/admin/wechat-pay/products/lead-channels", methods=["GET"])(api_admin_wechat_pay_product_lead_channels)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>", methods=["GET", "PUT", "DELETE"])(api_admin_wechat_pay_product_detail)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/enable", methods=["POST"])(api_admin_wechat_pay_product_enable)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/disable", methods=["POST"])(api_admin_wechat_pay_product_disable)
