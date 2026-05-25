@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wecom/tags*
 capability_owner: aicrm_next.customer_tags
-last_merged_pr: "#716"
-last_attempted_action: phase_5f_wecom_tag_production_live_canary_execution_bundle
-last_created_pr: "#717"
-recommended_next_pr: phase_5g_wecom_tag_family_acceptance_bundle
+last_merged_pr: "#717"
+last_attempted_action: phase_5g_wecom_tag_family_acceptance_bundle
+last_created_pr: "#718"
+recommended_next_pr: phase_5h_wecom_customer_contact_adapter_contract_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -223,9 +223,10 @@ completed_steps:
   - phase_5d_wecom_tag_staging_live_canary_evidence_completed
   - phase_5e_wecom_tag_production_canary_readiness_completed
   - phase_5f_wecom_tag_production_live_canary_execution_completed
+  - phase_5g_wecom_tag_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5g_wecom_tag_family_acceptance_bundle
+  - phase_5h_wecom_customer_contact_adapter_contract_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -409,6 +410,34 @@ phase5f_wecom_tag_production_live_canary_execution:
   automation_execution_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5g_wecom_tag_family_acceptance_bundle
+
+phase5g_wecom_tag_family_acceptance:
+  status: phase_5g_wecom_tag_family_acceptance_completed
+  route_family: /api/admin/wecom/tags*
+  capability_owner: aicrm_next.customer_tags
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_handoff_completed: true
+  completed_stage_inventory_completed: true
+  capability_matrix_completed: true
+  blockers_followup_inventory_completed: true
+  rollout_boundary_completed: true
+  checker_completed: true
+  tests_completed: true
+  no_new_live_wecom_call: true
+  no_new_production_tag_write: true
+  accepted_for_controlled_canary_tooling: true
+  production_canary_passed: false
+  wider_rollout_authorized: false
+  route_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  bulk_tag_write_authorized: false
+  outbound_send_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_5h_wecom_customer_contact_adapter_contract_bundle
+  next_route_family: /wecom/external-contact/callback
+  next_capability_owner: aicrm_next.integration_gateway
 
 forbidden_without_owner_approval:
   - production owner switch
