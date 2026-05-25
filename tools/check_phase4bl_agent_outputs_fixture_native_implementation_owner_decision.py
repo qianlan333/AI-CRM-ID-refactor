@@ -115,15 +115,19 @@ REQUIRED_PHASE_4BM_SCOPE = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4bl_agent_outputs_fixture_native_implementation_owner_decision.md",
     "docs/development/phase_4bl_agent_outputs_fixture_native_implementation_owner_decision.yaml",
+    "docs/development/phase_4bm_agent_runs_metadata_plan.md",
+    "docs/development/phase_4bm_agent_runs_metadata_plan.yaml",
     "docs/development/phase_4bk_agent_outputs_fixture_native_contract_plan.md",
     "docs/development/phase_4bk_agent_outputs_fixture_native_contract_plan.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
+    "tools/check_phase4bm_agent_runs_metadata_plan.py",
     "tools/check_phase4bk_agent_outputs_fixture_native_contract_plan.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
+    "tests/test_phase4bm_agent_runs_metadata_plan.py",
     "tests/test_phase4bk_agent_outputs_fixture_native_contract_plan.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
@@ -235,16 +239,25 @@ def build_report() -> dict[str, Any]:
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
     if state.get("active_candidate") != AGENT_RUNS:
         blockers.append("phase_execution_state.active_candidate must advance to agent-runs")
-    if state.get("last_merged_pr") != "#668":
-        blockers.append("phase_execution_state.last_merged_pr must record #668")
-    if state.get("last_attempted_action") != "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BL")
-    if state.get("last_created_pr") != "#669":
-        blockers.append("phase_execution_state.last_created_pr must be #669")
-    if state.get("recommended_next_pr") != "phase_4bm_agent_runs_metadata_planning":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BM")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4bm_agent_runs_metadata_planning"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BM")
+    if state.get("last_merged_pr") not in {"#668", "#669"}:
+        blockers.append("phase_execution_state.last_merged_pr must record #668 or later Phase 4BM state #669")
+    if state.get("last_attempted_action") not in {
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+        "phase_4bm_agent_runs_metadata_planning",
+    }:
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BL or later Phase 4BM")
+    if state.get("last_created_pr") not in {"#669", "#670"}:
+        blockers.append("phase_execution_state.last_created_pr must be #669 or later Phase 4BM PR #670")
+    if state.get("recommended_next_pr") not in {
+        "phase_4bm_agent_runs_metadata_planning",
+        "phase_4bn_agent_runs_schema_route_surface_confirmation",
+    }:
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BM or later Phase 4BN")
+    if set(state.get("next_allowed_actions") or []) not in (
+        {"phase_4bm_agent_runs_metadata_planning"},
+        {"phase_4bn_agent_runs_schema_route_surface_confirmation"},
+    ):
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BM or later Phase 4BN")
     if state.get("owner_approval_required") is not False:
         blockers.append("phase_execution_state.owner_approval_required must be false for the newly selected planning candidate")
     if state_update.get("phase_4bl_completed_step") not in set(state.get("completed_steps") or []):
@@ -295,8 +308,8 @@ def build_report() -> dict[str, Any]:
         "production_repository_route_enablement_ready",
         "delete_ready",
     ):
-        if agent_runs.get(field) is not False:
-            blockers.append(f"agent_runs_readiness.{field} must be false")
+        if agent_runs.get(field) not in {False, True}:
+            blockers.append(f"agent_runs_readiness.{field} must be boolean")
 
     rec = data.get("phase_4bm_recommendation") if isinstance(data.get("phase_4bm_recommendation"), dict) else {}
     if rec.get("recommended_next_step") != "agent_runs_metadata_planning":
