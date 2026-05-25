@@ -321,6 +321,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4cu_internal_write_acceptance_review.yaml",
         "docs/development/phase_4cv_phase5_readiness_entry.md",
         "docs/development/phase_4cv_phase5_readiness_entry.yaml",
+        "docs/development/phase_5a_wecom_tag_adapter_contract.md",
+        "docs/development/phase_5a_wecom_tag_adapter_contract.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -469,6 +471,9 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4cu_internal_write_acceptance_review.py",
         "tools/check_phase4cv_phase5_readiness_entry.py",
         "tests/test_phase4cv_phase5_readiness_entry.py",
+        "tools/check_phase5a_wecom_tag_adapter_contract.py",
+        "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
+        "tests/test_phase5a_wecom_tag_adapter_contract.py",
         "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/check_phase4bs_workflows_fixture_runtime.py",
         "tools/check_phase4bt_workflow_nodes_fixture_runtime.py",
@@ -633,7 +638,7 @@ Read and follow:
 ## Required implementation behavior
 
 - Advance only one compressed bounded bundle within a single route family and risk boundary.
-- Target 20-35 minutes of focused work.
+- Target 15-20 minutes of focused work for the current compressed safe bundle.
 - Avoid one- or two-line state-only PRs. If a state-only update is unavoidable, explain in the PR body why it cannot be folded into a fuller low-risk work package.
 - For Phase 4AM action-templates, a package may combine blocked evidence review summary, staging approval/config checklist, owner approval closure form, phase_execution_state.yaml update, checker/test coverage, and Next action.
 - Update docs/development/phase_execution_state.yaml with the resulting status.

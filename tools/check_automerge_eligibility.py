@@ -46,6 +46,7 @@ LOW_RISK_EXACT = {
     "tools/run_phase4cr_tasks_production_readonly_dry_run.py",
     "tools/run_phase4cs_agent_runs_production_readonly_dry_run.py",
     "tools/run_phase4ct_agent_outputs_production_readonly_dry_run.py",
+    "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -190,6 +191,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4cu_internal_write_acceptance_review.yaml",
         "docs/development/phase_4cv_phase5_readiness_entry.md",
         "docs/development/phase_4cv_phase5_readiness_entry.yaml",
+        "docs/development/phase_5a_wecom_tag_adapter_contract.md",
+        "docs/development/phase_5a_wecom_tag_adapter_contract.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -285,6 +288,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4cu_internal_write_acceptance_review.py",
         "tools/check_phase4cv_phase5_readiness_entry.py",
         "tests/test_phase4cv_phase5_readiness_entry.py",
+        "tools/check_phase5a_wecom_tag_adapter_contract.py",
+        "tools/run_phase5a_wecom_tag_adapter_contract_evidence.py",
+        "tests/test_phase5a_wecom_tag_adapter_contract.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",

@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_5_external_adapter"
     assert data["active_candidate"] == "/api/admin/wecom/tags*"
     assert data["capability_owner"] == "aicrm_next.customer_tags"
-    assert data["last_merged_pr"] == "#710"
+    assert data["last_merged_pr"] == "#711"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -91,6 +91,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4ct_agent_outputs_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cu_internal_write_acceptance_review_completed" in set(data["completed_steps"])
     assert "phase_4cv_phase5_readiness_entry_completed" in set(data["completed_steps"])
+    assert "phase_5a_wecom_tag_adapter_contract_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_5a_wecom_tag_adapter_contract_only() -> None:
@@ -108,8 +109,8 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
     data = checker.load_yaml(STATE)
     policy = data["work_package_policy"]
     assert policy["selection_unit"] == "compressed_bounded_bundle"
-    assert policy["target_duration_minutes_min"] == 20
-    assert policy["target_duration_minutes_max"] == 35
+    assert policy["target_duration_minutes_min"] == 15
+    assert policy["target_duration_minutes_max"] == 20
     for field in checker.REQUIRED_WORK_PACKAGE_POLICY_TRUE:
         assert policy[field] is True
     assert policy["admin_merge_for_owner_decision_package_allowed"] is False

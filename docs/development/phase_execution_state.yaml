@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wecom/tags*
 capability_owner: aicrm_next.customer_tags
-last_merged_pr: "#710"
-last_attempted_action: phase_4cv_phase5_readiness_entry
-last_created_pr: "#711"
-recommended_next_pr: phase_5a_wecom_tag_adapter_contract_bundle
+last_merged_pr: "#711"
+last_attempted_action: phase_5a_wecom_tag_adapter_contract_bundle
+last_created_pr: "#712"
+recommended_next_pr: phase_5b_wecom_tag_fake_stub_adapter_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -104,8 +104,8 @@ production_dry_run_readiness_slices:
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
-  target_duration_minutes_min: 20
-  target_duration_minutes_max: 35
+  target_duration_minutes_min: 15
+  target_duration_minutes_max: 20
   state_only_pr_requires_explanation: true
   avoid_repeated_blocked_evidence_review: true
   low_risk_admin_merge_allowed: true
@@ -187,9 +187,10 @@ completed_steps:
   - phase_4ct_agent_outputs_production_dry_run_readiness_completed
   - phase_4cu_internal_write_acceptance_review_completed
   - phase_4cv_phase5_readiness_entry_completed
+  - phase_5a_wecom_tag_adapter_contract_completed
 
 next_allowed_actions:
-  - phase_5a_wecom_tag_adapter_contract_bundle
+  - phase_5b_wecom_tag_fake_stub_adapter_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -205,6 +206,30 @@ phase5_readiness_entry:
   fallback_removal_ready: false
   production_compat_change_ready: false
   delete_ready: false
+
+phase5a_wecom_tag_adapter_contract:
+  status: phase_5a_wecom_tag_adapter_contract_completed
+  route_family: /api/admin/wecom/tags*
+  capability_owner: aicrm_next.customer_tags
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_contract_bundle
+  adapter_contract_completed: true
+  fake_stub_contract_defined: true
+  evidence_runner_completed: true
+  checker_completed: true
+  tests_completed: true
+  live_wecom_call_authorized: false
+  production_tag_write_authorized: false
+  outbound_send_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  oauth_callback_cutover_ready: false
+  timer_execution_ready: false
+  automation_execution_ready: false
+  canary_approved: false
+  delete_ready: false
+  recommended_next_bundle: phase_5b_wecom_tag_fake_stub_adapter_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
