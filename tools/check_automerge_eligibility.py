@@ -44,6 +44,7 @@ LOW_RISK_EXACT = {
     "tools/run_phase4cp_workflows_production_readonly_dry_run.py",
     "tools/run_phase4cq_workflow_nodes_production_readonly_dry_run.py",
     "tools/run_phase4cr_tasks_production_readonly_dry_run.py",
+    "tools/run_phase4cs_agent_runs_production_readonly_dry_run.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -180,6 +181,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4cq_workflow_nodes_production_dry_run_readiness_bundle.yaml",
         "docs/development/phase_4cr_tasks_production_dry_run_readiness_bundle.md",
         "docs/development/phase_4cr_tasks_production_dry_run_readiness_bundle.yaml",
+        "docs/development/phase_4cs_agent_runs_production_dry_run_readiness_bundle.md",
+        "docs/development/phase_4cs_agent_runs_production_dry_run_readiness_bundle.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -265,6 +268,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4cr_tasks_production_dry_run_readiness_bundle.py",
         "tools/run_phase4cr_tasks_production_readonly_dry_run.py",
         "tests/test_phase4cr_tasks_production_dry_run_readiness_bundle.py",
+        "tools/check_phase4cs_agent_runs_production_dry_run_readiness_bundle.py",
+        "tools/run_phase4cs_agent_runs_production_readonly_dry_run.py",
+        "tests/test_phase4cs_agent_runs_production_dry_run_readiness_bundle.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
