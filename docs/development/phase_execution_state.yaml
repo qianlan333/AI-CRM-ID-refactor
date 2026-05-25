@@ -8,13 +8,13 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/agent-outputs*
+active_candidate: /api/admin/automation-conversion/agent-runs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#667"
-last_attempted_action: phase_4bk_agent_outputs_fixture_native_contract_planning
-last_created_pr: "#668"
-recommended_next_pr: phase_4bl_agent_outputs_fixture_native_implementation_owner_decision
-owner_approval_required: true
+last_merged_pr: "#668"
+last_attempted_action: phase_4bl_agent_outputs_fixture_native_implementation_owner_decision
+last_created_pr: "#669"
+recommended_next_pr: phase_4bm_agent_runs_metadata_planning
+owner_approval_required: false
 
 work_package_policy:
   selection_unit: bounded_low_risk_work_package
@@ -65,9 +65,10 @@ completed_steps:
   - phase_4bi_agent_outputs_metadata_planning_completed
   - phase_4bj_agent_outputs_schema_route_surface_confirmation_completed
   - phase_4bk_agent_outputs_fixture_native_contract_planning_completed
+  - phase_4bl_agent_outputs_fixture_native_implementation_owner_decision_completed
 
 next_allowed_actions:
-  - phase_4bl_agent_outputs_fixture_native_implementation_owner_decision
+  - phase_4bm_agent_runs_metadata_planning
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -124,6 +125,11 @@ paused_candidates:
     paused_by_pr: "#665"
     owner_approval_required: true
     resume_condition: explicit_owner_approval_for_agents_fixture_native_runtime_implementation
+  - route_family: /api/admin/automation-conversion/agent-outputs*
+    status: awaiting_fixture_native_runtime_owner_decision
+    paused_by_pr: "#669"
+    owner_approval_required: true
+    resume_condition: explicit_owner_approval_for_agent_outputs_fixture_native_runtime_implementation
 
 task_groups_readiness:
   native_contract_planning_started: true
@@ -230,9 +236,31 @@ agent_outputs_readiness:
   fixture_native_contract_planning_completed: true
   fixture_native_implementation_requires_owner_decision: true
   owner_decision_required: true
+  paused: true
+  paused_by_pr: "#669"
   export_job_creation_excluded: true
   file_download_excluded: true
   agent_run_execution_excluded: true
+  llm_generation_excluded: true
+  external_call_excluded: true
+  runtime_implementation_ready: false
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_repository_route_enablement_ready: false
+  delete_ready: false
+
+agent_runs_readiness:
+  metadata_planning_ready: true
+  metadata_planning_completed: false
+  schema_route_surface_confirmation_ready: false
+  fixture_native_contract_planning_ready: false
+  fixture_native_implementation_requires_owner_decision: false
+  owner_decision_required: false
+  run_creation_excluded: true
+  run_execution_excluded: true
+  replay_execution_excluded: true
+  orchestration_execution_excluded: true
   llm_generation_excluded: true
   external_call_excluded: true
   runtime_implementation_ready: false

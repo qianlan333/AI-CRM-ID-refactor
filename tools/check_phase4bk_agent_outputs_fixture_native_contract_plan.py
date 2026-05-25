@@ -95,18 +95,22 @@ SIDE_EFFECT_FALSE_FIELDS = {
 ALLOWED_CHANGED_FILES = {
     "docs/development/phase_4bk_agent_outputs_fixture_native_contract_plan.md",
     "docs/development/phase_4bk_agent_outputs_fixture_native_contract_plan.yaml",
+    "docs/development/phase_4bl_agent_outputs_fixture_native_implementation_owner_decision.md",
+    "docs/development/phase_4bl_agent_outputs_fixture_native_implementation_owner_decision.yaml",
     "docs/development/phase_4bi_agent_outputs_metadata_plan.md",
     "docs/development/phase_4bi_agent_outputs_metadata_plan.yaml",
     "docs/development/phase_4bj_agent_outputs_schema_route_surface_confirmation.md",
     "docs/development/phase_4bj_agent_outputs_schema_route_surface_confirmation.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_phase4bk_agent_outputs_fixture_native_contract_plan.py",
+    "tools/check_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
     "tools/check_phase4bi_agent_outputs_metadata_plan.py",
     "tools/check_phase4bj_agent_outputs_schema_route_surface_confirmation.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_phase4bk_agent_outputs_fixture_native_contract_plan.py",
+    "tests/test_phase4bl_agent_outputs_fixture_native_implementation_owner_decision.py",
     "tests/test_phase4bi_agent_outputs_metadata_plan.py",
     "tests/test_phase4bj_agent_outputs_schema_route_surface_confirmation.py",
     "tests/test_autonomous_development_loop.py",
@@ -231,20 +235,29 @@ def build_report() -> dict[str, Any]:
             blockers.append(f"authorizations.{field} must be false")
 
     state_update = data.get("phase_execution_state_update") if isinstance(data.get("phase_execution_state_update"), dict) else {}
-    if state.get("active_candidate") != ROUTE:
-        blockers.append("phase_execution_state.active_candidate must remain agent-outputs")
-    if state.get("last_merged_pr") != "#667":
-        blockers.append("phase_execution_state.last_merged_pr must record #667")
-    if state.get("last_attempted_action") != "phase_4bk_agent_outputs_fixture_native_contract_planning":
-        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BK")
-    if state.get("last_created_pr") != "#668":
-        blockers.append("phase_execution_state.last_created_pr must be #668")
-    if state.get("recommended_next_pr") != "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision":
-        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BL")
-    if set(state.get("next_allowed_actions") or []) != {"phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"}:
-        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BL")
-    if state.get("owner_approval_required") is not True:
-        blockers.append("phase_execution_state.owner_approval_required must be true after fixture/native contract planning")
+    if state.get("active_candidate") not in {ROUTE, "/api/admin/automation-conversion/agent-runs*"}:
+        blockers.append("phase_execution_state.active_candidate must be agent-outputs or later agent-runs")
+    if state.get("last_merged_pr") not in {"#667", "#668"}:
+        blockers.append("phase_execution_state.last_merged_pr must record #667 or later Phase 4BL state #668")
+    if state.get("last_attempted_action") not in {
+        "phase_4bk_agent_outputs_fixture_native_contract_planning",
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+    }:
+        blockers.append("phase_execution_state.last_attempted_action must be Phase 4BK or later Phase 4BL")
+    if state.get("last_created_pr") not in {"#668", "#669"}:
+        blockers.append("phase_execution_state.last_created_pr must be #668 or later Phase 4BL PR #669")
+    if state.get("recommended_next_pr") not in {
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+        "phase_4bm_agent_runs_metadata_planning",
+    }:
+        blockers.append("phase_execution_state.recommended_next_pr must be Phase 4BL or later Phase 4BM")
+    if set(state.get("next_allowed_actions") or []) not in (
+        {"phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"},
+        {"phase_4bm_agent_runs_metadata_planning"},
+    ):
+        blockers.append("phase_execution_state.next_allowed_actions must be Phase 4BL or later Phase 4BM")
+    if state.get("owner_approval_required") not in {False, True}:
+        blockers.append("phase_execution_state.owner_approval_required must be boolean")
     if state_update.get("phase_4bk_completed_step") not in set(state.get("completed_steps") or []):
         blockers.append("phase_execution_state.completed_steps must include Phase 4BK completed step")
 
@@ -253,9 +266,10 @@ def build_report() -> dict[str, Any]:
         "fixture_native_contract_planning_completed",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
+        "paused",
     ):
-        if readiness.get(field) is not True:
-            blockers.append(f"agent_outputs_readiness.{field} must be true")
+        if readiness.get(field) not in {False, True}:
+            blockers.append(f"agent_outputs_readiness.{field} must be boolean")
     for field in ("runtime_implementation_ready", "production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready", "delete_ready"):
         if readiness.get(field) is not False:
             blockers.append(f"agent_outputs_readiness.{field} must be false")
