@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5b_wecom_tag_fake_stub_adapter_bundle",
+    "phase_5c_wecom_tag_live_adapter_behind_flag_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -111,6 +111,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cu_internal_write_acceptance_review_completed",
     "phase_4cv_phase5_readiness_entry_completed",
     "phase_5a_wecom_tag_adapter_contract_completed",
+    "phase_5b_wecom_tag_fake_stub_adapter_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -162,6 +163,11 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/agent_runs.py",
     "aicrm_next/automation_engine/workflows.py",
     "aicrm_next/automation_engine/workflow_nodes.py",
+    "aicrm_next/customer_tags/api.py",
+    "aicrm_next/customer_tags/application.py",
+    "aicrm_next/customer_tags/dto.py",
+    "aicrm_next/customer_tags/wecom_tag_adapter.py",
+    "aicrm_next/customer_tags/wecom_tag_contract.py",
 }
 
 
@@ -327,8 +333,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must select the first Phase 5A WeCom tag adapter contract candidate")
     if state.get("capability_owner") != "aicrm_next.customer_tags":
         blockers.append("capability_owner must be aicrm_next.customer_tags")
-    if state.get("last_merged_pr") != "#711":
-        blockers.append("last_merged_pr must record latest completed merged PR #711")
+    if state.get("last_merged_pr") != "#712":
+        blockers.append("last_merged_pr must record latest completed merged PR #712")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
