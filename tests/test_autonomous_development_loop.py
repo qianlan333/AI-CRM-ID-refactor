@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#674"
+    assert data["last_merged_pr"] == "#675"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -62,6 +62,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed" in set(data["completed_steps"])
     assert "phase_4bq_agent_replay_metadata_planning_completed" in set(data["completed_steps"])
     assert "phase_4br_task_groups_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
+    assert "phase_4bs_workflows_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -142,7 +143,7 @@ def test_action_templates_paused_and_task_groups_not_ready_for_production() -> N
     assert readiness["delete_ready"] is False
 
 
-def test_workflows_selected_for_next_metadata_planning_without_production_readiness() -> None:
+def test_workflows_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
     readiness = data["workflows_readiness"]
     assert readiness["metadata_planning_ready"] is True
@@ -151,12 +152,15 @@ def test_workflows_selected_for_next_metadata_planning_without_production_readin
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
-    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
-    assert readiness["owner_decision_required"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is False
+    assert readiness["fixture_native_list_create_runtime_completed"] is True
+    assert readiness["owner_decision_required"] is False
+    assert set(readiness["implemented_runtime_slices"]) == {"workflows_fixture_local_list", "workflows_fixture_local_metadata_create"}
+    assert readiness["production_guard_blocks_fixture_success"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
-    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
-    assert readiness["owner_decision_required"] is True
-    assert readiness["paused"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is False
+    assert readiness["owner_decision_required"] is False
+    assert readiness["paused"] is False
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
@@ -258,7 +262,7 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
 
 def test_agent_outputs_selected_for_fixture_contract_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflows*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
@@ -353,7 +357,7 @@ def test_docs_include_required_autopilot_contract_sections() -> None:
         assert section in text
 
 
-def test_only_phase4br_runtime_files_changed_if_git_diff_available() -> None:
+def test_only_phase4_runtime_files_changed_if_git_diff_available() -> None:
     proc = subprocess.run(
         ["git", "diff", "--name-only", "origin/main...HEAD"],
         cwd=ROOT,
@@ -365,7 +369,7 @@ def test_only_phase4br_runtime_files_changed_if_git_diff_available() -> None:
     if proc.returncode != 0:
         return
     changed = {line.strip() for line in proc.stdout.splitlines() if line.strip()}
-    assert not any(path.startswith("aicrm_next/") and path not in checker.PHASE4BR_ALLOWED_RUNTIME_FILES for path in changed)
+    assert not any(path.startswith("aicrm_next/") and path not in checker.PHASE4_ALLOWED_RUNTIME_FILES for path in changed)
     assert not any(path.startswith("wecom_ability_service/") for path in changed)
     assert not any(path.startswith("migrations/") for path in changed)
     assert not any(path.startswith("deploy/") for path in changed)

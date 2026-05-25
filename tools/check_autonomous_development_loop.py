@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bs_workflows_fixture_native_list_create_runtime",
+    "phase_4bt_workflow_nodes_fixture_native_list_create_runtime",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -78,6 +78,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed",
     "phase_4bq_agent_replay_metadata_planning_completed",
     "phase_4br_task_groups_fixture_native_list_create_runtime_completed",
+    "phase_4bs_workflows_fixture_native_list_create_runtime_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -110,12 +111,13 @@ REQUIRED_WORK_PACKAGE_POLICY_TRUE = {
     "admin_merge_requires_eligible_true",
     "admin_merge_requires_required_checks_green",
 }
-PHASE4BR_ALLOWED_RUNTIME_FILES = {
+PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/api.py",
     "aicrm_next/automation_engine/application.py",
     "aicrm_next/automation_engine/dto.py",
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/task_groups.py",
+    "aicrm_next/automation_engine/workflows.py",
 }
 
 
@@ -277,12 +279,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/workflows*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflows* after task-groups fixture runtime")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/workflow-nodes* after workflows fixture runtime")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#674":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #674")
+    if state.get("last_merged_pr") != "#675":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #675")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -366,10 +368,11 @@ def build_report() -> dict[str, Any]:
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/workflows*"
-        and item.get("owner_approval_required") is True
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "fixture_native_list_create_runtime_completed"
         for item in paused_candidates
     ):
-        blockers.append("paused_candidates must include workflows awaiting fixture/native runtime owner decision")
+        blockers.append("paused_candidates must record workflows fixture/native list/create runtime completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
@@ -450,12 +453,21 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflows_readiness.fixture_native_contract_planning_ready must be true")
     if workflows_readiness.get("fixture_native_contract_planning_completed") is not True:
         blockers.append("workflows_readiness.fixture_native_contract_planning_completed must be true")
-    if workflows_readiness.get("fixture_native_implementation_requires_owner_decision") is not True:
-        blockers.append("workflows_readiness.fixture_native_implementation_requires_owner_decision must be true")
-    if workflows_readiness.get("owner_decision_required") is not True:
-        blockers.append("workflows_readiness.owner_decision_required must be true")
-    if workflows_readiness.get("paused") is not True:
-        blockers.append("workflows_readiness.paused must be true")
+    if workflows_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
+        blockers.append("workflows_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
+    if workflows_readiness.get("owner_decision_required") is not False:
+        blockers.append("workflows_readiness.owner_decision_required must be false after safe fixture runtime")
+    if workflows_readiness.get("fixture_native_list_create_runtime_completed") is not True:
+        blockers.append("workflows_readiness.fixture_native_list_create_runtime_completed must be true")
+    if workflows_readiness.get("production_guard_blocks_fixture_success") is not True:
+        blockers.append("workflows_readiness.production_guard_blocks_fixture_success must be true")
+    if set(workflows_readiness.get("implemented_runtime_slices") or []) != {
+        "workflows_fixture_local_list",
+        "workflows_fixture_local_metadata_create",
+    }:
+        blockers.append("workflows_readiness.implemented_runtime_slices must record fixture local list/create")
+    if workflows_readiness.get("paused") is not False:
+        blockers.append("workflows_readiness.paused must be false after safe fixture runtime")
     for field in (
         "runtime_implementation_ready",
         "production_owner_switch_ready",
@@ -664,7 +676,7 @@ def build_report() -> dict[str, Any]:
     runtime_changed = [
         path
         for path in sorted(changed)
-        if path not in PHASE4BR_ALLOWED_RUNTIME_FILES
+        if path not in PHASE4_ALLOWED_RUNTIME_FILES
         and (path.startswith("aicrm_next/")
         or path.startswith("wecom_ability_service/")
         or path.startswith("migrations/")

@@ -8,16 +8,19 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/workflows*
+active_candidate: /api/admin/automation-conversion/workflow-nodes*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#674"
-last_attempted_action: phase_4br_task_groups_fixture_native_list_create_runtime
-last_created_pr: "#675"
-recommended_next_pr: phase_4bs_workflows_fixture_native_list_create_runtime
+last_merged_pr: "#675"
+last_attempted_action: phase_4bs_workflows_fixture_native_list_create_runtime
+last_created_pr: "#676"
+recommended_next_pr: phase_4bt_workflow_nodes_fixture_native_list_create_runtime
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_fixture_local_list_create
+    scope: fixture_local_only
+  - route_family: /api/admin/automation-conversion/workflows*
+    slice: workflows_fixture_local_list_create
     scope: fixture_local_only
 guarded_disabled_runtime_slices: []
 
@@ -77,9 +80,10 @@ completed_steps:
   - phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed
   - phase_4bq_agent_replay_metadata_planning_completed
   - phase_4br_task_groups_fixture_native_list_create_runtime_completed
+  - phase_4bs_workflows_fixture_native_list_create_runtime_completed
 
 next_allowed_actions:
-  - phase_4bs_workflows_fixture_native_list_create_runtime
+  - phase_4bt_workflow_nodes_fixture_native_list_create_runtime
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -117,10 +121,10 @@ paused_candidates:
     owner_approval_required: false
     resume_condition: completed_safe_fixture_native_list_create_runtime
   - route_family: /api/admin/automation-conversion/workflows*
-    status: awaiting_fixture_native_runtime_owner_decision
+    status: fixture_native_list_create_runtime_completed
     paused_by_pr: "#652"
-    owner_approval_required: true
-    resume_condition: explicit_owner_approval_for_workflows_fixture_native_runtime_implementation
+    owner_approval_required: false
+    resume_condition: completed_safe_fixture_native_list_create_runtime
   - route_family: /api/admin/automation-conversion/workflow-nodes*
     status: awaiting_fixture_native_runtime_owner_decision
     paused_by_pr: "#656"
@@ -174,9 +178,15 @@ workflows_readiness:
   schema_route_surface_confirmed: true
   fixture_native_contract_planning_ready: true
   fixture_native_contract_planning_completed: true
-  fixture_native_implementation_requires_owner_decision: true
-  owner_decision_required: true
-  paused: true
+  fixture_native_implementation_requires_owner_decision: false
+  fixture_native_list_create_runtime_completed: true
+  owner_decision_required: false
+  implemented_runtime_slices:
+    - workflows_fixture_local_list
+    - workflows_fixture_local_metadata_create
+  guarded_disabled_runtime_slices: []
+  production_guard_blocks_fixture_success: true
+  paused: false
   paused_by_pr: "#652"
   runtime_implementation_ready: false
   production_owner_switch_ready: false

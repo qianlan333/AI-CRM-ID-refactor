@@ -10,6 +10,7 @@ from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
 from .task_groups import TASK_GROUP_ROUTE_FAMILY, normalize_task_group_create_payload, task_group_projection, task_group_side_effect_safety
+from .workflows import WORKFLOW_ROUTE_FAMILY, normalize_workflow_create_payload, workflow_projection, workflow_side_effect_safety
 
 
 class AutomationRepository(Protocol):
@@ -38,6 +39,9 @@ class AutomationRepository(Protocol):
     def list_task_groups(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def create_task_group(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_task_group_audit_events(self) -> list[dict[str, Any]]: ...
+    def list_workflows(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def create_workflow(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def list_workflow_audit_events(self) -> list[dict[str, Any]]: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -183,6 +187,46 @@ class InMemoryAutomationRepository:
         }
         self._task_group_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._task_group_audit_events: list[dict[str, Any]] = []
+        self._workflows: dict[int, dict[str, Any]] = {
+            1: workflow_projection(
+                {
+                    "id": 1,
+                    "program_id": 1,
+                    "workflow_code": "phase4at_default_workflow",
+                    "workflow_name": "Fixture 默认工作流",
+                    "description": "Fixture local workflow metadata.",
+                    "status": "draft",
+                    "segmentation_basis": {"source": "fixture"},
+                    "profile_segment_template_id": 1,
+                    "behavior_tier_scheme": {"tier": "standard"},
+                    "fallback_to_standard_content": True,
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:10:00Z",
+                    "updated_at": "2026-05-20T09:10:00Z",
+                }
+            ),
+            2: workflow_projection(
+                {
+                    "id": 2,
+                    "program_id": 1,
+                    "workflow_code": "phase4at_followup_workflow",
+                    "workflow_name": "Fixture 跟进工作流",
+                    "description": "Fixture local follow-up workflow metadata.",
+                    "status": "inactive",
+                    "segmentation_basis": {"source": "fixture"},
+                    "profile_segment_template_id": 1,
+                    "behavior_tier_scheme": {"tier": "followup"},
+                    "fallback_to_standard_content": True,
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:15:00Z",
+                    "updated_at": "2026-05-20T09:15:00Z",
+                }
+            ),
+        }
+        self._workflow_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._workflow_audit_events: list[dict[str, Any]] = []
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -459,6 +503,77 @@ class InMemoryAutomationRepository:
     def list_task_group_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._task_group_audit_events)
 
+    def list_workflows(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        filters = filters or {}
+        program_id = filters.get("program_id")
+        status = str(filters.get("status") or "").strip()
+        include_archived = bool(filters.get("include_archived"))
+        limit = int(filters.get("limit") or 50)
+        offset = int(filters.get("offset") or 0)
+        rows = [workflow_projection(item) for item in self._workflows.values()]
+        if program_id not in (None, ""):
+            rows = [item for item in rows if int(item.get("program_id") or 0) == int(program_id)]
+        if status:
+            rows = [item for item in rows if str(item.get("status") or "") == status]
+        if not include_archived:
+            rows = [item for item in rows if not str(item.get("archived_at") or "").strip()]
+        rows.sort(key=lambda item: (str(item.get("updated_at") or ""), int(item.get("id") or 0)), reverse=True)
+        total = len(rows)
+        return deepcopy(rows[offset : offset + limit]), total
+
+    def create_workflow(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            raise ContractError("idempotency_key is required")
+        operator_id = str(operator or "system").strip() or "system"
+        normalized = normalize_workflow_create_payload({**payload, "operator": operator_id})
+        idempotency_scope = (WORKFLOW_ROUTE_FAMILY, "create", operator_id, key)
+        request_hash = self._request_hash(normalized)
+        replay = self._workflow_idempotency.get(idempotency_scope)
+        if replay:
+            if replay.get("request_hash") != request_hash:
+                raise ContractError("idempotency key conflicts with a different request payload")
+            response = deepcopy(replay.get("response_snapshot") or {})
+            response["idempotent_replay"] = True
+            return response
+        self._assert_unique_workflow(normalized["program_id"], normalized["workflow_code"])
+        now = utc_now_iso()
+        workflow_id = max(self._workflows) + 1 if self._workflows else 1
+        saved = workflow_projection({**normalized, "id": workflow_id, "created_at": now, "updated_at": now})
+        self._workflows[workflow_id] = deepcopy(saved)
+        rollback_payload = {
+            "strategy": "archive_created_workflow_in_later_approved_phase",
+            "created_workflow_id": workflow_id,
+            "workflow_code": saved["workflow_code"],
+            "delete_approved": False,
+        }
+        audit_event = self._append_workflow_audit_event(
+            operation="create",
+            operator=operator_id,
+            resource_id=workflow_id,
+            before={},
+            after=saved,
+            request_payload=normalized,
+            rollback_payload=rollback_payload,
+        )
+        result = {
+            "workflow": deepcopy(saved),
+            "workflows": [deepcopy(saved)],
+            "audit_event": audit_event,
+            "rollback_payload": rollback_payload,
+            "idempotent_replay": False,
+        }
+        self._workflow_idempotency[idempotency_scope] = {
+            "request_hash": request_hash,
+            "response_snapshot": deepcopy(result),
+            "resource_id": workflow_id,
+            "status": "succeeded",
+        }
+        return result
+
+    def list_workflow_audit_events(self) -> list[dict[str, Any]]:
+        return deepcopy(self._workflow_audit_events)
+
     def _request_hash(self, payload: dict[str, Any]) -> str:
         import hashlib
         import json
@@ -476,6 +591,15 @@ class InMemoryAutomationRepository:
                 raise ContractError("task group name already exists for program")
             if str(item.get("group_code") or "").strip().lower() == normalized_code:
                 raise ContractError("task group code already exists for program")
+
+    def _assert_unique_workflow(self, program_id: int, workflow_code: str) -> None:
+        normalized_code = str(workflow_code or "").strip().lower()
+        for workflow in self._workflows.values():
+            item = workflow_projection(workflow)
+            if int(item.get("program_id") or 0) != int(program_id):
+                continue
+            if str(item.get("workflow_code") or "").strip().lower() == normalized_code:
+                raise ContractError("workflow code already exists for program")
 
     def _append_task_group_audit_event(
         self,
@@ -503,6 +627,34 @@ class InMemoryAutomationRepository:
             "created_at": utc_now_iso(),
         }
         self._task_group_audit_events.insert(0, event)
+        return deepcopy(event)
+
+    def _append_workflow_audit_event(
+        self,
+        *,
+        operation: str,
+        operator: str,
+        resource_id: int,
+        before: dict[str, Any],
+        after: dict[str, Any],
+        request_payload: dict[str, Any],
+        rollback_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        event = {
+            "route_family": WORKFLOW_ROUTE_FAMILY,
+            "operation": operation,
+            "operator": str(operator or "system"),
+            "resource_type": "workflow",
+            "resource_id": int(resource_id),
+            "before_snapshot": deepcopy(before),
+            "after_snapshot": deepcopy(after),
+            "request_payload": deepcopy(request_payload),
+            "validation_result": {"ok": True},
+            "rollback_payload": deepcopy(rollback_payload),
+            "side_effect_safety": workflow_side_effect_safety(),
+            "created_at": utc_now_iso(),
+        }
+        self._workflow_audit_events.insert(0, event)
         return deepcopy(event)
 
     def _find_duplicate_profile_segment(self, name: str, code: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:
