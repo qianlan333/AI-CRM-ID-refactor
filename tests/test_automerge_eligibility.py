@@ -811,6 +811,18 @@ def test_phase5c_wecom_tag_live_adapter_runtime_paths_are_autopilot_deliverable(
         assert checker._is_low_risk_path(path)
 
 
+def test_phase5d_wecom_tag_staging_live_canary_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5d_wecom_tag_staging_live_canary_evidence.md",
+        "docs/development/phase_5d_wecom_tag_staging_live_canary_evidence.yaml",
+        "tools/check_phase5d_wecom_tag_staging_live_canary_evidence.py",
+        "tools/run_phase5d_wecom_tag_staging_live_canary_evidence.py",
+        "tools/run_phase5d_wecom_tag_production_live_readiness_review.py",
+        "tests/test_phase5d_wecom_tag_staging_live_canary_evidence.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
