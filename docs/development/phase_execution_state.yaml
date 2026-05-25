@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /wecom/external-contact/callback
 capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#723"
-last_attempted_action: phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_bundle
-last_created_pr: "#724"
-recommended_next_pr: phase_5l_wecom_customer_contact_production_callback_canary_readiness_bundle
+last_merged_pr: "#724"
+last_attempted_action: phase_5l_wecom_customer_contact_production_callback_canary_readiness_bundle
+last_created_pr: "#725"
+recommended_next_pr: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -152,6 +152,9 @@ production_dry_run_readiness_slices:
   - route_family: /wecom/external-contact/callback
     slice: wecom_customer_contact_live_callback_production_dry_run_gate
     scope: readiness_only_no_live_callback_no_write
+  - route_family: /wecom/external-contact/callback
+    slice: wecom_customer_contact_production_callback_canary_readiness
+    scope: readiness_only_no_live_callback_no_write
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -249,9 +252,10 @@ completed_steps:
   - phase_5i_wecom_customer_contact_fake_stub_adapter_completed
   - phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_completed
   - phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_completed
+  - phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed
 
 next_allowed_actions:
-  - phase_5l_wecom_customer_contact_production_callback_canary_readiness_bundle
+  - phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -576,6 +580,26 @@ phase5k_wecom_customer_contact_staging_live_callback_canary_evidence:
   production_canary_approved: false
   delete_ready: false
   recommended_next_bundle: phase_5l_wecom_customer_contact_production_callback_canary_readiness_bundle
+
+phase5l_wecom_customer_contact_production_callback_canary_readiness:
+  status: phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed
+  route_family: /wecom/external-contact/callback
+  capability_owner: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_production_canary_readiness_bundle
+  readiness_runner_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_canary_execution_authorized: false
+  production_live_callback_authorized: false
+  production_callback_cutover_authorized: false
+  production_callback_owner_switch_authorized: false
+  production_contact_write_authorized: false
+  production_identity_mapping_write_authorized: false
+  outbound_send_authorized: false
+  production_compat_change_ready: false
+  fallback_removal_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
