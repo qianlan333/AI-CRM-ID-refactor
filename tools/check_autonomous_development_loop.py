@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cq_workflow_nodes_production_dry_run_readiness_bundle",
+    "phase_4cr_tasks_production_dry_run_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -104,6 +104,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cn_agent_runs_staging_readiness_completed",
     "phase_4co_task_groups_production_dry_run_readiness_completed",
     "phase_4cp_workflows_production_dry_run_readiness_completed",
+    "phase_4cq_workflow_nodes_production_dry_run_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -316,12 +317,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
-        blockers.append("active_candidate must advance to workflow-nodes for the next production dry-run readiness bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/tasks*":
+        blockers.append("active_candidate must advance to tasks for the next production dry-run readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#704":
-        blockers.append("last_merged_pr must record latest completed merged PR #704")
+    if state.get("last_merged_pr") != "#705":
+        blockers.append("last_merged_pr must record latest completed merged PR #705")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -739,6 +740,32 @@ def build_report() -> dict[str, Any]:
     ):
         if workflow_nodes_readiness.get(field) is not False:
             blockers.append(f"workflow_nodes_readiness.{field} must be false")
+    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
+        and item.get("slice") == "workflow_nodes_production_readonly_dry_run_readiness"
+        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
+        for item in dry_run_slices
+    ):
+        blockers.append("production_dry_run_readiness_slices must record workflow-nodes readonly dry-run readiness")
+    for field in (
+        "production_dry_run_readiness_bundle_completed",
+        "production_readonly_dry_run_runner_completed",
+        "production_readonly_evidence_gate_completed",
+        "production_readonly_blocked_evidence_output_completed",
+    ):
+        if workflow_nodes_readiness.get(field) is not True:
+            blockers.append(f"workflow_nodes_readiness.{field} must be true")
+    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
+        if workflow_nodes_readiness.get(field) is not False:
+            blockers.append(f"workflow_nodes_readiness.{field} must be false")
+    if workflow_nodes_readiness.get("production_readonly_db_url_flag") != "AICRM_WORKFLOW_NODES_READONLY_DRY_RUN_DATABASE_URL":
+        blockers.append("workflow_nodes_readiness.production_readonly_db_url_flag must be AICRM_WORKFLOW_NODES_READONLY_DRY_RUN_DATABASE_URL")
+    if workflow_nodes_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CQ_PRODUCTION_READONLY_DRY_RUN_APPROVED":
+        blockers.append("workflow_nodes_readiness.production_readonly_approval_flag must be AICRM_PHASE4CQ_PRODUCTION_READONLY_DRY_RUN_APPROVED")
+    if workflow_nodes_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CQ_PRODUCTION_CONFIG_REVIEWED":
+        blockers.append("workflow_nodes_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CQ_PRODUCTION_CONFIG_REVIEWED")
 
     tasks_readiness = state.get("tasks_readiness") if isinstance(state.get("tasks_readiness"), dict) else {}
     for field in (
