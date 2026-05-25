@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
+from .agents import AGENT_ROUTE_FAMILY, agent_projection, agent_side_effect_safety, normalize_agent_create_payload
 from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
@@ -55,6 +56,9 @@ class AutomationRepository(Protocol):
     def list_tasks(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def create_task(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_task_audit_events(self) -> list[dict[str, Any]]: ...
+    def list_agents(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def create_agent(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def list_agent_audit_events(self) -> list[dict[str, Any]]: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -326,6 +330,50 @@ class InMemoryAutomationRepository:
         }
         self._task_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._task_audit_events: list[dict[str, Any]] = []
+        self._agents: dict[int, dict[str, Any]] = {
+            1: agent_projection(
+                {
+                    "id": 1,
+                    "program_id": 1,
+                    "workflow_id": 1,
+                    "node_id": 1,
+                    "task_id": 1,
+                    "agent_code": "phase4bg_review_agent",
+                    "agent_name": "Fixture 审阅 Agent",
+                    "agent_type": "reviewer",
+                    "status": "draft",
+                    "sort_order": 10,
+                    "metadata": {"source": "fixture"},
+                    "config": {"description": "metadata only"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:40:00Z",
+                    "updated_at": "2026-05-20T09:40:00Z",
+                }
+            ),
+            2: agent_projection(
+                {
+                    "id": 2,
+                    "program_id": 1,
+                    "workflow_id": 1,
+                    "node_id": 2,
+                    "task_id": 2,
+                    "agent_code": "phase4bg_followup_agent",
+                    "agent_name": "Fixture 跟进 Agent",
+                    "agent_type": "followup",
+                    "status": "inactive",
+                    "sort_order": 20,
+                    "metadata": {"source": "fixture"},
+                    "config": {"description": "metadata only"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:45:00Z",
+                    "updated_at": "2026-05-20T09:45:00Z",
+                }
+            ),
+        }
+        self._agent_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._agent_audit_events: list[dict[str, Any]] = []
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -828,6 +876,84 @@ class InMemoryAutomationRepository:
     def list_task_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._task_audit_events)
 
+    def list_agents(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        filters = filters or {}
+        program_id = filters.get("program_id")
+        workflow_id = filters.get("workflow_id")
+        node_id = filters.get("node_id")
+        task_id = filters.get("task_id")
+        agent_type = str(filters.get("agent_type") or "").strip()
+        status = str(filters.get("status") or "").strip()
+        include_archived = bool(filters.get("include_archived"))
+        limit = int(filters.get("limit") or 50)
+        offset = int(filters.get("offset") or 0)
+        rows = [agent_projection(item) for item in self._agents.values()]
+        for field, value in (("program_id", program_id), ("workflow_id", workflow_id), ("node_id", node_id), ("task_id", task_id)):
+            if value not in (None, ""):
+                rows = [item for item in rows if int(item.get(field) or 0) == int(value)]
+        if agent_type:
+            rows = [item for item in rows if str(item.get("agent_type") or "") == agent_type]
+        if status:
+            rows = [item for item in rows if str(item.get("status") or "") == status]
+        if not include_archived:
+            rows = [item for item in rows if not str(item.get("archived_at") or "").strip()]
+        rows.sort(key=lambda item: (int(item.get("workflow_id") or 0), int(item.get("task_id") or 0), int(item.get("sort_order") or 0), int(item.get("id") or 0)))
+        total = len(rows)
+        return deepcopy(rows[offset : offset + limit]), total
+
+    def create_agent(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            raise ContractError("idempotency_key is required")
+        operator_id = str(operator or "system").strip() or "system"
+        normalized = normalize_agent_create_payload({**payload, "operator": operator_id})
+        idempotency_scope = (AGENT_ROUTE_FAMILY, "create", operator_id, key)
+        request_hash = self._request_hash(normalized)
+        replay = self._agent_idempotency.get(idempotency_scope)
+        if replay:
+            if replay.get("request_hash") != request_hash:
+                raise ContractError("idempotency key conflicts with a different request payload")
+            response = deepcopy(replay.get("response_snapshot") or {})
+            response["idempotent_replay"] = True
+            return response
+        self._assert_unique_agent(normalized["workflow_id"], normalized["agent_code"])
+        now = utc_now_iso()
+        agent_id = max(self._agents) + 1 if self._agents else 1
+        saved = agent_projection({**normalized, "id": agent_id, "created_at": now, "updated_at": now})
+        self._agents[agent_id] = deepcopy(saved)
+        rollback_payload = {
+            "strategy": "archive_created_agent_in_later_approved_phase",
+            "created_agent_id": agent_id,
+            "agent_code": saved["agent_code"],
+            "delete_approved": False,
+        }
+        audit_event = self._append_agent_audit_event(
+            operation="create",
+            operator=operator_id,
+            resource_id=agent_id,
+            before={},
+            after=saved,
+            request_payload=normalized,
+            rollback_payload=rollback_payload,
+        )
+        result = {
+            "agent": deepcopy(saved),
+            "agents": [deepcopy(saved)],
+            "audit_event": audit_event,
+            "rollback_payload": rollback_payload,
+            "idempotent_replay": False,
+        }
+        self._agent_idempotency[idempotency_scope] = {
+            "request_hash": request_hash,
+            "response_snapshot": deepcopy(result),
+            "resource_id": agent_id,
+            "status": "succeeded",
+        }
+        return result
+
+    def list_agent_audit_events(self) -> list[dict[str, Any]]:
+        return deepcopy(self._agent_audit_events)
+
     def _request_hash(self, payload: dict[str, Any]) -> str:
         import hashlib
         import json
@@ -872,6 +998,15 @@ class InMemoryAutomationRepository:
                 continue
             if str(item.get("task_code") or "").strip().lower() == normalized_code:
                 raise ContractError("task code already exists for workflow")
+
+    def _assert_unique_agent(self, workflow_id: int, agent_code: str) -> None:
+        normalized_code = str(agent_code or "").strip().lower()
+        for agent in self._agents.values():
+            item = agent_projection(agent)
+            if int(item.get("workflow_id") or 0) != int(workflow_id):
+                continue
+            if str(item.get("agent_code") or "").strip().lower() == normalized_code:
+                raise ContractError("agent code already exists for workflow")
 
     def _append_task_group_audit_event(
         self,
@@ -983,6 +1118,34 @@ class InMemoryAutomationRepository:
             "created_at": utc_now_iso(),
         }
         self._task_audit_events.insert(0, event)
+        return deepcopy(event)
+
+    def _append_agent_audit_event(
+        self,
+        *,
+        operation: str,
+        operator: str,
+        resource_id: int,
+        before: dict[str, Any],
+        after: dict[str, Any],
+        request_payload: dict[str, Any],
+        rollback_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        event = {
+            "route_family": AGENT_ROUTE_FAMILY,
+            "operation": operation,
+            "operator": str(operator or "system"),
+            "resource_type": "agent",
+            "resource_id": int(resource_id),
+            "before_snapshot": deepcopy(before),
+            "after_snapshot": deepcopy(after),
+            "request_payload": deepcopy(request_payload),
+            "validation_result": {"ok": True},
+            "rollback_payload": deepcopy(rollback_payload),
+            "side_effect_safety": agent_side_effect_safety(),
+            "created_at": utc_now_iso(),
+        }
+        self._agent_audit_events.insert(0, event)
         return deepcopy(event)
 
     def _find_duplicate_profile_segment(self, name: str, code: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:

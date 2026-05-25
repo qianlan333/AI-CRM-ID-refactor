@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bv_agents_fixture_native_list_create_runtime",
+    "phase_4bw_agent_outputs_fixture_native_list_detail_runtime",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -81,6 +81,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bs_workflows_fixture_native_list_create_runtime_completed",
     "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed",
     "phase_4bu_tasks_fixture_native_list_create_runtime_completed",
+    "phase_4bv_agents_fixture_native_list_create_runtime_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -120,6 +121,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/repo.py",
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/tasks.py",
+    "aicrm_next/automation_engine/agents.py",
     "aicrm_next/automation_engine/workflows.py",
     "aicrm_next/automation_engine/workflow_nodes.py",
 }
@@ -283,12 +285,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agents*":
-        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agents* after tasks fixture runtime")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
+        blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-outputs* after agents fixture runtime")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#679":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #679")
+    if state.get("last_merged_pr") != "#680":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #680")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -305,12 +307,12 @@ def build_report() -> dict[str, Any]:
         blockers.append(f"forbidden_without_owner_approval missing high-risk actions: {missing_forbidden}")
 
     work_package_policy = state.get("work_package_policy") if isinstance(state.get("work_package_policy"), dict) else {}
-    if work_package_policy.get("selection_unit") != "bounded_low_risk_work_package":
-        blockers.append("work_package_policy.selection_unit must be bounded_low_risk_work_package")
-    if work_package_policy.get("target_duration_minutes_min") != 10:
-        blockers.append("work_package_policy.target_duration_minutes_min must be 10")
-    if work_package_policy.get("target_duration_minutes_max") != 13:
-        blockers.append("work_package_policy.target_duration_minutes_max must be 13")
+    if work_package_policy.get("selection_unit") != "compressed_bounded_bundle":
+        blockers.append("work_package_policy.selection_unit must be compressed_bounded_bundle")
+    if work_package_policy.get("target_duration_minutes_min") != 20:
+        blockers.append("work_package_policy.target_duration_minutes_min must be 20")
+    if work_package_policy.get("target_duration_minutes_max") != 35:
+        blockers.append("work_package_policy.target_duration_minutes_max must be 35")
     for field in sorted(REQUIRED_WORK_PACKAGE_POLICY_TRUE):
         if work_package_policy.get(field) is not True:
             blockers.append(f"work_package_policy.{field} must be true")
@@ -396,11 +398,12 @@ def build_report() -> dict[str, Any]:
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/agents*"
-        and item.get("owner_approval_required") is True
-        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "fixture_native_list_create_runtime_completed"
+        and item.get("paused_by_pr") == "#681"
         for item in paused_candidates
     ):
-        blockers.append("paused_candidates must include agents awaiting fixture/native runtime owner decision")
+        blockers.append("paused_candidates must record agents fixture/native list/create runtime completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
@@ -572,9 +575,8 @@ def build_report() -> dict[str, Any]:
         "schema_route_surface_confirmed",
         "fixture_native_contract_planning_ready",
         "fixture_native_contract_planning_completed",
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-        "paused",
+        "fixture_native_list_create_runtime_completed",
+        "production_guard_blocks_fixture_success",
         "agent_run_execution_excluded",
         "llm_generation_excluded",
         "deepseek_adapter_excluded",
@@ -584,6 +586,9 @@ def build_report() -> dict[str, Any]:
         if agents_readiness.get(field) is not True:
             blockers.append(f"agents_readiness.{field} must be true")
     for field in (
+        "fixture_native_implementation_requires_owner_decision",
+        "owner_decision_required",
+        "paused",
         "runtime_implementation_ready",
         "production_owner_switch_ready",
         "production_write_ready",
@@ -593,8 +598,13 @@ def build_report() -> dict[str, Any]:
     ):
         if agents_readiness.get(field) is not False:
             blockers.append(f"agents_readiness.{field} must be false")
-    if agents_readiness.get("paused_by_pr") != "#665":
-        blockers.append("agents_readiness.paused_by_pr must be #665")
+    if agents_readiness.get("paused_by_pr") != "#681":
+        blockers.append("agents_readiness.paused_by_pr must be #681")
+    if set(agents_readiness.get("implemented_runtime_slices") or []) != {
+        "agents_fixture_local_list",
+        "agents_fixture_local_metadata_create",
+    }:
+        blockers.append("agents_readiness.implemented_runtime_slices must record fixture local list/create")
 
     agent_outputs_readiness = state.get("agent_outputs_readiness") if isinstance(state.get("agent_outputs_readiness"), dict) else {}
     for field in (

@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#679"
+    assert data["last_merged_pr"] == "#680"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -65,6 +65,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bs_workflows_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
     assert "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
     assert "phase_4bu_tasks_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
+    assert "phase_4bv_agents_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -81,9 +82,9 @@ def test_forbidden_without_owner_approval_covers_high_risk_actions() -> None:
 def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
     data = checker.load_yaml(STATE)
     policy = data["work_package_policy"]
-    assert policy["selection_unit"] == "bounded_low_risk_work_package"
-    assert policy["target_duration_minutes_min"] == 10
-    assert policy["target_duration_minutes_max"] == 13
+    assert policy["selection_unit"] == "compressed_bounded_bundle"
+    assert policy["target_duration_minutes_min"] == 20
+    assert policy["target_duration_minutes_max"] == 35
     for field in checker.REQUIRED_WORK_PACKAGE_POLICY_TRUE:
         assert policy[field] is True
     assert policy["admin_merge_for_owner_decision_package_allowed"] is False
@@ -244,11 +245,12 @@ def test_tasks_runtime_completed_without_production_readiness() -> None:
     assert readiness["delete_ready"] is False
 
 
-def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> None:
+def test_agents_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
     assert any(
         item["route_family"] == "/api/admin/automation-conversion/agents*"
-        and item["owner_approval_required"] is True
+        and item["owner_approval_required"] is False
+        and item["status"] == "fixture_native_list_create_runtime_completed"
         and str(item["paused_by_pr"]).strip()
         for item in data["paused_candidates"]
     )
@@ -259,10 +261,16 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
-    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
-    assert readiness["owner_decision_required"] is True
-    assert readiness["paused"] is True
-    assert readiness["paused_by_pr"] == "#665"
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is False
+    assert readiness["fixture_native_list_create_runtime_completed"] is True
+    assert readiness["owner_decision_required"] is False
+    assert set(readiness["implemented_runtime_slices"]) == {
+        "agents_fixture_local_list",
+        "agents_fixture_local_metadata_create",
+    }
+    assert readiness["production_guard_blocks_fixture_success"] is True
+    assert readiness["paused"] is False
+    assert readiness["paused_by_pr"] == "#681"
     assert readiness["agent_run_execution_excluded"] is True
     assert readiness["llm_generation_excluded"] is True
     assert readiness["deepseek_adapter_excluded"] is True
@@ -278,7 +286,7 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
 
 def test_agent_outputs_selected_for_fixture_contract_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agents*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

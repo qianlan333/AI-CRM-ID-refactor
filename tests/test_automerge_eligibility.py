@@ -444,6 +444,20 @@ def test_phase4bu_tasks_runtime_path_is_autopilot_deliverable() -> None:
     assert checker._is_low_risk_path("aicrm_next/automation_engine/tasks.py")
 
 
+def test_phase4bv_agents_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4bv_agents_fixture_runtime.md",
+        "tools/check_phase4bv_agents_fixture_runtime.py",
+        "tests/test_phase4bv_agents_fixture_runtime.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
+def test_phase4bv_agents_runtime_path_is_autopilot_deliverable() -> None:
+    assert "aicrm_next/automation_engine/agents.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+    assert checker._is_low_risk_path("aicrm_next/automation_engine/agents.py")
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

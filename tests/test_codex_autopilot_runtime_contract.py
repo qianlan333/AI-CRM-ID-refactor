@@ -27,9 +27,9 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "phase_execution_state.yaml" in prompt_text
     assert "check_autonomous_development_loop.py" in prompt_text
     assert "check_automerge_eligibility.py" in prompt_text
-    assert "bounded low-risk work package" in prompt_text
-    assert "10-13 minutes" in prompt_text
-    assert "phase_4bv_agents_fixture_native_list_create_runtime" in prompt_text
+    assert "compressed bounded bundle" in prompt_text
+    assert "20-35 minutes" in prompt_text
+    assert "phase_4bw_agent_outputs_fixture_native_list_detail_runtime" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -764,6 +764,42 @@ def test_runner_treats_phase4bu_tasks_runtime_path_as_guarded_policy_file() -> N
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase4bv_agents_runtime_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "openclaw",
+        "mcp",
+        "timer",
+        "outbound send",
+        "agent-run execution",
+        "llm generation",
+    }
+    paths = {
+        "docs/development/phase_4bv_agents_fixture_runtime.md",
+        "tools/check_phase4bv_agents_fixture_runtime.py",
+        "tests/test_phase4bv_agents_fixture_runtime.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4bv_agents_runtime_path_as_guarded_policy_file() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "openclaw",
+        "mcp",
+        "timer",
+        "outbound send",
+        "agent-run execution",
+        "llm generation",
+    }
+    paths = {
+        "aicrm_next/automation_engine/agents.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
@@ -847,7 +883,7 @@ def test_runbook_declares_runtime_boundaries() -> None:
     for phrase in (
         "does not change production routes",
         "may use admin merge for eligible low-risk PRs",
-        "10-13 minute work packages",
+        "20-35 minute compressed bundles",
         "does not authorize production route switch",
         "Risk / rollback",
         "Autopilot runtime decision",

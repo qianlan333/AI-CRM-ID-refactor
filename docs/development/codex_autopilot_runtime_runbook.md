@@ -10,7 +10,7 @@ The runner is a local orchestration wrapper. It reads repository protocol files,
 
 ## Business value
 
-The runner lets AI-CRM continue safe low-risk Phase 4 housekeeping without manual polling. It prevents action-templates from advancing past staging approval/config gaps while still preparing useful 10-13 minute work packages instead of repeated tiny state-only updates.
+The runner lets AI-CRM continue safe low-risk Phase 4 housekeeping without manual polling. It prevents action-templates from advancing past staging approval/config gaps while still preparing useful 20-35 minute compressed bundles instead of repeated tiny state-only updates.
 
 ## Business continuity
 
@@ -45,7 +45,7 @@ Each tick:
 - Reads `docs/development/autonomous_stop_conditions.yaml`.
 - Generates an owner decision package instead of an implementation prompt when a stop condition appears.
 
-Each work package should be completable in 10-13 minutes. A package may include a blocked evidence summary, approval/config checklist, owner closure form, state updates, checker/test coverage, and a concrete next action. State-only updates are allowed only when the PR explains why they cannot be merged into a fuller package.
+Each compressed bundle should be completable in 20-35 minutes. A package may include adjacent safe stages that share one route family and risk boundary, plus state updates, checker/test coverage, and a concrete next action. State-only updates are allowed only when the PR explains why they cannot be merged into a fuller package.
 
 ## Auto-Merge Boundary
 

@@ -189,6 +189,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/automation_engine/application.py",
         "aicrm_next/automation_engine/dto.py",
         "aicrm_next/automation_engine/repo.py",
+        "aicrm_next/automation_engine/agents.py",
         "aicrm_next/automation_engine/task_groups.py",
         "aicrm_next/automation_engine/tasks.py",
         "aicrm_next/automation_engine/workflows.py",
@@ -244,6 +245,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4bg_agents_fixture_native_contract_plan.yaml",
         "docs/development/phase_4bh_agents_fixture_native_implementation_owner_decision.md",
         "docs/development/phase_4bh_agents_fixture_native_implementation_owner_decision.yaml",
+        "docs/development/phase_4bv_agents_fixture_runtime.md",
         "docs/development/phase_4bi_agent_outputs_metadata_plan.md",
         "docs/development/phase_4bi_agent_outputs_metadata_plan.yaml",
         "docs/development/phase_4bj_agent_outputs_schema_route_surface_confirmation.md",
@@ -292,6 +294,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4bf_agents_schema_route_surface_confirmation.py",
         "tests/test_phase4bg_agents_fixture_native_contract_plan.py",
         "tests/test_phase4bh_agents_fixture_native_implementation_owner_decision.py",
+        "tests/test_phase4bv_agents_fixture_runtime.py",
         "tests/test_phase4bi_agent_outputs_metadata_plan.py",
         "tests/test_phase4bj_agent_outputs_schema_route_surface_confirmation.py",
         "tests/test_phase4bk_agent_outputs_fixture_native_contract_plan.py",
@@ -329,6 +332,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase4bf_agents_schema_route_surface_confirmation.py",
         "tools/check_phase4bg_agents_fixture_native_contract_plan.py",
         "tools/check_phase4bh_agents_fixture_native_implementation_owner_decision.py",
+        "tools/check_phase4bv_agents_fixture_runtime.py",
         "tools/check_phase4bi_agent_outputs_metadata_plan.py",
         "tools/check_phase4bj_agent_outputs_schema_route_surface_confirmation.py",
         "tools/check_phase4bk_agent_outputs_fixture_native_contract_plan.py",
@@ -479,7 +483,7 @@ You are working in qianlan333/AI-CRM from latest main.
 Read and follow:
 {docs}
 
-## Selected bounded low-risk work package
+## Selected compressed bounded bundle
 
 - work_package: {work_package}
 - active_candidate: {state.get("active_candidate")}
@@ -501,8 +505,8 @@ Read and follow:
 
 ## Required implementation behavior
 
-- Advance only one bounded low-risk work package.
-- Target 10-13 minutes of focused work.
+- Advance only one compressed bounded bundle within a single route family and risk boundary.
+- Target 20-35 minutes of focused work.
 - Avoid one- or two-line state-only PRs. If a state-only update is unavoidable, explain in the PR body why it cannot be folded into a fuller low-risk work package.
 - For Phase 4AM action-templates, a package may combine blocked evidence review summary, staging approval/config checklist, owner approval closure form, phase_execution_state.yaml update, checker/test coverage, and Next action.
 - Update docs/development/phase_execution_state.yaml with the resulting status.

@@ -25,12 +25,15 @@ from .action_template_repository import (
     build_action_template_repository,
     action_template_sqlalchemy_enabled,
 )
+from .agents import agent_side_effect_safety
 from .domain import execution_record_projection, overview_cards, pool_summary
 from .dto import (
     ActivationWebhookRequest,
     ApplyActivationFactRequest,
     ApplyQuestionnaireResultRequest,
     ApplyTrialOpenedFactRequest,
+    AgentCreateRequest,
+    AgentListRequest,
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
@@ -189,6 +192,23 @@ def _task_production_unavailable_payload(detail: str | None = None) -> dict[str,
     return payload
 
 
+def _agent_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:
+    payload = blocked_production_payload(
+        capability_owner="aicrm_next.automation_engine",
+        detail=detail
+        or "agent production repository is not enabled; legacy production_compat fallback remains the production owner.",
+    )
+    payload.update(
+        {
+            "status_code": 503,
+            "error_code": "production_repository_not_enabled",
+            "route_owner": "ai_crm_next",
+            "side_effect_safety": agent_side_effect_safety(),
+        }
+    )
+    return payload
+
+
 def _profile_segment_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
     return {
         "ok": True,
@@ -251,6 +271,17 @@ def _task_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[s
         "route_owner": "ai_crm_next",
         "status_code": status_code,
         "side_effect_safety": task_side_effect_safety(),
+        **payload,
+    }
+
+
+def _agent_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source_status": "fixture_local_contract",
+        "route_owner": "ai_crm_next",
+        "status_code": status_code,
+        "side_effect_safety": agent_side_effect_safety(),
         **payload,
     }
 
@@ -367,6 +398,22 @@ class _TaskRepositoryOwner:
     def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
         detail = str(exc) if exc else None
         return _task_production_unavailable_payload(detail)
+
+
+class _AgentRepositoryOwner:
+    def __init__(self, repo: AutomationRepository | None = None) -> None:
+        self._repo = repo
+
+    def _repo_or_none(self) -> AutomationRepository | None:
+        if (production_environment() or production_data_ready()) and self._repo is None:
+            return None
+        if self._repo is None:
+            self._repo = build_automation_repository()
+        return self._repo
+
+    def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
+        detail = str(exc) if exc else None
+        return _agent_production_unavailable_payload(detail)
 
 
 class GetAutomationRuntimeContractQuery:
@@ -644,6 +691,60 @@ class CreateTaskCommand(_TaskRepositoryOwner):
         except RepositoryProviderError as exc:
             return self._blocked_payload(exc)
         return _task_response(result, status_code=201)
+
+    __call__ = execute
+
+
+class ListAgentsQuery(_AgentRepositoryOwner):
+    def execute(self, request: AgentListRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _agent_production_unavailable_payload()
+        try:
+            rows, total = repo.list_agents(_request_dump(request))
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _agent_response(
+            {
+                "items": rows,
+                "agents": rows,
+                "total": total,
+                "count": len(rows),
+                "limit": request.limit,
+                "offset": request.offset,
+                "filters": {
+                    "program_id": request.program_id,
+                    "workflow_id": request.workflow_id,
+                    "node_id": request.node_id,
+                    "task_id": request.task_id,
+                    "agent_type": request.agent_type,
+                    "status": request.status,
+                    "include_archived": request.include_archived,
+                },
+            }
+        )
+
+    __call__ = execute
+
+
+class CreateAgentCommand(_AgentRepositoryOwner):
+    def execute(self, request: AgentCreateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _agent_production_unavailable_payload()
+        payload = _request_dump(request)
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if not idempotency_key:
+            raise ContractError("idempotency_key is required")
+        try:
+            result = repo.create_agent(
+                payload,
+                idempotency_key=idempotency_key,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _agent_response(result, status_code=201)
 
     __call__ = execute
 
