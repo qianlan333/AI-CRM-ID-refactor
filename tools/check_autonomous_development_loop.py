@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4ci_workflows_staging_readiness_bundle",
+    "phase_4cj_workflow_nodes_staging_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -96,6 +96,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cf_agent_outputs_repository_adapter_parity_completed",
     "phase_4cg_agent_runs_repository_adapter_parity_completed",
     "phase_4ch_task_groups_staging_readiness_completed",
+    "phase_4ci_workflows_staging_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -308,12 +309,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/workflows*":
-        blockers.append("active_candidate must advance to workflows for the next compressed staging readiness bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
+        blockers.append("active_candidate must advance to workflow-nodes for the next compressed staging readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#693":
-        blockers.append("last_merged_pr must record latest completed merged PR #693")
+    if state.get("last_merged_pr") != "#694":
+        blockers.append("last_merged_pr must record latest completed merged PR #694")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)

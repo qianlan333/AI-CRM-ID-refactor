@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_4_internal_write
-active_candidate: /api/admin/automation-conversion/workflows*
+active_candidate: /api/admin/automation-conversion/workflow-nodes*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#693"
-last_attempted_action: phase_4ch_task_groups_staging_readiness_bundle
-last_created_pr: "#694"
-recommended_next_pr: phase_4ci_workflows_staging_readiness_bundle
+last_merged_pr: "#694"
+last_attempted_action: phase_4ci_workflows_staging_readiness_bundle
+last_created_pr: "#695"
+recommended_next_pr: phase_4cj_workflow_nodes_staging_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -63,6 +63,9 @@ repository_adapter_parity_slices:
 staging_readiness_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_staging_readiness_preflight
+    scope: staging_disabled_by_default_blocked_evidence
+  - route_family: /api/admin/automation-conversion/workflows*
+    slice: workflows_staging_readiness_preflight
     scope: staging_disabled_by_default_blocked_evidence
 production_dry_run_readiness_slices: []
 
@@ -137,9 +140,10 @@ completed_steps:
   - phase_4cf_agent_outputs_repository_adapter_parity_completed
   - phase_4cg_agent_runs_repository_adapter_parity_completed
   - phase_4ch_task_groups_staging_readiness_completed
+  - phase_4ci_workflows_staging_readiness_completed
 
 next_allowed_actions:
-  - phase_4ci_workflows_staging_readiness_bundle
+  - phase_4cj_workflow_nodes_staging_readiness_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
@@ -308,6 +312,17 @@ workflows_readiness:
   default_backend_fixture_local: true
   test_db_parity_harness_completed: true
   idempotency_audit_rollback_scaffold_completed: true
+  staging_readiness_bundle_completed: true
+  staging_readiness_preflight_completed: true
+  staging_evidence_gate_completed: true
+  staging_blocked_evidence_output_completed: true
+  staging_database_url_flag: AICRM_WORKFLOWS_STAGING_DATABASE_URL
+  staging_backend_flag: AICRM_WORKFLOWS_REPO_BACKEND
+  staging_approval_flag: AICRM_PHASE4CI_STAGING_SMOKE_APPROVED
+  staging_write_approval_flag: AICRM_PHASE4CI_STAGING_WRITE_APPROVED
+  staging_smoke_executed: false
+  staging_write_executed: false
+  staging_db_connection_attempted_by_default: false
   production_guard_blocks_fixture_success: true
   paused: false
   paused_by_pr: "#652"
