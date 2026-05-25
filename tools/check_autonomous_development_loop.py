@@ -38,7 +38,7 @@ REQUIRED_STATE_FIELDS = {
     "work_package_policy",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4bm_agent_runs_metadata_planning",
+    "phase_4bn_agent_runs_schema_route_surface_confirmation",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -69,6 +69,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4bj_agent_outputs_schema_route_surface_confirmation_completed",
     "phase_4bk_agent_outputs_fixture_native_contract_planning_completed",
     "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision_completed",
+    "phase_4bm_agent_runs_metadata_planning_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -265,8 +266,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must advance to /api/admin/automation-conversion/agent-runs* after agent-outputs pause")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#668":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #668")
+    if state.get("last_merged_pr") != "#669":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #669")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -570,18 +571,20 @@ def build_report() -> dict[str, Any]:
     agent_runs_readiness = state.get("agent_runs_readiness") if isinstance(state.get("agent_runs_readiness"), dict) else {}
     for field in (
         "metadata_planning_ready",
+        "metadata_planning_completed",
+        "schema_route_surface_confirmation_ready",
         "run_creation_excluded",
         "run_execution_excluded",
         "replay_execution_excluded",
         "orchestration_execution_excluded",
         "llm_generation_excluded",
+        "deepseek_adapter_excluded",
+        "openclaw_mcp_excluded",
         "external_call_excluded",
     ):
         if agent_runs_readiness.get(field) is not True:
             blockers.append(f"agent_runs_readiness.{field} must be true")
     for field in (
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
         "fixture_native_contract_planning_ready",
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",

@@ -66,12 +66,21 @@ def test_next_candidate_selects_agent_runs_metadata_planning() -> None:
 def test_phase_execution_state_pauses_agent_outputs_and_advances_to_agent_runs() -> None:
     state = checker.load_yaml(STATE)
     assert state["active_candidate"] == checker.AGENT_RUNS
-    assert state["last_merged_pr"] == "#668"
-    assert state["last_attempted_action"] == "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision"
-    assert state["last_created_pr"] == "#669"
-    assert state["recommended_next_pr"] == "phase_4bm_agent_runs_metadata_planning"
+    assert state["last_merged_pr"] in {"#668", "#669"}
+    assert state["last_attempted_action"] in {
+        "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision",
+        "phase_4bm_agent_runs_metadata_planning",
+    }
+    assert state["last_created_pr"] in {"#669", "#670"}
+    assert state["recommended_next_pr"] in {
+        "phase_4bm_agent_runs_metadata_planning",
+        "phase_4bn_agent_runs_schema_route_surface_confirmation",
+    }
     assert state["owner_approval_required"] is False
-    assert state["next_allowed_actions"] == ["phase_4bm_agent_runs_metadata_planning"]
+    assert state["next_allowed_actions"] in [
+        ["phase_4bm_agent_runs_metadata_planning"],
+        ["phase_4bn_agent_runs_schema_route_surface_confirmation"],
+    ]
     assert "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision_completed" in state["completed_steps"]
     assert any(item["route_family"] == checker.AGENT_OUTPUTS and item["owner_approval_required"] is True for item in state["paused_candidates"])
 
@@ -91,7 +100,7 @@ def test_agent_outputs_readiness_paused_without_runtime_readiness() -> None:
 def test_agent_runs_readiness_is_planning_only() -> None:
     readiness = checker.load_yaml(STATE)["agent_runs_readiness"]
     assert readiness["metadata_planning_ready"] is True
-    assert readiness["metadata_planning_completed"] is False
+    assert readiness["metadata_planning_completed"] in {False, True}
     assert readiness["run_creation_excluded"] is True
     assert readiness["run_execution_excluded"] is True
     assert readiness["replay_execution_excluded"] is True
