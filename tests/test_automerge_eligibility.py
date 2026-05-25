@@ -340,6 +340,16 @@ def test_phase4bm_agent_runs_metadata_artifacts_can_define_stop_terms_as_policy(
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4bn_agent_runs_schema_route_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.md",
+        "docs/development/phase_4bn_agent_runs_schema_route_surface_confirmation.yaml",
+        "tools/check_phase4bn_agent_runs_schema_route_surface_confirmation.py",
+        "tests/test_phase4bn_agent_runs_schema_route_surface_confirmation.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
