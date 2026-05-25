@@ -191,6 +191,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/automation_engine/repo.py",
         "aicrm_next/automation_engine/task_groups.py",
         "aicrm_next/automation_engine/workflows.py",
+        "aicrm_next/automation_engine/workflow_nodes.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -262,6 +263,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
+        "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
         "scripts/codex_autopilot_tick.sh",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -299,6 +301,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
         "tests/test_phase4br_task_groups_fixture_runtime.py",
         "tests/test_phase4bs_workflows_fixture_runtime.py",
+        "tests/test_phase4bt_workflow_nodes_fixture_runtime.py",
         "tests/test_codex_autopilot_runtime_contract.py",
         "tools/check_phase4am_action_templates_staging_owner_decision_package.py",
         "tools/check_phase4am_action_templates_staging_approval_config_closure.py",
@@ -334,6 +337,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
         "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/check_phase4bs_workflows_fixture_runtime.py",
+        "tools/check_phase4bt_workflow_nodes_fixture_runtime.py",
     }
     for path in sorted(paths):
         if path in policy_paths:

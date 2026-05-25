@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#675"
+    assert data["last_merged_pr"] == "#676"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -63,6 +63,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4bq_agent_replay_metadata_planning_completed" in set(data["completed_steps"])
     assert "phase_4br_task_groups_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
     assert "phase_4bs_workflows_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
+    assert "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_are_phase_4bk_agent_outputs_fixture_contract_only() -> None:
@@ -169,11 +170,12 @@ def test_workflows_runtime_completed_without_production_readiness() -> None:
     assert readiness["delete_ready"] is False
 
 
-def test_workflow_nodes_selected_for_metadata_planning_without_production_readiness() -> None:
+def test_workflow_nodes_runtime_completed_without_production_readiness() -> None:
     data = checker.load_yaml(STATE)
     assert any(
         item["route_family"] == "/api/admin/automation-conversion/workflow-nodes*"
-        and item["owner_approval_required"] is True
+        and item["owner_approval_required"] is False
+        and item["status"] == "fixture_native_list_create_runtime_completed"
         and str(item["paused_by_pr"]).strip()
         for item in data["paused_candidates"]
     )
@@ -184,9 +186,15 @@ def test_workflow_nodes_selected_for_metadata_planning_without_production_readin
     assert readiness["schema_route_surface_confirmed"] is True
     assert readiness["fixture_native_contract_planning_ready"] is True
     assert readiness["fixture_native_contract_planning_completed"] is True
-    assert readiness["fixture_native_implementation_requires_owner_decision"] is True
-    assert readiness["owner_decision_required"] is True
-    assert readiness["paused"] is True
+    assert readiness["fixture_native_implementation_requires_owner_decision"] is False
+    assert readiness["fixture_native_list_create_runtime_completed"] is True
+    assert readiness["owner_decision_required"] is False
+    assert set(readiness["implemented_runtime_slices"]) == {
+        "workflow_nodes_fixture_local_list",
+        "workflow_nodes_fixture_local_metadata_create",
+    }
+    assert readiness["production_guard_blocks_fixture_success"] is True
+    assert readiness["paused"] is False
     assert str(readiness["paused_by_pr"]).strip()
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
@@ -262,7 +270,7 @@ def test_agents_selected_for_metadata_planning_without_runtime_readiness() -> No
 
 def test_agent_outputs_selected_for_fixture_contract_without_runtime_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/tasks*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

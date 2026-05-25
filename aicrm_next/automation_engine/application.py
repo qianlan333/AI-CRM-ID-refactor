@@ -43,6 +43,8 @@ from .dto import (
     TaskGroupListRequest,
     WorkflowCreateRequest,
     WorkflowListRequest,
+    WorkflowNodeCreateRequest,
+    WorkflowNodeListRequest,
 )
 from .profile_segments import profile_segment_side_effect_safety
 from .profile_segment_repository import (
@@ -53,6 +55,7 @@ from .profile_segment_repository import (
 from .repo import AutomationRepository, build_automation_repository
 from .state_machine import apply_transition, normalize_followup_type
 from .task_groups import task_group_side_effect_safety
+from .workflow_nodes import workflow_node_side_effect_safety
 from .workflows import workflow_side_effect_safety
 from .workflow import default_workflow_registry
 
@@ -149,6 +152,23 @@ def _workflow_production_unavailable_payload(detail: str | None = None) -> dict[
     return payload
 
 
+def _workflow_node_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:
+    payload = blocked_production_payload(
+        capability_owner="aicrm_next.automation_engine",
+        detail=detail
+        or "workflow node production repository is not enabled; legacy production_compat fallback remains the production owner.",
+    )
+    payload.update(
+        {
+            "status_code": 503,
+            "error_code": "production_repository_not_enabled",
+            "route_owner": "ai_crm_next",
+            "side_effect_safety": workflow_node_side_effect_safety(),
+        }
+    )
+    return payload
+
+
 def _profile_segment_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
     return {
         "ok": True,
@@ -189,6 +209,17 @@ def _workflow_response(payload: dict[str, Any], *, status_code: int = 200) -> di
         "route_owner": "ai_crm_next",
         "status_code": status_code,
         "side_effect_safety": workflow_side_effect_safety(),
+        **payload,
+    }
+
+
+def _workflow_node_response(payload: dict[str, Any], *, status_code: int = 200) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source_status": "fixture_local_contract",
+        "route_owner": "ai_crm_next",
+        "status_code": status_code,
+        "side_effect_safety": workflow_node_side_effect_safety(),
         **payload,
     }
 
@@ -273,6 +304,22 @@ class _WorkflowRepositoryOwner:
     def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
         detail = str(exc) if exc else None
         return _workflow_production_unavailable_payload(detail)
+
+
+class _WorkflowNodeRepositoryOwner:
+    def __init__(self, repo: AutomationRepository | None = None) -> None:
+        self._repo = repo
+
+    def _repo_or_none(self) -> AutomationRepository | None:
+        if (production_environment() or production_data_ready()) and self._repo is None:
+            return None
+        if self._repo is None:
+            self._repo = build_automation_repository()
+        return self._repo
+
+    def _blocked_payload(self, exc: Exception | None = None) -> dict[str, Any]:
+        detail = str(exc) if exc else None
+        return _workflow_node_production_unavailable_payload(detail)
 
 
 class GetAutomationRuntimeContractQuery:
@@ -444,6 +491,58 @@ class CreateWorkflowCommand(_WorkflowRepositoryOwner):
         except RepositoryProviderError as exc:
             return self._blocked_payload(exc)
         return _workflow_response(result, status_code=201)
+
+    __call__ = execute
+
+
+class ListWorkflowNodesQuery(_WorkflowNodeRepositoryOwner):
+    def execute(self, request: WorkflowNodeListRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _workflow_node_production_unavailable_payload()
+        try:
+            rows, total = repo.list_workflow_nodes(_request_dump(request))
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _workflow_node_response(
+            {
+                "items": rows,
+                "nodes": rows,
+                "total": total,
+                "count": len(rows),
+                "limit": request.limit,
+                "offset": request.offset,
+                "filters": {
+                    "program_id": request.program_id,
+                    "workflow_id": request.workflow_id,
+                    "node_type": request.node_type,
+                    "status": request.status,
+                    "include_archived": request.include_archived,
+                },
+            }
+        )
+
+    __call__ = execute
+
+
+class CreateWorkflowNodeCommand(_WorkflowNodeRepositoryOwner):
+    def execute(self, request: WorkflowNodeCreateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _workflow_node_production_unavailable_payload()
+        payload = _request_dump(request)
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if not idempotency_key:
+            raise ContractError("idempotency_key is required")
+        try:
+            result = repo.create_workflow_node(
+                payload,
+                idempotency_key=idempotency_key,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _workflow_node_response(result, status_code=201)
 
     __call__ = execute
 

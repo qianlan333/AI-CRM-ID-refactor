@@ -15,6 +15,7 @@ from .application import (
     ApplyActivationWebhookCommand,
     ConfirmConversionCommand,
     CreateWorkflowCommand,
+    CreateWorkflowNodeCommand,
     EnterSilentPoolCommand,
     ExitMarketingCommand,
     CreateActionTemplateCommand,
@@ -23,6 +24,7 @@ from .application import (
     ListActionTemplatesQuery,
     ListTaskGroupsQuery,
     ListWorkflowsQuery,
+    ListWorkflowNodesQuery,
     GetProfileSegmentTemplateCatalogQuery,
     GetProfileSegmentTemplateOptionsQuery,
     GetProfileSegmentTemplateQuery,
@@ -51,6 +53,8 @@ from .dto import (
     TaskGroupListRequest,
     WorkflowCreateRequest,
     WorkflowListRequest,
+    WorkflowNodeCreateRequest,
+    WorkflowNodeListRequest,
 )
 
 router = APIRouter()
@@ -168,6 +172,36 @@ def list_workflows(
 def create_workflow(payload: WorkflowCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateWorkflowCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/workflow-nodes")
+def list_workflow_nodes(
+    program_id: int | None = None,
+    workflow_id: int | None = None,
+    node_type: str = "",
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = WorkflowNodeListRequest(
+        program_id=program_id,
+        workflow_id=workflow_id,
+        node_type=node_type,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListWorkflowNodesQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/workflow-nodes")
+def create_workflow_node(payload: WorkflowNodeCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateWorkflowNodeCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 

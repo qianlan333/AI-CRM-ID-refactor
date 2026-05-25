@@ -10,6 +10,12 @@ from .domain import member_matches_filters
 from .profile_segments import normalize_profile_segment_template_payload, profile_segment_template_projection
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
 from .task_groups import TASK_GROUP_ROUTE_FAMILY, normalize_task_group_create_payload, task_group_projection, task_group_side_effect_safety
+from .workflow_nodes import (
+    WORKFLOW_NODE_ROUTE_FAMILY,
+    normalize_workflow_node_create_payload,
+    workflow_node_projection,
+    workflow_node_side_effect_safety,
+)
 from .workflows import WORKFLOW_ROUTE_FAMILY, normalize_workflow_create_payload, workflow_projection, workflow_side_effect_safety
 
 
@@ -42,6 +48,9 @@ class AutomationRepository(Protocol):
     def list_workflows(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def create_workflow(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_workflow_audit_events(self) -> list[dict[str, Any]]: ...
+    def list_workflow_nodes(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def create_workflow_node(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def list_workflow_node_audit_events(self) -> list[dict[str, Any]]: ...
 
 
 def _fixture_members() -> list[dict[str, Any]]:
@@ -227,6 +236,48 @@ class InMemoryAutomationRepository:
         }
         self._workflow_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._workflow_audit_events: list[dict[str, Any]] = []
+        self._workflow_nodes: dict[int, dict[str, Any]] = {
+            1: workflow_node_projection(
+                {
+                    "id": 1,
+                    "program_id": 1,
+                    "workflow_id": 1,
+                    "node_code": "phase4ax_entry_node",
+                    "node_name": "Fixture 入口节点",
+                    "node_type": "manual",
+                    "status": "draft",
+                    "sort_order": 10,
+                    "position": {"x": 120, "y": 80},
+                    "metadata": {"source": "fixture"},
+                    "config": {"description": "metadata only"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:20:00Z",
+                    "updated_at": "2026-05-20T09:20:00Z",
+                }
+            ),
+            2: workflow_node_projection(
+                {
+                    "id": 2,
+                    "program_id": 1,
+                    "workflow_id": 1,
+                    "node_code": "phase4ax_followup_node",
+                    "node_name": "Fixture 跟进节点",
+                    "node_type": "metadata",
+                    "status": "inactive",
+                    "sort_order": 20,
+                    "position": {"x": 320, "y": 80},
+                    "metadata": {"source": "fixture"},
+                    "config": {"description": "metadata only"},
+                    "created_by": "fixture",
+                    "updated_by": "fixture",
+                    "created_at": "2026-05-20T09:25:00Z",
+                    "updated_at": "2026-05-20T09:25:00Z",
+                }
+            ),
+        }
+        self._workflow_node_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._workflow_node_audit_events: list[dict[str, Any]] = []
 
     def list_pools(self) -> list[dict[str, Any]]:
         return deepcopy(POOL_DEFINITIONS)
@@ -574,6 +625,83 @@ class InMemoryAutomationRepository:
     def list_workflow_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._workflow_audit_events)
 
+    def list_workflow_nodes(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        filters = filters or {}
+        program_id = filters.get("program_id")
+        workflow_id = filters.get("workflow_id")
+        node_type = str(filters.get("node_type") or "").strip()
+        status = str(filters.get("status") or "").strip()
+        include_archived = bool(filters.get("include_archived"))
+        limit = int(filters.get("limit") or 50)
+        offset = int(filters.get("offset") or 0)
+        rows = [workflow_node_projection(item) for item in self._workflow_nodes.values()]
+        if program_id not in (None, ""):
+            rows = [item for item in rows if int(item.get("program_id") or 0) == int(program_id)]
+        if workflow_id not in (None, ""):
+            rows = [item for item in rows if int(item.get("workflow_id") or 0) == int(workflow_id)]
+        if node_type:
+            rows = [item for item in rows if str(item.get("node_type") or "") == node_type]
+        if status:
+            rows = [item for item in rows if str(item.get("status") or "") == status]
+        if not include_archived:
+            rows = [item for item in rows if not str(item.get("archived_at") or "").strip()]
+        rows.sort(key=lambda item: (int(item.get("workflow_id") or 0), int(item.get("sort_order") or 0), int(item.get("id") or 0)))
+        total = len(rows)
+        return deepcopy(rows[offset : offset + limit]), total
+
+    def create_workflow_node(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            raise ContractError("idempotency_key is required")
+        operator_id = str(operator or "system").strip() or "system"
+        normalized = normalize_workflow_node_create_payload({**payload, "operator": operator_id})
+        idempotency_scope = (WORKFLOW_NODE_ROUTE_FAMILY, "create", operator_id, key)
+        request_hash = self._request_hash(normalized)
+        replay = self._workflow_node_idempotency.get(idempotency_scope)
+        if replay:
+            if replay.get("request_hash") != request_hash:
+                raise ContractError("idempotency key conflicts with a different request payload")
+            response = deepcopy(replay.get("response_snapshot") or {})
+            response["idempotent_replay"] = True
+            return response
+        self._assert_unique_workflow_node(normalized["workflow_id"], normalized["node_code"])
+        now = utc_now_iso()
+        node_id = max(self._workflow_nodes) + 1 if self._workflow_nodes else 1
+        saved = workflow_node_projection({**normalized, "id": node_id, "created_at": now, "updated_at": now})
+        self._workflow_nodes[node_id] = deepcopy(saved)
+        rollback_payload = {
+            "strategy": "archive_created_workflow_node_in_later_approved_phase",
+            "created_node_id": node_id,
+            "node_code": saved["node_code"],
+            "delete_approved": False,
+        }
+        audit_event = self._append_workflow_node_audit_event(
+            operation="create",
+            operator=operator_id,
+            resource_id=node_id,
+            before={},
+            after=saved,
+            request_payload=normalized,
+            rollback_payload=rollback_payload,
+        )
+        result = {
+            "node": deepcopy(saved),
+            "nodes": [deepcopy(saved)],
+            "audit_event": audit_event,
+            "rollback_payload": rollback_payload,
+            "idempotent_replay": False,
+        }
+        self._workflow_node_idempotency[idempotency_scope] = {
+            "request_hash": request_hash,
+            "response_snapshot": deepcopy(result),
+            "resource_id": node_id,
+            "status": "succeeded",
+        }
+        return result
+
+    def list_workflow_node_audit_events(self) -> list[dict[str, Any]]:
+        return deepcopy(self._workflow_node_audit_events)
+
     def _request_hash(self, payload: dict[str, Any]) -> str:
         import hashlib
         import json
@@ -600,6 +728,15 @@ class InMemoryAutomationRepository:
                 continue
             if str(item.get("workflow_code") or "").strip().lower() == normalized_code:
                 raise ContractError("workflow code already exists for program")
+
+    def _assert_unique_workflow_node(self, workflow_id: int, node_code: str) -> None:
+        normalized_code = str(node_code or "").strip().lower()
+        for node in self._workflow_nodes.values():
+            item = workflow_node_projection(node)
+            if int(item.get("workflow_id") or 0) != int(workflow_id):
+                continue
+            if str(item.get("node_code") or "").strip().lower() == normalized_code:
+                raise ContractError("workflow node code already exists for workflow")
 
     def _append_task_group_audit_event(
         self,
@@ -655,6 +792,34 @@ class InMemoryAutomationRepository:
             "created_at": utc_now_iso(),
         }
         self._workflow_audit_events.insert(0, event)
+        return deepcopy(event)
+
+    def _append_workflow_node_audit_event(
+        self,
+        *,
+        operation: str,
+        operator: str,
+        resource_id: int,
+        before: dict[str, Any],
+        after: dict[str, Any],
+        request_payload: dict[str, Any],
+        rollback_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        event = {
+            "route_family": WORKFLOW_NODE_ROUTE_FAMILY,
+            "operation": operation,
+            "operator": str(operator or "system"),
+            "resource_type": "workflow_node",
+            "resource_id": int(resource_id),
+            "before_snapshot": deepcopy(before),
+            "after_snapshot": deepcopy(after),
+            "request_payload": deepcopy(request_payload),
+            "validation_result": {"ok": True},
+            "rollback_payload": deepcopy(rollback_payload),
+            "side_effect_safety": workflow_node_side_effect_safety(),
+            "created_at": utc_now_iso(),
+        }
+        self._workflow_node_audit_events.insert(0, event)
         return deepcopy(event)
 
     def _find_duplicate_profile_segment(self, name: str, code: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:
