@@ -467,6 +467,17 @@ def test_phase4cg_agent_runs_adapter_parity_artifacts_can_define_stop_terms_as_p
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4ch_task_groups_staging_readiness_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4ch_task_groups_staging_readiness_bundle.md",
+        "docs/development/phase_4ch_task_groups_staging_readiness_bundle.yaml",
+        "tools/check_phase4ch_task_groups_staging_readiness_bundle.py",
+        "tools/run_phase4ch_task_groups_staging_readiness.py",
+        "tests/test_phase4ch_task_groups_staging_readiness_bundle.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_phase4br_task_groups_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
     expected = {
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
