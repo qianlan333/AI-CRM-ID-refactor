@@ -72,8 +72,10 @@ from .dto import (
     WorkflowNodeCreateRequest,
     WorkflowNodeListRequest,
 )
+from .group_ops.api import router as group_ops_router
 
 router = APIRouter()
+router.include_router(group_ops_router)
 
 
 def _raise_http(exc: Exception) -> None:

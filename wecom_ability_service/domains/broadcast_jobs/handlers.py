@@ -130,8 +130,30 @@ def _handle_sop(job: dict[str, Any]) -> dict[str, Any]:
 @register("workflow")
 def _handle_workflow(job: dict[str, Any]) -> dict[str, Any]:
     from ..automation_conversion.workflow_runtime import run_workflow_execution, run_pre_scheduled_workflow_node
+    from ..tasks.service import dispatch_wecom_group_task_with_intent
 
     payload = job.get("content_payload") or {}
+    if str(payload.get("channel") or "").strip() == "wecom_customer_group":
+        existing_outbound_task_id = int(job.get("outbound_task_id") or 0)
+        if existing_outbound_task_id:
+            return {
+                "ok": True,
+                "sent_count": len(payload.get("chat_ids") or []),
+                "failed_count": 0,
+                "outbound_task_id": existing_outbound_task_id,
+            }
+        result = dispatch_wecom_group_task_with_intent(
+            "broadcast_job/group_ops",
+            payload,
+            broadcast_job_id=int(job.get("id") or 0) or None,
+            trace_id=str(job.get("trace_id") or ""),
+        )
+        return {
+            "ok": True,
+            "sent_count": len(payload.get("chat_ids") or []),
+            "failed_count": 0,
+            "outbound_task_id": int(result.get("task_id") or 0) or None,
+        }
     # 预排期的 job 没有 execution_id，到期后走完整 node 执行流程
     if payload.get("pre_scheduled"):
         workflow_id = int(payload.get("workflow_id") or 0)

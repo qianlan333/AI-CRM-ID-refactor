@@ -176,6 +176,50 @@ def dispatch_wecom_task_with_intent(
     }
 
 
+def dispatch_wecom_group_task_with_intent(
+    task_type: str,
+    payload: dict[str, Any],
+    *,
+    broadcast_job_id: int | None = None,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """Create a recoverable outbound intent for customer-group sends.
+
+    The actual WeCom call is hidden behind the AI-CRM Next integration gateway
+    adapter so default runtime can remain staging-disabled.
+    """
+    local_id = repo.create_outbound_task_intent(
+        task_type,
+        payload,
+        trace_id=trace_id,
+    )
+    if broadcast_job_id:
+        from ..broadcast_jobs import service as queue_service
+
+        queue_service.mark_dispatch_started(
+            int(broadcast_job_id),
+            outbound_task_id=int(local_id),
+        )
+    from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_message_adapter
+
+    result = build_wecom_group_message_adapter().create_group_message_task(
+        payload,
+        idempotency_key=f"broadcast_job:{broadcast_job_id or ''}:outbound:{local_id}",
+    )
+    if not result.get("ok"):
+        repo.update_outbound_task_status(
+            int(local_id),
+            status="blocked",
+            response_payload=result,
+        )
+        raise RuntimeError(result.get("error_message") or result.get("error_code") or "wecom group adapter blocked")
+    repo.update_outbound_task_status(int(local_id), status="created", response_payload=result.get("result") or result)
+    return {
+        "task_id": local_id,
+        "wecom_result": result,
+    }
+
+
 def record_conversion_feedback(
     *,
     feedback_type: str,
