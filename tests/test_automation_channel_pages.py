@@ -14,6 +14,7 @@ from automation_channel_admission_helpers import admin_action_token, create_prog
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CHANNEL_ADMISSION_JS = ROOT / "wecom_ability_service/static/admin_console/channel_admission_pages.js"
 NEXT_CHANNEL_ADMISSION_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js"
 
 
@@ -394,11 +395,7 @@ def test_entry_channel_binding_payload_is_channel_ids_only_and_old_setup_is_read
     assert "initial_audience_code" not in entry_html
     assert "auto_enter_pool" not in entry_html
     assert "entry_rule_json" not in entry_html
-    js_source = (
-        "/Users/qianlan/Documents/New project/AI-CRM-channel-admission/"
-        "wecom_ability_service/static/admin_console/channel_admission_pages.js"
-    )
-    with open(js_source, encoding="utf-8") as handle:
+    with open(CHANNEL_ADMISSION_JS, encoding="utf-8") as handle:
         source = handle.read()
     bind_body = source[source.index("channel_ids: ids") - 120 : source.index("channel_ids: ids") + 60]
     assert "channel_ids: ids" in bind_body
@@ -414,6 +411,23 @@ def test_entry_channel_binding_payload_is_channel_ids_only_and_old_setup_is_read
     assert "生成二维码" not in setup_html
     assert "重新生成二维码" not in setup_html
     assert "initial_audience_code" not in setup_html
+
+
+def test_channel_form_payload_preserves_qrcode_scene_and_reads_entry_tag_inputs_from_page_root():
+    sources = []
+    for js_path in (CHANNEL_ADMISSION_JS, NEXT_CHANNEL_ADMISSION_JS):
+        with open(js_path, encoding="utf-8") as handle:
+            sources.append(handle.read())
+
+    for source in sources:
+        assert 'root.querySelector("[data-entry-tag-id]")?.value || ""' in source
+        assert 'root.querySelector("[data-entry-tag-name]")?.value || ""' in source
+        assert 'root.querySelector("[data-entry-tag-group-name]")?.value || ""' in source
+        assert "entry_tag_id: data.entry_tag_id" not in source
+        assert "entry_tag_name: data.entry_tag_name" not in source
+        assert "entry_tag_group_name: data.entry_tag_group_name" not in source
+        assert "data.scene_value || data.channel_code" not in source
+        assert "payload.scene_value = data.customer_channel || data.scene_value || \"\";" in source
 
 
 def test_next_frontend_channel_static_keeps_save_feedback_contract():
