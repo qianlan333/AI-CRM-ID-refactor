@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_4_internal_write
-active_candidate: phase_5_external_adapter_entry
-capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#709"
-last_attempted_action: phase_4cu_phase4_internal_write_acceptance_review
-last_created_pr: "#710"
-recommended_next_pr: phase_4cv_phase5_readiness_entry_bundle
+current_phase: phase_5_external_adapter
+active_candidate: /api/admin/wecom/tags*
+capability_owner: aicrm_next.customer_tags
+last_merged_pr: "#710"
+last_attempted_action: phase_4cv_phase5_readiness_entry
+last_created_pr: "#711"
+recommended_next_pr: phase_5a_wecom_tag_adapter_contract_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -186,9 +186,25 @@ completed_steps:
   - phase_4cs_agent_runs_production_dry_run_readiness_completed
   - phase_4ct_agent_outputs_production_dry_run_readiness_completed
   - phase_4cu_internal_write_acceptance_review_completed
+  - phase_4cv_phase5_readiness_entry_completed
 
 next_allowed_actions:
-  - phase_4cv_phase5_readiness_entry_bundle
+  - phase_5a_wecom_tag_adapter_contract_bundle
+
+phase5_readiness_entry:
+  phase_4_handoff_accepted: true
+  live_external_calls_authorized: false
+  adapter_contract_first_required: true
+  first_candidate_selected: true
+  selected_candidate: wecom_tag_adapter_contract_planning
+  route_family: /api/admin/wecom/tags*
+  capability_owner: aicrm_next.customer_tags
+  next_bundle: phase_5a_wecom_tag_adapter_contract_bundle
+  production_owner_switch_ready: false
+  production_write_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
 
 forbidden_without_owner_approval:
   - production owner switch

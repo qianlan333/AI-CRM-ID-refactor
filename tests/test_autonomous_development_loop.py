@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "phase_5_external_adapter_entry"
-    assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#709"
+    assert data["current_phase"] == "phase_5_external_adapter"
+    assert data["active_candidate"] == "/api/admin/wecom/tags*"
+    assert data["capability_owner"] == "aicrm_next.customer_tags"
+    assert data["last_merged_pr"] == "#710"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -90,9 +90,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4cs_agent_runs_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4ct_agent_outputs_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cu_internal_write_acceptance_review_completed" in set(data["completed_steps"])
+    assert "phase_4cv_phase5_readiness_entry_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4cv_phase5_entry_only() -> None:
+def test_next_allowed_actions_are_phase_5a_wecom_tag_adapter_contract_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -526,7 +527,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "phase_5_external_adapter_entry"
+    assert data["active_candidate"] == "/api/admin/wecom/tags*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
