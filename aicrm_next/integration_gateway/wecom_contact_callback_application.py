@@ -4,6 +4,7 @@ from typing import Any
 
 from .wecom_contact_callback_adapter import build_fake_stub_wecom_contact_callback_adapter
 from .wecom_contact_callback_contract import WeComContactCallbackContract
+from .wecom_contact_callback_live_adapter import LiveWeComContactCallbackAdapter, build_live_wecom_contact_callback_adapter
 
 
 Json = dict[str, Any]
@@ -41,3 +42,7 @@ class WeComContactCallbackApplicationService:
 
 def build_wecom_contact_callback_application_service() -> WeComContactCallbackApplicationService:
     return WeComContactCallbackApplicationService()
+
+
+def build_live_wecom_contact_callback_application_service(*, confirm_live_wecom_callback: bool = False) -> LiveWeComContactCallbackAdapter:
+    return build_live_wecom_contact_callback_adapter(confirm_live_wecom_callback=confirm_live_wecom_callback)
