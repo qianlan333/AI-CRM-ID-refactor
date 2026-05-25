@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5n_oauth_identity_adapter_contract_bundle",
+    "phase_5o_oauth_identity_fake_stub_adapter_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -379,6 +379,11 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_5m_wecom_customer_contact_callback_family_acceptance.yaml",
         "tools/check_phase5m_wecom_customer_contact_callback_family_acceptance.py",
         "tests/test_phase5m_wecom_customer_contact_callback_family_acceptance.py",
+        "docs/development/phase_5n_oauth_identity_adapter_contract.md",
+        "docs/development/phase_5n_oauth_identity_adapter_contract.yaml",
+        "tools/check_phase5n_oauth_identity_adapter_contract.py",
+        "tools/run_phase5n_oauth_identity_adapter_contract_evidence.py",
+        "tests/test_phase5n_oauth_identity_adapter_contract.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -719,6 +724,7 @@ Read and follow:
 - Phase 5K WeCom contact callback staging canary packages must stay docs/tools/tests/state only; production callback processing remains forbidden.
 - Phase 5L WeCom contact callback production readiness packages must stay docs/tools/tests/state only; production callback execution remains forbidden by default.
 - Phase 5M WeCom contact callback family acceptance packages must stay docs/tools/tests/state only; no new live callback is allowed.
+- Phase 5N OAuth identity adapter contract packages must stay docs/tools/tests/state only; no live OAuth callback cutover or token exchange is allowed.
 - Do not enable real external calls, timer, automation execution, or outbound send by default.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
