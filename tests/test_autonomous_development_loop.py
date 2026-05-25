@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_4_internal_write"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
+    assert data["active_candidate"] == "phase_4_internal_write_aggregate"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#707"
+    assert data["last_merged_pr"] == "#708"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -88,9 +88,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_4cq_workflow_nodes_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cr_tasks_production_dry_run_readiness_completed" in set(data["completed_steps"])
     assert "phase_4cs_agent_runs_production_dry_run_readiness_completed" in set(data["completed_steps"])
+    assert "phase_4ct_agent_outputs_production_dry_run_readiness_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_4ct_agent_outputs_production_dry_run_only() -> None:
+def test_next_allowed_actions_are_phase_4cu_acceptance_review_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -114,8 +115,9 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
     candidate = checker.load_yaml(STATE)["active_candidate"]
-    assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
-    assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
+    if candidate != "phase_4_internal_write_aggregate":
+        assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
+        assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
 
 
 def test_action_templates_not_ready_for_production_switch_or_write() -> None:
@@ -521,9 +523,9 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
     assert readiness["delete_ready"] is False
 
 
-def test_agent_outputs_fixture_runtime_completed_without_production_readiness() -> None:
+def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
+    assert data["active_candidate"] == "phase_4_internal_write_aggregate"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
@@ -565,6 +567,20 @@ def test_agent_outputs_fixture_runtime_completed_without_production_readiness() 
     assert readiness["staging_smoke_executed"] is False
     assert readiness["staging_write_executed"] is False
     assert readiness["staging_db_connection_attempted_by_default"] is False
+    assert any(
+        item["route_family"] == "/api/admin/automation-conversion/agent-outputs*"
+        and item["slice"] == "agent_outputs_production_readonly_dry_run_readiness"
+        for item in data["production_dry_run_readiness_slices"]
+    )
+    assert readiness["production_dry_run_readiness_bundle_completed"] is True
+    assert readiness["production_readonly_dry_run_runner_completed"] is True
+    assert readiness["production_readonly_evidence_gate_completed"] is True
+    assert readiness["production_readonly_blocked_evidence_output_completed"] is True
+    assert readiness["production_readonly_dry_run_executed"] is False
+    assert readiness["production_readonly_db_url_flag"] == "AICRM_AGENT_OUTPUTS_READONLY_DRY_RUN_DATABASE_URL"
+    assert readiness["production_readonly_approval_flag"] == "AICRM_PHASE4CT_PRODUCTION_READONLY_DRY_RUN_APPROVED"
+    assert readiness["production_readonly_config_review_flag"] == "AICRM_PHASE4CT_PRODUCTION_CONFIG_REVIEWED"
+    assert readiness["production_readonly_db_connection_attempted_by_default"] is False
     assert readiness["runtime_implementation_ready"] is False
     assert readiness["production_owner_switch_ready"] is False
     assert readiness["production_write_ready"] is False
