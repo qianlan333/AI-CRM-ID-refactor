@@ -1,0 +1,73 @@
+version: 1
+status: phase_5d_wecom_tag_staging_live_canary_evidence
+bundle_type: phase_5_external_adapter_staging_live_canary_evidence_bundle
+route_family: /api/admin/wecom/tags*
+capability_owner: aicrm_next.customer_tags
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  staging_live_canary_possible_with_approval: true
+  production_live_wecom_call_authorized: false
+  production_tag_write_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  oauth_callback_cutover_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  production_canary_approved: false
+  delete_ready: false
+
+staging_canary:
+  runner: tools/run_phase5d_wecom_tag_staging_live_canary_evidence.py
+  default_blocked: true
+  required_env:
+    - AICRM_WECOM_TAG_LIVE_ADAPTER_ENABLED
+    - AICRM_WECOM_TAG_LIVE_CALL_APPROVED
+    - AICRM_WECOM_TAG_CONFIG_REVIEWED
+    - AICRM_PHASE5D_WECOM_TAG_STAGING_CANARY_APPROVED
+    - AICRM_PHASE5D_WECOM_TAG_STAGING_CANARY_TARGET_APPROVED
+  required_args:
+    - --execute-staging-canary
+    - --confirm-live-wecom-call
+    - --confirm-staging-only
+    - --confirm-approved-target
+    - --idempotency-key
+    - --external-userid
+    - --tag-id
+
+target_safety:
+  single_target_only: true
+  batch_targets_allowed: false
+  target_approval_required: true
+  external_userid_redaction_required: true
+  raw_token_output_forbidden: true
+  raw_secret_output_forbidden: true
+
+side_effect_safety:
+  outbound_send_allowed: false
+  oauth_callback_allowed: false
+  payment_allowed: false
+  media_upload_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+production_readiness_review:
+  runner: tools/run_phase5d_wecom_tag_production_live_readiness_review.py
+  production_live_call_executed: false
+  production_tag_write_executed: false
+  requires_staging_evidence_json: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5e_wecom_tag_production_canary_readiness_bundle
+  route_family: /api/admin/wecom/tags*
