@@ -1,0 +1,81 @@
+version: 1
+status: phase_5f_wecom_tag_production_live_canary_execution_bundle
+bundle_type: phase_5_external_adapter_production_live_canary_execution_bundle
+route_family: /api/admin/wecom/tags*
+capability_owner: aicrm_next.customer_tags
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  production_live_canary_tooling_authorized: true
+  production_live_wecom_call_by_default_authorized: false
+  production_bulk_tag_write_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  oauth_callback_cutover_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+production_canary:
+  runner: tools/run_phase5f_wecom_tag_production_live_canary_execution.py
+  default_blocked: true
+  single_target_only: true
+  single_tag_only: true
+  batch_targets_allowed: false
+  customer_pool_target_allowed: false
+  automatic_segment_target_allowed: false
+  requires_phase5e_readiness_json: true
+  requires_staging_evidence_json: true
+  required_env:
+    - AICRM_WECOM_TAG_LIVE_ADAPTER_ENABLED
+    - AICRM_WECOM_TAG_LIVE_CALL_APPROVED
+    - AICRM_WECOM_TAG_CONFIG_REVIEWED
+    - AICRM_PHASE5F_WECOM_TAG_PRODUCTION_CANARY_APPROVED
+    - AICRM_PHASE5F_WECOM_TAG_PRODUCTION_TARGET_APPROVED
+    - AICRM_PHASE5F_WECOM_TAG_ROLLBACK_OWNER_APPROVED
+    - AICRM_PHASE5F_WECOM_TAG_CLEANUP_STRATEGY_APPROVED
+  required_args:
+    - --phase5e-readiness-json
+    - --staging-evidence-json
+    - --external-userid
+    - --tag-id
+    - --idempotency-key
+    - --confirm-production-live-wecom-call
+    - --confirm-single-approved-target
+    - --confirm-single-approved-tag
+    - --confirm-rollback-owner-approved
+    - --confirm-no-batch-target
+    - --confirm-no-outbound-send
+
+cleanup:
+  runner: tools/run_phase5f_wecom_tag_production_canary_cleanup.py
+  default_blocked: true
+  same_target_and_same_tag_only: true
+  batch_cleanup_allowed: false
+  automatic_cleanup_allowed: false
+  cleanup_requires_explicit_approval: true
+  cleanup_evidence_required: true
+
+side_effect_safety:
+  outbound_send_allowed: false
+  oauth_callback_allowed: false
+  payment_allowed: false
+  media_upload_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+business_continuity:
+  production_behavior_unchanged_except_explicit_canary: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  route_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5g_wecom_tag_family_acceptance_bundle
+  route_family: /api/admin/wecom/tags*
