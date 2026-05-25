@@ -14,6 +14,7 @@ from aicrm_next.integration_gateway.legacy_automation_facade import (
 from .application import (
     ApplyActivationWebhookCommand,
     ConfirmConversionCommand,
+    CreateTaskCommand,
     CreateWorkflowCommand,
     CreateWorkflowNodeCommand,
     EnterSilentPoolCommand,
@@ -22,6 +23,7 @@ from .application import (
     CreateProfileSegmentTemplateCommand,
     CreateTaskGroupCommand,
     ListActionTemplatesQuery,
+    ListTasksQuery,
     ListTaskGroupsQuery,
     ListWorkflowsQuery,
     ListWorkflowNodesQuery,
@@ -49,8 +51,10 @@ from .dto import (
     ProfileSegmentTemplateListRequest,
     ProfileSegmentTemplateUpdateRequest,
     PushOpenClawContextRequest,
+    TaskCreateRequest,
     TaskGroupCreateRequest,
     TaskGroupListRequest,
+    TaskListRequest,
     WorkflowCreateRequest,
     WorkflowListRequest,
     WorkflowNodeCreateRequest,
@@ -202,6 +206,40 @@ def list_workflow_nodes(
 def create_workflow_node(payload: WorkflowNodeCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateWorkflowNodeCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/tasks")
+def list_tasks(
+    program_id: int | None = None,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    group_id: int | None = None,
+    task_type: str = "",
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = TaskListRequest(
+        program_id=program_id,
+        workflow_id=workflow_id,
+        node_id=node_id,
+        group_id=group_id,
+        task_type=task_type,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListTasksQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/tasks")
+def create_task(payload: TaskCreateRequest) -> JSONResponse:
+    try:
+        return _json_result(CreateTaskCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 
