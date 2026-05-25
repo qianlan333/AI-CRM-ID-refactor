@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "compressed bounded bundle" in prompt_text
     assert "20-35 minutes" in prompt_text
-    assert "phase_4ce_agents_repository_adapter_parity_bundle" in prompt_text
+    assert "phase_4cf_agent_outputs_repository_adapter_parity_bundle" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -722,6 +722,25 @@ def test_runner_treats_phase4cd_tasks_adapter_parity_artifacts_as_policy_files()
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase4ce_agents_adapter_parity_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4ce_agents_repository_adapter_parity_bundle.md",
+        "docs/development/phase_4ce_agents_repository_adapter_parity_bundle.yaml",
+        "tools/check_phase4ce_agents_repository_adapter_parity_bundle.py",
+        "tools/run_phase4ce_agents_adapter_parity.py",
+        "tests/test_phase4ce_agents_repository_adapter_parity_bundle.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_treats_phase4ca_task_group_adapter_runtime_path_as_guarded_policy_file() -> None:
     paths = {
         "aicrm_next/automation_engine/task_group_sqlalchemy_repository.py",
@@ -770,6 +789,21 @@ def test_runner_treats_phase4cc_workflow_node_adapter_runtime_path_as_guarded_po
 def test_runner_treats_phase4cd_task_adapter_runtime_path_as_guarded_policy_file() -> None:
     paths = {
         "aicrm_next/automation_engine/task_sqlalchemy_repository.py",
+    }
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4ce_agent_adapter_runtime_path_as_guarded_policy_file() -> None:
+    paths = {
+        "aicrm_next/automation_engine/agent_sqlalchemy_repository.py",
     }
     terms = {
         "production write",
