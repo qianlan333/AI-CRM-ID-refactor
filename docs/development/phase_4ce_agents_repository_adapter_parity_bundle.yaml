@@ -1,0 +1,88 @@
+status: phase_4ce_agents_repository_adapter_parity_bundle
+bundle:
+  type: repository_adapter_parity_bundle
+  route_family: /api/admin/automation-conversion/agents*
+  estimated_pr_count_reduction_percent: 50
+  replaces_smaller_prs:
+    - agents_repository_adapter_plan
+    - agents_sqlalchemy_test_db_adapter
+    - agents_test_db_parity_harness
+    - agents_idempotency_audit_rollback_scaffold
+included_stages:
+  - repository_adapter_plan
+  - sqlalchemy_adapter_behind_explicit_flag
+  - test_db_parity_harness
+  - idempotency_audit_rollback_scaffold
+  - checker
+  - tests
+  - phase_execution_state_update
+excluded_stages:
+  - production_route_owner_switch
+  - production_repository_enablement
+  - production_write
+  - database_url_fallback
+  - fallback_removal
+  - agent_run_execution
+  - llm_generation
+  - deepseek_adapter
+  - openclaw_mcp_adapter
+  - workflow_execution
+  - timer_execution
+  - outbound_send
+  - live_external_calls
+  - destructive_migration
+adapter:
+  backend_flag: AICRM_AGENTS_REPO_BACKEND
+  database_url_flags:
+    - AICRM_AGENTS_TEST_DATABASE_URL
+    - AICRM_AGENTS_STAGING_DATABASE_URL
+  forbidden_database_url_fallbacks:
+    - DATABASE_URL
+  default_backend_remains_fixture_local: true
+  production_route_owner_enabled: false
+  production_write_authorized: false
+runtime_behavior:
+  list_metadata: true
+  create_metadata: true
+  update_delete_archive: false
+  agent_run_execution: false
+  llm_generation: false
+  deepseek_adapter: false
+  openclaw_mcp_adapter: false
+  workflow_execution: false
+  timer_execution: false
+  outbound_send: false
+safety:
+  no_database_url_fallback: true
+  route_specific_test_db_required: true
+  refuse_production_looking_urls: true
+  default_backend_fixture_local: true
+  production_owner_switch_authorized: false
+  production_repository_route_enablement_authorized: false
+  production_write_authorized: false
+  fallback_removal_authorized: false
+  destructive_migration_authorized: false
+  real_external_call_authorized: false
+  agent_run_execution_authorized: false
+  llm_generation_authorized: false
+  deepseek_adapter_authorized: false
+  openclaw_mcp_adapter_authorized: false
+  workflow_execution_authorized: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  delete_ready: false
+verification:
+  package_checker: tools/check_phase4ce_agents_repository_adapter_parity_bundle.py
+  parity_harness: tools/run_phase4ce_agents_adapter_parity.py
+  package_tests: tests/test_phase4ce_agents_repository_adapter_parity_bundle.py
+phase_execution_state_update:
+  active_candidate: /api/admin/automation-conversion/agent-outputs*
+  last_merged_pr: "#689"
+  last_attempted_action: phase_4ce_agents_repository_adapter_parity_bundle
+  last_created_pr: "#690"
+  completed_step: phase_4ce_agents_repository_adapter_parity_completed
+  recommended_next_pr: phase_4cf_agent_outputs_repository_adapter_parity_bundle
+next_bundle_recommendation:
+  recommended_next_step: phase_4cf_agent_outputs_repository_adapter_parity_bundle
+  route_family: /api/admin/automation-conversion/agent-outputs*
+  bundle_type: repository_adapter_parity_bundle

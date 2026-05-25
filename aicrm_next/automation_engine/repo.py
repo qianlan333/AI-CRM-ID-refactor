@@ -41,6 +41,10 @@ TASK_BACKEND_ENV = "AICRM_TASKS_REPO_BACKEND"
 TASK_TEST_DATABASE_URL_ENV = "AICRM_TASKS_TEST_DATABASE_URL"
 TASK_STAGING_DATABASE_URL_ENV = "AICRM_TASKS_STAGING_DATABASE_URL"
 TASK_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
+AGENT_BACKEND_ENV = "AICRM_AGENTS_REPO_BACKEND"
+AGENT_TEST_DATABASE_URL_ENV = "AICRM_AGENTS_TEST_DATABASE_URL"
+AGENT_STAGING_DATABASE_URL_ENV = "AICRM_AGENTS_STAGING_DATABASE_URL"
+AGENT_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 
 class AutomationRepository(Protocol):
@@ -1399,6 +1403,14 @@ def _task_database_url() -> str:
     return str(os.getenv(TASK_TEST_DATABASE_URL_ENV) or os.getenv(TASK_STAGING_DATABASE_URL_ENV) or "").strip()
 
 
+def _agent_repository_backend() -> str:
+    return str(os.getenv(AGENT_BACKEND_ENV) or "fixture").strip().lower()
+
+
+def _agent_database_url() -> str:
+    return str(os.getenv(AGENT_TEST_DATABASE_URL_ENV) or os.getenv(AGENT_STAGING_DATABASE_URL_ENV) or "").strip()
+
+
 def build_automation_repository(
     *,
     task_group_backend: str | None = None,
@@ -1409,6 +1421,8 @@ def build_automation_repository(
     workflow_node_engine: Any | None = None,
     task_backend: str | None = None,
     task_engine: Any | None = None,
+    agent_backend: str | None = None,
+    agent_engine: Any | None = None,
 ) -> AutomationRepository:
     selected_task_group_backend = str(task_group_backend or _task_group_repository_backend()).strip().lower()
     if selected_task_group_backend in TASK_GROUP_SQL_BACKENDS:
@@ -1473,6 +1487,22 @@ def build_automation_repository(
         return assert_repository_allowed(
             SqlAlchemyTaskRepository(engine),
             capability_owner="automation_engine.tasks",
+        )
+    selected_agent_backend = str(agent_backend or _agent_repository_backend()).strip().lower()
+    if selected_agent_backend in AGENT_SQL_BACKENDS:
+        engine = agent_engine
+        if engine is None:
+            database_url = _agent_database_url()
+            if not database_url:
+                raise ContractError(
+                    f"{AGENT_TEST_DATABASE_URL_ENV} or {AGENT_STAGING_DATABASE_URL_ENV} is required when {AGENT_BACKEND_ENV}=sqlalchemy"
+                )
+            engine = create_engine(database_url, future=True)
+        from .agent_sqlalchemy_repository import SqlAlchemyAgentRepository
+
+        return assert_repository_allowed(
+            SqlAlchemyAgentRepository(engine),
+            capability_owner="automation_engine.agents",
         )
     return assert_repository_allowed(_fixture_repo, capability_owner="automation_engine")
 

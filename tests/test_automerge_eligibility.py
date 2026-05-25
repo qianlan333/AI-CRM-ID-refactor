@@ -434,6 +434,17 @@ def test_phase4cd_tasks_adapter_parity_artifacts_can_define_stop_terms_as_policy
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase4ce_agents_adapter_parity_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_4ce_agents_repository_adapter_parity_bundle.md",
+        "docs/development/phase_4ce_agents_repository_adapter_parity_bundle.yaml",
+        "tools/check_phase4ce_agents_repository_adapter_parity_bundle.py",
+        "tools/run_phase4ce_agents_adapter_parity.py",
+        "tests/test_phase4ce_agents_repository_adapter_parity_bundle.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_phase4br_task_groups_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
     expected = {
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
@@ -474,6 +485,11 @@ def test_phase4cc_workflow_node_adapter_runtime_path_is_autopilot_deliverable() 
 def test_phase4cd_task_adapter_runtime_path_is_autopilot_deliverable() -> None:
     assert "aicrm_next/automation_engine/task_sqlalchemy_repository.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
     assert checker._is_low_risk_path("aicrm_next/automation_engine/task_sqlalchemy_repository.py")
+
+
+def test_phase4ce_agent_adapter_runtime_path_is_autopilot_deliverable() -> None:
+    assert "aicrm_next/automation_engine/agent_sqlalchemy_repository.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+    assert checker._is_low_risk_path("aicrm_next/automation_engine/agent_sqlalchemy_repository.py")
 
 
 def test_phase4bs_workflows_runtime_artifacts_can_define_stop_terms_as_policy() -> None:
