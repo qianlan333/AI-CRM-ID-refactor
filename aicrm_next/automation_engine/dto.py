@@ -269,5 +269,28 @@ class AgentOutputDetailRequest(BaseModel):
     visibility: str = "masked"
 
 
+class AgentRunListRequest(BaseModel):
+    page: int = 1
+    page_size: int = 50
+    request_id: str = ""
+    run_id: str = ""
+    agent_code: str = ""
+    run_status: str = ""
+    trigger_source: str = ""
+    external_contact_id: str = ""
+    userid: str = ""
+    task_id: int | None = None
+    workflow_id: int | None = None
+    started_after: str = ""
+    started_before: str = ""
+    has_error: bool | None = None
+    visibility: str = "masked"
+
+
+class AgentRunDetailRequest(BaseModel):
+    run_id: str
+    visibility: str = "masked"
+
+
 class ActionTemplateValidationError(ValueError):
     pass
