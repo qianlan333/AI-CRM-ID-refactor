@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/h5/wechat/oauth*
 capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#727"
-last_attempted_action: phase_5o_oauth_identity_fake_stub_adapter_bundle
-last_created_pr: "#728"
-recommended_next_pr: phase_5p_oauth_identity_live_adapter_behind_flag_bundle
+last_merged_pr: "#728"
+last_attempted_action: phase_5p_oauth_identity_live_adapter_behind_flag_bundle
+last_created_pr: "#729"
+recommended_next_pr: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -256,9 +256,10 @@ completed_steps:
   - phase_5m_wecom_customer_contact_callback_family_acceptance_completed
   - phase_5n_oauth_identity_adapter_contract_completed
   - phase_5o_oauth_identity_fake_stub_adapter_completed
+  - phase_5p_oauth_identity_live_adapter_behind_flag_completed
 
 next_allowed_actions:
-  - phase_5p_oauth_identity_live_adapter_behind_flag_bundle
+  - phase_5q_oauth_identity_staging_live_canary_evidence_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -674,6 +675,30 @@ phase5o_oauth_identity_fake_stub_adapter:
   canary_approved: false
   delete_ready: false
   recommended_next_bundle: phase_5p_oauth_identity_live_adapter_behind_flag_bundle
+
+phase5p_oauth_identity_live_adapter_behind_flag:
+  status: phase_5p_oauth_identity_live_adapter_behind_flag_completed
+  route_family: /api/h5/wechat/oauth*
+  capability_owner: aicrm_next.integration_gateway
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+  live_adapter_code_implemented: true
+  live_oauth_callback_default_enabled: false
+  explicit_flag_gates_implemented: true
+  staging_live_evidence_runner_completed: true
+  production_dry_run_gate_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_callback_cutover_authorized: false
+  production_callback_owner_switch_authorized: false
+  production_session_write_authorized: false
+  production_identity_write_authorized: false
+  outbound_send_authorized: false
+  production_compat_change_ready: false
+  fallback_removal_ready: false
+  canary_approved: false
+  delete_ready: false
+  recommended_next_bundle: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

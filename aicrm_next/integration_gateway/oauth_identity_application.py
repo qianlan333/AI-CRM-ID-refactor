@@ -4,6 +4,7 @@ from typing import Any
 
 from .oauth_identity_adapter import build_fake_stub_oauth_identity_adapter
 from .oauth_identity_contract import OAuthIdentityAdapterContract
+from .oauth_identity_live_adapter import LiveOAuthIdentityAdapter, build_live_oauth_identity_adapter
 
 
 Json = dict[str, Any]
@@ -41,3 +42,7 @@ class OAuthIdentityApplicationService:
 
 def build_oauth_identity_application_service() -> OAuthIdentityApplicationService:
     return OAuthIdentityApplicationService()
+
+
+def build_live_oauth_identity_application_service(*, confirm_live_oauth_callback: bool = False) -> LiveOAuthIdentityAdapter:
+    return build_live_oauth_identity_adapter(confirm_live_oauth_callback=confirm_live_oauth_callback)
