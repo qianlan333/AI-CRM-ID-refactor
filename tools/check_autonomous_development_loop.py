@@ -41,7 +41,7 @@ REQUIRED_STATE_FIELDS = {
     "guarded_disabled_runtime_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_4cg_agent_runs_repository_adapter_parity_bundle",
+    "phase_4ch_task_groups_staging_readiness_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -91,6 +91,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_4cd_tasks_repository_adapter_parity_completed",
     "phase_4ce_agents_repository_adapter_parity_completed",
     "phase_4cf_agent_outputs_repository_adapter_parity_completed",
+    "phase_4cg_agent_runs_repository_adapter_parity_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -134,6 +135,7 @@ PHASE4_ALLOWED_RUNTIME_FILES = {
     "aicrm_next/automation_engine/task_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/agent_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/agent_output_sqlalchemy_repository.py",
+    "aicrm_next/automation_engine/agent_run_sqlalchemy_repository.py",
     "aicrm_next/automation_engine/task_groups.py",
     "aicrm_next/automation_engine/tasks.py",
     "aicrm_next/automation_engine/agents.py",
@@ -302,12 +304,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_4_internal_write":
         blockers.append("current_phase must be phase_4_internal_write")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-runs*":
-        blockers.append("active_candidate must advance to agent-runs for the next compressed repository adapter parity bundle")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
+        blockers.append("active_candidate must advance to task-groups for the next compressed staging readiness bundle")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#690":
-        blockers.append("last_merged_pr must record latest completed autopilot PR #690")
+    if state.get("last_merged_pr") != "#691":
+        blockers.append("last_merged_pr must record latest completed autopilot PR #691")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -493,6 +495,15 @@ def build_report() -> dict[str, Any]:
         for item in paused_candidates
     ):
         blockers.append("paused_candidates must record agent-runs fixture/native list/detail runtime completion")
+    if not any(
+        isinstance(item, dict)
+        and item.get("route_family") == "/api/admin/automation-conversion/agent-runs*"
+        and item.get("owner_approval_required") is False
+        and item.get("status") == "repository_adapter_parity_completed"
+        and item.get("paused_by_pr") == "#692"
+        for item in paused_candidates
+    ):
+        blockers.append("paused_candidates must record agent-runs repository adapter parity completion")
     if not any(
         isinstance(item, dict)
         and item.get("route_family") == "/api/admin/automation-conversion/agent-replay"
@@ -750,6 +761,10 @@ def build_report() -> dict[str, Any]:
         "fixture_native_contract_planning_ready",
         "fixture_native_contract_planning_completed",
         "fixture_native_list_detail_runtime_completed",
+        "repository_adapter_parity_completed",
+        "no_database_url_fallback",
+        "default_backend_fixture_local",
+        "test_db_parity_harness_completed",
         "production_guard_blocks_fixture_success",
         "export_job_creation_excluded",
         "file_download_excluded",
@@ -814,6 +829,14 @@ def build_report() -> dict[str, Any]:
         "agent_runs_fixture_local_detail",
     }:
         blockers.append("agent_runs_readiness.implemented_runtime_slices must record fixture local list/detail")
+    if agent_runs_readiness.get("repository_adapter_backend_flag") != "AICRM_AGENT_RUNS_REPO_BACKEND":
+        blockers.append("agent_runs_readiness.repository_adapter_backend_flag must be AICRM_AGENT_RUNS_REPO_BACKEND")
+    if agent_runs_readiness.get("repository_adapter_test_db_url_flag") != "AICRM_AGENT_RUNS_TEST_DATABASE_URL":
+        blockers.append("agent_runs_readiness.repository_adapter_test_db_url_flag must be AICRM_AGENT_RUNS_TEST_DATABASE_URL")
+    if agent_runs_readiness.get("repository_adapter_staging_db_url_flag") != "AICRM_AGENT_RUNS_STAGING_DATABASE_URL":
+        blockers.append("agent_runs_readiness.repository_adapter_staging_db_url_flag must be AICRM_AGENT_RUNS_STAGING_DATABASE_URL")
+    if agent_runs_readiness.get("idempotency_audit_rollback_scaffold_completed") is not False:
+        blockers.append("agent_runs_readiness.idempotency_audit_rollback_scaffold_completed must be false for read/detail-only scope")
     for field in (
         "fixture_native_implementation_requires_owner_decision",
         "owner_decision_required",
