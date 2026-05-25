@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "bounded low-risk work package" in prompt_text
     assert "10-13 minutes" in prompt_text
-    assert "phase_4br_agent_replay_schema_route_surface_confirmation" in prompt_text
+    assert "phase_4bs_workflows_fixture_native_list_create_runtime" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -624,6 +624,42 @@ def test_runner_treats_phase4bq_agent_replay_metadata_artifacts_as_policy_files(
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4br_task_groups_runtime_artifacts_as_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "route ownership switch",
+        "timer",
+        "nginx",
+        "systemd",
+    }
+    paths = {
+        "docs/development/phase_4br_task_groups_fixture_runtime.md",
+        "tools/check_phase4br_task_groups_fixture_runtime.py",
+        "tests/test_phase4br_task_groups_fixture_runtime.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
+def test_runner_treats_phase4br_task_groups_runtime_paths_as_guarded_policy_files() -> None:
+    terms = {
+        "production write",
+        "fallback removal",
+        "openclaw",
+        "mcp",
+        "timer",
+        "outbound send",
+    }
+    paths = {
+        "aicrm_next/automation_engine/api.py",
+        "aicrm_next/automation_engine/application.py",
+        "aicrm_next/automation_engine/dto.py",
+        "aicrm_next/automation_engine/repo.py",
+        "aicrm_next/automation_engine/task_groups.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 

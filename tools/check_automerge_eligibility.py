@@ -28,6 +28,13 @@ LOW_RISK_EXACT = {
     "tools/run_codex_autopilot_tick.py",
     "scripts/codex_autopilot_tick.sh",
 }
+AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/automation_engine/application.py",
+    "aicrm_next/automation_engine/dto.py",
+    "aicrm_next/automation_engine/repo.py",
+    "aicrm_next/automation_engine/task_groups.py",
+}
 OWNER_DECISION_PACKAGE_PATHS = {
     "docs/development/phase_4am_action_templates_owner_decision_package.md",
     "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
@@ -101,6 +108,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_4bp_agent_runs_fixture_native_implementation_owner_decision.yaml",
         "docs/development/phase_4bq_agent_replay_metadata_plan.md",
         "docs/development/phase_4bq_agent_replay_metadata_plan.yaml",
+        "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "scripts/codex_autopilot_tick.sh",
@@ -138,6 +146,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase4bo_agent_runs_fixture_native_contract_plan.py",
         "tools/check_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tools/check_phase4bq_agent_replay_metadata_plan.py",
+        "tools/check_phase4br_task_groups_fixture_runtime.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
@@ -173,6 +182,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase4bo_agent_runs_fixture_native_contract_plan.py",
         "tests/test_phase4bp_agent_runs_fixture_native_implementation_owner_decision.py",
         "tests/test_phase4bq_agent_replay_metadata_plan.py",
+        "tests/test_phase4br_task_groups_fixture_runtime.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
 PROTECTED_EXACT = {
@@ -267,7 +277,12 @@ def _diff_text(paths: set[str], base_ref: str, head_ref: str) -> str:
 
 
 def _is_low_risk_path(path: str) -> bool:
-    return path in LOW_RISK_EXACT or path in OWNER_DECISION_PACKAGE_PATHS or path.startswith(LOW_RISK_PREFIXES)
+    return (
+        path in LOW_RISK_EXACT
+        or path in OWNER_DECISION_PACKAGE_PATHS
+        or path in AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+        or path.startswith(LOW_RISK_PREFIXES)
+    )
 
 
 def _has_owner_approval(path: str | None) -> bool:

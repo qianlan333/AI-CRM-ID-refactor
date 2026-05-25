@@ -120,5 +120,24 @@ class ActionTemplateCreateRequest(BaseModel):
     operator: str = "system"
 
 
+class TaskGroupListRequest(BaseModel):
+    program_id: int | None = None
+    include_archived: bool = False
+    limit: int = 50
+    offset: int = 0
+
+
+class TaskGroupCreateRequest(BaseModel):
+    program_id: int = 0
+    group_name: str | None = None
+    name: str | None = None
+    group_code: str | None = None
+    code: str | None = None
+    sort_order: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = None
+    operator: str = "system"
+
+
 class ActionTemplateValidationError(ValueError):
     pass
