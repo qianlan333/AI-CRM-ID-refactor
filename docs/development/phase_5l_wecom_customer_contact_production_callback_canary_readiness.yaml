@@ -1,0 +1,58 @@
+version: 1
+status: phase_5l_wecom_customer_contact_production_callback_canary_readiness_no_execution
+bundle_type: phase_5_external_adapter_production_canary_readiness_bundle
+route_family: /wecom/external-contact/callback
+capability_owner: aicrm_next.integration_gateway
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  production_canary_execution_authorized: false
+  production_live_callback_authorized: false
+  production_callback_cutover_authorized: false
+  production_callback_owner_switch_authorized: false
+  production_contact_write_authorized: false
+  production_identity_mapping_write_authorized: false
+  outbound_send_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  delete_ready: false
+
+readiness_runner:
+  path: tools/run_phase5l_wecom_customer_contact_production_callback_canary_readiness.py
+  default_blocked: true
+  production_live_callback_processed: false
+  production_contact_write_executed: false
+  production_identity_mapping_write_executed: false
+  requires_staging_evidence_json: true
+  required_env:
+    - AICRM_PHASE5L_WECOM_CONTACT_PRODUCTION_CANARY_PLANNING_APPROVED
+    - AICRM_PHASE5L_WECOM_CONTACT_PRODUCTION_CONFIG_REVIEWED
+    - AICRM_PHASE5L_WECOM_CONTACT_TARGET_POLICY_REVIEWED
+    - AICRM_PHASE5L_WECOM_CONTACT_ROLLBACK_OWNER_APPROVED
+  required_args:
+    - --staging-evidence-json
+    - --confirm-no-production-live-callback
+    - --confirm-no-production-write
+
+production_target_policy:
+  single_external_userid_only: true
+  single_event_only: true
+  batch_targets_allowed: false
+  batch_events_allowed: false
+  outbound_send_allowed: false
+  external_userid_redaction_required: true
+
+rollback_policy:
+  rollback_owner_required: true
+  cleanup_requires_explicit_approval: true
+  cleanup_evidence_required: true
+  automatic_cleanup_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5m_wecom_customer_contact_callback_family_acceptance_bundle
+  route_family: /wecom/external-contact/callback
