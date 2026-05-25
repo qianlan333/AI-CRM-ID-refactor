@@ -56,6 +56,7 @@ LOW_RISK_EXACT = {
     "tools/run_phase5e_wecom_tag_production_canary_readiness.py",
     "tools/run_phase5f_wecom_tag_production_live_canary_execution.py",
     "tools/run_phase5f_wecom_tag_production_canary_cleanup.py",
+    "tools/run_phase5h_wecom_customer_contact_adapter_contract_evidence.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -221,6 +222,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5f_wecom_tag_production_live_canary_execution.yaml",
         "docs/development/phase_5g_wecom_tag_family_acceptance.md",
         "docs/development/phase_5g_wecom_tag_family_acceptance.yaml",
+        "docs/development/phase_5h_wecom_customer_contact_adapter_contract.md",
+        "docs/development/phase_5h_wecom_customer_contact_adapter_contract.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -340,6 +343,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase5f_wecom_tag_production_live_canary_execution.py",
         "tools/check_phase5g_wecom_tag_family_acceptance.py",
         "tests/test_phase5g_wecom_tag_family_acceptance.py",
+        "tools/check_phase5h_wecom_customer_contact_adapter_contract.py",
+        "tools/run_phase5h_wecom_customer_contact_adapter_contract_evidence.py",
+        "tests/test_phase5h_wecom_customer_contact_adapter_contract.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
