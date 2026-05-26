@@ -24,3 +24,7 @@ Payment, OAuth callback, WeCom callback, timer/run-due, outbound send, public qu
 ## Next
 
 The only allowed next bundle is `phase_7f_production_compat_cleanup_readiness_bundle`.
+
+## Replacement Lifecycle
+
+- 2026-05-26: Added a docs-only note to retrigger GitHub pull_request checks for replacement PR #780; no Phase 7E safety boundary changed.
