@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6g_low_risk_external_adapter_enablement_tooling
-active_candidate: low_risk_external_adapter_enablement_tooling
+current_phase: phase_6h_production_compat_exact_route_narrowing_readiness
+active_candidate: production_compat_exact_route_narrowing_readiness
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#765"
-last_attempted_action: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
-last_created_pr: "#765"
-recommended_next_pr: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
+last_merged_pr: "#766"
+last_attempted_action: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
+last_created_pr: "#766"
+recommended_next_pr: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -383,8 +383,34 @@ completed_steps:
   - phase_6e_internal_owner_switch_acceptance_completed
   - phase_6f_external_adapter_enablement_readiness_completed
   - phase_6g_low_risk_external_adapter_enablement_tooling_completed
+  - phase_6h_production_compat_exact_route_narrowing_readiness_completed
 
 next_allowed_actions: []
+
+phase6h_production_compat_exact_route_narrowing_readiness:
+  status: phase_6h_production_compat_exact_route_narrowing_readiness_completed
+  bundle_type: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
+  candidate_exact_routes:
+    - GET /api/admin/automation-conversion/task-groups
+    - GET /api/admin/automation-conversion/workflow-nodes
+    - GET /api/admin/image-library
+    - GET /api/admin/image-library/facets
+    - GET /api/admin/wecom/tags
+    - GET /api/admin/wecom/tags/live/gate
+    - GET /mcp
+  proposed_narrowing_only: true
+  production_compat_behavior_change_authorized: false
+  wildcard_narrowing_authorized: false
+  manifest_write_authorized_default: false
+  fallback_removal_authorized: false
+  production_owner_switch_authorized: false
+  live_external_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
 
 phase6g_low_risk_external_adapter_enablement_tooling:
   status: phase_6g_low_risk_external_adapter_enablement_tooling_completed

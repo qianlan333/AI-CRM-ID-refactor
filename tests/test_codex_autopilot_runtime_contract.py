@@ -1417,6 +1417,28 @@ def test_runner_treats_phase6g_external_adapter_tooling_artifacts_as_policy_file
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6h_production_compat_readiness_artifacts_as_policy_files() -> None:
+    terms = {
+        "production_compat",
+        "wildcard narrowing",
+        "fallback removal",
+        "production owner switch",
+        "live external call",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6h_production_compat_exact_route_narrowing_readiness.md",
+        "docs/development/phase_6h_production_compat_exact_route_narrowing_readiness.yaml",
+        "tools/check_phase6h_production_compat_exact_route_narrowing_readiness.py",
+        "tools/run_phase6h_production_compat_exact_route_shadow_compare.py",
+        "tests/test_phase6h_production_compat_exact_route_narrowing_readiness.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
