@@ -22,14 +22,11 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     prompt = tmp_path / "prompt.md"
     report = runner.main(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
     assert report == 0
-    assert prompt.exists()
-    prompt_text = prompt.read_text(encoding="utf-8")
-    assert "phase_execution_state.yaml" in prompt_text
-    assert "check_autonomous_development_loop.py" in prompt_text
-    assert "check_automerge_eligibility.py" in prompt_text
-    assert "compressed bounded bundle" in prompt_text
-    assert "15-20 minutes" in prompt_text
-    assert "phase_5_aggregate_acceptance_review_bundle" in prompt_text
+    assert prompt.exists() is False
+    owner_package = Path("/tmp/aicrm_codex_owner_decision_package.md")
+    assert owner_package.exists()
+    text = owner_package.read_text(encoding="utf-8")
+    assert "phase_execution_state has no next_allowed_actions" in text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
