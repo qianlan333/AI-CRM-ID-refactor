@@ -174,8 +174,9 @@ def build_send_content_repository() -> SendContentRepository:
             PostgresSendContentRepository(database_url),
             capability_owner="send_content",
         )
+    if production_environment():
+        raise RepositoryProviderError("send content production repository unavailable: production data is not ready")
     return assert_repository_allowed(
         InMemorySendContentRepository(),
-        capability_owner="send_content" if not production_environment() else "send_content.fixture",
+        capability_owner="send_content",
     )
-
