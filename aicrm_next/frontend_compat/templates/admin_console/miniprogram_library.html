@@ -285,25 +285,31 @@
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  function requestJSON(url, options) {
+    var client = window.ImageUploadClient || {};
+    var fn = client.requestJsonWithTimeout || client.requestJson;
+    if (!fn) return Promise.reject(new Error('图片上传客户端未加载，请刷新页面后重试'));
+    return fn.call(client, url, options || {});
+  }
   function getJSON(url) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url);
+    return requestJSON(url);
   }
   function postJSON(url, body) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, {
+    return requestJSON(url, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
   }
   function putJSON(url, body) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, {
+    return requestJSON(url, {
       method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
   }
   function deleteReq(url) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, { method: 'DELETE', credentials: 'same-origin' });
+    return requestJSON(url, { method: 'DELETE', credentials: 'same-origin' });
   }
 
   // ---------- 状态 ---------- //

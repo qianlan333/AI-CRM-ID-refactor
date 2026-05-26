@@ -321,21 +321,27 @@
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  function requestJSON(url, options) {
+    var client = window.ImageUploadClient || {};
+    var fn = client.requestJsonWithTimeout || client.requestJson;
+    if (!fn) return Promise.reject(new Error('图片上传客户端未加载，请刷新页面后重试'));
+    return fn.call(client, url, options || {});
+  }
   function getJSON(url, options) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, options || {});
+    return requestJSON(url, options || {});
   }
   function putJSON(url, body) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, {
+    return requestJSON(url, {
       method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
   }
   function postForm(url, fd) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, { method: 'POST', credentials: 'same-origin', body: fd });
+    return requestJSON(url, { method: 'POST', credentials: 'same-origin', body: fd });
   }
   function deleteReq(url) {
-    return window.ImageUploadClient.requestJsonWithTimeout(url, { method: 'DELETE', credentials: 'same-origin' });
+    return requestJSON(url, { method: 'DELETE', credentials: 'same-origin' });
   }
   function fmtBytes(n) {
     n = Number(n) || 0;

@@ -57,16 +57,24 @@ def test_create_modal_submits_to_post_endpoint(source: str):
     assert "/api/admin/miniprogram-library" in source
     assert "method: 'POST'" in source
     assert "thumb_image_id: thumbId" in source
-    assert "ImageUploadClient.requestJson" in source
+    assert "requestJSON" in source
 
 
 def test_create_submit_uses_timeout_and_does_not_wait_for_list_before_close(source: str):
     assert "requestJsonWithTimeout" in source
+    assert "client.requestJsonWithTimeout || client.requestJson" in source
     success_idx = source.index("setCreateStatus('已新增")
     refresh_idx = source.index("refreshListInBackground();", success_idx)
     close_idx = source.index("setTimeout(closeCreateModal, 600)", success_idx)
     assert success_idx < refresh_idx < close_idx
     assert "await loadList();\n        setTimeout(closeCreateModal" not in source
+
+
+def test_json_request_helper_falls_back_to_old_upload_client(source: str):
+    """静态资源缓存可能让页面拿到旧 image_upload_client.js，模板不能直接崩。"""
+    assert "function requestJSON" in source
+    assert "client.requestJsonWithTimeout || client.requestJson" in source
+    assert "图片上传客户端未加载" in source
 
 
 def test_create_modal_has_open_close_handlers(source: str):
