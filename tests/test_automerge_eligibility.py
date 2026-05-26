@@ -1235,6 +1235,20 @@ def test_phase5ak_questionnaire_external_submit_contract_fake_stub_artifacts_can
     assert "aicrm_next/questionnaire/external_submit_adapter.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
 
 
+def test_phase5al_questionnaire_external_submit_live_adapter_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5al_questionnaire_external_submit_live_adapter_behind_flag.md",
+        "docs/development/phase_5al_questionnaire_external_submit_live_adapter_behind_flag.yaml",
+        "tools/check_phase5al_questionnaire_external_submit_live_adapter_behind_flag.py",
+        "tools/run_phase5al_questionnaire_external_submit_live_staging_evidence.py",
+        "tools/run_phase5al_questionnaire_external_submit_live_production_dry_run_gate.py",
+        "tests/test_phase5al_questionnaire_external_submit_live_adapter_behind_flag.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+    assert "aicrm_next/questionnaire/external_submit_live_adapter.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+    assert "aicrm_next/questionnaire/external_submit_live_gateway.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

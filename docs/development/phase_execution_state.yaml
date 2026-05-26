@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/h5/questionnaires*
 capability_owner: aicrm_next.questionnaire
-last_merged_pr: "#749"
-last_attempted_action: phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle
-last_created_pr: "#749"
-recommended_next_pr: phase_5al_questionnaire_external_submit_live_adapter_behind_flag_bundle
+last_merged_pr: "#750"
+last_attempted_action: phase_5al_questionnaire_external_submit_live_adapter_behind_flag_bundle
+last_created_pr: "#750"
+recommended_next_pr: phase_5am_questionnaire_external_submit_staging_canary_evidence_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -65,6 +65,9 @@ guarded_disabled_runtime_slices:
   - route_family: /mcp
     slice: openclaw_mcp_ai_assist_live_adapter_behind_explicit_flag
     scope: disabled_by_default_explicit_approval_only
+  - route_family: /api/h5/questionnaires*
+    slice: questionnaire_external_submit_live_adapter_behind_explicit_flag
+    scope: disabled_by_default_no_production_write
 repository_adapter_parity_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_sqlalchemy_test_db_parity
@@ -362,9 +365,10 @@ completed_steps:
   - phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_completed
   - phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed
   - phase_5ak_questionnaire_external_submit_contract_fake_stub_completed
+  - phase_5al_questionnaire_external_submit_live_adapter_behind_flag_completed
 
 next_allowed_actions:
-  - phase_5al_questionnaire_external_submit_live_adapter_behind_flag_bundle
+  - phase_5am_questionnaire_external_submit_staging_canary_evidence_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1385,6 +1389,29 @@ phase5ak_questionnaire_external_submit_contract_fake_stub:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5al_questionnaire_external_submit_live_adapter_behind_flag_bundle
+
+phase5al_questionnaire_external_submit_live_adapter_behind_flag:
+  status: phase_5al_questionnaire_external_submit_live_adapter_behind_flag_completed
+  route_family: /api/h5/questionnaires*
+  capability_owner: aicrm_next.questionnaire
+  integration_boundary: aicrm_next.questionnaire
+  bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+  live_adapter_code_authorized: true
+  live_call_disabled_by_default: true
+  default_gateway_disabled: true
+  staging_evidence_runner_completed: true
+  production_dry_run_gate_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_public_submit_owner_switch_ready: false
+  production_identity_write_authorized: false
+  production_tag_write_authorized: false
+  live_oauth_callback_cutover_authorized: false
+  outbound_send_authorized: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5am_questionnaire_external_submit_staging_canary_evidence_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
