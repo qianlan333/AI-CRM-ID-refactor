@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_6c_task_groups_owner_switch_tooling"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
+    assert data["current_phase"] == "phase_6d_internal_metadata_owner_switch_batch"
+    assert data["active_candidate"] == "internal_metadata_owner_switch_batch"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#759"
+    assert data["last_merged_pr"] == "#761"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -136,6 +136,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_6a_owner_production_compat_readiness_completed" in set(data["completed_steps"])
     assert "phase_6b_task_groups_owner_switch_canary_plan_completed" in set(data["completed_steps"])
     assert "phase_6c_task_groups_owner_switch_tooling_completed" in set(data["completed_steps"])
+    assert "phase_6d_internal_metadata_owner_switch_batch_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_empty_after_phase_6a_readiness() -> None:
@@ -162,7 +163,7 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
     candidate = checker.load_yaml(STATE)["active_candidate"]
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry"}:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch"}:
         assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
         assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
 
@@ -572,7 +573,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
+    assert data["active_candidate"] == "internal_metadata_owner_switch_batch"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

@@ -1329,6 +1329,27 @@ def test_runner_treats_phase6c_task_groups_tooling_artifacts_as_policy_files() -
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6d_internal_metadata_batch_artifacts_as_policy_files() -> None:
+    terms = {
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "destructive migration",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6d_internal_metadata_owner_switch_batch.md",
+        "docs/development/phase_6d_internal_metadata_owner_switch_batch.yaml",
+        "tools/check_phase6d_internal_metadata_owner_switch_batch.py",
+        "tools/run_phase6d_internal_metadata_owner_switch_batch.py",
+        "tests/test_phase6d_internal_metadata_owner_switch_batch.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
