@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wechat-pay*
 capability_owner: aicrm_next.commerce
-last_merged_pr: "#741"
-last_attempted_action: phase_5ac_payment_commerce_production_canary_readiness_bundle
-last_created_pr: "#741"
-recommended_next_pr: phase_5ad_payment_commerce_production_canary_tooling_bundle
+last_merged_pr: "#742"
+last_attempted_action: phase_5ad_payment_commerce_production_canary_tooling_bundle
+last_created_pr: "#742"
+recommended_next_pr: phase_5ae_payment_commerce_family_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -209,6 +209,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/admin/wechat-pay*
     slice: payment_commerce_production_canary_readiness
     scope: readiness_only_no_provider_call_no_money_movement_no_order_mutation
+  - route_family: /api/admin/wechat-pay*
+    slice: payment_commerce_production_canary_tooling
+    scope: blocked_by_default_single_synthetic_target_no_money_movement
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -324,9 +327,10 @@ completed_steps:
   - phase_5aa_payment_commerce_live_adapter_behind_flag_completed
   - phase_5ab_payment_commerce_staging_sandbox_canary_evidence_completed
   - phase_5ac_payment_commerce_production_canary_readiness_completed
+  - phase_5ad_payment_commerce_production_canary_tooling_completed
 
 next_allowed_actions:
-  - phase_5ad_payment_commerce_production_canary_tooling_bundle
+  - phase_5ae_payment_commerce_family_acceptance_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1131,6 +1135,33 @@ phase5ac_payment_commerce_production_canary_readiness:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5ad_payment_commerce_production_canary_tooling_bundle
+
+phase5ad_payment_commerce_production_canary_tooling:
+  status: phase_5ad_payment_commerce_production_canary_tooling_completed
+  route_family: /api/admin/wechat-pay*
+  capability_owner: aicrm_next.commerce
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_production_canary_tooling_bundle
+  production_canary_tooling_completed: true
+  default_blocked: true
+  single_synthetic_target_guard_completed: true
+  cleanup_runner_completed: true
+  checker_completed: true
+  tests_completed: true
+  production_canary_tooling_authorized: true
+  production_provider_call_by_default_authorized: false
+  real_payment_capture_authorized: false
+  real_refund_authorized: false
+  real_settlement_authorized: false
+  production_payment_webhook_cutover_authorized: false
+  production_order_state_mutation_authorized: false
+  financial_reconciliation_mutation_authorized: false
+  batch_target_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5ae_payment_commerce_family_acceptance_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

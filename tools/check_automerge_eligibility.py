@@ -88,6 +88,8 @@ LOW_RISK_EXACT = {
     "tools/run_phase5ab_payment_commerce_staging_sandbox_canary_evidence.py",
     "tools/run_phase5ab_payment_commerce_production_readiness_review.py",
     "tools/run_phase5ac_payment_commerce_production_canary_readiness.py",
+    "tools/run_phase5ad_payment_commerce_production_canary_tooling.py",
+    "tools/run_phase5ad_payment_commerce_production_canary_cleanup.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -311,6 +313,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5ab_payment_commerce_staging_sandbox_canary_evidence.yaml",
         "docs/development/phase_5ac_payment_commerce_production_canary_readiness.md",
         "docs/development/phase_5ac_payment_commerce_production_canary_readiness.yaml",
+        "docs/development/phase_5ad_payment_commerce_production_canary_tooling.md",
+        "docs/development/phase_5ad_payment_commerce_production_canary_tooling.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -506,6 +510,10 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_phase5ac_payment_commerce_production_canary_readiness.py",
         "tools/run_phase5ac_payment_commerce_production_canary_readiness.py",
         "tests/test_phase5ac_payment_commerce_production_canary_readiness.py",
+        "tools/check_phase5ad_payment_commerce_production_canary_tooling.py",
+        "tools/run_phase5ad_payment_commerce_production_canary_tooling.py",
+        "tools/run_phase5ad_payment_commerce_production_canary_cleanup.py",
+        "tests/test_phase5ad_payment_commerce_production_canary_tooling.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
