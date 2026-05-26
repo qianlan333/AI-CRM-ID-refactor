@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_5_external_adapter_completed"
-    assert data["active_candidate"] == "/api/h5/questionnaires*"
-    assert data["capability_owner"] == "aicrm_next.questionnaire"
-    assert data["last_merged_pr"] == "#755"
+    assert data["current_phase"] == "phase_6_owner_production_compat_readiness"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
+    assert data["capability_owner"] == "aicrm_next.automation_engine"
+    assert data["last_merged_pr"] == "#756"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -133,9 +133,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5an_questionnaire_external_submit_production_canary_readiness_completed" in set(data["completed_steps"])
     assert "phase_5ao_questionnaire_external_submit_family_acceptance_completed" in set(data["completed_steps"])
     assert "phase_5_aggregate_acceptance_review_completed" in set(data["completed_steps"])
+    assert "phase_6a_owner_production_compat_readiness_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_empty_after_phase_5_completion() -> None:
+def test_next_allowed_actions_empty_after_phase_6a_readiness() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -569,7 +570,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/h5/questionnaires*"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

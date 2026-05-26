@@ -46,6 +46,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_5an_questionnaire_external_submit_production_canary_readiness_bundle",
     "phase_5ao_questionnaire_external_submit_family_acceptance_bundle",
     "phase_5_aggregate_acceptance_review_bundle",
+    "phase_6_owner_production_compat_readiness_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -559,8 +560,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase5ao_questionnaire_external_submit_family_acceptance.py",
         "docs/development/phase_5_aggregate_acceptance_review.md",
         "docs/development/phase_5_aggregate_acceptance_review.yaml",
+        "docs/development/phase_6a_owner_production_compat_readiness.md",
+        "docs/development/phase_6a_owner_production_compat_readiness.yaml",
         "tools/check_phase5_aggregate_acceptance_review.py",
+        "tools/check_phase6a_owner_production_compat_readiness.py",
         "tests/test_phase5_aggregate_acceptance_review.py",
+        "tests/test_phase6a_owner_production_compat_readiness.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",

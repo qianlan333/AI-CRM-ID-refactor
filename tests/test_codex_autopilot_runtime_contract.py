@@ -1266,6 +1266,26 @@ def test_runner_treats_phase4bx_agent_runs_runtime_path_as_guarded_policy_file()
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6a_readiness_artifacts_as_policy_files() -> None:
+    terms = {
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "destructive migration",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6a_owner_production_compat_readiness.md",
+        "docs/development/phase_6a_owner_production_compat_readiness.yaml",
+        "tools/check_phase6a_owner_production_compat_readiness.py",
+        "tests/test_phase6a_owner_production_compat_readiness.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:

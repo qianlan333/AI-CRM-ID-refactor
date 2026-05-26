@@ -151,6 +151,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5an_questionnaire_external_submit_production_canary_readiness_completed",
     "phase_5ao_questionnaire_external_submit_family_acceptance_completed",
     "phase_5_aggregate_acceptance_review_completed",
+    "phase_6a_owner_production_compat_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -387,14 +388,14 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "phase_5_external_adapter_completed":
-        blockers.append("current_phase must be phase_5_external_adapter_completed")
-    if state.get("active_candidate") != "/api/h5/questionnaires*":
-        blockers.append("active_candidate must select the Phase 5 questionnaire external submit candidate")
-    if state.get("capability_owner") != "aicrm_next.questionnaire":
-        blockers.append("capability_owner must be aicrm_next.questionnaire")
-    if state.get("last_merged_pr") != "#755":
-        blockers.append("last_merged_pr must record latest completed merged PR #755")
+    if state.get("current_phase") != "phase_6_owner_production_compat_readiness":
+        blockers.append("current_phase must be phase_6_owner_production_compat_readiness")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
+        blockers.append("active_candidate must select the Phase 6A task-groups candidate")
+    if state.get("capability_owner") != "aicrm_next.automation_engine":
+        blockers.append("capability_owner must be aicrm_next.automation_engine")
+    if state.get("last_merged_pr") != "#756":
+        blockers.append("last_merged_pr must record latest completed merged PR #756")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
