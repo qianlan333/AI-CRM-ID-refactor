@@ -1,0 +1,72 @@
+version: 1
+status: phase_6b_task_groups_owner_switch_canary_plan_no_runtime_change
+bundle_type: phase_6b_first_owner_switch_canary_plan_bundle
+route_family: /api/admin/automation-conversion/task-groups*
+capability_owner: aicrm_next.automation_engine
+
+current_owner: production_compat_legacy_forward_with_retained_fallback
+proposed_owner: aicrm_next.automation_engine
+owner_switch_execution_authorized: false
+fallback_retained: true
+production_compat_unchanged: true
+shadow_compare_required: true
+rollback_required: true
+timer_execution_authorized: false
+automation_execution_authorized: false
+outbound_send_authorized: false
+delete_ready: false
+
+canary_plan:
+  exact_route_only: true
+  default_owner_switch_allowed: false
+  owner_approval_required: true
+  config_review_required: true
+  rollback_owner_required: true
+  production_compat_behavior_change_allowed: false
+  fallback_removal_allowed: false
+
+shadow_compare_plan:
+  required: true
+  default_blocked: true
+  compare_current_owner: production_compat_legacy_forward_with_retained_fallback
+  compare_proposed_owner: aicrm_next.automation_engine
+  required_evidence:
+    - item: route_family_request_inventory
+    - item: response_shape_comparison
+    - item: degraded_response_comparison
+    - item: no_fixture_production_success
+    - item: no_timer_execution
+    - item: no_automation_execution
+    - item: no_outbound_send
+
+rollback_plan:
+  required: true
+  fallback_must_remain: true
+  disable_canary_flag_restores_current_owner: true
+  production_compat_unchanged: true
+  destructive_migration_required: false
+  required_evidence:
+    - item: rollback_owner_approval
+    - item: fallback_smoke
+    - item: canary_flag_disable_smoke
+
+manifest_proposed_delta:
+  proposed_only: true
+  route_pattern: /api/admin/automation-conversion/task-groups*
+  proposed_current_runtime_owner: next_canary_behind_explicit_flag
+  legacy_fallback_allowed: true
+  production_compat_unchanged: true
+  delete_ready: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_live_behavior_change: true
+
+next_bundle:
+  recommended_next_step: phase_6c_task_groups_owner_switch_tooling_bundle
+  route_family: /api/admin/automation-conversion/task-groups*
+  owner_switch_execution_allowed: false
+  production_compat_change_allowed: false
+  fallback_removal_allowed: false
