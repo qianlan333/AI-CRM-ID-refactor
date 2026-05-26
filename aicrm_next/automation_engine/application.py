@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from aicrm_next.customer_read_model.application import GetCustomerChatContextQuery
@@ -17,6 +18,7 @@ from aicrm_next.integration_gateway.mcp_openclaw_adapters import build_openclaw_
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 from aicrm_next.shared.runtime import production_data_ready, production_environment
+from aicrm_next.send_content.application import NormalizeSendContentPackageCommand
 
 from .action_templates import action_template_side_effect_safety
 from .agent_outputs import agent_output_run_projection, agent_output_side_effect_safety
@@ -34,6 +36,7 @@ from .dto import (
     ApplyActivationFactRequest,
     ApplyQuestionnaireResultRequest,
     ApplyTrialOpenedFactRequest,
+    AgentMaterialsUpdateRequest,
     AgentCreateRequest,
     AgentListRequest,
     AgentOutputDetailRequest,
@@ -48,10 +51,15 @@ from .dto import (
     ProfileSegmentTemplateListRequest,
     ProfileSegmentTemplateUpdateRequest,
     PushOpenClawContextRequest,
+    BehaviorSegmentSendContentUpdateRequest,
+    ProfileSegmentSendContentUpdateRequest,
+    SendStrategyUpdateRequest,
     TaskCreateRequest,
     TaskGroupCreateRequest,
     TaskGroupListRequest,
     TaskListRequest,
+    TaskUpdateRequest,
+    UnifiedSendContentUpdateRequest,
     WorkflowCreateRequest,
     WorkflowListRequest,
     WorkflowNodeCreateRequest,
@@ -63,7 +71,7 @@ from .profile_segment_repository import (
     build_profile_segment_template_repository,
     profile_segment_template_sqlalchemy_enabled,
 )
-from .repo import AutomationRepository, build_automation_repository
+from .repo import AutomationRepository, build_automation_repository, task_postgres_enabled
 from .state_machine import apply_transition, normalize_followup_type
 from .task_groups import task_group_side_effect_safety
 from .tasks import task_side_effect_safety
@@ -355,6 +363,158 @@ def _request_dump(request: Any, *, exclude_unset: bool = False) -> dict[str, Any
     return request.dict(exclude_unset=exclude_unset)
 
 
+CONTENT_MODES = {"unified", "profile_layered", "behavior_layered", "agent"}
+OPERATION_CONTENT_KEYS = {
+    "content_mode",
+    "profile_segment_template_id",
+    "unified_content_json",
+    "segment_contents_json",
+    "agent_config_json",
+}
+BEHAVIOR_SEGMENT_NAMES = {
+    "lt_2": "消息少于 2",
+    "between_2_9": "消息 2-9",
+    "gte_10": "消息大于等于 10",
+}
+
+
+def _normalize_content_mode(mode: str) -> str:
+    value = str(mode or "").strip()
+    if value not in CONTENT_MODES:
+        raise ContractError("content_mode 必须是 unified、profile_layered、behavior_layered 或 agent")
+    return value
+
+
+def _operation_content_from_task(task: dict[str, Any]) -> dict[str, Any]:
+    config = task.get("config") if isinstance(task.get("config"), dict) else {}
+    existing = config.get("operation_content") if isinstance(config.get("operation_content"), dict) else {}
+    return {
+        "content_mode": str(existing.get("content_mode") or "unified"),
+        "profile_segment_template_id": int(existing.get("profile_segment_template_id") or 0),
+        "unified_content_json": existing.get("unified_content_json") if isinstance(existing.get("unified_content_json"), dict) else {},
+        "segment_contents_json": existing.get("segment_contents_json") if isinstance(existing.get("segment_contents_json"), list) else [],
+        "agent_config_json": existing.get("agent_config_json") if isinstance(existing.get("agent_config_json"), dict) else {},
+        **{key: value for key, value in existing.items() if key not in OPERATION_CONTENT_KEYS},
+    }
+
+
+def _content_patch_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    patch: dict[str, Any] = {}
+    for source in (
+        payload,
+        payload.get("config") if isinstance(payload.get("config"), dict) else {},
+        payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+    ):
+        if not isinstance(source, dict):
+            continue
+        operation_content = source.get("operation_content") if isinstance(source.get("operation_content"), dict) else {}
+        for container in (source, operation_content):
+            for key in OPERATION_CONTENT_KEYS:
+                if key in container:
+                    patch[key] = container[key]
+    if "content_mode" in patch:
+        patch["content_mode"] = _normalize_content_mode(patch["content_mode"])
+    if "profile_segment_template_id" in patch and patch["profile_segment_template_id"] in (None, ""):
+        patch["profile_segment_template_id"] = 0
+    return patch
+
+
+def _task_patch_with_operation_content(task: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    config = deepcopy(task.get("config") if isinstance(task.get("config"), dict) else {})
+    metadata = deepcopy(task.get("metadata") if isinstance(task.get("metadata"), dict) else {})
+    if isinstance(payload.get("config"), dict):
+        config = deepcopy(payload["config"])
+    if isinstance(payload.get("metadata"), dict):
+        metadata = deepcopy(payload["metadata"])
+    operation_patch = _content_patch_from_payload(payload)
+    if operation_patch:
+        operation_content = _operation_content_from_task({"config": config})
+        operation_content.update(operation_patch)
+        config["operation_content"] = operation_content
+    return {"config": config, "metadata": metadata, "operator": payload.get("operator") or "system"}
+
+
+def _update_task_operation_content(
+    owner: _TaskRepositoryOwner,
+    task_id: int,
+    operation_patch: dict[str, Any],
+    *,
+    operator: str = "system",
+) -> dict[str, Any]:
+    repo = owner._repo_or_none()
+    if repo is None:
+        return _task_production_unavailable_payload()
+    try:
+        current = repo.get_task(int(task_id))
+        if not current:
+            raise NotFoundError("automation task not found")
+        config = deepcopy(current.get("config") if isinstance(current.get("config"), dict) else {})
+        operation_content = _operation_content_from_task(current)
+        operation_content.update(operation_patch)
+        if "content_mode" in operation_content:
+            operation_content["content_mode"] = _normalize_content_mode(operation_content["content_mode"])
+        config["operation_content"] = operation_content
+        result = repo.update_task(
+            int(task_id),
+            {"config": config, "metadata": current.get("metadata") or {}, "operator": operator},
+            operator=operator,
+        )
+    except RepositoryProviderError as exc:
+        return owner._blocked_payload(exc)
+    return _task_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
+
+
+def _update_task_segment_content(
+    owner: _TaskRepositoryOwner,
+    task_id: int,
+    *,
+    mode: str,
+    segment_key: str,
+    segment_name: str,
+    content_package: dict[str, Any],
+    operator: str,
+    extra_operation_patch: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    repo = owner._repo_or_none()
+    if repo is None:
+        return _task_production_unavailable_payload()
+    try:
+        current = repo.get_task(int(task_id))
+        if not current:
+            raise NotFoundError("automation task not found")
+        config = deepcopy(current.get("config") if isinstance(current.get("config"), dict) else {})
+        operation_content = _operation_content_from_task(current)
+        rows = [dict(row) for row in operation_content.get("segment_contents_json") or [] if isinstance(row, dict)]
+        next_row = {
+            "segment_key": segment_key,
+            "segment_name": str(segment_name or segment_key).strip() or segment_key,
+            "content_package": content_package,
+        }
+        next_rows: list[dict[str, Any]] = []
+        replaced = False
+        for row in rows:
+            if str(row.get("segment_key") or "") == segment_key:
+                if not replaced:
+                    next_rows.append(next_row)
+                    replaced = True
+                continue
+            next_rows.append(row)
+        if not replaced:
+            next_rows.append(next_row)
+        operation_content.update(extra_operation_patch or {})
+        operation_content["content_mode"] = mode
+        operation_content["segment_contents_json"] = next_rows
+        config["operation_content"] = operation_content
+        result = repo.update_task(
+            int(task_id),
+            {"config": config, "metadata": current.get("metadata") or {}, "operator": operator},
+            operator=operator,
+        )
+    except RepositoryProviderError as exc:
+        return owner._blocked_payload(exc)
+    return _task_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
+
+
 class _ProfileSegmentRepositoryOwner:
     def __init__(self, repo: AutomationRepository | None = None) -> None:
         self._repo = repo
@@ -452,7 +612,9 @@ class _TaskRepositoryOwner:
 
     def _repo_or_none(self) -> AutomationRepository | None:
         if (production_environment() or production_data_ready()) and self._repo is None:
-            return None
+            if not task_postgres_enabled():
+                return None
+            self._repo = build_automation_repository(task_backend="postgres")
         if self._repo is None:
             self._repo = build_automation_repository()
         return self._repo
@@ -785,6 +947,190 @@ class CreateTaskCommand(_TaskRepositoryOwner):
         except RepositoryProviderError as exc:
             return self._blocked_payload(exc)
         return _task_response(result, status_code=201)
+
+    __call__ = execute
+
+
+class GetTaskDetailQuery(_TaskRepositoryOwner):
+    def execute(self, task_id: int) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _task_production_unavailable_payload()
+        try:
+            task = repo.get_task(int(task_id))
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        if not task:
+            raise NotFoundError("automation task not found")
+        return _task_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), "task": task})
+
+    __call__ = execute
+
+
+class UpdateTaskCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, request: TaskUpdateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _task_production_unavailable_payload()
+        payload = _request_dump(request, exclude_unset=True)
+        try:
+            current = repo.get_task(int(task_id))
+            if not current:
+                raise NotFoundError("automation task not found")
+            patch = _task_patch_with_operation_content(current, payload)
+            result = repo.update_task(
+                int(task_id),
+                patch,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _task_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
+
+    __call__ = execute
+
+
+class UpdateTaskSendStrategyCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, request: SendStrategyUpdateRequest) -> dict[str, Any]:
+        mode = _normalize_content_mode(request.content_mode)
+        operation_patch: dict[str, Any] = {"content_mode": mode}
+        if mode == "profile_layered":
+            template_id = int(request.profile_segment_template_id or 0)
+            if template_id <= 0:
+                raise ContractError("profile_layered 模式必须提供 profile_segment_template_id")
+            operation_patch["profile_segment_template_id"] = template_id
+        if mode == "behavior_layered":
+            operation_patch.setdefault("behavior_rule_key", "default_message_count")
+        if mode == "agent":
+            agent_code = str(request.agent_code or "").strip()
+            if not agent_code:
+                raise ContractError("agent 模式必须提供 agent_code")
+            operation_patch["agent_config_json"] = {"agent_code": agent_code}
+        return _update_task_operation_content(
+            self,
+            task_id,
+            operation_patch,
+            operator=request.operator,
+        )
+
+    __call__ = execute
+
+
+class SaveUnifiedSendContentCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, request: UnifiedSendContentUpdateRequest) -> dict[str, Any]:
+        content_package = NormalizeSendContentPackageCommand()(
+            request.content_package,
+            text_enabled=True,
+            require_body=False,
+        )
+        return _update_task_operation_content(
+            self,
+            task_id,
+            {"content_mode": "unified", "unified_content_json": content_package},
+            operator=request.operator,
+        )
+
+    __call__ = execute
+
+
+class SaveProfileSegmentSendContentCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, segment_key: str, request: ProfileSegmentSendContentUpdateRequest) -> dict[str, Any]:
+        key = str(segment_key or "").strip()
+        if not key:
+            raise ContractError("segment_key 不能为空")
+        template_id = int(request.profile_segment_template_id or 0)
+        if template_id <= 0:
+            raise ContractError("画像分层内容必须提供 profile_segment_template_id")
+        template_payload = GetProfileSegmentTemplateQuery()(template_id)
+        if template_payload.get("ok") is False:
+            return template_payload
+        content_package = NormalizeSendContentPackageCommand()(
+            request.content_package,
+            text_enabled=True,
+            require_body=False,
+        )
+        return _update_task_segment_content(
+            self,
+            task_id,
+            mode="profile_layered",
+            segment_key=key,
+            segment_name=request.segment_name,
+            content_package=content_package,
+            operator=request.operator,
+            extra_operation_patch={"profile_segment_template_id": template_id},
+        )
+
+    __call__ = execute
+
+
+class SaveBehaviorSegmentSendContentCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, segment_key: str, request: BehaviorSegmentSendContentUpdateRequest) -> dict[str, Any]:
+        key = str(segment_key or "").strip()
+        if key not in BEHAVIOR_SEGMENT_NAMES:
+            raise ContractError("消息数分层 segment_key 必须是 lt_2、between_2_9 或 gte_10")
+        content_package = NormalizeSendContentPackageCommand()(
+            request.content_package,
+            text_enabled=True,
+            require_body=False,
+        )
+        return _update_task_segment_content(
+            self,
+            task_id,
+            mode="behavior_layered",
+            segment_key=key,
+            segment_name=request.segment_name or BEHAVIOR_SEGMENT_NAMES[key],
+            content_package=content_package,
+            operator=request.operator,
+            extra_operation_patch={"behavior_rule_key": "default_message_count"},
+        )
+
+    __call__ = execute
+
+
+class SaveAgentMaterialsCommand(_TaskRepositoryOwner):
+    def execute(self, task_id: int, request: AgentMaterialsUpdateRequest) -> dict[str, Any]:
+        agent_code = str(request.agent_code or "").strip()
+        if not agent_code:
+            raise ContractError("agent_code 不能为空")
+        content_package = NormalizeSendContentPackageCommand()(
+            request.content_package,
+            text_enabled=False,
+            require_body=False,
+        )
+        return _update_task_operation_content(
+            self,
+            task_id,
+            {
+                "content_mode": "agent",
+                "agent_config_json": {
+                    "agent_code": agent_code,
+                    "image_library_ids": content_package["image_library_ids"],
+                    "miniprogram_library_ids": content_package["miniprogram_library_ids"],
+                    "attachment_library_ids": content_package["attachment_library_ids"],
+                },
+            },
+            operator=request.operator,
+        )
+
+    __call__ = execute
+
+
+class GetBehaviorSegmentRulesQuery:
+    def execute(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "rules": [
+                {
+                    "rule_key": "default_message_count",
+                    "rule_name": "默认消息数三层",
+                    "segments": [
+                        {"segment_key": "lt_2", "segment_name": "消息少于 2"},
+                        {"segment_key": "between_2_9", "segment_name": "消息 2-9"},
+                        {"segment_key": "gte_10", "segment_name": "消息大于等于 10"},
+                    ],
+                }
+            ],
+        }
 
     __call__ = execute
 

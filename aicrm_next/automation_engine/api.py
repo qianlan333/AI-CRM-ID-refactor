@@ -13,6 +13,7 @@ from aicrm_next.integration_gateway.legacy_automation_facade import (
 
 from .application import (
     ApplyActivationWebhookCommand,
+    GetBehaviorSegmentRulesQuery,
     ConfirmConversionCommand,
     CreateAgentCommand,
     CreateTaskCommand,
@@ -25,6 +26,7 @@ from .application import (
     CreateTaskGroupCommand,
     GetAgentOutputDetailQuery,
     GetAgentRunDetailQuery,
+    GetTaskDetailQuery,
     ListActionTemplatesQuery,
     ListAgentsQuery,
     ListAgentOutputsQuery,
@@ -45,10 +47,17 @@ from .application import (
     ListAutomationPoolsQuery,
     OverrideFollowupTypeCommand,
     PushMemberContextToOpenClawCommand,
+    SaveAgentMaterialsCommand,
+    SaveBehaviorSegmentSendContentCommand,
+    SaveProfileSegmentSendContentCommand,
+    SaveUnifiedSendContentCommand,
+    UpdateTaskCommand,
+    UpdateTaskSendStrategyCommand,
     UpdateProfileSegmentTemplateCommand,
 )
 from .dto import (
     ActivationWebhookRequest,
+    AgentMaterialsUpdateRequest,
     AgentCreateRequest,
     AgentListRequest,
     AgentOutputDetailRequest,
@@ -58,15 +67,20 @@ from .dto import (
     ActionTemplateCreateRequest,
     ActionTemplateListRequest,
     AutomationActionRequest,
+    BehaviorSegmentSendContentUpdateRequest,
     OverrideFollowupTypeRequest,
+    ProfileSegmentSendContentUpdateRequest,
     ProfileSegmentTemplateCreateRequest,
     ProfileSegmentTemplateListRequest,
     ProfileSegmentTemplateUpdateRequest,
     PushOpenClawContextRequest,
+    SendStrategyUpdateRequest,
     TaskCreateRequest,
     TaskGroupCreateRequest,
     TaskGroupListRequest,
     TaskListRequest,
+    TaskUpdateRequest,
+    UnifiedSendContentUpdateRequest,
     WorkflowCreateRequest,
     WorkflowListRequest,
     WorkflowNodeCreateRequest,
@@ -256,6 +270,67 @@ def create_task(payload: TaskCreateRequest) -> JSONResponse:
         return _json_result(CreateTaskCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/tasks/{task_id}")
+def get_task_detail(task_id: int) -> JSONResponse:
+    try:
+        return _json_result(GetTaskDetailQuery()(task_id))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}")
+def update_task(task_id: int, payload: TaskUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(UpdateTaskCommand()(task_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}/send-strategy")
+def update_task_send_strategy(task_id: int, payload: SendStrategyUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(UpdateTaskSendStrategyCommand()(task_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}/send-content/unified")
+def save_unified_send_content(task_id: int, payload: UnifiedSendContentUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(SaveUnifiedSendContentCommand()(task_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}/send-content/profile-segments/{segment_key}")
+def save_profile_segment_send_content(task_id: int, segment_key: str, payload: ProfileSegmentSendContentUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(SaveProfileSegmentSendContentCommand()(task_id, segment_key, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}/send-content/behavior-segments/{segment_key}")
+def save_behavior_segment_send_content(task_id: int, segment_key: str, payload: BehaviorSegmentSendContentUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(SaveBehaviorSegmentSendContentCommand()(task_id, segment_key, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials")
+def save_agent_materials(task_id: int, payload: AgentMaterialsUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(SaveAgentMaterialsCommand()(task_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/behavior-segment-rules")
+def behavior_segment_rules() -> JSONResponse:
+    return _json_result(GetBehaviorSegmentRulesQuery()())
 
 
 @router.get("/api/admin/automation-conversion/agents")

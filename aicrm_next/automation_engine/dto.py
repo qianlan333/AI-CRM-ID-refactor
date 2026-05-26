@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from aicrm_next.send_content.dto import SendContentPackage
 
 
 class ApplyQuestionnaireResultRequest(BaseModel):
@@ -216,6 +218,50 @@ class TaskCreateRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str | None = None
+    operator: str = "system"
+
+
+class TaskUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    metadata: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
+    content_mode: str | None = None
+    profile_segment_template_id: int | None = None
+    unified_content_json: dict[str, Any] | None = None
+    segment_contents_json: list[dict[str, Any]] | None = None
+    agent_config_json: dict[str, Any] | None = None
+    operator: str = "system"
+
+
+class SendStrategyUpdateRequest(BaseModel):
+    content_mode: str
+    profile_segment_template_id: int | None = None
+    agent_code: str | None = None
+    operator: str = "system"
+
+
+class UnifiedSendContentUpdateRequest(BaseModel):
+    content_package: SendContentPackage = Field(default_factory=SendContentPackage)
+    operator: str = "system"
+
+
+class ProfileSegmentSendContentUpdateRequest(BaseModel):
+    segment_name: str = ""
+    profile_segment_template_id: int
+    content_package: SendContentPackage = Field(default_factory=SendContentPackage)
+    operator: str = "system"
+
+
+class BehaviorSegmentSendContentUpdateRequest(BaseModel):
+    segment_name: str = ""
+    content_package: SendContentPackage = Field(default_factory=SendContentPackage)
+    operator: str = "system"
+
+
+class AgentMaterialsUpdateRequest(BaseModel):
+    agent_code: str
+    content_package: SendContentPackage = Field(default_factory=SendContentPackage)
     operator: str = "system"
 
 
