@@ -1,0 +1,47 @@
+version: 1
+status: phase_7g_first_exact_route_fallback_removal_canary
+bundle_type: phase_7g_first_exact_route_fallback_removal_canary_bundle
+cleanup_family: exact_route_fallback_removal_canary
+selected_route_family: /api/admin/automation-conversion/task-groups*
+cleanup_candidate: task_groups_exact_route_fallback_cleanup_canary
+
+authorizations:
+  wildcard_fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  runtime_deletion_authorized: false
+  delete_ready: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+
+requirements:
+  rollback_required: true
+  shadow_compare_required: true
+  route_ownership_proof_required: true
+  owner_approval_required: true
+
+evidence:
+  phase_6_owner_switch_tooling_accepted: true
+  phase_7e_fallback_cleanup_readiness: true
+  route_specific_shadow_compare_evidence: missing
+  rollback_owner: missing
+  rollback_plan: missing
+  route_ownership_proof: missing
+  outbound_send_involved: false
+  timer_execution_involved: false
+  external_live_call_involved: false
+  payment_involved: false
+  oauth_callback_involved: false
+  wecom_callback_involved: false
+
+outcome:
+  fallback_removed_for_selected_exact_route: false
+  fallback_removal_blocked: true
+  blocked_reason: missing_route_specific_owner_approval_shadow_compare_and_rollback_evidence
+  production_behavior_changed: false
+  production_compat_behavior_changed: false
+  wildcard_fallback_removed: false
+  runtime_deleted: false
+  delete_ready: false
+
+next:
+  - phase_7h_first_exact_route_production_compat_cleanup_canary_bundle
