@@ -1,0 +1,139 @@
+version: 1
+status: phase_6i_external_enablement_and_compat_readiness_acceptance_no_runtime_change
+bundle_type: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
+
+completed_inventory:
+  phase_6f_completed: true
+  phase_6g_completed: true
+  phase_6h_completed: true
+
+authorizations:
+  live_external_call_authorized_default: false
+  production_owner_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  wildcard_narrowing_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+
+external_adapter_enablement_matrix:
+  - family_key: media_upload
+    family_name: Media upload / media library
+    route_family: /api/admin/image-library*
+    tooling_status: default_blocked_runner_complete
+    acceptance_status: accepted_for_owner_reviewed_enablement_tooling
+    blocker: owner_approval_and_real_canary_evidence_required_before_live_upload
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: wecom_tags
+    family_name: WeCom tags
+    route_family: /api/admin/wecom/tags*
+    tooling_status: default_blocked_runner_complete
+    acceptance_status: accepted_for_owner_reviewed_enablement_tooling
+    blocker: owner_target_approval_and_no_tag_write_side_effect_evidence_required
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: openclaw_mcp_ai_assist
+    family_name: OpenClaw / MCP / AI assist
+    route_family: /mcp
+    tooling_status: default_blocked_runner_complete
+    acceptance_status: accepted_for_owner_reviewed_enablement_tooling
+    blocker: owner_approval_no_outbound_send_no_automation_execution_evidence_required
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: payment_commerce
+    family_name: Payment / commerce
+    route_family: /api/admin/wechat-pay*
+    tooling_status: excluded
+    acceptance_status: excluded_due_to_high_risk
+    blocker: real_payment_capture_refund_settlement_forbidden
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: oauth_identity
+    family_name: OAuth identity
+    route_family: /api/h5/wechat/oauth*
+    tooling_status: excluded
+    acceptance_status: excluded_due_to_high_risk
+    blocker: production_oauth_callback_cutover_forbidden
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: wecom_customer_contact_callback
+    family_name: WeCom customer contact callback
+    route_family: /wecom/external-contact/callback
+    tooling_status: excluded
+    acceptance_status: excluded_due_to_high_risk
+    blocker: callback_ownership_and_identity_mapping_review_required
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+  - family_key: questionnaire_external_submit
+    family_name: Questionnaire external submit / tag writeback edge
+    route_family: /api/h5/questionnaires*
+    tooling_status: deferred
+    acceptance_status: needs_followup_before_enablement
+    blocker: public_entry_identity_and_tag_writeback_review_required
+    fallback_retained: true
+    production_owner_switch: false
+    live_external_call_by_default: false
+
+production_compat_narrowing_readiness_matrix:
+  - exact_route: GET /api/admin/automation-conversion/task-groups
+    readiness_status: accepted_for_owner_reviewed_enablement_tooling
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: owner_review_required_before_actual_narrowing
+  - exact_route: GET /api/admin/automation-conversion/workflow-nodes
+    readiness_status: accepted_for_owner_reviewed_enablement_tooling
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: owner_review_required_before_actual_narrowing
+  - exact_route: GET /api/admin/image-library
+    readiness_status: accepted_with_blocked_evidence_only
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: behavior_change_not_authorized
+  - exact_route: GET /api/admin/image-library/facets
+    readiness_status: accepted_with_blocked_evidence_only
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: behavior_change_not_authorized
+  - exact_route: GET /api/admin/wecom/tags
+    readiness_status: accepted_with_blocked_evidence_only
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: behavior_change_not_authorized
+  - exact_route: GET /api/admin/wecom/tags/live/gate
+    readiness_status: accepted_with_blocked_evidence_only
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: gate_inspection_only_no_live_call_authorized
+  - exact_route: GET /mcp
+    readiness_status: accepted_with_blocked_evidence_only
+    production_compat_behavior_change: false
+    fallback_retained: true
+    blocker: metadata_route_only_no_tool_call_authorized
+
+acceptance_summary:
+  no_live_external_call_by_default: true
+  no_production_owner_switch: true
+  no_fallback_removal: true
+  no_production_compat_behavior_change: true
+  no_timer_execution: true
+  no_automation_execution: true
+  no_outbound_send: true
+  no_delete_ready: true
+
+next_bundle:
+  recommended_next_step: phase_6j_timer_execution_readiness_bundle
+  fallback_next_step: phase_6j_low_risk_external_adapter_owner_reviewed_enablement_bundle
+  implement_6j_in_this_pr: false

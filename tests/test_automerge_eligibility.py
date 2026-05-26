@@ -1393,6 +1393,16 @@ def test_phase6h_production_compat_exact_route_readiness_artifacts_can_define_st
     assert {"tools/run_phase6h_production_compat_exact_route_shadow_compare.py"} <= checker.LOW_RISK_EXACT
 
 
+def test_phase6i_external_enablement_compat_acceptance_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.md",
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.yaml",
+        "tools/check_phase6i_external_enablement_and_compat_readiness_acceptance.py",
+        "tests/test_phase6i_external_enablement_and_compat_readiness_acceptance.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

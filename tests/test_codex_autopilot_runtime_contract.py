@@ -1439,6 +1439,28 @@ def test_runner_treats_phase6h_production_compat_readiness_artifacts_as_policy_f
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6i_acceptance_artifacts_as_policy_files() -> None:
+    terms = {
+        "live external call",
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "payment behavior",
+        "oauth callback cutover",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.md",
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.yaml",
+        "tools/check_phase6i_external_enablement_and_compat_readiness_acceptance.py",
+        "tests/test_phase6i_external_enablement_and_compat_readiness_acceptance.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
