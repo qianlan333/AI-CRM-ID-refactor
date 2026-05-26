@@ -1429,8 +1429,12 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
     expected = {
         "docs/development/phase_6l_phase6_aggregate_acceptance.md",
         "docs/development/phase_6l_phase6_aggregate_acceptance.yaml",
+        "docs/development/phase_7a_legacy_retirement_readiness.md",
+        "docs/development/phase_7a_legacy_retirement_readiness.yaml",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
+        "tools/check_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
+        "tests/test_phase7a_legacy_retirement_readiness.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 

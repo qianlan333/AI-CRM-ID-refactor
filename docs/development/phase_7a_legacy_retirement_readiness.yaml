@@ -1,0 +1,110 @@
+version: 1
+status: phase_7a_legacy_retirement_readiness
+bundle_type: phase_7a_legacy_retirement_readiness_bundle
+route_family: phase_7_legacy_retirement_readiness
+
+phase_6_handoff:
+  source_pr: "#773"
+  source_merge_commit: b75d08ae5a8ae09b67e40a5a0f28febdeda425b9
+  production_owner_switches_executed: false
+  production_compat_behavior_changed: false
+  fallback_removed: false
+  timer_execution_default_on: false
+  automation_execution_default_on: false
+  outbound_send: false
+  live_external_default_on: false
+  destructive_migration_executed: false
+  delete_ready: false
+
+authorizations:
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  legacy_runtime_deletion_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+
+baseline_blockers:
+  direct_legacy_imports:
+    - path: aicrm_next/automation_engine/group_ops/domain.py
+      line: 10
+      import: wecom_ability_service.domains.tasks.private_message
+      remediation: phase_7b_import_boundary_refactor
+    - path: aicrm_next/integration_gateway/wecom_group_adapter.py
+      line: 97
+      import: wecom_ability_service.wecom_client
+      remediation: phase_7b_integration_gateway_boundary_refactor
+    - path: aicrm_next/integration_gateway/wecom_group_adapter.py
+      line: 155
+      import: wecom_ability_service.domains.broadcast_jobs
+      remediation: phase_7b_integration_gateway_boundary_refactor
+  environment_blockers:
+    - id: architecture_skill_compliance_local_yaml_dependency
+      tool: tools/check_architecture_skill_compliance.py
+      blocker: ModuleNotFoundError for yaml in local environment
+      handling: record_environment_blocker_do_not_claim_pass
+
+candidate_classification:
+  safe_no_behavior_change_cleanup_candidates:
+    - baseline direct legacy import boundary remediation
+    - docs/checker/state allowlist cleanup
+    - obsolete planning artifact archive proposal
+  requires_shadow_compare_before_cleanup:
+    - GET /api/admin/automation-conversion/task-groups
+    - GET /api/admin/automation-conversion/workflow-nodes
+    - GET /api/admin/image-library
+    - GET /api/admin/image-library/facets
+    - GET /api/admin/wecom/tags
+    - GET /api/admin/wecom/tags/live/gate
+    - GET /mcp
+  requires_owner_approval_before_fallback_removal:
+    - any production_compat fallback removal
+    - any legacy Flask fallback removal
+    - any runtime fallback used by customer-facing routes
+  deferred_until_production_owner_switch_evidence:
+    - legacy runtime deletion
+    - route ownership manifest cleanup that changes live owner
+    - production_compat manifest cleanup with behavior change
+  not_safe_for_phase_7_first_batch:
+    - payment capture/refund/settlement
+    - OAuth callback cutover
+    - WeCom callback cutover
+    - timer/run-due/automation execution
+    - outbound send
+    - destructive migration
+    - delete_ready true for runtime
+
+cleanup_risk_matrix:
+  docs_tooling_state:
+    risk: low
+    behavior_change_expected: false
+    required_gate: package_checker_and_tests
+  direct_import_boundary:
+    risk: low_to_medium
+    behavior_change_expected: false
+    required_gate: behavior_equivalence_tests
+  exact_route_production_compat_cleanup:
+    risk: medium
+    behavior_change_expected: possible
+    required_gate: shadow_compare_and_rollback
+  fallback_removal:
+    risk: high
+    behavior_change_expected: true
+    required_gate: owner_approval_usage_evidence_rollback
+  legacy_runtime_deletion:
+    risk: high
+    behavior_change_expected: possible
+    required_gate: explicit_phase7_delete_gate
+
+phase_7b_candidate_selection:
+  selected_next_bundle: phase_7b_baseline_legacy_import_remediation_bundle
+  selected_reason: reduces known baseline legacy import blockers before any fallback or production_compat cleanup
+  behavior_change_allowed: false
+  fallback_removal_allowed: false
+  production_compat_change_allowed: false
+  legacy_runtime_deletion_allowed: false
+
+next:
+  - phase_7b_baseline_legacy_import_remediation_bundle
