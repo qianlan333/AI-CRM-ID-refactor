@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_5_external_adapter
-active_candidate: /api/h5/wechat/oauth*
-capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#731"
-last_attempted_action: phase_5s_oauth_identity_production_live_canary_execution_bundle
-last_created_pr: "#732"
-recommended_next_pr: phase_5t_oauth_identity_family_acceptance_bundle
+active_candidate: /api/admin/image-library*
+capability_owner: aicrm_next.media_library
+last_merged_pr: "#732"
+last_attempted_action: phase_5t_oauth_identity_family_acceptance_bundle
+last_created_pr: "#733"
+recommended_next_pr: phase_5u_media_upload_adapter_contract_fake_stub_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -272,9 +272,10 @@ completed_steps:
   - phase_5q_oauth_identity_staging_live_canary_evidence_completed
   - phase_5r_oauth_identity_production_canary_readiness_completed
   - phase_5s_oauth_identity_production_live_canary_execution_completed
+  - phase_5t_oauth_identity_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5t_oauth_identity_family_acceptance_bundle
+  - phase_5u_media_upload_adapter_contract_fake_stub_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -811,6 +812,25 @@ phase5s_oauth_identity_production_live_canary_execution:
   automation_execution_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5t_oauth_identity_family_acceptance_bundle
+
+phase5t_oauth_identity_family_acceptance:
+  status: phase_5t_oauth_identity_family_acceptance_completed
+  route_family: /api/h5/wechat/oauth*
+  capability_owner: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_decision: accepted_with_blocked_evidence_only
+  production_canary_passed: false
+  production_callback_cutover_enabled: false
+  production_session_write_enabled: false
+  production_identity_write_enabled: false
+  token_persistence_enabled: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  delete_ready: false
+  selected_next_bundle: phase_5u_media_upload_adapter_contract_fake_stub_bundle
+  next_route_family: /api/admin/image-library*
+  next_capability_owner: aicrm_next.media_library
 
 forbidden_without_owner_approval:
   - production owner switch
