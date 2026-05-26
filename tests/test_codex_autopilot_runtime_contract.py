@@ -1392,6 +1392,31 @@ def test_runner_treats_phase6f_external_adapter_readiness_artifacts_as_policy_fi
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6g_external_adapter_tooling_artifacts_as_policy_files() -> None:
+    terms = {
+        "live external call",
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "payment behavior",
+        "oauth callback cutover",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6g_low_risk_external_adapter_enablement_tooling.md",
+        "docs/development/phase_6g_low_risk_external_adapter_enablement_tooling.yaml",
+        "tools/check_phase6g_low_risk_external_adapter_enablement_tooling.py",
+        "tools/run_phase6g_media_adapter_enablement_gate.py",
+        "tools/run_phase6g_wecom_tags_enablement_gate.py",
+        "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
+        "tests/test_phase6g_low_risk_external_adapter_enablement_tooling.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:

@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6f_external_adapter_enablement_readiness
-active_candidate: external_adapter_enablement_readiness
+current_phase: phase_6g_low_risk_external_adapter_enablement_tooling
+active_candidate: low_risk_external_adapter_enablement_tooling
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#764"
-last_attempted_action: phase_6f_external_adapter_enablement_readiness_bundle
-last_created_pr: "#764"
-recommended_next_pr: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+last_merged_pr: "#765"
+last_attempted_action: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+last_created_pr: "#765"
+recommended_next_pr: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -382,8 +382,30 @@ completed_steps:
   - phase_6d_internal_metadata_owner_switch_batch_completed
   - phase_6e_internal_owner_switch_acceptance_completed
   - phase_6f_external_adapter_enablement_readiness_completed
+  - phase_6g_low_risk_external_adapter_enablement_tooling_completed
 
 next_allowed_actions: []
+
+phase6g_low_risk_external_adapter_enablement_tooling:
+  status: phase_6g_low_risk_external_adapter_enablement_tooling_completed
+  bundle_type: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+  selected_external_adapter_families:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  default_blocked: true
+  live_external_call_executed: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_triggered: false
+  automation_execution_triggered: false
+  outbound_send_executed: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
 
 phase6f_external_adapter_enablement_readiness:
   status: phase_6f_external_adapter_enablement_readiness_completed
