@@ -1,0 +1,118 @@
+version: 1
+status: phase_6l_phase6_aggregate_acceptance
+bundle_type: phase_6l_phase6_aggregate_acceptance_bundle
+route_family: phase_6_aggregate_acceptance
+
+phase_6_completed_inventory:
+  - phase_6a_owner_production_compat_readiness
+  - phase_6b_task_groups_owner_switch_canary_plan
+  - phase_6c_task_groups_owner_switch_tooling
+  - phase_6d_internal_metadata_owner_switch_batch
+  - phase_6e_internal_owner_switch_acceptance
+  - phase_6f_external_adapter_enablement_readiness
+  - phase_6g_low_risk_external_adapter_enablement_tooling
+  - phase_6h_production_compat_exact_route_narrowing_readiness
+  - phase_6i_external_enablement_and_compat_readiness_acceptance
+  - phase_6j_timer_execution_readiness
+  - phase_6k_single_scope_execution_canary_tooling
+
+production_behavior_summary:
+  production_owner_switches_executed: false
+  production_owner_switch_executed_routes: []
+  production_compat_behavior_changed: false
+  fallback_removed: false
+  timer_execution_default_on: false
+  run_due_execution_default_on: false
+  automation_execution_default_on: false
+  outbound_send: false
+  live_external_default_on: false
+  destructive_migration_executed: false
+  delete_ready: false
+
+internal_owner_switch_readiness:
+  status: accepted_for_owner_switch_canary_tooling
+  accepted_route_families:
+    - /api/admin/automation-conversion/task-groups*
+    - /api/admin/automation-conversion/workflow-nodes*
+    - /api/admin/automation-conversion/agent-outputs*
+  production_owner_switch_executed: false
+  fallback_retained: true
+  production_compat_unchanged: true
+
+external_adapter_enablement_readiness:
+  status: accepted_for_owner_reviewed_enablement_tooling
+  accepted_families:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  excluded_due_to_high_risk:
+    - payment_commerce
+    - oauth_identity_callback
+    - wecom_customer_contact_callback
+  needs_followup_before_enablement:
+    - questionnaire_external_submit
+  live_external_default_on: false
+  outbound_send: false
+
+production_compat_exact_route_narrowing_readiness:
+  status: accepted_for_phase7_explicit_package_only
+  accepted_exact_routes:
+    - GET /api/admin/automation-conversion/task-groups
+    - GET /api/admin/automation-conversion/workflow-nodes
+  blocked_evidence_only_routes:
+    - GET /api/admin/image-library
+    - GET /api/admin/image-library/facets
+    - GET /api/admin/wecom/tags
+    - GET /api/admin/wecom/tags/live/gate
+    - GET /mcp
+  production_compat_behavior_changed: false
+  wildcard_narrowing_executed: false
+  fallback_removed: false
+
+execution_readiness_canary_tooling:
+  status: accepted_for_blocked_single_scope_dry_run_shadow_run_tooling
+  selected_execution_candidate: /api/admin/automation-conversion/workflow-nodes*
+  runner: tools/run_phase6k_single_scope_execution_canary.py
+  default_blocked: true
+  timer_execution_actual: false
+  run_due_execution_actual: false
+  automation_execution_actual: false
+  outbound_send_actual: false
+  live_external_call_actual: false
+
+phase_7_readiness_candidates:
+  owner_switch_tooling_candidates:
+    - /api/admin/automation-conversion/task-groups*
+    - /api/admin/automation-conversion/workflow-nodes*
+    - /api/admin/automation-conversion/agent-outputs*
+  external_owner_review_candidates:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  production_compat_cleanup_candidates:
+    - GET /api/admin/automation-conversion/task-groups
+    - GET /api/admin/automation-conversion/workflow-nodes
+  execution_canary_candidate:
+    - /api/admin/automation-conversion/workflow-nodes*
+
+phase_7_deferrals:
+  fallback_removal_requires_phase7_approval: true
+  production_compat_cleanup_requires_phase7_explicit_package: true
+  legacy_retirement_requires_phase7_explicit_package: true
+  payment_requires_higher_approval: true
+  oauth_callback_cutover_requires_higher_approval: true
+  wecom_callback_cutover_requires_higher_approval: true
+  outbound_send_requires_higher_approval: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  fallback_retained: true
+  production_compat_unchanged: true
+  no_default_execution: true
+  no_outbound_send: true
+  no_default_live_external_call: true
+  delete_ready_false: true
+
+next:
+  - phase_7a_legacy_retirement_readiness_bundle
+
