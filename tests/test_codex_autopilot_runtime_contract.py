@@ -18,13 +18,13 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_generates_phase_7b_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_generates_phase_7c_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
     report = runner.main(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
     assert report == 0
     assert prompt.exists() is True
     text = prompt.read_text(encoding="utf-8")
-    assert "phase_7b_baseline_legacy_import_remediation_bundle" in text
+    assert "phase_7c_delete_ready_candidate_selection_bundle" in text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -1518,10 +1518,15 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/phase_6l_phase6_aggregate_acceptance.yaml",
         "docs/development/phase_7a_legacy_retirement_readiness.md",
         "docs/development/phase_7a_legacy_retirement_readiness.yaml",
+        "docs/development/phase_7b_baseline_legacy_import_remediation.md",
+        "docs/development/phase_7b_baseline_legacy_import_remediation.yaml",
+        "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
         "tools/check_phase7a_legacy_retirement_readiness.py",
+        "tools/check_phase7b_baseline_legacy_import_remediation.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
+        "tests/test_phase7b_baseline_legacy_import_remediation.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
