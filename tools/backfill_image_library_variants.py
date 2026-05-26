@@ -73,23 +73,41 @@ def _upsert_variants(cur: Any, image: dict[str, Any]) -> None:
         )
 
 
-def run(*, database_url: str, dry_run: bool, limit: int, batch_size: int) -> dict[str, int]:
-    stats = {"processed": 0, "succeeded": 0, "failed": 0, "skipped": 0}
+def _variants_table_exists(cur: Any) -> bool:
+    cur.execute("SELECT to_regclass('public.image_library_variants') AS table_name")
+    return bool((cur.fetchone() or {}).get("table_name"))
+
+
+def run(*, database_url: str, dry_run: bool, limit: int, batch_size: int, image_id: int | None = None) -> dict[str, int]:
+    stats = {"processed": 0, "generated": 0, "failed": 0, "skipped": 0}
     with _connect(database_url) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT img.id, img.data_base64, img.mime_type, img.source_url
-                FROM image_library AS img
+            if not _variants_table_exists(cur):
+                print("image_library_variants table does not exist; generated=0 skipped=0 failed=0")
+                return stats
+            where = ""
+            params: list[Any] = []
+            if image_id is not None:
+                where = "WHERE img.id = %s"
+                params.append(image_id)
+            else:
+                where = """
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM image_library_variants AS v
                     WHERE v.image_id = img.id AND v.variant_key = 'thumb_320'
                 )
+                """
+            params.append(limit)
+            cur.execute(
+                f"""
+                SELECT img.id, img.data_base64, img.mime_type, img.source_url
+                FROM image_library AS img
+                {where}
                 ORDER BY img.id
                 LIMIT %s
                 """,
-                (limit,),
+                tuple(params),
             )
             rows = [dict(row) for row in cur.fetchall() or []]
         for start in range(0, len(rows), batch_size):
@@ -103,7 +121,7 @@ def run(*, database_url: str, dry_run: bool, limit: int, batch_size: int) -> dic
                     try:
                         if not dry_run:
                             _upsert_variants(cur, image)
-                        stats["succeeded"] += 1
+                        stats["generated"] += 1
                     except Exception as exc:
                         stats["failed"] += 1
                         print(f"failed image_id={image.get('id')}: {exc}")
@@ -120,11 +138,12 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument("--image-id", type=int, default=None)
     args = parser.parse_args()
     if not args.database_url:
         parser.error("--database-url or AICRM_MEDIA_LIBRARY_DATABASE_URL/DATABASE_URL is required")
-    stats = run(database_url=args.database_url, dry_run=args.dry_run, limit=max(1, args.limit), batch_size=max(1, args.batch_size))
-    print("processed={processed} succeeded={succeeded} failed={failed} skipped={skipped}".format(**stats))
+    stats = run(database_url=args.database_url, dry_run=args.dry_run, limit=max(1, args.limit), batch_size=max(1, args.batch_size), image_id=args.image_id)
+    print("processed={processed} generated={generated} failed={failed} skipped={skipped}".format(**stats))
     return 0 if stats["failed"] == 0 else 1
 
 

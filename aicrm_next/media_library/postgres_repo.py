@@ -5,10 +5,19 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import requests
+
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .repo import MediaLibraryRepository, normalize_tags
-from .variants import add_image_variant_urls, generate_image_variants, variant_bytes
+from .variants import (
+    THUMBNAIL_SIZE_TO_VARIANT,
+    add_image_variant_urls,
+    decode_image_base64,
+    generate_image_variants,
+    make_thumbnail_bytes,
+    variant_bytes,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +78,7 @@ class PostgresMediaLibraryRepository:
 
     def __init__(self, database_url: str) -> None:
         self._database_url = _psycopg_url(database_url)
+        self._variants_table_available: bool | None = None
 
     def _connect(self):
         import psycopg
@@ -118,6 +128,8 @@ class PostgresMediaLibraryRepository:
         image_id_int = int(image_id)
         with self._connect() as conn:
             with conn.cursor() as cur:
+                if not self._image_variants_table_exists(cur):
+                    return None
                 variant = self._fetch_variant(cur, image_id_int, variant_key)
                 if not variant:
                     cur.execute("SELECT * FROM image_library WHERE id = %s", (image_id_int,))
@@ -131,6 +143,45 @@ class PostgresMediaLibraryRepository:
             return None
         payload = variant_bytes(variant)
         return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
+
+    def get_image_thumbnail(self, image_id: str, size: int) -> dict[str, Any] | None:
+        if size not in THUMBNAIL_SIZE_TO_VARIANT:
+            raise ContractError("thumbnail size must be one of 160, 320, 720")
+        try:
+            image_id_int = int(image_id)
+        except (TypeError, ValueError):
+            return None
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if self._image_variants_table_exists(cur):
+                    variant = self._fetch_variant(cur, image_id_int, THUMBNAIL_SIZE_TO_VARIANT[size])
+                    if variant and str(variant.get("mime_type") or "").split(";")[0] in {"image/png", "image/jpeg"}:
+                        payload = variant_bytes(variant)
+                        return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
+                cur.execute("SELECT id, data_base64, mime_type, source_url FROM image_library WHERE id = %s", (image_id_int,))
+                image = cur.fetchone()
+        if not image:
+            return None
+        data_base64 = str(image.get("data_base64") or "")
+        mime_type = str(image.get("mime_type") or "image/png")
+        if data_base64:
+            data = decode_image_base64(data_base64)
+        elif image.get("source_url"):
+            try:
+                response = requests.get(str(image.get("source_url")), timeout=10)
+                response.raise_for_status()
+                data = response.content
+                mime_type = response.headers.get("content-type", mime_type).split(";")[0] or mime_type
+            except Exception as exc:
+                raise ContractError("image source_url is unavailable") from exc
+        else:
+            data = b""
+        return make_thumbnail_bytes(
+            image_id=image_id_int,
+            data=data,
+            mime_type=mime_type,
+            size=size,
+        )
 
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]:
         if kind == "image":
@@ -216,14 +267,31 @@ class PostgresMediaLibraryRepository:
                     f"SELECT * FROM {table}{where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s",
                     tuple(params + [limit, offset]),
                 )
-                rows = [self._serialize(kind, dict(row), include_data=False) for row in cur.fetchall() or []]
+                use_thumbnail_fallback = kind in {"image", "miniprogram"} and not self._image_variants_table_exists(cur)
+                rows = [
+                    self._serialize(kind, dict(row), include_data=False, use_thumbnail_fallback=use_thumbnail_fallback)
+                    for row in cur.fetchall() or []
+                ]
                 if kind == "image":
                     self._attach_image_variant_dimensions(cur, rows)
         return {"items": rows, "total": total, "limit": limit, "offset": offset}
 
+    def _image_variants_table_exists(self, cur: Any) -> bool:
+        if self._variants_table_available is not None:
+            return self._variants_table_available
+        try:
+            cur.execute("SELECT to_regclass('public.image_library_variants') AS table_name")
+            self._variants_table_available = bool((cur.fetchone() or {}).get("table_name"))
+        except Exception:
+            logger.debug("image_library_variants table availability check failed", exc_info=True)
+            self._variants_table_available = False
+        return self._variants_table_available
+
     def _attach_image_variant_dimensions(self, cur: Any, rows: list[dict[str, Any]]) -> None:
         image_ids = [int(item["id"]) for item in rows if item.get("id")]
         if not image_ids:
+            return
+        if not self._image_variants_table_exists(cur):
             return
         try:
             cur.execute(
@@ -244,6 +312,8 @@ class PostgresMediaLibraryRepository:
             item["height"] = int(variant.get("height") or item.get("height") or 0)
 
     def _fetch_variant(self, cur: Any, image_id: int, variant_key: str) -> dict[str, Any] | None:
+        if not self._image_variants_table_exists(cur):
+            return None
         cur.execute(
             """
             SELECT image_id, variant_key, storage_backend, storage_key, public_url,
@@ -258,6 +328,8 @@ class PostgresMediaLibraryRepository:
         return dict(row) if row else None
 
     def _ensure_image_variants(self, cur: Any, image: dict[str, Any]) -> None:
+        if not self._image_variants_table_exists(cur):
+            return
         image_id = int(image.get("id") or 0)
         variants = generate_image_variants(
             image_id=image_id,
@@ -541,7 +613,7 @@ class PostgresMediaLibraryRepository:
                 campaign_steps = [dict(row) for row in cur.fetchall() or []]
         return {"miniprograms": miniprograms, "campaign_steps": campaign_steps}
 
-    def _serialize(self, kind: str, row: dict[str, Any], *, include_data: bool) -> dict[str, Any]:
+    def _serialize(self, kind: str, row: dict[str, Any], *, include_data: bool, use_thumbnail_fallback: bool = False) -> dict[str, Any]:
         if kind == "image":
             item = {
                 "id": int(row.get("id") or 0),
@@ -564,7 +636,7 @@ class PostgresMediaLibraryRepository:
                 "created_at": _iso(row.get("created_at")),
                 "updated_at": _iso(row.get("updated_at")),
             }
-            add_image_variant_urls(item)
+            add_image_variant_urls(item, use_thumbnail_fallback=use_thumbnail_fallback)
             if include_data:
                 item["data_base64"] = str(row.get("data_base64") or "")
                 item["data_url"] = f"data:{item['mime_type']};base64,{item['data_base64']}"
@@ -588,7 +660,7 @@ class PostgresMediaLibraryRepository:
             }
             thumb_image_id = item.get("thumb_image_id")
             if thumb_image_id not in (None, ""):
-                add_image_variant_urls(item, thumb_image_id)
+                add_image_variant_urls(item, thumb_image_id, use_thumbnail_fallback=use_thumbnail_fallback)
             return item
         item = {
             "id": int(row.get("id") or 0),

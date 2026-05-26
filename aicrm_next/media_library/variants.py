@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 
+from aicrm_next.shared.errors import ContractError
+
 
 VARIANT_KEYS = {"original", "thumb_160", "thumb_320", "preview_720"}
+THUMBNAIL_SIZE_TO_VARIANT = {160: "thumb_160", 320: "thumb_320", 720: "preview_720"}
+ALLOWED_THUMBNAIL_SIZES = set(THUMBNAIL_SIZE_TO_VARIANT)
 
 
 @dataclass(frozen=True)
@@ -43,15 +48,29 @@ def variant_url(image_id: int | str, variant_key: str) -> str:
     return f"/api/admin/image-library/{image_id}/variants/{variant_key}"
 
 
-def add_image_variant_urls(item: dict[str, Any], image_id: int | str | None = None) -> dict[str, Any]:
+def thumbnail_url(image_id: int | str, size: int, updated_at: str = "") -> str:
+    url = f"/api/admin/image-library/{image_id}/thumbnail?size={size}"
+    if updated_at:
+        url += f"&v={updated_at}"
+    return url
+
+
+def add_image_variant_urls(item: dict[str, Any], image_id: int | str | None = None, *, use_thumbnail_fallback: bool = False) -> dict[str, Any]:
     target_id = image_id if image_id not in (None, "") else item.get("id")
     if target_id in (None, ""):
         return item
-    item["thumb_160_url"] = variant_url(target_id, "thumb_160")
-    item["thumb_320_url"] = variant_url(target_id, "thumb_320")
-    item["thumb_url"] = item["thumb_320_url"]
-    item["preview_url"] = variant_url(target_id, "preview_720")
-    item["original_url"] = variant_url(target_id, "original")
+    updated_at = str(item.get("updated_at") or "")
+    if use_thumbnail_fallback:
+        item["thumb_160_url"] = thumbnail_url(target_id, 160, updated_at)
+        item["thumb_320_url"] = thumbnail_url(target_id, 320, updated_at)
+        item["thumb_url"] = item["thumb_160_url"]
+        item["preview_url"] = thumbnail_url(target_id, 720, updated_at)
+    else:
+        item["thumb_160_url"] = variant_url(target_id, "thumb_160")
+        item["thumb_320_url"] = variant_url(target_id, "thumb_320")
+        item["thumb_url"] = item["thumb_320_url"]
+        item["preview_url"] = variant_url(target_id, "preview_720")
+        item["original_url"] = variant_url(target_id, "original")
     item.setdefault("width", 0)
     item.setdefault("height", 0)
     return item
@@ -91,6 +110,19 @@ def _encode_image(image: Any, source_mime_type: str) -> tuple[bytes, str]:
     return output.getvalue(), mime_type
 
 
+def _encode_thumbnail_image(image: Any, source_mime_type: str) -> tuple[bytes, str]:
+    has_alpha = image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in getattr(image, "info", {}))
+    if has_alpha or source_mime_type == "image/png":
+        output = BytesIO()
+        image.save(output, "PNG", optimize=True)
+        return output.getvalue(), "image/png"
+    if image.mode not in {"RGB", "L"}:
+        image = image.convert("RGB")
+    output = BytesIO()
+    image.save(output, "JPEG", quality=82, optimize=True)
+    return output.getvalue(), "image/jpeg"
+
+
 def _fallback_variants(image_id: int | str, raw: bytes, mime_type: str, data_base64: str) -> dict[str, ImageVariant]:
     payload = data_base64 or base64.b64encode(raw).decode("ascii")
     size = len(raw)
@@ -113,7 +145,10 @@ def _fallback_variants(image_id: int | str, raw: bytes, mime_type: str, data_bas
 
 
 def generate_image_variants(*, image_id: int | str, data_base64: str, mime_type: str) -> dict[str, ImageVariant]:
-    raw = base64.b64decode(data_base64 or "", validate=False)
+    try:
+        raw = base64.b64decode(data_base64 or "", validate=False)
+    except (binascii.Error, ValueError):
+        raw = b""
     if not raw:
         raw = b""
     try:
@@ -163,5 +198,54 @@ def generate_image_variants(*, image_id: int | str, data_base64: str, mime_type:
 
 
 def variant_bytes(variant: dict[str, Any]) -> bytes:
-    return base64.b64decode(str(variant.get("data_base64") or ""), validate=False)
+    try:
+        return base64.b64decode(str(variant.get("data_base64") or ""), validate=False)
+    except (binascii.Error, ValueError) as exc:
+        raise ContractError("invalid image data") from exc
 
+
+def make_thumbnail_bytes(*, image_id: int | str, data: bytes, mime_type: str, size: int) -> dict[str, Any]:
+    if size not in ALLOWED_THUMBNAIL_SIZES:
+        raise ContractError("thumbnail size must be one of 160, 320, 720")
+    if not data:
+        raise ContractError("image data is empty")
+    try:
+        from PIL import Image, ImageOps, UnidentifiedImageError
+
+        source = Image.open(BytesIO(data))
+        source = ImageOps.exif_transpose(source)
+    except UnidentifiedImageError as exc:
+        raise ContractError("unsupported image type") from exc
+    except Exception as exc:
+        raise ContractError("invalid image data") from exc
+
+    try:
+        if size in {160, 320}:
+            if source.width <= size and source.height <= size:
+                image = source.copy()
+            else:
+                image = ImageOps.fit(source, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        else:
+            image = source.copy()
+            image.thumbnail((size, size), Image.Resampling.LANCZOS)
+        payload, out_mime = _encode_thumbnail_image(image, mime_type or "image/png")
+    except Exception as exc:
+        raise ContractError("invalid image data") from exc
+    return {
+        "image_id": image_id,
+        "variant_key": THUMBNAIL_SIZE_TO_VARIANT[size],
+        "mime_type": out_mime,
+        "width": int(image.width or 0),
+        "height": int(image.height or 0),
+        "file_size": len(payload),
+        "checksum": _checksum(payload),
+        "bytes": payload,
+        "etag": '"' + _checksum(payload) + '"',
+    }
+
+
+def decode_image_base64(data_base64: str) -> bytes:
+    try:
+        return base64.b64decode(str(data_base64 or ""), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ContractError("invalid image data") from exc

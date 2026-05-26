@@ -85,6 +85,19 @@ class GetImageVariantQuery:
         return {"ok": True, "variant": variant}
 
 
+class GetImageThumbnailQuery:
+    def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
+        self._repo = repo or build_media_library_repository()
+
+    def __call__(self, image_id: str, size: int) -> dict[str, Any]:
+        thumbnail = self._repo.get_image_thumbnail(image_id, size)
+        if not thumbnail:
+            from aicrm_next.shared.errors import NotFoundError
+
+            raise NotFoundError("image item not found")
+        return {"ok": True, "thumbnail": thumbnail}
+
+
 class UpsertMediaItemCommand:
     def __init__(self, kind: str, repo: MediaLibraryRepository | None = None) -> None:
         self._kind = kind

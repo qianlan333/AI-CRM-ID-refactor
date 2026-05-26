@@ -11,6 +11,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from .application import (
     DeleteMediaItemCommand,
     GetMediaItemQuery,
+    GetImageThumbnailQuery,
     GetImageVariantQuery,
     ImportImageFromBase64Command,
     ImportImageFromUrlCommand,
@@ -118,6 +119,29 @@ def get_image(image_id: str, include_data: bool = False, variant: str = "") -> d
         return result
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/image-library/{image_id}/thumbnail")
+def get_image_thumbnail(
+    image_id: str,
+    size: int = Query(160),
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+) -> Response:
+    if size not in {160, 320, 720}:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "thumbnail size must be one of 160, 320, 720"})
+    try:
+        result = GetImageThumbnailQuery()(image_id, size)
+        thumbnail = result["thumbnail"]
+        etag = str(thumbnail.get("etag") or "")
+        headers = {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "ETag": etag,
+        }
+        if if_none_match and etag and if_none_match == etag:
+            return Response(status_code=304, headers=headers)
+        return Response(content=thumbnail.get("bytes") or b"", media_type=str(thumbnail.get("mime_type") or "image/png"), headers=headers)
+    except Exception as exc:
+        return _error_response(exc)
 
 
 @router.get("/api/admin/image-library/{image_id}/variants/{variant_key}")
