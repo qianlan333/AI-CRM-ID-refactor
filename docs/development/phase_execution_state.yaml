@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_5_external_adapter
+current_phase: phase_5_external_adapter_completed
 active_candidate: /api/h5/questionnaires*
 capability_owner: aicrm_next.questionnaire
-last_merged_pr: "#753"
-last_attempted_action: phase_5ao_questionnaire_external_submit_family_acceptance_bundle
-last_created_pr: "#753"
-recommended_next_pr: phase_5_aggregate_acceptance_review_bundle
+last_merged_pr: "#755"
+last_attempted_action: phase_5_aggregate_acceptance_review_bundle
+last_created_pr: "#755"
+recommended_next_pr: none_phase_5_complete
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -375,9 +375,9 @@ completed_steps:
   - phase_5am_questionnaire_external_submit_staging_canary_evidence_completed
   - phase_5an_questionnaire_external_submit_production_canary_readiness_completed
   - phase_5ao_questionnaire_external_submit_family_acceptance_completed
+  - phase_5_aggregate_acceptance_review_completed
 
-next_allowed_actions:
-  - phase_5_aggregate_acceptance_review_bundle
+next_allowed_actions: []
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1484,6 +1484,21 @@ phase5ao_questionnaire_external_submit_family_acceptance:
   production_compat_changed: false
   delete_ready: false
   recommended_next_bundle: phase_5_aggregate_acceptance_review_bundle
+
+phase5_aggregate_acceptance_review:
+  status: phase_5_aggregate_acceptance_review_completed
+  bundle_type: phase_5_external_adapter_aggregate_acceptance_review_bundle
+  all_selected_families_acceptance_complete: true
+  live_capabilities_remain_behind_explicit_gates: true
+  production_owner_switch_deferred_to_phase_6: true
+  fallback_removal_deferred_to_phase_7: true
+  production_compat_narrowing_deferred_to_phase_6_or_7: true
+  wider_rollout_authorized: false
+  default_live_external_call_enabled: false
+  outbound_send_enabled: false
+  timer_or_automation_execution_enabled: false
+  delete_ready: false
+  recommended_next_bundle: none_phase_5_complete
 
 forbidden_without_owner_approval:
   - production owner switch
