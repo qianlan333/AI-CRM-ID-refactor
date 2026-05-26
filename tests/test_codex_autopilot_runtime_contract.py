@@ -18,15 +18,13 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_generates_phase_7b_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
     report = runner.main(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
     assert report == 0
-    assert prompt.exists() is False
-    owner_package = Path("/tmp/aicrm_codex_owner_decision_package.md")
-    assert owner_package.exists()
-    text = owner_package.read_text(encoding="utf-8")
-    assert "phase_execution_state has no next_allowed_actions" in text
+    assert prompt.exists() is True
+    text = prompt.read_text(encoding="utf-8")
+    assert "phase_7b_baseline_legacy_import_remediation_bundle" in text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -1518,8 +1516,12 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
     paths = {
         "docs/development/phase_6l_phase6_aggregate_acceptance.md",
         "docs/development/phase_6l_phase6_aggregate_acceptance.yaml",
+        "docs/development/phase_7a_legacy_retirement_readiness.md",
+        "docs/development/phase_7a_legacy_retirement_readiness.yaml",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
+        "tools/check_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
+        "tests/test_phase7a_legacy_retirement_readiness.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
