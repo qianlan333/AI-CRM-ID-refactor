@@ -44,10 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5an_questionnaire_external_submit_production_canary_readiness_bundle",
+    "phase_5ao_questionnaire_external_submit_family_acceptance_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS = {
-    "phase_5an_questionnaire_external_submit_production_canary_readiness_bundle",
+    "phase_5ao_questionnaire_external_submit_family_acceptance_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -152,6 +152,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5ak_questionnaire_external_submit_contract_fake_stub_completed",
     "phase_5al_questionnaire_external_submit_live_adapter_behind_flag_completed",
     "phase_5am_questionnaire_external_submit_staging_canary_evidence_completed",
+    "phase_5an_questionnaire_external_submit_production_canary_readiness_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -394,8 +395,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must select the Phase 5 questionnaire external submit candidate")
     if state.get("capability_owner") != "aicrm_next.questionnaire":
         blockers.append("capability_owner must be aicrm_next.questionnaire")
-    if state.get("last_merged_pr") != "#751":
-        blockers.append("last_merged_pr must record latest completed merged PR #751")
+    if state.get("last_merged_pr") != "#752":
+        blockers.append("last_merged_pr must record latest completed merged PR #752")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
