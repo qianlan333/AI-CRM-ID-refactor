@@ -1,0 +1,101 @@
+version: 1
+status: phase_5ab_payment_commerce_staging_sandbox_canary_evidence
+bundle_type: phase_5_external_adapter_staging_sandbox_canary_evidence_bundle
+route_family: /api/admin/wechat-pay*
+capability_owner: aicrm_next.commerce
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  staging_sandbox_canary_possible_with_approval: true
+  real_payment_capture_authorized: false
+  real_refund_authorized: false
+  real_settlement_authorized: false
+  real_charge_authorized: false
+  production_provider_call_authorized: false
+  production_payment_webhook_cutover_authorized: false
+  production_order_state_mutation_authorized: false
+  financial_reconciliation_mutation_authorized: false
+  raw_payment_secret_output_authorized: false
+  token_persistence_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  media_live_upload_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+staging_sandbox_canary:
+  runner: tools/run_phase5ab_payment_commerce_staging_sandbox_canary_evidence.py
+  default_blocked: true
+  single_synthetic_order_only: true
+  batch_replay_allowed: false
+  sandbox_mode_required: true
+  no_real_money_movement_required: true
+  required_env:
+    - AICRM_PAYMENT_COMMERCE_LIVE_ADAPTER_ENABLED
+    - AICRM_PAYMENT_COMMERCE_LIVE_CALL_APPROVED
+    - AICRM_PAYMENT_COMMERCE_PROVIDER_CONFIG_REVIEWED
+    - AICRM_PAYMENT_COMMERCE_SANDBOX_MODE_APPROVED
+    - AICRM_PAYMENT_COMMERCE_NO_MONEY_MOVEMENT_CONFIRMED
+    - AICRM_PHASE5AB_PAYMENT_COMMERCE_STAGING_SANDBOX_APPROVED
+    - AICRM_PHASE5AB_PAYMENT_COMMERCE_TARGET_APPROVED
+  required_args:
+    - --execute-staging-sandbox-canary
+    - --synthetic-order-id
+    - --idempotency-key
+    - --confirm-no-real-money-movement
+    - --confirm-sandbox-only
+    - --confirm-no-production-order-mutation
+    - --confirm-no-webhook-cutover
+
+target_safety:
+  single_synthetic_order_only: true
+  batch_replay_allowed: false
+  production_order_mutation_allowed: false
+  production_webhook_cutover_allowed: false
+  real_financial_success_claim_allowed: false
+  raw_secret_output_forbidden: true
+  provider_secret_redaction_required: true
+
+production_readiness_review:
+  runner: tools/run_phase5ab_payment_commerce_production_readiness_review.py
+  production_provider_call_executed: false
+  real_money_movement_executed: false
+  production_order_state_mutation_executed: false
+  production_payment_webhook_cutover_executed: false
+  requires_staging_evidence_json: true
+
+side_effect_safety:
+  real_payment_capture_allowed: false
+  real_refund_allowed: false
+  real_settlement_allowed: false
+  real_charge_allowed: false
+  production_provider_call_allowed: false
+  production_payment_webhook_cutover_allowed: false
+  production_order_state_mutation_allowed: false
+  financial_reconciliation_mutation_allowed: false
+  raw_secret_output_allowed: false
+  token_persistence_allowed: false
+  outbound_send_allowed: false
+  media_upload_allowed: false
+  oauth_callback_allowed: false
+  wecom_call_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_real_money_movement: true
+  webhook_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5ac_payment_commerce_production_canary_readiness_bundle
+  route_family: /api/admin/wechat-pay*
