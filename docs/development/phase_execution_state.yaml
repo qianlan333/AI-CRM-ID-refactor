@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /mcp
 capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#744"
-last_attempted_action: phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle
-last_created_pr: "#744"
-recommended_next_pr: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle
+last_merged_pr: "#745"
+last_attempted_action: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle
+last_created_pr: "#745"
+recommended_next_pr: phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -59,6 +59,9 @@ guarded_disabled_runtime_slices:
   - route_family: /api/admin/wechat-pay*
     slice: payment_commerce_live_adapter_behind_explicit_flag
     scope: disabled_by_default_sandbox_no_money_movement_only
+  - route_family: /mcp
+    slice: openclaw_mcp_ai_assist_live_adapter_behind_explicit_flag
+    scope: disabled_by_default_explicit_approval_only
 repository_adapter_parity_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_sqlalchemy_test_db_parity
@@ -138,7 +141,10 @@ staging_readiness_slices:
     scope: blocked_by_default_sandbox_no_money_movement_only
   - route_family: /api/admin/wechat-pay*
     slice: payment_commerce_staging_sandbox_canary_evidence_gate
-    scope: blocked_by_default_single_synthetic_order_no_money_movement
+    scope: blocked_by_default_sandbox_no_money_movement_only
+  - route_family: /mcp
+    slice: openclaw_mcp_ai_assist_live_staging_evidence_gate
+    scope: blocked_by_default_explicit_approval_only
 production_dry_run_readiness_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_production_readonly_dry_run_readiness
@@ -212,6 +218,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/admin/wechat-pay*
     slice: payment_commerce_production_canary_tooling
     scope: blocked_by_default_single_synthetic_target_no_money_movement
+  - route_family: /mcp
+    slice: openclaw_mcp_ai_assist_live_production_dry_run_gate
+    scope: readiness_only_no_live_call_no_outbound_send_no_automation
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -330,9 +339,10 @@ completed_steps:
   - phase_5ad_payment_commerce_production_canary_tooling_completed
   - phase_5ae_payment_commerce_family_acceptance_completed
   - phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_completed
+  - phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed
 
 next_allowed_actions:
-  - phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle
+  - phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1216,6 +1226,38 @@ phase5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub:
   automation_execution_authorized: false
   delete_ready: false
   recommended_next_bundle: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle
+
+phase5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag:
+  status: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed
+  route_family: /mcp
+  related_capability_surfaces:
+    - /api/admin/ai-assist/contract
+    - /api/admin/cloud-orchestrator/campaigns/run-due*
+  capability_owner: aicrm_next.integration_gateway
+  related_capability_owner: aicrm_next.ai_assist
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+  live_adapter_code_authorized: true
+  live_call_disabled_by_default: true
+  default_gateway_disabled: true
+  staging_evidence_runner_completed: true
+  production_dry_run_gate_completed: true
+  checker_completed: true
+  tests_completed: true
+  real_mcp_call_by_default_authorized: false
+  real_openclaw_call_by_default_authorized: false
+  real_llm_call_by_default_authorized: false
+  deepseek_call_by_default_authorized: false
+  outbound_send_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  prompt_or_context_leak_authorized: false
+  credential_output_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

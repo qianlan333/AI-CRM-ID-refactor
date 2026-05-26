@@ -92,6 +92,8 @@ LOW_RISK_EXACT = {
     "tools/run_phase5ad_payment_commerce_production_canary_cleanup.py",
     "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_staging_smoke.py",
     "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_production_dry_run.py",
+    "tools/run_phase5ag_openclaw_mcp_ai_assist_live_staging_evidence.py",
+    "tools/run_phase5ag_openclaw_mcp_ai_assist_live_production_dry_run_gate.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -134,6 +136,8 @@ AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
     "aicrm_next/integration_gateway/media_live_gateway.py",
     "aicrm_next/integration_gateway/payment_commerce_live_adapter.py",
     "aicrm_next/integration_gateway/payment_commerce_live_gateway.py",
+    "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_adapter.py",
+    "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_gateway.py",
 }
 OWNER_DECISION_PACKAGE_PATHS = {
     "docs/development/phase_4am_action_templates_owner_decision_package.md",
@@ -321,6 +325,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5ae_payment_commerce_family_acceptance.yaml",
         "docs/development/phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.md",
         "docs/development/phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.yaml",
+        "docs/development/phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.md",
+        "docs/development/phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -526,6 +532,10 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_staging_smoke.py",
         "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_production_dry_run.py",
         "tests/test_phase5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.py",
+        "tools/check_phase5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.py",
+        "tools/run_phase5ag_openclaw_mcp_ai_assist_live_staging_evidence.py",
+        "tools/run_phase5ag_openclaw_mcp_ai_assist_live_production_dry_run_gate.py",
+        "tests/test_phase5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",

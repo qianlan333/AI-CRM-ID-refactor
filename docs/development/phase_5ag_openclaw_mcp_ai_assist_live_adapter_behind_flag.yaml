@@ -1,0 +1,107 @@
+version: 1
+status: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_explicit_flag
+bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+route_family: /mcp
+related_capability_surfaces:
+  - /api/admin/ai-assist/contract
+  - /api/admin/cloud-orchestrator/campaigns/run-due*
+capability_owner: aicrm_next.integration_gateway
+related_capability_owner: aicrm_next.ai_assist
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  live_adapter_code_authorized: true
+  real_mcp_call_by_default_authorized: false
+  real_openclaw_call_by_default_authorized: false
+  real_llm_call_by_default_authorized: false
+  deepseek_call_by_default_authorized: false
+  outbound_send_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  prompt_or_context_leak_authorized: false
+  credential_output_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+live_adapter:
+  default_enabled: false
+  gateway_default_disabled: true
+  required_env:
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_LIVE_ADAPTER_ENABLED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_LIVE_CALL_APPROVED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_CONFIG_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_ENDPOINT_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_CREDENTIAL_SOURCE_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_PROMPT_REDACTION_CONFIRMED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_NO_OUTBOUND_SEND_CONFIRMED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_NO_AUTOMATION_EXECUTION_CONFIRMED
+  required_inputs:
+    - operator
+    - idempotency_key
+    - prompt_or_tool_payload
+  methods:
+    - call_mcp_tool_live
+    - push_openclaw_context_live
+    - run_ai_assist_completion_live
+
+redaction_policy:
+  prompt_redaction_required: true
+  context_redaction_required: true
+  credential_redaction_required: true
+  raw_prompt_output_allowed: false
+  raw_context_output_allowed: false
+  raw_credential_output_allowed: false
+
+idempotency_policy:
+  idempotency_key_required_for_live_like_gate: true
+  replay_same_hash: true
+  conflict_different_hash: true
+  retry_safe_when_blocked_before_live_call: true
+  no_partial_external_side_effect_before_gate: true
+
+timeout_policy:
+  timeout_seconds_documented: true
+  live_timeout_execution_enabled_by_default: false
+  retry_backoff_execution_enabled_by_default: false
+
+staging_evidence:
+  runner: tools/run_phase5ag_openclaw_mcp_ai_assist_live_staging_evidence.py
+  default_blocked: true
+  dry_run_live_gate_supported: true
+  execute_staging_live_requires_approval: true
+  real_mcp_call_executed_by_default: false
+  real_openclaw_call_executed_by_default: false
+  real_llm_call_executed_by_default: false
+  outbound_send_executed: false
+  automation_execution_executed: false
+
+production_dry_run_gate:
+  runner: tools/run_phase5ag_openclaw_mcp_ai_assist_live_production_dry_run_gate.py
+  production_live_call_executed: false
+  outbound_send_executed: false
+  automation_execution_executed: false
+
+side_effect_safety:
+  real_mcp_call_allowed_by_default: false
+  real_openclaw_call_allowed_by_default: false
+  real_llm_call_allowed_by_default: false
+  deepseek_call_allowed_by_default: false
+  outbound_send_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+  prompt_raw_output_allowed: false
+  credential_output_allowed: false
+  production_write_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  route_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle
+  route_family: /mcp
