@@ -1,0 +1,126 @@
+version: 1
+status: phase_6h_production_compat_exact_route_narrowing_readiness_no_behavior_change
+bundle_type: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
+
+authorizations:
+  production_compat_behavior_change_authorized: false
+  wildcard_narrowing_authorized: false
+  manifest_write_authorized_default: false
+  fallback_removal_authorized: false
+  production_owner_switch_authorized: false
+  live_external_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+
+candidate_exact_routes:
+  - source: internal_accepted
+    route_family: /api/admin/automation-conversion/task-groups*
+    method: GET
+    exact_route: /api/admin/automation-conversion/task-groups
+    production_compat_current: legacy_forward
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: internal_accepted
+    route_family: /api/admin/automation-conversion/workflow-nodes*
+    method: GET
+    exact_route: /api/admin/automation-conversion/workflow-nodes
+    production_compat_current: legacy_forward
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: external_low_risk_tooling
+    route_family: /api/admin/image-library*
+    method: GET
+    exact_route: /api/admin/image-library
+    production_compat_current: wildcard_or_exact_legacy_fallback_retained
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: external_low_risk_tooling
+    route_family: /api/admin/image-library*
+    method: GET
+    exact_route: /api/admin/image-library/facets
+    production_compat_current: wildcard_or_exact_legacy_fallback_retained
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: external_low_risk_tooling
+    route_family: /api/admin/wecom/tags*
+    method: GET
+    exact_route: /api/admin/wecom/tags
+    production_compat_current: legacy_forward
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: external_low_risk_tooling
+    route_family: /api/admin/wecom/tags*
+    method: GET
+    exact_route: /api/admin/wecom/tags/live/gate
+    production_compat_current: legacy_forward_family_with_next_gate_route
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+  - source: external_low_risk_tooling
+    route_family: /mcp
+    method: GET
+    exact_route: /mcp
+    production_compat_current: next_exact_metadata_route_with_legacy_mcp_adapter_present
+    proposed_narrowing_only: true
+    shadow_compare_required: true
+    rollback_required: true
+
+excluded_routes:
+  - family: payment_commerce
+    reason: payment_capture_refund_settlement_forbidden
+  - family: oauth_callback
+    reason: production_oauth_callback_cutover_forbidden
+  - family: wecom_contact_callback
+    reason: callback_ownership_cutover_forbidden
+  - family: tasks_workflows_execution_adjacent
+    reason: execution_adjacent_routes_deferred
+  - family: timer_run_due
+    reason: timer_execution_forbidden
+  - family: outbound_send
+    reason: outbound_send_forbidden
+  - family: public_submit
+    reason: public_entry_identity_tag_writeback_requires_owner_review
+  - family: wildcard_production_compat
+    reason: wildcard_narrowing_forbidden
+
+runner:
+  path: tools/run_phase6h_production_compat_exact_route_shadow_compare.py
+  default_result_status: proposed_narrowing_only
+  production_compat_changed: false
+  manifest_written: false
+  fallback_removed: false
+  wildcard_narrowing: false
+  owner_switch_executed: false
+  live_external_call_executed: false
+  outbound_send_executed: false
+  timer_execution_triggered: false
+  automation_execution_triggered: false
+  delete_ready: false
+
+rollback:
+  current_production_compat_fallback_retained: true
+  rollback_requires_destructive_migration: false
+  rollback_requires_fallback_removal: false
+  rollback_requires_wildcard_narrowing: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  production_compat_unchanged: true
+  fallback_retained: true
+  no_live_external_call: true
+  no_owner_switch: true
+  no_timer_or_execution: true
+  no_outbound_send: true
+
+next:
+  - phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
