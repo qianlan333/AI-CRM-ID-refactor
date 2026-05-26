@@ -44,10 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle",
+    "phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS = {
-    "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle",
+    "phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -148,6 +148,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed",
     "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_completed",
     "phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_completed",
+    "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -383,12 +384,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_5_external_adapter":
         blockers.append("current_phase must be phase_5_external_adapter")
-    if state.get("active_candidate") != "/mcp":
-        blockers.append("active_candidate must select the Phase 5 OpenClaw/MCP candidate")
-    if state.get("capability_owner") != "aicrm_next.integration_gateway":
-        blockers.append("capability_owner must be aicrm_next.integration_gateway")
-    if state.get("last_merged_pr") != "#747":
-        blockers.append("last_merged_pr must record latest completed merged PR #747")
+    if state.get("active_candidate") != "/api/h5/questionnaires*":
+        blockers.append("active_candidate must select the Phase 5 questionnaire external submit candidate")
+    if state.get("capability_owner") != "aicrm_next.questionnaire":
+        blockers.append("capability_owner must be aicrm_next.questionnaire")
+    if state.get("last_merged_pr") != "#748":
+        blockers.append("last_merged_pr must record latest completed merged PR #748")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
