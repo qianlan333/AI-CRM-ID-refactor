@@ -1164,6 +1164,18 @@ def test_phase5ae_payment_commerce_family_acceptance_artifacts_can_define_stop_t
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase5af_openclaw_mcp_ai_assist_contract_fake_stub_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.md",
+        "docs/development/phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.yaml",
+        "tools/check_phase5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.py",
+        "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_staging_smoke.py",
+        "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_production_dry_run.py",
+        "tests/test_phase5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

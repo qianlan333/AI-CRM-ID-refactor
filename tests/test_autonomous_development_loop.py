@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_5_external_adapter"
-    assert data["active_candidate"] == "/api/admin/wechat-pay*"
-    assert data["capability_owner"] == "aicrm_next.commerce"
-    assert data["last_merged_pr"] == "#743"
+    assert data["active_candidate"] == "/mcp"
+    assert data["capability_owner"] == "aicrm_next.integration_gateway"
+    assert data["last_merged_pr"] == "#744"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -122,9 +122,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5ac_payment_commerce_production_canary_readiness_completed" in set(data["completed_steps"])
     assert "phase_5ad_payment_commerce_production_canary_tooling_completed" in set(data["completed_steps"])
     assert "phase_5ae_payment_commerce_family_acceptance_completed" in set(data["completed_steps"])
+    assert "phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5af_openclaw_contract_fake_stub_only() -> None:
+def test_next_allowed_actions_are_phase_5ag_openclaw_live_adapter_behind_flag_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -558,7 +559,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/wechat-pay*"
+    assert data["active_candidate"] == "/mcp"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

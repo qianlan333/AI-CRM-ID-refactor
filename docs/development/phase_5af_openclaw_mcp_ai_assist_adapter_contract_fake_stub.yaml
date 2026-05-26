@@ -1,0 +1,141 @@
+version: 1
+status: phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_no_live_call
+bundle_type: phase_5_external_adapter_contract_fake_stub_readiness_bundle
+route_family: /mcp
+related_capability_surfaces:
+  - /api/admin/ai-assist/contract
+  - /api/admin/cloud-orchestrator/campaigns/run-due*
+capability_owner: aicrm_next.integration_gateway
+related_capability_owner: aicrm_next.ai_assist
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  real_mcp_call_authorized: false
+  real_openclaw_call_authorized: false
+  real_llm_call_authorized: false
+  deepseek_call_authorized: false
+  outbound_send_authorized: false
+  prompt_or_context_leak_authorized: false
+  credential_output_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+adapter_contract:
+  methods:
+    - name: plan_ai_assist_request
+      live_call_allowed: false
+      adapter_mode: fake_stub_contract
+    - name: redact_prompt_context
+      live_call_allowed: false
+      adapter_mode: fake_stub_contract
+    - name: fake_stub_mcp_tool_call
+      live_call_allowed: false
+      idempotency_required: true
+      adapter_mode: fake_stub_contract
+    - name: fake_stub_openclaw_context_push
+      live_call_allowed: false
+      idempotency_required: true
+      adapter_mode: fake_stub_contract
+    - name: fake_stub_llm_completion
+      live_call_allowed: false
+      idempotency_required: true
+      adapter_mode: fake_stub_contract
+    - name: validate_idempotency_key
+      live_call_allowed: false
+      adapter_mode: fake_stub_contract
+
+fake_stub_contract:
+  deterministic_response_required: true
+  mcp_credential_required: false
+  openclaw_credential_required: false
+  llm_secret_required: false
+  deepseek_secret_required: false
+  token_usage_allowed: false
+  network_call_allowed: false
+  real_mcp_call_allowed: false
+  real_openclaw_call_allowed: false
+  real_llm_call_allowed: false
+  deepseek_call_allowed: false
+  outbound_send_allowed: false
+  prompt_raw_output_allowed: false
+  credential_output_allowed: false
+  production_success_claim_allowed: false
+
+error_mapping:
+  required_error_codes:
+    - mcp_config_missing
+    - openclaw_config_missing
+    - llm_config_missing
+    - prompt_required
+    - idempotency_key_required
+    - duplicate_idempotency_key
+    - request_hash_conflict
+    - real_mcp_call_not_enabled
+    - real_openclaw_call_not_enabled
+    - real_llm_call_not_enabled
+    - prompt_redaction_required
+    - credential_leak_risk
+    - adapter_unavailable
+    - forbidden_in_production_without_approval
+
+idempotency_policy:
+  idempotency_key_required_for_write_like_dry_run: true
+  replay_same_hash: true
+  conflict_different_hash: true
+  retry_safe_without_external_side_effect: true
+  no_partial_external_side_effect: true
+
+timeout_policy:
+  timeout_seconds_documented: true
+  live_timeout_execution_enabled: false
+  retry_backoff_execution_enabled: false
+
+evidence_policy:
+  real_mcp_call_executed_field_required: true
+  real_openclaw_call_executed_field_required: true
+  real_llm_call_executed_field_required: true
+  deepseek_call_executed_field_required: true
+  side_effect_safety_required: true
+  operator_required: true
+  request_hash_required: true
+  prompt_redaction_required: true
+  credential_redaction_required: true
+  timestamp_required: true
+
+side_effect_safety:
+  real_mcp_call_allowed: false
+  real_openclaw_call_allowed: false
+  real_llm_call_allowed: false
+  deepseek_call_allowed: false
+  outbound_send_allowed: false
+  prompt_raw_output_allowed: false
+  credential_output_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+  production_write_allowed: false
+
+readiness_runners:
+  staging_fake_stub:
+    path: tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_staging_smoke.py
+    live_call_allowed: false
+  production_fake_stub_dry_run:
+    path: tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_production_dry_run.py
+    live_call_allowed: false
+    required_args:
+      - --confirm-no-live-call
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_external_side_effect_enabled: true
+  fake_stub_only: true
+
+next_bundle:
+  recommended_next_step: phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle
+  route_family: /mcp
