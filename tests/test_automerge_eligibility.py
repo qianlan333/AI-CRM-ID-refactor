@@ -1445,6 +1445,8 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/phase_7g_first_exact_route_fallback_removal_canary.yaml",
         "docs/development/phase_7h_first_exact_route_production_compat_cleanup_canary.md",
         "docs/development/phase_7h_first_exact_route_production_compat_cleanup_canary.yaml",
+        "docs/development/phase_7i_legacy_runtime_deletion_readiness.md",
+        "docs/development/phase_7i_legacy_runtime_deletion_readiness.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1456,6 +1458,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tools/check_phase7f_production_compat_cleanup_readiness.py",
         "tools/check_phase7g_first_exact_route_fallback_removal_canary.py",
         "tools/check_phase7h_first_exact_route_production_compat_cleanup_canary.py",
+        "tools/check_phase7i_legacy_runtime_deletion_readiness.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1465,6 +1468,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tests/test_phase7f_production_compat_cleanup_readiness.py",
         "tests/test_phase7g_first_exact_route_fallback_removal_canary.py",
         "tests/test_phase7h_first_exact_route_production_compat_cleanup_canary.py",
+        "tests/test_phase7i_legacy_runtime_deletion_readiness.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
