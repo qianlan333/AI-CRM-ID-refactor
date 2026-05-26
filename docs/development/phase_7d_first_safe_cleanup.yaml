@@ -1,0 +1,34 @@
+version: 1
+status: phase_7d_first_safe_cleanup
+bundle_type: phase_7d_first_safe_cleanup_bundle
+cleanup_family: legacy_import_checker_baseline_followup
+
+cleanup:
+  selected_candidate_id: legacy_import_checker_baseline_followup
+  cleanup_type: checker_expectation_update
+  changed_file: tools/check_legacy_facade_growth_freeze.py
+  old_recommendation: READY_FOR_LEGACY_FACADE_GROWTH_FREEZE_ACCEPTANCE
+  new_recommendation: READY_FOR_PHASE7_BASELINE_IMPORT_CLEANUP_ACCEPTANCE
+  cleanup_behavior_change: false
+  production_behavior_unchanged: true
+  fallback_retained: true
+  production_compat_unchanged: true
+  legacy_runtime_deleted: false
+  delete_ready: false
+
+authorizations:
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  legacy_runtime_deletion_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+
+verification_evidence:
+  legacy_facade_growth_freeze: pass
+  direct_legacy_import_blockers: 0
+  runtime_files_changed: false
+  route_behavior_changed: false
+  deploy_config_changed: false
+
+next:
+  - phase_7e_fallback_cleanup_readiness_bundle
