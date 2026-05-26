@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5s_oauth_identity_production_live_canary_execution_bundle",
+    "phase_5t_oauth_identity_family_acceptance_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -412,6 +412,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase5r_oauth_identity_production_canary_readiness.py",
         "tools/run_phase5r_oauth_identity_production_canary_readiness.py",
         "tests/test_phase5r_oauth_identity_production_canary_readiness.py",
+        "docs/development/phase_5s_oauth_identity_production_live_canary_execution.md",
+        "docs/development/phase_5s_oauth_identity_production_live_canary_execution.yaml",
+        "tools/check_phase5s_oauth_identity_production_live_canary_execution.py",
+        "tools/run_phase5s_oauth_identity_production_live_canary_execution.py",
+        "tools/run_phase5s_oauth_identity_production_canary_cleanup.py",
+        "tests/test_phase5s_oauth_identity_production_live_canary_execution.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
