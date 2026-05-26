@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_7j_legacy_runtime_cleanup_blocker_acceptance
-active_candidate: legacy_runtime_cleanup_blocker_acceptance
+current_phase: phase_7k_final_route_ownership_manifest_cleanup
+active_candidate: final_route_ownership_manifest_cleanup
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#790"
-last_attempted_action: phase_7j_legacy_runtime_cleanup_blocker_acceptance_bundle
-last_created_pr: "#790"
-recommended_next_pr: phase_7k_final_route_ownership_manifest_cleanup_bundle
+last_merged_pr: "#791"
+last_attempted_action: phase_7k_final_route_ownership_manifest_cleanup_bundle
+last_created_pr: "#791"
+recommended_next_pr: phase_7l_final_legacy_retirement_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -398,9 +398,23 @@ completed_steps:
   - phase_7h_first_exact_route_production_compat_cleanup_canary_completed
   - phase_7i_legacy_runtime_deletion_readiness_completed
   - phase_7j_legacy_runtime_cleanup_blocker_acceptance_completed
+  - phase_7k_final_route_ownership_manifest_cleanup_completed
 
 next_allowed_actions:
-  - phase_7k_final_route_ownership_manifest_cleanup_bundle
+  - phase_7l_final_legacy_retirement_acceptance_bundle
+
+phase7k_final_route_ownership_manifest_cleanup:
+  status: phase_7k_final_route_ownership_manifest_cleanup_completed
+  bundle_type: phase_7k_final_route_ownership_manifest_cleanup_bundle
+  cleanup_family: final_route_ownership_manifest_cleanup
+  consolidation_only: true
+  route_owner_behavior_changed: false
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+  recommended_next_bundle: phase_7l_final_legacy_retirement_acceptance_bundle
 
 phase7j_legacy_runtime_cleanup_blocker_acceptance:
   status: phase_7j_legacy_runtime_cleanup_blocker_acceptance_completed

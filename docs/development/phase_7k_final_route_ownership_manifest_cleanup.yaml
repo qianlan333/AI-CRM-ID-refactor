@@ -1,0 +1,242 @@
+version: 1
+status: phase_7k_final_route_ownership_manifest_cleanup
+bundle_type: phase_7k_final_route_ownership_manifest_cleanup_bundle
+cleanup_family: final_route_ownership_manifest_cleanup
+
+authorizations:
+  route_owner_behavior_change_authorized: false
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  legacy_runtime_deletion_authorized: false
+  delete_ready: false
+
+cleanup_evidence_index:
+  phase_7g_fallback_canary: blocked
+  phase_7h_production_compat_canary: blocked
+  phase_7i_runtime_deletion_readiness: blocked_no_safe_candidate
+  phase_7j_blocker_acceptance: accepted_blocked_runtime_cleanup
+
+route_families:
+  - family: profile-segment-templates*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: action-templates*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: task-groups*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: blocked_phase_7g
+    production_compat_cleanup_status: blocked_phase_7h
+    runtime_cleanup_status: blocked_phase_7i_7j
+    delete_ready: false
+    blockers:
+      - fallback_retained
+      - production_compat_retained
+      - route_specific_shadow_compare_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: workflow-nodes*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: tasks*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: workflows*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: agents*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: agent-runs*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - execution_side_effect_review_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: agent-outputs*
+    current_owner: production_compat_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: accepted_tooling_only
+    fallback_cleanup_status: deferred
+    production_compat_cleanup_status: deferred
+    runtime_cleanup_status: deferred
+    delete_ready: false
+    blockers:
+      - route_specific_evidence_required
+    next_possible_action: owner_approved_exact_route_evidence
+  - family: WeCom tags
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - wecom_live_call_risk
+    next_possible_action: owner_approved_external_shadow_compare
+  - family: WeCom contact callback
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - wecom_callback_risk
+    next_possible_action: owner_approved_callback_evidence
+  - family: OAuth identity
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - oauth_callback_risk
+    next_possible_action: owner_approved_callback_evidence
+  - family: Media upload / media library
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - media_upload_publication_risk
+    next_possible_action: owner_approved_upload_evidence
+  - family: Payment / commerce
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - payment_money_movement_risk
+    next_possible_action: owner_approved_sandbox_evidence
+  - family: OpenClaw / MCP / AI assist
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - outbound_send_and_automation_risk
+    next_possible_action: owner_approved_single_scope_evidence
+  - family: Questionnaire external submit / tag writeback
+    current_owner: guarded_next_adapter_and_legacy_retained
+    next_owner_ready: partial
+    fallback_retained: true
+    production_compat_retained: true
+    owner_switch_tooling_status: deferred
+    fallback_cleanup_status: unsafe_external_deferred
+    production_compat_cleanup_status: unsafe_external_deferred
+    runtime_cleanup_status: unsafe_external_deferred
+    delete_ready: false
+    blockers:
+      - public_submit_write_risk
+    next_possible_action: owner_approved_public_submit_evidence
+
+outcome:
+  consolidation_only: true
+  production_behavior_changed: false
+  route_owner_behavior_changed: false
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+
+next:
+  - phase_7l_final_legacy_retirement_acceptance_bundle
