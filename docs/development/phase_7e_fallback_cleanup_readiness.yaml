@@ -1,0 +1,99 @@
+version: 1
+status: phase_7e_fallback_cleanup_readiness
+bundle_type: phase_7e_fallback_cleanup_readiness_bundle
+cleanup_family: fallback_cleanup_readiness
+
+authorizations:
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  runtime_deletion_authorized: false
+  delete_ready: false
+
+fallback_inventory:
+  candidate_sources:
+    - phase_6_internal_owner_switch_tooling_acceptance
+    - phase_6_external_enablement_readiness
+    - phase_7a_legacy_retirement_readiness
+    - phase_7c_delete_ready_candidate_matrix
+    - phase_7d_first_safe_cleanup_result
+  categories:
+    exact_route_fallback_candidates:
+      - candidate_id: task_groups_exact_route_fallback_cleanup_canary
+        route_family: /api/admin/automation-conversion/task-groups*
+        source_evidence:
+          - phase_6e_internal_owner_switch_acceptance
+          - phase_7c_task_groups_exact_route_fallback_cleanup_candidate
+        required_evidence:
+          - owner_approval
+          - rollback_evidence
+          - shadow_compare_evidence
+          - route_ownership_proof
+        rollback_strategy: restore_exact_route_fallback_manifest_or_forwarding
+        owner_approval_required: true
+        fallback_removal_authorized: false
+        behavior_change_expected_if_removed_later: true
+        selected_for_phase_7g: true
+      - candidate_id: workflow_nodes_exact_route_fallback_cleanup_canary
+        route_family: /api/admin/automation-conversion/workflow-nodes*
+        source_evidence:
+          - phase_6e_internal_owner_switch_acceptance
+          - phase_7c_workflow_nodes_exact_route_fallback_cleanup_candidate
+        required_evidence:
+          - owner_approval
+          - rollback_evidence
+          - shadow_compare_evidence
+          - route_ownership_proof
+        rollback_strategy: restore_exact_route_fallback_manifest_or_forwarding
+        owner_approval_required: true
+        fallback_removal_authorized: false
+        behavior_change_expected_if_removed_later: true
+        selected_for_phase_7g: false
+    docs_tooling_fallback_metadata_candidates:
+      - candidate_id: fallback_readiness_metadata_normalization
+        route_family: docs/development/phase_7e_fallback_cleanup_readiness.yaml
+        cleanup_type: docs_tooling_metadata
+        behavior_change_expected: false
+        owner_approval_required: false
+        rollback_strategy: revert_docs_tooling_state_only
+    production_compat_adjacent_candidates:
+      - candidate_id: production_compat_exact_route_readiness_handoff
+        route_family: /api/admin/automation-conversion/task-groups*
+        cleanup_type: production_compat_readiness_handoff
+        behavior_change_expected: false
+        owner_approval_required: false
+        rollback_strategy: revert_readiness_handoff
+    high_risk_deferred_fallback:
+      - candidate_id: payment_oauth_wecom_timer_outbound_public_submit_wildcard
+        route_family: payment/oauth/wecom-callback/timer/outbound/public-questionnaire-submit/wildcard
+        cleanup_type: high_risk_deferred
+        required_evidence:
+          - explicit_owner_approval
+          - route_specific_rollback_evidence
+          - shadow_compare_evidence
+        fallback_removal_authorized: false
+        selected_for_phase_7g: false
+
+selected_first_fallback_cleanup_candidate:
+  candidate_id: task_groups_exact_route_fallback_cleanup_canary
+  route_family: /api/admin/automation-conversion/task-groups*
+  phase_7e_action: readiness_only_no_removal
+  phase_7g_canary_candidate: true
+  fallback_removed_in_phase_7e: false
+  production_behavior_changed: false
+  production_compat_behavior_changed: false
+  wildcard_fallback_touched: false
+  runtime_deleted: false
+  delete_ready: false
+
+excluded_high_risk_fallback:
+  payment: true
+  oauth_callback: true
+  wecom_callback: true
+  timer_run_due: true
+  outbound_send: true
+  public_questionnaire_submit: true
+  wildcard_fallback: true
+  route_lacking_rollback_evidence: true
+
+next:
+  - phase_7f_production_compat_cleanup_readiness_bundle

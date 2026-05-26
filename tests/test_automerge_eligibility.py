@@ -1437,6 +1437,8 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/phase_7c_delete_ready_candidate_selection.yaml",
         "docs/development/phase_7d_first_safe_cleanup.md",
         "docs/development/phase_7d_first_safe_cleanup.yaml",
+        "docs/development/phase_7e_fallback_cleanup_readiness.md",
+        "docs/development/phase_7e_fallback_cleanup_readiness.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1444,11 +1446,13 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tools/check_phase7b_baseline_legacy_import_remediation.py",
         "tools/check_phase7c_delete_ready_candidate_selection.py",
         "tools/check_phase7d_first_safe_cleanup.py",
+        "tools/check_phase7e_fallback_cleanup_readiness.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
         "tests/test_phase7c_delete_ready_candidate_selection.py",
         "tests/test_phase7d_first_safe_cleanup.py",
+        "tests/test_phase7e_fallback_cleanup_readiness.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 

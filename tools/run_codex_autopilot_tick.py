@@ -62,6 +62,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_7b_baseline_legacy_import_remediation_bundle",
     "phase_7c_delete_ready_candidate_selection_bundle",
     "phase_7d_first_safe_cleanup_bundle",
+    "phase_7e_fallback_cleanup_readiness_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -607,6 +608,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_7c_delete_ready_candidate_selection.yaml",
         "docs/development/phase_7d_first_safe_cleanup.md",
         "docs/development/phase_7d_first_safe_cleanup.yaml",
+        "docs/development/phase_7e_fallback_cleanup_readiness.md",
+        "docs/development/phase_7e_fallback_cleanup_readiness.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -629,6 +632,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase7b_baseline_legacy_import_remediation.py",
         "tools/check_phase7c_delete_ready_candidate_selection.py",
         "tools/check_phase7d_first_safe_cleanup.py",
+        "tools/check_phase7e_fallback_cleanup_readiness.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -652,6 +656,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
         "tests/test_phase7c_delete_ready_candidate_selection.py",
         "tests/test_phase7d_first_safe_cleanup.py",
+        "tests/test_phase7e_fallback_cleanup_readiness.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",

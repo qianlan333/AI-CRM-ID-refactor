@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_7d_first_safe_cleanup
-active_candidate: phase_7_first_safe_cleanup
+current_phase: phase_7e_fallback_cleanup_readiness
+active_candidate: phase_7_fallback_cleanup_readiness
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#776"
-last_attempted_action: phase_7d_first_safe_cleanup_bundle
-last_created_pr: "#776"
-recommended_next_pr: phase_7e_fallback_cleanup_readiness_bundle
+last_merged_pr: "#778"
+last_attempted_action: phase_7e_fallback_cleanup_readiness_bundle
+last_created_pr: "#778"
+recommended_next_pr: phase_7f_production_compat_cleanup_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -392,9 +392,24 @@ completed_steps:
   - phase_7b_baseline_legacy_import_remediation_completed
   - phase_7c_delete_ready_candidate_selection_completed
   - phase_7d_first_safe_cleanup_completed
+  - phase_7e_fallback_cleanup_readiness_completed
 
 next_allowed_actions:
-  - phase_7e_fallback_cleanup_readiness_bundle
+  - phase_7f_production_compat_cleanup_readiness_bundle
+
+phase7e_fallback_cleanup_readiness:
+  status: phase_7e_fallback_cleanup_readiness_completed
+  bundle_type: phase_7e_fallback_cleanup_readiness_bundle
+  cleanup_family: fallback_cleanup_readiness
+  selected_fallback_cleanup_candidate: task_groups_exact_route_fallback_cleanup_canary
+  selected_route_family: /api/admin/automation-conversion/task-groups*
+  readiness_only: true
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+  recommended_next_bundle: phase_7f_production_compat_cleanup_readiness_bundle
 
 phase7d_first_safe_cleanup:
   status: phase_7d_first_safe_cleanup_completed
