@@ -18,13 +18,13 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_generates_phase_7l_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_generates_post_phase7_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
     report = runner.main(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
     assert report == 0
     assert prompt.exists() is True
     text = prompt.read_text(encoding="utf-8")
-    assert "phase_7l_final_legacy_retirement_acceptance_bundle" in text
+    assert "post_phase7_owner_approved_cleanup_track" in text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:
@@ -1538,6 +1538,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/phase_7j_legacy_runtime_cleanup_blocker_acceptance.yaml",
         "docs/development/phase_7k_final_route_ownership_manifest_cleanup.md",
         "docs/development/phase_7k_final_route_ownership_manifest_cleanup.yaml",
+        "docs/development/phase_7l_final_legacy_retirement_acceptance.md",
+        "docs/development/phase_7l_final_legacy_retirement_acceptance.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1552,6 +1554,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_phase7i_legacy_runtime_deletion_readiness.py",
         "tools/check_phase7j_legacy_runtime_cleanup_blocker_acceptance.py",
         "tools/check_phase7k_final_route_ownership_manifest_cleanup.py",
+        "tools/check_phase7l_final_legacy_retirement_acceptance.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1564,6 +1567,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_phase7i_legacy_runtime_deletion_readiness.py",
         "tests/test_phase7j_legacy_runtime_cleanup_blocker_acceptance.py",
         "tests/test_phase7k_final_route_ownership_manifest_cleanup.py",
+        "tests/test_phase7l_final_legacy_retirement_acceptance.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
