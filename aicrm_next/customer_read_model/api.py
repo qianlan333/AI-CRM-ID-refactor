@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import NotFoundError
@@ -26,24 +27,20 @@ router = APIRouter()
 
 
 def _input_error(message: str) -> JSONResponse:
-    return JSONResponse(
-        {"ok": False, "error": message, "source_status": "input_error", "route_owner": "ai_crm_next"},
-        status_code=400,
-    )
+    payload = {"ok": False, "error": message, "source_status": "input_error", "route_owner": "ai_crm_next"}
+    return JSONResponse(jsonable_encoder(payload), status_code=400)
 
 
 def _production_unavailable(exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        {
-            "ok": False,
-            "degraded": True,
-            "source_status": "production_unavailable",
-            "error_code": "customer_profile_read_unavailable",
-            "page_error": str(exc),
-            "route_owner": "ai_crm_next",
-        },
-        status_code=503,
-    )
+    payload = {
+        "ok": False,
+        "degraded": True,
+        "source_status": "production_unavailable",
+        "error_code": "customer_profile_read_unavailable",
+        "page_error": str(exc),
+        "route_owner": "ai_crm_next",
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=503)
 
 
 def _resolve_external_userid(external_userid: str | None = None, user_id: str | None = None) -> str:
@@ -88,7 +85,7 @@ def list_customers(
     )
     result = ListCustomersQuery()(query)
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/customers/{external_userid}")
@@ -98,7 +95,7 @@ def get_customer(external_userid: str) -> dict:
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/customers/{external_userid}/timeline")
@@ -119,7 +116,7 @@ def get_customer_timeline(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/messages/{external_userid}/recent")
@@ -130,7 +127,7 @@ def get_recent_messages(external_userid: str, limit: int = 20) -> dict:
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/sidebar/customer-context")
@@ -141,7 +138,7 @@ def get_sidebar_customer_context(external_userid: str | None = None, user_id: st
     try:
         context = _context_for_external_userid(resolved_external_userid)
         if not context.get("ok"):
-            return JSONResponse(context, status_code=503 if context.get("degraded") else 400)
+            return JSONResponse(jsonable_encoder(context), status_code=503 if context.get("degraded") else 400)
         if not context.get("customer"):
             return _input_error("customer not found")
         return {
@@ -180,7 +177,7 @@ def get_admin_customer_profile(
         user_id=user_id,
     )
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/admin/customers/profile/tags")
@@ -190,4 +187,4 @@ def get_admin_customer_profile_tags(external_userid: str | None = None, user_id:
         user_id=user_id,
     )
     status_code = int(result.pop("status_code", 200) or 200)
-    return JSONResponse(result, status_code=status_code)
+    return JSONResponse(jsonable_encoder(result), status_code=status_code)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery
@@ -70,6 +73,7 @@ def test_customer_context_query_does_not_return_fixture_success_when_production_
 
 
 def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkeypatch):
+    from aicrm_next.customer_read_model import application as customer_application
     from aicrm_next.customer_read_model import api as customer_api
     from aicrm_next.main import create_app
 
@@ -81,6 +85,7 @@ def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkey
             return _context_payload(request.external_userid)
 
     monkeypatch.setattr(customer_api, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
+    monkeypatch.setattr(customer_application, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
     client = TestClient(create_app())
 
     sidebar_response = client.get("/api/sidebar/customer-context?external_userid=wx_ext_001")
@@ -94,6 +99,32 @@ def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkey
     assert tags_response.status_code == 200
     assert tags_response.json()["tags"] == ["重点跟进"]
     assert [call.external_userid for call in calls] == ["wx_ext_001", "wx_ext_001", "wx_ext_001"]
+
+
+def test_admin_customer_profile_route_json_encodes_legacy_scalar_values(monkeypatch):
+    from aicrm_next.customer_read_model import application as customer_application
+    from aicrm_next.customer_read_model import api as customer_api
+    from aicrm_next.main import create_app
+
+    class FakeGetCustomerContextQuery:
+        def __call__(self, request: CustomerContextRequest):
+            payload = _context_payload(request.external_userid)
+            payload["customer"]["updated_at"] = datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc)
+            payload["customer"]["marketing_profile"] = {"score": Decimal("9.5")}
+            payload["timeline"]["items"][0]["event_time"] = datetime(2026, 5, 26, 9, 1, tzinfo=timezone.utc)
+            return payload
+
+    monkeypatch.setattr(customer_api, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
+    monkeypatch.setattr(customer_application, "GetCustomerContextQuery", FakeGetCustomerContextQuery)
+    client = TestClient(create_app())
+
+    response = client.get("/api/admin/customers/profile?external_userid=wx_ext_001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["profile"]["updated_at"] == "2026-05-26T09:00:00+00:00"
+    assert payload["profile"]["marketing_profile"]["score"] == 9.5
+    assert payload["context"]["timeline"]["items"][0]["event_time"] == "2026-05-26T09:01:00+00:00"
 
 
 def test_mcp_get_customer_context_reuses_customer_context_query(monkeypatch):
