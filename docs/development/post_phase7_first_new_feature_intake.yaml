@@ -1,0 +1,117 @@
+version: 1
+status: post_phase7_first_new_feature_intake
+bundle_type: post_phase7_first_new_feature_intake_bundle
+route_family: post_phase7_feature_intake
+
+authorizations:
+  business_feature_implementation_authorized: false
+  runtime_route_change_authorized: false
+  schema_migration_authorized: false
+  production_compat_route_authorized: false
+  wecom_ability_service_business_logic_authorized: false
+  direct_legacy_import_authorized: false
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  legacy_runtime_deletion_authorized: false
+  outbound_send_authorized: false
+  timer_execution_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_callback_cutover_authorized: false
+  delete_ready: false
+
+phase_7_handoff:
+  phase_7_completed: true
+  fallback_retained: true
+  production_compat_retained: true
+  legacy_runtime_retained: true
+  delete_ready: false
+
+post_phase7_rules:
+  next_native_required: true
+  production_compat_primary_path_allowed: false
+  wecom_ability_service_new_business_logic_allowed: false
+  direct_legacy_import_allowed: false
+  owner_required: true
+  tests_required: true
+  checker_required: true
+  rollback_required: true
+
+feature_intake_matrix:
+  required_fields:
+    - feature_id
+    - feature_name
+    - business_goal
+    - user_visible_value
+    - capability_owner
+    - route_family
+    - feature_category
+    - external_side_effect
+    - data_schema_impact
+    - production_risk
+    - requires_feature_flag
+    - requires_canary
+    - requires_owner_approval
+    - rollback_requirement
+    - recommended_first_implementation_bundle
+    - blocked_reason
+
+recommended_candidates:
+  - feature_id: hxc_next_native_broadcast_backend
+    feature_name: HXC Next-native broadcast backend / standard send content continuation
+    business_goal: Move broadcast backend intake toward Next-native ownership while keeping real send default-off
+    user_visible_value: Governed path toward standard send-content backend parity
+    capability_owner: aicrm_next.automation_engine
+    route_family: /api/admin/send-content*
+    feature_category: external_adapter
+    external_side_effect: outbound_send_risk_default_off_required
+    data_schema_impact: none_in_intake
+    production_risk: high
+    requires_feature_flag: true
+    requires_canary: true
+    requires_owner_approval: true
+    rollback_requirement: retain_existing_fallback_and_disable_new_send_path
+    recommended_first_implementation_bundle: post_phase7_hxc_broadcast_backend_plan_bundle
+    blocked_reason: owner_selection_required
+  - feature_id: campaign_step_standard_send_content_migration
+    feature_name: Campaign Step standard send content component migration
+    business_goal: Continue standard send-content UI migration where legacy picker logic remains
+    user_visible_value: Campaign steps can share the standard content component after approval
+    capability_owner: aicrm_next.frontend_compat
+    route_family: /admin/automation-conversion/campaign*
+    feature_category: frontend_component
+    external_side_effect: none_in_intake
+    data_schema_impact: none_in_intake
+    production_risk: medium
+    requires_feature_flag: false
+    requires_canary: true
+    requires_owner_approval: true
+    rollback_requirement: revert_component_migration_and_retain_legacy_screen
+    recommended_first_implementation_bundle: post_phase7_campaign_step_component_plan_bundle
+    blocked_reason: owner_selection_required
+  - feature_id: material_picker_remaining_surface_migration
+    feature_name: Remaining material picker surface migration
+    business_goal: Replace remaining direct miniprogram-library fetch surfaces with Next-native picker/options intake
+    user_visible_value: Consistent material selection UX after approved implementation
+    capability_owner: aicrm_next.frontend_compat
+    route_family: admin_user_ops / workflow_nodes material picker surfaces
+    feature_category: frontend_component
+    external_side_effect: none_in_intake
+    data_schema_impact: none_in_intake
+    production_risk: medium
+    requires_feature_flag: false
+    requires_canary: true
+    requires_owner_approval: true
+    rollback_requirement: revert_component_migration_and_retain_legacy_screen_if_marked
+    recommended_first_implementation_bundle: post_phase7_material_picker_migration_plan_bundle
+    blocked_reason: owner_selection_required
+
+selected_feature:
+  selected_feature_status: pending_owner_selection
+  selected_feature_id: none
+  implementation_authorized: false
+  owner_selection_required: true
+
+next_bundle:
+  if_pending_owner_selection: post_phase7_owner_feature_selection_bundle
+  if_selected_feature_ready: post_phase7_first_feature_implementation_plan_bundle
