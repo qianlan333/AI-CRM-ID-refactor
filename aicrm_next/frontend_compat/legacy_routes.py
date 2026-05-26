@@ -18,7 +18,6 @@ from aicrm_next.admin_read_model.application import (
     GetAdminJobsPageQuery,
     GetAdminProductsPageQuery,
     GetAdminTransactionsPageQuery,
-    GetAdminWeComTagsPageQuery,
     page_row_count,
 )
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
@@ -581,16 +580,14 @@ def admin_wecom_tags(request: Request):
     context = _shell_context(
         request=request,
         page_title="企微标签管理",
-        page_summary="管理企微标签分组和标签同步状态。",
+        page_summary="集中管理企业客户标签：同步、搜索、新增、编辑、删除和复制 tag_id。",
         active_endpoint="api.admin_wecom_tags_page",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminWeComTagsPageQuery()(),
-        title="企微标签管理",
-        summary="展示本地已同步标签缓存、使用人数和同步前置状态；不调用远程企微接口。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "企微标签管理"},
+    ]
+    return templates.TemplateResponse(request, "admin_console/config_wecom_tags.html", context)
 
 
 @router.get("/admin/questionnaires", name="api.admin_questionnaires")

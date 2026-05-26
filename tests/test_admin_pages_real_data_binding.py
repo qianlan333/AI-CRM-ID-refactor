@@ -82,6 +82,23 @@ def test_funnel_dashboard_entry_uses_hxc_dashboard_workspace(monkeypatch):
     assert "生产漏斗数据读取失败" not in response.text
 
 
+def test_wecom_tags_page_uses_full_management_workspace(monkeypatch):
+    response = _client(monkeypatch).get("/admin/wecom-tags")
+
+    assert response.status_code == 200
+    assert "data-wecom-tags-page" in response.text
+    assert 'data-api-tags="/api/admin/wecom/tags"' in response.text
+    assert 'data-api-groups="/api/admin/wecom/tag-groups"' in response.text
+    assert "同步企微标签" in response.text
+    assert "新增标签组" in response.text
+    assert "新增标签" in response.text
+    assert "集中管理企业客户标签：同步、搜索、新增、编辑、删除和复制 tag_id。" in response.text
+    assert "本地标签缓存" not in response.text
+    assert "标签使用记录" not in response.text
+    assert "远程同步" not in response.text
+    assert "有缓存" not in response.text
+
+
 def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
     response = _client(monkeypatch).get("/admin/customers")
 
