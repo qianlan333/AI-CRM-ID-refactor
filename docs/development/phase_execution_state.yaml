@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_7l_final_legacy_retirement_acceptance
-active_candidate: final_legacy_retirement_acceptance
+current_phase: post_phase7_new_feature_development_rules
+active_candidate: post_phase7_new_feature_development_governance
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#792"
-last_attempted_action: phase_7l_final_legacy_retirement_acceptance_bundle
-last_created_pr: "#792"
-recommended_next_pr: post_phase7_owner_approved_cleanup_track
+last_merged_pr: "#793"
+last_attempted_action: post_phase7_new_feature_development_rules_bundle
+last_created_pr: "#793"
+recommended_next_pr: post_phase7_first_new_feature_intake_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -400,10 +400,31 @@ completed_steps:
   - phase_7j_legacy_runtime_cleanup_blocker_acceptance_completed
   - phase_7k_final_route_ownership_manifest_cleanup_completed
   - phase_7l_final_legacy_retirement_acceptance_completed
+  - post_phase7_new_feature_development_rules_completed
 
 next_allowed_actions:
-  - post_phase7_owner_approved_cleanup_track
-  - new_feature_development_under_next_architecture_rules
+  - post_phase7_first_new_feature_intake_bundle
+
+post_phase7_new_feature_development_rules:
+  status: post_phase7_new_feature_development_rules_completed
+  bundle_type: post_phase7_new_feature_development_rules_bundle
+  route_family: post_phase7_new_feature_development_governance
+  rules_only: true
+  new_feature_must_use_next_native_owner: true
+  production_compat_as_primary_implementation_allowed: false
+  wecom_ability_service_new_business_logic_allowed: false
+  direct_legacy_import_allowed: false
+  fallback_as_primary_path_allowed: false
+  owner_required: true
+  tests_required: true
+  checker_required: true
+  rollback_required: true
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+  runtime_feature_changed: false
+  recommended_next_bundle: post_phase7_first_new_feature_intake_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
