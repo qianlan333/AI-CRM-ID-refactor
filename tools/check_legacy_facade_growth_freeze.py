@@ -407,7 +407,7 @@ def build_report(root: Path = ROOT, manifest_path: Path | None = None) -> dict[s
         "overall": "PASS" if ok else "FAIL",
         "blockers": blockers,
         "checks": checks,
-        "recommendation": "READY_FOR_LEGACY_FACADE_GROWTH_FREEZE_ACCEPTANCE" if ok else "FIX_BLOCKERS",
+        "recommendation": "READY_FOR_PHASE7_BASELINE_IMPORT_CLEANUP_ACCEPTANCE" if ok else "FIX_BLOCKERS",
     }
 
 
