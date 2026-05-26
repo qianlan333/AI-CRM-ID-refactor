@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_new_feature_development_rules
-active_candidate: post_phase7_new_feature_development_governance
+current_phase: post_phase7_first_new_feature_intake
+active_candidate: post_phase7_feature_intake
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#793"
-last_attempted_action: post_phase7_new_feature_development_rules_bundle
-last_created_pr: "#793"
-recommended_next_pr: post_phase7_first_new_feature_intake_bundle
+last_merged_pr: "#794"
+last_attempted_action: post_phase7_first_new_feature_intake_bundle
+last_created_pr: "#794"
+recommended_next_pr: post_phase7_owner_feature_selection_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -401,9 +401,10 @@ completed_steps:
   - phase_7k_final_route_ownership_manifest_cleanup_completed
   - phase_7l_final_legacy_retirement_acceptance_completed
   - post_phase7_new_feature_development_rules_completed
+  - post_phase7_first_new_feature_intake_completed
 
 next_allowed_actions:
-  - post_phase7_first_new_feature_intake_bundle
+  - post_phase7_owner_feature_selection_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -425,6 +426,32 @@ post_phase7_new_feature_development_rules:
   delete_ready: false
   runtime_feature_changed: false
   recommended_next_bundle: post_phase7_first_new_feature_intake_bundle
+
+post_phase7_first_new_feature_intake:
+  status: post_phase7_first_new_feature_intake_completed
+  bundle_type: post_phase7_first_new_feature_intake_bundle
+  route_family: post_phase7_feature_intake
+  intake_only: true
+  selected_feature_status: pending_owner_selection
+  selected_feature_id: none
+  implementation_authorized: false
+  owner_selection_required: true
+  business_feature_implemented: false
+  runtime_route_changed: false
+  schema_migration_added: false
+  production_compat_route_added: false
+  wecom_ability_service_business_logic_added: false
+  direct_legacy_import_added: false
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  legacy_runtime_deleted: false
+  outbound_send_enabled: false
+  timer_execution_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  delete_ready: false
+  recommended_next_bundle: post_phase7_owner_feature_selection_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
