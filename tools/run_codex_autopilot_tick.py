@@ -40,6 +40,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle",
     "phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_bundle",
     "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle",
+    "phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -516,6 +517,10 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5ai_openclaw_mcp_ai_assist_production_canary_readiness.py",
         "tools/run_phase5ai_openclaw_mcp_ai_assist_production_canary_cleanup.py",
         "tests/test_phase5ai_openclaw_mcp_ai_assist_production_canary_readiness.py",
+        "docs/development/phase_5aj_openclaw_mcp_ai_assist_family_acceptance.md",
+        "docs/development/phase_5aj_openclaw_mcp_ai_assist_family_acceptance.yaml",
+        "tools/check_phase5aj_openclaw_mcp_ai_assist_family_acceptance.py",
+        "tests/test_phase5aj_openclaw_mcp_ai_assist_family_acceptance.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",

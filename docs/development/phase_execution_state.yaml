@@ -8,12 +8,12 @@ autopilot:
   high_risk_requires_owner_decision_package: true
 
 current_phase: phase_5_external_adapter
-active_candidate: /mcp
-capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#747"
-last_attempted_action: phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_bundle
-last_created_pr: "#747"
-recommended_next_pr: phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle
+active_candidate: /api/h5/questionnaires*
+capability_owner: aicrm_next.questionnaire
+last_merged_pr: "#748"
+last_attempted_action: phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle
+last_created_pr: "#748"
+recommended_next_pr: phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -351,9 +351,10 @@ completed_steps:
   - phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed
   - phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_completed
   - phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_completed
+  - phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle
+  - phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1322,6 +1323,30 @@ phase5ai_openclaw_mcp_ai_assist_production_canary_readiness:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle
+
+phase5aj_openclaw_mcp_ai_assist_family_acceptance:
+  status: phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed
+  route_family: /mcp
+  capability_owner: aicrm_next.integration_gateway
+  related_capability_owner: aicrm_next.ai_assist
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_decision: accepted_for_controlled_canary_tooling
+  production_canary_passed: false
+  real_mcp_call_executed: false
+  real_openclaw_call_executed: false
+  real_llm_call_executed: false
+  deepseek_call_executed: false
+  outbound_send_executed: false
+  timer_or_automation_executed: false
+  prompt_leak_detected: false
+  credential_leak_detected: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  delete_ready: false
+  selected_next_bundle: phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle
+  next_capability_owner: aicrm_next.questionnaire
 
 forbidden_without_owner_approval:
   - production owner switch

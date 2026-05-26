@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_5_external_adapter"
-    assert data["active_candidate"] == "/mcp"
-    assert data["capability_owner"] == "aicrm_next.integration_gateway"
-    assert data["last_merged_pr"] == "#747"
+    assert data["active_candidate"] == "/api/h5/questionnaires*"
+    assert data["capability_owner"] == "aicrm_next.questionnaire"
+    assert data["last_merged_pr"] == "#748"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -126,9 +126,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed" in set(data["completed_steps"])
     assert "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_completed" in set(data["completed_steps"])
     assert "phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_completed" in set(data["completed_steps"])
+    assert "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5aj_openclaw_family_acceptance_only() -> None:
+def test_next_allowed_actions_are_phase_5ak_questionnaire_contract_fake_stub_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -562,7 +563,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/mcp"
+    assert data["active_candidate"] == "/api/h5/questionnaires*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
