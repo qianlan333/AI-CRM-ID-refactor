@@ -1457,6 +1457,8 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/post_phase7_new_feature_development_rules.yaml",
         "docs/development/post_phase7_first_new_feature_intake.md",
         "docs/development/post_phase7_first_new_feature_intake.yaml",
+        "docs/development/post_phase7_owner_feature_selection.md",
+        "docs/development/post_phase7_owner_feature_selection.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1474,6 +1476,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tools/check_phase7l_final_legacy_retirement_acceptance.py",
         "tools/check_post_phase7_new_feature_development_rules.py",
         "tools/check_post_phase7_first_new_feature_intake.py",
+        "tools/check_post_phase7_owner_feature_selection.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1489,6 +1492,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tests/test_phase7l_final_legacy_retirement_acceptance.py",
         "tests/test_post_phase7_new_feature_development_rules.py",
         "tests/test_post_phase7_first_new_feature_intake.py",
+        "tests/test_post_phase7_owner_feature_selection.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
