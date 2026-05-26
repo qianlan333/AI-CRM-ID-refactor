@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6b_task_groups_owner_switch_canary_plan
+current_phase: phase_6c_task_groups_owner_switch_tooling
 active_candidate: /api/admin/automation-conversion/task-groups*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#758"
-last_attempted_action: phase_6b_first_owner_switch_canary_plan_bundle
-last_created_pr: "#758"
-recommended_next_pr: phase_6c_task_groups_owner_switch_tooling_bundle
+last_merged_pr: "#759"
+last_attempted_action: phase_6c_task_groups_owner_switch_tooling_bundle
+last_created_pr: "#759"
+recommended_next_pr: phase_6d_internal_metadata_owner_switch_batch_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -378,8 +378,27 @@ completed_steps:
   - phase_5_aggregate_acceptance_review_completed
   - phase_6a_owner_production_compat_readiness_completed
   - phase_6b_task_groups_owner_switch_canary_plan_completed
+  - phase_6c_task_groups_owner_switch_tooling_completed
 
 next_allowed_actions: []
+
+phase6c_task_groups_owner_switch_tooling:
+  status: phase_6c_task_groups_owner_switch_tooling_completed
+  route_family: /api/admin/automation-conversion/task-groups*
+  capability_owner: aicrm_next.automation_engine
+  bundle_type: phase_6c_task_groups_owner_switch_tooling_bundle
+  tooling_only: true
+  runtime_gate_modified: false
+  disabled_by_default: true
+  owner_switch_executed: false
+  production_compat_changed: false
+  fallback_removed: false
+  timer_execution_triggered: false
+  automation_execution_triggered: false
+  outbound_send_triggered: false
+  destructive_migration_triggered: false
+  delete_ready: false
+  recommended_next_bundle: phase_6d_internal_metadata_owner_switch_batch_bundle
 
 phase6b_task_groups_owner_switch_canary_plan:
   status: phase_6b_task_groups_owner_switch_canary_plan_completed
