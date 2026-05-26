@@ -43,8 +43,8 @@ REQUIRED_STATE_FIELDS = {
     "staging_readiness_slices",
     "production_dry_run_readiness_slices",
 }
-ALLOWED_NEXT_ACTIONS: set[str] = {"phase_7h_first_exact_route_production_compat_cleanup_canary_bundle"}
-STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = {"phase_7h_first_exact_route_production_compat_cleanup_canary_bundle"}
+ALLOWED_NEXT_ACTIONS: set[str] = {"phase_7i_legacy_runtime_deletion_readiness_bundle"}
+STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = {"phase_7i_legacy_runtime_deletion_readiness_bundle"}
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
     "action_templates_staging_approval_config_closure_package_created",
@@ -170,6 +170,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_7e_fallback_cleanup_readiness_completed",
     "phase_7f_production_compat_cleanup_readiness_completed",
     "phase_7g_first_exact_route_fallback_removal_canary_completed",
+    "phase_7h_first_exact_route_production_compat_cleanup_canary_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -409,14 +410,14 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "phase_7g_first_exact_route_fallback_removal_canary":
-        blockers.append("current_phase must be phase_7g_first_exact_route_fallback_removal_canary")
-    if state.get("active_candidate") != "task_groups_exact_route_fallback_cleanup_canary":
-        blockers.append("active_candidate must select the Phase 7G task-groups fallback canary")
+    if state.get("current_phase") != "phase_7h_first_exact_route_production_compat_cleanup_canary":
+        blockers.append("current_phase must be phase_7h_first_exact_route_production_compat_cleanup_canary")
+    if state.get("active_candidate") != "task_groups_exact_route_production_compat_cleanup_canary":
+        blockers.append("active_candidate must select the Phase 7H task-groups production_compat canary")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#785":
-        blockers.append("last_merged_pr must record latest completed merged PR #785")
+    if state.get("last_merged_pr") != "#788":
+        blockers.append("last_merged_pr must record latest completed merged PR #788")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -463,9 +464,9 @@ def build_report() -> dict[str, Any]:
     candidate = str(state.get("active_candidate", ""))
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary"} and candidate not in manifest_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary"} and candidate not in manifest_text:
         blockers.append("active_candidate not found in production_route_ownership_manifest.yaml")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary"} and candidate not in backlog_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary"} and candidate not in backlog_text:
         blockers.append("active_candidate not found in legacy_replacement_backlog.yaml")
 
     readiness = state.get("action_templates_readiness") if isinstance(state.get("action_templates_readiness"), dict) else {}
