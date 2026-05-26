@@ -29,7 +29,7 @@ def test_runner_generates_prompt_without_github_when_no_open_pr(tmp_path: Path) 
     assert "check_automerge_eligibility.py" in prompt_text
     assert "compressed bounded bundle" in prompt_text
     assert "15-20 minutes" in prompt_text
-    assert "phase_5ae_payment_commerce_family_acceptance_bundle" in prompt_text
+    assert "phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle" in prompt_text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:

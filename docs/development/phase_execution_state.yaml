@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/wechat-pay*
 capability_owner: aicrm_next.commerce
-last_merged_pr: "#742"
-last_attempted_action: phase_5ad_payment_commerce_production_canary_tooling_bundle
-last_created_pr: "#742"
-recommended_next_pr: phase_5ae_payment_commerce_family_acceptance_bundle
+last_merged_pr: "#743"
+last_attempted_action: phase_5ae_payment_commerce_family_acceptance_bundle
+last_created_pr: "#743"
+recommended_next_pr: phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -328,9 +328,10 @@ completed_steps:
   - phase_5ab_payment_commerce_staging_sandbox_canary_evidence_completed
   - phase_5ac_payment_commerce_production_canary_readiness_completed
   - phase_5ad_payment_commerce_production_canary_tooling_completed
+  - phase_5ae_payment_commerce_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5ae_payment_commerce_family_acceptance_bundle
+  - phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -1162,6 +1163,27 @@ phase5ad_payment_commerce_production_canary_tooling:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5ae_payment_commerce_family_acceptance_bundle
+
+phase5ae_payment_commerce_family_acceptance:
+  status: phase_5ae_payment_commerce_family_acceptance_completed
+  route_family: /api/admin/wechat-pay*
+  capability_owner: aicrm_next.commerce
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_decision: accepted_with_blocked_evidence_only
+  production_canary_passed: false
+  real_money_movement_occurred: false
+  real_payment_capture_executed: false
+  real_refund_executed: false
+  real_settlement_executed: false
+  production_payment_webhook_cutover_executed: false
+  production_order_state_mutation_executed: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  delete_ready: false
+  selected_next_bundle: phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle
+  next_capability_owner: aicrm_next.integration_gateway
 
 forbidden_without_owner_approval:
   - production owner switch
