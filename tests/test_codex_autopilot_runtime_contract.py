@@ -18,13 +18,25 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_generates_post_phase7_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_stops_waiting_for_owner_evidence_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
-    report = runner.main(["--skip-github", "--prompt-output", str(prompt), "--lock-file", str(tmp_path / "lock")])
+    owner_package = tmp_path / "owner.md"
+    report = runner.main(
+        [
+            "--skip-github",
+            "--prompt-output",
+            str(prompt),
+            "--owner-decision-output",
+            str(owner_package),
+            "--lock-file",
+            str(tmp_path / "lock"),
+        ]
+    )
     assert report == 0
-    assert prompt.exists() is True
-    text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_owner_evidence_waiting_acceptance_bundle" in text
+    assert prompt.exists() is False
+    assert owner_package.exists() is True
+    text = owner_package.read_text(encoding="utf-8")
+    assert "phase_execution_state has no next_allowed_actions" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1557,6 +1569,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_cleanup_blocker_acceptance.yaml",
         "docs/development/post_phase7_cleanup_owner_evidence_collection.md",
         "docs/development/post_phase7_cleanup_owner_evidence_collection.yaml",
+        "docs/development/post_phase7_cleanup_owner_evidence_waiting_acceptance.md",
+        "docs/development/post_phase7_cleanup_owner_evidence_waiting_acceptance.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1580,6 +1594,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
         "tools/check_post_phase7_cleanup_blocker_acceptance.py",
         "tools/check_post_phase7_cleanup_owner_evidence_collection.py",
+        "tools/check_post_phase7_cleanup_owner_evidence_waiting_acceptance.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1601,6 +1616,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
         "tests/test_post_phase7_cleanup_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_owner_evidence_collection.py",
+        "tests/test_post_phase7_cleanup_owner_evidence_waiting_acceptance.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
