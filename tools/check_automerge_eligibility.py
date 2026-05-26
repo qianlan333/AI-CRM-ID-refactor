@@ -74,6 +74,8 @@ LOW_RISK_EXACT = {
     "tools/run_phase5r_oauth_identity_production_canary_readiness.py",
     "tools/run_phase5s_oauth_identity_production_live_canary_execution.py",
     "tools/run_phase5s_oauth_identity_production_canary_cleanup.py",
+    "tools/run_phase5u_media_upload_fake_stub_staging_smoke.py",
+    "tools/run_phase5u_media_upload_fake_stub_production_dry_run.py",
     "scripts/codex_autopilot_tick.sh",
 }
 AUTOPILOT_DELIVERABLE_RUNTIME_PATHS = {
@@ -275,6 +277,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/phase_5s_oauth_identity_production_live_canary_execution.yaml",
         "docs/development/phase_5t_oauth_identity_family_acceptance.md",
         "docs/development/phase_5t_oauth_identity_family_acceptance.yaml",
+        "docs/development/phase_5u_media_upload_adapter_contract_fake_stub.md",
+        "docs/development/phase_5u_media_upload_adapter_contract_fake_stub.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -438,6 +442,10 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_phase5s_oauth_identity_production_live_canary_execution.py",
         "tools/check_phase5t_oauth_identity_family_acceptance.py",
         "tests/test_phase5t_oauth_identity_family_acceptance.py",
+        "tools/check_phase5u_media_upload_adapter_contract_fake_stub.py",
+        "tools/run_phase5u_media_upload_fake_stub_staging_smoke.py",
+        "tools/run_phase5u_media_upload_fake_stub_production_dry_run.py",
+        "tests/test_phase5u_media_upload_adapter_contract_fake_stub.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",

@@ -1,0 +1,122 @@
+version: 1
+status: phase_5u_media_upload_adapter_contract_fake_stub_no_live_upload
+bundle_type: phase_5_external_adapter_contract_fake_stub_bundle
+route_family: /api/admin/image-library*
+related_route_families:
+  - /api/admin/image-library/upload
+  - /api/admin/attachment-library*
+  - /api/admin/miniprogram-library*
+capability_owner: aicrm_next.media_library
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  live_provider_upload_authorized: false
+  production_media_publish_authorized: false
+  public_media_url_publication_authorized: false
+  raw_file_exposure_authorized: false
+  destructive_delete_authorized: false
+  route_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  oauth_callback_cutover_authorized: false
+  payment_behavior_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+adapter_contract:
+  methods:
+    - name: validate_media_metadata
+      live_upload_allowed: false
+      adapter_mode: fake_stub_contract
+    - name: dry_run_upload_media
+      live_upload_allowed: false
+      idempotency_required: true
+      adapter_mode: fake_stub_contract
+    - name: dry_run_lookup_media
+      live_upload_allowed: false
+      adapter_mode: fake_stub_contract
+    - name: dry_run_provider_reference
+      live_upload_allowed: false
+      adapter_mode: fake_stub_contract
+    - name: dry_run_publish_reference_policy
+      live_upload_allowed: false
+      adapter_mode: fake_stub_contract
+
+fake_stub_runtime:
+  existing_runtime_boundary: aicrm_next.integration_gateway.media_adapters
+  deterministic_fake_metadata_required: true
+  provider_secret_required: false
+  token_usage_allowed: false
+  network_call_allowed: false
+  raw_file_dump_allowed: false
+  public_url_publication_allowed: false
+  destructive_delete_allowed: false
+  production_success_claim_allowed: false
+
+metadata_policy:
+  max_size_bytes: 5242880
+  allowed_mime_types:
+    - image/png
+    - image/jpeg
+    - image/webp
+    - application/pdf
+  allowed_extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .webp
+    - .pdf
+  raw_file_output_forbidden: true
+  public_url_redaction_required: true
+
+idempotency_policy:
+  idempotency_key_required_for_write_like_dry_run: true
+  replay_same_hash: true
+  conflict_different_hash: true
+  no_partial_external_side_effect: true
+
+readiness_runners:
+  staging:
+    path: tools/run_phase5u_media_upload_fake_stub_staging_smoke.py
+    default_blocked: true
+    live_upload_allowed: false
+    required_env:
+      - AICRM_PHASE5U_MEDIA_UPLOAD_STAGING_FAKE_STUB_APPROVED
+  production_dry_run:
+    path: tools/run_phase5u_media_upload_fake_stub_production_dry_run.py
+    live_upload_allowed: false
+    required_args:
+      - --dry-run
+      - --confirm-no-live-upload
+      - --confirm-no-public-publish
+
+side_effect_safety:
+  live_provider_upload_allowed: false
+  cloud_storage_upload_allowed: false
+  wecom_media_upload_allowed: false
+  network_call_allowed: false
+  token_usage_allowed: false
+  provider_secret_usage_allowed: false
+  public_media_url_publication_allowed: false
+  raw_file_exposure_allowed: false
+  destructive_delete_allowed: false
+  outbound_send_allowed: false
+  payment_allowed: false
+  oauth_callback_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_external_side_effect_enabled: true
+  fake_stub_only: true
+
+next_bundle:
+  recommended_next_step: phase_5v_media_upload_live_adapter_behind_flag_bundle
+  route_family: /api/admin/image-library*

@@ -44,10 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5u_media_upload_adapter_contract_fake_stub_bundle",
+    "phase_5v_media_upload_live_adapter_behind_flag_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS = {
-    "phase_5u_media_upload_adapter_contract_fake_stub_bundle",
+    "phase_5v_media_upload_live_adapter_behind_flag_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -133,6 +133,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5r_oauth_identity_production_canary_readiness_completed",
     "phase_5s_oauth_identity_production_live_canary_execution_completed",
     "phase_5t_oauth_identity_family_acceptance_completed",
+    "phase_5u_media_upload_adapter_contract_fake_stub_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -366,8 +367,8 @@ def build_report() -> dict[str, Any]:
         blockers.append("active_candidate must select the Phase 5U media image-library candidate")
     if state.get("capability_owner") != "aicrm_next.media_library":
         blockers.append("capability_owner must be aicrm_next.media_library")
-    if state.get("last_merged_pr") != "#732":
-        blockers.append("last_merged_pr must record latest completed merged PR #732")
+    if state.get("last_merged_pr") != "#733":
+        blockers.append("last_merged_pr must record latest completed merged PR #733")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
