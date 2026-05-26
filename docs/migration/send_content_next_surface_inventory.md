@@ -14,6 +14,14 @@
 - `PUT /api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials`
 - `GET /api/admin/automation-conversion/behavior-segment-rules`
 
+## New Frontend Assets
+
+- `aicrm_next/frontend_compat/static/admin_console/send_content_composer.js`
+- `aicrm_next/frontend_compat/static/admin_console/send_content_composer.css`
+- `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
+- `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
+- `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+
 ## Explicit Non-Surfaces
 
 This work does not add or rewrite:
@@ -32,3 +40,4 @@ This work does not add or rewrite:
 
 HXC / funnel dashboard broadcast remains out of scope for this phase. If a Next-native HXC broadcast backend is needed later, it should be implemented in a separate PR with explicit outbound safety gates.
 
+Campaign step and Sidebar integration are also left for the next frontend integration pass. This PR provides the standard component and automation operation page integration only.

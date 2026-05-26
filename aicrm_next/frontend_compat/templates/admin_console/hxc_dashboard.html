@@ -2,6 +2,8 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_simple.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}">
 <style>
   /* —— stat 卡片 (4 漏斗) —— */
   .hxc-stats {
@@ -122,48 +124,6 @@
   .hxc-ms-action { color: #3b82f6; cursor: pointer; }
   .hxc-ms-action:hover { text-decoration: underline; }
 
-  /* —— 群发弹窗 —— */
-  .hxc-modal-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    z-index: 2000; align-items: center; justify-content: center;
-  }
-  .hxc-modal-overlay.open { display: flex; }
-  .hxc-modal {
-    background: #fff; border-radius: 12px; padding: 24px; width: 600px; max-width: 90vw;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;
-  }
-  .hxc-modal h3 { margin: 0 0 12px; font-size: 16px; }
-  .hxc-modal textarea {
-    width: 100%; box-sizing: border-box; height: 100px; padding: 8px 10px;
-    border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; resize: vertical;
-  }
-  .hxc-modal-info { font-size: 12px; color: #6b7280; margin: 8px 0; line-height: 1.6; }
-  .hxc-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-  .hxc-modal-section { margin-top: 14px; }
-  .hxc-modal-section-title {
-    font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .hxc-modal-section-title .hxc-badge {
-    font-size: 11px; font-weight: 400; color: #6b7280; background: #f3f4f6;
-    padding: 1px 6px; border-radius: 8px;
-  }
-  .hxc-asset-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 8px; max-height: 200px; overflow-y: auto; padding: 4px;
-  }
-  .hxc-asset-card {
-    border: 2px solid #e5e7eb; border-radius: 8px; padding: 6px;
-    cursor: pointer; text-align: center; transition: border-color 0.15s; font-size: 11px;
-  }
-  .hxc-asset-card:hover { border-color: #93c5fd; }
-  .hxc-asset-card.selected { border-color: #3b82f6; background: #eff6ff; }
-  .hxc-asset-card img { width: 100%; height: 60px; object-fit: cover; border-radius: 4px; }
-  .hxc-asset-card .hxc-asset-name {
-    margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: #374151;
-  }
-  .hxc-asset-empty { font-size: 12px; color: #9ca3af; padding: 12px; text-align: center; }
 </style>
 {% endblock %}
 
@@ -226,47 +186,13 @@
 
 
 </section>
-
-<!-- 群发弹窗 -->
-<div class="hxc-modal-overlay" id="hxc-broadcast-modal">
-  <div class="hxc-modal">
-    <h3>群发消息</h3>
-    <div class="hxc-modal-info" id="hxc-broadcast-info"></div>
-
-    <div class="hxc-modal-section">
-      <div class="hxc-modal-section-title">文字内容</div>
-      <textarea id="hxc-broadcast-content" placeholder="输入群发文字内容 (可选, 至少填一项)"></textarea>
-    </div>
-
-    <div class="hxc-modal-section">
-      <div class="hxc-modal-section-title">
-        图片素材 <span class="hxc-badge" id="hxc-img-count">最多 3 张</span>
-      </div>
-      <div id="hxc-img-grid" class="hxc-asset-grid">
-        <div class="hxc-asset-empty">加载中...</div>
-      </div>
-    </div>
-
-    <div class="hxc-modal-section">
-      <div class="hxc-modal-section-title">
-        小程序卡片 <span class="hxc-badge">最多 1 个</span>
-      </div>
-      <div id="hxc-mp-grid" class="hxc-asset-grid">
-        <div class="hxc-asset-empty">加载中...</div>
-      </div>
-    </div>
-
-    <div class="hxc-modal-actions">
-      <button class="admin-button admin-button--ghost" type="button" id="hxc-broadcast-cancel">取消</button>
-      <button class="admin-button admin-button--primary" type="button" id="hxc-broadcast-send">确认群发</button>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
 {% block scripts_extra %}
 <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
 <script src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
+<script src="{{ url_for('static', filename='admin_console/material_picker.js') }}"></script>
+<script src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}"></script>
 <script id="hxc-dashboard-data" type="application/json">{{ dashboard_rows | tojson }}</script>
 <script id="hxc-send-config-data" type="application/json">{{ send_configs | tojson }}</script>
 <script>
@@ -518,92 +444,16 @@
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // 一键群发 (文字 + 图片 + 小程序)
-  // ═══════════════════════════════════════════════════════════════
+  // HXC broadcast still needs a Next-native backend in a later slice. This click only
+  // prepares the standard SendContentPackage and never calls the legacy broadcast route.
   const senderConfigs = JSON.parse(document.getElementById('hxc-send-config-data').textContent);
-  const modal = document.getElementById('hxc-broadcast-modal');
-  const infoEl = document.getElementById('hxc-broadcast-info');
-  let broadcastEuids = [];
-
-  // 素材缓存
-  let imageLibrary = null;
-  let miniprogramLibrary = null;
-  const selectedImageIds = new Set();
-  let selectedMpId = null;
-
-  function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-
-  async function loadAssets(){
-    if(!imageLibrary){
-      try {
-        const r = await fetch('/api/admin/image-library?enabled_only=true&limit=50');
-        const d = await r.json();
-        imageLibrary = (d.items || []);
-      } catch(e){ imageLibrary = []; }
-    }
-    if(!miniprogramLibrary){
-      try {
-        const r = await fetch('/api/admin/miniprogram-library?enabled_only=true');
-        const d = await r.json();
-        miniprogramLibrary = (d.items || []);
-      } catch(e){ miniprogramLibrary = []; }
-    }
-  }
-
-  function renderImageGrid(){
-    const grid = document.getElementById('hxc-img-grid');
-    if(!imageLibrary.length){ grid.innerHTML = '<div class="hxc-asset-empty">暂无图片素材，请先在「图片素材库」上传</div>'; return; }
-    grid.innerHTML = '';
-    imageLibrary.forEach(img => {
-      const card = document.createElement('div');
-      card.className = 'hxc-asset-card' + (selectedImageIds.has(img.id) ? ' selected' : '');
-      const thumbUrl = img.source_url || '';
-      card.innerHTML =
-        (thumbUrl ? '<img src="'+esc(thumbUrl)+'" alt="'+esc(img.name)+'">' : '<div style="height:60px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:20px">&#128247;</div>') +
-        '<div class="hxc-asset-name" title="'+esc(img.name)+'">'+esc(img.name)+'</div>';
-      card.addEventListener('click', () => {
-        if(selectedImageIds.has(img.id)){
-          selectedImageIds.delete(img.id);
-        } else {
-          if(selectedImageIds.size >= 3){ alert('最多选择 3 张图片'); return; }
-          selectedImageIds.add(img.id);
-        }
-        renderImageGrid();
-        document.getElementById('hxc-img-count').textContent = selectedImageIds.size > 0 ? '已选 '+selectedImageIds.size+'/3' : '最多 3 张';
-      });
-      grid.appendChild(card);
-    });
-  }
-
-  function renderMpGrid(){
-    const grid = document.getElementById('hxc-mp-grid');
-    if(!miniprogramLibrary.length){ grid.innerHTML = '<div class="hxc-asset-empty">暂无小程序卡片，请先在「小程序素材库」添加</div>'; return; }
-    grid.innerHTML = '';
-    miniprogramLibrary.forEach(mp => {
-      const card = document.createElement('div');
-      card.className = 'hxc-asset-card' + (selectedMpId === mp.id ? ' selected' : '');
-      const thumbUrl = mp.thumb_image_url || '';
-      card.innerHTML =
-        (thumbUrl ? '<img src="'+esc(thumbUrl)+'" alt="'+esc(mp.title)+'">' : '<div style="height:60px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:20px">&#128242;</div>') +
-        '<div class="hxc-asset-name" title="'+esc(mp.title || mp.name)+'">'+esc(mp.title || mp.name)+'</div>';
-      card.addEventListener('click', () => {
-        selectedMpId = selectedMpId === mp.id ? null : mp.id;
-        renderMpGrid();
-      });
-      grid.appendChild(card);
-    });
-  }
-
-  document.getElementById('hxc-broadcast-btn').addEventListener('click', async ()=>{
+  document.getElementById('hxc-broadcast-btn').addEventListener('click', ()=>{
     const filtered = table.getData("active");
-    const withEuid = filtered.filter(r=>r.external_userid && r.external_userid.trim());
-    const noEuid = filtered.length - withEuid.length;
-    broadcastEuids = withEuid.map(r=>r.external_userid);
+    const rowsWithContact = filtered.filter(r=>r.external_userid && r.external_userid.trim());
     const activeSenders = senderConfigs.filter(s=>s.is_active).map(s=>s.sender_userid);
 
-    if(!broadcastEuids.length){
-      alert('当前筛选结果中没有可发送用户 (无企微外部联系人 ID)');
+    if(!rowsWithContact.length){
+      alert('当前筛选结果中没有企微外部联系人 ID，暂不能生成群发内容包');
       return;
     }
     if(!activeSenders.length){
@@ -611,73 +461,28 @@
       return;
     }
 
-    const inWhitelist = withEuid.filter(r=>activeSenders.includes(r.owner_userid)).length;
-    infoEl.innerHTML =
-      '筛选结果: <b>'+filtered.length+'</b> 行 &nbsp;|&nbsp; '+
-      '有企微 ID: <b>'+withEuid.length+'</b> 人'+
-      (noEuid>0?' ('+noEuid+' 人无 ID 已跳过)':'')+'&nbsp;|&nbsp; '+
-      '白名单匹配: <b>'+inWhitelist+'</b> 人 &nbsp;|&nbsp; '+
-      '发送人: '+activeSenders.join(', ');
-    document.getElementById('hxc-broadcast-content').value = '';
-    selectedImageIds.clear();
-    selectedMpId = null;
-
-    await loadAssets();
-    renderImageGrid();
-    renderMpGrid();
-    document.getElementById('hxc-img-count').textContent = '最多 3 张';
-    modal.classList.add('open');
-  });
-
-  document.getElementById('hxc-broadcast-cancel').addEventListener('click', ()=>{
-    modal.classList.remove('open');
-  });
-  modal.addEventListener('click', e=>{ if(e.target===modal) modal.classList.remove('open'); });
-
-  document.getElementById('hxc-broadcast-send').addEventListener('click', async ()=>{
-    const content = document.getElementById('hxc-broadcast-content').value.trim();
-    const hasContent = !!content;
-    const hasImages = selectedImageIds.size > 0;
-    const hasMp = !!selectedMpId;
-    if(!hasContent && !hasImages && !hasMp){
-      alert('请至少填写文字内容、选择图片或小程序卡片');
-      return;
-    }
-
-    const payload = {external_userids: broadcastEuids};
-    if(hasContent) payload.content = content;
-    if(hasImages) payload.image_library_ids = [...selectedImageIds];
-    if(hasMp) payload.miniprogram_library_id = selectedMpId;
-
-    const btn = document.getElementById('hxc-broadcast-send');
-    btn.disabled = true; btn.textContent = '发送中…';
-    try {
-      const resp = await fetch('/api/admin/hxc-dashboard/broadcast', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(payload),
-      });
-      const result = await resp.json();
-      btn.disabled = false; btn.textContent = '确认群发';
-      if(result.ok){
-        let msg = '发送完成!\n成功: '+result.total_sent+' 人';
-        if(result.total_failed) msg += '\n失败: '+result.total_failed+' 人';
-        if(result.skipped_no_match) msg += '\n无匹配发送人 (好友中无白名单成员): '+result.skipped_no_match+' 人';
-        if(result.sender_results){
-          msg += '\n\n各发送人明细:';
-          result.sender_results.forEach(sr=>{
-            msg += '\n  '+sr.sender+'('+(sr.display_name||'-')+'): '+(sr.ok?sr.target_count+' 人':'失败 - '+sr.error);
-          });
-        }
-        alert(msg);
-        modal.classList.remove('open');
-      } else {
-        alert('发送失败: '+(result.error||'未知错误')+
-          (result.skipped_no_match?'\n无匹配发送人: '+result.skipped_no_match+' 人':''));
-      }
-    } catch(err) {
-      btn.disabled = false; btn.textContent = '确认群发';
-      alert('发送失败: '+err.message);
-    }
+    window.AICRMSendContentComposer.open({
+      title: 'HXC 群发内容',
+      textEnabled: true,
+      value: {
+        content_text: '',
+        image_library_ids: [],
+        miniprogram_library_ids: [],
+        attachment_library_ids: [],
+      },
+      onConfirm(contentPackage) {
+        const materialCount =
+          (contentPackage.image_library_ids || []).length +
+          (contentPackage.miniprogram_library_ids || []).length +
+          (contentPackage.attachment_library_ids || []).length;
+        alert(
+          '已生成标准内容包，HXC Next-native broadcast 后端将在后续 PR 接入。' +
+          '\n筛选行数: ' + filtered.length +
+          '\n已识别联系人: ' + rowsWithContact.length +
+          '\n素材数: ' + materialCount
+        );
+      },
+    });
   });
 })();
 </script>

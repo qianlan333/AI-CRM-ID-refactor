@@ -29,3 +29,6 @@ Normalization rules:
 
 The component outputs only `content_text` plus the three material ID arrays. Outer automation pages own `content_mode`, `profile_segment_template_id`, behavior rules, and `agent_code`.
 
+Frontend usage follows the same boundary. `AICRMSendContentComposer` only edits this package. The automation operation page owns unified/profile-layered/behavior-layered/agent mode selection, profile template selection, behavior rule selection, and agent selection.
+
+In agent mode the composer must be opened with `textEnabled=false`, so no manual copy is returned and only material IDs are saved.
