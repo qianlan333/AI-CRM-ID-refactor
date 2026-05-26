@@ -24,7 +24,7 @@ def test_phase_execution_state_fields_complete() -> None:
     assert data["current_phase"] == "phase_5_external_adapter"
     assert data["active_candidate"] == "/api/admin/image-library*"
     assert data["capability_owner"] == "aicrm_next.media_library"
-    assert data["last_merged_pr"] == "#734"
+    assert data["last_merged_pr"] == "#735"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -113,9 +113,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5t_oauth_identity_family_acceptance_completed" in set(data["completed_steps"])
     assert "phase_5u_media_upload_adapter_contract_fake_stub_completed" in set(data["completed_steps"])
     assert "phase_5v_media_upload_live_adapter_behind_flag_completed" in set(data["completed_steps"])
+    assert "phase_5w_media_upload_staging_live_canary_evidence_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5w_media_upload_staging_canary_only() -> None:
+def test_next_allowed_actions_are_phase_5x_media_upload_production_canary_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
