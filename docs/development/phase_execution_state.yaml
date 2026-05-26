@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/h5/wechat/oauth*
 capability_owner: aicrm_next.integration_gateway
-last_merged_pr: "#728"
-last_attempted_action: phase_5p_oauth_identity_live_adapter_behind_flag_bundle
-last_created_pr: "#729"
-recommended_next_pr: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
+last_merged_pr: "#729"
+last_attempted_action: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
+last_created_pr: "#730"
+recommended_next_pr: phase_5r_oauth_identity_production_canary_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -112,6 +112,9 @@ staging_readiness_slices:
   - route_family: /wecom/external-contact/callback
     slice: wecom_customer_contact_staging_live_callback_canary_evidence_gate
     scope: blocked_by_default_explicit_canary_approval_only
+  - route_family: /api/h5/wechat/oauth*
+    slice: oauth_identity_staging_live_canary_evidence_gate
+    scope: blocked_by_default_explicit_canary_approval_only
 production_dry_run_readiness_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_production_readonly_dry_run_readiness
@@ -155,6 +158,9 @@ production_dry_run_readiness_slices:
   - route_family: /wecom/external-contact/callback
     slice: wecom_customer_contact_production_callback_canary_readiness
     scope: readiness_only_no_live_callback_no_write
+  - route_family: /api/h5/wechat/oauth*
+    slice: oauth_identity_production_live_readiness_review
+    scope: review_only_no_live_oauth_call_no_session_write
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -257,9 +263,10 @@ completed_steps:
   - phase_5n_oauth_identity_adapter_contract_completed
   - phase_5o_oauth_identity_fake_stub_adapter_completed
   - phase_5p_oauth_identity_live_adapter_behind_flag_completed
+  - phase_5q_oauth_identity_staging_live_canary_evidence_completed
 
 next_allowed_actions:
-  - phase_5q_oauth_identity_staging_live_canary_evidence_bundle
+  - phase_5r_oauth_identity_production_canary_readiness_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -699,6 +706,39 @@ phase5p_oauth_identity_live_adapter_behind_flag:
   canary_approved: false
   delete_ready: false
   recommended_next_bundle: phase_5q_oauth_identity_staging_live_canary_evidence_bundle
+
+phase5q_oauth_identity_staging_live_canary_evidence:
+  status: phase_5q_oauth_identity_staging_live_canary_evidence_completed
+  route_family: /api/h5/wechat/oauth*
+  capability_owner: aicrm_next.integration_gateway
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_staging_live_canary_evidence_bundle
+  staging_live_canary_gate_completed: true
+  staging_live_canary_default_blocked: true
+  target_guard_completed: true
+  redacted_evidence_collector_completed: true
+  cleanup_rollback_evidence_completed: true
+  production_readiness_review_completed: true
+  checker_completed: true
+  tests_completed: true
+  staging_live_canary_possible_with_approval: true
+  production_live_oauth_call_authorized: false
+  production_callback_cutover_authorized: false
+  production_session_write_authorized: false
+  production_identity_write_authorized: false
+  outbound_send_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  payment_behavior_ready: false
+  media_live_upload_ready: false
+  wecom_live_call_ready: false
+  openclaw_mcp_live_call_ready: false
+  timer_execution_ready: false
+  automation_execution_ready: false
+  production_canary_approved: false
+  delete_ready: false
+  recommended_next_bundle: phase_5r_oauth_identity_production_canary_readiness_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

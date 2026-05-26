@@ -1,0 +1,83 @@
+version: 1
+status: phase_5q_oauth_identity_staging_live_canary_evidence
+bundle_type: phase_5_external_adapter_staging_live_canary_evidence_bundle
+route_family: /api/h5/wechat/oauth*
+capability_owner: aicrm_next.integration_gateway
+
+authorizations:
+  staging_live_canary_possible_with_approval: true
+  production_live_oauth_call_authorized: false
+  production_callback_cutover_authorized: false
+  production_session_write_authorized: false
+  production_identity_write_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  wecom_live_call_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  production_canary_approved: false
+  delete_ready: false
+
+staging_canary:
+  runner: tools/run_phase5q_oauth_identity_staging_live_canary_evidence.py
+  default_blocked: true
+  required_env:
+    - AICRM_OAUTH_IDENTITY_LIVE_ADAPTER_ENABLED
+    - AICRM_OAUTH_IDENTITY_LIVE_CALLBACK_APPROVED
+    - AICRM_OAUTH_IDENTITY_CONFIG_REVIEWED
+    - AICRM_PHASE5Q_OAUTH_IDENTITY_STAGING_CANARY_APPROVED
+    - AICRM_PHASE5Q_OAUTH_IDENTITY_STAGING_TARGET_APPROVED
+  required_args:
+    - --execute-staging-canary
+    - --confirm-live-oauth-call
+    - --confirm-staging-only
+    - --confirm-approved-target
+    - --idempotency-key
+    - --state
+    - --output-json
+    - --output-md
+
+target_safety:
+  single_callback_attempt_only: true
+  batch_replay_allowed: false
+  production_callback_url_allowed: false
+  production_session_write_allowed: false
+  production_identity_write_allowed: false
+  raw_code_output_forbidden: true
+  raw_state_output_forbidden: true
+  raw_token_output_forbidden: true
+  raw_secret_output_forbidden: true
+
+side_effect_safety:
+  production_callback_cutover_allowed: false
+  production_session_write_allowed: false
+  production_identity_write_allowed: false
+  outbound_send_allowed: false
+  wecom_call_allowed: false
+  payment_allowed: false
+  media_upload_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+production_readiness_review:
+  runner: tools/run_phase5q_oauth_identity_production_live_readiness_review.py
+  production_live_oauth_call_executed: false
+  production_callback_cutover_executed: false
+  production_session_write_executed: false
+  production_identity_write_executed: false
+  requires_staging_evidence_json: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5r_oauth_identity_production_canary_readiness_bundle
+  route_family: /api/h5/wechat/oauth*
