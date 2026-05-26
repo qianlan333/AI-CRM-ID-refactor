@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5ac_payment_commerce_production_canary_readiness_bundle",
+    "phase_5ad_payment_commerce_production_canary_tooling_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -471,6 +471,11 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5ab_payment_commerce_staging_sandbox_canary_evidence.py",
         "tools/run_phase5ab_payment_commerce_production_readiness_review.py",
         "tests/test_phase5ab_payment_commerce_staging_sandbox_canary_evidence.py",
+        "docs/development/phase_5ac_payment_commerce_production_canary_readiness.md",
+        "docs/development/phase_5ac_payment_commerce_production_canary_readiness.yaml",
+        "tools/check_phase5ac_payment_commerce_production_canary_readiness.py",
+        "tools/run_phase5ac_payment_commerce_production_canary_readiness.py",
+        "tests/test_phase5ac_payment_commerce_production_canary_readiness.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
