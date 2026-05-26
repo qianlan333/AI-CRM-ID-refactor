@@ -19,6 +19,10 @@ def test_image_upload_client_handles_non_json_413():
     assert "response.status === 413" in source
     assert "服务返回了非 JSON" in source
     assert "prepareImageForUpload" in source
+    assert "DEFAULT_REQUEST_TIMEOUT_MS = 15000" in source
+    assert "requestJsonWithTimeout" in source
+    assert "请求超时，请检查网络或稍后重试" in source
+    assert "controller.abort()" in source
 
 
 def test_image_upload_client_compresses_before_post():

@@ -286,31 +286,30 @@
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function getJSON(url) {
-    return window.ImageUploadClient.requestJson(url);
+    return window.ImageUploadClient.requestJsonWithTimeout(url);
   }
   function postJSON(url, body) {
-    return window.ImageUploadClient.requestJson(url, {
+    return window.ImageUploadClient.requestJsonWithTimeout(url, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
   }
   function putJSON(url, body) {
-    return window.ImageUploadClient.requestJson(url, {
+    return window.ImageUploadClient.requestJsonWithTimeout(url, {
       method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
   }
   function deleteReq(url) {
-    return window.ImageUploadClient.requestJson(url, { method: 'DELETE', credentials: 'same-origin' });
+    return window.ImageUploadClient.requestJsonWithTimeout(url, { method: 'DELETE', credentials: 'same-origin' });
   }
 
   // ---------- 状态 ---------- //
   var STATE = {
     items: [],
     filters: { q:'', includeDisabled:false },
-    thumbCache: {},  // image_id → data:url，给卡片缩略图 + 编辑大图共用
   };
 
   // ---------- 客户端过滤 ---------- //
@@ -326,39 +325,17 @@
     });
   }
 
-  // ---------- 缩略图：通过 thumb_image_id 拉 image_library 拿 base64 ---------- //
-  async function thumbnailUrl(item) {
-    if (item._thumb) return item._thumb;
-    // 1) 关联 image_library
-    var imgId = item.thumb_image_id;
-    if (imgId && STATE.thumbCache[imgId]) {
-      item._thumb = STATE.thumbCache[imgId];
-      return item._thumb;
-    }
-    if (imgId) {
-      try {
-        var d = await getJSON('/api/admin/image-library/' + imgId);
-        if (d.ok && d.item.data_base64) {
-          var url = 'data:' + (d.item.mime_type || 'image/png') + ';base64,' + d.item.data_base64;
-          STATE.thumbCache[imgId] = url;
-          item._thumb = url;
-          return url;
-        }
-        if (d.ok && d.item.source_url) {
-          STATE.thumbCache[imgId] = d.item.source_url;
-          item._thumb = d.item.source_url;
-          return item._thumb;
-        }
-      } catch (e) {}
-    }
-    // 2) legacy 兜底字段
+  // ---------- 缩略图：优先使用后端变体 URL，不再批量拉原图 base64 ---------- //
+  function thumbnailUrl(item, variant) {
+    if (variant === 'preview' && item.preview_url) return item.preview_url;
+    if (item.thumb_320_url) return item.thumb_320_url;
+    if (item.thumb_url) return item.thumb_url;
+    if (item.thumb_160_url) return item.thumb_160_url;
     if (item.thumb_image_url) {
-      item._thumb = item.thumb_image_url;
-      return item._thumb;
+      return item.thumb_image_url;
     }
     if (item.thumb_image_base64) {
-      item._thumb = 'data:image/png;base64,' + item.thumb_image_base64;
-      return item._thumb;
+      return 'data:image/png;base64,' + item.thumb_image_base64;
     }
     return '';
   }
@@ -390,11 +367,11 @@
         + '</div></div>';
     }).join('');
 
-    // 异步填缩略图
-    items.forEach(async function (it) {
-      var url = await thumbnailUrl(it);
+    // 填缩略图：列表 item 已带 thumb_320_url / thumb_160_url
+    items.forEach(function (it) {
+      var url = thumbnailUrl(it);
       var cell = wrap.querySelector('.mp-card[data-id="' + it.id + '"] .mp-thumb');
-      if (cell && url) cell.innerHTML = '<img src="' + url + '" alt="">';
+      if (cell && url) cell.innerHTML = '<img src="' + escapeHtml(url) + '" srcset="' + escapeHtml(it.thumb_160_url || url) + ' 160w, ' + escapeHtml(it.thumb_320_url || url) + ' 320w" sizes="220px" loading="lazy" decoding="async" width="320" height="256" alt="">';
       else if (cell) cell.textContent = '(无图)';
     });
 
@@ -452,6 +429,11 @@
     $createModal.hidden = false;
   }
   function closeCreateModal() { $createModal.hidden = true; }
+  function refreshListInBackground() {
+    loadList().catch(function (e) {
+      console.warn('miniprogram library background refresh failed', e);
+    });
+  }
 
   document.getElementById('mp-open-create').addEventListener('click', openCreateModal);
   document.getElementById('mp-create-close').addEventListener('click', closeCreateModal);
@@ -479,7 +461,7 @@
       });
       if (d.ok) {
         setCreateStatus('已新增 #' + d.item.id, 'success');
-        await loadList();
+        refreshListInBackground();
         setTimeout(closeCreateModal, 600);
       } else {
         setCreateStatus('失败：' + (d.error || '未知错误'), 'error');
@@ -531,9 +513,9 @@
     // 加载左栏大图
     var imgWrap = document.getElementById('mp-edit-image-wrap');
     imgWrap.innerHTML = '<span class="empty">加载中…</span>';
-    var url = await thumbnailUrl(item);
+    var url = thumbnailUrl(item, 'preview');
     if (url) {
-      imgWrap.innerHTML = '<img src="' + url + '" alt="">';
+      imgWrap.innerHTML = '<img src="' + escapeHtml(url) + '" loading="lazy" decoding="async" alt="">';
     } else {
       imgWrap.innerHTML = '<span class="empty">无缩略图</span>';
     }
@@ -551,6 +533,8 @@
   // 保存
   document.getElementById('mp-edit-save').addEventListener('click', async function () {
     if (!editingItem) return;
+    var btn = this;
+    btn.disabled = true;
     setEditStatus('保存中…', 'busy');
     var newThumbId = editPicker ? editPicker.getValue() : 0;
     var payload = {
@@ -566,13 +550,15 @@
       var d = await putJSON('/api/admin/miniprogram-library/' + editingItem.id, payload);
       if (d.ok) {
         setEditStatus('已保存', 'success');
-        await loadList();
+        refreshListInBackground();
         setTimeout(closeEditModal, 500);
       } else {
         setEditStatus('保存失败：' + (d.error || '未知错误'), 'error');
       }
     } catch (e) {
       setEditStatus('保存失败：' + String(e), 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
 

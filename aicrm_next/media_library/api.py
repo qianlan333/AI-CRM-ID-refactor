@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import JSONResponse
+import logging
+import time
+
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse, Response
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .application import (
     DeleteMediaItemCommand,
     GetMediaItemQuery,
+    GetImageVariantQuery,
     ImportImageFromBase64Command,
     ImportImageFromUrlCommand,
     ListMediaFacetsQuery,
@@ -20,6 +24,7 @@ from .application import (
 from .dto import AttachmentUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _raise_http(exc: Exception) -> None:
@@ -28,6 +33,14 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _error_response(exc: Exception, status_code: int = 400, *, headers: dict[str, str] | None = None) -> JSONResponse:
+    if isinstance(exc, NotFoundError):
+        status_code = 404
+    elif isinstance(exc, ContractError):
+        status_code = 400
+    return JSONResponse(status_code=status_code, content={"ok": False, "error": str(exc)}, headers=headers or {})
 
 
 @router.get("/api/admin/image-library")
@@ -97,9 +110,29 @@ async def upload_image(
 
 
 @router.get("/api/admin/image-library/{image_id}")
-def get_image(image_id: str) -> dict:
+def get_image(image_id: str, include_data: bool = False, variant: str = "") -> dict:
     try:
-        return GetMediaItemQuery("image")(image_id)
+        result = GetMediaItemQuery("image")(image_id, include_data=include_data)
+        if variant:
+            result["variant_url"] = f"/api/admin/image-library/{image_id}/variants/{variant}"
+        return result
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/image-library/{image_id}/variants/{variant_key}")
+def get_image_variant(image_id: str, variant_key: str, if_none_match: str | None = Header(default=None, alias="If-None-Match")) -> Response:
+    try:
+        result = GetImageVariantQuery()(image_id, variant_key)
+        variant = result["variant"]
+        etag = str(variant.get("etag") or "")
+        headers = {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "ETag": etag,
+        }
+        if if_none_match and etag and if_none_match == etag:
+            return Response(status_code=304, headers=headers)
+        return Response(content=variant.get("bytes") or b"", media_type=str(variant.get("mime_type") or "image/png"), headers=headers)
     except Exception as exc:
         _raise_http(exc)
 
@@ -182,8 +215,20 @@ def list_miniprograms(limit: int = 100, offset: int = 0, enabled_only: bool = Tr
 
 
 @router.post("/api/admin/miniprogram-library")
-def create_miniprogram(payload: MiniprogramUpsertRequest) -> dict:
-    return UpsertMediaItemCommand("miniprogram")(payload)
+def create_miniprogram(payload: MiniprogramUpsertRequest):
+    started = time.perf_counter()
+    def duration_headers() -> dict[str, str]:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        log = logger.warning if duration_ms > 2000 else logger.info
+        log("POST /api/admin/miniprogram-library duration_ms=%s", duration_ms)
+        return {"X-AICRM-Media-Library-Duration-Ms": str(duration_ms)}
+
+    try:
+        result = UpsertMediaItemCommand("miniprogram")(payload)
+        return JSONResponse(content=result, headers=duration_headers())
+    except Exception as exc:
+        logger.exception("miniprogram library create failed")
+        return _error_response(exc, headers=duration_headers())
 
 
 @router.get("/api/admin/miniprogram-library/{item_id}")
