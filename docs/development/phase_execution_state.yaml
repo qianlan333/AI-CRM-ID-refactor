@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6i_external_enablement_and_compat_readiness_acceptance
-active_candidate: external_enablement_and_compat_readiness_acceptance
+current_phase: phase_6j_timer_execution_readiness
+active_candidate: timer_execution_readiness
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#767"
-last_attempted_action: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
-last_created_pr: "#767"
-recommended_next_pr: phase_6j_timer_execution_readiness_bundle
+last_merged_pr: "#769"
+last_attempted_action: phase_6j_timer_execution_readiness_bundle
+last_created_pr: "#769"
+recommended_next_pr: phase_6k_single_scope_execution_canary_tooling_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -385,8 +385,35 @@ completed_steps:
   - phase_6g_low_risk_external_adapter_enablement_tooling_completed
   - phase_6h_production_compat_exact_route_narrowing_readiness_completed
   - phase_6i_external_enablement_and_compat_readiness_acceptance_completed
+  - phase_6j_timer_execution_readiness_completed
 
 next_allowed_actions: []
+
+phase6j_timer_execution_readiness:
+  status: phase_6j_timer_execution_readiness_completed
+  bundle_type: phase_6j_timer_execution_readiness_bundle
+  route_family: phase_6_timer_execution_readiness
+  selected_execution_candidate:
+    candidate: workflow-nodes
+    route_family: /api/admin/automation-conversion/workflow-nodes*
+    capability: workflow_nodes_metadata_execution_simulation
+    execution_type: internal_metadata_dry_run_shadow_run
+    requires_outbound_send: false
+    requires_timer: false
+    requires_live_external_call: false
+    can_be_dry_run: true
+    can_be_single_scope_canary: true
+    risk_level: low
+  timer_execution_authorized: false
+  run_due_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  live_external_call_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6k_single_scope_execution_canary_tooling_bundle
 
 phase6i_external_enablement_and_compat_readiness_acceptance:
   status: phase_6i_external_enablement_and_compat_readiness_acceptance_completed

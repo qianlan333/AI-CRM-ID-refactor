@@ -1403,6 +1403,16 @@ def test_phase6i_external_enablement_compat_acceptance_artifacts_can_define_stop
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase6j_timer_execution_readiness_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_6j_timer_execution_readiness.md",
+        "docs/development/phase_6j_timer_execution_readiness.yaml",
+        "tools/check_phase6j_timer_execution_readiness.py",
+        "tests/test_phase6j_timer_execution_readiness.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
