@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/image-library*
 capability_owner: aicrm_next.media_library
-last_merged_pr: "#736"
-last_attempted_action: phase_5x_media_upload_production_canary_readiness_execution_bundle
-last_created_pr: "#736"
-recommended_next_pr: phase_5y_media_upload_family_acceptance_bundle
+last_merged_pr: "#737"
+last_attempted_action: phase_5y_media_upload_family_acceptance_bundle
+last_created_pr: "#737"
+recommended_next_pr: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -304,9 +304,10 @@ completed_steps:
   - phase_5v_media_upload_live_adapter_behind_flag_completed
   - phase_5w_media_upload_staging_live_canary_evidence_completed
   - phase_5x_media_upload_production_canary_readiness_execution_completed
+  - phase_5y_media_upload_family_acceptance_completed
 
 next_allowed_actions:
-  - phase_5y_media_upload_family_acceptance_bundle
+  - phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -975,6 +976,25 @@ phase5x_media_upload_production_canary_readiness_execution:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5y_media_upload_family_acceptance_bundle
+
+phase5y_media_upload_family_acceptance:
+  status: phase_5y_media_upload_family_acceptance_completed
+  route_family: /api/admin/image-library*
+  capability_owner: aicrm_next.media_library
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_family_acceptance_bundle
+  acceptance_decision: accepted_with_blocked_evidence_only
+  production_canary_passed: false
+  public_publish_enabled: false
+  destructive_delete_enabled: false
+  batch_upload_enabled: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  delete_ready: false
+  selected_next_bundle: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
+  next_route_family: /api/admin/wechat-pay*
+  next_capability_owner: aicrm_next.commerce
 
 forbidden_without_owner_approval:
   - production owner switch
