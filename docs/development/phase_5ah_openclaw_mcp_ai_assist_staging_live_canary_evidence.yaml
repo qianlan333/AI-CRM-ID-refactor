@@ -1,0 +1,89 @@
+version: 1
+status: phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence
+bundle_type: phase_5_external_adapter_staging_live_canary_evidence_bundle
+route_family: /mcp
+capability_owner: aicrm_next.integration_gateway
+related_capability_owner: aicrm_next.ai_assist
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  staging_live_canary_possible_with_approval: true
+  production_live_call_authorized: false
+  outbound_send_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  prompt_or_context_leak_authorized: false
+  credential_output_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  production_write_authorized: false
+  delete_ready: false
+
+staging_canary:
+  runner: tools/run_phase5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence.py
+  default_blocked: true
+  single_target_only: true
+  batch_replay_allowed: false
+  required_env:
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_LIVE_ADAPTER_ENABLED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_LIVE_CALL_APPROVED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_CONFIG_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_ENDPOINT_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_CREDENTIAL_SOURCE_REVIEWED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_PROMPT_REDACTION_CONFIRMED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_NO_OUTBOUND_SEND_CONFIRMED
+    - AICRM_OPENCLAW_MCP_AI_ASSIST_NO_AUTOMATION_EXECUTION_CONFIRMED
+    - AICRM_PHASE5AH_OPENCLAW_MCP_AI_ASSIST_STAGING_CANARY_APPROVED
+    - AICRM_PHASE5AH_OPENCLAW_MCP_AI_ASSIST_TARGET_APPROVED
+  required_args:
+    - --execute-staging-canary
+    - --confirm-live-call
+    - --confirm-staging-only
+    - --confirm-approved-target
+    - --confirm-redaction
+    - --confirm-no-outbound-send
+    - --confirm-no-automation-execution
+    - --idempotency-key
+
+target_safety:
+  single_prompt_or_tool_only: true
+  batch_replay_allowed: false
+  external_mutation_allowed: false
+  prompt_redaction_required: true
+  context_redaction_required: true
+  credential_redaction_required: true
+  raw_prompt_output_allowed: false
+  raw_credential_output_allowed: false
+
+cleanup_rollback:
+  cleanup_guidance_required: true
+  automatic_cleanup_allowed: false
+  batch_cleanup_allowed: false
+  cleanup_requires_separate_approval_if_live_artifact_created: true
+
+production_readiness_review:
+  runner: tools/run_phase5ah_openclaw_mcp_ai_assist_production_readiness_review.py
+  production_live_call_executed: false
+  outbound_send_executed: false
+  automation_execution_executed: false
+  requires_staging_evidence_json: true
+
+side_effect_safety:
+  production_live_call_allowed: false
+  outbound_send_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+  prompt_raw_output_allowed: false
+  credential_output_allowed: false
+  production_write_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  route_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_bundle
+  route_family: /mcp
