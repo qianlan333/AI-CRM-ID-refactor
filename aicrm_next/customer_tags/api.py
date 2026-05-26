@@ -1,12 +1,123 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
 
 from .application import build_wecom_tag_application_service
 from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
+from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_enabled, production_environment
 
 
 router = APIRouter()
+
+
+def _timestamp() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_local_fixture_allowed() -> None:
+    if production_environment() or legacy_production_facade_enabled() or not fixture_mode():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "Next fixture WeCom tag API is disabled outside local fixture mode; production must use the legacy facade or live WeCom API.",
+                "source_status": "fixture_disabled",
+            },
+        )
+
+
+def _fixture_catalog() -> dict[str, Any]:
+    synced_at = _timestamp()
+    tags = [
+        {
+            "tag_id": "tag_fixture_active",
+            "tag_name": "活跃客户",
+            "group_id": "group_fixture_lifecycle",
+            "group_name": "客户阶段",
+            "usage_count": 0,
+            "synced_at": synced_at,
+        },
+        {
+            "tag_id": "tag_fixture_trial",
+            "tag_name": "体验中",
+            "group_id": "group_fixture_lifecycle",
+            "group_name": "客户阶段",
+            "usage_count": 0,
+            "synced_at": synced_at,
+        },
+    ]
+    return {
+        "ok": True,
+        "items": [
+            {
+                "tag_id": tag["tag_id"],
+                "tag_name": tag["tag_name"],
+                "group_id": tag["group_id"],
+                "group_name": tag["group_name"],
+            }
+            for tag in tags
+        ],
+        "groups": [
+            {
+                "group_key": "group_fixture_lifecycle",
+                "group_id": "group_fixture_lifecycle",
+                "group_name": "客户阶段",
+                "missing_group_id": False,
+                "tag_count": len(tags),
+                "tags": tags,
+            }
+        ],
+        "total_tags": len(tags),
+        "tag_limit": 1000,
+        "synced_at": synced_at,
+        "source_status": "next_fixture",
+    }
+
+
+@router.get("/api/admin/wecom/tags")
+def list_admin_wecom_tags_fixture() -> dict:
+    _ensure_local_fixture_allowed()
+    return _fixture_catalog()
+
+
+@router.post("/api/admin/wecom/tags/sync")
+@router.post("/api/admin/wecom/tags/sync-due")
+def sync_admin_wecom_tags_fixture() -> dict:
+    _ensure_local_fixture_allowed()
+    catalog = _fixture_catalog()
+    return {
+        "ok": True,
+        "fetched_groups": len(catalog["groups"]),
+        "fetched_tags": len(catalog["items"]),
+        "upserted_groups": len(catalog["groups"]),
+        "upserted_tags": len(catalog["items"]),
+        "marked_deleted_tags": 0,
+        "source_status": "next_fixture",
+        "error_message": "",
+        "synced_at": catalog["synced_at"],
+    }
+
+
+@router.post("/api/admin/wecom/tag-groups")
+@router.put("/api/admin/wecom/tag-groups/{group_id}")
+@router.delete("/api/admin/wecom/tag-groups/{group_id}")
+@router.post("/api/admin/wecom/tags")
+@router.put("/api/admin/wecom/tags/{tag_id}")
+@router.delete("/api/admin/wecom/tags/{tag_id}")
+def mutate_admin_wecom_tags_fixture(group_id: str = "", tag_id: str = "") -> dict:
+    _ensure_local_fixture_allowed()
+    return {
+        "ok": True,
+        "result": {
+            "source_status": "next_fixture",
+            "group_id": group_id,
+            "tag_id": tag_id,
+            "synced_at": _timestamp(),
+        },
+    }
 
 
 @router.get("/api/admin/wecom/tags/fake-stub")

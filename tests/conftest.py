@@ -182,6 +182,8 @@ _TABLES_TO_TRUNCATE = [
     "wecom_external_contact_follow_users",
     "wecom_external_contact_event_logs",
     "contact_tags",
+    "wecom_corp_tags",
+    "wecom_corp_tag_groups",
     "group_chats",
     # group_chat_members 不在 PG schema 中（成员信息嵌入 group_chats.raw_payload）
     "people",

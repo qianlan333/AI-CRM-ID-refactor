@@ -13,6 +13,7 @@ from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
+from .customer_tags.api import router as customer_tags_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .identity_contact.api import router as identity_router
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)
+    app.include_router(customer_tags_router)
     app.include_router(user_ops_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
