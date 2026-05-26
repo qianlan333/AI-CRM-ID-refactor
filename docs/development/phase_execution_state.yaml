@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/image-library*
 capability_owner: aicrm_next.media_library
-last_merged_pr: "#732"
-last_attempted_action: phase_5t_oauth_identity_family_acceptance_bundle
-last_created_pr: "#733"
-recommended_next_pr: phase_5u_media_upload_adapter_contract_fake_stub_bundle
+last_merged_pr: "#733"
+last_attempted_action: phase_5u_media_upload_adapter_contract_fake_stub_bundle
+last_created_pr: "#734"
+recommended_next_pr: phase_5v_media_upload_live_adapter_behind_flag_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -43,6 +43,9 @@ implemented_runtime_slices:
   - route_family: /wecom/external-contact/callback
     slice: wecom_customer_contact_callback_fake_stub_runtime
     scope: fake_stub_only_no_live_callback
+  - route_family: /api/admin/image-library*
+    slice: media_upload_fake_stub_adapter_runtime
+    scope: fake_stub_only_no_live_upload
 guarded_disabled_runtime_slices:
   - route_family: /api/admin/wecom/tags*
     slice: wecom_tag_live_adapter_behind_explicit_flag
@@ -115,6 +118,9 @@ staging_readiness_slices:
   - route_family: /api/h5/wechat/oauth*
     slice: oauth_identity_staging_live_canary_evidence_gate
     scope: blocked_by_default_explicit_canary_approval_only
+  - route_family: /api/admin/image-library*
+    slice: media_upload_fake_stub_staging_smoke
+    scope: blocked_by_default_fake_stub_no_live_upload
 production_dry_run_readiness_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_production_readonly_dry_run_readiness
@@ -167,6 +173,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/h5/wechat/oauth*
     slice: oauth_identity_production_live_canary_execution_tooling
     scope: blocked_by_default_single_callback_no_token_persistence
+  - route_family: /api/admin/image-library*
+    slice: media_upload_fake_stub_production_dry_run
+    scope: blocked_by_default_fake_stub_no_live_upload
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -273,9 +282,10 @@ completed_steps:
   - phase_5r_oauth_identity_production_canary_readiness_completed
   - phase_5s_oauth_identity_production_live_canary_execution_completed
   - phase_5t_oauth_identity_family_acceptance_completed
+  - phase_5u_media_upload_adapter_contract_fake_stub_completed
 
 next_allowed_actions:
-  - phase_5u_media_upload_adapter_contract_fake_stub_bundle
+  - phase_5v_media_upload_live_adapter_behind_flag_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -831,6 +841,35 @@ phase5t_oauth_identity_family_acceptance:
   selected_next_bundle: phase_5u_media_upload_adapter_contract_fake_stub_bundle
   next_route_family: /api/admin/image-library*
   next_capability_owner: aicrm_next.media_library
+
+phase5u_media_upload_adapter_contract_fake_stub:
+  status: phase_5u_media_upload_adapter_contract_fake_stub_completed
+  route_family: /api/admin/image-library*
+  related_route_families:
+    - /api/admin/image-library/upload
+    - /api/admin/attachment-library*
+    - /api/admin/miniprogram-library*
+  capability_owner: aicrm_next.media_library
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_contract_fake_stub_bundle
+  adapter_contract_completed: true
+  fake_stub_runtime_ready: true
+  deterministic_fake_metadata_completed: true
+  staging_fake_stub_runner_completed: true
+  production_fake_stub_dry_run_completed: true
+  checker_completed: true
+  tests_completed: true
+  live_provider_upload_authorized: false
+  production_media_publish_authorized: false
+  public_media_url_publication_authorized: false
+  raw_file_exposure_authorized: false
+  destructive_delete_authorized: false
+  outbound_send_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5v_media_upload_live_adapter_behind_flag_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

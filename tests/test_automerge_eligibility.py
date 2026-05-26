@@ -1022,6 +1022,18 @@ def test_phase5t_oauth_identity_family_acceptance_artifacts_can_define_stop_term
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase5u_media_upload_contract_fake_stub_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5u_media_upload_adapter_contract_fake_stub.md",
+        "docs/development/phase_5u_media_upload_adapter_contract_fake_stub.yaml",
+        "tools/check_phase5u_media_upload_adapter_contract_fake_stub.py",
+        "tools/run_phase5u_media_upload_fake_stub_staging_smoke.py",
+        "tools/run_phase5u_media_upload_fake_stub_production_dry_run.py",
+        "tests/test_phase5u_media_upload_adapter_contract_fake_stub.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
