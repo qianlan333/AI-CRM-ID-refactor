@@ -1461,6 +1461,27 @@ def test_runner_treats_phase6i_acceptance_artifacts_as_policy_files() -> None:
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6j_timer_execution_readiness_artifacts_as_policy_files() -> None:
+    terms = {
+        "timer",
+        "run-due",
+        "automation execution",
+        "outbound send",
+        "live external call",
+        "production owner switch",
+        "production_compat",
+        "fallback removal",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6j_timer_execution_readiness.md",
+        "docs/development/phase_6j_timer_execution_readiness.yaml",
+        "tools/check_phase6j_timer_execution_readiness.py",
+        "tests/test_phase6j_timer_execution_readiness.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:
