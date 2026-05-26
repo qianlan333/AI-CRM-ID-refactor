@@ -79,7 +79,14 @@ def test_upload_modal_prepares_large_image_before_post(source: str):
     """上传前先校验/压缩图片，避免 1MB+ 文件被 nginx 直接 413 成 HTML。"""
     assert "prepareImageForUpload(f)" in source
     assert "prepared.file" in source
-    assert "ImageUploadClient.requestJsonWithTimeout" in source
+    assert "requestJsonWithTimeout || client.requestJson" in source
+
+
+def test_json_request_helper_falls_back_to_old_upload_client(source: str):
+    """静态资源缓存可能让页面拿到旧 image_upload_client.js，模板不能直接崩。"""
+    assert "function requestJSON" in source
+    assert "client.requestJsonWithTimeout || client.requestJson" in source
+    assert "图片上传客户端未加载" in source
 
 
 def test_upload_modal_has_open_close_handlers(source: str):
