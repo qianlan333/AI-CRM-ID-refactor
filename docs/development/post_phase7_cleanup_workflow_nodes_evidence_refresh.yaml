@@ -1,0 +1,77 @@
+version: 1
+status: post_phase7_cleanup_workflow_nodes_evidence_refresh
+bundle_type: post_phase7_cleanup_workflow_nodes_evidence_refresh_bundle
+route_family: /api/admin/automation-conversion/workflow-nodes*
+cleanup_family: workflow_nodes_exact_route_cleanup_evidence_refresh
+no_behavior_change: true
+
+authorizations:
+  actual_fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  runtime_deletion_authorized: false
+  wildcard_cleanup_authorized: false
+  broad_fallback_removal_authorized: false
+  delete_ready: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_callback_cutover_authorized: false
+  public_submit_cutover_authorized: false
+
+evidence_sources:
+  - docs/development/phase_6d_internal_metadata_owner_switch_batch.yaml
+  - docs/development/phase_6e_internal_owner_switch_acceptance.yaml
+  - docs/development/phase_7e_fallback_cleanup_readiness.yaml
+  - docs/development/phase_7f_production_compat_cleanup_readiness.yaml
+  - docs/development/post_phase7_cleanup_task_groups_evidence_refresh.yaml
+  - docs/development/phase_execution_state.yaml
+
+evidence:
+  phase6_owner_switch_tooling_accepted: true
+  phase6e_internal_owner_switch_acceptance: true
+  phase7e_fallback_readiness_exists: true
+  phase7f_production_compat_readiness_exists: true
+  task_groups_blocked_comparison_reviewed: true
+  tests_cover_next_native_workflow_nodes_path: true
+  route_ownership_proof: missing
+  owner_approval: missing
+  latest_main_shadow_compare: missing
+  rollback_owner: missing
+  rollback_plan: missing
+  rollback_execution_evidence: missing
+  production_compat_exact_entry_cleanup_proof: missing
+  no_outbound_send: true
+  no_timer_execution: true
+  no_external_live_call: true
+  no_payment_or_oauth_or_wecom_callback: true
+  no_public_submit_cutover: true
+
+decision:
+  ready_for_exact_route_fallback_cleanup: false
+  ready_for_exact_route_production_compat_cleanup: false
+  blocked_with_missing_evidence: true
+  blocked_reason: missing_owner_approval_latest_main_shadow_compare_rollback_route_ownership_and_production_compat_exact_entry_proof
+  missing_evidence:
+    - owner_approval
+    - latest_main_shadow_compare
+    - rollback_owner
+    - rollback_plan
+    - rollback_execution_evidence
+    - route_ownership_proof
+    - production_compat_exact_entry_cleanup_proof
+
+outcome:
+  evidence_refresh_completed: true
+  fallback_removal_executed: false
+  production_compat_cleanup_executed: false
+  runtime_deletion_executed: false
+  production_behavior_changed: false
+  production_compat_behavior_changed: false
+  wildcard_cleanup_touched: false
+  delete_ready: false
+
+next_bundle:
+  if_ready: post_phase7_cleanup_workflow_nodes_exact_route_fallback_removal_bundle
+  if_blocked: post_phase7_cleanup_blocker_acceptance_bundle
+  recommended_next_step: post_phase7_cleanup_blocker_acceptance_bundle

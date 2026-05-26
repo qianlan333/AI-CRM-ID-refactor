@@ -77,6 +77,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "post_phase7_owner_approved_cleanup_track_activation_bundle",
     "post_phase7_cleanup_task_groups_evidence_refresh_bundle",
     "post_phase7_cleanup_workflow_nodes_evidence_refresh_bundle",
+    "post_phase7_cleanup_blocker_acceptance_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -648,6 +649,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/post_phase7_owner_approved_cleanup_track_activation.yaml",
         "docs/development/post_phase7_cleanup_task_groups_evidence_refresh.md",
         "docs/development/post_phase7_cleanup_task_groups_evidence_refresh.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_evidence_refresh.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_evidence_refresh.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -683,6 +686,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_post_phase7_owner_feature_selection.py",
         "tools/check_post_phase7_owner_approved_cleanup_track_activation.py",
         "tools/check_post_phase7_cleanup_task_groups_evidence_refresh.py",
+        "tools/check_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -719,6 +723,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_post_phase7_owner_feature_selection.py",
         "tests/test_post_phase7_owner_approved_cleanup_track_activation.py",
         "tests/test_post_phase7_cleanup_task_groups_evidence_refresh.py",
+        "tests/test_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",

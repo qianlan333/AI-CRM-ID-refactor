@@ -24,7 +24,7 @@ def test_runner_generates_post_phase7_prompt_without_github_when_no_open_pr(tmp_
     assert report == 0
     assert prompt.exists() is True
     text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_workflow_nodes_evidence_refresh_bundle" in text
+    assert "post_phase7_cleanup_blocker_acceptance_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1551,6 +1551,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_owner_approved_cleanup_track_activation.yaml",
         "docs/development/post_phase7_cleanup_task_groups_evidence_refresh.md",
         "docs/development/post_phase7_cleanup_task_groups_evidence_refresh.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_evidence_refresh.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_evidence_refresh.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1571,6 +1573,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_post_phase7_owner_feature_selection.py",
         "tools/check_post_phase7_owner_approved_cleanup_track_activation.py",
         "tools/check_post_phase7_cleanup_task_groups_evidence_refresh.py",
+        "tools/check_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1589,6 +1592,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_owner_feature_selection.py",
         "tests/test_post_phase7_owner_approved_cleanup_track_activation.py",
         "tests/test_post_phase7_cleanup_task_groups_evidence_refresh.py",
+        "tests/test_post_phase7_cleanup_workflow_nodes_evidence_refresh.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
