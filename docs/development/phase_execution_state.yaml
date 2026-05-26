@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_first_new_feature_intake
-active_candidate: post_phase7_feature_intake
-capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#794"
-last_attempted_action: post_phase7_first_new_feature_intake_bundle
-last_created_pr: "#794"
-recommended_next_pr: post_phase7_owner_feature_selection_bundle
+current_phase: post_phase7_owner_feature_selection
+active_candidate: post_phase7_owner_feature_selection
+capability_owner: aicrm_next.send_content
+last_merged_pr: "#795"
+last_attempted_action: post_phase7_owner_feature_selection_bundle
+last_created_pr: "#795"
+recommended_next_pr: post_phase7_hxc_next_native_broadcast_backend_plan_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -402,9 +402,10 @@ completed_steps:
   - phase_7l_final_legacy_retirement_acceptance_completed
   - post_phase7_new_feature_development_rules_completed
   - post_phase7_first_new_feature_intake_completed
+  - post_phase7_owner_feature_selection_completed
 
 next_allowed_actions:
-  - post_phase7_owner_feature_selection_bundle
+  - post_phase7_hxc_next_native_broadcast_backend_plan_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -452,6 +453,35 @@ post_phase7_first_new_feature_intake:
   wecom_callback_cutover: false
   delete_ready: false
   recommended_next_bundle: post_phase7_owner_feature_selection_bundle
+
+post_phase7_owner_feature_selection:
+  status: post_phase7_owner_feature_selection_completed
+  bundle_type: post_phase7_owner_feature_selection_bundle
+  route_family: post_phase7_owner_feature_selection
+  selected_feature_id: hxc_next_native_broadcast_backend
+  selected_feature_name: HXC Next-native broadcast backend
+  capability_owner: aicrm_next.send_content
+  selected_route_family: /api/admin/hxc-dashboard/broadcast*
+  implementation_authorized: false
+  first_pr_may_implement_contract_or_plan_only: true
+  business_feature_implemented: false
+  runtime_route_changed: false
+  schema_migration_added: false
+  production_compat_route_added: false
+  wecom_ability_service_business_logic_added: false
+  direct_legacy_import_added: false
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  legacy_runtime_deleted: false
+  live_wecom_send_enabled: false
+  outbound_send_enabled: false
+  timer_execution_enabled: false
+  batch_send_execution_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  delete_ready: false
+  recommended_next_bundle: post_phase7_hxc_next_native_broadcast_backend_plan_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
