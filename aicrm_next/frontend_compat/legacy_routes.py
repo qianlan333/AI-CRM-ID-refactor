@@ -16,7 +16,6 @@ from aicrm_next.admin_read_model.application import (
     GetAdminConfigPageQuery,
     GetAdminFunnelPageQuery,
     GetAdminJobsPageQuery,
-    GetAdminMediaPageQuery,
     GetAdminProductsPageQuery,
     GetAdminTransactionsPageQuery,
     GetAdminWeComTagsPageQuery,
@@ -994,13 +993,7 @@ def admin_image_library(request: Request):
         page_summary="集中维护可被群发 / 卡片 / 自动化欢迎语等场景引用的图片，支持上传和外链。",
         active_endpoint="api.admin_image_library_workspace",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminMediaPageQuery()("image"),
-        title="图片素材库",
-        summary="生产 image_library 首屏只读列表；上传入口保留但不在本页触发外部动作。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    return templates.TemplateResponse(request, "admin_console/image_library.html", context)
 
 
 @router.get("/admin/miniprogram-library", name="api.admin_miniprogram_library_workspace")
@@ -1011,13 +1004,7 @@ def admin_miniprogram_library(request: Request):
         page_summary="维护群发和自动化可复用的小程序卡片。",
         active_endpoint="api.admin_miniprogram_library_workspace",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminMediaPageQuery()("miniprogram"),
-        title="小程序素材库",
-        summary="生产 miniprogram_library 首屏只读列表。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    return templates.TemplateResponse(request, "admin_console/miniprogram_library.html", context)
 
 
 @router.get("/admin/attachment-library", name="api.admin_attachment_library_workspace")
@@ -1028,13 +1015,7 @@ def admin_attachment_library(request: Request):
         page_summary="维护 PDF、附件和课程资料等可复用素材。",
         active_endpoint="api.admin_attachment_library_workspace",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminMediaPageQuery()("attachment"),
-        title="附件素材库",
-        summary="生产 attachment_library 首屏只读列表，生产表为空时展示明确空状态。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    return templates.TemplateResponse(request, "admin_console/attachment_library.html", context)
 
 
 @router.get("/admin/customers/{external_userid}", name="api.admin_console_customer_detail")

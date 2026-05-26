@@ -55,6 +55,28 @@ def test_commerce_and_media_admin_routes_return_legacy_shells() -> None:
             assert forbidden not in response.text
 
 
+def test_media_library_routes_return_restored_card_templates() -> None:
+    client = make_client()
+
+    image_response = client.get("/admin/image-library")
+    assert image_response.status_code == 200
+    assert 'id="il-open-upload"' in image_response.text
+    assert "图片素材列表" not in image_response.text
+    assert "real-data-table" not in image_response.text
+
+    miniprogram_response = client.get("/admin/miniprogram-library")
+    assert miniprogram_response.status_code == 200
+    assert 'id="mp-open-create"' in miniprogram_response.text
+    assert "小程序素材列表" not in miniprogram_response.text
+    assert "real-data-table" not in miniprogram_response.text
+
+    attachment_response = client.get("/admin/attachment-library")
+    assert attachment_response.status_code == 200
+    assert 'id="al-open-upload"' in attachment_response.text
+    assert "上传附件" in attachment_response.text
+    assert "real-data-table" not in attachment_response.text
+
+
 def test_admin_channels_route_returns_first_level_channel_center() -> None:
     response = make_client().get("/admin/channels")
     assert response.status_code == 200
