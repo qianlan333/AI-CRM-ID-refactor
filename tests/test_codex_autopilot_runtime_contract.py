@@ -1306,6 +1306,29 @@ def test_runner_treats_phase6b_task_groups_canary_plan_artifacts_as_policy_files
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6c_task_groups_tooling_artifacts_as_policy_files() -> None:
+    terms = {
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "destructive migration",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6c_task_groups_owner_switch_tooling.md",
+        "docs/development/phase_6c_task_groups_owner_switch_tooling.yaml",
+        "tools/check_phase6c_task_groups_owner_switch_tooling.py",
+        "tools/run_phase6c_task_groups_owner_switch_canary.py",
+        "tools/run_phase6c_task_groups_shadow_compare.py",
+        "tools/run_phase6c_task_groups_owner_switch_rollback.py",
+        "tests/test_phase6c_task_groups_owner_switch_tooling.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:

@@ -1313,6 +1313,24 @@ def test_phase6b_task_groups_canary_plan_artifacts_can_define_stop_terms_as_poli
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase6c_task_groups_tooling_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_6c_task_groups_owner_switch_tooling.md",
+        "docs/development/phase_6c_task_groups_owner_switch_tooling.yaml",
+        "tools/check_phase6c_task_groups_owner_switch_tooling.py",
+        "tools/run_phase6c_task_groups_owner_switch_canary.py",
+        "tools/run_phase6c_task_groups_shadow_compare.py",
+        "tools/run_phase6c_task_groups_owner_switch_rollback.py",
+        "tests/test_phase6c_task_groups_owner_switch_tooling.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+    assert {
+        "tools/run_phase6c_task_groups_owner_switch_canary.py",
+        "tools/run_phase6c_task_groups_shadow_compare.py",
+        "tools/run_phase6c_task_groups_owner_switch_rollback.py",
+    } <= checker.LOW_RISK_EXACT
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")

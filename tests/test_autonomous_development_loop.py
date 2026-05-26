@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_6b_task_groups_owner_switch_canary_plan"
+    assert data["current_phase"] == "phase_6c_task_groups_owner_switch_tooling"
     assert data["active_candidate"] == "/api/admin/automation-conversion/task-groups*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#758"
+    assert data["last_merged_pr"] == "#759"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -135,6 +135,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5_aggregate_acceptance_review_completed" in set(data["completed_steps"])
     assert "phase_6a_owner_production_compat_readiness_completed" in set(data["completed_steps"])
     assert "phase_6b_task_groups_owner_switch_canary_plan_completed" in set(data["completed_steps"])
+    assert "phase_6c_task_groups_owner_switch_tooling_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_empty_after_phase_6a_readiness() -> None:
