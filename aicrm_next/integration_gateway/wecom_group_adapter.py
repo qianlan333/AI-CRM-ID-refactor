@@ -94,9 +94,9 @@ class WeComGroupMessageAdapter:
                 "error_code": "production_guard_failed",
                 "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE is not enabled",
             }
-        from wecom_ability_service.wecom_client import WeComClient
+        from .legacy_flask_facade import legacy_wecom_client_from_app
 
-        result = WeComClient.from_app().create_group_message_task(normalized)
+        result = legacy_wecom_client_from_app().create_group_message_task(normalized)
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -152,9 +152,9 @@ class LegacyBroadcastJobQueueGateway:
     ) -> int:
         def _enqueue() -> int:
             if self._enqueue_job_fn is None:
-                from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+                from .legacy_flask_facade import legacy_broadcast_enqueue_job
 
-                enqueue_job = queue_service.enqueue_job
+                enqueue_job = legacy_broadcast_enqueue_job
             else:
                 enqueue_job = self._enqueue_job_fn
 

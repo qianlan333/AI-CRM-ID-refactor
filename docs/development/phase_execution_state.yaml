@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_7a_legacy_retirement_readiness
-active_candidate: phase_7_legacy_retirement_readiness
+current_phase: phase_7b_baseline_legacy_import_remediation
+active_candidate: phase_7_baseline_legacy_import_remediation
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#773"
-last_attempted_action: phase_7a_legacy_retirement_readiness_bundle
-last_created_pr: "#773"
-recommended_next_pr: phase_7b_baseline_legacy_import_remediation_bundle
+last_merged_pr: "#774"
+last_attempted_action: phase_7b_baseline_legacy_import_remediation_bundle
+last_created_pr: "#774"
+recommended_next_pr: phase_7c_delete_ready_candidate_selection_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -389,9 +389,29 @@ completed_steps:
   - phase_6k_single_scope_execution_canary_tooling_completed
   - phase_6l_phase6_aggregate_acceptance_completed
   - phase_7a_legacy_retirement_readiness_completed
+  - phase_7b_baseline_legacy_import_remediation_completed
 
 next_allowed_actions:
-  - phase_7b_baseline_legacy_import_remediation_bundle
+  - phase_7c_delete_ready_candidate_selection_bundle
+
+phase7b_baseline_legacy_import_remediation:
+  status: phase_7b_baseline_legacy_import_remediation_completed
+  bundle_type: phase_7b_baseline_legacy_import_remediation_bundle
+  cleanup_family: baseline_direct_legacy_import_remediation
+  baseline_direct_legacy_import_blockers_before: 3
+  baseline_direct_legacy_import_blockers_after: 0
+  behavior_change_expected: false
+  production_behavior_changed: false
+  live_wecom_behavior_changed: false
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  legacy_runtime_deletion_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  recommended_next_bundle: phase_7c_delete_ready_candidate_selection_bundle
 
 phase7a_legacy_retirement_readiness:
   status: phase_7a_legacy_retirement_readiness_completed

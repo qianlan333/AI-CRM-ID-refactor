@@ -6,8 +6,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
+from aicrm_next.integration_gateway.legacy_flask_facade import build_legacy_private_message_request_payload
 from aicrm_next.shared.errors import ContractError
-from wecom_ability_service.domains.tasks.private_message import build_private_message_request_payload
 
 PLAN_TYPES = {"standard", "webhook"}
 PLAN_STATUSES = {"draft", "active", "disabled"}
@@ -99,7 +99,7 @@ def normalize_message_content(*, text: Any = "", attachments: list[Any] | None =
     if sender:
         payload["sender"] = clean_text(sender)
     try:
-        normalized, _image_count = build_private_message_request_payload(payload)
+        normalized, _image_count = build_legacy_private_message_request_payload(payload)
     except ValueError as exc:
         raise ContractError(str(exc)) from exc
     if not normalized.get("text") and not normalized.get("attachments"):

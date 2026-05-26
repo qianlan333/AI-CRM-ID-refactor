@@ -8,10 +8,6 @@ from functools import lru_cache
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
-from fastapi import Request
-from fastapi.responses import JSONResponse, Response
-from starlette.responses import Response as StarletteResponse
-
 LOGGER = logging.getLogger("aicrm_next.legacy_flask_facade")
 
 LEGACY_COMPATIBILITY_BOUNDARY = "legacy_flask_facade"
@@ -39,6 +35,35 @@ _HOP_BY_HOP_HEADERS = {
     "content-length",
     "content-encoding",
 }
+
+
+@lru_cache(maxsize=1)
+def _response_classes() -> tuple[Any, Any, Any]:
+    from fastapi.responses import JSONResponse, Response
+    from starlette.responses import Response as StarletteResponse
+
+    return JSONResponse, Response, StarletteResponse
+
+
+class _ResponseProxy:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        _json_response, response, _starlette_response = _response_classes()
+        return response(*args, **kwargs)
+
+
+class _JSONResponseProxy:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        json_response, _response_class, _starlette_response = _response_classes()
+        return json_response(*args, **kwargs)
+
+
+Response = _ResponseProxy()
+JSONResponse = _JSONResponseProxy()
+
+
+def _is_starlette_response(value: Any) -> bool:
+    _json_response, response, _starlette_response = _response_classes()
+    return isinstance(value, _starlette_response)
 
 
 @lru_cache(maxsize=1)
@@ -70,6 +95,33 @@ def legacy_automation_conversion_service() -> Any:
 @lru_cache(maxsize=1)
 def legacy_automation_conversion_module() -> Any:
     return _legacy_import_module(".domains.automation_conversion")
+
+
+@lru_cache(maxsize=1)
+def legacy_private_message_module() -> Any:
+    return _legacy_import_module(".domains.tasks.private_message")
+
+
+@lru_cache(maxsize=1)
+def legacy_wecom_client_module() -> Any:
+    return _legacy_import_module(".wecom_client")
+
+
+@lru_cache(maxsize=1)
+def legacy_broadcast_jobs_service() -> Any:
+    return _legacy_import_module(".domains.broadcast_jobs.service")
+
+
+def build_legacy_private_message_request_payload(payload: dict[str, Any]) -> Any:
+    return legacy_private_message_module().build_private_message_request_payload(payload)
+
+
+def legacy_wecom_client_from_app() -> Any:
+    return legacy_wecom_client_module().WeComClient.from_app()
+
+
+def legacy_broadcast_enqueue_job(**kwargs: Any) -> int:
+    return int(legacy_broadcast_jobs_service().enqueue_job(**kwargs))
 
 
 def legacy_questionnaire_oauth_is_configured() -> bool:
@@ -168,7 +220,7 @@ def _copy_request_cookies_to_legacy_client(client: Any, request: Request, *, bas
 
 
 def normalize_legacy_response(raw_response: Any) -> Response:
-    if isinstance(raw_response, StarletteResponse):
+    if _is_starlette_response(raw_response):
         raw_response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
         raw_response.headers.setdefault("X-AICRM-Compatibility-Facade", LEGACY_COMPATIBILITY_BOUNDARY)
         return raw_response

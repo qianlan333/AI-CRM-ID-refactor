@@ -1431,12 +1431,26 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/phase_6l_phase6_aggregate_acceptance.yaml",
         "docs/development/phase_7a_legacy_retirement_readiness.md",
         "docs/development/phase_7a_legacy_retirement_readiness.yaml",
+        "docs/development/phase_7b_baseline_legacy_import_remediation.md",
+        "docs/development/phase_7b_baseline_legacy_import_remediation.yaml",
+        "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
         "tools/check_phase7a_legacy_retirement_readiness.py",
+        "tools/check_phase7b_baseline_legacy_import_remediation.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
+        "tests/test_phase7b_baseline_legacy_import_remediation.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
+def test_phase7b_import_boundary_runtime_paths_are_autopilot_deliverable() -> None:
+    expected = {
+        "aicrm_next/automation_engine/group_ops/domain.py",
+        "aicrm_next/integration_gateway/legacy_flask_facade.py",
+        "aicrm_next/integration_gateway/wecom_group_adapter.py",
+    }
+    assert expected <= checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
 
 
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
