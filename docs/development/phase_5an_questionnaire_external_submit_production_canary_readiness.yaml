@@ -1,0 +1,96 @@
+version: 1
+status: phase_5an_questionnaire_external_submit_production_canary_readiness
+bundle_type: phase_5_external_adapter_production_canary_readiness_tooling_bundle
+route_family: /api/h5/questionnaires*
+capability_owner: aicrm_next.questionnaire
+integration_boundary: aicrm_next.questionnaire
+
+authorizations:
+  production_canary_tooling_authorized: true
+  production_public_submit_owner_switch_authorized: false
+  production_public_submit_write_authorized: false
+  production_identity_write_authorized: false
+  production_tag_write_authorized: false
+  live_oauth_callback_cutover_authorized: false
+  outbound_send_authorized: false
+  batch_submit_authorized: false
+  batch_tag_write_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  delete_ready: false
+
+production_canary:
+  runner: tools/run_phase5an_questionnaire_external_submit_production_canary_readiness.py
+  default_blocked: true
+  single_submit_target_only: true
+  batch_submit_allowed: false
+  batch_tag_write_allowed: false
+  requires_staging_evidence_json: true
+  requires_idempotency_key: true
+  production_public_submit_write_executed: false
+  production_identity_write_executed: false
+  production_tag_write_executed: false
+  required_env:
+    - AICRM_PHASE5AN_QUESTIONNAIRE_PRODUCTION_CANARY_PLANNING_APPROVED
+    - AICRM_PHASE5AN_QUESTIONNAIRE_PRODUCTION_CONFIG_REVIEWED
+    - AICRM_PHASE5AN_QUESTIONNAIRE_TARGET_POLICY_REVIEWED
+    - AICRM_PHASE5AN_QUESTIONNAIRE_ROLLBACK_OWNER_APPROVED
+    - AICRM_PHASE5AN_QUESTIONNAIRE_TAG_WRITEBACK_POLICY_REVIEWED
+  required_args:
+    - --staging-evidence-json
+    - --idempotency-key
+    - --slug
+    - --submission-id
+    - --confirm-no-production-owner-switch
+    - --confirm-no-production-write
+    - --confirm-no-production-tag-write
+    - --confirm-no-outbound-send
+    - --confirm-single-approved-target
+
+target_safety:
+  single_submit_target_only: true
+  single_approved_target_only: true
+  batch_submit_allowed: false
+  batch_tag_write_allowed: false
+  customer_pool_target_allowed: false
+  automatic_segment_target_allowed: false
+  production_public_submit_write_allowed: false
+  production_identity_write_allowed: false
+  production_tag_write_allowed: false
+  raw_openid_output_forbidden: true
+  raw_unionid_output_forbidden: true
+  raw_external_userid_output_forbidden: true
+  raw_token_output_forbidden: true
+  raw_secret_output_forbidden: true
+
+cleanup:
+  runner: tools/run_phase5an_questionnaire_external_submit_production_canary_cleanup.py
+  default_blocked: true
+  cleanup_requires_explicit_approval: true
+  production_submit_delete_allowed: false
+  production_identity_delete_allowed: false
+  production_tag_cleanup_allowed: false
+  automatic_cleanup_allowed: false
+  batch_cleanup_allowed: false
+
+side_effect_safety:
+  production_public_submit_write_allowed: false
+  production_identity_write_allowed: false
+  production_tag_write_allowed: false
+  live_oauth_callback_cutover_allowed: false
+  outbound_send_allowed: false
+  batch_submit_allowed: false
+  batch_tag_write_allowed: false
+  production_owner_switch_allowed: false
+  fallback_removal_allowed: false
+  production_compat_change_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  route_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5ao_questionnaire_external_submit_family_acceptance_bundle
+  route_family: /api/h5/questionnaires*
