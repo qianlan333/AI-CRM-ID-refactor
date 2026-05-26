@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/image-library*
 capability_owner: aicrm_next.media_library
-last_merged_pr: "#733"
-last_attempted_action: phase_5u_media_upload_adapter_contract_fake_stub_bundle
+last_merged_pr: "#734"
+last_attempted_action: phase_5v_media_upload_live_adapter_behind_flag_bundle
 last_created_pr: "#734"
-recommended_next_pr: phase_5v_media_upload_live_adapter_behind_flag_bundle
+recommended_next_pr: phase_5w_media_upload_staging_live_canary_evidence_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -52,6 +52,9 @@ guarded_disabled_runtime_slices:
     scope: disabled_by_default_explicit_approval_only
   - route_family: /wecom/external-contact/callback
     slice: wecom_customer_contact_live_callback_adapter_behind_explicit_flag
+    scope: disabled_by_default_explicit_approval_only
+  - route_family: /api/admin/image-library*
+    slice: media_upload_live_adapter_behind_explicit_flag
     scope: disabled_by_default_explicit_approval_only
 repository_adapter_parity_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -121,6 +124,9 @@ staging_readiness_slices:
   - route_family: /api/admin/image-library*
     slice: media_upload_fake_stub_staging_smoke
     scope: blocked_by_default_fake_stub_no_live_upload
+  - route_family: /api/admin/image-library*
+    slice: media_upload_live_staging_evidence_gate
+    scope: blocked_by_default_explicit_approval_only
 production_dry_run_readiness_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
     slice: task_groups_production_readonly_dry_run_readiness
@@ -176,6 +182,9 @@ production_dry_run_readiness_slices:
   - route_family: /api/admin/image-library*
     slice: media_upload_fake_stub_production_dry_run
     scope: blocked_by_default_fake_stub_no_live_upload
+  - route_family: /api/admin/image-library*
+    slice: media_upload_live_production_dry_run_gate
+    scope: readiness_only_no_live_upload_no_public_publish
 
 work_package_policy:
   selection_unit: compressed_bounded_bundle
@@ -283,9 +292,10 @@ completed_steps:
   - phase_5s_oauth_identity_production_live_canary_execution_completed
   - phase_5t_oauth_identity_family_acceptance_completed
   - phase_5u_media_upload_adapter_contract_fake_stub_completed
+  - phase_5v_media_upload_live_adapter_behind_flag_completed
 
 next_allowed_actions:
-  - phase_5v_media_upload_live_adapter_behind_flag_bundle
+  - phase_5w_media_upload_staging_live_canary_evidence_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -870,6 +880,36 @@ phase5u_media_upload_adapter_contract_fake_stub:
   production_compat_change_ready: false
   delete_ready: false
   recommended_next_bundle: phase_5v_media_upload_live_adapter_behind_flag_bundle
+
+phase5v_media_upload_live_adapter_behind_flag:
+  status: phase_5v_media_upload_live_adapter_behind_flag_completed
+  route_family: /api/admin/image-library*
+  related_route_families:
+    - /api/admin/image-library/upload
+    - /api/admin/attachment-library*
+    - /api/admin/miniprogram-library*
+  capability_owner: aicrm_next.media_library
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+  live_adapter_code_implemented: true
+  live_upload_disabled_by_default: true
+  explicit_live_flags_required: true
+  staging_live_evidence_package_completed: true
+  production_dry_run_gate_completed: true
+  checker_completed: true
+  tests_completed: true
+  live_media_adapter_code_authorized: true
+  live_provider_upload_by_default_authorized: false
+  production_live_upload_authorized: false
+  public_media_url_publication_authorized: false
+  destructive_delete_authorized: false
+  raw_file_exposure_authorized: false
+  outbound_send_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5w_media_upload_staging_live_canary_evidence_bundle
 
 forbidden_without_owner_approval:
   - production owner switch

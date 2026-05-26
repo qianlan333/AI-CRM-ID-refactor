@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5v_media_upload_live_adapter_behind_flag_bundle",
+    "phase_5w_media_upload_staging_live_canary_evidence_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -223,6 +223,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/integration_gateway/oauth_identity_contract.py",
         "aicrm_next/integration_gateway/oauth_identity_live_adapter.py",
         "aicrm_next/integration_gateway/oauth_identity_live_gateway.py",
+        "aicrm_next/integration_gateway/media_live_adapter.py",
+        "aicrm_next/integration_gateway/media_live_gateway.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -428,6 +430,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5u_media_upload_fake_stub_staging_smoke.py",
         "tools/run_phase5u_media_upload_fake_stub_production_dry_run.py",
         "tests/test_phase5u_media_upload_adapter_contract_fake_stub.py",
+        "docs/development/phase_5v_media_upload_live_adapter_behind_flag.md",
+        "docs/development/phase_5v_media_upload_live_adapter_behind_flag.yaml",
+        "tools/check_phase5v_media_upload_live_adapter_behind_flag.py",
+        "tools/run_phase5v_media_upload_live_staging_evidence.py",
+        "tools/run_phase5v_media_upload_live_production_dry_run_gate.py",
+        "tests/test_phase5v_media_upload_live_adapter_behind_flag.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
