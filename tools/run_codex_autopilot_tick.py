@@ -35,7 +35,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
     "phase_4am_blocked_evidence_review",
 }
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5z_payment_commerce_adapter_contract_fake_stub_bundle",
+    "phase_5aa_payment_commerce_live_adapter_behind_flag_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -452,6 +452,11 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_5y_media_upload_family_acceptance.yaml",
         "tools/check_phase5y_media_upload_family_acceptance.py",
         "tests/test_phase5y_media_upload_family_acceptance.py",
+        "docs/development/phase_5z_payment_commerce_adapter_contract_fake_stub.md",
+        "docs/development/phase_5z_payment_commerce_adapter_contract_fake_stub.yaml",
+        "tools/check_phase5z_payment_commerce_adapter_contract_fake_stub.py",
+        "tools/run_phase5z_payment_commerce_fake_stub_evidence.py",
+        "tests/test_phase5z_payment_commerce_adapter_contract_fake_stub.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
