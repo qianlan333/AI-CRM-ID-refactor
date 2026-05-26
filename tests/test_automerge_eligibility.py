@@ -1433,13 +1433,17 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/phase_7a_legacy_retirement_readiness.yaml",
         "docs/development/phase_7b_baseline_legacy_import_remediation.md",
         "docs/development/phase_7b_baseline_legacy_import_remediation.yaml",
+        "docs/development/phase_7c_delete_ready_candidate_selection.md",
+        "docs/development/phase_7c_delete_ready_candidate_selection.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
         "tools/check_phase7a_legacy_retirement_readiness.py",
         "tools/check_phase7b_baseline_legacy_import_remediation.py",
+        "tools/check_phase7c_delete_ready_candidate_selection.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
+        "tests/test_phase7c_delete_ready_candidate_selection.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
