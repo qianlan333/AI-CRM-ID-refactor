@@ -1370,6 +1370,28 @@ def test_runner_treats_phase6e_internal_owner_switch_acceptance_artifacts_as_pol
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
 
+def test_runner_treats_phase6f_external_adapter_readiness_artifacts_as_policy_files() -> None:
+    terms = {
+        "live external call",
+        "production owner switch",
+        "fallback removal",
+        "production_compat",
+        "timer",
+        "automation execution",
+        "outbound send",
+        "payment capture",
+        "oauth callback cutover",
+        "delete_ready",
+    }
+    paths = {
+        "docs/development/phase_6f_external_adapter_enablement_readiness.md",
+        "docs/development/phase_6f_external_adapter_enablement_readiness.yaml",
+        "tools/check_phase6f_external_adapter_enablement_readiness.py",
+        "tests/test_phase6f_external_adapter_enablement_readiness.py",
+    }
+    assert runner.diff_hits_stop_condition(paths, terms) == []
+
+
 def test_runner_uses_single_flight_lock(tmp_path: Path) -> None:
     lock = tmp_path / "lock"
     with lock.open("w", encoding="utf-8") as handle:

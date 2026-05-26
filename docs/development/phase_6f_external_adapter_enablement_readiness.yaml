@@ -1,0 +1,191 @@
+version: 1
+status: phase_6f_external_adapter_enablement_readiness_no_runtime_change
+bundle_type: phase_6f_external_adapter_enablement_readiness_bundle
+route_family: phase_6_external_adapter_enablement_readiness
+
+authorizations:
+  live_external_enablement_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  payment_capture_authorized: false
+  oauth_callback_cutover_authorized: false
+  delete_ready: false
+
+candidate_inventory:
+  - family_name: WeCom tags
+    family_key: wecom_tags
+    route_family: /api/admin/wecom/tags*
+    capability_owner: wecom_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: selected_for_low_risk_default_blocked_tooling
+    risk_level: medium
+    enablement_ready: true
+    blocked_reasons:
+      - owner_approval_required_before_live_enablement
+      - shadow_or_dry_run_evidence_required
+    required_approvals:
+      - owner_approval
+      - config_review
+      - rollback_owner_approval
+      - canary_target_approval
+    rollback_requirement: retain_current_fallback_and_disable_phase6g_gate
+    recommended_next_bundle: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+  - family_name: WeCom customer contact callback
+    family_key: wecom_customer_contact_callback
+    route_family: /wecom/external-contact/callback
+    capability_owner: wecom_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: excluded_due_to_callback_ownership_risk
+    risk_level: high
+    enablement_ready: false
+    blocked_reasons:
+      - production_callback_ownership_cutover_required
+      - identity_mapping_owner_review_required
+    required_approvals:
+      - callback_owner_approval
+      - identity_mapping_review
+      - rollback_owner_approval
+    rollback_requirement: preserve_current_callback_owner_and_fallback
+    recommended_next_bundle: deferred_after_phase6g
+  - family_name: OAuth identity
+    family_key: oauth_identity
+    route_family: /api/h5/wechat/oauth*
+    capability_owner: oauth_identity_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: excluded_due_to_oauth_callback_cutover_risk
+    risk_level: high
+    enablement_ready: false
+    blocked_reasons:
+      - production_oauth_callback_cutover_required
+      - token_exchange_and_session_write_review_required
+    required_approvals:
+      - oauth_owner_approval
+      - callback_cutover_review
+      - rollback_owner_approval
+    rollback_requirement: preserve_current_oauth_callback_and_session_path
+    recommended_next_bundle: deferred_after_phase6g
+  - family_name: Media upload / media library
+    family_key: media_upload
+    route_family: /api/admin/image-library*
+    capability_owner: media_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: selected_for_low_risk_default_blocked_tooling
+    risk_level: medium
+    enablement_ready: true
+    blocked_reasons:
+      - owner_approval_required_before_live_upload
+      - config_review_and_shadow_evidence_required
+    required_approvals:
+      - owner_approval
+      - config_review
+      - rollback_owner_approval
+      - canary_target_approval
+    rollback_requirement: disable_phase6g_media_gate_and_keep_fallback
+    recommended_next_bundle: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+  - family_name: Payment / commerce
+    family_key: payment_commerce
+    route_family: /api/admin/wechat-pay*
+    capability_owner: payment_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: excluded_due_to_money_movement_risk
+    risk_level: high
+    enablement_ready: false
+    blocked_reasons:
+      - real_payment_capture_refund_or_settlement_risk
+      - higher_finance_owner_approval_required
+    required_approvals:
+      - finance_owner_approval
+      - payment_provider_config_review
+      - rollback_owner_approval
+    rollback_requirement: preserve_sandbox_only_no_money_movement_path
+    recommended_next_bundle: deferred_after_phase6g
+  - family_name: OpenClaw / MCP / AI assist
+    family_key: openclaw_mcp_ai_assist
+    route_family: /mcp
+    capability_owner: ai_assist_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: selected_for_low_risk_default_blocked_tooling
+    risk_level: medium
+    enablement_ready: true
+    blocked_reasons:
+      - owner_approval_required_before_live_tool_call
+      - no_outbound_send_and_no_automation_execution_evidence_required
+    required_approvals:
+      - owner_approval
+      - config_review
+      - rollback_owner_approval
+      - canary_target_approval
+    rollback_requirement: disable_phase6g_openclaw_mcp_gate_and_keep_fallback
+    recommended_next_bundle: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
+  - family_name: Questionnaire external submit / tag writeback edge
+    family_key: questionnaire_external_submit
+    route_family: /api/h5/questionnaires*
+    capability_owner: questionnaire_adapter
+    phase_5_acceptance_status: family_acceptance_complete
+    live_adapter_available: true
+    canary_tooling_available: true
+    production_canary_passed: false
+    recommended_phase6_status: excluded_due_to_public_entry_identity_and_tag_writeback_risk
+    risk_level: high
+    enablement_ready: false
+    blocked_reasons:
+      - public_entry_owner_review_required
+      - identity_mapping_and_tag_writeback_review_required
+    required_approvals:
+      - questionnaire_owner_approval
+      - identity_mapping_review
+      - tag_writeback_owner_approval
+      - rollback_owner_approval
+    rollback_requirement: preserve_fake_stub_or_current_submit_path_no_tag_writeback
+    recommended_next_bundle: deferred_after_phase6g
+
+first_phase6g_candidates:
+  selected:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  explicitly_not_selected:
+    - payment_commerce
+    - oauth_identity
+    - wecom_customer_contact_callback
+    - questionnaire_external_submit
+  selection_rules:
+    no_default_live_external_call: true
+    no_payment_money_movement: true
+    no_oauth_callback_cutover: true
+    no_callback_ownership_cutover: true
+    no_public_submit_or_tag_writeback: true
+    fallback_retained: true
+    production_compat_unchanged: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  fallback_retained: true
+  production_compat_unchanged: true
+  no_live_external_call_enabled_by_default: true
+  no_outbound_send: true
+
+next:
+  - phase_6g_low_risk_external_adapter_enablement_tooling_bundle

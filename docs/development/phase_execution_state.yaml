@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6e_internal_owner_switch_acceptance
-active_candidate: internal_owner_switch_acceptance
+current_phase: phase_6f_external_adapter_enablement_readiness
+active_candidate: external_adapter_enablement_readiness
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#762"
-last_attempted_action: phase_6e_internal_owner_switch_acceptance_bundle
-last_created_pr: "#762"
-recommended_next_pr: phase_6f_external_adapter_enablement_readiness_bundle
+last_merged_pr: "#764"
+last_attempted_action: phase_6f_external_adapter_enablement_readiness_bundle
+last_created_pr: "#764"
+recommended_next_pr: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -381,8 +381,35 @@ completed_steps:
   - phase_6c_task_groups_owner_switch_tooling_completed
   - phase_6d_internal_metadata_owner_switch_batch_completed
   - phase_6e_internal_owner_switch_acceptance_completed
+  - phase_6f_external_adapter_enablement_readiness_completed
 
 next_allowed_actions: []
+
+phase6f_external_adapter_enablement_readiness:
+  status: phase_6f_external_adapter_enablement_readiness_completed
+  bundle_type: phase_6f_external_adapter_enablement_readiness_bundle
+  route_family: phase_6_external_adapter_enablement_readiness
+  selected_external_adapter_families:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  deferred_external_adapter_families:
+    - payment_commerce
+    - oauth_identity
+    - wecom_customer_contact_callback
+    - questionnaire_external_submit
+  live_external_enablement_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  payment_capture_authorized: false
+  oauth_callback_cutover_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6g_low_risk_external_adapter_enablement_tooling_bundle
 
 phase6e_internal_owner_switch_acceptance:
   status: phase_6e_internal_owner_switch_acceptance_completed
