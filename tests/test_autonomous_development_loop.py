@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_6f_external_adapter_enablement_readiness"
-    assert data["active_candidate"] == "external_adapter_enablement_readiness"
+    assert data["current_phase"] == "phase_6g_low_risk_external_adapter_enablement_tooling"
+    assert data["active_candidate"] == "low_risk_external_adapter_enablement_tooling"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#764"
+    assert data["last_merged_pr"] == "#765"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -139,6 +139,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_6d_internal_metadata_owner_switch_batch_completed" in set(data["completed_steps"])
     assert "phase_6e_internal_owner_switch_acceptance_completed" in set(data["completed_steps"])
     assert "phase_6f_external_adapter_enablement_readiness_completed" in set(data["completed_steps"])
+    assert "phase_6g_low_risk_external_adapter_enablement_tooling_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_empty_after_phase_6a_readiness() -> None:
@@ -165,7 +166,7 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
     candidate = checker.load_yaml(STATE)["active_candidate"]
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness"}:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling"}:
         assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
         assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
 
@@ -575,7 +576,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "external_adapter_enablement_readiness"
+    assert data["active_candidate"] == "low_risk_external_adapter_enablement_tooling"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

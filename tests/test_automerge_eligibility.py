@@ -1363,6 +1363,24 @@ def test_phase6f_external_adapter_enablement_readiness_artifacts_can_define_stop
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase6g_low_risk_external_adapter_tooling_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_6g_low_risk_external_adapter_enablement_tooling.md",
+        "docs/development/phase_6g_low_risk_external_adapter_enablement_tooling.yaml",
+        "tools/check_phase6g_low_risk_external_adapter_enablement_tooling.py",
+        "tools/run_phase6g_media_adapter_enablement_gate.py",
+        "tools/run_phase6g_wecom_tags_enablement_gate.py",
+        "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
+        "tests/test_phase6g_low_risk_external_adapter_enablement_tooling.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+    assert {
+        "tools/run_phase6g_media_adapter_enablement_gate.py",
+        "tools/run_phase6g_wecom_tags_enablement_gate.py",
+        "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
+    } <= checker.LOW_RISK_EXACT
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
