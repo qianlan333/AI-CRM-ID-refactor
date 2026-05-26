@@ -1,0 +1,86 @@
+version: 1
+status: phase_5x_media_upload_production_canary_readiness_execution_tooling
+bundle_type: phase_5_external_adapter_production_canary_readiness_execution_bundle
+route_family: /api/admin/image-library*
+capability_owner: aicrm_next.media_library
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  production_live_canary_tooling_authorized: true
+  production_live_upload_by_default_authorized: false
+  public_media_url_publication_authorized: false
+  destructive_delete_authorized: false
+  batch_upload_authorized: false
+  raw_file_exposure_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+production_canary:
+  runner: tools/run_phase5x_media_upload_production_canary_readiness_execution.py
+  default_blocked: true
+  single_file_only: true
+  batch_upload_allowed: false
+  public_media_url_publication_allowed: false
+  destructive_delete_allowed: false
+  requires_staging_evidence_json: true
+  required_env:
+    - AICRM_MEDIA_UPLOAD_LIVE_ADAPTER_ENABLED
+    - AICRM_MEDIA_UPLOAD_LIVE_UPLOAD_APPROVED
+    - AICRM_MEDIA_UPLOAD_CONFIG_REVIEWED
+    - AICRM_PHASE5X_MEDIA_UPLOAD_PRODUCTION_CANARY_APPROVED
+    - AICRM_PHASE5X_MEDIA_UPLOAD_PRODUCTION_TARGET_APPROVED
+    - AICRM_PHASE5X_MEDIA_UPLOAD_ROLLBACK_OWNER_APPROVED
+    - AICRM_PHASE5X_MEDIA_UPLOAD_CLEANUP_STRATEGY_APPROVED
+  required_args:
+    - --staging-evidence-json
+    - --file-name
+    - --content-type
+    - --idempotency-key
+    - --confirm-production-live-media-upload
+    - --confirm-single-approved-file
+    - --confirm-no-public-publish
+    - --confirm-no-delete
+    - --confirm-rollback-owner-approved
+    - --confirm-no-batch-upload
+
+cleanup:
+  runner: tools/run_phase5x_media_upload_production_canary_cleanup.py
+  default_blocked: true
+  same_file_only: true
+  destructive_delete_allowed: false
+  batch_cleanup_allowed: false
+  automatic_cleanup_allowed: false
+  cleanup_requires_explicit_approval: true
+  cleanup_evidence_required: true
+
+side_effect_safety:
+  public_media_url_publication_allowed: false
+  destructive_delete_allowed: false
+  raw_file_exposure_allowed: false
+  batch_upload_allowed: false
+  outbound_send_allowed: false
+  payment_allowed: false
+  oauth_callback_allowed: false
+  wecom_call_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+business_continuity:
+  production_behavior_unchanged_except_explicit_canary_tooling: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  route_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5y_media_upload_family_acceptance_bundle
+  route_family: /api/admin/image-library*
