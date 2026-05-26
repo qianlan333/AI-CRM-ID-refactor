@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_5_external_adapter_completed
-active_candidate: /api/h5/questionnaires*
-capability_owner: aicrm_next.questionnaire
-last_merged_pr: "#755"
-last_attempted_action: phase_5_aggregate_acceptance_review_bundle
-last_created_pr: "#755"
-recommended_next_pr: none_phase_5_complete
+current_phase: phase_6_owner_production_compat_readiness
+active_candidate: /api/admin/automation-conversion/task-groups*
+capability_owner: aicrm_next.automation_engine
+last_merged_pr: "#756"
+last_attempted_action: phase_6_owner_production_compat_readiness_bundle
+last_created_pr: "#756"
+recommended_next_pr: phase_6b_first_owner_switch_canary_plan_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -376,8 +376,28 @@ completed_steps:
   - phase_5an_questionnaire_external_submit_production_canary_readiness_completed
   - phase_5ao_questionnaire_external_submit_family_acceptance_completed
   - phase_5_aggregate_acceptance_review_completed
+  - phase_6a_owner_production_compat_readiness_completed
 
 next_allowed_actions: []
+
+phase6a_owner_production_compat_readiness:
+  status: phase_6a_owner_production_compat_readiness_completed
+  route_family: phase_6_owner_production_compat_readiness
+  selected_next_route_family: /api/admin/automation-conversion/task-groups*
+  capability_owner: aicrm_next.automation_engine
+  bundle_type: phase_6_owner_production_compat_readiness_bundle
+  no_runtime_change: true
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  phase_5_handoff_confirmed: true
+  first_phase6_candidate_selected: true
+  recommended_next_bundle: phase_6b_first_owner_switch_canary_plan_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
