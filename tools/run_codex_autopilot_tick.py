@@ -37,6 +37,7 @@ ACTION_TEMPLATES_ALLOWED_ACTIONS = {
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle",
     "phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle",
+    "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -228,6 +229,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/integration_gateway/media_live_gateway.py",
         "aicrm_next/integration_gateway/payment_commerce_live_adapter.py",
         "aicrm_next/integration_gateway/payment_commerce_live_gateway.py",
+        "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_adapter.py",
+        "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_gateway.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
@@ -493,6 +496,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_staging_smoke.py",
         "tools/run_phase5af_openclaw_mcp_ai_assist_fake_stub_production_dry_run.py",
         "tests/test_phase5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub.py",
+        "docs/development/phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.md",
+        "docs/development/phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.yaml",
+        "tools/check_phase5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.py",
+        "tools/run_phase5ag_openclaw_mcp_ai_assist_live_staging_evidence.py",
+        "tools/run_phase5ag_openclaw_mcp_ai_assist_live_production_dry_run_gate.py",
+        "tests/test_phase5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
