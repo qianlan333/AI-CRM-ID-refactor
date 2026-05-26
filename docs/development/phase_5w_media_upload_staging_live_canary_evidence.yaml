@@ -1,0 +1,92 @@
+version: 1
+status: phase_5w_media_upload_staging_live_canary_evidence
+bundle_type: phase_5_external_adapter_staging_live_canary_evidence_bundle
+route_family: /api/admin/image-library*
+related_route_families:
+  - /api/admin/image-library/upload
+  - /api/admin/attachment-library*
+  - /api/admin/miniprogram-library*
+capability_owner: aicrm_next.media_library
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  staging_live_canary_possible_with_approval: true
+  production_live_upload_authorized: false
+  public_media_url_publication_authorized: false
+  destructive_delete_authorized: false
+  raw_file_exposure_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  production_canary_approved: false
+  delete_ready: false
+
+staging_canary:
+  runner: tools/run_phase5w_media_upload_staging_live_canary_evidence.py
+  default_blocked: true
+  required_env:
+    - AICRM_MEDIA_UPLOAD_LIVE_ADAPTER_ENABLED
+    - AICRM_MEDIA_UPLOAD_LIVE_UPLOAD_APPROVED
+    - AICRM_MEDIA_UPLOAD_CONFIG_REVIEWED
+    - AICRM_PHASE5V_MEDIA_UPLOAD_STAGING_LIVE_APPROVED
+    - AICRM_PHASE5W_MEDIA_UPLOAD_STAGING_CANARY_APPROVED
+    - AICRM_PHASE5W_MEDIA_UPLOAD_STAGING_TARGET_APPROVED
+  required_args:
+    - --execute-staging-canary
+    - --confirm-live-media-upload
+    - --confirm-staging-only
+    - --confirm-approved-test-file
+    - --confirm-no-public-publish
+    - --idempotency-key
+    - --file-name
+    - --content-type
+
+target_safety:
+  single_test_file_only: true
+  batch_upload_allowed: false
+  public_media_url_publication_allowed: false
+  raw_file_output_forbidden: true
+  raw_token_output_forbidden: true
+  raw_secret_output_forbidden: true
+  file_metadata_redaction_required: true
+
+side_effect_safety:
+  production_live_upload_allowed: false
+  public_media_url_publication_allowed: false
+  destructive_delete_allowed: false
+  raw_file_exposure_allowed: false
+  outbound_send_allowed: false
+  payment_allowed: false
+  oauth_callback_allowed: false
+  wecom_call_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+production_readiness_review:
+  runner: tools/run_phase5w_media_upload_production_live_readiness_review.py
+  production_live_upload_executed: false
+  public_media_url_published: false
+  destructive_delete_executed: false
+  requires_staging_evidence_json: true
+  required_args:
+    - --staging-evidence-json
+    - --confirm-no-production-live-upload
+    - --confirm-no-public-publish
+    - --confirm-no-delete
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5x_media_upload_production_canary_readiness_execution_bundle
+  route_family: /api/admin/image-library*
