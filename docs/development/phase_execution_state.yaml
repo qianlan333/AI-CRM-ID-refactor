@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6k_single_scope_execution_canary_tooling
-active_candidate: /api/admin/automation-conversion/workflow-nodes*
+current_phase: phase_6l_phase6_aggregate_acceptance
+active_candidate: phase_6_aggregate_acceptance
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#770"
-last_attempted_action: phase_6k_single_scope_execution_canary_tooling_bundle
-last_created_pr: "#770"
-recommended_next_pr: phase_6l_phase6_aggregate_acceptance_bundle
+last_merged_pr: "#772"
+last_attempted_action: phase_6l_phase6_aggregate_acceptance_bundle
+last_created_pr: "#772"
+recommended_next_pr: phase_7a_legacy_retirement_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -387,8 +387,25 @@ completed_steps:
   - phase_6i_external_enablement_and_compat_readiness_acceptance_completed
   - phase_6j_timer_execution_readiness_completed
   - phase_6k_single_scope_execution_canary_tooling_completed
+  - phase_6l_phase6_aggregate_acceptance_completed
 
 next_allowed_actions: []
+
+phase6l_phase6_aggregate_acceptance:
+  status: phase_6l_phase6_aggregate_acceptance_completed
+  bundle_type: phase_6l_phase6_aggregate_acceptance_bundle
+  route_family: phase_6_aggregate_acceptance
+  production_owner_switches_executed: false
+  production_owner_switch_executed_routes: []
+  production_compat_behavior_changed: false
+  fallback_removed: false
+  timer_execution_default_on: false
+  run_due_execution_default_on: false
+  automation_execution_default_on: false
+  outbound_send: false
+  live_external_default_on: false
+  delete_ready: false
+  recommended_next_bundle: phase_7a_legacy_retirement_readiness_bundle
 
 phase6k_single_scope_execution_canary_tooling:
   status: phase_6k_single_scope_execution_canary_tooling_completed

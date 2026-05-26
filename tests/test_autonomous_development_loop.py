@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "phase_6k_single_scope_execution_canary_tooling"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert data["current_phase"] == "phase_6l_phase6_aggregate_acceptance"
+    assert data["active_candidate"] == "phase_6_aggregate_acceptance"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#770"
+    assert data["last_merged_pr"] == "#772"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -144,6 +144,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_6i_external_enablement_and_compat_readiness_acceptance_completed" in set(data["completed_steps"])
     assert "phase_6j_timer_execution_readiness_completed" in set(data["completed_steps"])
     assert "phase_6k_single_scope_execution_canary_tooling_completed" in set(data["completed_steps"])
+    assert "phase_6l_phase6_aggregate_acceptance_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_empty_after_phase_6a_readiness() -> None:
@@ -170,7 +171,7 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
     candidate = checker.load_yaml(STATE)["active_candidate"]
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness"}:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance"}:
         assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
         assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
 
@@ -580,7 +581,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/workflow-nodes*"
+    assert data["active_candidate"] == "phase_6_aggregate_acceptance"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
