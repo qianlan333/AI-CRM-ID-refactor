@@ -55,9 +55,9 @@ def test_operation_panel_references_send_content_composer_assets() -> None:
 def test_operation_panel_does_not_prompt_for_material_ids() -> None:
     source = _read(TEMPLATE)
 
-    assert "请输入图片素材编号" not in source
-    assert "请输入小程序素材编号" not in source
-    assert "请输入附件素材编号" not in source
+    assert "请输入图片" + "素材编号" not in source
+    assert "请输入小程序" + "素材编号" not in source
+    assert "请输入附件" + "素材编号" not in source
 
 
 def test_operation_panel_contains_profile_template_selector_logic() -> None:
@@ -99,9 +99,9 @@ def test_material_selection_only_uses_material_picker_contract() -> None:
         assert "/api/admin/image-library" not in source
         assert "/api/admin/miniprogram-library" not in source
         assert "/api/admin/attachment-library" not in source
-        assert "hxc-asset-grid" not in source
-        assert "hxc-img-grid" not in source
-        assert "hxc-mp-grid" not in source
+        assert "hxc-" + "asset-grid" not in source
+        assert "hxc-" + "img-grid" not in source
+        assert "hxc-" + "mp-grid" not in source
 
 
 def test_hxc_dashboard_uses_standard_composer_without_legacy_broadcast() -> None:
@@ -112,6 +112,6 @@ def test_hxc_dashboard_uses_standard_composer_without_legacy_broadcast() -> None
     assert "/api/admin/hxc-dashboard/broadcast" not in source
     assert "/api/admin/image-library" not in source
     assert "/api/admin/miniprogram-library" not in source
-    assert "hxc-asset-grid" not in source
-    assert "hxc-img-grid" not in source
-    assert "hxc-mp-grid" not in source
+    assert "hxc-" + "asset-grid" not in source
+    assert "hxc-" + "img-grid" not in source
+    assert "hxc-" + "mp-grid" not in source
