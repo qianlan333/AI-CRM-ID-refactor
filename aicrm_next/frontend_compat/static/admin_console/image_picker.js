@@ -38,7 +38,7 @@
     if (_libraryCachePromise) return _libraryCachePromise;
     _libraryCachePromise = (async () => {
       try {
-      const data = await requestJson('/api/admin/image-library?enabled_only=true&limit=80');
+        const data = await requestJson('/api/admin/image-library?enabled_only=true&limit=80');
         _libraryCache = data.ok ? (data.items || []) : [];
       } catch (e) {
         _libraryCache = [];
@@ -58,8 +58,54 @@
 
   function thumbnailUrl(item) {
     if (item._thumb_url) return item._thumb_url;
-    item._thumb_url = item.thumb_160_url || item.thumb_url || item.thumb_320_url || item.source_url || '';
+    item._thumb_url = item.thumb_160_url || item.thumb_url || item.thumb_320_url || fallbackThumbnailUrl(item) || item.source_url || '';
     return item._thumb_url;
+  }
+
+  function fallbackThumbnailUrl(item, size) {
+    if (!item || item.id == null || item.id === '') return '';
+    const targetSize = size || 160;
+    let url = '/api/admin/image-library/' + encodeURIComponent(String(item.id)) + '/thumbnail?size=' + targetSize;
+    if (item.updated_at) url += '&v=' + encodeURIComponent(String(item.updated_at));
+    return url;
+  }
+
+  function srcsetFor(item, fallbackUrl) {
+    const small = item.thumb_160_url || fallbackThumbnailUrl(item, 160) || fallbackUrl;
+    const medium = item.thumb_320_url || fallbackThumbnailUrl(item, 320) || fallbackUrl;
+    if (!small || !medium) return '';
+    return escapeHtml(small) + ' 160w, ' + escapeHtml(medium) + ' 320w';
+  }
+
+  function renderThumbImage(cell, item, size) {
+    if (!cell) return;
+    const firstUrl = thumbnailUrl(item);
+    const fallbackUrl = fallbackThumbnailUrl(item, size || 160);
+    if (!firstUrl && !fallbackUrl) return;
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.width = size || 120;
+    img.height = size || 120;
+    img.alt = '';
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+    const srcset = srcsetFor(item, fallbackUrl || firstUrl);
+    if (srcset) {
+      img.setAttribute('srcset', srcset);
+      img.setAttribute('sizes', (size || 120) + 'px');
+    }
+    img.onerror = function () {
+      if (fallbackUrl && img.src.indexOf(fallbackUrl) < 0) {
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
+        img.src = fallbackUrl;
+        return;
+      }
+      cell.textContent = '无图';
+    };
+    cell.textContent = '';
+    img.src = firstUrl || fallbackUrl;
+    cell.appendChild(img);
   }
 
   function showLibraryPickerModal({ existing, onConfirm, mode, max }) {
@@ -86,7 +132,7 @@
     const listEl = wrap.querySelector('.img-picker-list');
     const countEl = wrap.querySelector('.img-picker-count');
 
-    let chosen = mode === 'multiple' ? new Set(existing) : (existing.length ? existing[0] : 0);
+    let chosen = mode === 'multiple' ? new Set(existing.map(String)) : (existing.length ? String(existing[0]) : '');
 
     function close() { wrap.remove(); }
     wrap.querySelector('.img-picker-close').addEventListener('click', close);
@@ -104,7 +150,8 @@
       }
       // 先渲染骨架占位，再填服务端返回的 thumb_160_url，避免批量拉原图详情。
       listEl.innerHTML = items.map(function (it) {
-        const isSel = mode === 'multiple' ? chosen.has(it.id) : (chosen === it.id);
+        const itemId = String(it.id);
+        const isSel = mode === 'multiple' ? chosen.has(itemId) : (chosen === itemId);
         return '<label data-id="' + it.id + '" style="border:2px solid ' + (isSel ? '#2c5cdb' : '#e5e7eb') + ';border-radius:6px;padding:6px;cursor:pointer;font-size:11px;display:flex;flex-direction:column;gap:6px;">'
           + '<div class="img-picker-thumb" style="width:100%;aspect-ratio:1;background:#f5f6f8;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#bbb;overflow:hidden;">…</div>'
           + '<div style="display:flex;align-items:center;gap:4px;"><input type="' + (mode === 'multiple' ? 'checkbox' : 'radio') + '" name="img-picker" ' + (isSel ? 'checked' : '') + ' style="margin:0;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.name || it.file_name || '#' + it.id) + '</span></div>'
@@ -117,16 +164,12 @@
       updateCount();
       // 填缩略图
       items.forEach(function (it) {
-        const url = thumbnailUrl(it);
         const cell = listEl.querySelector('label[data-id="' + it.id + '"] .img-picker-thumb');
-        if (cell) {
-          if (url) cell.innerHTML = '<img src="' + url + '" loading="lazy" decoding="async" width="120" height="120" style="width:100%;height:100%;object-fit:cover;">';
-          else cell.textContent = '(无图)';
-        }
+        renderThumbImage(cell, it, 120);
       });
       // 选择交互
       listEl.querySelectorAll('label[data-id]').forEach(function (lbl) {
-        const id = Number(lbl.dataset.id);
+        const id = String(lbl.dataset.id);
         lbl.addEventListener('click', function (e) {
           if (e.target.tagName === 'INPUT') return;  // 让 input 自己处理
           const input = lbl.querySelector('input');
@@ -147,10 +190,10 @@
             }
             lbl.style.borderColor = this.checked ? '#2c5cdb' : '#e5e7eb';
           } else {
-            chosen = this.checked ? id : 0;
+            chosen = this.checked ? id : '';
             // 单选清掉其他
             listEl.querySelectorAll('label').forEach(function (other) {
-              other.style.borderColor = (Number(other.dataset.id) === chosen) ? '#2c5cdb' : '#e5e7eb';
+              other.style.borderColor = (String(other.dataset.id) === chosen) ? '#2c5cdb' : '#e5e7eb';
             });
           }
           updateCount();
@@ -169,8 +212,8 @@
     const mode = options.mode === 'multiple' ? 'multiple' : 'single';
     const max = options.max || 9;
     let value = options.value;
-    if (mode === 'multiple') value = Array.isArray(value) ? value.slice() : [];
-    else value = Number(value || 0);
+    if (mode === 'multiple') value = Array.isArray(value) ? value.map(String) : [];
+    else value = value ? String(value) : '';
     const onChange = typeof options.onChange === 'function' ? options.onChange : function () {};
 
     container.innerHTML = `
@@ -196,7 +239,7 @@
       }
       const items = await fetchLibrary();
       selectedEl.innerHTML = ids.map(function (id) {
-        const it = items.find(function (x) { return x.id === id; }) || { id: id, name: '#' + id };
+        const it = items.find(function (x) { return String(x.id) === String(id); }) || { id: id, name: '#' + id };
         return '<div class="img-picker-chip" data-id="' + id + '" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #e5e7eb;border-radius:4px;background:#fafbfc;font-size:12px;">'
           + '<div class="img-picker-chip-thumb" style="width:28px;height:28px;background:#f5f6f8;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px;">…</div>'
           + '<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.name || it.file_name || ('#' + id)) + '</span>'
@@ -205,20 +248,19 @@
       }).join('');
       // 填缩略图
       ids.forEach(function (id) {
-        const it = items.find(function (x) { return x.id === id; });
+        const it = items.find(function (x) { return String(x.id) === String(id); }) || { id: id, updated_at: '' };
         if (!it) return;
-        const url = thumbnailUrl(it);
         const cell = selectedEl.querySelector('.img-picker-chip[data-id="' + id + '"] .img-picker-chip-thumb');
-        if (cell && url) cell.innerHTML = '<img src="' + url + '" loading="lazy" decoding="async" width="28" height="28" style="width:100%;height:100%;object-fit:cover;">';
+        renderThumbImage(cell, it, 28);
       });
       // 移除按钮
       selectedEl.querySelectorAll('[data-remove]').forEach(function (btn) {
         btn.addEventListener('click', function () {
-          const rid = Number(btn.dataset.remove);
+          const rid = String(btn.dataset.remove);
           if (mode === 'multiple') {
-            value = value.filter(function (x) { return x !== rid; });
+            value = value.filter(function (x) { return String(x) !== rid; });
           } else {
-            value = 0;
+            value = '';
           }
           renderSelected();
           onChange(mode === 'multiple' ? value : value);
@@ -227,7 +269,7 @@
     }
 
     pickBtn.addEventListener('click', function () {
-      const ids = mode === 'multiple' ? value : (value ? [value] : []);
+      const ids = mode === 'multiple' ? value.map(String) : (value ? [String(value)] : []);
       showLibraryPickerModal({
         existing: ids,
         mode: mode,
@@ -236,7 +278,7 @@
           if (mode === 'multiple') {
             value = newIds.slice(0, max);
           } else {
-            value = newIds.length ? newIds[0] : 0;
+            value = newIds.length ? newIds[0] : '';
           }
           renderSelected();
           onChange(mode === 'multiple' ? value : value);
@@ -270,7 +312,7 @@
             if (mode === 'multiple') {
               if (value.length < max) value.push(data.item.id);
             } else {
-              value = data.item.id;
+              value = String(data.item.id);
             }
           } else {
             fail++;
@@ -295,8 +337,8 @@
     return {
       getValue: function () { return mode === 'multiple' ? value.slice() : value; },
       setValue: function (v) {
-        if (mode === 'multiple') value = Array.isArray(v) ? v.slice() : [];
-        else value = Number(v || 0);
+        if (mode === 'multiple') value = Array.isArray(v) ? v.map(String) : [];
+        else value = v ? String(v) : '';
         renderSelected();
       },
       refresh: function () { invalidateCache(); renderSelected(); },

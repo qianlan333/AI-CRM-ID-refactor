@@ -269,6 +269,7 @@ def test_thumbnail_loader_uses_variant_urls(source: str):
     assert "thumb_320_url" in source
     assert "thumb_160_url" in source
     assert "preview_url" in source
+    assert "/api/admin/image-library/' + encodeURIComponent(String(item.id)) + '/thumbnail?size='" in source
     assert "/api/admin/image-library/' + item.id" not in source
     assert "include_data=true" not in source
     assert "source === 'url'" in source

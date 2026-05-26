@@ -4,12 +4,21 @@ import os
 from copy import deepcopy
 from typing import Any, Protocol
 
+import requests
+
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from aicrm_next.commerce.domain import now_iso
-from .variants import add_image_variant_urls, generate_image_variants, variant_bytes
+from .variants import (
+    THUMBNAIL_SIZE_TO_VARIANT,
+    add_image_variant_urls,
+    decode_image_base64,
+    generate_image_variants,
+    make_thumbnail_bytes,
+    variant_bytes,
+)
 
 
 MEDIA_LIBRARY_BACKEND_ENV = "AICRM_MEDIA_LIBRARY_REPO_BACKEND"
@@ -22,6 +31,7 @@ class MediaLibraryRepository(Protocol):
     def list_facets(self, kind: str) -> dict[str, list[str]]: ...
     def get_item(self, kind: str, item_id: str, *, include_data: bool = True) -> dict[str, Any] | None: ...
     def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None: ...
+    def get_image_thumbnail(self, image_id: str, size: int) -> dict[str, Any] | None: ...
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]: ...
     def delete_item(self, kind: str, item_id: str, *, force: bool = False) -> dict[str, Any]: ...
 
@@ -195,6 +205,34 @@ class InMemoryMediaLibraryRepository:
             return None
         payload = variant_bytes(variant)
         return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
+
+    def get_image_thumbnail(self, image_id: str, size: int) -> dict[str, Any] | None:
+        variant = self.get_image_variant(image_id, THUMBNAIL_SIZE_TO_VARIANT.get(size, ""))
+        if variant and str(variant.get("mime_type") or "").split(";")[0] in {"image/png", "image/jpeg"}:
+            return variant
+        item = self.get_item("image", image_id, include_data=True)
+        if not item:
+            return None
+        data_base64 = str(item.get("data_base64") or "")
+        mime_type = str(item.get("mime_type") or "image/png")
+        if data_base64:
+            data = decode_image_base64(data_base64)
+        elif item.get("source_url"):
+            try:
+                response = requests.get(str(item.get("source_url")), timeout=10)
+                response.raise_for_status()
+                data = response.content
+                mime_type = response.headers.get("content-type", mime_type).split(";")[0] or mime_type
+            except Exception as exc:
+                raise ContractError("image source_url is unavailable") from exc
+        else:
+            data = b""
+        return make_thumbnail_bytes(
+            image_id=item.get("id") or image_id,
+            data=data,
+            mime_type=mime_type,
+            size=size,
+        )
 
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]:
         now = now_iso()
