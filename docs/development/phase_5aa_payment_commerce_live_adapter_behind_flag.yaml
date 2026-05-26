@@ -1,0 +1,126 @@
+version: 1
+status: phase_5aa_payment_commerce_live_adapter_behind_explicit_flag
+bundle_type: phase_5_external_adapter_live_adapter_behind_flag_bundle
+route_family: /api/admin/wechat-pay*
+related_route_families:
+  - /api/h5/wechat-pay*
+  - /api/wechat-pay*
+  - /api/orders*
+capability_owner: aicrm_next.commerce
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  live_payment_adapter_code_authorized: true
+  live_payment_call_by_default_authorized: false
+  real_payment_capture_authorized: false
+  real_refund_authorized: false
+  real_settlement_authorized: false
+  real_charge_authorized: false
+  production_payment_webhook_cutover_authorized: false
+  production_order_state_mutation_authorized: false
+  financial_reconciliation_mutation_authorized: false
+  raw_payment_secret_output_authorized: false
+  token_persistence_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  media_live_upload_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+live_adapter:
+  default_enabled: false
+  sandbox_mode_required_by_default: true
+  no_money_movement_required: true
+  provider_secret_redaction_required: true
+  request_hash_required: true
+  required_env:
+    - AICRM_PAYMENT_COMMERCE_LIVE_ADAPTER_ENABLED
+    - AICRM_PAYMENT_COMMERCE_LIVE_CALL_APPROVED
+    - AICRM_PAYMENT_COMMERCE_PROVIDER_CONFIG_REVIEWED
+    - AICRM_PAYMENT_COMMERCE_SANDBOX_MODE_APPROVED
+    - AICRM_PAYMENT_COMMERCE_NO_MONEY_MOVEMENT_CONFIRMED
+    - AICRM_PAYMENT_COMMERCE_PROVIDER_NAME
+    - AICRM_PAYMENT_COMMERCE_PROVIDER_SECRET
+  required_inputs:
+    - order_id
+    - amount_cents
+    - currency
+    - operator
+    - idempotency_key
+  methods:
+    - create_payment_intent_live
+    - query_payment_status_live
+    - request_refund_live
+    - verify_payment_webhook_live
+
+staging_evidence:
+  runner: tools/run_phase5aa_payment_commerce_live_staging_evidence.py
+  default_blocked: true
+  dry_run_gate_supported: true
+  execute_sandbox_staging_requires_approval: true
+  real_money_movement_executed: false
+  production_order_state_mutation_executed: false
+
+production_dry_run_gate:
+  runner: tools/run_phase5aa_payment_commerce_live_production_dry_run_gate.py
+  provider_call_executed: false
+  real_money_movement_executed: false
+  production_payment_webhook_cutover_executed: false
+  production_order_state_mutation_executed: false
+
+error_mapping:
+  required_error_codes:
+    - live_adapter_not_enabled
+    - live_payment_call_not_approved
+    - payment_config_missing
+    - sandbox_mode_required
+    - no_money_movement_confirmation_required
+    - idempotency_key_required
+    - duplicate_idempotency_key
+    - order_id_missing
+    - amount_invalid
+    - refund_not_enabled
+    - webhook_cutover_not_enabled
+    - forbidden_in_production_without_approval
+
+idempotency_policy:
+  idempotency_key_required_for_write_like_live_gate: true
+  replay_same_hash: true
+  conflict_different_hash: true
+  request_hash_required: true
+  no_partial_financial_side_effect: true
+
+side_effect_safety:
+  real_payment_capture_allowed: false
+  real_refund_allowed: false
+  real_settlement_allowed: false
+  real_charge_allowed: false
+  production_payment_webhook_cutover_allowed: false
+  production_order_state_mutation_allowed: false
+  financial_reconciliation_mutation_allowed: false
+  raw_secret_output_allowed: false
+  token_persistence_allowed: false
+  outbound_send_allowed: false
+  media_upload_allowed: false
+  oauth_callback_allowed: false
+  wecom_call_allowed: false
+  openclaw_mcp_allowed: false
+  timer_execution_allowed: false
+  automation_execution_allowed: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_real_money_movement: true
+  webhook_owner_unchanged: true
+
+next_bundle:
+  recommended_next_step: phase_5ab_payment_commerce_staging_sandbox_canary_evidence_bundle
+  route_family: /api/admin/wechat-pay*
