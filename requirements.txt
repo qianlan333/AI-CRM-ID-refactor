@@ -17,3 +17,4 @@ anthropic>=0.40.0
 pytest-timeout==2.3.1
 pytest-xdist==3.6.1
 segno==1.6.1
+Pillow>=10.4,<12.0

@@ -9,6 +9,7 @@ from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from aicrm_next.commerce.domain import now_iso
+from .variants import add_image_variant_urls, generate_image_variants, variant_bytes
 
 
 MEDIA_LIBRARY_BACKEND_ENV = "AICRM_MEDIA_LIBRARY_REPO_BACKEND"
@@ -19,7 +20,8 @@ MEDIA_LIBRARY_SQL_BACKENDS = {"sql", "postgres", "postgresql", "psycopg"}
 class MediaLibraryRepository(Protocol):
     def list_items(self, kind: str, *, limit: int, offset: int, filters: dict[str, Any] | None = None) -> dict[str, Any]: ...
     def list_facets(self, kind: str) -> dict[str, list[str]]: ...
-    def get_item(self, kind: str, item_id: str) -> dict[str, Any] | None: ...
+    def get_item(self, kind: str, item_id: str, *, include_data: bool = True) -> dict[str, Any] | None: ...
+    def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None: ...
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]: ...
     def delete_item(self, kind: str, item_id: str, *, force: bool = False) -> dict[str, Any]: ...
 
@@ -124,6 +126,7 @@ class InMemoryMediaLibraryRepository:
     def __init__(self, data: dict[str, list[dict[str, Any]]] | None = None) -> None:
         self._data = deepcopy(data if data is not None else _seed())
         self._campaign_steps: list[dict[str, Any]] = []
+        self._image_variants: dict[str, dict[str, dict[str, Any]]] = {}
 
     def list_items(self, kind: str, *, limit: int, offset: int, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         filters = filters or {}
@@ -148,6 +151,10 @@ class InMemoryMediaLibraryRepository:
                     if not item.get("description") or not item.get("category") or not normalize_tags(item.get("tags"))
                 ]
         rows.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        if kind == "image":
+            rows = [self._serialize_image(item, include_data=False) for item in rows]
+        elif kind == "miniprogram":
+            rows = [self._serialize_miniprogram(item) for item in rows]
         return {"items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
 
     def list_facets(self, kind: str) -> dict[str, list[str]]:
@@ -163,23 +170,56 @@ class InMemoryMediaLibraryRepository:
                 tags.add(tag)
         return {"categories": sorted(categories), "tags": sorted(tags)}
 
-    def get_item(self, kind: str, item_id: str) -> dict[str, Any] | None:
+    def get_item(self, kind: str, item_id: str, *, include_data: bool = True) -> dict[str, Any] | None:
         for item in self._data[kind]:
             if str(item["id"]) == str(item_id) and not item.get("deleted"):
-                return deepcopy(item)
+                if kind == "image":
+                    return self._serialize_image(item, include_data=include_data)
+                if kind == "miniprogram":
+                    return self._serialize_miniprogram(item)
+                out = deepcopy(item)
+                if not include_data:
+                    out.pop("data_base64", None)
+                return out
         return None
+
+    def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None:
+        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720"}:
+            return None
+        item = self.get_item("image", image_id, include_data=True)
+        if not item:
+            return None
+        variants = self._ensure_image_variants(item)
+        variant = variants.get(variant_key)
+        if not variant:
+            return None
+        payload = variant_bytes(variant)
+        return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
 
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]:
         now = now_iso()
         if item_id:
             normalized = self._normalize_update_payload(kind, payload)
+            if kind == "miniprogram" and normalized.get("thumb_image_id") not in (None, ""):
+                self._assert_image_exists(normalized.get("thumb_image_id"))
             for index, item in enumerate(self._data[kind]):
                 if str(item["id"]) == str(item_id) and not item.get("deleted"):
                     updated = {**item, **normalized, "id": item["id"], "updated_at": now}
                     self._data[kind][index] = updated
+                    if kind == "image":
+                        self._image_variants.pop(str(item["id"]), None)
+                        return self._serialize_image(updated, include_data=True)
+                    if kind == "miniprogram":
+                        return self._serialize_miniprogram(updated)
                     return deepcopy(updated)
             raise NotFoundError(f"{kind} item not found")
         normalized = self._normalize_payload(kind, payload)
+        if kind == "miniprogram":
+            missing = [key for key in ("appid", "pagepath", "title") if not normalized.get(key)]
+            if missing:
+                raise ContractError("小程序素材缺少必填字段：" + ", ".join(missing))
+            if normalized.get("thumb_image_id") not in (None, ""):
+                self._assert_image_exists(normalized.get("thumb_image_id"))
         item = {
             **normalized,
             "id": f"{kind}_masked_{len(self._data[kind]) + 1:03d}",
@@ -188,6 +228,10 @@ class InMemoryMediaLibraryRepository:
             "deleted": False,
         }
         self._data[kind].append(item)
+        if kind == "image":
+            return self._serialize_image(item, include_data=True)
+        if kind == "miniprogram":
+            return self._serialize_miniprogram(item)
         return deepcopy(item)
 
     def delete_item(self, kind: str, item_id: str, *, force: bool = False) -> dict[str, Any]:
@@ -216,6 +260,10 @@ class InMemoryMediaLibraryRepository:
         text = " ".join(str(item.get(field) or "") for field in fields)
         text += " " + " ".join(normalize_tags(item.get("tags")))
         return text.lower()
+
+    def _assert_image_exists(self, image_id: Any) -> None:
+        if not any(str(item.get("id")) == str(image_id) and not item.get("deleted") for item in self._data["image"]):
+            raise ContractError("thumb_image_id 对应的图片素材不存在")
 
     def _normalize_payload(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = deepcopy(payload)
@@ -307,6 +355,36 @@ class InMemoryMediaLibraryRepository:
             out["tags"] = normalize_tags(data.get("tags"))
         if "enabled" in data:
             out["enabled"] = bool(data.get("enabled"))
+        return out
+
+    def _ensure_image_variants(self, item: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        image_id = str(item.get("id") or "")
+        if image_id in self._image_variants:
+            return self._image_variants[image_id]
+        generated = generate_image_variants(
+            image_id=item.get("id") or image_id,
+            data_base64=str(item.get("data_base64") or ""),
+            mime_type=str(item.get("mime_type") or item.get("content_type") or "image/png"),
+        )
+        self._image_variants[image_id] = {key: variant.metadata() | {"data_base64": variant.data_base64} for key, variant in generated.items()}
+        return self._image_variants[image_id]
+
+    def _serialize_image(self, item: dict[str, Any], *, include_data: bool) -> dict[str, Any]:
+        out = deepcopy(item)
+        if not include_data:
+            out.pop("data_base64", None)
+            out.pop("data_url", None)
+        variants = self._ensure_image_variants(item)
+        original = variants.get("original") or {}
+        out["width"] = int(original.get("width") or out.get("width") or 0)
+        out["height"] = int(original.get("height") or out.get("height") or 0)
+        return add_image_variant_urls(out)
+
+    def _serialize_miniprogram(self, item: dict[str, Any]) -> dict[str, Any]:
+        out = deepcopy(item)
+        thumb_image_id = out.get("thumb_image_id")
+        if thumb_image_id not in (None, ""):
+            add_image_variant_urls(out, thumb_image_id)
         return out
 
     def _image_references(self, image_id: str) -> dict[str, list[dict[str, Any]]]:

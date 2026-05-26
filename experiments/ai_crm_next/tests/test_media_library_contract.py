@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from conftest import make_client
+from fastapi.testclient import TestClient
+
+from aicrm_next.main import create_app
 
 
 TINY_PNG = (
@@ -12,6 +14,10 @@ TINY_PNG = (
     b"\x00\x00\x00\x0bIDATx\xdac`\x00\x01\x00\x00\x07\x00\x01\xe9\x15\x08-"
     b"\x00\x00\x00\x00IEND\xaeB`\x82"
 )
+
+
+def make_client() -> TestClient:
+    return TestClient(create_app())
 
 
 def test_image_library_frontend_contract_filters_upload_update_and_delete() -> None:
@@ -51,10 +57,17 @@ def test_image_library_frontend_contract_filters_upload_update_and_delete() -> N
         "tags",
         "category",
         "ai_metadata",
+        "thumb_url",
+        "thumb_160_url",
+        "thumb_320_url",
+        "preview_url",
+        "width",
+        "height",
         "created_at",
         "updated_at",
     ]:
         assert key in filtered["items"][0]
+    assert "data_base64" not in filtered["items"][0]
 
     facets = client.get("/api/admin/image-library/facets").json()
     assert facets["ok"] is True
@@ -63,7 +76,11 @@ def test_image_library_frontend_contract_filters_upload_update_and_delete() -> N
 
     detail = client.get(f"/api/admin/image-library/{uploaded['id']}").json()
     assert detail["ok"] is True
-    assert detail["item"]["data_base64"]
+    assert "data_base64" not in detail["item"]
+
+    detail_with_data = client.get(f"/api/admin/image-library/{uploaded['id']}?include_data=true").json()
+    assert detail_with_data["ok"] is True
+    assert detail_with_data["item"]["data_base64"]
 
     updated = client.put(
         f"/api/admin/image-library/{uploaded['id']}",
@@ -101,6 +118,7 @@ def test_miniprogram_library_accepts_pagepath_aliases_and_test_resolve() -> None
     ).json()["item"]
     assert created["pagepath"] == "pages/index?from=crm"
     assert "page_path" in created
+    assert "thumb_320_url" in created
 
     updated = client.put(
         f"/api/admin/miniprogram-library/{created['id']}",
@@ -119,6 +137,38 @@ def test_miniprogram_library_accepts_pagepath_aliases_and_test_resolve() -> None
 
     deleted = client.delete(f"/api/admin/miniprogram-library/{created['id']}").json()
     assert deleted == {"ok": True, "deleted": True, "hard_deleted": True, "id": str(created["id"])}
+
+
+def test_miniprogram_library_accepts_page_path_and_rejects_missing_thumb_json() -> None:
+    client = make_client()
+    created = client.post(
+        "/api/admin/miniprogram-library",
+        json={
+            "name": "page_path alias",
+            "appid": "wx_fixture",
+            "page_path": "pages/alias/index",
+            "title": "别名路径",
+            "thumb_image_id": "image_masked_001",
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["item"]["pagepath"] == "pages/alias/index"
+
+    missing_thumb = client.post(
+        "/api/admin/miniprogram-library",
+        json={
+            "name": "bad thumb",
+            "appid": "wx_fixture",
+            "pagepath": "pages/index",
+            "title": "坏缩略图",
+            "thumb_image_id": "999999",
+        },
+    )
+    assert missing_thumb.headers.get("content-type", "").startswith("application/json")
+    assert missing_thumb.status_code in {200, 400}
+    body = missing_thumb.json()
+    assert body["ok"] is False
+    assert "不存在" in body["error"] or "not found" in body["error"]
 
 
 def test_attachment_library_upload_list_detail_update_and_delete() -> None:

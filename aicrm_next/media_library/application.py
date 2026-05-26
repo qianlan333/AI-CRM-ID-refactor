@@ -63,13 +63,26 @@ class GetMediaItemQuery:
         self._kind = kind
         self._repo = repo or build_media_library_repository()
 
-    def __call__(self, item_id: str) -> dict[str, Any]:
-        item = self._repo.get_item(self._kind, item_id)
+    def __call__(self, item_id: str, *, include_data: bool = True) -> dict[str, Any]:
+        item = self._repo.get_item(self._kind, item_id, include_data=include_data)
         if not item:
             from aicrm_next.shared.errors import NotFoundError
 
             raise NotFoundError(f"{self._kind} item not found")
         return {"ok": True, "item": item}
+
+
+class GetImageVariantQuery:
+    def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
+        self._repo = repo or build_media_library_repository()
+
+    def __call__(self, image_id: str, variant_key: str) -> dict[str, Any]:
+        variant = self._repo.get_image_variant(image_id, variant_key)
+        if not variant:
+            from aicrm_next.shared.errors import NotFoundError
+
+            raise NotFoundError("image variant not found")
+        return {"ok": True, "variant": variant}
 
 
 class UpsertMediaItemCommand:
@@ -219,7 +232,7 @@ class TestResolveMiniprogramThumbCommand:
         thumb_image_id = item.get("thumb_image_id")
         if not thumb_image_id:
             return {"ok": False, "error": "thumb_image_id is required before resolving WeCom media"}
-        image = self._repo.get_item("image", str(thumb_image_id))
+        image = self._repo.get_item("image", str(thumb_image_id), include_data=True)
         if not image or not image.get("data_base64"):
             return {"ok": False, "error": "thumb image data is unavailable"}
         result = build_wecom_media_adapter().upload_image(

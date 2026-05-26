@@ -3118,6 +3118,27 @@ ON image_library (category) WHERE category <> '';
 CREATE INDEX IF NOT EXISTS idx_image_library_tags_gin
 ON image_library USING GIN (tags);
 
+CREATE TABLE IF NOT EXISTS image_library_variants (
+    id BIGSERIAL PRIMARY KEY,
+    image_id BIGINT NOT NULL REFERENCES image_library(id) ON DELETE CASCADE,
+    variant_key TEXT NOT NULL,
+    storage_backend TEXT NOT NULL DEFAULT 'db_base64',
+    storage_key TEXT NOT NULL DEFAULT '',
+    public_url TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'image/png',
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    checksum TEXT NOT NULL DEFAULT '',
+    data_base64 TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (image_id, variant_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_library_variants_image
+ON image_library_variants (image_id, variant_key);
+
 CREATE TABLE IF NOT EXISTS attachment_library (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',

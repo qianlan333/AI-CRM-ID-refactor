@@ -6,6 +6,7 @@
   var MAX_CANVAS_SIDE = 1600;
   var MIN_CANVAS_SIDE = 720;
   var JPEG_MIME = "image/jpeg";
+  var DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
   function headersToObject(headers) {
     var result = {};
@@ -60,10 +61,27 @@
 
     var finalOptions = {};
     Object.keys(options).forEach(function (key) {
+      if (key === "timeoutMs") return;
       finalOptions[key] = options[key];
     });
     finalOptions.credentials = options.credentials || "same-origin";
     finalOptions.headers = headers;
+    var timeoutMs = Number(options.timeoutMs || DEFAULT_REQUEST_TIMEOUT_MS);
+    var controller = new AbortController();
+    var timeoutId = null;
+    var timedOut = false;
+    var sourceSignal = options.signal;
+    if (sourceSignal) {
+      if (sourceSignal.aborted) controller.abort();
+      else sourceSignal.addEventListener("abort", function () { controller.abort(); }, { once: true });
+    }
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(function () {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+    }
+    finalOptions.signal = controller.signal;
 
     return fetch(url, finalOptions).then(function (response) {
       return response.text().then(function (text) {
@@ -80,6 +98,13 @@
         }
         return payload;
       });
+    }).catch(function (error) {
+      if (timedOut || (error && error.name === "AbortError" && !sourceSignal)) {
+        throw new Error("请求超时，请检查网络或稍后重试");
+      }
+      throw error;
+    }).finally(function () {
+      if (timeoutId) clearTimeout(timeoutId);
     });
   }
 
@@ -197,6 +222,7 @@
     MAX_SOURCE_BYTES: MAX_SOURCE_BYTES,
     DIRECT_UPLOAD_BYTES: DIRECT_UPLOAD_BYTES,
     requestJson: requestJson,
+    requestJsonWithTimeout: requestJson,
     prepareImageForUpload: prepareImageForUpload,
     fmtBytes: fmtBytes,
   };

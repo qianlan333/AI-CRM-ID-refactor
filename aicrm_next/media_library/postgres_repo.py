@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
-from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .repo import MediaLibraryRepository, normalize_tags
+from .variants import add_image_variant_urls, generate_image_variants, variant_bytes
+
+
+logger = logging.getLogger(__name__)
 
 
 def _psycopg_url(url: str) -> str:
@@ -44,6 +49,19 @@ def _bool(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     return str(value).strip().lower() in {"1", "true", "yes", "on", "t"}
+
+
+def _coerce_optional_int(value: Any, field_name: str) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        raise ContractError(f"{field_name} must be numeric")
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if text.isdigit():
+        return int(text)
+    raise ContractError(f"{field_name} must be numeric")
 
 
 class PostgresMediaLibraryRepository:
@@ -84,7 +102,7 @@ class PostgresMediaLibraryRepository:
                         tags.add(tag)
                 return {"categories": sorted(categories), "tags": sorted(tags)}
 
-    def get_item(self, kind: str, item_id: str) -> dict[str, Any] | None:
+    def get_item(self, kind: str, item_id: str, *, include_data: bool = True) -> dict[str, Any] | None:
         table = self._table(kind)
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -92,7 +110,27 @@ class PostgresMediaLibraryRepository:
                 row = cur.fetchone()
         if not row:
             return None
-        return self._serialize(kind, dict(row), include_data=True)
+        return self._serialize(kind, dict(row), include_data=include_data)
+
+    def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None:
+        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720"}:
+            return None
+        image_id_int = int(image_id)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                variant = self._fetch_variant(cur, image_id_int, variant_key)
+                if not variant:
+                    cur.execute("SELECT * FROM image_library WHERE id = %s", (image_id_int,))
+                    image = cur.fetchone()
+                    if not image:
+                        return None
+                    self._ensure_image_variants(cur, dict(image))
+                    variant = self._fetch_variant(cur, image_id_int, variant_key)
+                conn.commit()
+        if not variant:
+            return None
+        payload = variant_bytes(variant)
+        return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
 
     def save_item(self, kind: str, payload: dict[str, Any], item_id: str | None = None) -> dict[str, Any]:
         if kind == "image":
@@ -179,15 +217,97 @@ class PostgresMediaLibraryRepository:
                     tuple(params + [limit, offset]),
                 )
                 rows = [self._serialize(kind, dict(row), include_data=False) for row in cur.fetchall() or []]
+                if kind == "image":
+                    self._attach_image_variant_dimensions(cur, rows)
         return {"items": rows, "total": total, "limit": limit, "offset": offset}
 
+    def _attach_image_variant_dimensions(self, cur: Any, rows: list[dict[str, Any]]) -> None:
+        image_ids = [int(item["id"]) for item in rows if item.get("id")]
+        if not image_ids:
+            return
+        try:
+            cur.execute(
+                """
+                SELECT image_id, width, height
+                FROM image_library_variants
+                WHERE variant_key = 'original' AND image_id = ANY(%s)
+                """,
+                (image_ids,),
+            )
+            by_id = {int(row["image_id"]): row for row in cur.fetchall() or []}
+        except Exception:
+            logger.debug("image variant dimensions unavailable", exc_info=True)
+            return
+        for item in rows:
+            variant = by_id.get(int(item.get("id") or 0)) or {}
+            item["width"] = int(variant.get("width") or item.get("width") or 0)
+            item["height"] = int(variant.get("height") or item.get("height") or 0)
+
+    def _fetch_variant(self, cur: Any, image_id: int, variant_key: str) -> dict[str, Any] | None:
+        cur.execute(
+            """
+            SELECT image_id, variant_key, storage_backend, storage_key, public_url,
+                   mime_type, width, height, file_size, checksum, data_base64,
+                   created_at, updated_at
+            FROM image_library_variants
+            WHERE image_id = %s AND variant_key = %s
+            """,
+            (image_id, variant_key),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def _ensure_image_variants(self, cur: Any, image: dict[str, Any]) -> None:
+        image_id = int(image.get("id") or 0)
+        variants = generate_image_variants(
+            image_id=image_id,
+            data_base64=str(image.get("data_base64") or ""),
+            mime_type=str(image.get("mime_type") or "image/png"),
+        )
+        for variant in variants.values():
+            cur.execute(
+                """
+                INSERT INTO image_library_variants
+                    (image_id, variant_key, storage_backend, storage_key, public_url,
+                     mime_type, width, height, file_size, checksum, data_base64)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (image_id, variant_key) DO UPDATE SET
+                    storage_backend = EXCLUDED.storage_backend,
+                    storage_key = EXCLUDED.storage_key,
+                    public_url = EXCLUDED.public_url,
+                    mime_type = EXCLUDED.mime_type,
+                    width = EXCLUDED.width,
+                    height = EXCLUDED.height,
+                    file_size = EXCLUDED.file_size,
+                    checksum = EXCLUDED.checksum,
+                    data_base64 = EXCLUDED.data_base64,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    image_id,
+                    variant.variant_key,
+                    variant.storage_backend,
+                    variant.storage_key,
+                    variant.public_url,
+                    variant.mime_type,
+                    variant.width,
+                    variant.height,
+                    variant.file_size,
+                    variant.checksum,
+                    variant.data_base64,
+                ),
+            )
+
     def _save_image(self, payload: dict[str, Any], item_id: str | None) -> dict[str, Any]:
+        data_base64 = str(payload.get("data_base64") or "").strip()
+        if not data_base64 and payload.get("data_url"):
+            _, _, data_base64 = str(payload.get("data_url") or "").partition(",")
         data = {
             "name": str(payload.get("name") or payload.get("file_name") or "图片素材").strip()[:200],
             "file_name": str(payload.get("file_name") or "image.png").strip()[:200],
             "source": str(payload.get("source") or "upload").strip()[:40],
             "source_url": str(payload.get("source_url") or "").strip()[:1000],
-            "data_base64": str(payload.get("data_base64") or "").strip(),
+            "data_base64": data_base64,
             "mime_type": str(payload.get("mime_type") or payload.get("content_type") or "image/png").strip()[:80],
             "file_size": int(payload.get("file_size") or 0),
             "enabled": _bool(payload.get("enabled", True)),
@@ -235,6 +355,8 @@ class PostgresMediaLibraryRepository:
                         ),
                     )
                     row = cur.fetchone()
+                    if row:
+                        self._ensure_image_variants(cur, {"id": row["id"], **data})
                 conn.commit()
         if not row:
             raise NotFoundError("image item not found")
@@ -247,42 +369,67 @@ class PostgresMediaLibraryRepository:
             "appid": str(payload.get("appid") or "").strip()[:120],
             "pagepath": str(pagepath or "").strip()[:500],
             "title": str(payload.get("title") or payload.get("name") or "").strip()[:200],
-            "thumb_image_id": int(payload["thumb_image_id"]) if payload.get("thumb_image_id") else None,
+            "thumb_image_id": _coerce_optional_int(payload.get("thumb_image_id"), "thumb_image_id"),
             "enabled": _bool(payload.get("enabled", True)),
         }
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                if item_id:
-                    sets = []
-                    params = []
-                    for key in ["name", "appid", "pagepath", "title", "thumb_image_id", "thumb_media_id", "enabled"]:
-                        if key in payload or (key == "pagepath" and "page_path" in payload):
-                            sets.append(f"{key} = %s")
-                            params.append(str(payload.get("thumb_media_id") or "") if key == "thumb_media_id" else data[key])
-                    if "thumb_image_id" in payload:
-                        sets.append("thumb_media_id = ''")
-                        sets.append("thumb_media_id_expires_at = NULL")
-                    if not sets:
-                        return self.get_item("miniprogram", item_id) or {}
-                    params.append(int(item_id))
-                    cur.execute(f"UPDATE miniprogram_library SET {', '.join(sets)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id", tuple(params))
-                    row = cur.fetchone()
-                else:
-                    cur.execute(
-                        """
-                        INSERT INTO miniprogram_library
-                            (name, appid, pagepath, title, thumb_image_url, thumb_image_base64,
-                             thumb_image_id, thumb_media_id, thumb_media_id_expires_at, enabled)
-                        VALUES (%s, %s, %s, %s, '', '', %s, '', NULL, %s)
-                        RETURNING id
-                        """,
-                        (data["name"], data["appid"], data["pagepath"], data["title"], data["thumb_image_id"], data["enabled"]),
-                    )
-                    row = cur.fetchone()
-                conn.commit()
+        if not item_id:
+            missing = [label for label, value in (("appid", data["appid"]), ("pagepath", data["pagepath"]), ("title", data["title"])) if not value]
+            if missing:
+                raise ContractError("小程序素材缺少必填字段：" + ", ".join(missing))
+        else:
+            for label in ("appid", "pagepath", "title"):
+                if label in payload or (label == "pagepath" and "page_path" in payload):
+                    if not data[label]:
+                        raise ContractError("小程序素材字段不能为空：" + label)
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    if data["thumb_image_id"] is not None:
+                        cur.execute("SELECT 1 FROM image_library WHERE id = %s", (data["thumb_image_id"],))
+                        if not cur.fetchone():
+                            raise ContractError("thumb_image_id 对应的图片素材不存在")
+                    if item_id:
+                        sets = []
+                        params = []
+                        for key in ["name", "appid", "pagepath", "title", "thumb_image_id", "thumb_media_id", "enabled"]:
+                            if key in payload or (key == "pagepath" and "page_path" in payload):
+                                sets.append(f"{key} = %s")
+                                params.append(str(payload.get("thumb_media_id") or "") if key == "thumb_media_id" else data[key])
+                        if "thumb_image_id" in payload:
+                            sets.append("thumb_media_id = ''")
+                            sets.append("thumb_media_id_expires_at = NULL")
+                        if not sets:
+                            return self.get_item("miniprogram", item_id) or {}
+                        params.append(int(item_id))
+                        cur.execute(f"UPDATE miniprogram_library SET {', '.join(sets)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id", tuple(params))
+                        row = cur.fetchone()
+                    else:
+                        cur.execute(
+                            """
+                            INSERT INTO miniprogram_library
+                                (name, appid, pagepath, title, thumb_image_url, thumb_image_base64,
+                                 thumb_image_id, thumb_media_id, thumb_media_id_expires_at, enabled)
+                            VALUES (%s, %s, %s, %s, '', '', %s, '', NULL, %s)
+                            RETURNING id
+                            """,
+                            (data["name"], data["appid"], data["pagepath"], data["title"], data["thumb_image_id"], data["enabled"]),
+                        )
+                        row = cur.fetchone()
+                    conn.commit()
+        except (ContractError, NotFoundError):
+            raise
+        except Exception as exc:
+            logger.exception("miniprogram library save failed item_id=%s payload_keys=%s", item_id, sorted(payload.keys()))
+            raise ContractError("小程序素材保存失败：数据库写入异常，请稍后重试") from exc
         if not row:
             raise NotFoundError("miniprogram item not found")
-        return self.get_item("miniprogram", str(row["id"])) or {}
+        item = self.get_item("miniprogram", str(row["id"])) or {}
+        required = {"id", "name", "appid", "pagepath", "page_path", "title", "thumb_image_id", "thumb_media_id", "enabled", "created_at", "updated_at"}
+        missing_keys = sorted(required - set(item))
+        if missing_keys:
+            logger.error("miniprogram library saved item missing fields: %s", missing_keys)
+            raise ContractError("小程序素材保存失败：返回字段不完整")
+        return item
 
     def _save_attachment(self, payload: dict[str, Any], item_id: str | None) -> dict[str, Any]:
         data = {
@@ -412,16 +559,19 @@ class PostgresMediaLibraryRepository:
                 "tags": normalize_tags(_json(row.get("tags"), [])),
                 "category": str(row.get("category") or ""),
                 "ai_metadata": _json(row.get("ai_metadata"), {}),
+                "width": int(row.get("width") or 0),
+                "height": int(row.get("height") or 0),
                 "created_at": _iso(row.get("created_at")),
                 "updated_at": _iso(row.get("updated_at")),
             }
+            add_image_variant_urls(item)
             if include_data:
                 item["data_base64"] = str(row.get("data_base64") or "")
                 item["data_url"] = f"data:{item['mime_type']};base64,{item['data_base64']}"
             return item
         if kind == "miniprogram":
             pagepath = str(row.get("pagepath") or "")
-            return {
+            item = {
                 "id": int(row.get("id") or 0),
                 "name": str(row.get("name") or ""),
                 "appid": str(row.get("appid") or ""),
@@ -436,6 +586,10 @@ class PostgresMediaLibraryRepository:
                 "created_at": _iso(row.get("created_at")),
                 "updated_at": _iso(row.get("updated_at")),
             }
+            thumb_image_id = item.get("thumb_image_id")
+            if thumb_image_id not in (None, ""):
+                add_image_variant_urls(item, thumb_image_id)
+            return item
         item = {
             "id": int(row.get("id") or 0),
             "name": str(row.get("name") or ""),

@@ -38,7 +38,7 @@
     if (_libraryCachePromise) return _libraryCachePromise;
     _libraryCachePromise = (async () => {
       try {
-        const data = await requestJson('/api/admin/image-library?enabled_only=true&limit=200');
+      const data = await requestJson('/api/admin/image-library?enabled_only=true&limit=80');
         _libraryCache = data.ok ? (data.items || []) : [];
       } catch (e) {
         _libraryCache = [];
@@ -56,21 +56,10 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  async function thumbnailUrl(item) {
-    // 库列表 API 默认不带 data_base64（避免 payload 过大）。要展示缩略图就再请求一次详情。
+  function thumbnailUrl(item) {
     if (item._thumb_url) return item._thumb_url;
-    if (item.source === 'url' && item.source_url) {
-      item._thumb_url = item.source_url;
-      return item._thumb_url;
-    }
-    try {
-      const data = await requestJson('/api/admin/image-library/' + item.id);
-      if (data.ok && data.item.data_base64) {
-        const mime = data.item.mime_type || 'image/png';
-        item._thumb_url = 'data:' + mime + ';base64,' + data.item.data_base64;
-      }
-    } catch (e) { /* fail silently → 用占位 */ }
-    return item._thumb_url || '';
+    item._thumb_url = item.thumb_160_url || item.thumb_url || item.thumb_320_url || item.source_url || '';
+    return item._thumb_url;
   }
 
   function showLibraryPickerModal({ existing, onConfirm, mode, max }) {
@@ -113,7 +102,7 @@
         listEl.innerHTML = '<div style="grid-column:1/-1;color:#888;font-size:13px;text-align:center;padding:30px;">素材库还是空的，先去 <a href="/admin/image-library" target="_blank">/admin/image-library</a> 上传一些。</div>';
         return;
       }
-      // 先渲染骨架占位，再异步填缩略图（避免一次性发 N 个详情请求）
+      // 先渲染骨架占位，再填服务端返回的 thumb_160_url，避免批量拉原图详情。
       listEl.innerHTML = items.map(function (it) {
         const isSel = mode === 'multiple' ? chosen.has(it.id) : (chosen === it.id);
         return '<label data-id="' + it.id + '" style="border:2px solid ' + (isSel ? '#2c5cdb' : '#e5e7eb') + ';border-radius:6px;padding:6px;cursor:pointer;font-size:11px;display:flex;flex-direction:column;gap:6px;">'
@@ -126,12 +115,12 @@
         countEl.textContent = mode === 'multiple' ? ('已选 ' + n + (max ? ' / ' + max : '')) : (n ? '已选 1' : '');
       }
       updateCount();
-      // 异步填缩略图
-      items.forEach(async function (it) {
-        const url = await thumbnailUrl(it);
+      // 填缩略图
+      items.forEach(function (it) {
+        const url = thumbnailUrl(it);
         const cell = listEl.querySelector('label[data-id="' + it.id + '"] .img-picker-thumb');
         if (cell) {
-          if (url) cell.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover;">';
+          if (url) cell.innerHTML = '<img src="' + url + '" loading="lazy" decoding="async" width="120" height="120" style="width:100%;height:100%;object-fit:cover;">';
           else cell.textContent = '(无图)';
         }
       });
@@ -214,13 +203,13 @@
           + '<button type="button" data-remove="' + id + '" style="border:0;background:transparent;color:#a02929;cursor:pointer;font-size:14px;">×</button>'
           + '</div>';
       }).join('');
-      // 异步填缩略图
-      ids.forEach(async function (id) {
+      // 填缩略图
+      ids.forEach(function (id) {
         const it = items.find(function (x) { return x.id === id; });
         if (!it) return;
-        const url = await thumbnailUrl(it);
+        const url = thumbnailUrl(it);
         const cell = selectedEl.querySelector('.img-picker-chip[data-id="' + id + '"] .img-picker-chip-thumb');
-        if (cell && url) cell.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover;">';
+        if (cell && url) cell.innerHTML = '<img src="' + url + '" loading="lazy" decoding="async" width="28" height="28" style="width:100%;height:100%;object-fit:cover;">';
       });
       // 移除按钮
       selectedEl.querySelectorAll('[data-remove]').forEach(function (btn) {
