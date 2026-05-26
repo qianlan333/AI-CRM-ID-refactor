@@ -989,6 +989,17 @@ def test_phase5q_oauth_identity_staging_canary_artifacts_can_define_stop_terms_a
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
 
+def test_phase5r_oauth_identity_production_readiness_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5r_oauth_identity_production_canary_readiness.md",
+        "docs/development/phase_5r_oauth_identity_production_canary_readiness.yaml",
+        "tools/check_phase5r_oauth_identity_production_canary_readiness.py",
+        "tools/run_phase5r_oauth_identity_production_canary_readiness.py",
+        "tests/test_phase5r_oauth_identity_production_canary_readiness.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
