@@ -400,9 +400,9 @@
 
     // 整张卡片点击 → 编辑 modal
     wrap.querySelectorAll('.mp-card').forEach(function (card) {
-      var id = Number(card.dataset.id);
+      var id = String(card.dataset.id);
       card.addEventListener('click', function () {
-        var item = STATE.items.find(function (x) { return x.id === id; });
+        var item = STATE.items.find(function (x) { return String(x.id) === id; });
         if (item) openEditModal(item);
       });
     });

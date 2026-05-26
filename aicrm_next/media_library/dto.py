@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ImageUpsertRequest(BaseModel):
-    name: str = Field(min_length=1)
+    name: str | None = None
     file_name: str = "fixture.png"
     content_type: str = "image/png"
+    mime_type: str | None = None
     file_size: int = 0
     width: int = 1
     height: int = 1
     data_url: str = "data:image/png;base64,ZmFrZQ=="
     tags: list[str] = Field(default_factory=list)
+    description: str = ""
+    category: str = ""
+    enabled: bool | None = None
+    ai_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageFromUrlRequest(BaseModel):
@@ -28,8 +35,8 @@ class ImageFromBase64Request(BaseModel):
 
 
 class AttachmentUpsertRequest(BaseModel):
-    name: str = Field(min_length=1)
-    file_name: str
+    name: str | None = None
+    file_name: str = "attachment.bin"
     mime_type: str = "application/octet-stream"
     file_size: int = 0
     data_base64: str = ""
@@ -38,10 +45,20 @@ class AttachmentUpsertRequest(BaseModel):
 
 
 class MiniprogramUpsertRequest(BaseModel):
-    title: str = Field(min_length=1)
-    appid: str
-    page_path: str
-    thumb_image_id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = None
+    title: str | None = None
+    appid: str | None = None
+    page_path: str | None = Field(default=None, alias="pagepath")
+    thumb_image_id: str | int | None = None
     description: str = ""
     tags: list[str] = Field(default_factory=list)
-    enabled: bool = True
+    enabled: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_page_path_aliases(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "pagepath" not in values and "page_path" in values:
+            values = {**values, "pagepath": values.get("page_path")}
+        return values

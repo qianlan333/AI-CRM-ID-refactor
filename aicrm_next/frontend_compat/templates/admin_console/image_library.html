@@ -551,8 +551,8 @@
       entries.forEach(function (entry) {
         if (!entry.isIntersecting) return;
         var card = entry.target;
-        var id = Number(card.dataset.id);
-        var item = STATE.items.find(function (x) { return x.id === id; });
+        var id = String(card.dataset.id);
+        var item = STATE.items.find(function (x) { return String(x.id) === id; });
         if (!item) return;
         STATE.thumbObserver.unobserve(card);  // 加载一次就停止观察这张卡片
         thumbnailUrl(item).then(function (url) {
@@ -566,9 +566,9 @@
     // 卡片绑定 observer + 点击事件
     wrap.querySelectorAll('.il-card').forEach(function (card) {
       STATE.thumbObserver.observe(card);
-      var id = Number(card.dataset.id);
+      var id = String(card.dataset.id);
       card.addEventListener('click', function () {
-        var item = STATE.items.find(function (x) { return x.id === id; });
+        var item = STATE.items.find(function (x) { return String(x.id) === id; });
         if (item) openEditModal(item);
       });
     });

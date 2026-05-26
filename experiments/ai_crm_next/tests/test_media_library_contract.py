@@ -1,55 +1,153 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 from conftest import make_client
 
 
-def test_image_library_crud_and_fake_imports() -> None:
+TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x04\x00\x00\x00\xb5\x1c\x0c\x02"
+    b"\x00\x00\x00\x0bIDATx\xdac`\x00\x01\x00\x00\x07\x00\x01\xe9\x15\x08-"
+    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def test_image_library_frontend_contract_filters_upload_update_and_delete() -> None:
     client = make_client()
-    payload = client.get("/api/admin/image-library").json()
-    assert payload["ok"] is True
-    item = payload["items"][0]
-    for key in ["id", "name", "file_name", "content_type", "file_size", "width", "height", "data_url", "tags", "created_at", "updated_at"]:
-        assert key in item
-    facets = client.get("/api/admin/image-library/facets").json()
-    assert facets == {"ok": True, "categories": [], "tags": ["commerce"]}
-    created = client.post(
+
+    uploaded = client.post(
+        "/api/admin/image-library/upload",
+        files={"image": ("hero.png", BytesIO(TINY_PNG), "image/png")},
+        data={"name": "活动主图", "description": "五月活动", "tags": "活动, 海报", "category": "活动海报"},
+    ).json()["item"]
+
+    filtered = client.get(
         "/api/admin/image-library",
-        json={"name": "图片", "file_name": "x.png", "content_type": "image/png", "file_size": 8, "width": 1, "height": 1, "data_url": "data:image/png;base64,ZmFrZQ=="},
+        params={
+            "enabled_only": "true",
+            "q": "活动",
+            "category": "活动海报",
+            "tags": "海报",
+            "only_unlabeled": "false",
+        },
+    ).json()
+    assert filtered["ok"] is True
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["id"] == uploaded["id"]
+    for key in [
+        "id",
+        "name",
+        "file_name",
+        "source",
+        "source_url",
+        "mime_type",
+        "file_size",
+        "thumb_media_id",
+        "thumb_media_id_expires_at",
+        "enabled",
+        "description",
+        "tags",
+        "category",
+        "ai_metadata",
+        "created_at",
+        "updated_at",
+    ]:
+        assert key in filtered["items"][0]
+
+    facets = client.get("/api/admin/image-library/facets").json()
+    assert facets["ok"] is True
+    assert "活动海报" in facets["categories"]
+    assert "海报" in facets["tags"]
+
+    detail = client.get(f"/api/admin/image-library/{uploaded['id']}").json()
+    assert detail["ok"] is True
+    assert detail["item"]["data_base64"]
+
+    updated = client.put(
+        f"/api/admin/image-library/{uploaded['id']}",
+        json={"description": "更新描述", "tags": ["转化"], "category": "好评截图", "enabled": False},
     ).json()["item"]
-    assert client.get(f"/api/admin/image-library/{created['id']}").json()["item"]["name"] == "图片"
-    assert client.put(f"/api/admin/image-library/{created['id']}", json={**created, "name": "图片更新"}).json()["item"]["name"] == "图片更新"
-    assert client.post("/api/admin/image-library/from-url", json={"url": "https://example.invalid/a.png", "name": "外链"}).json()["source_status"] == "fake_import"
-    assert client.post("/api/admin/image-library/from-base64", json={"data_base64": "ZmFrZQ==", "name": "base64"}).json()["source_status"] == "fake_import"
-    assert client.delete(f"/api/admin/image-library/{created['id']}").json()["soft_deleted"] is True
+    assert updated["description"] == "更新描述"
+    assert updated["tags"] == ["转化"]
+    assert updated["category"] == "好评截图"
+    assert updated["enabled"] is False
+
+    unlabeled = client.get("/api/admin/image-library", params={"only_unlabeled": "true", "enabled_only": "true"}).json()
+    assert any(item["id"] == "image_masked_001" for item in unlabeled["items"])
+
+    conflict = client.delete("/api/admin/image-library/image_masked_001")
+    assert conflict.status_code == 409
+    assert conflict.json()["references"]["miniprograms"]
+
+    forced = client.delete("/api/admin/image-library/image_masked_001?force=true").json()
+    assert forced["ok"] is True
+    assert forced["references_cleared"]["miniprograms_cleared"] == 1
 
 
-def test_attachment_library_crud() -> None:
+def test_miniprogram_library_accepts_pagepath_aliases_and_test_resolve() -> None:
     client = make_client()
-    payload = client.get("/api/admin/attachment-library").json()
-    assert payload["ok"] is True
-    item = payload["items"][0]
-    for key in ["id", "name", "file_name", "mime_type", "file_size", "data_base64", "tags", "enabled", "created_at", "updated_at"]:
-        assert key in item
-    created = client.post(
-        "/api/admin/attachment-library",
-        json={"name": "附件", "file_name": "a.pdf", "mime_type": "application/pdf", "file_size": 10, "data_base64": "ZmFrZQ=="},
-    ).json()["item"]
-    assert client.get(f"/api/admin/attachment-library/{created['id']}").json()["item"]["file_name"] == "a.pdf"
-    assert client.put(f"/api/admin/attachment-library/{created['id']}", json={**created, "enabled": False}).json()["item"]["enabled"] is False
-    assert client.delete(f"/api/admin/attachment-library/{created['id']}").json()["deleted"] is True
-
-
-def test_miniprogram_library_crud() -> None:
-    client = make_client()
-    payload = client.get("/api/admin/miniprogram-library").json()
-    assert payload["ok"] is True
-    item = payload["items"][0]
-    for key in ["id", "title", "appid", "page_path", "thumb_image_id", "description", "tags", "enabled", "created_at", "updated_at"]:
-        assert key in item
     created = client.post(
         "/api/admin/miniprogram-library",
-        json={"title": "小程序", "appid": "appid_masked_new", "page_path": "pages/a/index", "thumb_image_id": "image_masked_001"},
+        json={
+            "name": "体验课卡片",
+            "appid": "wx_fixture",
+            "pagepath": "pages/index?from=crm",
+            "title": "预约体验课",
+            "thumb_image_id": "image_masked_001",
+            "enabled": True,
+        },
     ).json()["item"]
-    assert client.get(f"/api/admin/miniprogram-library/{created['id']}").json()["item"]["appid"] == "appid_masked_new"
-    assert client.put(f"/api/admin/miniprogram-library/{created['id']}", json={**created, "enabled": False}).json()["item"]["enabled"] is False
-    assert client.delete(f"/api/admin/miniprogram-library/{created['id']}").json()["deleted"] is True
+    assert created["pagepath"] == "pages/index?from=crm"
+    assert "page_path" in created
+
+    updated = client.put(
+        f"/api/admin/miniprogram-library/{created['id']}",
+        json={"page_path": "pages/detail?id=1", "title": "更新标题"},
+    ).json()["item"]
+    assert updated["pagepath"] == "pages/detail?id=1"
+    assert updated["page_path"] == "pages/detail?id=1"
+
+    listed = client.get("/api/admin/miniprogram-library?enabled_only=false").json()
+    assert listed["ok"] is True
+    assert any(item["pagepath"] == "pages/detail?id=1" for item in listed["items"])
+
+    resolved = client.post(f"/api/admin/miniprogram-library/{created['id']}/test-resolve").json()
+    assert resolved["ok"] is True
+    assert resolved["thumb_media_id"]
+
+    deleted = client.delete(f"/api/admin/miniprogram-library/{created['id']}").json()
+    assert deleted == {"ok": True, "deleted": True, "hard_deleted": True, "id": str(created["id"])}
+
+
+def test_attachment_library_upload_list_detail_update_and_delete() -> None:
+    client = make_client()
+    created = client.post(
+        "/api/admin/attachment-library/upload",
+        files={"attachment": ("guide.pdf", BytesIO(b"%PDF-1.4\n%%EOF\n"), "application/pdf")},
+        data={"name": "欢迎资料", "tags": "欢迎语,PDF"},
+    ).json()["item"]
+    assert created["file_name"] == "guide.pdf"
+    assert created["tags"] == ["欢迎语", "PDF"]
+
+    listed = client.get("/api/admin/attachment-library", params={"q": "欢迎", "enabled_only": "true"}).json()
+    assert listed["ok"] is True
+    assert listed["total"] == 1
+    for key in ["id", "name", "file_name", "mime_type", "file_size", "tags", "enabled", "created_at", "updated_at"]:
+        assert key in listed["items"][0]
+
+    detail = client.get(f"/api/admin/attachment-library/{created['id']}").json()
+    assert detail["ok"] is True
+    assert detail["item"]["data_base64"]
+
+    updated = client.put(
+        f"/api/admin/attachment-library/{created['id']}",
+        json={"name": "欢迎资料更新", "tags": ["课前"], "enabled": False},
+    ).json()["item"]
+    assert updated["name"] == "欢迎资料更新"
+    assert updated["tags"] == ["课前"]
+    assert updated["enabled"] is False
+
+    deleted = client.delete(f"/api/admin/attachment-library/{created['id']}").json()
+    assert deleted == {"ok": True, "deleted": True, "hard_deleted": True, "id": str(created["id"])}
