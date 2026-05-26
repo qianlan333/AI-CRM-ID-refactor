@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_7h_first_exact_route_production_compat_cleanup_canary
-active_candidate: task_groups_exact_route_production_compat_cleanup_canary
+current_phase: phase_7i_legacy_runtime_deletion_readiness
+active_candidate: legacy_runtime_deletion_readiness
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#788"
-last_attempted_action: phase_7h_first_exact_route_production_compat_cleanup_canary_bundle
-last_created_pr: "#788"
-recommended_next_pr: phase_7i_legacy_runtime_deletion_readiness_bundle
+last_merged_pr: "#789"
+last_attempted_action: phase_7i_legacy_runtime_deletion_readiness_bundle
+last_created_pr: "#789"
+recommended_next_pr: phase_7j_legacy_runtime_cleanup_blocker_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -396,9 +396,25 @@ completed_steps:
   - phase_7f_production_compat_cleanup_readiness_completed
   - phase_7g_first_exact_route_fallback_removal_canary_completed
   - phase_7h_first_exact_route_production_compat_cleanup_canary_completed
+  - phase_7i_legacy_runtime_deletion_readiness_completed
 
 next_allowed_actions:
-  - phase_7i_legacy_runtime_deletion_readiness_bundle
+  - phase_7j_legacy_runtime_cleanup_blocker_acceptance_bundle
+
+phase7i_legacy_runtime_deletion_readiness:
+  status: phase_7i_legacy_runtime_deletion_readiness_completed
+  bundle_type: phase_7i_legacy_runtime_deletion_readiness_bundle
+  cleanup_family: legacy_runtime_deletion_readiness
+  selected_runtime_cleanup_candidate: none
+  readiness_only: true
+  runtime_cleanup_blocked: true
+  blocked_reason: fallback_and_production_compat_still_retained_after_phase_7g_7h
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+  recommended_next_bundle: phase_7j_legacy_runtime_cleanup_blocker_acceptance_bundle
 
 phase7h_first_exact_route_production_compat_cleanup_canary:
   status: phase_7h_first_exact_route_production_compat_cleanup_canary_completed

@@ -67,6 +67,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_7g_first_exact_route_fallback_removal_canary_bundle",
     "phase_7h_first_exact_route_production_compat_cleanup_canary_bundle",
     "phase_7i_legacy_runtime_deletion_readiness_bundle",
+    "phase_7j_legacy_runtime_cleanup_blocker_acceptance_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -620,6 +621,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_7g_first_exact_route_fallback_removal_canary.yaml",
         "docs/development/phase_7h_first_exact_route_production_compat_cleanup_canary.md",
         "docs/development/phase_7h_first_exact_route_production_compat_cleanup_canary.yaml",
+        "docs/development/phase_7i_legacy_runtime_deletion_readiness.md",
+        "docs/development/phase_7i_legacy_runtime_deletion_readiness.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -646,6 +649,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase7f_production_compat_cleanup_readiness.py",
         "tools/check_phase7g_first_exact_route_fallback_removal_canary.py",
         "tools/check_phase7h_first_exact_route_production_compat_cleanup_canary.py",
+        "tools/check_phase7i_legacy_runtime_deletion_readiness.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -673,6 +677,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase7f_production_compat_cleanup_readiness.py",
         "tests/test_phase7g_first_exact_route_fallback_removal_canary.py",
         "tests/test_phase7h_first_exact_route_production_compat_cleanup_canary.py",
+        "tests/test_phase7i_legacy_runtime_deletion_readiness.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
