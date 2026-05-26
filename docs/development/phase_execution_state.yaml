@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6d_internal_metadata_owner_switch_batch
-active_candidate: internal_metadata_owner_switch_batch
+current_phase: phase_6e_internal_owner_switch_acceptance
+active_candidate: internal_owner_switch_acceptance
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#761"
-last_attempted_action: phase_6d_internal_metadata_owner_switch_batch_bundle
-last_created_pr: "#761"
-recommended_next_pr: phase_6e_internal_owner_switch_acceptance_bundle
+last_merged_pr: "#762"
+last_attempted_action: phase_6e_internal_owner_switch_acceptance_bundle
+last_created_pr: "#762"
+recommended_next_pr: phase_6f_external_adapter_enablement_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -380,8 +380,30 @@ completed_steps:
   - phase_6b_task_groups_owner_switch_canary_plan_completed
   - phase_6c_task_groups_owner_switch_tooling_completed
   - phase_6d_internal_metadata_owner_switch_batch_completed
+  - phase_6e_internal_owner_switch_acceptance_completed
 
 next_allowed_actions: []
+
+phase6e_internal_owner_switch_acceptance:
+  status: phase_6e_internal_owner_switch_acceptance_completed
+  bundle_type: phase_6e_internal_owner_switch_acceptance_bundle
+  accepted_route_families:
+    - /api/admin/automation-conversion/task-groups*
+    - /api/admin/automation-conversion/workflow-nodes*
+  blocked_evidence_only_route_families:
+    - /api/admin/automation-conversion/agent-outputs*
+  followup_before_owner_switch_route_families:
+    - /api/admin/automation-conversion/tasks*
+    - /api/admin/automation-conversion/workflows*
+  default_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6f_external_adapter_enablement_readiness_bundle
 
 phase6d_internal_metadata_owner_switch_batch:
   status: phase_6d_internal_metadata_owner_switch_batch_completed
