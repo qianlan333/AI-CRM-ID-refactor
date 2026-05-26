@@ -267,10 +267,11 @@ class PostgresMediaLibraryRepository:
                     f"SELECT * FROM {table}{where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s",
                     tuple(params + [limit, offset]),
                 )
+                raw_rows = [dict(row) for row in cur.fetchall() or []]
                 use_thumbnail_fallback = kind in {"image", "miniprogram"} and not self._image_variants_table_exists(cur)
                 rows = [
-                    self._serialize(kind, dict(row), include_data=False, use_thumbnail_fallback=use_thumbnail_fallback)
-                    for row in cur.fetchall() or []
+                    self._serialize(kind, row, include_data=False, use_thumbnail_fallback=use_thumbnail_fallback)
+                    for row in raw_rows
                 ]
                 if kind == "image":
                     self._attach_image_variant_dimensions(cur, rows)

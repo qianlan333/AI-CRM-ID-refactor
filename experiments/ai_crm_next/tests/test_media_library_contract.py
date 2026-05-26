@@ -5,6 +5,7 @@ from io import BytesIO
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+from aicrm_next.media_library.postgres_repo import PostgresMediaLibraryRepository
 
 
 TINY_PNG = (
@@ -18,6 +19,85 @@ TINY_PNG = (
 
 def make_client() -> TestClient:
     return TestClient(create_app())
+
+
+class _CursorResultOverwriteProbe:
+    def __init__(self) -> None:
+        self._rows: list[dict] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        if "count(*) AS total" in sql:
+            self._rows = [{"total": 1}]
+            return
+        if "SELECT * FROM image_library" in sql:
+            self._rows = [
+                {
+                    "id": 101,
+                    "name": "生产素材",
+                    "file_name": "asset.png",
+                    "source": "upload",
+                    "source_url": "",
+                    "mime_type": "image/png",
+                    "file_size": 123,
+                    "thumb_media_id": "",
+                    "thumb_media_id_expires_at": None,
+                    "enabled": True,
+                    "description": "",
+                    "tags": [],
+                    "category": "",
+                    "ai_metadata": {},
+                    "width": 0,
+                    "height": 0,
+                    "created_at": "",
+                    "updated_at": "",
+                }
+            ]
+            return
+        if "to_regclass('public.image_library_variants')" in sql:
+            self._rows = [{"table_name": None}]
+            return
+        self._rows = []
+
+    def fetchone(self) -> dict | None:
+        if not self._rows:
+            return None
+        return self._rows.pop(0)
+
+    def fetchall(self) -> list[dict]:
+        rows = list(self._rows)
+        self._rows = []
+        return rows
+
+
+class _ConnectionResultOverwriteProbe:
+    def __init__(self, cursor: _CursorResultOverwriteProbe) -> None:
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def cursor(self) -> _CursorResultOverwriteProbe:
+        return self._cursor
+
+
+def test_postgres_list_fetches_rows_before_variant_probe_overwrites_cursor() -> None:
+    cursor = _CursorResultOverwriteProbe()
+    repo = PostgresMediaLibraryRepository("postgresql://unused")
+    repo._connect = lambda: _ConnectionResultOverwriteProbe(cursor)  # type: ignore[method-assign]
+
+    payload = repo.list_items("image", limit=5, offset=0, filters={"enabled_only": True})
+
+    assert payload["total"] == 1
+    assert [item["id"] for item in payload["items"]] == [101]
 
 
 def test_image_library_frontend_contract_filters_upload_update_and_delete() -> None:
