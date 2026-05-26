@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_owner_feature_selection
-active_candidate: post_phase7_owner_feature_selection
-capability_owner: aicrm_next.send_content
-last_merged_pr: "#795"
-last_attempted_action: post_phase7_owner_feature_selection_bundle
-last_created_pr: "#795"
-recommended_next_pr: post_phase7_hxc_next_native_broadcast_backend_plan_bundle
+current_phase: post_phase7_owner_approved_cleanup_track_activation
+active_candidate: post_phase7_owner_approved_cleanup_track
+capability_owner: aicrm_next.automation_engine
+last_merged_pr: "#796"
+last_attempted_action: post_phase7_owner_approved_cleanup_track_activation_bundle
+last_created_pr: "#796"
+recommended_next_pr: post_phase7_cleanup_task_groups_evidence_refresh_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -403,9 +403,10 @@ completed_steps:
   - post_phase7_new_feature_development_rules_completed
   - post_phase7_first_new_feature_intake_completed
   - post_phase7_owner_feature_selection_completed
+  - post_phase7_owner_approved_cleanup_track_activation_completed
 
 next_allowed_actions:
-  - post_phase7_hxc_next_native_broadcast_backend_plan_bundle
+  - post_phase7_cleanup_task_groups_evidence_refresh_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -482,6 +483,35 @@ post_phase7_owner_feature_selection:
   wecom_callback_cutover: false
   delete_ready: false
   recommended_next_bundle: post_phase7_hxc_next_native_broadcast_backend_plan_bundle
+
+post_phase7_owner_approved_cleanup_track_activation:
+  status: post_phase7_owner_approved_cleanup_track_activation_completed
+  bundle_type: post_phase7_owner_approved_cleanup_track_activation_bundle
+  route_family: post_phase7_owner_approved_cleanup_track
+  feature_selection_paused: true
+  business_feature_implementation_authorized: false
+  cleanup_track_authorized: true
+  first_cleanup_candidates:
+    - task_groups_exact_route_fallback_cleanup
+    - task_groups_exact_route_production_compat_cleanup
+    - workflow_nodes_exact_route_fallback_cleanup
+    - workflow_nodes_exact_route_production_compat_cleanup
+    - dead_docs_checker_state_cleanup
+    - legacy_runtime_deletion_readiness_after_route_cleanup
+  business_feature_implemented: false
+  runtime_route_changed: false
+  schema_migration_added: false
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  production_compat_wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  delete_ready: false
+  timer_execution_enabled: false
+  outbound_send_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  recommended_next_bundle: post_phase7_cleanup_task_groups_evidence_refresh_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
