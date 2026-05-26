@@ -799,8 +799,6 @@ def admin_group_ops_groups_ui(request: Request):
 
 @router.get("/admin/channels", name="api.admin_channels_page")
 async def admin_channels_page(request: Request) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     context = _shell_context(
         request=request,
         page_title="渠道码中心",
@@ -824,9 +822,16 @@ async def admin_channels_page(request: Request) -> Response:
                 {"label": "新建渠道", "href": request.url_for("api.admin_channel_new_page"), "variant": "primary"},
                 {"label": "自动化运营", "href": request.url_for("api.admin_automation_conversion"), "variant": "secondary"},
             ],
+            "channel_center_payload": {
+                "api_urls": {
+                    "channels": "/api/admin/channels?limit=300",
+                    "contacts_base": "/api/admin/channels/0/contacts",
+                    "bindings_base": "/api/admin/channels/0/bindings",
+                }
+            },
         }
     )
-    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+    return templates.TemplateResponse(request, "admin_console/channel_code_center.html", context)
 
 
 @router.get("/admin/channels/new", name="api.admin_channel_new_page")

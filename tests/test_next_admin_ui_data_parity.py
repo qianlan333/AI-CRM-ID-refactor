@@ -50,10 +50,31 @@ def test_next_channels_page_is_first_level_sidebar_entry(monkeypatch):
 
     assert response.status_code == 200
     assert "渠道码中心" in html
+    assert "群运营计划" in html
     assert 'href="/admin/channels"' in html
     assert 'class="admin-nav-link is-active"' in html
-    assert "普通二维码支持下载二维码" in html
-    assert "企微获客助手链接支持复制链接和分享链接" in html
+    assert "渠道码中心只管理渠道资产" in html
+    assert "/api/admin/channels?limit=300" in html
+    assert "channel_code_center_next.js" in html
+
+
+def test_next_channels_page_stays_next_owned_in_production_data_mode(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    client = _client(monkeypatch)
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+
+    async def fail_forward(_request):
+        raise AssertionError("channels page should not forward to legacy Flask")
+
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fail_forward)
+
+    response = client.get("/admin/channels")
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "渠道码中心" in response.text
+    assert "群运营计划" in response.text
 
 
 def test_navigation_definition_matches_screenshot_target():
