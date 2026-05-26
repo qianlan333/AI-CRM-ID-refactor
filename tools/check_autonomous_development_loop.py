@@ -154,6 +154,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_6a_owner_production_compat_readiness_completed",
     "phase_6b_task_groups_owner_switch_canary_plan_completed",
     "phase_6c_task_groups_owner_switch_tooling_completed",
+    "phase_6d_internal_metadata_owner_switch_batch_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -390,14 +391,14 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "phase_6c_task_groups_owner_switch_tooling":
-        blockers.append("current_phase must be phase_6c_task_groups_owner_switch_tooling")
-    if state.get("active_candidate") != "/api/admin/automation-conversion/task-groups*":
-        blockers.append("active_candidate must select the Phase 6A task-groups candidate")
+    if state.get("current_phase") != "phase_6d_internal_metadata_owner_switch_batch":
+        blockers.append("current_phase must be phase_6d_internal_metadata_owner_switch_batch")
+    if state.get("active_candidate") != "internal_metadata_owner_switch_batch":
+        blockers.append("active_candidate must select the Phase 6D internal metadata batch")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#759":
-        blockers.append("last_merged_pr must record latest completed merged PR #759")
+    if state.get("last_merged_pr") != "#761":
+        blockers.append("last_merged_pr must record latest completed merged PR #761")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
@@ -444,9 +445,9 @@ def build_report() -> dict[str, Any]:
     candidate = str(state.get("active_candidate", ""))
     manifest_text = MANIFEST.read_text(encoding="utf-8")
     backlog_text = BACKLOG.read_text(encoding="utf-8")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry"} and candidate not in manifest_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch"} and candidate not in manifest_text:
         blockers.append("active_candidate not found in production_route_ownership_manifest.yaml")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry"} and candidate not in backlog_text:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch"} and candidate not in backlog_text:
         blockers.append("active_candidate not found in legacy_replacement_backlog.yaml")
 
     readiness = state.get("action_templates_readiness") if isinstance(state.get("action_templates_readiness"), dict) else {}

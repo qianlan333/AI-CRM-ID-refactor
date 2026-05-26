@@ -1331,6 +1331,18 @@ def test_phase6c_task_groups_tooling_artifacts_can_define_stop_terms_as_policy()
     } <= checker.LOW_RISK_EXACT
 
 
+def test_phase6d_internal_metadata_batch_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_6d_internal_metadata_owner_switch_batch.md",
+        "docs/development/phase_6d_internal_metadata_owner_switch_batch.yaml",
+        "tools/check_phase6d_internal_metadata_owner_switch_batch.py",
+        "tools/run_phase6d_internal_metadata_owner_switch_batch.py",
+        "tests/test_phase6d_internal_metadata_owner_switch_batch.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+    assert {"tools/run_phase6d_internal_metadata_owner_switch_batch.py"} <= checker.LOW_RISK_EXACT
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
