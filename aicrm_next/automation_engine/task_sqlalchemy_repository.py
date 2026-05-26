@@ -111,6 +111,16 @@ class SqlAlchemyTaskRepository(InMemoryAutomationRepository):
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"task repository unavailable: {exc}") from exc
 
+    def get_task(self, task_id: int) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(text("SELECT * FROM automation_tasks WHERE id = :id"), {"id": int(task_id)}).fetchone()
+            if not row:
+                return None
+            return self._row_to_projection(_as_mapping(row) or {})
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"task repository unavailable: {exc}") from exc
+
     def create_task(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
         key = str(idempotency_key or "").strip()
         if not key:
@@ -168,6 +178,57 @@ class SqlAlchemyTaskRepository(InMemoryAutomationRepository):
             raise
         except IntegrityError as exc:
             raise ContractError("task code already exists for workflow") from exc
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"task repository unavailable: {exc}") from exc
+
+    def update_task(self, task_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
+        operator_id = str(operator or payload.get("operator") or "system").strip() or "system"
+        try:
+            with self._engine.begin() as conn:
+                before_row = conn.execute(text("SELECT * FROM automation_tasks WHERE id = :id"), {"id": int(task_id)}).fetchone()
+                if not before_row:
+                    raise ContractError("automation task not found")
+                before = self._row_to_projection(_as_mapping(before_row) or {})
+                metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else before.get("metadata") or {}
+                config = payload.get("config") if isinstance(payload.get("config"), dict) else before.get("config") or {}
+                conn.execute(
+                    text(
+                        """
+                        UPDATE automation_tasks
+                        SET metadata_json = :metadata_json,
+                            config_json = :config_json,
+                            updated_by = :updated_by,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :id
+                        """
+                    ),
+                    {
+                        "id": int(task_id),
+                        "metadata_json": _json_dumps(metadata),
+                        "config_json": _json_dumps(config),
+                        "updated_by": operator_id,
+                    },
+                )
+                after_row = conn.execute(text("SELECT * FROM automation_tasks WHERE id = :id"), {"id": int(task_id)}).fetchone()
+                after = self._row_to_projection(_as_mapping(after_row) or {})
+                audit_event = self._insert_audit_event(
+                    conn,
+                    operation="update",
+                    operator=operator_id,
+                    resource_id=int(task_id),
+                    before=before,
+                    after=after,
+                    request_payload=payload,
+                    rollback_payload={
+                        "strategy": "restore_previous_task_config",
+                        "task_id": int(task_id),
+                        "previous_config": before.get("config") or {},
+                        "delete_approved": False,
+                    },
+                )
+            return {"source_status": self.source_status, "task": deepcopy(after), "audit_event": audit_event}
+        except ContractError:
+            raise
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"task repository unavailable: {exc}") from exc
 

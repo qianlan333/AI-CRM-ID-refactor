@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .agent_outputs import agent_output_projection, normalize_agent_output_filters
 from .agent_runs import agent_run_projection, normalize_agent_run_filters
@@ -88,7 +89,9 @@ class AutomationRepository(Protocol):
     def create_workflow_node(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_workflow_node_audit_events(self) -> list[dict[str, Any]]: ...
     def list_tasks(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def get_task(self, task_id: int) -> dict[str, Any] | None: ...
     def create_task(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def update_task(self, task_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]: ...
     def list_task_audit_events(self) -> list[dict[str, Any]]: ...
     def list_agents(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def create_agent(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
@@ -947,6 +950,12 @@ class InMemoryAutomationRepository:
         total = len(rows)
         return deepcopy(rows[offset : offset + limit]), total
 
+    def get_task(self, task_id: int) -> dict[str, Any] | None:
+        task = self._tasks.get(int(task_id))
+        if not task:
+            return None
+        return task_projection(task)
+
     def create_task(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
         key = str(idempotency_key or "").strip()
         if not key:
@@ -996,6 +1005,36 @@ class InMemoryAutomationRepository:
             "status": "succeeded",
         }
         return result
+
+    def update_task(self, task_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
+        current = self.get_task(task_id)
+        if not current:
+            raise NotFoundError("automation task not found")
+        patch = deepcopy(payload or {})
+        updated = deepcopy(current)
+        if isinstance(patch.get("metadata"), dict):
+            updated["metadata"] = deepcopy(patch["metadata"])
+        if isinstance(patch.get("config"), dict):
+            updated["config"] = deepcopy(patch["config"])
+        updated["updated_by"] = str(operator or patch.get("operator") or "system").strip() or "system"
+        updated["updated_at"] = utc_now_iso()
+        saved = task_projection(updated)
+        self._tasks[int(task_id)] = deepcopy(saved)
+        audit_event = self._append_task_audit_event(
+            operation="update",
+            operator=updated["updated_by"],
+            resource_id=int(task_id),
+            before=current,
+            after=saved,
+            request_payload=patch,
+            rollback_payload={
+                "strategy": "restore_previous_task_config",
+                "task_id": int(task_id),
+                "previous_config": current.get("config") or {},
+                "delete_approved": False,
+            },
+        )
+        return {"task": deepcopy(saved), "audit_event": audit_event}
 
     def list_task_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._task_audit_events)
@@ -1408,7 +1447,11 @@ def _task_repository_backend() -> str:
 
 
 def _task_database_url() -> str:
-    return str(os.getenv(TASK_TEST_DATABASE_URL_ENV) or os.getenv(TASK_STAGING_DATABASE_URL_ENV) or "").strip()
+    return str(os.getenv(TASK_TEST_DATABASE_URL_ENV) or os.getenv(TASK_STAGING_DATABASE_URL_ENV) or raw_database_url()).strip()
+
+
+def task_postgres_enabled() -> bool:
+    return _task_repository_backend() in TASK_SQL_BACKENDS or bool(production_data_ready() and raw_database_url())
 
 
 def _agent_repository_backend() -> str:
@@ -1501,6 +1544,8 @@ def build_automation_repository(
             capability_owner="automation_engine.workflow_nodes",
         )
     selected_task_backend = str(task_backend or _task_repository_backend()).strip().lower()
+    if task_backend is None and production_data_ready() and raw_database_url():
+        selected_task_backend = "postgres"
     if selected_task_backend in TASK_SQL_BACKENDS:
         engine = task_engine
         if engine is None:
@@ -1510,10 +1555,10 @@ def build_automation_repository(
                     f"{TASK_TEST_DATABASE_URL_ENV} or {TASK_STAGING_DATABASE_URL_ENV} is required when {TASK_BACKEND_ENV}=sqlalchemy"
                 )
             engine = create_engine(database_url, future=True)
-        from .task_sqlalchemy_repository import SqlAlchemyTaskRepository
+        from .postgres_repo import PostgresTaskRepository
 
         return assert_repository_allowed(
-            SqlAlchemyTaskRepository(engine),
+            PostgresTaskRepository(engine),
             capability_owner="automation_engine.tasks",
         )
     selected_agent_backend = str(agent_backend or _agent_repository_backend()).strip().lower()
