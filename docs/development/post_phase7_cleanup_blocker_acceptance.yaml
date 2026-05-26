@@ -1,0 +1,77 @@
+version: 1
+status: post_phase7_cleanup_blocker_acceptance
+bundle_type: post_phase7_cleanup_blocker_acceptance_bundle
+cleanup_family: owner_approved_cleanup_blocker_acceptance
+no_behavior_change: true
+
+authorizations:
+  actual_fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  runtime_deletion_authorized: false
+  wildcard_cleanup_authorized: false
+  broad_fallback_removal_authorized: false
+  delete_ready: false
+  timer_execution_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_callback_cutover_authorized: false
+  public_submit_cutover_authorized: false
+
+blocked_route_families:
+  - route_family: /api/admin/automation-conversion/task-groups*
+    source_pr: 798
+    fallback_cleanup_status: blocked
+    production_compat_cleanup_status: blocked
+    missing_evidence:
+      - owner_approval
+      - latest_main_shadow_compare
+      - rollback_owner
+      - rollback_plan
+      - rollback_execution_evidence
+      - route_ownership_proof
+      - production_compat_exact_entry_cleanup_proof
+  - route_family: /api/admin/automation-conversion/workflow-nodes*
+    source_pr: 799
+    fallback_cleanup_status: blocked
+    production_compat_cleanup_status: blocked
+    missing_evidence:
+      - owner_approval
+      - latest_main_shadow_compare
+      - rollback_owner
+      - rollback_plan
+      - rollback_execution_evidence
+      - route_ownership_proof
+      - production_compat_exact_entry_cleanup_proof
+
+owner_action_list:
+  - owner_approval
+  - latest_main_shadow_compare
+  - rollback_owner
+  - rollback_plan
+  - rollback_execution_evidence
+  - route_ownership_proof
+  - production_compat_exact_entry_proof
+
+cleanup_summary:
+  fallback_removals_executed: []
+  production_compat_cleanups_executed: []
+  runtime_deletions_executed: []
+  delete_ready_true_items: []
+  fallback_removal_occurred: false
+  production_compat_behavior_changed: false
+  runtime_deletion_occurred: false
+  wildcard_cleanup_occurred: false
+  delete_ready: false
+  legacy_runtime_recheck_allowed: false
+  legacy_runtime_recheck_blocked_reason: no_exact_route_cleanup_executed
+
+retained_old_code_categories:
+  - exact_route_fallback_hooks
+  - production_compat_forwards
+  - legacy_runtime_templates_and_adapters
+  - retained_legacy_tests_and_evidence_paths
+
+next_bundle:
+  recommended_next_step: post_phase7_cleanup_owner_evidence_collection_bundle
+  reason: route_specific_owner_shadow_rollback_and_ownership_evidence_required_before_cleanup_execution
