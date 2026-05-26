@@ -26,7 +26,7 @@ except ModuleNotFoundError:
     raise
 
 TARGET_NAV_GROUPS = [
-    ("运营", ["自动化运营", "渠道码中心", "AI 助手", "客户激活 / 客户列表", "漏斗 / 数据看板", "问卷", "企微标签管理"]),
+    ("运营", ["自动化运营", "群运营计划", "渠道码中心", "AI 助手", "客户激活 / 客户列表", "漏斗 / 数据看板", "问卷", "企微标签管理"]),
     ("交易", ["交易管理", "商品管理"]),
     ("素材", ["图片素材库", "小程序素材库", "附件素材库"]),
     ("配置及后台", ["同步任务配置 / 同步任务", "配置", "API 文档"]),
@@ -35,6 +35,7 @@ TARGET_NAV_GROUPS = [
 ADMIN_PAGES = [
     "/admin",
     "/admin/automation-conversion",
+    "/admin/automation-conversion/group-ops/ui",
     "/admin/channels",
     "/admin/channels/new",
     "/admin/cloud-orchestrator",
