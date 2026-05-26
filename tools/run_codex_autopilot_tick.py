@@ -51,6 +51,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_6c_task_groups_owner_switch_tooling_bundle",
     "phase_6d_internal_metadata_owner_switch_batch_bundle",
     "phase_6e_internal_owner_switch_acceptance_bundle",
+    "phase_6f_external_adapter_enablement_readiness_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -574,6 +575,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_6d_internal_metadata_owner_switch_batch.yaml",
         "docs/development/phase_6e_internal_owner_switch_acceptance.md",
         "docs/development/phase_6e_internal_owner_switch_acceptance.yaml",
+        "docs/development/phase_6f_external_adapter_enablement_readiness.md",
+        "docs/development/phase_6f_external_adapter_enablement_readiness.yaml",
         "tools/check_phase5_aggregate_acceptance_review.py",
         "tools/check_phase6a_owner_production_compat_readiness.py",
         "tools/check_phase6b_task_groups_owner_switch_canary_plan.py",
@@ -584,12 +587,14 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_phase6d_internal_metadata_owner_switch_batch.py",
         "tools/run_phase6d_internal_metadata_owner_switch_batch.py",
         "tools/check_phase6e_internal_owner_switch_acceptance.py",
+        "tools/check_phase6f_external_adapter_enablement_readiness.py",
         "tests/test_phase5_aggregate_acceptance_review.py",
         "tests/test_phase6a_owner_production_compat_readiness.py",
         "tests/test_phase6b_task_groups_owner_switch_canary_plan.py",
         "tests/test_phase6c_task_groups_owner_switch_tooling.py",
         "tests/test_phase6d_internal_metadata_owner_switch_batch.py",
         "tests/test_phase6e_internal_owner_switch_acceptance.py",
+        "tests/test_phase6f_external_adapter_enablement_readiness.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
