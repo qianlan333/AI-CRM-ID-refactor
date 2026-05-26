@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6h_production_compat_exact_route_narrowing_readiness
-active_candidate: production_compat_exact_route_narrowing_readiness
+current_phase: phase_6i_external_enablement_and_compat_readiness_acceptance
+active_candidate: external_enablement_and_compat_readiness_acceptance
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#766"
-last_attempted_action: phase_6h_production_compat_exact_route_narrowing_readiness_bundle
-last_created_pr: "#766"
-recommended_next_pr: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
+last_merged_pr: "#767"
+last_attempted_action: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
+last_created_pr: "#767"
+recommended_next_pr: phase_6j_timer_execution_readiness_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -384,8 +384,45 @@ completed_steps:
   - phase_6f_external_adapter_enablement_readiness_completed
   - phase_6g_low_risk_external_adapter_enablement_tooling_completed
   - phase_6h_production_compat_exact_route_narrowing_readiness_completed
+  - phase_6i_external_enablement_and_compat_readiness_acceptance_completed
 
 next_allowed_actions: []
+
+phase6i_external_enablement_and_compat_readiness_acceptance:
+  status: phase_6i_external_enablement_and_compat_readiness_acceptance_completed
+  bundle_type: phase_6i_external_enablement_and_compat_readiness_acceptance_bundle
+  accepted_external_adapter_families:
+    - media_upload
+    - wecom_tags
+    - openclaw_mcp_ai_assist
+  high_risk_excluded_families:
+    - payment_commerce
+    - oauth_identity
+    - wecom_customer_contact_callback
+  followup_before_enablement_families:
+    - questionnaire_external_submit
+  accepted_production_compat_exact_routes:
+    - GET /api/admin/automation-conversion/task-groups
+    - GET /api/admin/automation-conversion/workflow-nodes
+  blocked_evidence_only_production_compat_exact_routes:
+    - GET /api/admin/image-library
+    - GET /api/admin/image-library/facets
+    - GET /api/admin/wecom/tags
+    - GET /api/admin/wecom/tags/live/gate
+    - GET /mcp
+  live_external_call_authorized_default: false
+  production_owner_switch_authorized: false
+  fallback_removal_authorized: false
+  production_compat_behavior_change_authorized: false
+  wildcard_narrowing_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  destructive_migration_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6j_timer_execution_readiness_bundle
 
 phase6h_production_compat_exact_route_narrowing_readiness:
   status: phase_6h_production_compat_exact_route_narrowing_readiness_completed

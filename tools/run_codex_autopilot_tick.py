@@ -54,6 +54,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "phase_6f_external_adapter_enablement_readiness_bundle",
     "phase_6g_low_risk_external_adapter_enablement_tooling_bundle",
     "phase_6h_production_compat_exact_route_narrowing_readiness_bundle",
+    "phase_6i_external_enablement_and_compat_readiness_acceptance_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -583,6 +584,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_6g_low_risk_external_adapter_enablement_tooling.yaml",
         "docs/development/phase_6h_production_compat_exact_route_narrowing_readiness.md",
         "docs/development/phase_6h_production_compat_exact_route_narrowing_readiness.yaml",
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.md",
+        "docs/development/phase_6i_external_enablement_and_compat_readiness_acceptance.yaml",
         "tools/check_phase5_aggregate_acceptance_review.py",
         "tools/check_phase6a_owner_production_compat_readiness.py",
         "tools/check_phase6b_task_groups_owner_switch_canary_plan.py",
@@ -600,6 +603,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
         "tools/check_phase6h_production_compat_exact_route_narrowing_readiness.py",
         "tools/run_phase6h_production_compat_exact_route_shadow_compare.py",
+        "tools/check_phase6i_external_enablement_and_compat_readiness_acceptance.py",
         "tests/test_phase5_aggregate_acceptance_review.py",
         "tests/test_phase6a_owner_production_compat_readiness.py",
         "tests/test_phase6b_task_groups_owner_switch_canary_plan.py",
@@ -609,6 +613,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_phase6f_external_adapter_enablement_readiness.py",
         "tests/test_phase6g_low_risk_external_adapter_enablement_tooling.py",
         "tests/test_phase6h_production_compat_exact_route_narrowing_readiness.py",
+        "tests/test_phase6i_external_enablement_and_compat_readiness_acceptance.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
