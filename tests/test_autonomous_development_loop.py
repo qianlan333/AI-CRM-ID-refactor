@@ -22,9 +22,9 @@ def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "phase_5_external_adapter"
-    assert data["active_candidate"] == "/api/h5/wechat/oauth*"
-    assert data["capability_owner"] == "aicrm_next.integration_gateway"
-    assert data["last_merged_pr"] == "#731"
+    assert data["active_candidate"] == "/api/admin/image-library*"
+    assert data["capability_owner"] == "aicrm_next.media_library"
+    assert data["last_merged_pr"] == "#732"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -110,9 +110,10 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "phase_5q_oauth_identity_staging_live_canary_evidence_completed" in set(data["completed_steps"])
     assert "phase_5r_oauth_identity_production_canary_readiness_completed" in set(data["completed_steps"])
     assert "phase_5s_oauth_identity_production_live_canary_execution_completed" in set(data["completed_steps"])
+    assert "phase_5t_oauth_identity_family_acceptance_completed" in set(data["completed_steps"])
 
 
-def test_next_allowed_actions_are_phase_5t_oauth_identity_family_acceptance_only() -> None:
+def test_next_allowed_actions_are_phase_5u_media_upload_contract_fake_stub_only() -> None:
     data = checker.load_yaml(STATE)
     assert set(data["next_allowed_actions"]) == checker.ALLOWED_NEXT_ACTIONS
 
@@ -546,7 +547,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/h5/wechat/oauth*"
+    assert data["active_candidate"] == "/api/admin/image-library*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

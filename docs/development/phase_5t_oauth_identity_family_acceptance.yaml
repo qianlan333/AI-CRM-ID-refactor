@@ -1,0 +1,125 @@
+version: 1
+status: phase_5t_oauth_identity_family_acceptance_no_new_live_call
+bundle_type: phase_5_external_adapter_family_acceptance_bundle
+route_family: /api/h5/wechat/oauth*
+capability_owner: aicrm_next.integration_gateway
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  new_live_oauth_call_authorized: false
+  production_callback_cutover_authorized: false
+  production_session_write_authorized: false
+  production_identity_write_authorized: false
+  token_persistence_authorized: false
+  route_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  batch_replay_authorized: false
+  outbound_send_authorized: false
+  wecom_live_call_authorized: false
+  payment_behavior_authorized: false
+  media_live_upload_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+completed_stages:
+  - stage: phase_5n_contract
+    complete: true
+    pr: 727
+    merge_commit: d70befd281d79865075814ac0070de76649658e9
+  - stage: phase_5o_fake_stub_runtime
+    complete: true
+    pr: 728
+    merge_commit: 28dfeca689352fb1835df7fc9327f3033a7ace42
+  - stage: phase_5p_live_adapter_behind_flag
+    complete: true
+    pr: 729
+    merge_commit: 3a46b8767271f0e693bc7ee5304aa364c77b245a
+  - stage: phase_5q_staging_live_canary_gate
+    complete: true
+    pr: 730
+    merge_commit: 3df9fc3c830b775d8259619827fc68ef69c6ef25
+  - stage: phase_5r_production_canary_readiness
+    complete: true
+    pr: 731
+    merge_commit: c7de73f3947c0c3cb825747cef001f7799f1f6dc
+  - stage: phase_5s_production_live_canary_tooling
+    complete: true
+    pr: 732
+    merge_commit: 10128286499e04f2c31becfdddd2668e8d113180
+
+capability_matrix:
+  adapter_contract_complete: true
+  fake_stub_complete: true
+  live_adapter_behind_flag_complete: true
+  staging_canary_gate_complete: true
+  production_canary_readiness_complete: true
+  production_live_canary_tooling_complete: true
+  cleanup_runner_complete: true
+  production_canary_passed: false
+  production_callback_cutover_enabled: false
+  production_session_write_enabled: false
+  production_identity_write_enabled: false
+  token_persistence_enabled: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  batch_replay_enabled: false
+  outbound_send_enabled: false
+
+acceptance_decision:
+  status: accepted_with_blocked_evidence_only
+  allowed_values:
+    - accepted_for_controlled_canary_tooling
+    - accepted_with_blocked_evidence_only
+    - needs_followup_before_family_acceptance
+  production_canary_passed: false
+  staging_canary_passed: false
+  wider_rollout_authorized: false
+  notes: production OAuth canary passed evidence is not attached; guarded tooling and blocked evidence are accepted for handoff only.
+
+rollout_boundary:
+  wider_rollout_authorized: false
+  production_callback_cutover_deferred: true
+  route_owner_switch_deferred: true
+  fallback_removal_deferred: true
+  production_compat_change_deferred: true
+  token_persistence_deferred: true
+  batch_replay_deferred: true
+  delete_ready: false
+
+blockers:
+  - item: missing real staging OAuth canary evidence if approval remains absent
+  - item: missing production OAuth canary execution evidence
+  - item: missing production callback target approval
+  - item: missing rollback cleanup evidence
+  - item: baseline legacy facade blockers
+  - item: local architecture yaml dependency
+
+next_family:
+  selected_next_bundle: phase_5u_media_upload_adapter_contract_fake_stub_bundle
+  route_family: /api/admin/image-library*
+  related_route_families:
+    - /api/admin/image-library/upload
+    - /api/admin/attachment-library*
+    - /api/admin/miniprogram-library*
+  capability_owner: aicrm_next.media_library
+  why_selected: Media upload and media library routes are the next Phase 5 external adapter boundary in the backlog and manifest; contract plus fake/stub readiness keeps provider side effects disabled.
+  live_external_call_allowed: false
+  first_safe_step: contract_fake_stub_runtime_and_dry_run_readiness
+  required_guardrails:
+    - item: no live provider upload
+    - item: no public media URL publication
+    - item: no raw file exposure
+    - item: no destructive delete
+    - item: no production route owner switch
+    - item: no fallback removal
+    - item: checker/test required
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_wider_rollout_enabled: true

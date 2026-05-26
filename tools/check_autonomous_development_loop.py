@@ -44,10 +44,10 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS = {
-    "phase_5t_oauth_identity_family_acceptance_bundle",
+    "phase_5u_media_upload_adapter_contract_fake_stub_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS = {
-    "phase_5t_oauth_identity_family_acceptance_bundle",
+    "phase_5u_media_upload_adapter_contract_fake_stub_bundle",
 }
 REQUIRED_COMPLETED_STEPS = {
     "phase_4al_staging_execution_readiness_gate_completed",
@@ -132,6 +132,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_5q_oauth_identity_staging_live_canary_evidence_completed",
     "phase_5r_oauth_identity_production_canary_readiness_completed",
     "phase_5s_oauth_identity_production_live_canary_execution_completed",
+    "phase_5t_oauth_identity_family_acceptance_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -361,12 +362,12 @@ def build_report() -> dict[str, Any]:
 
     if state.get("current_phase") != "phase_5_external_adapter":
         blockers.append("current_phase must be phase_5_external_adapter")
-    if state.get("active_candidate") != "/api/h5/wechat/oauth*":
-        blockers.append("active_candidate must select the Phase 5N OAuth identity callback contract candidate")
-    if state.get("capability_owner") != "aicrm_next.integration_gateway":
-        blockers.append("capability_owner must be aicrm_next.integration_gateway")
-    if state.get("last_merged_pr") != "#731":
-        blockers.append("last_merged_pr must record latest completed merged PR #731")
+    if state.get("active_candidate") != "/api/admin/image-library*":
+        blockers.append("active_candidate must select the Phase 5U media image-library candidate")
+    if state.get("capability_owner") != "aicrm_next.media_library":
+        blockers.append("capability_owner must be aicrm_next.media_library")
+    if state.get("last_merged_pr") != "#732":
+        blockers.append("last_merged_pr must record latest completed merged PR #732")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
