@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: phase_6j_timer_execution_readiness
-active_candidate: timer_execution_readiness
+current_phase: phase_6k_single_scope_execution_canary_tooling
+active_candidate: /api/admin/automation-conversion/workflow-nodes*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#769"
-last_attempted_action: phase_6j_timer_execution_readiness_bundle
-last_created_pr: "#769"
-recommended_next_pr: phase_6k_single_scope_execution_canary_tooling_bundle
+last_merged_pr: "#770"
+last_attempted_action: phase_6k_single_scope_execution_canary_tooling_bundle
+last_created_pr: "#770"
+recommended_next_pr: phase_6l_phase6_aggregate_acceptance_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -386,8 +386,33 @@ completed_steps:
   - phase_6h_production_compat_exact_route_narrowing_readiness_completed
   - phase_6i_external_enablement_and_compat_readiness_acceptance_completed
   - phase_6j_timer_execution_readiness_completed
+  - phase_6k_single_scope_execution_canary_tooling_completed
 
 next_allowed_actions: []
+
+phase6k_single_scope_execution_canary_tooling:
+  status: phase_6k_single_scope_execution_canary_tooling_completed
+  bundle_type: phase_6k_single_scope_execution_canary_tooling_bundle
+  route_family: /api/admin/automation-conversion/workflow-nodes*
+  selected_execution_candidate: workflow-nodes
+  runner_path: tools/run_phase6k_single_scope_execution_canary.py
+  default_blocked: true
+  dry_run_supported: true
+  shadow_run_supported: true
+  single_scope_only: true
+  operator_identity_required: true
+  idempotency_key_required: true
+  kill_switch_required: true
+  timer_execution_authorized: false
+  run_due_execution_authorized: false
+  automation_execution_authorized: false
+  outbound_send_authorized: false
+  live_external_call_authorized: false
+  production_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  delete_ready: false
+  recommended_next_bundle: phase_6l_phase6_aggregate_acceptance_bundle
 
 phase6j_timer_execution_readiness:
   status: phase_6j_timer_execution_readiness_completed

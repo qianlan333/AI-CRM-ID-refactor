@@ -161,6 +161,7 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_6h_production_compat_exact_route_narrowing_readiness_completed",
     "phase_6i_external_enablement_and_compat_readiness_acceptance_completed",
     "phase_6j_timer_execution_readiness_completed",
+    "phase_6k_single_scope_execution_canary_tooling_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -397,14 +398,14 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "phase_6j_timer_execution_readiness":
-        blockers.append("current_phase must be phase_6j_timer_execution_readiness")
-    if state.get("active_candidate") != "timer_execution_readiness":
-        blockers.append("active_candidate must select the Phase 6J timer execution readiness package")
+    if state.get("current_phase") != "phase_6k_single_scope_execution_canary_tooling":
+        blockers.append("current_phase must be phase_6k_single_scope_execution_canary_tooling")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/workflow-nodes*":
+        blockers.append("active_candidate must select the Phase 6K workflow-nodes route family")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#769":
-        blockers.append("last_merged_pr must record latest completed merged PR #769")
+    if state.get("last_merged_pr") != "#770":
+        blockers.append("last_merged_pr must record latest completed merged PR #770")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
