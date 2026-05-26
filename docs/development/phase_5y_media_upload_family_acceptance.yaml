@@ -1,0 +1,107 @@
+version: 1
+status: phase_5y_media_upload_family_acceptance_no_new_live_upload
+bundle_type: phase_5_external_adapter_family_acceptance_bundle
+route_family: /api/admin/image-library*
+capability_owner: aicrm_next.media_library
+integration_boundary: aicrm_next.integration_gateway
+
+authorizations:
+  new_live_media_upload_authorized: false
+  public_media_url_publication_authorized: false
+  destructive_delete_authorized: false
+  batch_upload_authorized: false
+  route_owner_switch_authorized: false
+  production_compat_change_authorized: false
+  fallback_removal_authorized: false
+  outbound_send_authorized: false
+  payment_behavior_authorized: false
+  oauth_callback_cutover_authorized: false
+  wecom_live_call_authorized: false
+  openclaw_mcp_live_call_authorized: false
+  timer_execution_authorized: false
+  automation_execution_authorized: false
+  delete_ready: false
+
+completed_stages:
+  - stage: phase_5u_contract_fake_stub
+    complete: true
+    pr: 734
+    merge_commit: 4bdcb70b4c39a94fc0163a2bd18e516a61207fc0
+  - stage: phase_5v_live_adapter_behind_flag
+    complete: true
+    pr: 735
+    merge_commit: c8d0eb813f302eb2df8cb288a37aad90f7d3ccbb
+  - stage: phase_5w_staging_live_canary_gate
+    complete: true
+    pr: 736
+    merge_commit: d9eb8b80aed956b19eb1943baa5765fc679276f8
+  - stage: phase_5x_production_canary_tooling
+    complete: true
+    pr: 737
+    merge_commit: be8600959af246b6ffef3bf97fe9939b01e3fc90
+
+capability_matrix:
+  adapter_contract_complete: true
+  fake_stub_complete: true
+  live_adapter_behind_flag_complete: true
+  staging_canary_gate_complete: true
+  production_canary_tooling_complete: true
+  cleanup_runner_complete: true
+  production_canary_passed: false
+  route_owner_switched: false
+  fallback_removed: false
+  production_compat_changed: false
+  public_publish_enabled: false
+  destructive_delete_enabled: false
+  batch_upload_enabled: false
+  outbound_send_enabled: false
+
+acceptance_decision:
+  status: accepted_with_blocked_evidence_only
+  allowed_values:
+    - accepted_for_controlled_canary_tooling
+    - accepted_with_blocked_evidence_only
+    - needs_followup_before_family_acceptance
+  production_canary_passed: false
+  wider_rollout_authorized: false
+  notes: media family accepted for blocked evidence and controlled tooling handoff only; no verified production canary pass is attached.
+
+rollout_boundary:
+  wider_rollout_authorized: false
+  public_publish_authorized: false
+  batch_upload_authorized: false
+  destructive_delete_authorized: false
+  route_owner_switch_deferred: true
+  fallback_removal_deferred: true
+  production_compat_change_deferred: true
+  delete_ready: false
+
+blockers:
+  - item: missing real staging media canary evidence if approval remains absent
+  - item: missing production media canary execution evidence
+  - item: missing production target approval if canary remains blocked
+  - item: missing cleanup evidence if no canary executed
+  - item: baseline legacy facade blockers
+  - item: local architecture yaml dependency
+
+next_family:
+  selected_next_bundle: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
+  route_family: /api/admin/wechat-pay*
+  capability_owner: aicrm_next.commerce
+  why_selected: payment commerce routes are the next high-risk external adapter family; only contract plus fake/stub readiness is safe in this run.
+  live_external_call_allowed: false
+  first_safe_step: contract_fake_stub_runtime_and_dry_run_readiness
+  required_guardrails:
+    - item: no real payment capture
+    - item: no refund
+    - item: no settlement
+    - item: no production webhook cutover
+    - item: no production order state mutation
+    - item: no raw secret output
+    - item: checker/test required
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_fallback_retained: true
+  production_compat_unchanged: true
+  no_wider_rollout_enabled: true
