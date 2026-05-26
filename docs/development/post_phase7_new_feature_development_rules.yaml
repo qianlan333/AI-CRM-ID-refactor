@@ -1,0 +1,93 @@
+version: 1
+status: post_phase7_new_feature_development_rules
+bundle_type: post_phase7_new_feature_development_rules_bundle
+route_family: post_phase7_new_feature_development_governance
+
+phase_7_handoff:
+  phase_7_completed: true
+  fallback_retained: true
+  production_compat_retained: true
+  legacy_runtime_retained: true
+  delete_ready: false
+  future_cleanup_requires_owner_approval: true
+
+default_new_feature_rules:
+  new_feature_must_use_next_native_owner: true
+  production_compat_as_primary_implementation_allowed: false
+  wecom_ability_service_new_business_logic_allowed: false
+  direct_legacy_import_allowed: false
+  fallback_as_primary_path_allowed: false
+  owner_required: true
+  tests_required: true
+  checker_required: true
+  rollback_required: true
+
+feature_categories:
+  - category: internal_read
+    feature_flag_required: false
+    external_side_effect_allowed: false
+    canary_required: false
+  - category: internal_write
+    feature_flag_required: true
+    external_side_effect_allowed: false
+    canary_required: true
+  - category: external_adapter
+    feature_flag_required: true
+    external_side_effect_allowed: true
+    canary_required: true
+    owner_approval_required: true
+  - category: execution
+    feature_flag_required: true
+    default_on_allowed: false
+    canary_required: true
+    owner_approval_required: true
+  - category: frontend_component
+    next_native_required: true
+    direct_legacy_api_allowed: false
+  - category: media
+    feature_flag_required: true
+    public_publish_default_allowed: false
+    owner_approval_required: true
+  - category: payment
+    feature_flag_required: true
+    default_money_movement_allowed: false
+    owner_approval_required: true
+  - category: oauth_identity
+    callback_cutover_default_allowed: false
+    owner_approval_required: true
+  - category: wecom
+    outbound_send_default_allowed: false
+    owner_approval_required: true
+  - category: cleanup
+    owner_approval_required: true
+    delete_ready_default_allowed: false
+
+forbidden_patterns:
+  - new_production_compat_business_route
+  - new_wecom_ability_service_business_route
+  - new_direct_legacy_import
+  - default_on_external_side_effect
+  - default_on_timer_execution
+  - default_on_outbound_send
+  - unowned_route
+  - route_without_tests
+
+required_pr_sections:
+  - Summary
+  - Business value
+  - Capability owner
+  - Route family
+  - Architecture boundary
+  - Included stages
+  - Excluded stages
+  - Production behavior
+  - Fallback behavior
+  - production_compat behavior
+  - External side effects
+  - Verification
+  - Risk / rollback
+  - PR lifecycle
+
+next_bundle:
+  recommended_next_step: post_phase7_first_new_feature_intake_bundle
+  route_family: selected_by_owner
