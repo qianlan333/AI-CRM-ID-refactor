@@ -1249,6 +1249,18 @@ def test_phase5al_questionnaire_external_submit_live_adapter_artifacts_can_defin
     assert "aicrm_next/questionnaire/external_submit_live_gateway.py" in checker.AUTOPILOT_DELIVERABLE_RUNTIME_PATHS
 
 
+def test_phase5am_questionnaire_external_submit_staging_canary_artifacts_can_define_stop_terms_as_policy() -> None:
+    expected = {
+        "docs/development/phase_5am_questionnaire_external_submit_staging_canary_evidence.md",
+        "docs/development/phase_5am_questionnaire_external_submit_staging_canary_evidence.yaml",
+        "tools/check_phase5am_questionnaire_external_submit_staging_canary_evidence.py",
+        "tools/run_phase5am_questionnaire_external_submit_staging_canary_evidence.py",
+        "tools/run_phase5am_questionnaire_external_submit_production_readiness_review.py",
+        "tests/test_phase5am_questionnaire_external_submit_staging_canary_evidence.py",
+    }
+    assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
+
+
 def test_owner_approval_does_not_make_protected_diff_automerge_eligible(tmp_path: Path) -> None:
     approval = tmp_path / "approval.md"
     approval.write_text("owner approval placeholder", encoding="utf-8")
