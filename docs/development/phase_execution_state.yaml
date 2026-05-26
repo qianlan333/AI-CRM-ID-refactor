@@ -10,10 +10,10 @@ autopilot:
 current_phase: phase_5_external_adapter
 active_candidate: /api/admin/image-library*
 capability_owner: aicrm_next.media_library
-last_merged_pr: "#737"
-last_attempted_action: phase_5y_media_upload_family_acceptance_bundle
-last_created_pr: "#737"
-recommended_next_pr: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
+last_merged_pr: "#738"
+last_attempted_action: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
+last_created_pr: "#738"
+recommended_next_pr: phase_5aa_payment_commerce_live_adapter_behind_flag_bundle
 owner_approval_required: false
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -305,9 +305,10 @@ completed_steps:
   - phase_5w_media_upload_staging_live_canary_evidence_completed
   - phase_5x_media_upload_production_canary_readiness_execution_completed
   - phase_5y_media_upload_family_acceptance_completed
+  - phase_5z_payment_commerce_adapter_contract_fake_stub_completed
 
 next_allowed_actions:
-  - phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
+  - phase_5aa_payment_commerce_live_adapter_behind_flag_bundle
 
 phase5_readiness_entry:
   phase_4_handoff_accepted: true
@@ -995,6 +996,32 @@ phase5y_media_upload_family_acceptance:
   selected_next_bundle: phase_5z_payment_commerce_adapter_contract_fake_stub_bundle
   next_route_family: /api/admin/wechat-pay*
   next_capability_owner: aicrm_next.commerce
+
+phase5z_payment_commerce_adapter_contract_fake_stub:
+  status: phase_5z_payment_commerce_adapter_contract_fake_stub_completed
+  route_family: /api/admin/wechat-pay*
+  related_route_families:
+    - /api/h5/wechat-pay*
+    - /api/wechat-pay*
+    - /api/orders*
+  capability_owner: aicrm_next.commerce
+  integration_boundary: aicrm_next.integration_gateway
+  bundle_type: phase_5_external_adapter_contract_fake_stub_bundle
+  adapter_contract_completed: true
+  fake_stub_evidence_runner_completed: true
+  checker_completed: true
+  tests_completed: true
+  real_payment_capture_authorized: false
+  real_refund_authorized: false
+  real_settlement_authorized: false
+  production_payment_webhook_cutover_authorized: false
+  production_order_state_mutation_authorized: false
+  raw_payment_secret_output_authorized: false
+  production_owner_switch_ready: false
+  fallback_removal_ready: false
+  production_compat_change_ready: false
+  delete_ready: false
+  recommended_next_bundle: phase_5aa_payment_commerce_live_adapter_behind_flag_bundle
 
 forbidden_without_owner_approval:
   - production owner switch
