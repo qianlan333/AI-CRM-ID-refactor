@@ -40,6 +40,7 @@
   }
 
   function open(options) {
+    options = options || {};
     const type = String(options.type || "image");
     if (!TYPE_LABELS[type]) throw new Error("未知素材类型");
     const selectedIds = new Set((options.selectedIds || []).map((id) => Number(id)));
@@ -114,8 +115,10 @@
         items = await fetchItems(type, query);
         render();
       } catch (error) {
+        items = [];
         empty.hidden = false;
         empty.textContent = error.message || "素材列表加载失败";
+        grid.innerHTML = "";
       }
     }
 

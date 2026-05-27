@@ -17,7 +17,10 @@ DOC = ROOT / "docs" / "migration" / "send_content_next_surface_inventory.md"
 
 
 SURFACES = {
-    "automation_operation": [TEMPLATES / "_automation_operation_orchestration_panel.html"],
+    "automation_operation": [
+        TEMPLATES / "_automation_operation_orchestration_panel.html",
+        STATIC / "automation_operation_orchestration_panel.js",
+    ],
     "hxc_dashboard": [TEMPLATES / "hxc_dashboard.html"],
     "channel_welcome": [
         TEMPLATES / "channel_code_form.html",

@@ -77,12 +77,12 @@
   }
 
   function open(options) {
+    options = options || {};
     const textEnabled = options.textEnabled !== false;
     const limits = { ...DEFAULT_LIMITS, ...(options.limits || {}) };
     const onConfirm = typeof options.onConfirm === "function" ? options.onConfirm : function () {};
     const onCancel = typeof options.onCancel === "function" ? options.onCancel : function () {};
     const state = {
-      activeType: "image",
       value: normalizePackage(options.value || {}, textEnabled),
       details: new Map(),
       closed: false,
@@ -112,12 +112,11 @@
               `}
               <div>
                 <div class="aicrm-send-composer__section-title">素材</div>
-                <div class="aicrm-send-composer__tabs">
-                  <button class="aicrm-send-composer__tab is-active" type="button" data-composer-type="image">图片</button>
-                  <button class="aicrm-send-composer__tab" type="button" data-composer-type="miniprogram">小程序</button>
-                  <button class="aicrm-send-composer__tab" type="button" data-composer-type="attachment">PDF/附件</button>
+                <div class="aicrm-send-composer__material-actions">
+                  <button class="aicrm-send-composer__button is-soft" type="button" data-add-material="image">+图片</button>
+                  <button class="aicrm-send-composer__button is-soft" type="button" data-add-material="miniprogram">+小程序</button>
+                  <button class="aicrm-send-composer__button is-soft" type="button" data-add-material="attachment">+附件</button>
                 </div>
-                <button class="aicrm-send-composer__button is-soft" type="button" data-add-material>选择素材</button>
               </div>
               <div>
                 <div class="aicrm-send-composer__section-title">已选素材列表</div>
@@ -171,6 +170,31 @@
       return detail ? detail.title : `${TYPE_LABELS[type]} ${id}`;
     }
 
+    function materialPreviewCard(item) {
+      const type = item.type || "attachment";
+      const title = item.title || `${TYPE_LABELS[type] || "素材"} ${item.library_id || ""}`;
+      const subtitle = item.subtitle || TYPE_LABELS[type] || "";
+      const thumb = item.thumbnail_url
+        ? `<img src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(title)}">`
+        : `<span>${escapeHtml(TYPE_LABELS[type] || "素材")}</span>`;
+      if (type === "image" || type === "miniprogram") {
+        return `<article class="aicrm-send-composer__preview-material is-${escapeHtml(type)}">
+          <div class="aicrm-send-composer__preview-thumb">${thumb}</div>
+          <div class="aicrm-send-composer__preview-meta">
+            <strong>${escapeHtml(title)}</strong>
+            <span>${escapeHtml(subtitle)}</span>
+          </div>
+        </article>`;
+      }
+      return `<article class="aicrm-send-composer__preview-material is-attachment">
+        <div class="aicrm-send-composer__preview-file">PDF</div>
+        <div class="aicrm-send-composer__preview-meta">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(subtitle)}</span>
+        </div>
+      </article>`;
+    }
+
     function renderSelected() {
       const rows = [];
       Object.entries(TYPE_FIELDS).forEach(([type, field]) => {
@@ -199,7 +223,7 @@
         const preview = await previewPackage(contentPackage, textEnabled);
         const materials = preview.materials || [];
         previewMaterials.innerHTML = materials.length
-          ? materials.map((item) => `<span class="aicrm-send-composer__token">${escapeHtml(item.title || `${item.type} ${item.library_id}`)}</span>`).join("")
+          ? materials.map(materialPreviewCard).join("")
           : countMaterials(contentPackage)
             ? `<span class="aicrm-send-composer__token">已选择 ${countMaterials(contentPackage)} 个素材</span>`
             : "";
@@ -208,13 +232,6 @@
           previewMaterials.innerHTML = `<span class="aicrm-send-composer__token">已选择 ${countMaterials(contentPackage)} 个素材</span>`;
         }
       }
-    }
-
-    function setActiveType(type) {
-      state.activeType = type;
-      mask.querySelectorAll("[data-composer-type]").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.composerType === type);
-      });
     }
 
     function addMaterial(item) {
@@ -248,11 +265,6 @@
         close(true);
         return;
       }
-      const typeButton = event.target.closest("[data-composer-type]");
-      if (typeButton) {
-        setActiveType(typeButton.dataset.composerType || "image");
-        return;
-      }
       if (event.target.closest("[data-insert-customer-name]") && textField) {
         const start = textField.selectionStart || textField.value.length;
         const end = textField.selectionEnd || start;
@@ -270,11 +282,18 @@
         renderPreview();
         return;
       }
-      if (event.target.closest("[data-add-material]")) {
-        const type = state.activeType;
+      const addButton = event.target.closest("[data-add-material]");
+      if (addButton) {
+        error.textContent = "";
+        const type = addButton.dataset.addMaterial || "image";
         const field = TYPE_FIELDS[type];
+        if (!field) return;
         if (state.value[field].length >= limits[type]) {
           window.alert(`${TYPE_LABELS[type]}最多选择 ${limits[type]} 个`);
+          return;
+        }
+        if (!window.AICRMMaterialPicker || typeof window.AICRMMaterialPicker.open !== "function") {
+          error.textContent = "素材选择器未加载，请刷新页面后重试";
           return;
         }
         window.AICRMMaterialPicker.open({
