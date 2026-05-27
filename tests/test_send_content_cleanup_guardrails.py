@@ -53,6 +53,7 @@ def test_next_campaign_cleanup_guard_only_applies_after_migration() -> None:
     if "AICRMSendContentComposer.open" not in source:
         return
     assert "attach" + "MiniprogramPicker" not in source
+    assert "mount" + "ImagePicker" not in source
     assert "请输入附件" + "素材编号" not in source
 
 
@@ -75,6 +76,7 @@ def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> Non
             _read(FRONTEND / "static" / "admin_console" / "channel_admission_pages.js"),
         ),
         (GROUP_OPS_TEMPLATE, _read(STATIC / "group_ops.js")),
+        (CAMPAIGN_TEMPLATE, ""),
     ]
     direct_fetch_markers = [
         "/api/admin/image-library",

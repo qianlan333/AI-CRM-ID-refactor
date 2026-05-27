@@ -1,8 +1,10 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<script src="{{ url_for('static', filename='admin_console/image_upload_client.js') }}"></script>
-<script src="{{ url_for('static', filename='admin_console/image_picker.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}">
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -133,6 +135,7 @@
 .cloud-camp-step-row .step-stop { font-size:11px; color:#287a3c; background:#e9f7ee; padding:1px 6px; border-radius:8px; }
 .cloud-camp-step-row .step-text { font-size:13px; line-height:1.6; color:#1d1d1f; white-space:pre-wrap; word-break:break-word; }
 .cloud-camp-step-row .step-image { margin-top:8px; font-size:12px; color:#aaa; }
+.cloud-camp-step-row .step-materials { margin-top:6px; font-size:12px; color:#888; }
 .cloud-camp-step-empty { color:#a02929; font-size:13px; padding:8px 0; }
 .cloud-camp-step-edit { margin-left:auto; padding:2px 10px; border:1px solid #d3dcf2; background:#fff; color:#2c5cdb; font-size:12px; border-radius:4px; cursor:pointer; }
 .cloud-camp-step-edit:hover { background:#eef3fb; }
@@ -150,9 +153,9 @@
 .cloud-camp-step-edit-form .edit-block { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#5b626f; }
 .cloud-camp-step-edit-form textarea { width:100%; font-family:inherit; resize:vertical; padding:8px 10px; border:1px solid #d6dae0; border-radius:4px; box-sizing:border-box; }
 .cloud-camp-step-edit-form .edit-actions { display:flex; gap:8px; justify-content:flex-end; }
-.cloud-camp-step-edit-form .edit-image-upload { display:flex; align-items:center; gap:10px; padding:6px 0; font-size:12px; color:#5b626f; }
-.cloud-camp-step-edit-form .edit-image-upload input[type=file] { font-size:12px; }
-.cloud-camp-step-edit-form .edit-image-upload-status { color:#287a3c; }
+.cloud-camp-step-content-box { display:grid; gap:10px; border:1px solid #e5e7eb; border-radius:8px; padding:12px; background:#fff; }
+.cloud-camp-step-content-summary { display:grid; gap:6px; color:#5b626f; font-size:13px; line-height:1.55; }
+.cloud-camp-step-content-summary strong { color:#1d1d1f; }
 
 .cloud-camp-members-summary { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .cloud-camp-members-total { font-size:18px; font-weight:600; color:#1d1d1f; }
@@ -241,77 +244,122 @@
     return `${y}-${m}-${day}`;
   }
 
-  let _miniprogramLibraryCache = null;
-  async function loadMiniprogramLibrary() {
-    if (_miniprogramLibraryCache) return _miniprogramLibraryCache;
-    try {
-      const resp = await fetch('/api/admin/miniprogram-library', { credentials: 'same-origin' });
-      const data = await resp.json();
-      _miniprogramLibraryCache = data.ok ? (data.items || []) : [];
-    } catch { _miniprogramLibraryCache = []; }
-    return _miniprogramLibraryCache;
-  }
-  function attachMiniprogramPicker(rowEl) {
-    const idsInput = rowEl.querySelector('.edit-miniprogram-ids');
-    const listEl = rowEl.querySelector('.edit-miniprogram-list');
-    const summaryEl = rowEl.querySelector('.edit-miniprogram-summary');
-    const pickBtn = rowEl.querySelector('.edit-pick-miniprogram');
-    if (!idsInput || !pickBtn) return;
-    function getIds() { try { return JSON.parse(idsInput.value || '[]'); } catch { return []; } }
-    async function render() {
-      const ids = getIds();
-      const items = await loadMiniprogramLibrary();
-      summaryEl.textContent = '已选 ' + ids.length + ' 个';
-      if (!ids.length) { listEl.innerHTML = '<div style="font-size:12px;color:#aaa;">暂未选择小程序</div>'; return; }
-      listEl.innerHTML = ids.map(function (id, idx) {
-        const it = items.find(function (x) { return x.id === id; }) || { appid: '(未知)', title: '#' + id };
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;">'
-          + '<span><strong>' + escapeHtml(it.title || it.name || ('#' + id)) + '</strong> <span style="color:#888;">' + escapeHtml(it.appid) + ' · ' + escapeHtml(it.pagepath || '') + '</span></span>'
-          + '<button type="button" class="admin-button admin-button--ghost" data-mp-remove="' + idx + '" style="font-size:11px;">移除</button>'
-          + '</div>';
-      }).join('');
-      listEl.querySelectorAll('[data-mp-remove]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          const cur = getIds();
-          cur.splice(Number(b.getAttribute('data-mp-remove')), 1);
-          idsInput.value = JSON.stringify(cur);
-          render();
-        });
-      });
+  function parsePayloadObject(raw) {
+    if (raw && typeof raw === 'object') return raw;
+    if (typeof raw === 'string' && raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
     }
-    pickBtn.addEventListener('click', async function () {
-      const items = await loadMiniprogramLibrary();
-      if (!items.length) { alert('小程序素材库还是空的，先到 /admin/miniprogram-library 配置一条。'); return; }
-      const existing = new Set(getIds());
-      const choices = items.map(function (it) {
-        const checked = existing.has(it.id) ? 'checked' : '';
-        return '<label style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid #ddd;border-radius:6px;margin-bottom:6px;">'
-          + '<input type="checkbox" data-mp-pick="' + it.id + '" ' + checked + '>'
-          + '<span><strong>' + escapeHtml(it.title || it.name) + '</strong>'
-          + '<br><small>' + escapeHtml(it.appid) + ' · ' + escapeHtml(it.pagepath) + '</small></span>'
-          + '</label>';
-      }).join('');
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
-      wrap.innerHTML = '<div style="background:#fff;padding:16px;border-radius:8px;max-width:480px;width:90%;max-height:80vh;overflow:auto;">'
-        + '<h3 style="margin:0 0 12px;">选择小程序卡片</h3>' + choices
-        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
-        + '<button class="admin-button admin-button--ghost" type="button" data-mp-cancel>取消</button>'
-        + '<button class="admin-button admin-button--primary" type="button" data-mp-confirm>确定</button>'
-        + '</div></div>';
-      document.body.appendChild(wrap);
-      wrap.querySelector('[data-mp-cancel]').addEventListener('click', function () { wrap.remove(); });
-      wrap.querySelector('[data-mp-confirm]').addEventListener('click', function () {
-        const picked = [];
-        wrap.querySelectorAll('[data-mp-pick]:checked').forEach(function (cb) {
-          picked.push(Number(cb.getAttribute('data-mp-pick')));
-        });
-        idsInput.value = JSON.stringify(picked);
-        wrap.remove();
-        render();
-      });
+    return {};
+  }
+
+  function normalizeIdList(value) {
+    const raw = Array.isArray(value) ? value : String(value || '').split(',');
+    const ids = [];
+    raw.forEach(item => {
+      const id = parseInt(String(item).trim(), 10);
+      if (id > 0 && ids.indexOf(id) === -1) ids.push(id);
     });
-    render();
+    return ids;
+  }
+
+  function normalizeContentPackage(value) {
+    const data = value && typeof value === 'object' ? value : {};
+    return {
+      content_text: String(data.content_text || '').trim(),
+      image_library_ids: normalizeIdList(data.image_library_ids),
+      miniprogram_library_ids: normalizeIdList(data.miniprogram_library_ids),
+      attachment_library_ids: normalizeIdList(data.attachment_library_ids),
+    };
+  }
+
+  function stepToContentPackage(step) {
+    const current = step || {};
+    const contentPackage = parsePayloadObject(current.content_package_json || current.content_package);
+    const payload = parsePayloadObject(current.content_payload_json);
+    return normalizeContentPackage({
+      content_text: current.content_text || contentPackage.content_text || payload.content_text || '',
+      image_library_ids: current.image_library_ids || contentPackage.image_library_ids || payload.image_library_ids || [],
+      miniprogram_library_ids: current.miniprogram_library_ids || contentPackage.miniprogram_library_ids || payload.miniprogram_library_ids || [],
+      attachment_library_ids: current.attachment_library_ids || contentPackage.attachment_library_ids || payload.attachment_library_ids || [],
+    });
+  }
+
+  function contentPackageToStepPayload(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    return {
+      content_text: normalized.content_text,
+      content_package_json: normalized,
+      content_package: normalized,
+      image_library_ids: normalized.image_library_ids,
+      image_media_ids: [],
+      miniprogram_library_ids: normalized.miniprogram_library_ids,
+      attachment_library_ids: normalized.attachment_library_ids,
+    };
+  }
+
+  function stepContentSummary(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    const text = normalized.content_text || '';
+    return {
+      text: text ? (text.length > 60 ? `${text.slice(0, 60)}...` : text) : '未配置话术',
+      imageCount: normalized.image_library_ids.length,
+      miniprogramCount: normalized.miniprogram_library_ids.length,
+      attachmentCount: normalized.attachment_library_ids.length,
+    };
+  }
+
+  function renderStepContentSummary(contentPackage) {
+    const summary = stepContentSummary(contentPackage);
+    return `
+      <div class="cloud-camp-step-content-summary" data-step-content-summary>
+        <strong>话术：</strong><span>${escapeHtml(summary.text)}</span>
+        <strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>
+      </div>
+    `;
+  }
+
+  function updateStepContentState(rowEl, contentPackage) {
+    const hidden = rowEl.querySelector('.edit-content-package-json');
+    if (hidden) hidden.value = JSON.stringify(normalizeContentPackage(contentPackage));
+    const summary = rowEl.querySelector('[data-step-content-summary]');
+    if (summary) summary.outerHTML = renderStepContentSummary(contentPackage);
+  }
+
+  function openStepContentComposer(rowEl) {
+    if (!window.AICRMSendContentComposer || typeof window.AICRMSendContentComposer.open !== 'function') {
+      alert('标准发送内容组件加载失败，请刷新页面后重试');
+      return;
+    }
+    const hidden = rowEl.querySelector('.edit-content-package-json');
+    let value = {};
+    try { value = JSON.parse(hidden?.value || '{}'); } catch { value = {}; }
+    window.AICRMSendContentComposer.open({
+      title: '配置 Campaign Step 内容',
+      textEnabled: true,
+      value: normalizeContentPackage(value),
+      limits: {
+        image: 3,
+        miniprogram: 1,
+        attachment: 9,
+      },
+      onConfirm(contentPackage) {
+        updateStepContentState(rowEl, contentPackage);
+      },
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.AICRMCampaignStepContentAdapter = {
+      normalizeContentPackage,
+      stepToContentPackage,
+      contentPackageToStepPayload,
+      stepContentSummary,
+    };
   }
 
   async function loadList() {
@@ -480,20 +528,9 @@
       } else {
         for (const step of steps) {
           const dayLabel = step.day_offset === 0 ? 'D+0（首日）' : `D+${step.day_offset}`;
-          const stopChip = step.stop_on_reply ? '<span class="step-stop">回复后停止</span>' : '';
-          // step.content_payload_json 可能已经是 object，也可能仍是后端序列化字符串
-          let payload = {};
-          try {
-            const raw = step.content_payload_json;
-            if (raw && typeof raw === 'object') payload = raw;
-            else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
-          } catch { payload = {}; }
-          const imageLibraryIds = Array.isArray(payload.image_library_ids) ? payload.image_library_ids : [];
-          const legacyMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
-          const totalImages = imageLibraryIds.length + legacyMediaIds.length;
-          const imageLine = totalImages
-            ? `图片：${totalImages} 张${legacyMediaIds.length ? `（其中 ${legacyMediaIds.length} 张为老版直传 media_id）` : '（来自图片素材库）'}`
-            : '图片：未配置';
+          const stopChip = step.stop_on_reply ? '<span class="step-stop">回复后停止</span>' : '<span class="step-time">回复后继续</span>';
+          const contentPackage = stepToContentPackage(step);
+          const contentSummary = stepContentSummary(contentPackage);
           const editBtns = editable
             ? `<button class="cloud-camp-step-edit" data-step-index="${fmt(step.step_index)}">编辑</button>
                <button class="cloud-camp-step-delete" data-step-index="${fmt(step.step_index)}">删除</button>`
@@ -506,8 +543,8 @@
                 ${stopChip}
                 ${editBtns}
               </div>
-              <div class="step-text">${escapeHtml(step.content_text || '')}</div>
-              <div class="step-image">${imageLine}</div>
+              <div class="step-text">${escapeHtml(contentSummary.text)}</div>
+              <div class="step-materials">图片 ${contentSummary.imageCount} / 小程序 ${contentSummary.miniprogramCount} / 附件 ${contentSummary.attachmentCount}</div>
             </div>
           `;
         }
@@ -693,16 +730,7 @@
     if (!rowEl) return;
     if (rowEl.dataset.editing === '1') return;
     rowEl.dataset.editing = '1';
-    let payload = {};
-    try {
-      const raw = step.content_payload_json;
-      if (raw && typeof raw === 'object') payload = raw;
-      else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
-    } catch { payload = {}; }
-    // 兼容老数据：旧 step 用 image_media_ids（直接是企微 media_id）；新版用 image_library_ids（图片素材库 id）
-    const imageLibraryIds = Array.isArray(payload.image_library_ids) ? payload.image_library_ids : [];
-    const legacyMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
-    const miniprogramLibraryIds = Array.isArray(payload.miniprogram_library_ids) ? payload.miniprogram_library_ids : [];
+    const contentPackage = stepToContentPackage(step);
     const originalHtml = rowEl.innerHTML;
     rowEl.innerHTML = `
       <div class="cloud-camp-step-edit-form">
@@ -717,22 +745,13 @@
             <input type="checkbox" class="edit-stop-on-reply" ${step.stop_on_reply ? 'checked' : ''}> 收到回复后停止后续节奏
           </label>
         </div>
-        <label class="edit-block">话术
-          <textarea class="admin-input edit-content-text" rows="6">${escapeHtml(step.content_text || '')}</textarea>
-        </label>
         <div class="edit-block">
-          <div style="font-size:13px;color:#5b626f;margin-bottom:6px;">图片（最多 9 张，从图片素材库选；发送前自动换企微 media_id）</div>
-          <div class="edit-image-picker"></div>
-          ${legacyMediaIds.length ? `<div style="font-size:11px;color:#a06400;margin-top:6px;">⚠️ 老数据带 ${legacyMediaIds.length} 个直接 media_id（${legacyMediaIds.map(m => escapeHtml(String(m).slice(0,8))+'…').join(', ')}），保存时会被覆盖。</div>` : ''}
-        </div>
-        <div class="edit-block">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span>小程序卡片（从素材库选；发送前自动换 media_id）</span>
-            <button type="button" class="admin-button admin-button--ghost edit-pick-miniprogram" style="font-size:12px;">选择小程序</button>
-            <span class="edit-miniprogram-summary" style="font-size:12px;color:#888;">已选 ${miniprogramLibraryIds.length} 个</span>
+          <span>Campaign Step 内容</span>
+          <div class="cloud-camp-step-content-box">
+            ${renderStepContentSummary(contentPackage)}
+            <button type="button" class="admin-button admin-button--ghost edit-configure-content">配置话术和素材</button>
           </div>
-          <div class="edit-miniprogram-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
-          <input type="hidden" class="edit-miniprogram-ids" value='${JSON.stringify(miniprogramLibraryIds)}'>
+          <input type="hidden" class="edit-content-package-json" value='${escapeHtml(JSON.stringify(contentPackage))}'>
         </div>
         <div class="edit-actions">
           <button class="admin-button admin-button--primary edit-save">保存</button>
@@ -740,14 +759,7 @@
         </div>
       </div>
     `;
-    // 图片：用通用 image picker（multi 模式，最多 9 张）
-    const imagePicker = window.mountImagePicker(rowEl.querySelector('.edit-image-picker'), {
-      mode: 'multiple',
-      max: 9,
-      value: imageLibraryIds,
-    });
-
-    attachMiniprogramPicker(rowEl);
+    rowEl.querySelector('.edit-configure-content').addEventListener('click', () => openStepContentComposer(rowEl));
     rowEl.querySelector('.edit-cancel').addEventListener('click', () => {
       rowEl.innerHTML = originalHtml;
       rowEl.dataset.editing = '0';
@@ -755,17 +767,13 @@
       rowEl.querySelector('.cloud-camp-step-edit')?.addEventListener('click', () => loadDetail(currentCode));
     });
     rowEl.querySelector('.edit-save').addEventListener('click', async () => {
-      let miniprogramIds = [];
-      try { miniprogramIds = JSON.parse(rowEl.querySelector('.edit-miniprogram-ids').value || '[]'); } catch {}
+      let contentPackage = {};
+      try { contentPackage = JSON.parse(rowEl.querySelector('.edit-content-package-json').value || '{}'); } catch {}
       const body = {
-        content_text: rowEl.querySelector('.edit-content-text').value,
+        ...contentPackageToStepPayload(contentPackage),
         send_time: rowEl.querySelector('.edit-send-time').value || '10:00',
         day_offset: parseInt(rowEl.querySelector('.edit-day-offset').value || '0', 10),
         stop_on_reply: rowEl.querySelector('.edit-stop-on-reply').checked,
-        image_library_ids: imagePicker.getValue(),
-        // 显式清空老 image_media_ids，避免新老数据并存导致重复发图
-        image_media_ids: [],
-        miniprogram_library_ids: miniprogramIds,
       };
       const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(step.step_index)}`, {
         method: 'PATCH', headers: {'Content-Type': 'application/json'},
