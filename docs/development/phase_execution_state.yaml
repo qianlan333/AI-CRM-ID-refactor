@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_owner_evidence_package_blocker_acceptance
-active_candidate: cleanup_owner_evidence_package_blocker_acceptance
+current_phase: post_phase7_cleanup_task_groups_owner_evidence_validation
+active_candidate: task_groups_owner_evidence_validation
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#807"
-last_attempted_action: post_phase7_cleanup_owner_evidence_package_blocker_acceptance_bundle
-last_created_pr: "#807"
-recommended_next_pr: none_waiting_owner_only_evidence
+last_merged_pr: "#810"
+last_attempted_action: post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
+last_created_pr: "#810"
+recommended_next_pr: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -411,8 +411,10 @@ completed_steps:
   - post_phase7_cleanup_owner_evidence_waiting_acceptance_completed
   - post_phase7_cleanup_owner_evidence_package_generation_completed
   - post_phase7_cleanup_owner_evidence_package_blocker_acceptance_completed
+  - post_phase7_cleanup_task_groups_owner_evidence_validation_completed
 
-next_allowed_actions: []
+next_allowed_actions:
+  - post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -791,6 +793,51 @@ post_phase7_cleanup_owner_evidence_package_blocker_acceptance:
   oauth_callback_cutover: false
   wecom_callback_cutover: false
   recommended_next_bundle: none_waiting_owner_only_evidence
+
+post_phase7_cleanup_task_groups_owner_evidence_validation:
+  status: post_phase7_cleanup_task_groups_owner_evidence_validation_completed
+  bundle_type: post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
+  cleanup_family: task_groups_owner_evidence_validation
+  route_family: /api/admin/automation-conversion/task-groups*
+  evidence_validation_authorized: true
+  exact_route_cleanup_retry_authorized: false
+  owner_approval_status: granted
+  owner: qianlan
+  rollback_owner: qianlan
+  risk_acceptance: granted_conditionally
+  approval_timestamp: "2026-05-27T01:31:42Z"
+  latest_main_sha: c9f3b3db97b1c3cbe8cbf6b28e2323c490a0009d
+  latest_main_shadow_compare_status: ready_for_review_not_executed
+  shadow_compare_executed: false
+  shadow_compare_passed: false
+  rollback_plan_generated: true
+  rollback_execution_status: ready_for_review_not_executed
+  rollback_executed: false
+  route_ownership_proof_collected: true
+  production_compat_exact_entry_proof_collected: true
+  wildcard_cleanup_required: false
+  ready_for_exact_route_fallback_cleanup: false
+  ready_for_exact_route_production_compat_cleanup: false
+  ready_for_exact_route_cleanup_retry: false
+  validation_blocked: true
+  blocked_reason:
+    - latest_main_shadow_compare_not_executed
+    - latest_main_shadow_compare_not_passed
+    - rollback_rehearsal_not_executed
+    - exact_route_cleanup_retry_not_authorized
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  production_compat_cleanup_executed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  runtime_deletion_executed: false
+  delete_ready: false
+  timer_execution_enabled: false
+  outbound_send_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  recommended_next_bundle: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
