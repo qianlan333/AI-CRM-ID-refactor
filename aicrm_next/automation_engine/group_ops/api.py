@@ -109,6 +109,12 @@ def list_group_ops_owners() -> JSONResponse:
         members = search_operation_members(scope="group_ops", page_size=100)
         if not members["items"]:
             return _json_result(ListGroupOpsOwnersQuery()())
+        snapshot_owners = {}
+        try:
+            snapshot_payload = ListGroupOpsOwnersQuery()()
+            snapshot_owners = {item["userid"]: item for item in snapshot_payload.get("items", []) if item.get("userid")}
+        except Exception:
+            snapshot_owners = {}
         return _json_result(
             {
                 "ok": True,
@@ -116,7 +122,7 @@ def list_group_ops_owners() -> JSONResponse:
                     {
                         "userid": item["user_id"],
                         "name": item["display_name"] or item["user_id"],
-                        "group_count": 0,
+                        "group_count": int(snapshot_owners.get(item["user_id"], {}).get("group_count") or 0),
                         **item,
                     }
                     for item in members["items"]

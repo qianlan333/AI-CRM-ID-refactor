@@ -15,6 +15,11 @@ class WeComGroupChatSyncAdapterContract(Protocol):
     def get_group_chat(self, chat_id: str, *, owner_userid: str = "") -> Json: ...
 
 
+class WeComGroupAssetAdapterContract(Protocol):
+    def list_group_chats(self, *, owner_userid: str, cursor: str = "", limit: int = 100) -> Json: ...
+    def get_group_chat(self, *, chat_id: str, need_name: int = 1) -> Json: ...
+
+
 class GroupOpsQueueGatewayContract(Protocol):
     def enqueue_group_message(
         self,

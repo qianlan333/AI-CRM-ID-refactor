@@ -371,48 +371,62 @@ class PostgresGroupOpsRepository:
 
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int:
         count = 0
+        for group in groups:
+            if not clean_text((group or {}).get("chat_id")):
+                continue
+            self.upsert_group_asset(group)
+            count += 1
+        return count
+
+    def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        chat_id = clean_text(snapshot.get("chat_id"))
+        if not chat_id:
+            raise ContractError("chat_id is required")
         try:
             with self._engine.begin() as conn:
-                for group in groups:
-                    chat_id = clean_text(group.get("chat_id"))
-                    if not chat_id:
-                        continue
-                    params = {
-                        "chat_id": chat_id,
-                        "group_name": clean_text(group.get("group_name") or chat_id),
-                        "owner_userid": clean_text(group.get("owner_userid")),
-                        "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
-                        "internal_member_count": _int(group.get("internal_member_count")),
-                        "external_member_count": _int(group.get("external_member_count")),
-                        "status": clean_text(group.get("status") or "active"),
-                    }
-                    conn.execute(
-                        text(
-                            """
-                            INSERT INTO wecom_group_chat_snapshots (
-                                chat_id, group_name, owner_userid, owner_name,
-                                internal_member_count, external_member_count,
-                                synced_at, status
-                            )
-                            VALUES (
-                                :chat_id, :group_name, :owner_userid, :owner_name,
-                                :internal_member_count, :external_member_count,
-                                CURRENT_TIMESTAMP, :status
-                            )
-                            ON CONFLICT(chat_id) DO UPDATE SET
-                                group_name = excluded.group_name,
-                                owner_userid = excluded.owner_userid,
-                                owner_name = excluded.owner_name,
-                                internal_member_count = excluded.internal_member_count,
-                                external_member_count = excluded.external_member_count,
-                                synced_at = CURRENT_TIMESTAMP,
-                                status = excluded.status
-                            """
-                        ),
-                        params,
-                    )
-                    count += 1
-                return count
+                existing = conn.execute(
+                    text("SELECT chat_id FROM wecom_group_chat_snapshots WHERE chat_id = :chat_id LIMIT 1"),
+                    {"chat_id": chat_id},
+                ).fetchone()
+                params = {
+                    "chat_id": chat_id,
+                    "group_name": clean_text(snapshot.get("group_name") or chat_id),
+                    "owner_userid": clean_text(snapshot.get("owner_userid")),
+                    "owner_name": clean_text(snapshot.get("owner_name") or snapshot.get("owner_userid")),
+                    "internal_member_count": _int(snapshot.get("internal_member_count")),
+                    "external_member_count": _int(snapshot.get("external_member_count")),
+                    "status": clean_text(snapshot.get("status") or "active"),
+                }
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO wecom_group_chat_snapshots (
+                            chat_id, group_name, owner_userid, owner_name,
+                            internal_member_count, external_member_count,
+                            synced_at, status
+                        )
+                        VALUES (
+                            :chat_id, :group_name, :owner_userid, :owner_name,
+                            :internal_member_count, :external_member_count,
+                            CURRENT_TIMESTAMP, :status
+                        )
+                        ON CONFLICT(chat_id) DO UPDATE SET
+                            group_name = excluded.group_name,
+                            owner_userid = excluded.owner_userid,
+                            owner_name = excluded.owner_name,
+                            internal_member_count = excluded.internal_member_count,
+                            external_member_count = excluded.external_member_count,
+                            synced_at = CURRENT_TIMESTAMP,
+                            status = excluded.status
+                        """
+                    ),
+                    params,
+                )
+                saved = conn.execute(
+                    text("SELECT * FROM wecom_group_chat_snapshots WHERE chat_id = :chat_id LIMIT 1"),
+                    {"chat_id": chat_id},
+                ).fetchone()
+                return self._row_to_group_asset(_as_mapping(saved) or {}), "updated" if existing else "created"
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 

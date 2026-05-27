@@ -20,6 +20,7 @@
     ownerOptions: [],
     createOwner: null,
     groupFilterOwner: null,
+    refreshingOwnerGroups: false,
     notice: "",
     showCreate: false,
     showNodeForm: false,
@@ -43,6 +44,7 @@
     apiWebhookRegenerate: (id) =>
       `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/webhook/regenerate`,
     apiGroups: "/api/admin/automation-conversion/group-ops/groups",
+    apiGroupsSync: "/api/admin/automation-conversion/group-ops/groups/sync",
     apiMembers: "/api/admin/common/operation-members?scope=group_ops&page_size=100",
   };
 
@@ -263,6 +265,7 @@
     if (action === "show-create-plan") return showCreatePlan();
     if (action === "cancel-create-plan") return cancelCreatePlan();
     if (action === "save-plan") return savePlan();
+    if (action === "refresh-owner-groups") return refreshOwnerGroups();
     if (action === "disable-plan") return disablePlan(event.currentTarget.dataset.planId);
     if (action === "bind-group") return bindGroup(event.currentTarget.dataset.chatId);
     if (action === "remove-group") return removeGroup(event.currentTarget.dataset.chatId);
@@ -286,12 +289,15 @@
       fieldName: "owner_userid",
       title: "选择运营人员",
       value: currentFormValue("owner_userid") || (state.plan || {}).owner_userid,
-      onPicked: () => {
-        const target = app.querySelector("[data-available-groups]");
-        if (target) {
-          target.innerHTML = renderAvailableGroups();
-          bindSharedEvents();
+      onPicked: (member) => {
+        if (state.plan) {
+          state.plan.owner_userid = member.user_id || "";
+          state.plan.owner_name = member.display_name || member.name || member.user_id || "";
         }
+        loadOwnerGroups(member.user_id || "").catch((error) => {
+          state.notice = error.message || "加载群聊失败";
+          renderDetail();
+        });
       },
     });
     if (action === "pick-group-filter-owner") return openMemberPicker({
@@ -385,6 +391,49 @@
     await requestJson(routes.apiPlanGroup(state.plan.id, chatId), { method: "DELETE" });
     state.notice = "已移除";
     loadDetailPage(state.plan.id);
+  }
+
+  async function loadOwnerGroups(ownerUserId) {
+    const owner = String(ownerUserId || "").trim();
+    if (!owner) {
+      state.groups = [];
+      renderDetail();
+      return;
+    }
+    const payload = await requestJson(`${routes.apiGroups}?owner_userid=${encodeURIComponent(owner)}`);
+    state.groups = normalizeItems(payload);
+    renderDetail();
+  }
+
+  async function refreshOwnerGroups() {
+    if (!state.plan) return;
+    const owner = currentFormValue("owner_userid") || state.plan.owner_userid || "";
+    if (!owner) {
+      state.notice = "请选择运营成员";
+      renderDetail();
+      return;
+    }
+    state.refreshingOwnerGroups = true;
+    state.notice = "刷新中";
+    renderDetail();
+    try {
+      const synced = await requestJson(routes.apiGroupsSync, {
+        method: "POST",
+        body: {
+          owner_userid: owner,
+          limit: 100,
+          operator: "admin_ui",
+        },
+      });
+      const payload = await requestJson(`${routes.apiGroups}?owner_userid=${encodeURIComponent(owner)}`);
+      state.groups = normalizeItems(payload);
+      state.notice = `已刷新：新增 ${formatNumber(synced.new_count || 0)} 个，更新 ${formatNumber(synced.updated_count || 0)} 个`;
+    } catch (error) {
+      state.notice = error.message || "刷新失败";
+    } finally {
+      state.refreshingOwnerGroups = false;
+      renderDetail();
+    }
   }
 
   function showNodeForm(nodeId) {
@@ -538,14 +587,14 @@
   async function loadDetailPage(planId) {
     renderLoading();
     try {
-      const [planPayload, groupPayload, allGroupsPayload, nodePayload, ownersPayload] = await Promise.all([
+      const [planPayload, groupPayload, nodePayload, ownersPayload] = await Promise.all([
         requestJson(routes.apiPlan(planId)),
         requestJson(routes.apiPlanGroups(planId)),
-        requestJson(routes.apiGroups),
         requestJson(routes.apiPlanNodes(planId)),
         requestJson(routes.apiMembers),
       ]);
       state.plan = planPayload.item || planPayload.plan || planPayload;
+      const allGroupsPayload = await requestJson(`${routes.apiGroups}?owner_userid=${encodeURIComponent(state.plan.owner_userid || "")}`);
       state.planGroups = normalizeItems(groupPayload);
       state.groupSummary = groupPayload.summary || null;
       state.groups = normalizeItems(allGroupsPayload);
@@ -603,6 +652,14 @@
         </div>`,
       )
       .join("");
+  }
+
+  function renderRefreshOwnerGroupsButton() {
+    const owner = currentFormValue("owner_userid") || (state.plan && state.plan.owner_userid) || "";
+    const disabled = !owner || state.refreshingOwnerGroups;
+    return `<button class="group-ops__button" type="button" data-action="refresh-owner-groups"${disabled ? " disabled" : ""}>${
+      state.refreshingOwnerGroups ? "刷新中" : "刷新名下群聊"
+    }</button>`;
   }
 
   function refreshNodeContentSummary(contentPackage) {
@@ -771,6 +828,7 @@
               <span>运营成员</span>
               ${renderMemberField("owner_userid", state.plan.owner_userid, "pick-plan-owner", "更换运营成员")}
             </label>
+            <div class="group-ops__field">${renderRefreshOwnerGroupsButton()}</div>
             <label class="group-ops__field">
               <span>状态</span>
               <select name="status">

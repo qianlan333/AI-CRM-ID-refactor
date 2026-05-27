@@ -36,6 +36,7 @@ class GroupOpsRepository(Protocol):
     def remove_group(self, plan_id: int, chat_id: str) -> bool: ...
     def list_group_assets(self, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]: ...
     def get_group_asset(self, chat_id: str) -> dict[str, Any] | None: ...
+    def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]: ...
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
     def list_owners(self) -> list[dict[str, Any]]: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
@@ -341,21 +342,29 @@ class InMemoryGroupOpsRepository:
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int:
         count = 0
         for group in groups:
-            chat_id = clean_text(group.get("chat_id"))
-            if not chat_id:
+            if not clean_text((group or {}).get("chat_id")):
                 continue
-            self._groups[chat_id] = {
-                "chat_id": chat_id,
-                "group_name": clean_text(group.get("group_name") or chat_id),
-                "owner_userid": clean_text(group.get("owner_userid")),
-                "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
-                "internal_member_count": int(group.get("internal_member_count") or 0),
-                "external_member_count": int(group.get("external_member_count") or 0),
-                "synced_at": utc_now_iso(),
-                "status": clean_text(group.get("status") or "active"),
-            }
-            count += 1
+            _saved, action = self.upsert_group_asset(group)
+            if action in {"created", "updated"}:
+                count += 1
         return count
+
+    def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        chat_id = clean_text(snapshot.get("chat_id"))
+        if not chat_id:
+            raise ContractError("chat_id is required")
+        action = "updated" if chat_id in self._groups else "created"
+        self._groups[chat_id] = {
+            "chat_id": chat_id,
+            "group_name": clean_text(snapshot.get("group_name") or chat_id),
+            "owner_userid": clean_text(snapshot.get("owner_userid")),
+            "owner_name": clean_text(snapshot.get("owner_name") or snapshot.get("owner_userid")),
+            "internal_member_count": int(snapshot.get("internal_member_count") or 0),
+            "external_member_count": int(snapshot.get("external_member_count") or 0),
+            "synced_at": utc_now_iso(),
+            "status": clean_text(snapshot.get("status") or "active"),
+        }
+        return deepcopy(self._groups[chat_id]), action
 
     def list_owners(self) -> list[dict[str, Any]]:
         owners: dict[str, dict[str, Any]] = {}
