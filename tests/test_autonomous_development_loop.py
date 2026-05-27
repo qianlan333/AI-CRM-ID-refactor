@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "post_phase7_cleanup_legacy_runtime_recheck"
-    assert data["active_candidate"] == "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup"
+    assert data["current_phase"] == "post_phase7_cleanup_agent_outputs_exact_route_cleanup"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#818"
+    assert data["last_merged_pr"] == "#819"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -614,7 +614,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup"
+    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_legacy_runtime_recheck
-active_candidate: legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup
+current_phase: post_phase7_cleanup_agent_outputs_exact_route_cleanup
+active_candidate: /api/admin/automation-conversion/agent-outputs*
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#818"
-last_attempted_action: post_phase7_cleanup_legacy_runtime_recheck_bundle
-last_created_pr: "#818"
-recommended_next_pr: post_phase7_cleanup_track_acceptance_bundle
+last_merged_pr: "#819"
+last_attempted_action: post_phase7_cleanup_agent_outputs_exact_route_cleanup_bundle
+last_created_pr: pending
+recommended_next_pr: post_phase7_cleanup_legacy_runtime_recheck_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -419,9 +419,11 @@ completed_steps:
   - post_phase7_cleanup_legacy_runtime_recheck_completed
   - post_phase7_cleanup_track_acceptance_completed
   - post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed
+  - post_phase7_cleanup_owner_standing_approval_recorded
+  - post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed
 
 next_allowed_actions:
-  - post_phase7_cleanup_track_acceptance_bundle
+  - post_phase7_cleanup_legacy_runtime_recheck_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -1153,6 +1155,35 @@ post_phase7_cleanup_workflow_nodes_owner_approved_cleanup:
   high_risk_route_affected: false
   rollback_available: true
   rollback_method: revert_merge_commit
+  recommended_next_bundle: post_phase7_cleanup_legacy_runtime_recheck_bundle
+
+post_phase7_cleanup_owner_standing_approval:
+  status: post_phase7_cleanup_owner_standing_approval_recorded
+  bundle_type: post_phase7_cleanup_owner_standing_approval_bundle
+  owner: qianlan
+  approved_low_medium_risk_route_specific_cleanup: true
+  broad_fallback_removal_authorized: false
+  wildcard_router_deletion_authorized: false
+  runtime_deletion_authorized: false
+  delete_ready: false
+
+post_phase7_cleanup_agent_outputs_exact_route_cleanup:
+  status: post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed
+  bundle_type: post_phase7_cleanup_agent_outputs_exact_route_cleanup_bundle
+  route_family: /api/admin/automation-conversion/agent-outputs*
+  selected_exact_route: /api/admin/automation-conversion/agent-outputs
+  owner_standing_approval_status: granted
+  exact_production_compat_entry_removed: true
+  wildcard_production_compat_entry_retained: true
+  subpath_fallback_retained: true
+  wildcard_router_retained: true
+  runtime_deletion_executed: false
+  delete_ready: false
+  retained_old_code_categories:
+    - agent_outputs_subpath_fallback_retained
+    - other_production_compat_routes_retained
+    - wildcard_router_retained
+    - legacy_runtime_retained
   recommended_next_bundle: post_phase7_cleanup_legacy_runtime_recheck_bundle
 
 phase7l_final_legacy_retirement_acceptance:

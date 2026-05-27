@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS: set[str] = {
-    "post_phase7_cleanup_track_acceptance_bundle",
+    "post_phase7_cleanup_legacy_runtime_recheck_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = set(ALLOWED_NEXT_ACTIONS)
 REQUIRED_COMPLETED_STEPS = {
@@ -196,6 +196,8 @@ REQUIRED_COMPLETED_STEPS = {
     "post_phase7_cleanup_legacy_runtime_recheck_completed",
     "post_phase7_cleanup_track_acceptance_completed",
     "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed",
+    "post_phase7_cleanup_owner_standing_approval_recorded",
+    "post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -436,14 +438,14 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "post_phase7_cleanup_legacy_runtime_recheck":
-        blockers.append("current_phase must be post_phase7_cleanup_legacy_runtime_recheck")
-    if state.get("active_candidate") != "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup":
-        blockers.append("active_candidate must select post-#818 legacy runtime recheck")
+    if state.get("current_phase") != "post_phase7_cleanup_agent_outputs_exact_route_cleanup":
+        blockers.append("current_phase must be post_phase7_cleanup_agent_outputs_exact_route_cleanup")
+    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
+        blockers.append("active_candidate must select agent-outputs exact-route cleanup")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#818":
-        blockers.append("last_merged_pr must record latest cleanup PR #818")
+    if state.get("last_merged_pr") != "#819":
+        blockers.append("last_merged_pr must record latest cleanup PR #819")
 
     completed = _as_strings(state.get("completed_steps"))
     missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)

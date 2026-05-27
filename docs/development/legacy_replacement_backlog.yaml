@@ -860,7 +860,7 @@ entries:
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
-    notes: "Agent output APIs remain legacy-forwarded during the workspace cutover."
+    notes: "Post-Phase 7 standing approval removed only the exact /api/admin/automation-conversion/agent-outputs production_compat decorator after confirming the Next-native GET list route and tests; agent-output subpath fallback, export behavior, wildcard routing, and runtime deletion remain retained."
   - id: "LRB-040"
     route_pattern: "/api/admin/automation-conversion/agent-runs*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
