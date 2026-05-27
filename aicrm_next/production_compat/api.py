@@ -79,13 +79,6 @@ async def legacy_admin_wecom_tag_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/admin/channels", methods=_ALL_METHODS)
-@router.api_route("/api/admin/channels/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/channel-welcome-materials", methods=_ALL_METHODS)
-async def legacy_admin_channel_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/api/admin/automation-conversion/tasks/run-due", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu", methods=["POST", "OPTIONS"])
 async def legacy_automation_workspace_routes(request: Request) -> Response:
@@ -140,9 +133,6 @@ async def legacy_image_library_upload_route(request: Request) -> Response:
 @wildcard_router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/channels", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/channels/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/channel-welcome-materials", methods=_ALL_METHODS)
 @wildcard_router.api_route("/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)

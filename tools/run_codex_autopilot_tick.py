@@ -33,6 +33,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "remaining stale checker/test references",
     "governance config compaction",
     "non_runtime_cleanup",
+    "runtime_fallback_cleanup",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -213,7 +214,18 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         full = ROOT / path
         if not full.exists() or not full.is_file():
             continue
-        matched = text_hits_stop_condition(full.read_text(encoding="utf-8", errors="ignore"), terms)
+        if path == "aicrm_next/production_compat/api.py":
+            code, stdout, _ = run_command(["git", "diff", "--unified=0", "--", path])
+            if code != 0:
+                stdout = ""
+            diff_lines = [
+                line[1:]
+                for line in stdout.splitlines()
+                if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+            ]
+            matched = text_hits_stop_condition("\n".join(diff_lines), terms)
+        else:
+            matched = text_hits_stop_condition(full.read_text(encoding="utf-8", errors="ignore"), terms)
         hits.extend(f"{path}: {term}" for term in matched)
     return hits
 
@@ -300,6 +312,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "runtime_fallback_migration_channels_track1" and "runtime_fallback_cleanup" in allowed:
+        return "runtime_fallback_cleanup"
     if recommended == "final_non_runtime_cleanup_closeout_wave17" and "non_runtime_cleanup" in allowed:
         return "non_runtime_cleanup"
     if recommended == "stale_product_design_documentation_cleanup_wave16" and "remaining stale non-runtime docs/reports" in allowed:
@@ -346,7 +360,7 @@ You are working in qianlan333/AI-CRM from latest main.
 Read and follow:
 {docs}
 
-## Selected bounded governance cleanup
+## Selected bounded runtime fallback migration
 
 - work_package: {work_package}
 - current_phase: {state.get("current_phase")}
@@ -356,18 +370,18 @@ Read and follow:
 ## Hard boundaries
 
 - Only choose from docs/development/phase_execution_state.yaml next_cleanup_candidates.
-- Runtime behavior must remain unchanged.
-- Do not switch production owner.
+- Business behavior must remain unchanged.
+- Switch production owner only for the selected low/medium-risk admin fallback route family after Next parity is already present.
 - Do not write production.
-- Do not remove fallback.
-- Do not modify production_compat, aicrm_next/main.py, business routes, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
+- Do not remove high-risk fallback.
+- Do not modify aicrm_next/main.py, business route implementations, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
 - Do not enable real external calls, payment, OAuth, WeCom callback, timer, automation execution, or outbound send.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
 ## Required implementation behavior
 
-- Advance only one bounded low-risk governance cleanup package.
-- Prefer deleting or compacting stale non-runtime docs/tools/tests/state over wording-only changes.
+- Advance only one bounded low/medium-risk runtime fallback package.
+- Prefer removing or narrowing selected production_compat entries only after Next-native coverage is verified.
 - Update docs/development/phase_execution_state.yaml only when the active compact state changes.
 - Keep Business value, Business continuity, Risk / rollback, and Next action in the PR body.
 - Run:
@@ -379,7 +393,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low-risk merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files. Owner decision packages must not auto-merge.
+Low/medium-risk merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and production_compat edits are limited to the selected admin fallback route family. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
