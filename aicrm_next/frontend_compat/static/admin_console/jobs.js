@@ -1,6 +1,11 @@
 function bootJobsForms() {
   document.querySelectorAll("[data-jobs-form]").forEach((form) => {
-    form.addEventListener("submit", () => {
+    form.addEventListener("submit", (event) => {
+      const confirmMessage = form.getAttribute("data-confirm-message");
+      if (confirmMessage && !window.confirm(confirmMessage)) {
+        event.preventDefault();
+        return;
+      }
       const button = form.querySelector("[data-jobs-submit]");
       if (!button) {
         return;
