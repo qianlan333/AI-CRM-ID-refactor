@@ -555,6 +555,17 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
                     "scene_value": "aqr_260521_b91c",
                     "welcome_message": "欢迎来到峰会",
                     "updated_at": "2026-05-23T09:00:00Z",
+                },
+                {
+                    "id": 32,
+                    "channel_name": "获客助手链接",
+                    "channel_code": "wca_260521_b91c",
+                    "channel_type": "wecom_customer_acquisition",
+                    "carrier_type": "link",
+                    "status": "active",
+                    "binding_status": "active",
+                    "customer_channel": "wca_260521_b91c",
+                    "final_url": "https://work.weixin.qq.com/ca/example",
                 }
             ],
             "qrcode_channel": {
@@ -667,6 +678,95 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
         for marker in markers:
             assert marker in response.text, (step, marker)
         assert "Not Found" not in response.text
+    entry_response = client.get("/admin/automation-conversion/programs/7/setup?step=entry")
+    assert "前往入口渠道页" in entry_response.text
+    assert "当前二维码入口" not in entry_response.text
+    assert "入口配置块" not in entry_response.text
+    assert "欢迎来到峰会" not in entry_response.text
+
+
+def test_automation_program_entry_channels_page_uses_next_binding_payload(monkeypatch):
+    from aicrm_next.frontend_compat import legacy_routes
+
+    monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    program_data = {
+        "program": {
+            "id": 7,
+            "program_name": "202605沙龙商业修行峰会",
+            "program_code": "202505",
+            "status": "active",
+            "description": "生产方案",
+        },
+        "summary": {"channel_count": 2, "workflow_count": 1},
+    }
+    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_program_channel_bindings_resource",
+        lambda program_id: [
+            {
+                "id": 101,
+                "program_id": program_id,
+                "channel_id": 31,
+                "binding_status": "active",
+                "channel": {
+                    "id": 31,
+                    "channel_name": "默认渠道二维码",
+                    "channel_code": "aqr_260521_b91c",
+                    "channel_type": "qrcode",
+                    "carrier_type": "qrcode",
+                    "status": "active",
+                    "scene_value": "aqr_260521_b91c",
+                    "qr_url": "https://wework.qpic.cn/example",
+                },
+            },
+            {
+                "id": 102,
+                "program_id": program_id,
+                "channel_id": 32,
+                "binding_status": "active",
+                "channel": {
+                    "id": 32,
+                    "channel_name": "获客助手链接",
+                    "channel_code": "wca_260521_b91c",
+                    "channel_type": "wecom_customer_acquisition",
+                    "carrier_type": "link",
+                    "status": "active",
+                    "customer_channel": "wca_260521_b91c",
+                    "final_url": "https://work.weixin.qq.com/ca/example",
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_program_entry_candidate_channels",
+        lambda program_id: [
+            {
+                "id": 33,
+                "channel_name": "候选渠道",
+                "channel_code": "aqr_260522_cand",
+                "channel_type": "qrcode",
+                "carrier_type": "qrcode",
+                "status": "active",
+                "scene_value": "aqr_260522_cand",
+                "qr_url": "https://wework.qpic.cn/candidate",
+            }
+        ],
+    )
+
+    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion/programs/7/entry-channels")
+
+    assert response.status_code == 200
+    assert "绑定已有渠道码" in response.text
+    assert "默认渠道二维码" in response.text
+    assert "获客助手链接" in response.text
+    assert "候选渠道" in response.text
+    assert "/api/admin/automation-conversion/programs/7/channel-bindings" in response.text
 
 
 def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):

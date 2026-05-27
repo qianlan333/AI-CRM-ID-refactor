@@ -13,7 +13,9 @@ from aicrm_next.shared.runtime import raw_database_url
 router = APIRouter()
 
 _FIXTURE_CHANNELS: dict[int, dict[str, Any]] = {}
+_FIXTURE_PROGRAM_BINDINGS: dict[int, dict[str, Any]] = {}
 _NEXT_ID = 1
+_NEXT_BINDING_ID = 1
 
 
 def _psycopg_url(url: str) -> str:
@@ -113,6 +115,43 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["created_at"] = _iso(channel.get("created_at"))
     channel["updated_at"] = _iso(channel.get("updated_at"))
     return channel
+
+
+def _serialize_program_binding(row: dict[str, Any]) -> dict[str, Any]:
+    binding = {
+        "id": int(row.get("id") or row.get("binding_id") or 0),
+        "program_id": int(row.get("program_id") or 0),
+        "channel_id": int(row.get("channel_id") or 0),
+        "binding_status": _text(row.get("binding_status")) or "active",
+        "auto_enter_pool": bool(row.get("auto_enter_pool", True)),
+        "initial_audience_code": _text(row.get("initial_audience_code")) or "pending_questionnaire",
+        "priority": int(row.get("priority") or 0),
+        "bound_at": _iso(row.get("bound_at")),
+        "unbound_at": _iso(row.get("unbound_at")),
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+    channel = {
+        "id": binding["channel_id"],
+        "channel_code": row.get("channel_code"),
+        "channel_name": row.get("channel_name"),
+        "channel_type": row.get("channel_type"),
+        "carrier_type": row.get("carrier_type"),
+        "scene_value": row.get("scene_value"),
+        "qr_url": row.get("qr_url"),
+        "customer_channel": row.get("customer_channel") or row.get("wca_customer_channel"),
+        "link_url": row.get("link_url") or row.get("wca_link_url"),
+        "final_url": row.get("final_url") or row.get("wca_final_url"),
+        "status": row.get("channel_status") or row.get("status"),
+        "owner_staff_id": row.get("owner_staff_id"),
+        "entry_tag_id": row.get("entry_tag_id"),
+        "entry_tag_name": row.get("entry_tag_name"),
+        "entry_tag_group_name": row.get("entry_tag_group_name"),
+        "updated_at": row.get("channel_updated_at") or row.get("updated_at"),
+        "created_at": row.get("channel_created_at") or row.get("created_at"),
+    }
+    binding["channel"] = _serialize_channel(channel)
+    return binding
 
 
 def _default_channel() -> dict[str, Any]:
@@ -223,6 +262,217 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                 tuple(params),
             )
             return [_serialize_channel(dict(row)) for row in cur.fetchall() or []]
+
+
+def list_program_channel_bindings_resource(program_id: int) -> list[dict[str, Any]]:
+    conn = _connect()
+    if conn is None:
+        bindings = [
+            _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding})
+            for binding in _FIXTURE_PROGRAM_BINDINGS.values()
+            if int(binding.get("program_id") or 0) == int(program_id) and _text(binding.get("binding_status")) != "archived"
+        ]
+        return sorted(bindings, key=lambda item: (int(item.get("priority") or 0), int(item.get("id") or 0)), reverse=True)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    b.id,
+                    b.program_id,
+                    b.channel_id,
+                    b.binding_status,
+                    b.auto_enter_pool,
+                    b.initial_audience_code,
+                    b.priority,
+                    b.bound_at,
+                    b.unbound_at,
+                    b.created_at,
+                    b.updated_at,
+                    c.channel_code,
+                    c.channel_name,
+                    c.channel_type,
+                    c.carrier_type,
+                    c.scene_value,
+                    c.qr_url,
+                    c.customer_channel,
+                    c.link_url,
+                    c.final_url,
+                    c.status AS channel_status,
+                    c.owner_staff_id,
+                    c.entry_tag_id,
+                    c.entry_tag_name,
+                    c.entry_tag_group_name,
+                    c.updated_at AS channel_updated_at,
+                    c.created_at AS channel_created_at,
+                    wca.customer_channel AS wca_customer_channel,
+                    wca.link_url AS wca_link_url,
+                    wca.final_url AS wca_final_url
+                FROM automation_program_channel_binding b
+                JOIN automation_channel c ON c.id = b.channel_id
+                LEFT JOIN wecom_customer_acquisition_links wca
+                  ON wca.automation_channel_id = c.id AND wca.status = 'active'
+                WHERE b.program_id = %s
+                  AND b.binding_status <> 'archived'
+                ORDER BY b.priority DESC, b.id DESC
+                """,
+                (int(program_id),),
+            )
+            return [_serialize_program_binding(dict(row)) for row in cur.fetchall() or []]
+
+
+def list_program_entry_candidate_channels(program_id: int) -> list[dict[str, Any]]:
+    return _list_channels_from_postgres(limit=200, status="", available_for_program_id=int(program_id))
+
+
+def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    global _NEXT_BINDING_ID
+    normalized_ids: list[int] = []
+    for item in channel_ids:
+        channel_id = int(item or 0)
+        if channel_id > 0 and channel_id not in normalized_ids:
+            normalized_ids.append(channel_id)
+    if not normalized_ids:
+        raise ValueError("channel_ids_required")
+    payload = payload or {}
+    initial_audience_code = _text(payload.get("initial_audience_code")) or "pending_questionnaire"
+    if initial_audience_code not in {"pending_questionnaire", "operating", "converted"}:
+        raise ValueError("invalid_initial_audience_code")
+    priority = int(payload.get("priority") or 0)
+    conn = _connect()
+    if conn is None:
+        now = datetime.now(UTC).isoformat()
+        for channel_id in normalized_ids:
+            if channel_id not in _FIXTURE_CHANNELS:
+                raise LookupError("channel_not_found")
+            active_conflict = next(
+                (
+                    item
+                    for item in _FIXTURE_PROGRAM_BINDINGS.values()
+                    if int(item.get("channel_id") or 0) == channel_id
+                    and int(item.get("program_id") or 0) != int(program_id)
+                    and _text(item.get("binding_status")) == "active"
+                ),
+                None,
+            )
+            if active_conflict:
+                raise ValueError("channel_already_bound")
+            existing_id = next(
+                (
+                    binding_id
+                    for binding_id, item in _FIXTURE_PROGRAM_BINDINGS.items()
+                    if int(item.get("program_id") or 0) == int(program_id) and int(item.get("channel_id") or 0) == channel_id
+                ),
+                None,
+            )
+            binding_id = int(existing_id or _NEXT_BINDING_ID)
+            if existing_id is None:
+                _NEXT_BINDING_ID += 1
+            _FIXTURE_PROGRAM_BINDINGS[binding_id] = {
+                "id": binding_id,
+                "program_id": int(program_id),
+                "channel_id": channel_id,
+                "binding_status": "active",
+                "auto_enter_pool": True,
+                "initial_audience_code": initial_audience_code,
+                "priority": priority,
+                "bound_at": now,
+                "created_at": now,
+                "updated_at": now,
+            }
+        return {"bindings": list_program_channel_bindings_resource(int(program_id)), "reason": "program_channels_bound"}
+    from psycopg.types.json import Jsonb
+
+    with conn:
+        with conn.cursor() as cur:
+            for channel_id in normalized_ids:
+                cur.execute("SELECT id FROM automation_channel WHERE id = %s LIMIT 1", (channel_id,))
+                if not cur.fetchone():
+                    raise LookupError("channel_not_found")
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM automation_program_channel_binding
+                    WHERE channel_id = %s
+                      AND binding_status = 'active'
+                      AND program_id <> %s
+                    LIMIT 1
+                    """,
+                    (channel_id, int(program_id)),
+                )
+                if cur.fetchone():
+                    raise ValueError("channel_already_bound")
+                cur.execute(
+                    """
+                    INSERT INTO automation_program_channel_binding (
+                        program_id,
+                        channel_id,
+                        binding_status,
+                        auto_enter_pool,
+                        initial_audience_code,
+                        entry_rule_json,
+                        priority,
+                        bound_by
+                    )
+                    VALUES (%s, %s, 'active', TRUE, %s, %s, %s, %s)
+                    ON CONFLICT (program_id, channel_id)
+                    DO UPDATE SET
+                        binding_status = 'active',
+                        auto_enter_pool = TRUE,
+                        initial_audience_code = EXCLUDED.initial_audience_code,
+                        entry_rule_json = EXCLUDED.entry_rule_json,
+                        priority = EXCLUDED.priority,
+                        bound_by = EXCLUDED.bound_by,
+                        bound_at = CASE
+                            WHEN automation_program_channel_binding.binding_status <> 'active'
+                            THEN CURRENT_TIMESTAMP
+                            ELSE automation_program_channel_binding.bound_at
+                        END,
+                        unbound_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        int(program_id),
+                        channel_id,
+                        initial_audience_code,
+                        Jsonb(dict(payload.get("entry_rule_json") or {})),
+                        priority,
+                        _text(payload.get("operator_id") or payload.get("bound_by")) or "next_admin",
+                    ),
+                )
+        conn.commit()
+    return {"bindings": list_program_channel_bindings_resource(int(program_id)), "reason": "program_channels_bound"}
+
+
+def archive_program_channel_binding_resource(program_id: int, binding_id: int) -> dict[str, Any]:
+    conn = _connect()
+    if conn is None:
+        binding = _FIXTURE_PROGRAM_BINDINGS.get(int(binding_id))
+        if not binding or int(binding.get("program_id") or 0) != int(program_id):
+            raise LookupError("binding_not_found")
+        binding["binding_status"] = "archived"
+        binding["unbound_at"] = datetime.now(UTC).isoformat()
+        binding["updated_at"] = binding["unbound_at"]
+        return {"binding": _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding}), "reason": "program_channel_unbound"}
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE automation_program_channel_binding
+                SET binding_status = 'archived',
+                    unbound_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                  AND program_id = %s
+                RETURNING id
+                """,
+                (int(binding_id), int(program_id)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise LookupError("binding_not_found")
+    return {"binding_id": int(binding_id), "reason": "program_channel_unbound"}
 
 
 def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -423,6 +673,43 @@ def list_channel_bindings(channel_id: int) -> dict[str, Any]:
             )
             bindings = [dict(row) for row in cur.fetchall() or []]
     return {"ok": True, "bindings": bindings, "reason": "channel_bindings_listed", "source": "ai_crm_next"}
+
+
+@router.get("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings")
+def list_program_channel_bindings(program_id: int) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "bindings": list_program_channel_bindings_resource(int(program_id)),
+        "reason": "program_channel_bindings_listed",
+        "source": "ai_crm_next",
+    }
+
+
+@router.post("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings", status_code=201)
+def bind_program_channels(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    channel_ids = payload.get("channel_ids") or payload.get("channel_id") or []
+    if not isinstance(channel_ids, list):
+        channel_ids = [channel_ids]
+    try:
+        result = bind_channels_to_program_resource(
+            int(program_id),
+            [int(item) for item in channel_ids if _text(item)],
+            payload,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **result, "source": "ai_crm_next"}
+
+
+@router.delete("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings/{binding_id:int}")
+def unbind_program_channel(program_id: int, binding_id: int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        result = archive_program_channel_binding_resource(int(program_id), int(binding_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, **result, "source": "ai_crm_next"}
 
 
 @router.get("/api/admin/channels/{channel_id:int}/share-link")
