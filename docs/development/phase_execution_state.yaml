@@ -10,9 +10,9 @@ autopilot:
   runtime_changes_allowed: false
 
 current_phase: post_phase7_active_cleanup
-last_merged_pr: "#846"
-last_merged_cleanup_wave: active_governance_state_compaction_wave10
-recommended_next_pr: residual_governance_cleanup_wave11
+last_merged_pr: "#847"
+last_merged_cleanup_wave: residual_governance_cleanup_wave11
+recommended_next_pr: residual_narrative_documentation_cleanup_wave12
 owner_approval_required: false
 runtime_behavior_changed: false
 delete_ready: false
