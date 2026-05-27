@@ -22,9 +22,9 @@ def test_phase_execution_state_uses_compact_active_contract() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "runtime_fallback_migration"
-    assert data["last_merged_pr"] == "#862"
-    assert data["last_merged_cleanup_wave"] == "final_non_runtime_cleanup_closeout_wave17"
-    assert data["recommended_next_pr"] == "runtime_fallback_migration_channels_track1"
+    assert data["last_merged_pr"] == "#865"
+    assert data["last_merged_cleanup_wave"] == "runtime_fallback_migration_channels_track1"
+    assert data["recommended_next_pr"] == "runtime_fallback_migration_media_material_libraries_track2"
     assert data["owner_approval_required"] is False
     assert data["runtime_behavior_changed"] is False
     assert data["delete_ready"] is False

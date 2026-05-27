@@ -1417,7 +1417,7 @@ entries:
     capability_owner: "aicrm_next.media_library"
     current_runtime_owner: "next"
     production_behavior: "fake_adapter"
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
     checker: "tools/check_production_route_resolution.py"
@@ -1429,10 +1429,10 @@ entries:
     replacement_owner: "aicrm_next.media_library"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked."
+    notes: "Next media routes own broad image library list/read/metadata surfaces; explicit upload remains guarded production_compat."
   - id: "LRB-066"
     route_pattern: "/api/admin/image-library/upload"
     methods: ["POST", "OPTIONS"]
@@ -1461,7 +1461,7 @@ entries:
     capability_owner: "aicrm_next.media_library"
     current_runtime_owner: "next"
     production_behavior: "fake_adapter"
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
     checker: "tools/check_production_route_resolution.py"
@@ -1473,17 +1473,17 @@ entries:
     replacement_owner: "aicrm_next.media_library"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Attachment routes use fake/staging-disabled adapters."
+    notes: "Next attachment library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters."
   - id: "LRB-068"
     route_pattern: "/api/admin/miniprogram-library*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.media_library"
     current_runtime_owner: "next"
     production_behavior: "fake_adapter"
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
     checker: "tools/check_production_route_resolution.py"
@@ -1495,10 +1495,10 @@ entries:
     replacement_owner: "aicrm_next.media_library"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Miniprogram routes use fake/staging-disabled adapters."
+    notes: "Next miniprogram library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters."
   - id: "LRB-069"
     route_pattern: "/sidebar/bind-mobile"
     methods: ["GET", "HEAD"]
