@@ -21,6 +21,11 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
+from aicrm_next.automation_engine.channels_api import (
+    default_channel_form_payload,
+    get_channel_resource,
+    list_channel_owner_candidates,
+)
 from aicrm_next.customer_read_model.application import ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
 from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
@@ -764,6 +769,25 @@ def _group_ops_page_context(
     return context
 
 
+def _channel_form_payload(request: Request, *, channel: dict | None) -> dict:
+    del request
+    is_edit = bool(channel)
+    channel_id = int((channel or {}).get("id") or 0)
+    return {
+        "channel": channel or default_channel_form_payload(),
+        "owner_candidates": list_channel_owner_candidates(),
+        "is_edit": is_edit,
+        "api_urls": {
+            "channels": "/api/admin/channels",
+            "detail": f"/api/admin/channels/{channel_id}" if is_edit else "",
+            "qrcode_download": f"/api/admin/channels/{channel_id}/qrcode/download" if is_edit else "",
+            "share_link": f"/api/admin/channels/{channel_id}/share-link" if is_edit else "",
+            "welcome_materials": "/api/admin/channel-welcome-materials",
+            "wecom_tags": "/api/admin/wecom/tags",
+        },
+    }
+
+
 @router.get("/admin/automation-conversion/group-ops/ui", name="api.admin_group_ops_ui")
 def admin_group_ops_ui(request: Request):
     context = _group_ops_page_context(
@@ -840,7 +864,7 @@ async def admin_channel_new_page(request: Request) -> Response:
     context = _shell_context(
         request=request,
         page_title="新建渠道",
-        page_summary="创建普通二维码或企微获客助手链接渠道；渠道绑定在自动化运营入口渠道页完成。",
+        page_summary="创建渠道资产本身，不在渠道中心绑定自动化运营。普通二维码和企微获客助手链接按载体类型显示不同操作。",
         active_endpoint="api.admin_channels_page",
     )
     context.update(
@@ -850,21 +874,37 @@ async def admin_channel_new_page(request: Request) -> Response:
                 {"label": "渠道码中心", "href": request.url_for("api.admin_channels_page")},
                 {"label": "新建渠道"},
             ],
-            "state_title": "新建渠道",
-            "state_body": "生产环境会打开完整的新建渠道表单；本地兼容层保留入口和导航契约。",
-            "state_items": [
-                "支持普通二维码",
-                "支持企微获客助手链接",
-                "支持欢迎语、小程序、图片和 PDF 素材选择",
-            ],
-            "actions": [{"label": "返回渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+            "channel_form_payload": _channel_form_payload(request, channel=None),
+            "admin_action_token": "",
         }
     )
-    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+    return templates.TemplateResponse(request, "admin_console/channel_code_form.html", context)
 
 
 @router.get("/admin/channels/{channel_id:int}/edit", name="api.admin_channel_edit_page")
 async def admin_channel_edit_page(request: Request, channel_id: int) -> Response:
+    channel = get_channel_resource(int(channel_id))
+    if not channel:
+        context = _shell_context(
+            request=request,
+            page_title="渠道不存在",
+            page_summary="当前没有找到这个渠道。",
+            active_endpoint="api.admin_channels_page",
+        )
+        context.update(
+            {
+                "breadcrumbs": [
+                    {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                    {"label": "渠道码中心", "href": request.url_for("api.admin_channels_page")},
+                    {"label": f"编辑渠道 {channel_id}"},
+                ],
+                "state_title": "渠道不存在",
+                "state_body": "请确认渠道编号是否正确，或回到渠道码中心重新选择。",
+                "state_items": ["渠道可能已被删除", "当前环境也可能还没有初始化渠道数据"],
+                "actions": [{"label": "返回渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+            }
+        )
+        return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
     context = _shell_context(
         request=request,
         page_title="编辑渠道",
@@ -878,17 +918,11 @@ async def admin_channel_edit_page(request: Request, channel_id: int) -> Response
                 {"label": "渠道码中心", "href": request.url_for("api.admin_channels_page")},
                 {"label": f"编辑渠道 {channel_id}"},
             ],
-            "state_title": "编辑渠道",
-            "state_body": "生产环境会打开完整的渠道编辑表单；本地兼容层保留入口和导航契约。",
-            "state_items": [
-                "普通二维码不会被重新生成",
-                "企微获客助手链接不会被重新生成",
-                "绑定状态只在入口渠道页变更",
-            ],
-            "actions": [{"label": "返回渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+            "channel_form_payload": _channel_form_payload(request, channel=channel),
+            "admin_action_token": "",
         }
     )
-    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+    return templates.TemplateResponse(request, "admin_console/channel_code_form.html", context)
 
 
 @router.get(
