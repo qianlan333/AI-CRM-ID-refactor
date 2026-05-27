@@ -56,17 +56,6 @@ from .automation_conversion_runtime_api import (
     api_internal_automation_conversion_lobster_results,
     api_internal_automation_conversion_router_test_dispatch,
 )
-from .automation_conversion_settings import (
-    api_admin_automation_conversion_default_channel_generate_qr,
-    api_admin_automation_conversion_default_channel_settings,
-    api_admin_automation_conversion_default_channel_settings_save,
-    api_admin_automation_conversion_model_settings,
-    api_admin_automation_conversion_model_settings_save,
-    api_admin_automation_conversion_model_settings_test,
-    api_admin_automation_conversion_settings_default_channel_generate_qr,
-    api_admin_automation_conversion_settings_payload,
-    api_admin_automation_conversion_settings_save,
-)
 from .automation_conversion_setup import (
     api_admin_automation_program_customer_acquisition_links,
     api_admin_automation_program_publish_entry,
@@ -111,9 +100,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
-    bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings_payload)
-    bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_settings_save)
-    bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_settings_default_channel_generate_qr)
     bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup", methods=["GET"])(api_admin_automation_program_setup)
     bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/basic", methods=["POST"])(api_admin_automation_program_setup_basic)
     bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/entry-channel", methods=["POST"])(api_admin_automation_program_setup_entry_channel)
@@ -125,12 +111,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links", methods=["GET", "POST"])(api_admin_automation_program_customer_acquisition_links)
     register_channel_admission_routes(bp)
     bp.route("/api/admin/automation-conversion/tasks/run-due", methods=["POST"])(api_admin_automation_conversion_tasks_run_due)
-    bp.route("/api/admin/automation-conversion/default-channel-settings", methods=["GET"])(api_admin_automation_conversion_default_channel_settings)
-    bp.route("/api/admin/automation-conversion/default-channel-settings", methods=["PUT"])(api_admin_automation_conversion_default_channel_settings_save)
-    bp.route("/api/admin/automation-conversion/default-channel-settings/generate-qr", methods=["POST"])(api_admin_automation_conversion_default_channel_generate_qr)
-    bp.route("/api/admin/automation-conversion/model-settings", methods=["GET"])(api_admin_automation_conversion_model_settings)
-    bp.route("/api/admin/automation-conversion/model-settings", methods=["PUT"])(api_admin_automation_conversion_model_settings_save)
-    bp.route("/api/admin/automation-conversion/model-settings/test", methods=["POST"])(api_admin_automation_conversion_model_settings_test)
     bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)
     bp.route("/api/admin/automation-conversion/router-callback-replay/<run_id>", methods=["POST"])(api_admin_automation_conversion_router_callback_replay)
     bp.route("/api/admin/automation-conversion/router-pending-callback-check", methods=["POST"])(api_admin_automation_conversion_router_pending_callback_check)

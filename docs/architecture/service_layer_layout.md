@@ -60,7 +60,6 @@ Automation-conversion handlers are split by surface:
 - `automation_conversion_review.py`: auto-reply review-output APIs
 - `automation_conversion_runtime_api.py`: internal runtime trigger and callback APIs
 - `automation_conversion_delivery.py`: focus-send and SOP v1 delivery APIs
-- `automation_conversion_settings.py`: settings, default channel, and model infra APIs
 
 Automation-conversion helper modules are not route owners:
 

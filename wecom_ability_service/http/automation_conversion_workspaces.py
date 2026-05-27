@@ -21,7 +21,6 @@ from ..domains.automation_conversion.service import (
 )
 from ..domains.automation_conversion.sop_service import get_sop_v1_batches_payload
 from ..domains.automation_conversion.workflow_service import (
-    list_conversion_agent_options,
     list_conversion_profile_segment_catalog,
     list_conversion_profile_segment_templates,
 )
@@ -47,13 +46,6 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
         "label": "自动化应答",
         "summary": "模块级应答监控与话术处理底座",
         "endpoint": "api.admin_automation_conversion_auto_reply",
-        "params": {},
-    },
-    {
-        "key": "agent_config",
-        "label": "模型与智能体配置",
-        "summary": "共享智能体本体与大模型配置",
-        "endpoint": "api.admin_automation_conversion_shared_agents",
         "params": {},
     },
 )
@@ -225,7 +217,6 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "message_activity_sync": dict(overview_payload.get("message_activity_sync") or {}),
         "agent_configs": list(agent_config_bundle.get("items") or []),
         "agent_config_total": int(agent_config_bundle.get("total") or 0),
-        "agent_config_href": url_for("api.admin_automation_conversion_shared_agents"),
         "action_urls": {
             "toggle": url_for("api.admin_automation_auto_reply_monitor_toggle"),
             "capture": url_for("api.admin_automation_auto_reply_monitor_capture"),
@@ -238,30 +229,6 @@ def _build_auto_reply_workspace() -> dict[str, object]:
             "review_output_wecom_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_wecom", output_id="__OUTPUT_ID__"),
             "review_output_bazhuayu_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_bazhuayu", output_id="__OUTPUT_ID__"),
         },
-    }
-
-
-def _build_agent_config_workspace() -> dict[str, object]:
-    return {
-        "api_urls": {
-            "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
-            "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
-            "agent_create": url_for("api.api_admin_automation_conversion_agent_create"),
-            "agent_detail_base": url_for("api.api_admin_automation_conversion_agent_detail", agent_code="__AGENT_CODE__"),
-            "agent_draft_base": url_for("api.api_admin_automation_conversion_agent_draft", agent_code="__AGENT_CODE__"),
-            "agent_delete_base": url_for("api.api_admin_automation_conversion_agent_delete", agent_code="__AGENT_CODE__"),
-            "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
-            "model_settings": url_for("api.api_admin_automation_conversion_model_settings"),
-            "model_settings_test": url_for("api.api_admin_automation_conversion_model_settings_test"),
-        },
-        "entry_urls": {
-            "operations": _program_route_or_main("api.admin_automation_program_operations"),
-            "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
-        },
-        "selected_template_id": None,
-        "available_agents": list(list_conversion_agent_options(enabled_only=False).get("items") or []),
-        "initial_templates": [],
-        "initial_template_catalog": [],
     }
 
 
@@ -518,7 +485,6 @@ def _build_program_setup_workspace(program_id: int, *, step: str = "basic", audi
         "base": base_url,
         "basic": url_for("api.api_admin_automation_program_setup_basic", program_id=int(program_id)),
         "entry_channel": url_for("api.api_admin_automation_program_setup_entry_channel", program_id=int(program_id)),
-        "entry_channel_generate_qr": url_for("api.api_admin_automation_conversion_settings_default_channel_generate_qr"),
         "segmentation": url_for("api.api_admin_automation_program_setup_segmentation", program_id=int(program_id)),
         "audience_entry_rule": url_for("api.api_admin_automation_program_setup_audience_entry_rule", program_id=int(program_id)),
         "publish_check": url_for("api.api_admin_automation_program_setup_publish_check", program_id=int(program_id)),
@@ -539,7 +505,6 @@ __all__ = [
     "_automation_conversion_workspace_tabs",
     "_automation_program_workspace_tabs",
     "_build_action_orchestration_workspace",
-    "_build_agent_config_workspace",
     "_build_auto_reply_workspace",
     "_build_execution_records_workspace",
     "_build_flow_design_workspace",

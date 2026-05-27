@@ -86,14 +86,6 @@ async def legacy_admin_channel_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/admin/automation-conversion/settings", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/settings/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/default-channel-settings", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/default-channel-settings/{path:path}", methods=_ALL_METHODS)
-async def legacy_automation_channel_settings_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/api/admin/automation-conversion/tasks/run-due", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu", methods=["POST", "OPTIONS"])
 async def legacy_automation_workspace_routes(request: Request) -> Response:

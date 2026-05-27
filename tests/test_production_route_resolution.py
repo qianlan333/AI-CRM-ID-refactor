@@ -71,48 +71,6 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "POST", "/api/admin/automation-conversion/programs/3/setup/basic") == "production_compat"
-    assert (
-        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/programs/3/setup/basic")
-        == "aicrm_next.production_compat.api"
-    )
-    assert (
-        _owner_for(samples, "POST", "/api/admin/automation-conversion/settings/default-channel/generate")
-        == "production_compat"
-    )
-    assert (
-        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/settings/default-channel/generate")
-        == "aicrm_next.production_compat.api"
-    )
-    assert (
-        _owner_for(samples, "GET", "/api/admin/automation-conversion/default-channel-settings")
-        == "production_compat"
-    )
-    assert (
-        _endpoint_for(samples, "GET", "/api/admin/automation-conversion/default-channel-settings")
-        == "aicrm_next.production_compat.api"
-    )
-    assert (
-        _owner_for(samples, "POST", "/api/admin/automation-conversion/default-channel-settings/generate-qr")
-        == "production_compat"
-    )
-    assert (
-        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/default-channel-settings/generate-qr")
-        == "aicrm_next.production_compat.api"
-    )
-    assert (
-        _owner_for(samples, "GET", "/api/admin/automation-conversion/profile-segment-templates/options")
-        == "production_compat"
-    )
-    assert (
-        _endpoint_for(samples, "GET", "/api/admin/automation-conversion/profile-segment-templates/options")
-        == "aicrm_next.production_compat.api"
-    )
-    assert _owner_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "production_compat"
-    assert (
-        _endpoint_for(samples, "GET", "/api/admin/automation-conversion/agents/options")
-        == "aicrm_next.production_compat.api"
-    )
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/admin/image-library/upload") == "production_compat"
@@ -134,8 +92,11 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
                 "/admin/wechat-pay/products",
                 "/admin/wechat-pay/products*",
                 "/api/admin/wechat-pay/products*",
+                "/api/admin/wecom/tags*",
+                "/api/admin/wecom/tag-groups*",
                 "/api/h5/questionnaires/{slug}/submit",
                 "/api/h5/wechat/oauth*",
+                "/api/admin/image-library/upload",
                 "/p/{page_slug}",
                 "/pay/{product_code}",
                 "/api/products*",
