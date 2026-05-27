@@ -509,6 +509,166 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
     assert 'action="/admin/automation-conversion/programs/7/copy"' in copy_response.text
 
 
+def test_automation_program_setup_steps_render_configured_data(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    program_data = {
+        "program": {
+            "id": 7,
+            "program_name": "202605沙龙商业修行峰会",
+            "program_code": "202505",
+            "status": "active",
+            "description": "生产方案",
+            "updated_at": "2026-05-22T00:00:00Z",
+            "config_json": {},
+        },
+        "summary": {
+            "channel_count": 1,
+            "workflow_count": 1,
+            "latest_execution_at": "2026-05-23 09:00:00",
+            "publish_status_label": "完整自动化已发布",
+        },
+    }
+    setup_payload = {
+        **program_data,
+        "step": "basic",
+        "steps": legacy_routes.SETUP_STEPS,
+        "is_default_program": False,
+        "basic": {},
+        "entry_channel": {"qrcode": {"channel_name": "默认渠道二维码"}},
+        "entry": {
+            "channels": [
+                {
+                    "id": 31,
+                    "channel_name": "默认渠道二维码",
+                    "channel_code": "aqr_260521_b91c",
+                    "channel_type": "qrcode",
+                    "carrier_type": "qrcode",
+                    "status": "active",
+                    "binding_status": "active",
+                    "initial_audience_label": "待填问卷",
+                    "qr_url": "https://wework.qpic.cn/example",
+                    "scene_value": "aqr_260521_b91c",
+                    "welcome_message": "欢迎来到峰会",
+                    "updated_at": "2026-05-23T09:00:00Z",
+                }
+            ],
+            "qrcode_channel": {
+                "id": 31,
+                "channel_name": "默认渠道二维码",
+                "channel_code": "aqr_260521_b91c",
+                "channel_type": "qrcode",
+                "carrier_type": "qrcode",
+                "status": "active",
+                "binding_status": "active",
+                "initial_audience_label": "待填问卷",
+                "qr_url": "https://wework.qpic.cn/example",
+                "scene_value": "aqr_260521_b91c",
+                "welcome_message": "欢迎来到峰会",
+            },
+            "customer_acquisition_links": [
+                {
+                    "link_name": "获客助手链接",
+                    "link_id": "link_001",
+                    "initial_audience_code": "operating",
+                    "status": "active",
+                    "final_url": "https://work.weixin.qq.com/ca/example",
+                    "last_event_at": "2026-05-23T10:00:00Z",
+                }
+            ],
+        },
+        "segmentation": {
+            "selected_questionnaire": {"title": "信息收集测试"},
+            "default_strategy": "normal_question_rules",
+            "normal_question_rules": {
+                "segmentation_question_title": "你当前最关注什么",
+                "category_rows": [
+                    {
+                        "category_name": "入门用户",
+                        "description": "刚开始了解",
+                        "option_ids": [1],
+                        "option_snapshots": [{"id": 1, "option_text": "先了解"}],
+                    }
+                ],
+                "unassigned_options": [],
+            },
+            "score_segments": {
+                "enabled": True,
+                "rows": [{"segment_name": "高意向", "segment_key": "high", "min_score": 80, "max_score": 100}],
+            },
+            "profile_dimension": {"template_id": 9},
+        },
+        "audience_entry_rule": {
+            "normalized_cards": {
+                "channel_enter": {
+                    "event_label": "入口进入后",
+                    "condition_type": "any_entry_channel",
+                    "condition_options": {"any_entry_channel": "任一当前方案入口"},
+                    "target_audience_code": "pending_questionnaire",
+                    "target_options": {"pending_questionnaire": "待填问卷"},
+                    "enabled": True,
+                },
+                "questionnaire_submitted": {
+                    "event_label": "问卷提交后",
+                    "condition_type": "questionnaire_id_matched",
+                    "condition_options": {"questionnaire_id_matched": "当前方案问卷提交"},
+                    "target_audience_code": "operating",
+                    "target_options": {"operating": "运营中"},
+                    "enabled": True,
+                },
+            },
+            "manual_cards": [{"event_label": "成交标记", "target_label": "已转化"}],
+        },
+        "operations": {
+            "active_count": 1,
+            "tasks": [
+                {
+                    "id": 8,
+                    "task_name": "首日欢迎触达",
+                    "description": "入池后第一天触达",
+                    "group_name": "峰会跟进",
+                    "status": "active",
+                    "trigger_type": "scheduled_daily",
+                    "send_time": "09:30",
+                    "target_audience_label": "运营中",
+                    "content_mode": "unified",
+                    "updated_at": "2026-05-23T11:00:00Z",
+                }
+            ],
+        },
+        "publish_check": {
+            "entry": {"items": [{"label": "至少有一个当前方案入口", "passed": True, "message": "已完成"}]},
+            "full": {"items": [{"label": "存在启用中的运营任务", "passed": True, "message": "已完成"}]},
+        },
+    }
+
+    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(
+        legacy_routes,
+        "get_automation_program_setup_payload",
+        lambda program_id, *, step="basic": {**setup_payload, "step": step},
+    )
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    assertions = {
+        "entry": ["默认渠道二维码", "aqr_260521_b91c", "获客助手链接", "https://wework.qpic.cn/example"],
+        "segmentation": ["信息收集测试", "你当前最关注什么", "入门用户", "高意向"],
+        "entry-rule": ["入口进入后", "任一当前方案入口", "问卷提交后", "成交标记"],
+        "operations": ["首日欢迎触达", "峰会跟进", "运营中", "unified"],
+        "publish": ["入口发布检查", "至少有一个当前方案入口", "完整自动化发布检查", "存在启用中的运营任务"],
+    }
+    for step, markers in assertions.items():
+        response = client.get(f"/admin/automation-conversion/programs/7/setup?step={step}")
+        assert response.status_code == 200, step
+        for marker in markers:
+            assert marker in response.text, (step, marker)
+        assert "Not Found" not in response.text
+
+
 def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 

@@ -22,13 +22,31 @@
   .setup-summary-item { display: grid; gap: 8px; padding: 16px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fafc; }
   .setup-summary-item span { color: #64748b; font-size: 13px; font-weight: 800; }
   .setup-summary-item strong { color: #111827; font-size: 24px; }
+  .setup-two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .72fr); gap: 16px; align-items: start; }
+  .setup-table-wrap { overflow: auto; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; }
+  .setup-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  .setup-table th, .setup-table td { padding: 13px 14px; border-bottom: 1px solid rgba(15,23,42,.06); text-align: left; vertical-align: top; }
+  .setup-table th { background: #f8fafc; color: #64748b; font-size: 13px; font-weight: 900; }
+  .setup-table td { color: #1f2937; }
+  .setup-table tr:last-child td { border-bottom: 0; }
+  .setup-chip-list, .setup-option-pool { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .setup-chip { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; background: #eef4ff; color: #1456f0; font-size: 12px; font-weight: 800; }
+  .setup-rule-grid { display: grid; gap: 14px; }
+  .setup-rule-card { display: grid; gap: 12px; padding: 16px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #fbfdff; }
+  .setup-result-card { display: grid; gap: 8px; padding: 16px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fafc; }
+  .setup-result-row { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; word-break: break-all; }
+  .setup-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .setup-check-list { display: grid; gap: 10px; }
+  .setup-check-item { display: grid; gap: 4px; padding: 13px 14px; border-radius: 10px; background: #fff7ed; color: #9a3412; }
+  .setup-check-item.is-pass { background: #ecfdf3; color: #067647; }
+  .setup-check-item.is-fail { background: #fef2f2; color: #991b1b; }
   .setup-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
   .setup-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border: 1px solid rgba(37,99,235,.18); border-radius: 10px; background: #eef4ff; color: #1456f0; font-weight: 800; text-decoration: none; cursor: pointer; }
   .setup-action.is-primary { background: #2563eb; color: #fff; box-shadow: 0 10px 22px rgba(37,99,235,.18); }
   .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
   .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 1080px) {
-    .setup-steps, .setup-form-grid, .setup-summary-grid { grid-template-columns: 1fr; }
+    .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid { grid-template-columns: 1fr; }
     .setup-footer { align-items: stretch; flex-direction: column; }
   }
 </style>
@@ -108,25 +126,145 @@
     </div>
   </section>
   {% elif current_step == "entry" %}
+  {% set entry = workspace.entry or {} %}
+  {% set qrcode = entry.qrcode_channel or {} %}
   <section class="setup-panel">
     <div>
       <h2>入口渠道</h2>
-      <p class="setup-muted">入口渠道在方案内统一绑定，渠道码中心只管理渠道本体。</p>
+      <p class="setup-muted">读取当前方案已绑定的二维码、渠道码和企业微信获客助手入口。</p>
     </div>
     <div class="setup-summary-grid">
-      <article class="setup-summary-item"><span>已绑定入口</span><strong>{{ summary.channel_count or 0 }}</strong></article>
+      <article class="setup-summary-item"><span>已绑定入口</span><strong>{{ (entry.channels or [])|length }}</strong></article>
       <article class="setup-summary-item"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
       <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
+    </div>
+    <div class="setup-two-col">
+      <article class="setup-result-card">
+        <h3>当前二维码入口</h3>
+        <div class="setup-result-row"><strong>渠道名称</strong><span>{{ qrcode.channel_name or "-" }}</span></div>
+        <div class="setup-result-row"><strong>渠道编码</strong><span>{{ qrcode.channel_code or "-" }}</span></div>
+        <div class="setup-result-row"><strong>状态</strong><span>{{ qrcode.status or "-" }} / {{ qrcode.binding_status or "-" }}</span></div>
+        <div class="setup-result-row"><strong>初始人群</strong><span>{{ qrcode.initial_audience_label or qrcode.initial_audience_code or "-" }}</span></div>
+        <div class="setup-result-row"><strong>scene_value</strong><span>{{ qrcode.scene_value or "-" }}</span></div>
+        <div class="setup-result-row"><strong>二维码链接</strong><span>{{ qrcode.qr_url or "-" }}</span></div>
+        <div class="setup-result-row"><strong>欢迎语</strong><span>{{ qrcode.welcome_message or "-" }}</span></div>
+      </article>
+      <article class="setup-result-card">
+        <h3>入口配置块</h3>
+        {% set entry_block = workspace.entry_channel or {} %}
+        <div class="setup-result-row"><strong>二维码配置</strong><span>{{ "已保存" if entry_block.qrcode else "未保存" }}</span></div>
+        <div class="setup-result-row"><strong>获客助手</strong><span>{{ (entry.customer_acquisition_links or [])|length }} 条</span></div>
+        <div class="setup-result-row"><strong>免验证</strong><span>{{ "是" if qrcode.auto_accept_friend else "否" }}</span></div>
+        <div class="setup-result-row"><strong>标签</strong><span>{{ qrcode.entry_tag_group_name or "-" }} / {{ qrcode.entry_tag_name or "-" }}</span></div>
+      </article>
+    </div>
+    <div class="setup-table-wrap">
+      <table class="setup-table">
+        <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>初始人群</th><th>链接/二维码</th><th>更新时间</th></tr></thead>
+        <tbody>
+          {% for channel in entry.channels or [] %}
+          <tr>
+            <td>{{ channel.channel_type }} / {{ channel.carrier_type }}</td>
+            <td>{{ channel.channel_name or channel.channel_code }}</td>
+            <td>{{ channel.status }} / {{ channel.binding_status }}</td>
+            <td>{{ channel.initial_audience_label or channel.initial_audience_code }}</td>
+            <td>{{ channel.final_url or channel.link_url or channel.qr_url or channel.scene_value or "-" }}</td>
+            <td>{{ channel.updated_at or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">当前方案还没有绑定入口。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="setup-table-wrap">
+      <table class="setup-table">
+        <thead><tr><th>获客助手</th><th>link_id</th><th>初始人群</th><th>状态</th><th>final_url</th><th>最近事件</th></tr></thead>
+        <tbody>
+          {% for link in entry.customer_acquisition_links or [] %}
+          <tr>
+            <td>{{ link.link_name or link.link_id }}</td>
+            <td>{{ link.link_id }}</td>
+            <td>{{ link.initial_audience_code }}</td>
+            <td>{{ link.status }}</td>
+            <td>{{ link.final_url or link.link_url or "-" }}</td>
+            <td>{{ link.last_event_at or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">当前方案还没有获客助手入口。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     <div class="setup-actions">
       <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">编辑入口渠道</a>
     </div>
   </section>
   {% elif current_step == "segmentation" %}
+  {% set segmentation = workspace.segmentation or {} %}
+  {% set normal = segmentation.normal_question_rules or {} %}
+  {% set score = segmentation.score_segments or {} %}
+  {% set profile = segmentation.profile_dimension or {} %}
   <section class="setup-panel">
     <div>
       <h2>分层规则</h2>
-      <p class="setup-muted">当前 Next 方案页保留分层配置入口，具体问卷和画像规则继续在方案数据中落表。</p>
+      <p class="setup-muted">读取当前方案的问卷选择、普通问卷选项分类、总分分层和画像模板配置。</p>
+    </div>
+    <div class="setup-summary-grid">
+      <article class="setup-summary-item"><span>当前问卷</span><strong>{{ (segmentation.selected_questionnaire or {}).title or "未绑定问卷" }}</strong></article>
+      <article class="setup-summary-item"><span>默认策略</span><strong>{{ segmentation.default_strategy or "normal_question_rules" }}</strong></article>
+      <article class="setup-summary-item"><span>画像模板</span><strong>{{ profile.template_id or "未绑定" }}</strong></article>
+    </div>
+    <div class="setup-two-col">
+      <article class="setup-result-card">
+        <h3>普通问卷规则</h3>
+        <div class="setup-result-row"><strong>分层题目</strong><span>{{ normal.segmentation_question_title or (normal.selected_question or {}).title or "-" }}</span></div>
+        <div class="setup-result-row"><strong>分类数量</strong><span>{{ (normal.category_rows or [])|length }}</span></div>
+        <div class="setup-result-row"><strong>未分配选项</strong><span>{{ (normal.unassigned_options or [])|length }}</span></div>
+        <div class="setup-chip-list">
+          {% for category in normal.category_rows or [] %}
+          <span class="setup-chip">{{ category.category_name }} · {{ (category.option_ids or [])|length }} 项</span>
+          {% else %}
+          <span class="setup-muted">还没有普通问卷分类。</span>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="setup-result-card">
+        <h3>总分分层</h3>
+        <div class="setup-result-row"><strong>状态</strong><span>{{ "启用" if score.enabled else "未启用" }}</span></div>
+        <div class="setup-result-row"><strong>分层档位</strong><span>{{ (score.rows or [])|length }}</span></div>
+        <div class="setup-chip-list">
+          {% for row in score.rows or [] %}
+          <span class="setup-chip">{{ row.segment_name or row.segment_key }}：{{ row.min_score }}-{{ row.max_score }}</span>
+          {% else %}
+          <span class="setup-muted">还没有总分分层档位。</span>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+    <div class="setup-table-wrap">
+      <table class="setup-table">
+        <thead><tr><th>分类</th><th>说明</th><th>已选选项</th></tr></thead>
+        <tbody>
+          {% for category in normal.category_rows or [] %}
+          <tr>
+            <td>{{ category.category_name or category.category_key }}</td>
+            <td>{{ category.description or "-" }}</td>
+            <td>
+              <div class="setup-chip-list">
+                {% for option in category.option_snapshots or [] %}
+                <span class="setup-chip">{{ option.option_text }}</span>
+                {% else %}
+                <span class="setup-muted">未选择选项</span>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">当前方案还没有配置选项分类。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     <div class="setup-actions">
       <a class="setup-action" href="/admin/questionnaires">问卷模块</a>
@@ -134,40 +272,99 @@
     </div>
   </section>
   {% elif current_step == "entry-rule" %}
+  {% set rule = workspace.audience_entry_rule or {} %}
+  {% set cards = rule.normalized_cards or {} %}
   <section class="setup-panel">
     <div>
       <h2>入池规则</h2>
-      <p class="setup-muted">配置用户从入口进入方案后的初始人群和阶段流转规则。</p>
+      <p class="setup-muted">读取入口进入后、问卷提交后的目标人群和启用状态。</p>
+    </div>
+    <div class="setup-rule-grid">
+      {% for key in ["channel_enter", "questionnaire_submitted"] %}
+      {% set card = cards[key] or {} %}
+      <article class="setup-rule-card">
+        <h3>{{ card.event_label or key }}</h3>
+        <div class="setup-summary-grid">
+          <article class="setup-summary-item"><span>条件</span><strong>{{ (card.condition_options or {}).get(card.condition_type, card.condition_type) }}</strong></article>
+          <article class="setup-summary-item"><span>目标人群</span><strong>{{ (card.target_options or {}).get(card.target_audience_code, card.target_audience_code) }}</strong></article>
+          <article class="setup-summary-item"><span>启用状态</span><strong>{{ "启用" if card.enabled else "停用" }}</strong></article>
+        </div>
+      </article>
+      {% endfor %}
+      <article class="setup-rule-card">
+        <h3>人工 / 异常规则</h3>
+        <div class="setup-chip-list">
+          {% for item in rule.manual_cards or [] %}
+          <span class="setup-chip">{{ item.event_label }} -> {{ item.target_label }}</span>
+          {% endfor %}
+        </div>
+      </article>
     </div>
     <div class="setup-actions">
       <a class="setup-action is-primary" href="{{ urls['base'] }}?step=operations">下一步</a>
     </div>
   </section>
   {% elif current_step == "operations" %}
+  {% set operations = workspace.operations or {} %}
   <section class="setup-panel">
     <div>
       <h2>运营编排</h2>
-      <p class="setup-muted">运营动作和任务流按当前方案独立统计，不复用默认方案运行数据。</p>
+      <p class="setup-muted">读取当前方案已有运营任务；下方继续加载 Next 运营任务面板。</p>
     </div>
     <div class="setup-summary-grid">
-      <article class="setup-summary-item"><span>运营动作</span><strong>{{ summary.workflow_count or 0 }}</strong></article>
+      <article class="setup-summary-item"><span>运营任务</span><strong>{{ (operations.tasks or [])|length }}</strong></article>
+      <article class="setup-summary-item"><span>启用中</span><strong>{{ operations.active_count or 0 }}</strong></article>
       <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
-      <article class="setup-summary-item"><span>方案状态</span><strong>{{ status_label }}</strong></article>
     </div>
+    <div class="setup-table-wrap">
+      <table class="setup-table">
+        <thead><tr><th>任务</th><th>分组</th><th>状态</th><th>触发</th><th>目标人群</th><th>内容模式</th><th>更新时间</th></tr></thead>
+        <tbody>
+          {% for task in operations.tasks or [] %}
+          <tr>
+            <td><strong>{{ task.task_name or ("任务 " ~ task.id) }}</strong><br><span class="setup-muted">{{ task.description or "" }}</span></td>
+            <td>{{ task.group_name or "未分组" }}</td>
+            <td>{{ task.status }}</td>
+            <td>{{ task.trigger_type }} {{ task.send_time or "" }}</td>
+            <td>{{ task.target_audience_label or task.target_audience_code }}</td>
+            <td>{{ task.content_mode }}</td>
+            <td>{{ task.updated_at or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">当前方案还没有运营任务。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% set operations_workspace = workspace.operations_workspace or {} %}
+    {% include "admin_console/_automation_operation_orchestration_panel.html" %}
     <div class="setup-actions">
       <a class="setup-action is-primary" href="{{ urls['base'] }}?step=publish">下一步</a>
     </div>
   </section>
   {% else %}
+  {% set checks = workspace.publish_check or {} %}
   <section class="setup-panel">
     <div>
       <h2>检查并发布</h2>
-      <p class="setup-muted">发布前检查基础信息、入口渠道、分层规则和运营编排是否完整。</p>
+      <p class="setup-muted">读取入口发布和完整自动化发布的逐项检查结果。</p>
     </div>
-    <div class="setup-summary-grid">
-      <article class="setup-summary-item"><span>基础信息</span><strong>{{ "已填写" if program.program_name and program.program_code else "待完善" }}</strong></article>
-      <article class="setup-summary-item"><span>入口渠道</span><strong>{{ "已配置" if summary.channel_count else "待配置" }}</strong></article>
-      <article class="setup-summary-item"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
+    <div class="setup-check-grid">
+      {% for key, title in [("entry", "入口发布检查"), ("full", "完整自动化发布检查")] %}
+      {% set group = checks[key] or {} %}
+      <article class="setup-result-card">
+        <h3>{{ title }}</h3>
+        <div class="setup-check-list">
+          {% for item in group["items"] or [] %}
+          <div class="setup-check-item {% if item.passed %}is-pass{% else %}is-fail{% endif %}">
+            <strong>{{ "通过" if item.passed else "待处理" }}</strong>
+            <span>{{ item.label }}</span>
+            {% if not item.passed %}<span>{{ item.message }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
     </div>
     <div class="setup-actions">
       <a class="setup-action is-primary" href="{{ urls['overview'] }}">查看概览</a>
