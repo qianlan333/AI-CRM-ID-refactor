@@ -52,15 +52,19 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/post_phase7_cleanup_owner_standing_approval.yaml",
     "docs/development/post_phase7_cleanup_agent_outputs_exact_route_cleanup.md",
     "docs/development/post_phase7_cleanup_agent_outputs_exact_route_cleanup.yaml",
+    "docs/development/post_phase7_cleanup_legacy_runtime_recheck.md",
+    "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
     "docs/development/phase_execution_state.yaml",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
     "docs/development/legacy_replacement_backlog.md",
     "docs/development/legacy_replacement_backlog.yaml",
     "tools/check_post_phase7_cleanup_agent_outputs_exact_route_cleanup.py",
+    "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_post_phase7_cleanup_agent_outputs_exact_route_cleanup.py",
+    "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -204,10 +208,16 @@ def build_report() -> dict[str, Any]:
     if "exact /api/admin/automation-conversion/agent-outputs production_compat decorator" not in backlog_text:
         blockers.append("legacy replacement backlog must record exact-entry cleanup evidence")
 
-    if state.get("current_phase") != "post_phase7_cleanup_agent_outputs_exact_route_cleanup":
-        blockers.append("phase state current_phase must be agent-outputs exact-route cleanup")
-    if state.get("active_candidate") != EXPECTED_ROUTE_FAMILY:
-        blockers.append("phase state active_candidate must be agent-outputs route family")
+    current_phase = state.get("current_phase")
+    if current_phase not in {
+        "post_phase7_cleanup_agent_outputs_exact_route_cleanup",
+        "post_phase7_cleanup_legacy_runtime_recheck",
+    }:
+        blockers.append("phase state current_phase must be agent-outputs cleanup or follow-up legacy runtime recheck")
+    if current_phase == "post_phase7_cleanup_agent_outputs_exact_route_cleanup" and state.get("active_candidate") != EXPECTED_ROUTE_FAMILY:
+        blockers.append("phase state active_candidate must be agent-outputs route family during cleanup")
+    if current_phase == "post_phase7_cleanup_legacy_runtime_recheck" and state.get("active_candidate") != "legacy_runtime_recheck_after_agent_outputs_exact_cleanup":
+        blockers.append("phase state active_candidate must be post-#820 legacy runtime recheck during follow-up")
     phase = _dict(state.get("post_phase7_cleanup_agent_outputs_exact_route_cleanup"))
     if phase.get("exact_production_compat_entry_removed") is not True:
         blockers.append("phase state must record exact production_compat entry removal")

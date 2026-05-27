@@ -22,6 +22,8 @@ def test_source_and_authorizations() -> None:
     assert data["source_prs"]["task_groups_legacy_runtime_recheck"] == 816
     assert data["source_prs"]["cleanup_track_acceptance"] == 817
     assert data["source_prs"]["workflow_nodes_owner_approved_cleanup"] == 818
+    assert data["source_prs"]["post_818_legacy_runtime_recheck"] == 819
+    assert data["source_prs"]["agent_outputs_exact_route_cleanup"] == 820
     for value in data["authorizations"].values():
         assert value is False
 
@@ -33,6 +35,9 @@ def test_task_groups_cleanup_handoff_and_no_runtime_deletion() -> None:
     assert handoff["task_groups_production_compat_cleanup_executed"] is True
     assert handoff["workflow_nodes_production_compat_cleanup_executed"] is True
     assert handoff["workflow_nodes_production_compat_hook_absent"] is True
+    assert handoff["agent_outputs_exact_production_compat_cleanup_executed"] is True
+    assert handoff["agent_outputs_exact_production_compat_hook_absent"] is True
+    assert handoff["agent_outputs_wildcard_production_compat_retained"] is True
     assert handoff["runtime_deletion_executed"] is False
     cleanup = data["cleanup_execution"]
     assert cleanup["runtime_deletion_executed"] is False
@@ -44,6 +49,9 @@ def test_no_safe_runtime_candidate_selected() -> None:
     result = checker.load_yaml(PLAN_YAML)["runtime_candidate_result"]
     assert result["safe_runtime_cleanup_candidate_selected"] is False
     assert result["no_safe_runtime_cleanup_candidate"] is True
+    assert result["safe_deletion_candidates"] == []
+    assert result["blocked_candidates"]
+    assert result["retained_old_code_categories"]
     assert result["blocked_reason"]
 
 
@@ -52,6 +60,8 @@ def test_recheck_proves_task_groups_and_workflow_nodes_absent_but_unrelated_rout
     assert '"/api/admin/automation-conversion/task-groups"' not in text
     assert '"/api/admin/automation-conversion/task-groups/{path:path}"' not in text
     assert '"/api/admin/automation-conversion/workflow-nodes/{path:path}"' not in text
+    assert '"/api/admin/automation-conversion/agent-outputs"' not in text
+    assert '"/api/admin/automation-conversion/agent-outputs/{path:path}"' in text
     assert "wildcard_router" in text
     for route in checker.RETAINED_PRODUCTION_COMPAT_ROUTES:
         assert f'"{route}"' in text or f"'{route}'" in text

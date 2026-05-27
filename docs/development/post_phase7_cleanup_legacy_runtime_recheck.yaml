@@ -8,6 +8,8 @@ source_prs:
   task_groups_legacy_runtime_recheck: 816
   cleanup_track_acceptance: 817
   workflow_nodes_owner_approved_cleanup: 818
+  post_818_legacy_runtime_recheck: 819
+  agent_outputs_exact_route_cleanup: 820
 
 authorizations:
   runtime_deletion_authorized: false
@@ -22,6 +24,9 @@ exact_route_cleanup_handoff:
   task_groups_production_compat_cleanup_executed: true
   workflow_nodes_production_compat_cleanup_executed: true
   workflow_nodes_production_compat_hook_absent: true
+  agent_outputs_exact_production_compat_cleanup_executed: true
+  agent_outputs_exact_production_compat_hook_absent: true
+  agent_outputs_wildcard_production_compat_retained: true
   wildcard_cleanup_executed: false
   runtime_deletion_executed: false
   delete_ready: false
@@ -31,6 +36,11 @@ reference_recheck:
   workflow_nodes_production_compat_hook_absent: true
   workflow_nodes_manifest_owner_next: true
   workflow_nodes_legacy_fallback_allowed: false
+  agent_outputs_exact_production_compat_hook_absent: true
+  agent_outputs_wildcard_production_compat_retained: true
+  agent_outputs_manifest_owner_production_compat: true
+  agent_outputs_legacy_fallback_allowed: true
+  agent_outputs_legacy_runtime_references_retained: true
   other_production_compat_routes_retained: true
   wildcard_router_retained: true
   fallback_references_retained: true
@@ -48,9 +58,26 @@ reference_recheck:
 runtime_candidate_result:
   safe_runtime_cleanup_candidate_selected: false
   no_safe_runtime_cleanup_candidate: true
-  blocked_reason:
+  safe_deletion_candidates: []
+  blocked_candidates:
+    - route_family: /api/admin/automation-conversion/agent-outputs*
+      blocked_reason:
+        - agent_outputs_wildcard_production_compat_retained
+        - agent_outputs_export_subpath_fallback_retained
+        - agent_outputs_legacy_runtime_references_retained
+        - manifest_backlog_retain_route_family
+  retained_old_code_categories:
+    - agent_outputs_subpath_fallback_retained
+    - agent_outputs_legacy_runtime_retained
     - other_production_compat_routes_retained
-    - workflows_tasks_agents_production_compat_routes_retained
+    - wildcard_router_retained
+    - high_risk_external_runtime_retained
+    - legacy_runtime_still_referenced_by_retained_production_compat
+  blocked_reason:
+    - agent_outputs_wildcard_production_compat_retained
+    - agent_outputs_legacy_runtime_references_retained
+    - other_production_compat_routes_retained
+    - workflows_tasks_agents_agent_runs_action_templates_production_compat_routes_retained
     - high_risk_external_runtime_retained
     - payment_oauth_wecom_public_submit_timer_outbound_retained
     - wildcard_router_retained
@@ -68,6 +95,8 @@ business_continuity:
   production_behavior_unchanged: true
   task_groups_cleanup_retained: true
   workflow_nodes_cleanup_retained: true
+  agent_outputs_exact_cleanup_retained: true
+  agent_outputs_wildcard_fallback_retained: true
   unrelated_production_compat_retained: true
   wildcard_router_retained: true
   legacy_runtime_retained: true
@@ -77,3 +106,4 @@ business_continuity:
 next_bundle:
   if_safe_candidate_selected: post_phase7_cleanup_first_legacy_runtime_removal_bundle
   if_no_safe_candidate: post_phase7_cleanup_track_acceptance_bundle
+  next_recommended_target: /api/admin/automation-conversion/agent-outputs/{path:path} subpath replacement package

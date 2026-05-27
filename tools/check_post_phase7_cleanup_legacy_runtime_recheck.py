@@ -25,7 +25,11 @@ EXPECTED_STATUS = "post_phase7_cleanup_legacy_runtime_recheck"
 EXPECTED_BUNDLE = "post_phase7_cleanup_legacy_runtime_recheck_bundle"
 TASK_GROUPS_EXACT = "/api/admin/automation-conversion/task-groups"
 WORKFLOW_NODES_EXACT = "/api/admin/automation-conversion/workflow-nodes"
+AGENT_OUTPUTS_EXACT = "/api/admin/automation-conversion/agent-outputs"
+AGENT_OUTPUTS_WILDCARD = "/api/admin/automation-conversion/agent-outputs/{path:path}"
 RETAINED_PRODUCTION_COMPAT_ROUTES = (
+    AGENT_OUTPUTS_WILDCARD,
+    "/api/admin/automation-conversion/agent-runs/{path:path}",
     "/api/admin/automation-conversion/tasks",
     "/api/admin/automation-conversion/tasks/{path:path}",
     "/api/admin/automation-conversion/workflows",
@@ -41,11 +45,13 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
     "docs/development/phase_execution_state.yaml",
     "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
+    "tools/check_post_phase7_cleanup_agent_outputs_exact_route_cleanup.py",
     "tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
+    "tests/test_post_phase7_cleanup_agent_outputs_exact_route_cleanup.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -117,6 +123,10 @@ def build_report() -> dict[str, Any]:
         blockers.append("source_prs.cleanup_track_acceptance must be 817")
     if source_prs.get("workflow_nodes_owner_approved_cleanup") != 818:
         blockers.append("source_prs.workflow_nodes_owner_approved_cleanup must be 818")
+    if source_prs.get("post_818_legacy_runtime_recheck") != 819:
+        blockers.append("source_prs.post_818_legacy_runtime_recheck must be 819")
+    if source_prs.get("agent_outputs_exact_route_cleanup") != 820:
+        blockers.append("source_prs.agent_outputs_exact_route_cleanup must be 820")
 
     authorizations = _dict(data.get("authorizations"))
     for key in (
@@ -139,6 +149,12 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow-nodes production_compat cleanup handoff must be true")
     if handoff.get("workflow_nodes_production_compat_hook_absent") is not True:
         blockers.append("workflow-nodes production_compat hook must be absent in handoff")
+    if handoff.get("agent_outputs_exact_production_compat_cleanup_executed") is not True:
+        blockers.append("agent-outputs exact production_compat cleanup handoff must be true")
+    if handoff.get("agent_outputs_exact_production_compat_hook_absent") is not True:
+        blockers.append("agent-outputs exact production_compat hook must be absent in handoff")
+    if handoff.get("agent_outputs_wildcard_production_compat_retained") is not True:
+        blockers.append("agent-outputs wildcard production_compat must be retained in handoff")
     for key in ("wildcard_cleanup_executed", "runtime_deletion_executed", "delete_ready"):
         if handoff.get(key) is not False:
             blockers.append(f"exact_route_cleanup_handoff.{key} must be false")
@@ -148,6 +164,11 @@ def build_report() -> dict[str, Any]:
         "task_groups_production_compat_hooks_absent",
         "workflow_nodes_production_compat_hook_absent",
         "workflow_nodes_manifest_owner_next",
+        "agent_outputs_exact_production_compat_hook_absent",
+        "agent_outputs_wildcard_production_compat_retained",
+        "agent_outputs_manifest_owner_production_compat",
+        "agent_outputs_legacy_fallback_allowed",
+        "agent_outputs_legacy_runtime_references_retained",
         "other_production_compat_routes_retained",
         "wildcard_router_retained",
         "fallback_references_retained",
@@ -167,6 +188,15 @@ def build_report() -> dict[str, Any]:
         blockers.append("safe_runtime_cleanup_candidate_selected must be false")
     if result.get("no_safe_runtime_cleanup_candidate") is not True:
         blockers.append("no_safe_runtime_cleanup_candidate must be true")
+    if _list(result.get("safe_deletion_candidates")):
+        blockers.append("safe_deletion_candidates must be empty")
+    blocked_candidates = _list(result.get("blocked_candidates"))
+    if not blocked_candidates:
+        blockers.append("blocked_candidates must not be empty")
+    elif not any(isinstance(item, dict) and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*" for item in blocked_candidates):
+        blockers.append("blocked_candidates must include agent-outputs")
+    if not _list(result.get("retained_old_code_categories")):
+        blockers.append("retained_old_code_categories must not be empty")
     if not _list(result.get("blocked_reason")):
         blockers.append("blocked_reason must list why runtime deletion is unsafe")
 
@@ -189,6 +219,8 @@ def build_report() -> dict[str, Any]:
     for key in (
         "task_groups_cleanup_retained",
         "workflow_nodes_cleanup_retained",
+        "agent_outputs_exact_cleanup_retained",
+        "agent_outputs_wildcard_fallback_retained",
         "unrelated_production_compat_retained",
         "wildcard_router_retained",
     ):
@@ -204,6 +236,10 @@ def build_report() -> dict[str, Any]:
         blockers.append("task-groups production_compat hooks must remain absent after #815")
     if _contains_decorator(compat_text, f"{WORKFLOW_NODES_EXACT}/{{path:path}}"):
         blockers.append("workflow-nodes production_compat hook must be absent after #818")
+    if _contains_decorator(compat_text, AGENT_OUTPUTS_EXACT):
+        blockers.append("agent-outputs exact production_compat hook must be absent after #820")
+    if not _contains_decorator(compat_text, AGENT_OUTPUTS_WILDCARD):
+        blockers.append("agent-outputs wildcard production_compat hook must remain after #820")
     if "wildcard_router" not in compat_text:
         blockers.append("wildcard_router must remain retained")
     for route in RETAINED_PRODUCTION_COMPAT_ROUTES:
@@ -212,6 +248,7 @@ def build_report() -> dict[str, Any]:
 
     task_groups = _route_manifest("/api/admin/automation-conversion/task-groups*")
     workflow_nodes = _route_manifest("/api/admin/automation-conversion/workflow-nodes*")
+    agent_outputs = _route_manifest("/api/admin/automation-conversion/agent-outputs*")
     if task_groups.get("current_runtime_owner") != "aicrm_next.automation_engine":
         blockers.append("task-groups manifest owner must remain Next-native after #815")
     if task_groups.get("legacy_fallback_allowed") is not False:
@@ -220,13 +257,17 @@ def build_report() -> dict[str, Any]:
         blockers.append("workflow-nodes manifest owner must be next after #818")
     if workflow_nodes.get("legacy_fallback_allowed") is not False:
         blockers.append("workflow-nodes legacy_fallback_allowed must be false after #818")
+    if agent_outputs.get("current_runtime_owner") != "production_compat":
+        blockers.append("agent-outputs manifest owner must remain production_compat while wildcard is retained")
+    if agent_outputs.get("legacy_fallback_allowed") is not True:
+        blockers.append("agent-outputs legacy_fallback_allowed must remain true while wildcard is retained")
 
     if state.get("current_phase") != EXPECTED_STATUS:
         blockers.append(f"phase_execution_state.current_phase must be {EXPECTED_STATUS}")
-    if state.get("active_candidate") != "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup":
-        blockers.append("active_candidate must be legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup")
-    if state.get("last_merged_pr") != "#818":
-        blockers.append("last_merged_pr must record #818")
+    if state.get("active_candidate") != "legacy_runtime_recheck_after_agent_outputs_exact_cleanup":
+        blockers.append("active_candidate must be legacy_runtime_recheck_after_agent_outputs_exact_cleanup")
+    if state.get("last_merged_pr") != "#820":
+        blockers.append("last_merged_pr must record #820")
     if set(_list(state.get("next_allowed_actions"))) != {"post_phase7_cleanup_track_acceptance_bundle"}:
         blockers.append("next_allowed_actions must select cleanup track acceptance")
     phase_state = _dict(state.get("post_phase7_cleanup_legacy_runtime_recheck"))
@@ -242,6 +283,10 @@ def build_report() -> dict[str, Any]:
         blockers.append("state delete_ready must be false")
     if phase_state.get("workflow_nodes_production_compat_hook_absent") is not True:
         blockers.append("state workflow_nodes_production_compat_hook_absent must be true")
+    if phase_state.get("agent_outputs_exact_production_compat_hook_absent") is not True:
+        blockers.append("state agent_outputs_exact_production_compat_hook_absent must be true")
+    if phase_state.get("agent_outputs_wildcard_production_compat_retained") is not True:
+        blockers.append("state agent_outputs_wildcard_production_compat_retained must be true")
 
     changed = _changed_files()
     details["changed_files"] = sorted(changed)

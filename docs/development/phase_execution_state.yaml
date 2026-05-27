@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_agent_outputs_exact_route_cleanup
-active_candidate: /api/admin/automation-conversion/agent-outputs*
+current_phase: post_phase7_cleanup_legacy_runtime_recheck
+active_candidate: legacy_runtime_recheck_after_agent_outputs_exact_cleanup
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#819"
-last_attempted_action: post_phase7_cleanup_agent_outputs_exact_route_cleanup_bundle
+last_merged_pr: "#820"
+last_attempted_action: post_phase7_cleanup_legacy_runtime_recheck_bundle
 last_created_pr: pending
-recommended_next_pr: post_phase7_cleanup_legacy_runtime_recheck_bundle
+recommended_next_pr: post_phase7_cleanup_track_acceptance_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -423,7 +423,7 @@ completed_steps:
   - post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed
 
 next_allowed_actions:
-  - post_phase7_cleanup_legacy_runtime_recheck_bundle
+  - post_phase7_cleanup_track_acceptance_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -1048,6 +1048,8 @@ post_phase7_cleanup_legacy_runtime_recheck:
     task_groups_legacy_runtime_recheck: "#816"
     cleanup_track_acceptance: "#817"
     workflow_nodes_owner_approved_cleanup: "#818"
+    post_818_legacy_runtime_recheck: "#819"
+    agent_outputs_exact_route_cleanup: "#820"
   task_groups_fallback_removal_executed: true
   task_groups_production_compat_cleanup_executed: true
   task_groups_production_compat_hooks_absent: true
@@ -1055,6 +1057,12 @@ post_phase7_cleanup_legacy_runtime_recheck:
   workflow_nodes_production_compat_hook_absent: true
   workflow_nodes_manifest_owner_next: true
   workflow_nodes_legacy_fallback_allowed: false
+  agent_outputs_exact_production_compat_cleanup_executed: true
+  agent_outputs_exact_production_compat_hook_absent: true
+  agent_outputs_wildcard_production_compat_retained: true
+  agent_outputs_manifest_owner_production_compat: true
+  agent_outputs_legacy_fallback_allowed: true
+  agent_outputs_legacy_runtime_references_retained: true
   other_production_compat_routes_retained: true
   wildcard_router_retained: true
   fallback_references_retained: true
@@ -1063,9 +1071,26 @@ post_phase7_cleanup_legacy_runtime_recheck:
   wecom_ability_service_references_retained: true
   safe_runtime_cleanup_candidate_selected: false
   no_safe_runtime_cleanup_candidate: true
-  blocked_reason:
+  safe_deletion_candidates: []
+  blocked_candidates:
+    - route_family: /api/admin/automation-conversion/agent-outputs*
+      blocked_reason:
+        - agent_outputs_wildcard_production_compat_retained
+        - agent_outputs_export_subpath_fallback_retained
+        - agent_outputs_legacy_runtime_references_retained
+        - manifest_backlog_retain_route_family
+  retained_old_code_categories:
+    - agent_outputs_subpath_fallback_retained
+    - agent_outputs_legacy_runtime_retained
     - other_production_compat_routes_retained
-    - workflows_tasks_agents_production_compat_routes_retained
+    - wildcard_router_retained
+    - high_risk_external_runtime_retained
+    - legacy_runtime_still_referenced_by_retained_production_compat
+  blocked_reason:
+    - agent_outputs_wildcard_production_compat_retained
+    - agent_outputs_legacy_runtime_references_retained
+    - other_production_compat_routes_retained
+    - workflows_tasks_agents_agent_runs_action_templates_production_compat_routes_retained
     - high_risk_external_runtime_retained
     - payment_oauth_wecom_public_submit_timer_outbound_retained
     - wildcard_router_retained

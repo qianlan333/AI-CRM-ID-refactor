@@ -21,10 +21,10 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "post_phase7_cleanup_agent_outputs_exact_route_cleanup"
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
+    assert data["current_phase"] == "post_phase7_cleanup_legacy_runtime_recheck"
+    assert data["active_candidate"] == "legacy_runtime_recheck_after_agent_outputs_exact_cleanup"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
-    assert data["last_merged_pr"] == "#819"
+    assert data["last_merged_pr"] == "#820"
 
 
 def test_completed_steps_include_phase_4al_readiness_gate() -> None:
@@ -202,7 +202,7 @@ def test_work_package_policy_sets_bounded_low_risk_granularity() -> None:
 
 def test_active_candidate_in_manifest_and_backlog() -> None:
     candidate = checker.load_yaml(STATE)["active_candidate"]
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary", "legacy_runtime_deletion_readiness", "legacy_runtime_cleanup_blocker_acceptance", "final_route_ownership_manifest_cleanup", "final_legacy_retirement_acceptance", "post_phase7_new_feature_development_governance", "post_phase7_feature_intake", "post_phase7_owner_feature_selection", "post_phase7_owner_approved_cleanup_track", "task_groups_cleanup_evidence_refresh", "workflow_nodes_cleanup_evidence_refresh", "cleanup_blocker_acceptance", "cleanup_owner_evidence_collection", "cleanup_owner_evidence_waiting_acceptance", "cleanup_owner_evidence_package_generation", "cleanup_owner_evidence_package_blocker_acceptance", "task_groups_owner_evidence_validation", "task_groups_owner_evidence_validation_blocker_acceptance", "task_groups_shadow_compare_rollback_evidence", "task_groups_owner_evidence_revalidation", "task_groups_exact_route_cleanup_retry", "legacy_runtime_recheck_after_task_groups_cleanup", "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup", "owner_approved_cleanup_track_acceptance"}:
+    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary", "legacy_runtime_deletion_readiness", "legacy_runtime_cleanup_blocker_acceptance", "final_route_ownership_manifest_cleanup", "final_legacy_retirement_acceptance", "post_phase7_new_feature_development_governance", "post_phase7_feature_intake", "post_phase7_owner_feature_selection", "post_phase7_owner_approved_cleanup_track", "task_groups_cleanup_evidence_refresh", "workflow_nodes_cleanup_evidence_refresh", "cleanup_blocker_acceptance", "cleanup_owner_evidence_collection", "cleanup_owner_evidence_waiting_acceptance", "cleanup_owner_evidence_package_generation", "cleanup_owner_evidence_package_blocker_acceptance", "task_groups_owner_evidence_validation", "task_groups_owner_evidence_validation_blocker_acceptance", "task_groups_shadow_compare_rollback_evidence", "task_groups_owner_evidence_revalidation", "task_groups_exact_route_cleanup_retry", "legacy_runtime_recheck_after_task_groups_cleanup", "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup", "legacy_runtime_recheck_after_agent_outputs_exact_cleanup", "owner_approved_cleanup_track_acceptance"}:
         assert candidate in (ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml").read_text(encoding="utf-8")
         assert candidate in (ROOT / "docs/development/legacy_replacement_backlog.yaml").read_text(encoding="utf-8")
 
@@ -614,7 +614,9 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "/api/admin/automation-conversion/agent-outputs*"
+    assert "/api/admin/automation-conversion/agent-outputs*" in {
+        item["route_family"] for item in data["implemented_runtime_slices"]
+    }
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True
