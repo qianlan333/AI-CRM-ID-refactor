@@ -57,6 +57,21 @@ from .application import (
     UpdateTaskSendStrategyCommand,
     UpdateProfileSegmentTemplateCommand,
 )
+from .programs import (
+    AutomationProgramDataUnavailable,
+    copy_automation_program_operation_task,
+    create_automation_program_operation_task,
+    create_automation_program_operation_task_group,
+    delete_automation_program_operation_task_group,
+    list_automation_program_operation_tasks,
+    preview_automation_program_operation_task_audience,
+    save_automation_program_audience_entry_rule,
+    save_automation_program_operation_task_content,
+    save_automation_program_segmentation,
+    set_automation_program_operation_task_status,
+    update_automation_program_operation_task,
+    update_automation_program_operation_task_send_strategy,
+)
 from .dto import (
     ActivationWebhookRequest,
     AgentMaterialsUpdateRequest,
@@ -131,6 +146,239 @@ def automation_pools() -> dict:
         except LegacyAutomationDataUnavailable as exc:
             raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
     return ListAutomationPoolsQuery()()
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
+    name="api_admin_automation_program_setup_segmentation",
+)
+def save_automation_program_setup_segmentation(program_id: int, payload: dict) -> dict:
+    try:
+        result = save_automation_program_segmentation(int(program_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "source_status": "ai_crm_next", "route_owner": "ai_crm_next", **result}
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
+    name="api_admin_automation_program_setup_audience_entry_rule",
+)
+def save_automation_program_setup_audience_entry_rule(program_id: int, payload: dict) -> dict:
+    try:
+        result = save_automation_program_audience_entry_rule(int(program_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "source_status": "ai_crm_next", "route_owner": "ai_crm_next", **result}
+
+
+@router.get(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks",
+    name="api_admin_automation_program_setup_operation_tasks",
+)
+def list_automation_program_setup_operation_tasks(program_id: int) -> dict:
+    try:
+        return list_automation_program_operation_tasks(int(program_id))
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups",
+    name="api_admin_automation_program_setup_operation_task_groups_create",
+)
+def create_automation_program_setup_operation_task_group(program_id: int, payload: dict) -> dict:
+    try:
+        return create_automation_program_operation_task_group(int(program_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups/{group_id}",
+    name="api_admin_automation_program_setup_operation_task_groups_delete",
+)
+def delete_automation_program_setup_operation_task_group(program_id: int, group_id: int) -> dict:
+    try:
+        return delete_automation_program_operation_task_group(int(program_id), int(group_id), operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks",
+    name="api_admin_automation_program_setup_operation_tasks_create",
+)
+def create_automation_program_setup_operation_task(program_id: int, payload: dict) -> dict:
+    try:
+        return create_automation_program_operation_task(int(program_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}",
+    name="api_admin_automation_program_setup_operation_tasks_get",
+)
+def get_automation_program_setup_operation_task(program_id: int, task_id: int) -> dict:
+    try:
+        result = list_automation_program_operation_tasks(int(program_id))
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    task = next((item for item in list(result.get("tasks") or result.get("items") or []) if int(item.get("id") or 0) == int(task_id)), None)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"operation task {task_id} not found")
+    return {"ok": True, "route_owner": "ai_crm_next", "source_status": result.get("source_status") or "ai_crm_next", "task": task}
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}",
+    name="api_admin_automation_program_setup_operation_tasks_update",
+)
+def update_automation_program_setup_operation_task(program_id: int, task_id: int, payload: dict) -> dict:
+    try:
+        return update_automation_program_operation_task(int(program_id), int(task_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/copy",
+    name="api_admin_automation_program_setup_operation_tasks_copy",
+)
+def copy_automation_program_setup_operation_task(program_id: int, task_id: int) -> dict:
+    try:
+        return copy_automation_program_operation_task(int(program_id), int(task_id), operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/activate",
+    name="api_admin_automation_program_setup_operation_tasks_activate",
+)
+def activate_automation_program_setup_operation_task(program_id: int, task_id: int) -> dict:
+    try:
+        return set_automation_program_operation_task_status(int(program_id), int(task_id), "active", operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/pause",
+    name="api_admin_automation_program_setup_operation_tasks_pause",
+)
+def pause_automation_program_setup_operation_task(program_id: int, task_id: int) -> dict:
+    try:
+        return set_automation_program_operation_task_status(int(program_id), int(task_id), "paused", operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}",
+    name="api_admin_automation_program_setup_operation_tasks_archive",
+)
+def archive_automation_program_setup_operation_task(program_id: int, task_id: int) -> dict:
+    try:
+        return set_automation_program_operation_task_status(int(program_id), int(task_id), "archived", operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/preview-audience",
+    name="api_admin_automation_program_setup_operation_tasks_preview_audience",
+)
+def preview_automation_program_setup_operation_task_audience(program_id: int, task_id: int, payload: dict) -> dict:
+    del task_id
+    try:
+        return preview_automation_program_operation_task_audience(int(program_id), payload)
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-strategy",
+    name="api_admin_automation_program_setup_operation_tasks_send_strategy",
+)
+def update_automation_program_setup_operation_task_send_strategy(program_id: int, task_id: int, payload: dict) -> dict:
+    try:
+        return update_automation_program_operation_task_send_strategy(int(program_id), int(task_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/unified",
+    name="api_admin_automation_program_setup_operation_tasks_send_content_unified",
+)
+def save_automation_program_setup_operation_task_unified_content(program_id: int, task_id: int, payload: dict) -> dict:
+    try:
+        return save_automation_program_operation_task_content(
+            int(program_id), int(task_id), payload, content_kind="unified", operator_id="admin"
+        )
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/profile-segments/{segment_key}",
+    name="api_admin_automation_program_setup_operation_tasks_send_content_profile",
+)
+def save_automation_program_setup_operation_task_profile_content(program_id: int, task_id: int, segment_key: str, payload: dict) -> dict:
+    try:
+        return save_automation_program_operation_task_content(
+            int(program_id), int(task_id), payload, content_kind="profile", segment_key=segment_key, operator_id="admin"
+        )
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/behavior-segments/{segment_key}",
+    name="api_admin_automation_program_setup_operation_tasks_send_content_behavior",
+)
+def save_automation_program_setup_operation_task_behavior_content(program_id: int, task_id: int, segment_key: str, payload: dict) -> dict:
+    try:
+        return save_automation_program_operation_task_content(
+            int(program_id), int(task_id), payload, content_kind="behavior", segment_key=segment_key, operator_id="admin"
+        )
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put(
+    "/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/{task_id}/send-content/agent-materials",
+    name="api_admin_automation_program_setup_operation_tasks_send_content_agent",
+)
+def save_automation_program_setup_operation_task_agent_content(program_id: int, task_id: int, payload: dict) -> dict:
+    try:
+        return save_automation_program_operation_task_content(
+            int(program_id), int(task_id), payload, content_kind="agent", operator_id="admin"
+        )
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/admin/automation-conversion/action-templates")

@@ -56,6 +56,7 @@ DEFAULT_AUDIENCE_ENTRY_RULES = (
         "enabled": True,
     },
 )
+AUDIENCE_REVIEW_STEP_KEYS = {"order_product", "questionnaire", "conversion_product"}
 
 
 _FIXTURE_PROGRAM = {
@@ -67,6 +68,10 @@ _FIXTURE_PROGRAM = {
     "updated_at": "2026-05-20T12:00:00Z",
     "config_json": {},
 }
+_FIXTURE_OPERATION_GROUPS: list[dict[str, Any]] = []
+_FIXTURE_OPERATION_TASKS: list[dict[str, Any]] = []
+_FIXTURE_OPERATION_GROUP_ID = 1000
+_FIXTURE_OPERATION_TASK_ID = 5000
 
 
 def _clean_text(value: Any) -> str:
@@ -369,38 +374,194 @@ def _segmentation_view_model(payload: dict[str, Any], *, program_id: int) -> dic
     }
 
 
-def _audience_rule_view_model(payload: dict[str, Any] | None, *, program_id: int) -> dict[str, Any]:
-    del program_id
-    payload = dict(payload or {})
-    rules = list(payload.get("rules") or DEFAULT_AUDIENCE_ENTRY_RULES)
-    cards_payload = dict(payload.get("cards") or {})
-    by_event = {str(item.get("event") or ""): dict(item or {}) for item in rules}
-    for event, card in cards_payload.items():
-        by_event[str(event)] = {"event": str(event), **dict(card or {})}
-    entry_rule = by_event.get("channel_enter") or dict(DEFAULT_AUDIENCE_ENTRY_RULES[0])
-    submit_rule = by_event.get("questionnaire_submitted") or dict(DEFAULT_AUDIENCE_ENTRY_RULES[1])
+def _selected_product_snapshot(selected_product_id: Any, provided: dict[str, Any] | None = None) -> dict[str, Any]:
+    snapshot = dict(provided or {})
+    product_id = _clean_text(selected_product_id)
     return {
-        "rules": rules,
-        "normalized_cards": {
-            "channel_enter": {
-                "event": "channel_enter",
-                "event_label": "入口进入后",
-                "condition_type": _clean_text(entry_rule.get("condition_type") or entry_rule.get("condition")) or "any_entry_channel",
-                "condition_options": ENTRY_CONDITION_LABELS,
-                "target_audience_code": _clean_text(entry_rule.get("target_audience_code")) or "pending_questionnaire",
-                "target_options": AUDIENCE_LABELS,
-                "enabled": bool(entry_rule.get("enabled", True)),
-            },
-            "questionnaire_submitted": {
-                "event": "questionnaire_submitted",
-                "event_label": "问卷提交后",
-                "condition_type": _clean_text(submit_rule.get("condition_type") or submit_rule.get("condition")) or "questionnaire_id_matched",
-                "condition_options": QUESTIONNAIRE_CONDITION_LABELS,
-                "target_audience_code": _clean_text(submit_rule.get("target_audience_code")) or "operating",
-                "target_options": {"operating": "运营中", "converted": "已转化"},
-                "enabled": bool(submit_rule.get("enabled", True)),
-            },
+        "id": product_id,
+        "name": _clean_text(snapshot.get("name")) or _clean_text(snapshot.get("product_name")) or product_id,
+        "price_text": _clean_text(snapshot.get("price_text")) or _clean_text(snapshot.get("amount_text")),
+    }
+
+
+def _selected_questionnaire_snapshot(
+    selected_questionnaire_id: Any,
+    *,
+    available: list[dict[str, Any]] | None = None,
+    provided: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    questionnaire_id = int(selected_questionnaire_id or 0)
+    snapshot = dict(provided or {})
+    matched = next((dict(item) for item in list(available or []) if int(item.get("id") or 0) == questionnaire_id), {})
+    return {
+        "id": questionnaire_id,
+        "title": _clean_text(matched.get("title")) or _clean_text(snapshot.get("title")) or (f"问卷 {questionnaire_id}" if questionnaire_id else ""),
+        "status": _clean_text(matched.get("status")) or _clean_text(snapshot.get("status")),
+        "question_count": int(matched.get("question_count") or snapshot.get("question_count") or 0),
+    }
+
+
+def _normalize_audience_review_item(
+    item: dict[str, Any],
+    *,
+    enabled_default: bool,
+    product: bool = False,
+    questionnaire: bool = False,
+    available_questionnaires: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    enabled = bool(item.get("enabled", enabled_default))
+    result: dict[str, Any] = {"enabled": enabled}
+    if product:
+        selected_product_id = _clean_text(item.get("selected_product_id") or item.get("product_id"))
+        result["selected_product_id"] = selected_product_id or None
+        result["selected_product_snapshot"] = _selected_product_snapshot(
+            selected_product_id,
+            item.get("selected_product_snapshot") if isinstance(item.get("selected_product_snapshot"), dict) else {},
+        )
+    if questionnaire:
+        selected_questionnaire_id = int(item.get("selected_questionnaire_id") or item.get("questionnaire_id") or 0) or None
+        result["selected_questionnaire_id"] = selected_questionnaire_id
+        result["selected_questionnaire_snapshot"] = _selected_questionnaire_snapshot(
+            selected_questionnaire_id,
+            available=available_questionnaires,
+            provided=item.get("selected_questionnaire_snapshot") if isinstance(item.get("selected_questionnaire_snapshot"), dict) else {},
+        )
+    return result
+
+
+def _normalize_audience_entry_rule_payload(
+    payload: dict[str, Any] | None,
+    *,
+    validate: bool = True,
+    available_questionnaires: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    payload = dict(payload or {})
+    has_review_config = any(
+        key in payload
+        for key in ("entry_source", "order_review", "questionnaire_review", "operating", "conversion_review")
+    )
+    if not has_review_config and (payload.get("cards") or payload.get("rules")):
+        rules = list(payload.get("rules") or [])
+        cards = dict(payload.get("cards") or {})
+        if cards:
+            submit_card = dict(cards.get("questionnaire_submitted") or {})
+            questionnaire_enabled = bool(submit_card.get("enabled", True))
+        else:
+            by_event = {str(item.get("event") or ""): dict(item or {}) for item in rules}
+            submit_rule = by_event.get("questionnaire_submitted") or dict(DEFAULT_AUDIENCE_ENTRY_RULES[1])
+            questionnaire_enabled = bool(submit_rule.get("enabled", True))
+        normalized = {
+            "entry_source": "both",
+            "order_review": _normalize_audience_review_item({}, enabled_default=False, product=True),
+            "questionnaire_review": _normalize_audience_review_item(
+                {
+                    "enabled": questionnaire_enabled,
+                    "selected_questionnaire_id": payload.get("selected_questionnaire_id"),
+                    "selected_questionnaire_snapshot": payload.get("selected_questionnaire_snapshot"),
+                },
+                enabled_default=questionnaire_enabled,
+                questionnaire=True,
+                available_questionnaires=available_questionnaires,
+            ),
+            "operating": {"enabled": True, "fixed": True},
+            "conversion_review": _normalize_audience_review_item({}, enabled_default=False, product=True),
+        }
+    else:
+        normalized = {
+            "entry_source": _clean_text(payload.get("entry_source")) or "both",
+            "order_review": _normalize_audience_review_item(dict(payload.get("order_review") or {}), enabled_default=False, product=True),
+            "questionnaire_review": _normalize_audience_review_item(
+                dict(payload.get("questionnaire_review") or {}),
+                enabled_default=False,
+                questionnaire=True,
+                available_questionnaires=available_questionnaires,
+            ),
+            "operating": {"enabled": True, "fixed": True},
+            "conversion_review": _normalize_audience_review_item(
+                dict(payload.get("conversion_review") or {}),
+                enabled_default=False,
+                product=True,
+            ),
+        }
+    normalized["rules"] = _legacy_rules_from_entry_rule(normalized)
+    if validate:
+        order_review = dict(normalized.get("order_review") or {})
+        questionnaire_review = dict(normalized.get("questionnaire_review") or {})
+        conversion_review = dict(normalized.get("conversion_review") or {})
+        if order_review.get("enabled") and not _clean_text(order_review.get("selected_product_id")):
+            raise ValueError("订单审核已启用，请先选择商品")
+        if questionnaire_review.get("enabled") and not int(questionnaire_review.get("selected_questionnaire_id") or 0):
+            raise ValueError("问卷审核已启用，请先选择问卷")
+        if conversion_review.get("enabled") and not _clean_text(conversion_review.get("selected_product_id")):
+            raise ValueError("已转化判定已启用，请先选择成交商品")
+    return normalized
+
+
+def _legacy_rules_from_entry_rule(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    rules = list((payload or {}).get("rules") or [])
+    if rules:
+        return rules
+    payload = dict(payload or {})
+    order_enabled = bool((payload.get("order_review") or {}).get("enabled"))
+    questionnaire_enabled = bool((payload.get("questionnaire_review") or {}).get("enabled"))
+    return [
+        {
+            "event": "channel_enter",
+            "condition_type": "any_entry_channel",
+            "target_audience_code": "pending_questionnaire" if order_enabled or questionnaire_enabled else "operating",
+            "enabled": True,
         },
+        {
+            "event": "questionnaire_submitted",
+            "condition_type": "questionnaire_id_matched",
+            "target_audience_code": "operating",
+            "enabled": questionnaire_enabled,
+        },
+    ]
+
+
+def _audience_next_steps(payload: dict[str, Any]) -> dict[str, str]:
+    order_enabled = bool((payload.get("order_review") or {}).get("enabled"))
+    questionnaire_enabled = bool((payload.get("questionnaire_review") or {}).get("enabled"))
+    conversion_enabled = bool((payload.get("conversion_review") or {}).get("enabled"))
+    return {
+        "scan_enter": "订单审核" if order_enabled else ("问卷审核" if questionnaire_enabled else "运营中"),
+        "order_review": ("问卷审核" if questionnaire_enabled else "运营中") if order_enabled else "本项已跳过",
+        "questionnaire_review": "运营中" if questionnaire_enabled else "本项已跳过",
+        "operating": "已转化" if conversion_enabled else "结束",
+        "conversion_review": "结束" if conversion_enabled else "本项已关闭",
+    }
+
+
+def _audience_rule_view_model(
+    payload: dict[str, Any] | None,
+    *,
+    program_id: int,
+    available_questionnaires: list[dict[str, Any]] | None = None,
+    available_products: list[dict[str, Any]] | None = None,
+    picker: str = "",
+) -> dict[str, Any]:
+    del program_id
+    normalized = _normalize_audience_entry_rule_payload(
+        payload,
+        validate=False,
+        available_questionnaires=available_questionnaires,
+    )
+    picker_key = _clean_text(picker)
+    if picker_key not in AUDIENCE_REVIEW_STEP_KEYS:
+        picker_key = ""
+    return {
+        **normalized,
+        "rules": _legacy_rules_from_entry_rule(normalized),
+        "next_steps": _audience_next_steps(normalized),
+        "available_products": list(available_products or []),
+        "available_questionnaires": list(available_questionnaires or []),
+        "picker": picker_key,
+        "picker_title": {
+            "order_product": "选择订单审核商品",
+            "questionnaire": "选择问卷审核问卷",
+            "conversion_product": "选择成交判定商品",
+        }.get(picker_key, ""),
         "manual_cards": [
             {"event_label": "人工移除", "target_label": "退出当前方案"},
             {"event_label": "成交标记", "target_label": "已转化"},
@@ -415,6 +576,39 @@ def _has_segmentation(segmentation: dict[str, Any]) -> bool:
     normal = dict(strategies.get("normal_question_rules") or {})
     score = dict(strategies.get("score_segments") or {})
     return bool(normal.get("categories") or normal.get("rules") or score.get("ranges"))
+
+
+def _validate_option_categories(payload: dict[str, Any]) -> None:
+    normal = dict((payload.get("strategies") or {}).get("normal_question_rules") or {})
+    seen: set[int] = set()
+    for category in list(normal.get("categories") or []):
+        for option_id in list((category or {}).get("option_ids") or []):
+            normalized_id = int(option_id or 0)
+            if not normalized_id:
+                continue
+            if normalized_id in seen:
+                raise ValueError("同一个选项不能同时属于多个分类")
+            seen.add(normalized_id)
+
+
+def _validate_score_ranges(payload: dict[str, Any]) -> None:
+    score = dict((payload.get("strategies") or {}).get("score_segments") or {})
+    ranges = []
+    for row in list(score.get("ranges") or []):
+        if row.get("min_score") in (None, "") and row.get("max_score") in (None, ""):
+            continue
+        try:
+            min_score = float(row.get("min_score"))
+            max_score = float(row.get("max_score"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("总分分层的最低分和最高分必须填写数字") from exc
+        if max_score < min_score:
+            raise ValueError("总分分层的最高分必须大于等于最低分")
+        ranges.append((min_score, max_score))
+    ranges.sort(key=lambda item: (item[0], item[1]))
+    for previous, current in zip(ranges, ranges[1:], strict=False):
+        if current[0] <= previous[1]:
+            raise ValueError("总分分层区间不能重叠")
 
 
 def _publish_item(label: str, passed: bool, message: str, fix_step: str) -> dict[str, Any]:
@@ -521,8 +715,13 @@ def _project_customer_acquisition_link(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _project_operation_task(row: dict[str, Any]) -> dict[str, Any]:
+    content_mode = _clean_text(row.get("content_mode")) or "unified"
+    unified = _json_loads(row.get("unified_content_json"), default={})
+    segments = _json_loads(row.get("segment_contents_json"), default=[])
+    agent = _json_loads(row.get("agent_config_json"), default={})
     return {
         "id": int(row.get("id") or 0),
+        "program_id": int(row.get("program_id") or 0),
         "task_name": _clean_text(row.get("task_name")),
         "description": _clean_text(row.get("description")),
         "group_id": int(row.get("group_id") or 0) or None,
@@ -536,10 +735,103 @@ def _project_operation_task(row: dict[str, Any]) -> dict[str, Any]:
         "target_stage_code": _clean_text(row.get("target_stage_code")),
         "audience_day_offset": int(row.get("audience_day_offset") or 0),
         "behavior_filter": _clean_text(row.get("behavior_filter")) or "none",
-        "content_mode": _clean_text(row.get("content_mode")) or "unified",
+        "content_mode": content_mode,
         "profile_segment_template_id": int(row.get("profile_segment_template_id") or 0) or None,
+        "unified_content_json": unified if isinstance(unified, dict) else {},
+        "segment_contents_json": segments if isinstance(segments, list) else [],
+        "agent_config_json": agent if isinstance(agent, dict) else {},
+        "operation_content": {
+            "content_mode": content_mode,
+            "profile_segment_template_id": int(row.get("profile_segment_template_id") or 0) or None,
+            "unified_content_json": unified if isinstance(unified, dict) else {},
+            "segment_contents_json": segments if isinstance(segments, list) else [],
+            "agent_config_json": agent if isinstance(agent, dict) else {},
+        },
         "updated_at": _stringify_datetime(row.get("updated_at")),
         "published_at": _stringify_datetime(row.get("published_at")),
+    }
+
+
+def _project_operation_task_group(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row.get("id") or 0),
+        "program_id": int(row.get("program_id") or 0),
+        "group_name": _clean_text(row.get("group_name")),
+        "sort_order": int(row.get("sort_order") or 0),
+        "created_at": _stringify_datetime(row.get("created_at")),
+        "updated_at": _stringify_datetime(row.get("updated_at")),
+        "archived_at": _clean_text(row.get("archived_at")),
+    }
+
+
+def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program_id: int, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = dict(payload or {})
+    existing = dict(existing or {})
+    content = dict(existing.get("operation_content") or {})
+    content.update(payload.get("operation_content") if isinstance(payload.get("operation_content"), dict) else {})
+    content_mode = _clean_text(payload.get("content_mode") or content.get("content_mode") or existing.get("content_mode")) or "unified"
+    if content_mode not in {"unified", "profile_layered", "behavior_layered", "agent"}:
+        content_mode = "unified"
+    status = _clean_text(payload.get("status") or existing.get("status")) or "draft"
+    if status not in {"draft", "active", "paused", "archived"}:
+        status = "draft"
+    trigger_type = _clean_text(payload.get("trigger_type") or existing.get("trigger_type")) or "scheduled_daily"
+    if trigger_type not in {"scheduled_daily", "audience_entered"}:
+        trigger_type = "scheduled_daily"
+    behavior_filter = _clean_text(payload.get("behavior_filter") or existing.get("behavior_filter")) or "none"
+    if behavior_filter not in {"none", "lt_2", "between_2_9", "gte_10"}:
+        behavior_filter = "none"
+    target_stage_code = _clean_text(payload.get("target_stage_code") or existing.get("target_stage_code"))
+    target_audience_code = _clean_text(payload.get("target_audience_code") or existing.get("target_audience_code")) or "operating"
+    if target_stage_code in {"operating", "converted", "pending_questionnaire"}:
+        target_audience_code = "converted" if target_stage_code == "converted" else "pending_questionnaire" if target_stage_code == "pending_questionnaire" else "operating"
+    if target_audience_code not in AUDIENCE_LABELS:
+        target_audience_code = "operating"
+    group_value = payload.get("group_id")
+    if group_value is None and existing:
+        group_value = existing.get("group_id")
+    return {
+        "program_id": int(program_id),
+        "group_id": int(group_value or 0) or None,
+        "task_name": _clean_text(payload.get("task_name") or existing.get("task_name")) or "新运营任务",
+        "description": _clean_text(payload.get("description") or existing.get("description")),
+        "status": status,
+        "trigger_type": trigger_type,
+        "send_time": _clean_text(payload.get("send_time") or existing.get("send_time")) or "10:00",
+        "timezone": _clean_text(payload.get("timezone") or existing.get("timezone")) or "Asia/Shanghai",
+        "target_audience_code": target_audience_code,
+        "target_stage_code": target_stage_code or target_audience_code,
+        "audience_day_offset": max(int(payload.get("audience_day_offset") or existing.get("audience_day_offset") or 1), 1),
+        "behavior_filter": behavior_filter,
+        "content_mode": content_mode,
+        "profile_segment_template_id": int(payload.get("profile_segment_template_id") or content.get("profile_segment_template_id") or existing.get("profile_segment_template_id") or 0) or None,
+        "unified_content_json": dict(payload.get("unified_content_json") or content.get("unified_content_json") or existing.get("unified_content_json") or {}),
+        "segment_contents_json": list(payload.get("segment_contents_json") or content.get("segment_contents_json") or existing.get("segment_contents_json") or []),
+        "agent_config_json": dict(payload.get("agent_config_json") or content.get("agent_config_json") or existing.get("agent_config_json") or {}),
+    }
+
+
+def _fixture_operation_payload(program_id: int) -> dict[str, Any]:
+    groups = [
+        _project_operation_task_group(item)
+        for item in _FIXTURE_OPERATION_GROUPS
+        if int(item.get("program_id") or 0) == int(program_id) and not _clean_text(item.get("archived_at"))
+    ]
+    group_names = {int(item["id"]): item["group_name"] for item in groups}
+    tasks = [
+        _project_operation_task({**item, "group_name": group_names.get(int(item.get("group_id") or 0), "未分组")})
+        for item in _FIXTURE_OPERATION_TASKS
+        if int(item.get("program_id") or 0) == int(program_id) and _clean_text(item.get("status")) != "archived"
+    ]
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "source_status": "next_fixture",
+        "groups": groups,
+        "tasks": tasks,
+        "items": tasks,
+        "total": len(tasks),
+        "active_count": sum(1 for item in tasks if item.get("status") == "active"),
     }
 
 
@@ -578,13 +870,14 @@ class PostgresAutomationProgramRepository:
             segmentation_payload = _payload_from_block(blocks, BLOCK_SEGMENTATION)
             segmentation = self._segmentation_view_model(conn, segmentation_payload, program_id=int(program_id))
             audience_payload = _payload_from_block(blocks, BLOCK_AUDIENCE_ENTRY_RULE)
+            audience = self._audience_rule_view_model(conn, audience_payload, program_id=int(program_id))
             operations = self._fetch_operations_payload(conn, int(program_id))
         publish_check = _publish_check_from_parts(
             program,
             has_config=bool(blocks),
             has_entry=bool(entry.get("channels")),
             segmentation=segmentation_payload,
-            audience_rules=list(audience_payload.get("rules") or []),
+            audience_rules=list(audience.get("rules") or []),
             active_task_count=int(operations.get("active_count") or 0),
         )
         return {
@@ -599,7 +892,7 @@ class PostgresAutomationProgramRepository:
             "entry_channel": _payload_from_block(blocks, BLOCK_ENTRY_CHANNEL),
             "entry": entry,
             "segmentation": segmentation,
-            "audience_entry_rule": _audience_rule_view_model(audience_payload, program_id=int(program_id)),
+            "audience_entry_rule": audience,
             "operations": operations,
             "publish_state": _payload_from_block(blocks, BLOCK_PUBLISH_STATE),
             "publish_check": publish_check,
@@ -777,6 +1070,284 @@ class PostgresAutomationProgramRepository:
             raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
         return updated
 
+    def save_segmentation(self, program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+        normalized = _normalize_segmentation_payload(payload)
+        _validate_option_categories(normalized)
+        _validate_score_ranges(normalized)
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT id FROM automation_program WHERE id = :program_id LIMIT 1"),
+                {"program_id": int(program_id)},
+            ).mappings().first()
+            if not row:
+                raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+            block = self._upsert_config_block(conn, int(program_id), BLOCK_SEGMENTATION, normalized, status="saved")
+            profile_template = self._sync_profile_segment_template(conn, int(program_id), normalized, operator_id=operator_id)
+        return {"segmentation": block, "profile_segment_template": profile_template}
+
+    def save_audience_entry_rule(self, program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+        del operator_id
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT id FROM automation_program WHERE id = :program_id LIMIT 1"),
+                {"program_id": int(program_id)},
+            ).mappings().first()
+            if not row:
+                raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+            available_questionnaires = self._list_available_questionnaires(conn)
+            normalized = _normalize_audience_entry_rule_payload(
+                payload,
+                validate=not bool(payload.get("_allow_incomplete")),
+                available_questionnaires=available_questionnaires,
+            )
+            block = self._upsert_config_block(conn, int(program_id), BLOCK_AUDIENCE_ENTRY_RULE, normalized, status="saved")
+        return {"audience_entry_rule": block, "next_steps": _audience_next_steps(normalized)}
+
+    def _upsert_config_block(
+        self,
+        conn: Any,
+        program_id: int,
+        block_key: str,
+        payload: dict[str, Any],
+        *,
+        status: str = "saved",
+    ) -> dict[str, Any]:
+        row = conn.execute(
+            text(
+                """
+                INSERT INTO automation_program_config_block (
+                    program_id,
+                    block_key,
+                    payload_json,
+                    status,
+                    version,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :program_id,
+                    :block_key,
+                    CAST(:payload_json AS jsonb),
+                    :status,
+                    1,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (program_id, block_key)
+                DO UPDATE SET
+                    payload_json = EXCLUDED.payload_json,
+                    status = EXCLUDED.status,
+                    version = automation_program_config_block.version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id, block_key, payload_json, status, version, updated_at
+                """
+            ),
+            {
+                "program_id": int(program_id),
+                "block_key": block_key,
+                "payload_json": _json_text(payload),
+                "status": status,
+            },
+        ).mappings().first()
+        item = dict(row or {})
+        return {
+            "id": int(item.get("id") or 0),
+            "block_key": _clean_text(item.get("block_key")),
+            "payload": _json_loads(item.get("payload_json"), default={}),
+            "status": _clean_text(item.get("status")) or status,
+            "version": int(item.get("version") or 1),
+            "updated_at": _stringify_datetime(item.get("updated_at")),
+        }
+
+    def _sync_profile_segment_template(
+        self,
+        conn: Any,
+        program_id: int,
+        payload: dict[str, Any],
+        *,
+        operator_id: str,
+    ) -> dict[str, Any] | None:
+        normal = dict((payload.get("strategies") or {}).get("normal_question_rules") or {})
+        categories = list(normal.get("categories") or [])
+        questionnaire_id = int(payload.get("questionnaire_id") or 0)
+        question_id = int(normal.get("segmentation_question_id") or 0)
+        template_code = f"setup_normal_option_category_{int(program_id)}"
+        existing = conn.execute(
+            text(
+                """
+                SELECT *
+                FROM automation_profile_segment_template
+                WHERE template_code = :template_code
+                LIMIT 1
+                """
+            ),
+            {"template_code": template_code},
+        ).mappings().first()
+        if not questionnaire_id or not question_id or not categories:
+            if existing:
+                disabled = conn.execute(
+                    text(
+                        """
+                        UPDATE automation_profile_segment_template
+                        SET enabled = false,
+                            version = COALESCE(version, 1) + 1,
+                            updated_by = :updated_by,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :template_id
+                        RETURNING *
+                        """
+                    ),
+                    {"template_id": int(existing["id"]), "updated_by": _clean_text(operator_id) or "setup_wizard"},
+                ).mappings().first()
+                return dict(disabled or existing)
+            return None
+
+        template_name = _clean_text(normal.get("segmentation_question_title")) or "普通问卷选项分类"
+        common = {
+            "program_id": int(program_id),
+            "template_code": template_code,
+            "template_name": f"{template_name} · 自然画像",
+            "questionnaire_id": questionnaire_id,
+            "segmentation_question_id": question_id,
+            "description": "由 Next 配置向导的普通问卷选项分类自动同步。",
+            "enabled": True,
+            "operator_id": _clean_text(operator_id) or "setup_wizard",
+        }
+        if existing:
+            saved = conn.execute(
+                text(
+                    """
+                    UPDATE automation_profile_segment_template
+                    SET program_id = :program_id,
+                        template_name = :template_name,
+                        questionnaire_id = :questionnaire_id,
+                        segmentation_question_id = :segmentation_question_id,
+                        description = :description,
+                        enabled = :enabled,
+                        version = COALESCE(version, 1) + 1,
+                        updated_by = :operator_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :template_id
+                    RETURNING *
+                    """
+                ),
+                {**common, "template_id": int(existing["id"])},
+            ).mappings().first()
+        else:
+            saved = conn.execute(
+                text(
+                    """
+                    INSERT INTO automation_profile_segment_template (
+                        program_id,
+                        template_code,
+                        template_name,
+                        questionnaire_id,
+                        segmentation_question_id,
+                        description,
+                        enabled,
+                        version,
+                        created_by,
+                        updated_by,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        :program_id,
+                        :template_code,
+                        :template_name,
+                        :questionnaire_id,
+                        :segmentation_question_id,
+                        :description,
+                        :enabled,
+                        1,
+                        :operator_id,
+                        :operator_id,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    )
+                    RETURNING *
+                    """
+                ),
+                common,
+            ).mappings().first()
+        template = dict(saved or {})
+        template_id = int(template.get("id") or 0)
+        conn.execute(
+            text("DELETE FROM automation_profile_segment_option_mapping WHERE template_id = :template_id"),
+            {"template_id": template_id},
+        )
+        conn.execute(
+            text("DELETE FROM automation_profile_segment_category WHERE template_id = :template_id"),
+            {"template_id": template_id},
+        )
+        for index, category in enumerate(categories, start=1):
+            category_row = conn.execute(
+                text(
+                    """
+                    INSERT INTO automation_profile_segment_category (
+                        template_id,
+                        category_key,
+                        category_name,
+                        description,
+                        sort_order,
+                        enabled,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        :template_id,
+                        :category_key,
+                        :category_name,
+                        :description,
+                        :sort_order,
+                        true,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "template_id": template_id,
+                    "category_key": _clean_text(category.get("category_key")) or f"category_{index}",
+                    "category_name": _clean_text(category.get("category_name")) or f"分类 {index}",
+                    "description": _clean_text(category.get("description")),
+                    "sort_order": index,
+                },
+            ).mappings().first()
+            category_id = int((category_row or {}).get("id") or 0)
+            for option_id in list(category.get("option_ids") or []):
+                normalized_option_id = int(option_id or 0)
+                if not normalized_option_id:
+                    continue
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO automation_profile_segment_option_mapping (
+                            template_id,
+                            category_id,
+                            question_id,
+                            option_id,
+                            created_at
+                        )
+                        VALUES (
+                            :template_id,
+                            :category_id,
+                            :question_id,
+                            :option_id,
+                            CURRENT_TIMESTAMP
+                        )
+                        """
+                    ),
+                    {
+                        "template_id": template_id,
+                        "category_id": category_id,
+                        "question_id": question_id,
+                        "option_id": normalized_option_id,
+                    },
+                )
+        return template
+
     def _fetch_program_rows(self, *, program_id: int | None = None) -> list[dict[str, Any]]:
         where_sql = "WHERE p.id = :program_id" if program_id is not None else "WHERE 1 = 1"
         params = {"program_id": int(program_id)} if program_id is not None else {}
@@ -902,7 +1473,12 @@ class PostgresAutomationProgramRepository:
         normalized = _normalize_segmentation_payload(payload)
         questionnaire_id = int(normalized.get("questionnaire_id") or 0) or None
         available = self._list_available_questionnaires(conn)
-        question_rows = self._questionnaire_questions(conn, questionnaire_id)
+        for item in available:
+            item["questions"] = self._questionnaire_questions(conn, int(item.get("id") or 0))
+        question_rows = next(
+            (list(item.get("questions") or []) for item in available if int(item.get("id") or 0) == int(questionnaire_id or 0)),
+            self._questionnaire_questions(conn, questionnaire_id),
+        )
         selected = next((dict(item) for item in available if int(item.get("id") or 0) == int(questionnaire_id or 0)), {})
         if questionnaire_id and not selected:
             selected = {"id": questionnaire_id, "title": f"问卷 {questionnaire_id}", "status": "未找到", "question_count": 0}
@@ -972,6 +1548,14 @@ class PostgresAutomationProgramRepository:
             },
         }
 
+    def _audience_rule_view_model(self, conn: Any, payload: dict[str, Any], *, program_id: int) -> dict[str, Any]:
+        return _audience_rule_view_model(
+            payload,
+            program_id=int(program_id),
+            available_questionnaires=self._list_available_questionnaires(conn),
+            available_products=self._available_products(conn),
+        )
+
     def _list_available_questionnaires(self, conn: Any) -> list[dict[str, Any]]:
         rows = conn.execute(
             text(
@@ -994,6 +1578,35 @@ class PostgresAutomationProgramRepository:
             }
             for row in rows
         ]
+
+    def _available_products(self, conn: Any) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, product_code, name, amount_total, currency, status, enabled
+                FROM wechat_pay_products
+                ORDER BY enabled DESC, status ASC, updated_at DESC, id DESC
+                LIMIT 100
+                """
+            )
+        ).mappings().all()
+        products = []
+        for row in rows:
+            amount_total = int(row.get("amount_total") or 0)
+            currency = _clean_text(row.get("currency")) or "CNY"
+            price_text = "免费" if amount_total <= 0 else f"¥{amount_total / 100:.2f}" if currency == "CNY" else f"{amount_total / 100:.2f} {currency}"
+            product_id = _clean_text(row.get("product_code")) or str(int(row.get("id") or 0))
+            products.append(
+                {
+                    "id": product_id,
+                    "product_code": _clean_text(row.get("product_code")),
+                    "name": _clean_text(row.get("name")) or product_id,
+                    "price_text": price_text,
+                    "status": _clean_text(row.get("status")) or ("active" if row.get("enabled") else "draft"),
+                    "enabled": bool(row.get("enabled")),
+                }
+            )
+        return products
 
     def _questionnaire_questions(self, conn: Any, questionnaire_id: int | None) -> list[dict[str, Any]]:
         normalized_id = int(questionnaire_id or 0)
@@ -1072,6 +1685,18 @@ class PostgresAutomationProgramRepository:
         ]
 
     def _fetch_operations_payload(self, conn: Any, program_id: int) -> dict[str, Any]:
+        group_rows = conn.execute(
+            text(
+                """
+                SELECT *
+                FROM automation_operation_task_group
+                WHERE program_id = :program_id
+                  AND COALESCE(archived_at, '') = ''
+                ORDER BY sort_order ASC, id ASC
+                """
+            ),
+            {"program_id": int(program_id)},
+        ).mappings().all()
         task_rows = conn.execute(
             text(
                 """
@@ -1079,6 +1704,7 @@ class PostgresAutomationProgramRepository:
                 FROM automation_operation_task t
                 LEFT JOIN automation_operation_task_group g ON g.id = t.group_id
                 WHERE t.program_id = :program_id
+                  AND t.status <> 'archived'
                 ORDER BY
                     CASE t.status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 WHEN 'paused' THEN 2 ELSE 3 END,
                     t.updated_at DESC,
@@ -1090,9 +1716,169 @@ class PostgresAutomationProgramRepository:
         ).mappings().all()
         tasks = [_project_operation_task(dict(row)) for row in task_rows]
         return {
+            "groups": [_project_operation_task_group(dict(row)) for row in group_rows],
             "tasks": tasks,
+            "items": tasks,
+            "total": len(tasks),
             "active_count": sum(1 for item in tasks if item.get("status") == "active"),
         }
+
+    def list_operation_tasks(self, program_id: int) -> dict[str, Any]:
+        with self._engine.connect() as conn:
+            payload = self._fetch_operations_payload(conn, int(program_id))
+        return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_postgres", **payload}
+
+    def create_operation_task_group(self, program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+        group_name = _clean_text(payload.get("group_name") or payload.get("name"))
+        if not group_name:
+            raise ValueError("分组名称不能为空")
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO automation_operation_task_group (
+                        program_id, group_name, sort_order, created_by, updated_by, created_at, updated_at, archived_at
+                    )
+                    VALUES (
+                        :program_id, :group_name, :sort_order, :operator_id, :operator_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ''
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "program_id": int(program_id),
+                    "group_name": group_name,
+                    "sort_order": int(payload.get("sort_order") or 0),
+                    "operator_id": _clean_text(operator_id) or "setup_wizard",
+                },
+            ).mappings().first()
+        group = _project_operation_task_group(dict(row or {}))
+        return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_postgres", "group": group, "groups": [group]}
+
+    def archive_operation_task_group(self, program_id: int, group_id: int, *, operator_id: str) -> dict[str, Any]:
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    UPDATE automation_operation_task_group
+                    SET archived_at = CAST(CURRENT_TIMESTAMP AS TEXT),
+                        updated_by = :operator_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :group_id
+                      AND program_id = :program_id
+                      AND COALESCE(archived_at, '') = ''
+                    RETURNING *
+                    """
+                ),
+                {"program_id": int(program_id), "group_id": int(group_id), "operator_id": _clean_text(operator_id) or "setup_wizard"},
+            ).mappings().first()
+            if not row:
+                raise AutomationProgramDataUnavailable(f"operation task group {group_id} not found")
+            conn.execute(
+                text(
+                    """
+                    UPDATE automation_operation_task
+                    SET group_id = NULL,
+                        updated_by = :operator_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE program_id = :program_id
+                      AND group_id = :group_id
+                    """
+                ),
+                {"program_id": int(program_id), "group_id": int(group_id), "operator_id": _clean_text(operator_id) or "setup_wizard"},
+            )
+        return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_postgres", "group": _project_operation_task_group(dict(row))}
+
+    def create_operation_task(self, program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+        normalized = _normalize_operation_task_payload(payload, program_id=int(program_id))
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO automation_operation_task (
+                        program_id, group_id, task_name, description, status, trigger_type, send_time, timezone,
+                        target_audience_code, target_stage_code, audience_day_offset, behavior_filter,
+                        content_mode, profile_segment_template_id, unified_content_json, segment_contents_json,
+                        agent_config_json, created_by, updated_by, created_at, updated_at, published_at
+                    )
+                    VALUES (
+                        :program_id, :group_id, :task_name, :description, :status, :trigger_type, :send_time, :timezone,
+                        :target_audience_code, :target_stage_code, :audience_day_offset, :behavior_filter,
+                        :content_mode, :profile_segment_template_id, CAST(:unified_content_json AS jsonb), CAST(:segment_contents_json AS jsonb),
+                        CAST(:agent_config_json AS jsonb), :operator_id, :operator_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                        CASE WHEN :status = 'active' THEN CURRENT_TIMESTAMP ELSE NULL END
+                    )
+                    RETURNING *
+                    """
+                ),
+                {**normalized, "operator_id": _clean_text(operator_id) or "setup_wizard", "unified_content_json": _json_text(normalized["unified_content_json"]), "segment_contents_json": json.dumps(normalized["segment_contents_json"], ensure_ascii=False), "agent_config_json": _json_text(normalized["agent_config_json"])},
+            ).mappings().first()
+        task = _project_operation_task(dict(row or {}))
+        return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_postgres", "task": task, "tasks": [task]}
+
+    def get_operation_task(self, program_id: int, task_id: int) -> dict[str, Any]:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT t.*, g.group_name
+                    FROM automation_operation_task t
+                    LEFT JOIN automation_operation_task_group g ON g.id = t.group_id
+                    WHERE t.program_id = :program_id
+                      AND t.id = :task_id
+                    LIMIT 1
+                    """
+                ),
+                {"program_id": int(program_id), "task_id": int(task_id)},
+            ).mappings().first()
+        if not row:
+            raise AutomationProgramDataUnavailable(f"operation task {task_id} not found")
+        return _project_operation_task(dict(row))
+
+    def update_operation_task(self, program_id: int, task_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+        existing = self.get_operation_task(int(program_id), int(task_id))
+        normalized = _normalize_operation_task_payload(payload, program_id=int(program_id), existing=existing)
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    UPDATE automation_operation_task
+                    SET group_id = :group_id,
+                        task_name = :task_name,
+                        description = :description,
+                        status = :status,
+                        trigger_type = :trigger_type,
+                        send_time = :send_time,
+                        timezone = :timezone,
+                        target_audience_code = :target_audience_code,
+                        target_stage_code = :target_stage_code,
+                        audience_day_offset = :audience_day_offset,
+                        behavior_filter = :behavior_filter,
+                        content_mode = :content_mode,
+                        profile_segment_template_id = :profile_segment_template_id,
+                        unified_content_json = CAST(:unified_content_json AS jsonb),
+                        segment_contents_json = CAST(:segment_contents_json AS jsonb),
+                        agent_config_json = CAST(:agent_config_json AS jsonb),
+                        updated_by = :operator_id,
+                        updated_at = CURRENT_TIMESTAMP,
+                        published_at = CASE WHEN :status = 'active' THEN COALESCE(published_at, CURRENT_TIMESTAMP) ELSE published_at END
+                    WHERE program_id = :program_id
+                      AND id = :task_id
+                    RETURNING *
+                    """
+                ),
+                {**normalized, "task_id": int(task_id), "operator_id": _clean_text(operator_id) or "setup_wizard", "unified_content_json": _json_text(normalized["unified_content_json"]), "segment_contents_json": json.dumps(normalized["segment_contents_json"], ensure_ascii=False), "agent_config_json": _json_text(normalized["agent_config_json"])},
+            ).mappings().first()
+        task = _project_operation_task(dict(row or {}))
+        return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_postgres", "task": task}
+
+    def copy_operation_task(self, program_id: int, task_id: int, *, operator_id: str) -> dict[str, Any]:
+        existing = self.get_operation_task(int(program_id), int(task_id))
+        payload = {**existing, "task_name": f"{existing.get('task_name') or '运营任务'} / 复制", "status": "draft"}
+        return self.create_operation_task(int(program_id), payload, operator_id=operator_id)
+
+    def archive_operation_task(self, program_id: int, task_id: int, *, operator_id: str) -> dict[str, Any]:
+        return self.update_operation_task(int(program_id), int(task_id), {"status": "archived"}, operator_id=operator_id)
 
     def _project_row(self, row: dict[str, Any]) -> dict[str, Any]:
         program = {
@@ -1185,6 +1971,207 @@ def update_automation_program_basic_info(program_id: int, payload: dict[str, Any
     updated["description"] = _clean_text(payload.get("description"))
     updated["status"] = _clean_text(payload.get("status")) or updated["status"]
     return {"program": updated, "summary": _fixture_summary()}
+
+
+def save_automation_program_segmentation(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    normalized = _normalize_segmentation_payload(payload)
+    _validate_option_categories(normalized)
+    _validate_score_ranges(normalized)
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().save_segmentation(int(program_id), normalized, operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    return {
+        "segmentation": {
+            "id": 0,
+            "block_key": BLOCK_SEGMENTATION,
+            "payload": normalized,
+            "status": "saved",
+            "version": 1,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+        "profile_segment_template": None,
+    }
+
+
+def save_automation_program_audience_entry_rule(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    normalized = _normalize_audience_entry_rule_payload(
+        payload,
+        validate=not bool((payload or {}).get("_allow_incomplete")),
+    )
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().save_audience_entry_rule(int(program_id), payload, operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    return {
+        "audience_entry_rule": {
+            "id": 0,
+            "block_key": BLOCK_AUDIENCE_ENTRY_RULE,
+            "payload": normalized,
+            "status": "saved",
+            "version": 1,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+        "next_steps": _audience_next_steps(normalized),
+    }
+
+
+def list_automation_program_operation_tasks(program_id: int) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().list_operation_tasks(int(program_id))
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    return _fixture_operation_payload(int(program_id))
+
+
+def create_automation_program_operation_task_group(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().create_operation_task_group(int(program_id), payload, operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    global _FIXTURE_OPERATION_GROUP_ID
+    group_name = _clean_text(payload.get("group_name") or payload.get("name"))
+    if not group_name:
+        raise ValueError("分组名称不能为空")
+    _FIXTURE_OPERATION_GROUP_ID += 1
+    group = {
+        "id": _FIXTURE_OPERATION_GROUP_ID,
+        "program_id": int(program_id),
+        "group_name": group_name,
+        "sort_order": int(payload.get("sort_order") or len(_FIXTURE_OPERATION_GROUPS) + 1),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "archived_at": "",
+    }
+    _FIXTURE_OPERATION_GROUPS.append(group)
+    return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_fixture", "group": _project_operation_task_group(group), "groups": [_project_operation_task_group(group)]}
+
+
+def delete_automation_program_operation_task_group(program_id: int, group_id: int, *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().archive_operation_task_group(int(program_id), int(group_id), operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    for group in _FIXTURE_OPERATION_GROUPS:
+        if int(group.get("program_id") or 0) == int(program_id) and int(group.get("id") or 0) == int(group_id):
+            group["archived_at"] = datetime.now(UTC).isoformat()
+            group["updated_at"] = datetime.now(UTC).isoformat()
+            for task in _FIXTURE_OPERATION_TASKS:
+                if int(task.get("program_id") or 0) == int(program_id) and int(task.get("group_id") or 0) == int(group_id):
+                    task["group_id"] = None
+            return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_fixture", "group": _project_operation_task_group(group)}
+    raise AutomationProgramDataUnavailable(f"operation task group {group_id} not found")
+
+
+def create_automation_program_operation_task(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().create_operation_task(int(program_id), payload, operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    global _FIXTURE_OPERATION_TASK_ID
+    _FIXTURE_OPERATION_TASK_ID += 1
+    normalized = _normalize_operation_task_payload(payload, program_id=int(program_id))
+    now = datetime.now(UTC).isoformat()
+    task = {**normalized, "id": _FIXTURE_OPERATION_TASK_ID, "created_at": now, "updated_at": now, "published_at": now if normalized["status"] == "active" else ""}
+    _FIXTURE_OPERATION_TASKS.append(task)
+    projected = _project_operation_task(task)
+    return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_fixture", "task": projected, "tasks": [projected]}
+
+
+def _fixture_get_operation_task(program_id: int, task_id: int) -> dict[str, Any]:
+    for task in _FIXTURE_OPERATION_TASKS:
+        if int(task.get("program_id") or 0) == int(program_id) and int(task.get("id") or 0) == int(task_id):
+            return _project_operation_task(task)
+    raise AutomationProgramDataUnavailable(f"operation task {task_id} not found")
+
+
+def update_automation_program_operation_task(program_id: int, task_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().update_operation_task(int(program_id), int(task_id), payload, operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    for index, task in enumerate(_FIXTURE_OPERATION_TASKS):
+        if int(task.get("program_id") or 0) == int(program_id) and int(task.get("id") or 0) == int(task_id):
+            normalized = _normalize_operation_task_payload(payload, program_id=int(program_id), existing=_project_operation_task(task))
+            now = datetime.now(UTC).isoformat()
+            _FIXTURE_OPERATION_TASKS[index] = {**task, **normalized, "updated_at": now, "published_at": task.get("published_at") or (now if normalized["status"] == "active" else "")}
+            return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_fixture", "task": _project_operation_task(_FIXTURE_OPERATION_TASKS[index])}
+    raise AutomationProgramDataUnavailable(f"operation task {task_id} not found")
+
+
+def copy_automation_program_operation_task(program_id: int, task_id: int, *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().copy_operation_task(int(program_id), int(task_id), operator_id=operator_id)
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    existing = _fixture_get_operation_task(int(program_id), int(task_id))
+    return create_automation_program_operation_task(int(program_id), {**existing, "task_name": f"{existing.get('task_name') or '运营任务'} / 复制", "status": "draft"}, operator_id=operator_id)
+
+
+def set_automation_program_operation_task_status(program_id: int, task_id: int, status: str, *, operator_id: str) -> dict[str, Any]:
+    if _clean_text(status) not in {"draft", "active", "paused", "archived"}:
+        raise ValueError("运营任务状态不正确")
+    return update_automation_program_operation_task(int(program_id), int(task_id), {"status": _clean_text(status)}, operator_id=operator_id)
+
+
+def preview_automation_program_operation_task_audience(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    del payload
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "source_status": "next_postgres" if production_data_ready() else "next_fixture",
+        "preview": {"target_count": 0, "segment_counts": {}},
+    }
+
+
+def update_automation_program_operation_task_send_strategy(program_id: int, task_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    patch: dict[str, Any] = {"content_mode": _clean_text(payload.get("content_mode")) or "unified"}
+    if patch["content_mode"] == "profile_layered":
+        patch["profile_segment_template_id"] = int(payload.get("profile_segment_template_id") or 0) or None
+    if patch["content_mode"] == "agent":
+        agent_code = _clean_text(payload.get("agent_code"))
+        if agent_code:
+            current = _fixture_get_operation_task(program_id, task_id) if not production_data_ready() else _build_postgres_repository().get_operation_task(program_id, task_id)
+            agent_config = dict(current.get("agent_config_json") or {})
+            agent_config["agent_code"] = agent_code
+            patch["agent_config_json"] = agent_config
+    return update_automation_program_operation_task(int(program_id), int(task_id), patch, operator_id=operator_id)
+
+
+def save_automation_program_operation_task_content(
+    program_id: int,
+    task_id: int,
+    payload: dict[str, Any],
+    *,
+    content_kind: str,
+    segment_key: str = "",
+    operator_id: str,
+) -> dict[str, Any]:
+    current = _fixture_get_operation_task(program_id, task_id) if not production_data_ready() else _build_postgres_repository().get_operation_task(program_id, task_id)
+    content_package = dict(payload.get("content_package") or {})
+    patch: dict[str, Any] = {}
+    if content_kind == "unified":
+        patch = {"content_mode": "unified", "unified_content_json": content_package}
+    elif content_kind in {"profile", "behavior"}:
+        rows = [dict(item) for item in list(current.get("segment_contents_json") or []) if isinstance(item, dict)]
+        next_rows = [item for item in rows if _clean_text(item.get("segment_key")) != _clean_text(segment_key)]
+        next_rows.append({"segment_key": _clean_text(segment_key), "segment_name": _clean_text(payload.get("segment_name")), "content_package": content_package, **content_package})
+        patch = {"content_mode": "profile_layered" if content_kind == "profile" else "behavior_layered", "segment_contents_json": next_rows}
+        if content_kind == "profile":
+            patch["profile_segment_template_id"] = int(payload.get("profile_segment_template_id") or current.get("profile_segment_template_id") or 0) or None
+    elif content_kind == "agent":
+        patch = {"content_mode": "agent", "agent_config_json": {"agent_code": _clean_text(payload.get("agent_code")) or _clean_text((current.get("agent_config_json") or {}).get("agent_code")), **content_package}}
+    else:
+        raise ValueError("发送内容类型不正确")
+    return update_automation_program_operation_task(int(program_id), int(task_id), patch, operator_id=operator_id)
 
 
 def update_automation_program_status(program_id: int, *, status: str, operator_id: str) -> dict[str, Any]:
