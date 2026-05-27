@@ -54,6 +54,35 @@ def test_product_create_update_enable_disable_delete_and_validation() -> None:
 
 def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> None:
     client = make_client()
+    seeded_detail = client.get("/admin/wechat-pay/transactions/order_masked_001")
+    assert seeded_detail.status_code == 200
+    assert "申请退款" in seeded_detail.text
+    assert "可退款" in seeded_detail.text
+    mismatch = client.post(
+        "/api/admin/wechat-pay/orders/order_masked_001/refunds",
+        json={
+            "refund_amount_total": 100,
+            "reason": "客户主动申请退款",
+            "transaction_id_confirmation": "wrong_transaction",
+            "checked": True,
+        },
+    )
+    assert mismatch.status_code == 400
+    assert "微信单号二次确认不匹配" in mismatch.json()["error"]
+    refund = client.post(
+        "/api/admin/wechat-pay/orders/order_masked_001/refunds",
+        json={
+            "refund_amount_total": 100,
+            "reason": "客户主动申请退款",
+            "transaction_id_confirmation": "transaction_masked_001",
+            "checked": True,
+        },
+    ).json()
+    assert refund["ok"] is True
+    assert refund["refund"]["provider_refund_executed"] is False
+    assert refund["order"]["status"] == "refund_processing"
+    assert refund["order"]["active_refund_amount_total"] == 100
+
     wechat = client.post(
         "/api/checkout/wechat",
         json={"product_code": "course_masked_001", "buyer_identity": {"mobile": "mobile_masked_001"}, "quantity": 2},
