@@ -52,9 +52,10 @@ Automation-conversion handlers are split by surface:
 - `automation_conversion_channels.py`: channel center, channel binding, admission logs, and entry-channel member summaries
 - `automation_conversion_member_api.py`: member action and manual-send JSON APIs
 - `automation_conversion_templates.py`: action templates and profile-segment template APIs
-- `automation_conversion_workflows.py`: workflow, node, dashboard, and execution APIs
 - `automation_conversion_agent_api.py`: agent output, agent config, and router callback APIs
 - `automation_conversion_runtime_api.py`: internal runtime trigger and callback APIs
+- `automation_conversion_task_runtime.py`: operation-task due-runner API
+- `automation_conversion_execution_outbound.py`: execution-item outbound send API
 - `automation_conversion_delivery.py`: focus-send and SOP v1 delivery APIs
 
 Automation-conversion helper modules are not route owners:

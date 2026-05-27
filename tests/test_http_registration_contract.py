@@ -568,8 +568,11 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/sop/config",
             "/api/admin/automation-conversion/sop/run-due",
         },
-        "automation_conversion_workflows": {
+        "automation_conversion_execution_outbound": {
             "/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu",
+        },
+        "automation_conversion_task_runtime": {
+            "/api/admin/automation-conversion/tasks/run-due",
         },
         "automation_conversion_runtime_api": {
             "/api/admin/automation-conversion/message-activity-sync/run",
