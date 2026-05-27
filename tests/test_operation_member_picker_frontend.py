@@ -6,9 +6,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
 PICKER_CSS = ROOT / "aicrm_next/frontend_compat/static/admin_console/admin_console.css"
+BASE_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/base.html"
+LEGACY_BASE_TEMPLATE = ROOT / "wecom_ability_service/templates/admin_console/base.html"
 GROUP_OPS_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/group_ops.js"
 CHANNEL_FORM = ROOT / "aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html"
 CHANNEL_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js"
+CHANNEL_CENTER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_code_center_next.js"
+CHANNEL_CENTER_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/channel_code_center.html"
 OPERATIONS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/operations.html"
 JOBS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/jobs.html"
 ADMIN_JOBS_TEMPLATE = ROOT / "aicrm_next/admin_jobs/templates/admin_console/jobs.html"
@@ -28,6 +32,12 @@ def test_operation_member_picker_modal_is_simplified_and_searches_common_api():
     source = _read(PICKER_JS)
 
     assert "/api/admin/common/operation-members" in source
+    assert "function ensureStyles()" in source
+    assert "ensureStyles();" in source
+    assert "data-operation-member-picker-style" in source
+    assert "position: fixed" in source
+    assert "z-index: 10000" in source
+    assert "display: none !important" in source
     assert "选择运营人员" in source
     assert "搜索姓名或 userID，选择后回填到当前页面。" in source
     assert "data-operation-member-search" in source
@@ -71,6 +81,9 @@ def test_operation_member_picker_rows_only_show_identity_avatar_and_select_butto
     assert "operation-member-picker__select" in css
     assert "width: min(820px, 100%)" in css
     assert "grid-template-columns: 1fr 110px" in css
+    assert "background: var(--panel-strong, #fff)" in css
+    assert "box-shadow: var(--shadow-lg, 0 18px 54px rgba(15, 23, 42, 0.18))" in css
+    assert "display: none !important" in css
 
 
 def test_operation_member_picker_error_empty_debounce_clear_cancel_confirm_contract():
@@ -99,13 +112,19 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     jobs = _read(JOBS_TEMPLATE)
     admin_jobs = _read(ADMIN_JOBS_TEMPLATE)
     admin_jobs_base = _read(ADMIN_JOBS_BASE)
+    base_template = _read(BASE_TEMPLATE)
+    legacy_base_template = _read(LEGACY_BASE_TEMPLATE)
 
     assert "OperationMemberPicker.open" in group_ops
     assert "OperationMemberPicker.open" in channel_js
     assert "OperationMemberPicker.open" in operations
     assert "OperationMemberPicker.open" in jobs
     assert "OperationMemberPicker.open" in admin_jobs
-    assert "operation_member_picker.js" in admin_jobs_base
+    assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in base_template
+    assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in legacy_base_template
+    assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in admin_jobs_base
+    assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in base_template
+    assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in legacy_base_template
     for source in [group_ops, channel_js, operations, jobs, admin_jobs]:
         assert "value:" in source
         assert "onSelect:" in source
@@ -144,3 +163,17 @@ def test_ai_assistant_has_no_private_operation_member_picker_or_visible_owner_in
     ]:
         assert forbidden not in combined
     assert "channel.owner_staff_id" in combined
+
+
+def test_channel_center_list_keeps_edit_links_and_nonblocking_clicks():
+    source = _read(CHANNEL_CENTER_JS)
+    template = _read(CHANNEL_CENTER_TEMPLATE)
+
+    assert "channel_code_center_next.js" in template
+    assert '"/api/admin/channels?limit=300"' in source
+    assert "Array.isArray(data.channels)" in source
+    assert "/admin/channels/${encodeURIComponent(channel.id)}/edit" in source
+    assert "data-open-channel-drawer" in source
+    assert "data-copy-channel-link" in source
+    assert "data-share-channel-link" in source
+    assert "preventDefault" not in source
