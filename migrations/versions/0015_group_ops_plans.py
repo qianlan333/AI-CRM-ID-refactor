@@ -92,6 +92,7 @@ def upgrade() -> None:
             action_title TEXT NOT NULL DEFAULT '',
             text_content TEXT NOT NULL DEFAULT '',
             attachments_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             sort_order INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'disabled', 'deleted')),
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

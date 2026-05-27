@@ -472,11 +472,11 @@ class PostgresGroupOpsRepository:
                         """
                         INSERT INTO automation_group_ops_plan_nodes (
                             plan_id, day_index, trigger_time_label, action_title,
-                            text_content, attachments_json, sort_order, status
+                            text_content, attachments_json, content_package_json, sort_order, status
                         )
                         VALUES (
                             :plan_id, :day_index, :trigger_time_label, :action_title,
-                            :text_content, :attachments_json, :sort_order, :status
+                            :text_content, :attachments_json, :content_package_json, :sort_order, :status
                         )
                         RETURNING id
                         """
@@ -500,6 +500,7 @@ class PostgresGroupOpsRepository:
                             action_title = :action_title,
                             text_content = :text_content,
                             attachments_json = :attachments_json,
+                            content_package_json = :content_package_json,
                             sort_order = :sort_order,
                             status = :status,
                             updated_at = CURRENT_TIMESTAMP
@@ -776,6 +777,15 @@ class PostgresGroupOpsRepository:
             "action_title": clean_text(row.get("action_title")),
             "text_content": clean_text(row.get("text_content")),
             "attachments": _json_loads(row.get("attachments_json"), []),
+            "content_package_json": _json_loads(
+                row.get("content_package_json"),
+                {
+                    "content_text": clean_text(row.get("text_content")),
+                    "image_library_ids": [],
+                    "miniprogram_library_ids": [],
+                    "attachment_library_ids": [],
+                },
+            ),
             "sort_order": _int(row.get("sort_order")),
             "status": clean_text(row.get("status")),
             "created_at": _iso(row.get("created_at")),
@@ -816,6 +826,7 @@ class PostgresGroupOpsRepository:
             "action_title": clean_text(payload.get("action_title")),
             "text_content": clean_text(payload.get("text_content")),
             "attachments_json": _json_dumps(list(payload.get("attachments") or [])),
+            "content_package_json": _json_dumps(payload.get("content_package_json") or {}),
             "sort_order": _int(payload.get("sort_order")),
             "status": clean_text(payload.get("status") or "active"),
         }

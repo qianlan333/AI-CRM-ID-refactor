@@ -62,6 +62,7 @@ def _create_group_ops_sqlite_db(path: Path) -> str:
                     action_title TEXT NOT NULL DEFAULT '',
                     text_content TEXT NOT NULL DEFAULT '',
                     attachments_json TEXT NOT NULL DEFAULT '[]',
+                    content_package_json TEXT NOT NULL DEFAULT '{}',
                     sort_order INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -140,6 +141,24 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     group = repo.get_group_asset("wrOgAAA001")
     assert group and group["owner_userid"] == "owner_001"
     binding = repo.bind_group(plan["id"], group)
+    node = repo.create_node(
+        plan["id"],
+        {
+            "day_index": 1,
+            "trigger_time_label": "入群后 10 分钟",
+            "action_title": "欢迎动作",
+            "text_content": "欢迎入群",
+            "attachments": [],
+            "content_package_json": {
+                "content_text": "欢迎入群",
+                "image_library_ids": [12],
+                "miniprogram_library_ids": [],
+                "attachment_library_ids": [34],
+            },
+            "sort_order": 10,
+            "status": "active",
+        },
+    )
 
     plans, total = repo.list_plans({"limit": 50, "offset": 0})
     groups = repo.list_bound_groups(plan["id"])
@@ -163,6 +182,8 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert total == 1
     assert plans[0]["owner_name"] == "王小明"
     assert binding["group_name_snapshot"] == "体验课 01 群"
+    assert node["content_package_json"]["image_library_ids"] == [12]
+    assert repo.list_nodes(plan["id"])[0]["content_package_json"]["attachment_library_ids"] == [34]
     assert groups[0]["external_member_count_snapshot"] == 150
     assert group_total == 1
     assert group_assets[0]["plan_name"] == "体验课 7 日群运营"

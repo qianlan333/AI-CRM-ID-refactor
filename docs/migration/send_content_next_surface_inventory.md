@@ -22,9 +22,24 @@
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
 - `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
 - `aicrm_next/frontend_compat/templates/admin_console/cloud_campaigns_workspace.html`
+- `aicrm_next/frontend_compat/templates/admin_console/group_ops.html`
+- `aicrm_next/frontend_compat/static/admin_console/group_ops.js`
+- `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
+- `aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js`
 
 ## Migrated Surfaces
 
+- Automation operation send-content configuration is migrated to `AICRMSendContentComposer`.
+- HXC dashboard content package preparation is migrated to `AICRMSendContentComposer`; real broadcast remains a later Next-native backend task.
+- Channel code center welcome copy and materials are migrated to `AICRMSendContentComposer`.
+  - The outer channel page still owns channel name, channel code, channel type, owner, entry tag, and link/qrcode fields.
+  - The standard component owns only welcome copy plus local image, miniprogram, and attachment IDs.
+  - The short-term save adapter maps `content_text` to `welcome_message`, `image_library_ids` to `welcome_image_library_ids`, `miniprogram_library_ids` to `welcome_miniprogram_library_ids`, and `attachment_library_ids` to `welcome_attachment_library_ids`.
+- 群运营计划标准编排动作: 已迁移到 `AICRMSendContentComposer`。
+  - 外层页面仍负责第几天、时间、动作标题、排序、状态、节点/动作 id。
+  - 标准组件负责标准话术、图片素材、小程序素材、附件/PDF 素材。
+  - `content_package_json` 是标准组件的保存结构；legacy `node_attachments` / `attachments` 仅兼容旧数据和发送 fallback，不再作为运营输入项。
+  - 本迁移不改变真实企微发送、media_id 解析或群消息下发链路。
 - Campaign Step: 已迁移到 `AICRMSendContentComposer`。
   - Campaign Step 外层仍由 Campaign 审阅页负责：`day_offset`、`send_time`、`stop_on_reply`、step id、campaign id、审批状态、审阅状态。
   - 标准组件负责 `SendContentPackage`：`content_text`、`image_library_ids`、`miniprogram_library_ids`、`attachment_library_ids`。
@@ -49,4 +64,4 @@ This work does not add or rewrite:
 
 HXC / funnel dashboard broadcast remains out of scope for this phase. If a Next-native HXC broadcast backend is needed later, it should be implemented in a separate PR with explicit outbound safety gates.
 
-Sidebar integration is still left for a later frontend integration pass. This PR does not change Sidebar runtime or outbound sending behavior.
+Sidebar integration is still left for a later frontend integration pass. Channel code center entry tags remain a separate outer-page picker and are not part of `SendContentPackage`.
