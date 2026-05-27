@@ -814,7 +814,7 @@ def test_api_docs_page_lists_real_route_groups(monkeypatch):
 
     assert response.status_code == 200
     assert "/api/admin/automation-conversion/jobs/run-due" in response.text
-    assert "/api/h5/wechat-pay/notify" in response.text
+    assert "/api/wechat-pay/notify" in response.text
     assert checker._row_count(response.text) >= 10
 
 

@@ -277,26 +277,20 @@ def config_payload(repo: AdminReadRepository) -> dict[str, Any]:
 
 
 def api_docs_payload(repo: AdminReadRepository) -> dict[str, Any]:
+    from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
+
+    view_model = build_api_docs_view_model()
     routes = [
-        ["后台 API", "GET", "/api/admin/dashboard/shell-context"],
-        ["后台 API", "GET", "/api/customers"],
-        ["后台 API", "GET", "/api/admin/questionnaires"],
-        ["企微回调", "POST", "/wecom/external-contact/callback"],
-        ["企微回调", "POST", "/api/wecom/events"],
-        ["支付回调", "POST", "/api/h5/wechat-pay/notify"],
-        ["支付回调", "POST", "/api/h5/wechat-pay/jsapi/orders"],
-        ["自动化任务", "POST", "/api/admin/automation-conversion/reply-monitor/run-due"],
-        ["自动化任务", "POST", "/api/admin/automation-conversion/jobs/run-due"],
-        ["自动化任务", "POST", "/api/admin/cloud-orchestrator/campaigns/run-due"],
-        ["素材 API", "GET", "/api/admin/image-library"],
-        ["素材 API", "GET", "/api/admin/miniprogram-library"],
-        ["素材 API", "GET", "/api/admin/attachment-library"],
-        ["商品/订单 API", "GET", "/api/admin/wechat-pay/products"],
-        ["商品/订单 API", "GET", "/api/admin/wechat-pay/orders"],
+        [item["group_title"], item["method"], item["path"], item["summary"], item["auth"]]
+        for item in view_model["quick_reference"]
     ]
     return _base_payload(
         repo,
-        {"source_status": "fastapi_route_registry", "cards": [{"label": "API 路由", "value": len(routes), "description": "Next route groups"}], "sections": [{"title": "API 分组", "headers": ["分组", "方法", "路径"], "rows": routes}]},
+        {
+            "source_status": view_model["source_status"],
+            "cards": [{"label": "API 路由", "value": len(routes), "description": "Next route registry"}],
+            "sections": [{"title": "API 分组", "headers": ["分组", "方法", "路径", "说明", "认证"], "rows": routes}],
+        },
     )
 
 
