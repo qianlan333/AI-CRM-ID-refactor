@@ -99,6 +99,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/ai_crm_next_architecture_skill.md",
+        "docs/development/codex_task_template.md",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",

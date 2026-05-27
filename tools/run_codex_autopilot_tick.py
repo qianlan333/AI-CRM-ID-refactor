@@ -185,6 +185,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/phase_execution_state.yaml",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/ai_crm_next_architecture_skill.md",
+        "docs/development/codex_task_template.md",
         "docs/development/legacy_replacement_backlog.md",
         "docs/development/legacy_replacement_backlog.yaml",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
@@ -291,6 +292,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "legacy_retirement_package_cleanup_wave13" and "remaining stale checker/test references" in allowed:
+        return "remaining stale checker/test references"
     if recommended == "residual_narrative_documentation_cleanup_wave12" and "remaining stale non-runtime docs/reports" in allowed:
         return "remaining stale non-runtime docs/reports"
     return allowed[0]

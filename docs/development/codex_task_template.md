@@ -5,7 +5,6 @@
 - `docs/development/ai_crm_next_architecture_skill.md`
 - `docs/project_map.md`
 - `docs/module_status_matrix.md`
-- `docs/legacy_retirement_plan.md`
 - 与本任务相关的 route ownership / checker 文档
 
 ## Task Intake
