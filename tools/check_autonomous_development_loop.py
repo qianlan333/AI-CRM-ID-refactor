@@ -92,6 +92,14 @@ REMOVED_CHANNEL_FALLBACK_STRINGS = {
     '"/api/admin/channels/{path:path}"',
     '"/api/admin/channel-welcome-materials"',
 }
+REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS = {
+    '"/api/admin/image-library"',
+    '"/api/admin/image-library/{path:path}"',
+    '"/api/admin/attachment-library"',
+    '"/api/admin/attachment-library/{path:path}"',
+    '"/api/admin/miniprogram-library"',
+    '"/api/admin/miniprogram-library/{path:path}"',
+}
 REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/wecom/external-contact/callback"',
     '"/api/wecom/events"',
@@ -235,12 +243,12 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
     if state.get("current_phase") != "runtime_fallback_migration":
         blockers.append("current_phase must be runtime_fallback_migration")
-    if state.get("last_merged_pr") != "#862":
-        blockers.append("last_merged_pr must record merged cleanup PR #862")
-    if state.get("last_merged_cleanup_wave") != "final_non_runtime_cleanup_closeout_wave17":
-        blockers.append("last_merged_cleanup_wave must record wave 17 final non-runtime cleanup closeout")
-    if state.get("recommended_next_pr") != "runtime_fallback_migration_channels_track1":
-        blockers.append("recommended_next_pr must name runtime fallback migration channels track 1")
+    if state.get("last_merged_pr") != "#865":
+        blockers.append("last_merged_pr must record merged runtime fallback migration PR #865")
+    if state.get("last_merged_cleanup_wave") != "runtime_fallback_migration_channels_track1":
+        blockers.append("last_merged_cleanup_wave must record channels runtime fallback migration track 1")
+    if state.get("recommended_next_pr") != "runtime_fallback_migration_media_material_libraries_track2":
+        blockers.append("recommended_next_pr must name runtime fallback migration media/material libraries track 2")
     if state.get("owner_approval_required") is not False:
         blockers.append("owner_approval_required must be false for bounded low/medium admin runtime fallback migration")
     if state.get("runtime_behavior_changed") is not False:
@@ -299,6 +307,9 @@ def _validate_runtime_fallback_scope(changed: set[str], blockers: list[str]) -> 
     stale_channel_routes = sorted(route for route in REMOVED_CHANNEL_FALLBACK_STRINGS if route in text)
     if stale_channel_routes:
         blockers.append(f"selected channel production_compat fallback routes must be removed: {stale_channel_routes}")
+    stale_media_routes = sorted(route for route in REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS if route in text)
+    if stale_media_routes:
+        blockers.append(f"selected media/material production_compat fallback routes must be removed: {stale_media_routes}")
     missing_high_risk = sorted(route for route in REQUIRED_HIGH_RISK_FALLBACK_STRINGS if route not in text)
     if missing_high_risk:
         blockers.append(f"high-risk production_compat routes must remain: {missing_high_risk}")

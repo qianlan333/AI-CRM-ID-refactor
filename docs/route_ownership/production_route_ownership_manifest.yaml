@@ -714,12 +714,12 @@ routes:
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked.
+    notes: Next media routes own broad image library list/read/metadata surfaces; explicit upload remains guarded production_compat.
   - route_pattern: /api/admin/image-library/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.media_library
@@ -736,23 +736,23 @@ routes:
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Attachment routes use fake/staging-disabled adapters.
+    notes: Next attachment library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters.
   - route_pattern: /api/admin/miniprogram-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Miniprogram routes use fake/staging-disabled adapters.
+    notes: Next miniprogram library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters.
   - route_pattern: /sidebar/bind-mobile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.frontend_compat

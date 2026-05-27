@@ -312,7 +312,10 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
-    if recommended == "runtime_fallback_migration_channels_track1" and "runtime_fallback_cleanup" in allowed:
+    if recommended in {
+        "runtime_fallback_migration_channels_track1",
+        "runtime_fallback_migration_media_material_libraries_track2",
+    } and "runtime_fallback_cleanup" in allowed:
         return "runtime_fallback_cleanup"
     if recommended == "final_non_runtime_cleanup_closeout_wave17" and "non_runtime_cleanup" in allowed:
         return "non_runtime_cleanup"
