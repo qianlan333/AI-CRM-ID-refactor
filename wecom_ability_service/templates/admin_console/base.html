@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page_title }} · 客户管理后台</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/admin_console.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/admin_console.css') }}?v=operation-member-picker-fix-20260527">
   {% block head_extra %}{% endblock %}
   <script defer src="{{ url_for('static', filename='admin_console/admin_api_client.js') }}"></script>
   <script defer src="{{ url_for('static', filename='admin_console/admin_console.js') }}"></script>
-  <script defer src="{{ url_for('static', filename='admin_console/operation_member_picker.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='admin_console/operation_member_picker.js') }}?v=operation-member-picker-fix-20260527"></script>
 </head>
 <body
   class="admin-shell"
