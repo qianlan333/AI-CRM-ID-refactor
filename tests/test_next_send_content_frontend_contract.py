@@ -53,6 +53,39 @@ def test_send_content_composer_supports_text_disabled_agent_mode() -> None:
     assert 'content_text: textEnabled ? normalized.content_text : ""' in source
 
 
+def test_send_content_composer_uses_direct_material_add_buttons() -> None:
+    source = _read(STATIC / "send_content_composer.js")
+
+    assert 'data-add-material="image"' in source
+    assert 'data-add-material="miniprogram"' in source
+    assert 'data-add-material="attachment"' in source
+    assert "+图片" in source
+    assert "+小程序" in source
+    assert "+附件" in source
+    assert "data-composer-type" not in source
+    assert "activeType" not in source
+
+
+def test_send_content_composer_preview_renders_visual_material_cards() -> None:
+    source = _read(STATIC / "send_content_composer.js")
+    css = _read(STATIC / "send_content_composer.css")
+
+    assert "function materialPreviewCard" in source
+    assert "item.thumbnail_url" in source
+    assert '<img src="${escapeHtml(item.thumbnail_url)}"' in source
+    assert "aicrm-send-composer__preview-material" in source
+    assert "aicrm-send-composer__preview-thumb" in css
+    assert "object-fit: cover" in css
+
+
+def test_send_content_composer_modal_fits_without_horizontal_scroll() -> None:
+    css = _read(STATIC / "send_content_composer.css")
+
+    assert "width: min(1180px, calc(100vw - 32px))" in css
+    assert "overflow-x: hidden" in css
+    assert "grid-template-columns: minmax(420px, 1fr) minmax(300px, 380px)" in css
+
+
 def test_operation_panel_references_send_content_composer_assets() -> None:
     source = _read(TEMPLATE)
 

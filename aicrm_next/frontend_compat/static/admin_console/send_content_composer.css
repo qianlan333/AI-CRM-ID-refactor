@@ -14,10 +14,10 @@
 }
 
 .aicrm-send-composer {
-  width: min(980px, 96vw);
+  width: min(1180px, calc(100vw - 32px));
   max-height: 92vh;
   display: grid;
-  grid-template-rows: auto minmax(360px, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, .12);
   border-radius: 14px;
@@ -53,15 +53,17 @@
 }
 
 .aicrm-send-composer__body {
-  overflow: auto;
-  padding: 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
   background: #f8fafc;
 }
 
 .aicrm-send-composer__layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
+  grid-template-columns: minmax(420px, 1fr) minmax(300px, 380px);
+  gap: 14px;
+  min-width: 0;
 }
 
 .aicrm-send-composer__main,
@@ -97,7 +99,7 @@
 }
 
 .aicrm-send-composer__quick,
-.aicrm-send-composer__tabs,
+.aicrm-send-composer__material-actions,
 .aicrm-send-composer__actions {
   display: flex;
   align-items: center;
@@ -105,7 +107,6 @@
   gap: 8px;
 }
 
-.aicrm-send-composer__tab,
 .aicrm-send-composer__button {
   border: 1px solid rgba(15, 23, 42, .14);
   border-radius: 10px;
@@ -116,7 +117,6 @@
   cursor: pointer;
 }
 
-.aicrm-send-composer__tab.is-active,
 .aicrm-send-composer__button.is-soft {
   border-color: rgba(37, 99, 235, .26);
   background: #eff6ff;
@@ -132,7 +132,9 @@
 .aicrm-send-composer__selected {
   display: grid;
   gap: 8px;
-  min-height: 90px;
+  min-height: 72px;
+  max-height: 190px;
+  overflow: auto;
   padding: 10px;
   border: 1px solid rgba(15, 23, 42, .08);
   border-radius: 12px;
@@ -175,7 +177,7 @@
   display: grid;
   gap: 10px;
   align-content: start;
-  min-height: 260px;
+  min-height: 240px;
   padding: 14px;
   border: 1px solid rgba(15, 23, 42, .08);
   border-radius: 12px;
@@ -184,6 +186,8 @@
 
 .aicrm-send-composer__bubble {
   min-height: 82px;
+  max-height: 300px;
+  overflow: auto;
   padding: 12px;
   border-radius: 12px;
   background: #eff6ff;
@@ -203,18 +207,87 @@
 }
 
 .aicrm-send-composer__tokens {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+  display: grid;
+  gap: 8px;
 }
 
 .aicrm-send-composer__token {
+  display: inline-flex;
+  width: fit-content;
   border-radius: 999px;
   background: #f1f5f9;
   color: #475569;
   padding: 5px 9px;
   font-size: 12px;
   font-weight: 900;
+}
+
+.aicrm-send-composer__preview-material {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.aicrm-send-composer__preview-thumb {
+  width: 72px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.aicrm-send-composer__preview-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.aicrm-send-composer__preview-file {
+  width: 72px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.aicrm-send-composer__preview-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.aicrm-send-composer__preview-meta strong,
+.aicrm-send-composer__preview-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aicrm-send-composer__preview-meta strong {
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.aicrm-send-composer__preview-meta span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 780px) {
