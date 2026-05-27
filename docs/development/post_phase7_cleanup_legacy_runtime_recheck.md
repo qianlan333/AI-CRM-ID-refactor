@@ -3,24 +3,28 @@
 ## Status
 
 - status: `post_phase7_cleanup_legacy_runtime_recheck`
-- source cleanup PR: #815
+- source cleanup PRs: #815 and #818
 - runtime deletion executed: false
 - fallback removal in this PR: false
 - production_compat cleanup in this PR: false
 - wildcard cleanup executed: false
 - delete_ready: false
 
-## Handoff From Task-Groups Exact-Route Cleanup
+## Handoff From Exact-Route Cleanup
 
 PR #815 removed the selected task-groups production_compat fallback hooks and updated route ownership to `aicrm_next.automation_engine`. It did not delete runtime.
+
+PR #818 removed only the selected workflow-nodes production_compat entry after owner approval and Next-native replacement verification. It did not delete runtime and left `delete_ready: false`.
 
 ## Reference Recheck
 
 The recheck confirms:
 
 - task-groups production_compat hooks are absent
-- workflow-nodes production_compat remains retained
+- workflow-nodes production_compat hook is absent
+- workflow-nodes manifest owner is `next`
 - other production_compat routes remain retained
+- `wildcard_router` remains retained
 - fallback references remain for other route families
 - tests and manifest still reference retained legacy categories
 - WeCom, payment, OAuth, media upload, timer/execution, and public submit runtime categories remain retained
@@ -31,10 +35,13 @@ No safe runtime deletion candidate is selected.
 
 Blocked reasons:
 
-- workflow-nodes production_compat retained
 - other production_compat routes retained
-- legacy runtime categories still referenced
-- tests and manifest still reference legacy categories
+- workflows / tasks / agents production_compat routes retained
+- high-risk external runtime retained
+- payment / OAuth / WeCom / public-submit / timer / outbound runtime retained
+- wildcard router retained
+- legacy runtime still referenced by retained production_compat
+- tests and manifest still reference retained legacy categories
 
 ## Production Behavior
 
