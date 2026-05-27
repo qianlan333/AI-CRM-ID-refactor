@@ -125,9 +125,16 @@ def test_broadcast_queue_feishu_settings_page_module(monkeypatch):
     assert response.status_code == 200
     assert "飞书监控配置" in html
     assert "配置后，系统会每小时统计上一小时的群发任务" in html
+    assert "data-feishu-open" in html
+    assert "data-feishu-overlay" in html
     assert "data-feishu-webhook-input" in html
     assert "data-feishu-save" in html
     assert "data-feishu-validate" in html
+    assert "Outbound Task" not in html
+    assert "Trace" not in html
+    assert "Campaign" not in html
+    assert "Workflow" not in html
+    assert "+08:00" not in html
 
 
 def test_mask_webhook_url_safely_masks_feishu_and_lark_tokens():

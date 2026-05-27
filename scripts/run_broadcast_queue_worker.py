@@ -71,6 +71,13 @@ def _process_one_job(job: dict[str, Any]) -> dict[str, Any]:
     from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
 
     job_id = int(job["id"])
+    queue_service.record_job_event(
+        job_id,
+        event_type="handler_dispatched",
+        from_status="claimed",
+        to_status="claimed",
+        event_payload={"source_type": str(job.get("source_type") or "")},
+    )
     result = execute_job(job)
     if result.get("ok"):
         queue_service.mark_sent(
@@ -90,7 +97,7 @@ def _process_one_job(job: dict[str, Any]) -> dict[str, Any]:
         get_db().rollback()
     except Exception:
         pass
-    queue_service.mark_failed(job_id, error=error_msg)
+    queue_service.mark_failed(job_id, error=error_msg, failure_type="handler_error")
     logger.error("broadcast_job dispatch failed id=%s: %s", job_id, error_msg)
     return {"id": job_id, "status": "failed", "reason": error_msg}
 
@@ -101,7 +108,7 @@ def run(batch_size: int) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc)
     stale_claim_seconds = read_int_env("BROADCAST_QUEUE_STALE_CLAIM_SECONDS", 900)
     lease_seconds = read_int_env("BROADCAST_QUEUE_LEASE_SECONDS", 900)
-    recovered = {
+    recovered: dict[str, list[dict[str, Any]]] = {
         "requeued_without_outbound": [],
         "requeued_created_outbound": [],
         "failed_unknown_outbound": [],

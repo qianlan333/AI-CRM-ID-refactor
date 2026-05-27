@@ -3212,6 +3212,13 @@ CREATE TABLE IF NOT EXISTS broadcast_jobs (
     scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     priority INTEGER NOT NULL DEFAULT 100,
     batch_key TEXT NOT NULL DEFAULT '',
+    business_domain TEXT,
+    idempotency_key TEXT,
+    channel TEXT,
+    target_kind TEXT,
+    failure_type TEXT,
+    retry_policy_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     status TEXT NOT NULL DEFAULT 'queued'
         CHECK (status IN ('waiting_approval', 'queued', 'claimed', 'sent', 'failed', 'cancelled')),
     requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
@@ -3260,6 +3267,31 @@ WHERE status = 'claimed' AND claim_token <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_source_scheduled
 ON broadcast_jobs (source_table, source_id, scheduled_for)
 WHERE source_id <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_idempotency_key
+ON broadcast_jobs (idempotency_key)
+WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
+
+CREATE TABLE IF NOT EXISTS broadcast_job_events (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    event_type TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT,
+    event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    actor_type TEXT,
+    actor_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_job_id
+ON broadcast_job_events (job_id);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_event_type_created_at
+ON broadcast_job_events (event_type, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_created_at
+ON broadcast_job_events (created_at);
 
 -- ---------- 用户激活漏斗看板快照 (alembic 0010) ----------
 -- CRM × 黄小璨 聚合快照, 每 30 分钟 TRUNCATE + 重写, 供 admin 看板页 + 外部 API.

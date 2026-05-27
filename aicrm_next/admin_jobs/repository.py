@@ -390,6 +390,8 @@ class PostgresAdminJobsRepository:
         return self._rows(
             """
             SELECT bj.id, bj.source_type, bj.source_id, bj.source_table, bj.scheduled_for, bj.priority, bj.batch_key,
+                   bj.business_domain, bj.channel, bj.target_kind, bj.failure_type,
+                   CASE WHEN COALESCE(bj.idempotency_key, '') <> '' THEN TRUE ELSE FALSE END AS has_idempotency_key,
                    bj.status, bj.requires_approval, bj.approved_by, bj.approved_at,
                    bj.cancelled_by, bj.cancelled_at, bj.cancel_reason,
                    bj.target_count, bj.target_summary, bj.content_type, bj.content_summary,
@@ -595,6 +597,13 @@ class FixtureAdminJobsRepository:
             {"id": 2, "source_type": "focus_send", "source_id": "focus-2", "source_table": "focus_tasks", "scheduled_for": "2026-04-02 13:05:00", "priority": 90, "batch_key": "batch-b", "status": "queued", "requires_approval": False, "approved_by": "", "approved_at": "", "cancelled_by": "", "cancelled_at": "", "cancel_reason": "", "target_count": 1, "target_summary": "1 个客户", "content_type": "text", "content_summary": "排队中内容", "attempt_count": 0, "last_error": "", "outbound_task_id": 9, "sent_count": 0, "failed_count": 0, "trace_id": "trace-2", "created_by": "fixture", "created_at": "2026-04-02 12:41:00", "updated_at": "2026-04-02 12:41:00", "claimed_at": "", "sent_at": ""},
             {"id": 3, "source_type": "manual", "source_id": "manual-3", "source_table": "manual_sends", "scheduled_for": "2026-04-02 13:10:00", "priority": 80, "batch_key": "batch-c", "status": "sent", "requires_approval": False, "approved_by": "", "approved_at": "", "cancelled_by": "", "cancelled_at": "", "cancel_reason": "", "target_count": 3, "target_summary": "3 个客户", "content_type": "text", "content_summary": "已发送内容", "attempt_count": 1, "last_error": "", "outbound_task_id": 10, "sent_count": 3, "failed_count": 0, "trace_id": "trace-3", "created_by": "fixture", "created_at": "2026-04-02 12:42:00", "updated_at": "2026-04-02 13:11:00", "claimed_at": "2026-04-02 13:10:00", "sent_at": "2026-04-02 13:11:00"},
         ]
+        for row in self.broadcast_jobs:
+            source_type = str(row.get("source_type") or "")
+            row.setdefault("business_domain", "manual" if source_type == "manual" else "automation_ops")
+            row.setdefault("channel", "manual" if source_type == "manual" else "wecom_private")
+            row.setdefault("target_kind", "unknown" if source_type == "manual" else "external_userid")
+            row.setdefault("failure_type", "")
+            row.setdefault("has_idempotency_key", source_type != "manual")
         self.broadcast_notification_settings: dict[str, dict[str, Any]] = {}
         self.broadcast_hourly_reports: dict[str, dict[str, Any]] = {}
         self.audit_logs: list[dict[str, Any]] = []

@@ -1881,6 +1881,81 @@ def _ensure_postgres_broadcast_job_leases(db) -> None:
     )
 
 
+def _ensure_postgres_broadcast_queue_platform_hardening(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS broadcast_jobs
+        ADD COLUMN IF NOT EXISTS business_domain TEXT,
+        ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+        ADD COLUMN IF NOT EXISTS channel TEXT,
+        ADD COLUMN IF NOT EXISTS target_kind TEXT,
+        ADD COLUMN IF NOT EXISTS failure_type TEXT,
+        ADD COLUMN IF NOT EXISTS retry_policy_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        """
+    )
+    db.execute(
+        """
+        UPDATE broadcast_jobs
+        SET business_domain = CASE
+            WHEN source_table = 'automation_group_ops_plans' THEN 'group_ops'
+            WHEN content_payload->>'channel' = 'wecom_customer_group' THEN 'group_ops'
+            WHEN source_type = 'cloud_plan' THEN 'ai_assistant'
+            WHEN source_type IN ('campaign', 'sop', 'workflow', 'operation_task', 'focus_send', 'deferred') THEN 'automation_ops'
+            WHEN source_type = 'manual' THEN 'manual'
+            ELSE 'unknown'
+        END
+        WHERE business_domain IS NULL OR business_domain = ''
+        """
+    )
+    db.execute(
+        """
+        UPDATE broadcast_jobs
+        SET channel = CASE
+            WHEN content_payload->>'channel' = 'wecom_customer_group' THEN 'wecom_customer_group'
+            WHEN source_table = 'automation_group_ops_plans' THEN 'wecom_customer_group'
+            ELSE 'unknown'
+        END
+        WHERE channel IS NULL OR channel = ''
+        """
+    )
+    db.execute(
+        """
+        UPDATE broadcast_jobs
+        SET target_kind = 'unknown'
+        WHERE target_kind IS NULL OR target_kind = ''
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_idempotency_key
+        ON broadcast_jobs (idempotency_key)
+        WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS broadcast_job_events (
+            id BIGSERIAL PRIMARY KEY,
+            job_id BIGINT NOT NULL,
+            event_type TEXT NOT NULL,
+            from_status TEXT,
+            to_status TEXT,
+            event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            actor_type TEXT,
+            actor_id TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_job_id ON broadcast_job_events (job_id)",
+        "CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_event_type_created_at ON broadcast_job_events (event_type, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_broadcast_job_events_created_at ON broadcast_job_events (created_at)",
+    ):
+        db.execute(stmt)
+
+
 def _ensure_postgres_group_ops_tables(db) -> None:
     db.execute(
         """
@@ -2239,6 +2314,20 @@ def _init_postgres(db) -> None:
         "ADD COLUMN IF NOT EXISTS claim_token TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS broadcast_jobs "
         "ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS business_domain TEXT",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS idempotency_key TEXT",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS channel TEXT",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS target_kind TEXT",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS failure_type TEXT",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS retry_policy_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE IF EXISTS automation_touch_delivery_log "
         "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS automation_workflow "
@@ -2303,6 +2392,7 @@ def _init_postgres(db) -> None:
         """
     )
     _ensure_postgres_broadcast_job_leases(db)
+    _ensure_postgres_broadcast_queue_platform_hardening(db)
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_questionnaire_scrm_apply_log_columns(db)
     _ensure_postgres_wechat_pay_tables(db)
