@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,7 +110,8 @@ def test_hxc_dashboard_uses_standard_composer_without_legacy_broadcast() -> None
 
     assert "AICRMSendContentComposer.open" in source
     assert "send_content_composer.js" in source
-    assert "/api/admin/hxc-dashboard/broadcast" not in source
+    assert "/api/admin/hxc-dashboard/broadcast-tasks" in source
+    assert not re.search(r"fetch\([\"']/api/admin/hxc-dashboard/broadcast[\"']", source)
     assert "/api/admin/image-library" not in source
     assert "/api/admin/miniprogram-library" not in source
     assert "hxc-" + "asset-grid" not in source

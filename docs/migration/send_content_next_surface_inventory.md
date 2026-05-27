@@ -30,6 +30,7 @@ Outer business pages own strategy, audience, sender, schedule, approval, and rou
 - `PUT /api/admin/automation-conversion/tasks/{task_id}/send-content/behavior-segments/{segment_key}`
 - `PUT /api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials`
 - `GET /api/admin/automation-conversion/behavior-segment-rules`
+- `POST /api/admin/hxc-dashboard/broadcast-tasks`
 
 ## Frontend Assets
 
@@ -37,13 +38,20 @@ Outer business pages own strategy, audience, sender, schedule, approval, and rou
 - `aicrm_next/frontend_compat/static/admin_console/send_content_composer.css`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
+- `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/frontend_compat/templates/admin_console/hxc_dashboard.html`
+- `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
+- `aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js`
+- `aicrm_next/frontend_compat/templates/admin_console/group_ops.html`
+- `aicrm_next/frontend_compat/static/admin_console/group_ops.js`
+- `aicrm_next/frontend_compat/templates/admin_console/cloud_campaigns_workspace.html`
 
 ## Migrated
 
 | Surface | 状态 | 外层负责 | 标准组件负责 | 备注 |
 |---|---|---|---|---|
 | 自动化运营编排 | migrated | content_mode / segment / agent | content_text + 三类素材 | 样板入口；发送策略属于外层页面 |
-| HXC 漏斗看板 | migrated / backend pending | audience_filter / sender | content_text + 三类素材 | 前端已接标准组件；真实 Next-native broadcast 后端另做 |
+| HXC 漏斗看板 | migrated | audience_filter / sender / idempotency_key | content_text + 三类素材 | 已接 Next-native `/api/admin/hxc-dashboard/broadcast-tasks`；真实外发仍由后续 dispatch 链路负责 |
 | 渠道码中心欢迎语 | migrated | 渠道基础信息 / 入渠标签 | welcome_message + 三类素材 | adapter 映射到原 welcome 字段 |
 | 群运营计划动作 | migrated | day / time / status / sort | 标准话术 + 三类素材 | legacy attachments 只兼容旧数据和发送 fallback |
 | Campaign Step | migrated | day_offset / send_time / stop_on_reply | step 内容包 | 兼容旧 `content_text` / `content_payload_json` |
@@ -69,4 +77,5 @@ Outer business pages own strategy, audience, sender, schedule, approval, and rou
 - Migrated business pages must not directly fetch `/api/admin/image-library`, `/api/admin/miniprogram-library`, or `/api/admin/attachment-library`.
 - Business pages must not define private material pickers such as `attachMiniprogramPicker`, `setupWelcomeMaterialPicker`, or inline attachment JSON textareas.
 - `AICRMMaterialPicker` is the only frontend code that may list selectable send-content materials for business pages.
+- HXC broadcast must use `/api/admin/hxc-dashboard/broadcast-tasks` and must not call the old Flask `/api/admin/hxc-dashboard/broadcast` route.
 - This migration work does not change real WeCom send, upload, media resolution, or outbound task execution.

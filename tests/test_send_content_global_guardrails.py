@@ -119,7 +119,7 @@ def test_send_content_surface_inventory_has_required_status_sections() -> None:
     assert "## Legacy Only / Not Migrating" in source
     for row in [
         "| 自动化运营编排 | migrated |",
-        "| HXC 漏斗看板 | migrated / backend pending |",
+        "| HXC 漏斗看板 | migrated |",
         "| 渠道码中心欢迎语 | migrated |",
         "| 群运营计划动作 | migrated |",
         "| Campaign Step | migrated |",
