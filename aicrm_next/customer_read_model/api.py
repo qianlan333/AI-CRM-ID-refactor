@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.integration_gateway import legacy_sidebar_read_facade
 
 from .application import (
     GetAdminCustomerProfileQuery,
@@ -41,6 +42,34 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
         "route_owner": "ai_crm_next",
     }
     return JSONResponse(jsonable_encoder(payload), status_code=503)
+
+
+def _sidebar_input_error(message: str) -> JSONResponse:
+    return JSONResponse(
+        {"ok": False, "error": message, "source_status": "input_error", "route_owner": "ai_crm_next"},
+        status_code=400,
+    )
+
+
+def _sidebar_lookup_error(message: str) -> JSONResponse:
+    return JSONResponse(
+        {"ok": False, "error": message, "source_status": "not_found", "route_owner": "ai_crm_next"},
+        status_code=404,
+    )
+
+
+def _sidebar_read_unavailable(exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "degraded": True,
+            "source_status": "production_unavailable",
+            "error_code": "sidebar_read_unavailable",
+            "page_error": str(exc),
+            "route_owner": "ai_crm_next",
+        },
+        status_code=503,
+    )
 
 
 def _resolve_external_userid(external_userid: str | None = None, user_id: str | None = None) -> str:
@@ -211,6 +240,179 @@ def get_sidebar_customer_context(external_userid: str | None = None, user_id: st
         return _input_error("customer not found")
     except Exception as exc:
         return _production_unavailable(exc)
+
+
+@router.get("/api/sidebar/jssdk-config")
+def get_sidebar_jssdk_config(url: str | None = None):
+    if not str(url or "").strip():
+        return _sidebar_input_error("url is required")
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "jssdk signature is disabled in Next read-only cleanup",
+            "source_status": "external_call_blocked",
+            "route_owner": "ai_crm_next",
+        },
+        status_code=503,
+    )
+
+
+@router.get("/api/sidebar/lead-pool/status")
+def get_sidebar_lead_pool_status(external_userid: str | None = None, owner_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_lead_pool_status(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/signup-tags/status")
+def get_sidebar_signup_tag_status(external_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_signup_tag_status(
+            external_userid=str(external_userid or "").strip(),
+        )
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/marketing-status")
+def get_sidebar_marketing_status(external_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_marketing_status(
+            external_userid=str(external_userid or "").strip(),
+        )
+    except LookupError as exc:
+        return _sidebar_lookup_error(str(exc) or "customer not found")
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/workbench")
+def get_sidebar_v2_workbench(external_userid: str | None = None, owner_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_workbench_readonly(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/questionnaires")
+def get_sidebar_v2_questionnaires(external_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_questionnaires(
+            external_userid=str(external_userid or "").strip(),
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {**payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/materials")
+def get_sidebar_v2_materials(type: str = "", limit: int = 50):
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_materials(material_type=type, limit=limit)
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {**payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/materials/image/{image_id}/thumbnail")
+def get_sidebar_v2_image_thumbnail(image_id: int):
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_image_thumbnail(image_id)
+    except LookupError as exc:
+        return _sidebar_lookup_error(str(exc) or "image not found")
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    redirect_url = str(payload.get("redirect_url") or "").strip()
+    if redirect_url:
+        return RedirectResponse(redirect_url, status_code=302)
+    response = Response(payload.get("body") or b"", media_type=str(payload.get("mime_type") or "image/png"))
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
+
+
+@router.get("/api/sidebar/v2/other-staff-messages")
+def get_sidebar_v2_other_staff_messages(
+    external_userid: str | None = None,
+    current_userid: str | None = None,
+    owner_userid: str | None = None,
+    limit: int = 20,
+):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_other_staff_messages(
+            external_userid=str(external_userid or "").strip(),
+            current_userid=str(current_userid or owner_userid or "").strip(),
+            limit=limit,
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {**payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/products")
+def get_sidebar_v2_products(external_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_products(
+            external_userid=str(external_userid or "").strip(),
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {**payload, "route_owner": "ai_crm_next"}
+
+
+@router.get("/api/sidebar/v2/orders")
+def get_sidebar_v2_orders(external_userid: str | None = None):
+    if not str(external_userid or "").strip():
+        return _sidebar_input_error("external_userid is required")
+    try:
+        payload = legacy_sidebar_read_facade.sidebar_v2_orders_readonly(
+            external_userid=str(external_userid or "").strip(),
+        )
+    except ValueError as exc:
+        return _sidebar_input_error(str(exc))
+    except Exception as exc:
+        return _sidebar_read_unavailable(exc)
+    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
 
 
 @router.get("/api/admin/customers/profile")
