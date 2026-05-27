@@ -18,6 +18,9 @@ def _breadcrumb_items(*items: tuple[str, str | None]) -> list[dict[str, str]]:
 
 _ADMIN_NAV_FALLBACK_HREFS = {
     "api.admin_automation_conversion": "/admin/automation-conversion",
+    "api.admin_group_ops_ui": "/admin/automation-conversion/group-ops/ui",
+    "api.admin_group_ops_plan_detail": "/admin/automation-conversion/group-ops/plans",
+    "api.admin_group_ops_groups_ui": "/admin/automation-conversion/group-ops/groups/ui",
     "api.admin_channels_page": "/admin/channels",
     "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
     "api.admin_console_customers": "/admin/customers",

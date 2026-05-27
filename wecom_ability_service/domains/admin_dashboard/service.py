@@ -13,6 +13,7 @@ ADMIN_NAV_GROUPS = (
         "title": "运营",
         "items": (
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
+            {"key": "group_ops", "label": "群运营计划", "endpoint": "api.admin_group_ops_ui"},
             {"key": "channels", "label": "渠道码中心", "endpoint": "api.admin_channels_page"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},

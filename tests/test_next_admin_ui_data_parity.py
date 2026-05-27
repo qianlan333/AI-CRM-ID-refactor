@@ -114,6 +114,38 @@ def test_next_channels_page_stays_next_owned_in_production_data_mode(monkeypatch
     assert "群运营计划" in response.text
 
 
+def test_next_wechat_transactions_page_uses_unified_admin_shell(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/wechat-pay/transactions")
+    html = response.text
+
+    assert response.status_code == 200
+    assert 'data-next-commerce-admin="wechat-pay-transactions"' in html
+    assert "admin-shell" in html
+    assert "admin-nav" in html
+    assert "群运营计划" in html
+    assert "渠道码中心" in html
+    assert "交易管理" in html
+    assert "导出筛选结果" in html
+    assert 'class="layout"' not in html
+    assert 'class="sidebar"' not in html
+    assert "心流商业客户管理" not in html
+
+
+def test_next_wechat_transaction_detail_page_uses_unified_admin_shell(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/wechat-pay/transactions/order_masked_001")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "admin-shell" in html
+    assert "申请退款" in html
+    assert "再次完整输入微信单号" in html
+    assert "群运营计划" in html
+
+
 def test_next_channel_form_pages_render_native_editor(monkeypatch):
     client = _client(monkeypatch)
 

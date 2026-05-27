@@ -60,15 +60,23 @@ def test_wechat_transaction_admin_is_next_native_surface() -> None:
     assert response.status_code == 200
     text = response.text
     assert 'data-next-commerce-admin="wechat-pay-transactions"' in text
+    assert "admin-shell" in text
+    assert "admin-nav" in text
+    assert "群运营计划" in text
     assert "微信支付交易管理" in text
     assert "导出筛选结果" in text
     assert "/api/admin/wechat-pay/orders" in text
+    assert 'class="layout"' not in text
+    assert 'class="sidebar"' not in text
+    assert "心流商业客户管理" not in text
     assert "生产 wechat_pay_orders 只读列表" not in text
     assert "production_postgres" not in text
     detail = make_client().get("/admin/wechat-pay/transactions/order_masked_001")
     assert detail.status_code == 200
+    assert "admin-shell" in detail.text
     assert "申请退款" in detail.text
     assert "再次完整输入微信单号" in detail.text
+    assert "群运营计划" in detail.text
 
 
 def test_media_library_routes_return_restored_card_templates() -> None:

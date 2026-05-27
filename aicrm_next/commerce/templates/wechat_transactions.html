@@ -1,267 +1,375 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>微信支付交易管理 · AI-CRM Next</title>
-  <style>
-    :root { color-scheme: light; --blue:#2563eb; --blue-soft:#eaf1ff; --line:#dbe5f3; --text:#172033; --muted:#66758a; --page:#f4f7fb; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--page); color:var(--text); }
-    .layout { display:grid; grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
-    .sidebar { background:#fff; border-right:1px solid #e5ebf4; padding:18px 12px; }
-    .brand { display:flex; gap:10px; align-items:center; margin-bottom:32px; font-weight:900; font-size:18px; }
-    .mark { width:36px; height:36px; display:grid; place-items:center; border-radius:8px; background:var(--blue); color:#fff; font-size:14px; }
-    .nav-title { margin:22px 0 8px; color:#9aa7b7; font-weight:900; font-size:13px; }
-    .nav-link { display:block; padding:12px 14px; border-radius:8px; color:#46566b; text-decoration:none; font-weight:800; }
-    .nav-link.is-active { background:#eaf1ff; color:#2563eb; }
-    .main { min-width:0; }
-    .topbar { background:#fff; border-bottom:1px solid #e5ebf4; padding:22px 32px; }
-    .crumbs { color:#8b98aa; font-size:13px; font-weight:800; margin-bottom:4px; }
-    h1 { margin:0; font-size:30px; letter-spacing:0; }
-    .summary { margin:8px 0 0; color:var(--muted); font-weight:700; }
-    .page { padding:26px 32px 42px; display:grid; gap:0; }
-    .card { border:1px solid var(--line); background:#fff; box-shadow:0 14px 30px rgba(26,50,86,.07); }
-    .card + .card { margin-top:0; border-top:0; }
-    .card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:24px 28px; border-bottom:1px solid #edf2f8; }
-    .card-head h2 { margin:0; font-size:26px; letter-spacing:0; }
-    .card-head p { margin:8px 0 0; color:var(--muted); font-weight:800; }
-    .body { padding:22px 28px; }
-    .actions, .pager { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-    button, select, input { font:inherit; }
-    button, .select { min-height:42px; border:1px solid var(--line); border-radius:999px; background:#fff; color:#1f2a3d; padding:9px 16px; font-weight:900; cursor:pointer; }
-    button.primary { border-color:var(--blue); background:var(--blue); color:#fff; }
-    button.soft { border-color:#c7d7fe; background:var(--blue-soft); color:#1d4ed8; }
-    button:disabled { opacity:.55; cursor:not-allowed; }
-    .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
-    label { display:block; margin-bottom:7px; color:#334155; font-size:13px; font-weight:900; }
-    input, select.field { width:100%; min-height:44px; border:1px solid var(--line); border-radius:12px; background:#fff; padding:9px 12px; color:var(--text); }
-    .table-wrap { overflow-x:auto; }
-    table { width:100%; min-width:1100px; border-collapse:separate; border-spacing:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
-    th, td { padding:14px 16px; border-bottom:1px solid #edf2f8; text-align:left; vertical-align:top; }
-    th { background:#f7faff; color:#617086; font-size:13px; font-weight:900; white-space:nowrap; }
-    tr:last-child td { border-bottom:0; }
-    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; font-weight:800; }
-    .muted, .sub { color:var(--muted); }
-    .sub { font-size:12px; line-height:1.6; margin-top:3px; }
-    .strong { font-weight:900; }
-    .pill { display:inline-flex; align-items:center; min-height:26px; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:900; background:#eef2f7; color:#475569; }
-    .pill.paid { background:#e7f8ee; color:#0f7a43; }
-    .pill.pending { background:#fff4d6; color:#8a5a00; }
-    .pill.failed { background:#fee2e2; color:#b91c1c; }
-    .pill.refund_processing { background:#f3e8ff; color:#9333ea; }
-    .pill.partial_refunded { background:#e7efff; color:#1d4ed8; }
-    .empty { display:none; padding:30px; border:1px dashed #b7c6dc; border-radius:12px; color:var(--muted); text-align:center; font-weight:900; }
-    .state { display:block; }
-    .foot { display:flex; justify-content:space-between; gap:12px; padding:18px 28px; border-top:1px solid #edf2f8; background:#fbfdff; }
-    .link { color:var(--blue); text-decoration:none; font-weight:900; }
-    .toast { margin-top:14px; color:var(--muted); font-weight:800; }
-    .detail-grid { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:18px; align-items:start; }
-    .kv { display:grid; grid-template-columns:150px minmax(0,1fr); gap:12px 18px; }
-    .kv-label { color:var(--muted); font-weight:900; }
-    .kv-value { font-weight:900; word-break:break-all; }
-    .field-block + .field-block { margin-top:14px; }
-    .checkline { display:flex; align-items:center; gap:8px; margin-top:14px; color:#334155; font-weight:800; }
-    .checkline input { width:auto; min-height:0; }
-    @media (max-width:980px){ .layout{grid-template-columns:1fr}.sidebar{display:none}.grid{grid-template-columns:1fr 1fr}.topbar,.page{padding-left:18px;padding-right:18px} }
-    @media (max-width:980px){ .detail-grid{grid-template-columns:1fr} }
-    @media (max-width:680px){ .grid,.kv{grid-template-columns:1fr}.card-head,.foot{flex-direction:column;align-items:stretch} h1{font-size:24px}.card-head h2{font-size:22px} }
-  </style>
-</head>
-<body data-next-commerce-admin="wechat-pay-transactions">
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="brand"><div class="mark">CRM</div><div>心流商业客户管理</div></div>
-      <div class="nav-title">运营</div>
-      <a class="nav-link" href="/admin/automation-conversion">自动化运营</a>
-      <a class="nav-link" href="/admin/cloud-orchestrator">AI 助手</a>
-      <a class="nav-link" href="/admin/customers">客户激活 / 客户列表</a>
-      <a class="nav-link" href="/admin/user-ops">漏斗 / 数据看板</a>
-      <a class="nav-link" href="/admin/questionnaires">问卷</a>
-      <a class="nav-link" href="/admin/wecom-tags">企微标签管理</a>
-      <div class="nav-title">交易</div>
-      <a class="nav-link is-active" href="/admin/wechat-pay/transactions">交易管理</a>
-      <a class="nav-link" href="/admin/wechat-pay/products">商品管理</a>
-      <div class="nav-title">素材</div>
-      <a class="nav-link" href="/admin/image-library">图片素材库</a>
-      <a class="nav-link" href="/admin/miniprogram-library">小程序素材库</a>
-      <a class="nav-link" href="/admin/attachment-library">附件素材库</a>
-      <div class="nav-title">配置及后台</div>
-      <a class="nav-link" href="/admin/jobs">同步任务配置 / 同步任务</a>
-    </aside>
-    <main class="main">
-      <header class="topbar">
-        <div class="crumbs">客户管理后台 / 交易管理</div>
-        <h1>{% if detail_order or detail_error %}微信支付订单详情{% else %}微信支付交易管理{% endif %}</h1>
-        <p class="summary">{% if detail_order or detail_error %}核对订单状态、退款金额，并提交退款申请。{% else %}按订单创建时间检索微信支付订单、导出筛选结果，并进入独立详情页查看订单状态。{% endif %}</p>
-      </header>
-      <section class="page">
-        {% if detail_error %}
-        <section class="card">
-          <div class="body">
-            <div class="empty state">{{ detail_error }}</div>
-            <p><a class="link" href="/admin/wechat-pay/transactions">返回交易管理</a></p>
-          </div>
-        </section>
-        {% elif detail_order %}
-        <div class="detail-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <h2>订单详情</h2>
-                <p>展示微信侧交易单号和运营核对字段。</p>
-              </div>
-              <a class="link" href="/admin/wechat-pay/transactions">返回列表</a>
-            </div>
-            <div class="body">
-              <div class="kv">
-                <div class="kv-label">微信单号</div><div class="kv-value mono">{{ detail_order.transaction_id }}</div>
-                <div class="kv-label">订单创建时间</div><div class="kv-value">{{ detail_order.created_at }}</div>
-                <div class="kv-label">付款人</div><div class="kv-value">{{ detail_order.payer_name }}</div>
-                <div class="kv-label">手机号</div><div class="kv-value">{{ detail_order.mobile or "未记录" }}</div>
-                <div class="kv-label">客户身份</div><div class="kv-value">{{ detail_order.userid or detail_order.external_userid or "-" }}</div>
-                <div class="kv-label">商品</div><div class="kv-value">{{ detail_order.product_name }} / {{ detail_order.product_code }}</div>
-                <div class="kv-label">金额</div><div class="kv-value">¥{{ detail_order.amount_yuan }} {{ detail_order.currency }}</div>
-                <div class="kv-label">状态</div><div class="kv-value"><span class="pill {{ detail_order.status }}">{{ detail_order.status_label }}</span></div>
-                <div class="kv-label">已退款</div><div class="kv-value">¥{{ detail_order.refunded_amount_yuan }}</div>
-                <div class="kv-label">退款处理中</div><div class="kv-value">¥{{ detail_order.active_refund_amount_yuan }}</div>
-                <div class="kv-label">可退款</div><div class="kv-value">¥{{ detail_order.refundable_amount_yuan }}</div>
-              </div>
-            </div>
-          </section>
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <h2>申请退款</h2>
-                <p>仅已支付或部分退款且仍有可退金额的订单可提交。</p>
-              </div>
-            </div>
-            <div class="body">
-              {% if detail_order.can_refund %}
-              <form id="refundForm" data-order-id="{{ detail_order.id }}" data-max-refund-total="{{ detail_order.refundable_amount_total }}">
-                <div class="field-block">
-                  <label for="refundAmount">退款金额</label>
-                  <input id="refundAmount" inputmode="decimal" placeholder="最多 {{ detail_order.refundable_amount_yuan }}" required>
-                </div>
-                <div class="field-block">
-                  <label for="refundReason">退款原因</label>
-                  <select class="field" id="refundReason" required>
-                    <option value="">请选择</option>
-                    <option value="客户主动申请退款">客户主动申请退款</option>
-                    <option value="重复支付">重复支付</option>
-                    <option value="商品或服务未交付">商品或服务未交付</option>
-                    <option value="运营核销调整">运营核销调整</option>
-                  </select>
-                </div>
-                <div class="field-block">
-                  <label for="transactionConfirm">再次完整输入微信单号</label>
-                  <input id="transactionConfirm" autocomplete="off" required>
-                </div>
-                <label class="checkline"><input id="refundChecked" type="checkbox"><span>已核对付款人、商品、金额和微信单号</span></label>
-                <div class="actions" style="margin-top:14px"><button class="primary" type="submit">提交退款申请</button></div>
-              </form>
-              <div class="toast" id="refundResult"></div>
-              {% else %}
-              <div class="empty state">当前订单状态不可申请退款。</div>
-              {% endif %}
-            </div>
-          </section>
-        </div>
-        {% else %}
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <h2>筛选</h2>
-              <p>默认查看最近 30 天，按订单创建时间倒序；可按商品、手机号、客户身份或微信单号筛选。</p>
-            </div>
-            <div class="actions">
-              <button class="primary" id="searchBtn" type="button">查询</button>
-              <button class="soft" id="exportBtn" type="button">导出筛选结果</button>
-              <button id="resetBtn" type="button">重置</button>
-            </div>
-          </div>
-          <div class="body">
-            <div class="grid">
-              <div><label for="mobile">手机号</label><input id="mobile" placeholder="输入手机号"></div>
-              <div><label for="identity">客户身份</label><input id="identity" placeholder="输入客户 ID 或外部联系人 ID"></div>
-              <div><label for="transaction">微信单号</label><input id="transaction" placeholder="输入微信支付单号"></div>
-              <div><label for="product">商品</label><select class="field" id="product"><option value="">全部商品</option>{% for product in product_options %}<option value="{{ product.product_code }}">{{ product.product_name }}</option>{% endfor %}</select></div>
-              <div><label for="createdFrom">订单创建开始</label><input id="createdFrom" type="datetime-local" value="{{ default_filters.created_from }}"></div>
-              <div><label for="createdTo">订单创建结束</label><input id="createdTo" type="datetime-local" value="{{ default_filters.created_to }}"></div>
-              <div><label for="status">状态</label><select class="field" id="status"><option value="">全部</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="refund_processing">退款处理中</option><option value="partial_refunded">部分退款</option><option value="full_refunded">全额退款</option><option value="failed">支付失败</option></select></div>
-            </div>
-            <div class="toast" id="notice"></div>
-          </div>
-        </section>
-        <section class="card">
-          <div class="card-head">
-            <div><h2>订单列表</h2><p id="summary">正在加载订单...</p></div>
-            <div class="actions">
-              <select class="select" id="limit" aria-label="每页条数"><option value="20">每页 20 条</option><option value="50">每页 50 条</option><option value="100">每页 100 条</option></select>
-              <button id="refreshBtn" type="button">刷新</button>
-            </div>
-          </div>
-          <div class="body">
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>订单创建时间</th><th>微信单号</th><th>付款人 / 客户身份</th><th>商品</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
-                <tbody id="rows"></tbody>
-              </table>
-            </div>
-            <div class="empty" id="empty">暂无符合条件的订单。</div>
-          </div>
-          <div class="foot">
-            <div class="muted" id="pageHint">服务端分页。</div>
-            <div class="pager"><button id="prevBtn" type="button">上一页</button><button class="soft" id="nextBtn" type="button">下一页</button></div>
-          </div>
-        </section>
-        {% endif %}
-      </section>
-    </main>
-  </div>
-  <script>
-    const state = {offset: 0, total: 0, limit: 20};
-    const $ = (id) => document.getElementById(id);
-    const esc = (value) => String(value || "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-    const moneyCents = (value) => Math.round(Number(value || 0) * 100);
-    const refundForm = $("refundForm");
-    if (refundForm) {
-      refundForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const result = $("refundResult");
-        const refundAmountTotal = moneyCents($("refundAmount").value);
-        const maxRefundTotal = Number(refundForm.dataset.maxRefundTotal || 0);
-        result.textContent = "正在提交退款申请...";
-        if (!Number.isFinite(refundAmountTotal) || refundAmountTotal <= 0) {
-          result.textContent = "退款金额必须大于 0";
-          return;
-        }
-        if (maxRefundTotal > 0 && refundAmountTotal > maxRefundTotal) {
-          result.textContent = `退款金额不能超过可退款金额 ¥${(maxRefundTotal / 100).toFixed(2)}`;
-          return;
-        }
-        const response = await fetch(`/api/admin/wechat-pay/orders/${encodeURIComponent(refundForm.dataset.orderId)}/refunds`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            refund_amount_total: refundAmountTotal,
-            reason: $("refundReason").value,
-            transaction_id_confirmation: $("transactionConfirm").value,
-            checked: $("refundChecked").checked
-          })
-        });
-        const data = await response.json();
-        if (!data.ok) {
-          result.textContent = data.error || "退款申请提交失败";
-          return;
-        }
-        result.textContent = `退款申请已提交，当前订单状态：${data.order.status_label}，退款处理中 ¥${data.order.active_refund_amount_yuan}，已退款 ¥${data.order.refunded_amount_yuan}，可退款 ¥${data.order.refundable_amount_yuan}`;
-        if (Number(data.order.refundable_amount_total || 0) <= 0) {
-          refundForm.querySelectorAll("input, select, button").forEach((node) => { node.disabled = true; });
-        }
-      });
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .commerce-admin {
+    display: grid;
+    gap: 18px;
+  }
+
+  .commerce-card-body {
+    display: grid;
+    gap: 16px;
+  }
+
+  .commerce-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
+
+  .commerce-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .commerce-field span,
+  .commerce-kv-label {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .commerce-field input,
+  .commerce-field select {
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fffdf8;
+    color: var(--text);
+  }
+
+  .commerce-table-wrap {
+    min-height: 360px;
+  }
+
+  .commerce-table {
+    min-width: 1100px;
+  }
+
+  .commerce-summary,
+  .commerce-toast,
+  .commerce-sub,
+  .commerce-muted {
+    color: var(--muted);
+  }
+
+  .commerce-summary {
+    min-height: 21px;
+  }
+
+  .commerce-toast {
+    min-height: 22px;
+    font-weight: 700;
+  }
+
+  .commerce-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .commerce-strong {
+    font-weight: 800;
+  }
+
+  .commerce-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .commerce-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .commerce-pill.paid {
+    background: #e7f8ee;
+    color: #0f7a43;
+  }
+
+  .commerce-pill.pending {
+    background: #fff4d6;
+    color: #8a5a00;
+  }
+
+  .commerce-pill.failed {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .commerce-pill.refund_processing {
+    background: #f3e8ff;
+    color: #9333ea;
+  }
+
+  .commerce-pill.partial_refunded {
+    background: #e7efff;
+    color: #1d4ed8;
+  }
+
+  .commerce-empty {
+    display: none;
+    min-height: 120px;
+    padding: 28px;
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-md);
+    color: var(--muted);
+    text-align: center;
+    font-weight: 800;
+  }
+
+  .commerce-empty.is-visible {
+    display: grid;
+    place-items: center;
+  }
+
+  .commerce-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .commerce-kv {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 12px 18px;
+  }
+
+  .commerce-kv-value {
+    font-weight: 800;
+    word-break: break-all;
+  }
+
+  .commerce-refund-form {
+    display: grid;
+    gap: 14px;
+  }
+
+  .commerce-checkline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .commerce-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (max-width: 1100px) {
+    .commerce-filter-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    if ($("rows")) {
+  }
+
+  @media (max-width: 840px) {
+    .commerce-detail-grid,
+    .commerce-filter-grid,
+    .commerce-kv {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="commerce-admin" data-next-commerce-admin="wechat-pay-transactions">
+  {% if detail_error %}
+  <section class="admin-card">
+    <div class="commerce-card-body">
+      <div class="commerce-empty is-visible">{{ detail_error }}</div>
+      <p><a class="admin-button admin-button--ghost" href="/admin/wechat-pay/transactions">返回交易管理</a></p>
+    </div>
+  </section>
+  {% elif detail_order %}
+  <div class="commerce-detail-grid">
+    <section class="admin-card">
+      <div class="admin-card-head">
+        <div>
+          <h2>订单详情</h2>
+          <p>展示微信侧交易单号和运营核对字段。</p>
+        </div>
+        <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/transactions">返回列表</a>
+      </div>
+      <div class="commerce-card-body">
+        <div class="commerce-kv">
+          <div class="commerce-kv-label">微信单号</div><div class="commerce-kv-value commerce-mono">{{ detail_order.transaction_id }}</div>
+          <div class="commerce-kv-label">订单创建时间</div><div class="commerce-kv-value">{{ detail_order.created_at }}</div>
+          <div class="commerce-kv-label">付款人</div><div class="commerce-kv-value">{{ detail_order.payer_name }}</div>
+          <div class="commerce-kv-label">手机号</div><div class="commerce-kv-value">{{ detail_order.mobile or "未记录" }}</div>
+          <div class="commerce-kv-label">客户身份</div><div class="commerce-kv-value">{{ detail_order.userid or detail_order.external_userid or "-" }}</div>
+          <div class="commerce-kv-label">商品</div><div class="commerce-kv-value">{{ detail_order.product_name }} / {{ detail_order.product_code }}</div>
+          <div class="commerce-kv-label">金额</div><div class="commerce-kv-value">¥{{ detail_order.amount_yuan }} {{ detail_order.currency }}</div>
+          <div class="commerce-kv-label">状态</div><div class="commerce-kv-value"><span class="commerce-pill {{ detail_order.status }}">{{ detail_order.status_label }}</span></div>
+          <div class="commerce-kv-label">已退款</div><div class="commerce-kv-value">¥{{ detail_order.refunded_amount_yuan }}</div>
+          <div class="commerce-kv-label">退款处理中</div><div class="commerce-kv-value">¥{{ detail_order.active_refund_amount_yuan }}</div>
+          <div class="commerce-kv-label">可退款</div><div class="commerce-kv-value">¥{{ detail_order.refundable_amount_yuan }}</div>
+        </div>
+      </div>
+    </section>
+    <section class="admin-card">
+      <div class="admin-card-head">
+        <div>
+          <h2>申请退款</h2>
+          <p>仅已支付或部分退款且仍有可退金额的订单可提交。</p>
+        </div>
+      </div>
+      <div class="commerce-card-body">
+        {% if detail_order.can_refund %}
+        <form class="commerce-refund-form" id="refundForm" data-order-id="{{ detail_order.id }}" data-max-refund-total="{{ detail_order.refundable_amount_total }}">
+          <label class="commerce-field" for="refundAmount">
+            <span>退款金额</span>
+            <input id="refundAmount" inputmode="decimal" placeholder="最多 {{ detail_order.refundable_amount_yuan }}" required>
+          </label>
+          <label class="commerce-field" for="refundReason">
+            <span>退款原因</span>
+            <select id="refundReason" required>
+              <option value="">请选择</option>
+              <option value="客户主动申请退款">客户主动申请退款</option>
+              <option value="重复支付">重复支付</option>
+              <option value="商品或服务未交付">商品或服务未交付</option>
+              <option value="运营核销调整">运营核销调整</option>
+            </select>
+          </label>
+          <label class="commerce-field" for="transactionConfirm">
+            <span>再次完整输入微信单号</span>
+            <input id="transactionConfirm" autocomplete="off" required>
+          </label>
+          <label class="commerce-checkline"><input id="refundChecked" type="checkbox"><span>已核对付款人、商品、金额和微信单号</span></label>
+          <div class="admin-form-actions"><button class="admin-button admin-button--primary" type="submit">提交退款申请</button></div>
+        </form>
+        <div class="commerce-toast" id="refundResult"></div>
+        {% else %}
+        <div class="commerce-empty is-visible">当前订单状态不可申请退款。</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+  {% else %}
+  <section class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>筛选</h2>
+        <p>默认查看最近 30 天，按订单创建时间倒序；可按商品、手机号、客户身份或微信单号筛选。</p>
+      </div>
+      <div class="admin-form-actions">
+        <button class="admin-button admin-button--primary" id="searchBtn" type="button">查询</button>
+        <button class="admin-button admin-button--secondary" id="exportBtn" type="button">导出筛选结果</button>
+        <button class="admin-button admin-button--ghost" id="resetBtn" type="button">重置</button>
+      </div>
+    </div>
+    <div class="commerce-card-body">
+      <div class="commerce-filter-grid">
+        <label class="commerce-field" for="mobile"><span>手机号</span><input id="mobile" placeholder="输入手机号"></label>
+        <label class="commerce-field" for="identity"><span>客户身份</span><input id="identity" placeholder="输入客户 ID 或外部联系人 ID"></label>
+        <label class="commerce-field" for="transaction"><span>微信单号</span><input id="transaction" placeholder="输入微信支付单号"></label>
+        <label class="commerce-field" for="product">
+          <span>商品</span>
+          <select id="product"><option value="">全部商品</option>{% for product in product_options %}<option value="{{ product.product_code }}">{{ product.product_name }}</option>{% endfor %}</select>
+        </label>
+        <label class="commerce-field" for="createdFrom"><span>订单创建开始</span><input id="createdFrom" type="datetime-local" value="{{ default_filters.created_from }}"></label>
+        <label class="commerce-field" for="createdTo"><span>订单创建结束</span><input id="createdTo" type="datetime-local" value="{{ default_filters.created_to }}"></label>
+        <label class="commerce-field" for="status">
+          <span>状态</span>
+          <select id="status"><option value="">全部</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="refund_processing">退款处理中</option><option value="partial_refunded">部分退款</option><option value="full_refunded">全额退款</option><option value="failed">支付失败</option></select>
+        </label>
+      </div>
+      <div class="commerce-toast" id="notice"></div>
+    </div>
+  </section>
+  <section class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>订单列表</h2>
+        <p class="commerce-summary" id="summary">正在加载订单...</p>
+      </div>
+      <div class="admin-form-actions">
+        <select class="admin-button" id="limit" aria-label="每页条数"><option value="20">每页 20 条</option><option value="50">每页 50 条</option><option value="100">每页 100 条</option></select>
+        <button class="admin-button admin-button--ghost" id="refreshBtn" type="button">刷新</button>
+      </div>
+    </div>
+    <div class="commerce-card-body">
+      <div class="admin-table-wrap commerce-table-wrap">
+        <table class="admin-table commerce-table">
+          <thead><tr><th>订单创建时间</th><th>微信单号</th><th>付款人 / 客户身份</th><th>商品</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="commerce-muted">正在加载订单...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="commerce-empty" id="empty">暂无符合条件的订单。</div>
+      <div class="commerce-pager">
+        <div class="commerce-muted" id="pageHint">服务端分页。</div>
+        <div class="admin-form-actions"><button class="admin-button admin-button--ghost" id="prevBtn" type="button">上一页</button><button class="admin-button admin-button--secondary" id="nextBtn" type="button">下一页</button></div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  const state = {offset: 0, total: 0, limit: 20};
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value || "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const moneyCents = (value) => Math.round(Number(value || 0) * 100);
+  const refundForm = $("refundForm");
+  if (refundForm) {
+    refundForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const result = $("refundResult");
+      const refundAmountTotal = moneyCents($("refundAmount").value);
+      const maxRefundTotal = Number(refundForm.dataset.maxRefundTotal || 0);
+      result.textContent = "正在提交退款申请...";
+      if (!Number.isFinite(refundAmountTotal) || refundAmountTotal <= 0) {
+        result.textContent = "退款金额必须大于 0";
+        return;
+      }
+      if (maxRefundTotal > 0 && refundAmountTotal > maxRefundTotal) {
+        result.textContent = `退款金额不能超过可退款金额 ¥${(maxRefundTotal / 100).toFixed(2)}`;
+        return;
+      }
+      const response = await fetch(`/api/admin/wechat-pay/orders/${encodeURIComponent(refundForm.dataset.orderId)}/refunds`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          refund_amount_total: refundAmountTotal,
+          reason: $("refundReason").value,
+          transaction_id_confirmation: $("transactionConfirm").value,
+          checked: $("refundChecked").checked
+        })
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        result.textContent = data.error || "退款申请提交失败";
+        return;
+      }
+      result.textContent = `退款申请已提交，当前订单状态：${data.order.status_label}，退款处理中 ¥${data.order.active_refund_amount_yuan}，已退款 ¥${data.order.refunded_amount_yuan}，可退款 ¥${data.order.refundable_amount_yuan}`;
+      if (Number(data.order.refundable_amount_total || 0) <= 0) {
+        refundForm.querySelectorAll("input, select, button").forEach((node) => { node.disabled = true; });
+      }
+    });
+  }
+  if ($("rows")) {
     function filters() {
       return {
         mobile: $("mobile").value, identity: $("identity").value, transaction_id: $("transaction").value,
@@ -276,20 +384,25 @@
       out.set("offset", String(state.offset));
       return out;
     }
+    function renderLoading() {
+      $("rows").innerHTML = '<tr><td colspan="7" class="commerce-muted">正在加载订单...</td></tr>';
+      $("empty").classList.remove("is-visible");
+    }
     function render(items) {
       $("rows").innerHTML = items.map((row) => `<tr>
         <td>${esc(row.created_at)}</td>
-        <td><span class="mono">${esc(row.transaction_id)}</span></td>
-        <td><div class="strong">${esc(row.payer_name)}</div><div class="sub">${esc(row.mobile || "未记录手机号")} · ${esc(row.userid || row.external_userid || "-")}</div></td>
-        <td><div class="strong">${esc(row.product_name)}</div><div class="sub">${esc(row.product_code)}</div></td>
-        <td class="strong">¥${esc(row.amount_yuan)}</td>
-        <td><span class="pill ${esc(row.status)}">${esc(row.status_label)}</span></td>
-        <td><a class="link" href="${esc(row.detail_url)}">查看详情</a></td>
+        <td><span class="commerce-mono">${esc(row.transaction_id)}</span></td>
+        <td><div class="commerce-strong">${esc(row.payer_name)}</div><div class="commerce-sub">${esc(row.mobile || "未记录手机号")} · ${esc(row.userid || row.external_userid || "-")}</div></td>
+        <td><div class="commerce-strong">${esc(row.product_name)}</div><div class="commerce-sub">${esc(row.product_code)}</div></td>
+        <td class="commerce-strong">¥${esc(row.amount_yuan)}</td>
+        <td><span class="commerce-pill ${esc(row.status)}">${esc(row.status_label)}</span></td>
+        <td><a class="admin-button admin-button--ghost" href="${esc(row.detail_url)}">查看详情</a></td>
       </tr>`).join("");
-      $("empty").style.display = items.length ? "none" : "block";
+      $("empty").classList.toggle("is-visible", !items.length);
     }
     async function load() {
       $("summary").textContent = "正在加载订单...";
+      renderLoading();
       const response = await fetch(`/api/admin/wechat-pay/orders?${params().toString()}`);
       const data = await response.json();
       if (!data.ok) {
@@ -327,7 +440,6 @@
       $("notice").textContent = "导出文件已生成。";
     });
     load();
-    }
-  </script>
-</body>
-</html>
+  }
+</script>
+{% endblock %}
