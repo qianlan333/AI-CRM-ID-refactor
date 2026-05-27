@@ -418,7 +418,7 @@ def test_questionnaire_new_page_renders_editor_shell(monkeypatch):
     assert "Not Found" not in response.text
 
 
-def test_automation_conversion_page_uses_production_facade_without_fixture_repo(monkeypatch):
+def test_automation_conversion_page_uses_next_program_repository_without_fixture_repo(monkeypatch):
     import aicrm_next.frontend_compat.legacy_routes as legacy_routes
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -428,7 +428,7 @@ def test_automation_conversion_page_uses_production_facade_without_fixture_repo(
     monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
     monkeypatch.setattr(
         legacy_routes,
-        "list_automation_programs_from_legacy",
+        "list_automation_programs_payload",
         lambda: {
             "ok": True,
             "items": [
@@ -449,7 +449,7 @@ def test_automation_conversion_page_uses_production_facade_without_fixture_repo(
             ],
             "default_program": {"id": 7, "program_name": "真实自动化运营方案"},
             "total": 1,
-            "source_status": "production_postgres",
+            "source_status": "next_postgres",
         },
     )
 
@@ -460,20 +460,53 @@ def test_automation_conversion_page_uses_production_facade_without_fixture_repo(
     assert "real_program_v1" in response.text
     assert "fixture_repository_blocked_in_production" not in response.text
     assert "next_local_preview" not in response.text
-    assert 'href="/admin/automation-conversion/programs/7/entry-channels">入口渠道</a>' in response.text
+    assert 'href="/admin/automation-conversion/programs/7/setup?step=basic">编辑</a>' in response.text
     assert 'href="/admin/automation-conversion/programs/7/overview">概览</a>' in response.text
     assert 'action="/admin/automation-conversion/programs/7/pause"' in response.text
 
 
-def test_retired_automation_setup_page_is_not_reintroduced(monkeypatch):
+def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    program_data = {
+        "program": {
+            "id": 7,
+            "program_name": "真实自动化运营方案",
+            "program_code": "real_program_v1",
+            "status": "active",
+            "description": "生产方案",
+            "updated_at": "2026-05-22T00:00:00Z",
+            "config_json": {},
+        },
+        "summary": {
+            "channel_count": 3,
+            "workflow_count": 9,
+            "latest_execution_at": "2026-05-22T01:00:00Z",
+            "publish_status_label": "入口已发布",
+        },
+    }
+    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
 
-    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion/programs/7/setup?step=basic")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    setup_response = client.get("/admin/automation-conversion/programs/7/setup?step=basic")
+    overview_response = client.get("/admin/automation-conversion/programs/7/overview")
+    copy_response = client.get("/admin/automation-conversion/programs/7/copy")
 
-    assert response.status_code == 404
+    assert setup_response.status_code == 200
+    assert "配置向导" in setup_response.text
+    assert "第 1 步" in setup_response.text
+    assert "基础信息" in setup_response.text
+    assert 'action="/admin/automation-conversion/programs/7/update"' in setup_response.text
+    assert overview_response.status_code == 200
+    assert "方案概览" in overview_response.text
+    assert "入口已发布" in overview_response.text
+    assert copy_response.status_code == 200
+    assert "复制自动化运营方案" in copy_response.text
+    assert 'action="/admin/automation-conversion/programs/7/copy"' in copy_response.text
 
 
 def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):

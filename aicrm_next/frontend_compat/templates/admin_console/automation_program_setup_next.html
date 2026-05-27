@@ -1,0 +1,189 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+<style>
+  .setup-shell { display: grid; gap: 18px; min-width: 0; }
+  .setup-guide { display: grid; gap: 14px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .setup-guide h2, .setup-panel h2, .setup-panel h3 { margin: 0; color: #111827; }
+  .setup-muted { margin: 0; color: #64748b; line-height: 1.7; }
+  .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  .setup-step { display: grid; gap: 6px; min-height: 82px; padding: 14px; border: 1px solid rgba(37,99,235,.14); border-radius: 10px; background: #fff; color: #1f2937; text-decoration: none; }
+  .setup-step.is-active { background: #eaf2ff; color: #1456f0; border-color: rgba(37,99,235,.34); box-shadow: 0 0 0 3px rgba(37,99,235,.08); }
+  .setup-step span { font-size: 12px; font-weight: 800; }
+  .setup-step strong { font-size: 16px; line-height: 1.35; }
+  .setup-panel { display: grid; gap: 16px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .setup-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .setup-field { display: grid; gap: 7px; }
+  .setup-field span { color: #475569; font-size: 13px; font-weight: 800; }
+  .setup-field input, .setup-field select, .setup-field textarea { width: 100%; padding: 12px 14px; border: 1px solid rgba(15,23,42,.14); border-radius: 10px; background: #fff; font-size: 15px; }
+  .setup-field textarea { min-height: 112px; resize: vertical; }
+  .setup-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .setup-summary-item { display: grid; gap: 8px; padding: 16px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fafc; }
+  .setup-summary-item span { color: #64748b; font-size: 13px; font-weight: 800; }
+  .setup-summary-item strong { color: #111827; font-size: 24px; }
+  .setup-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .setup-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border: 1px solid rgba(37,99,235,.18); border-radius: 10px; background: #eef4ff; color: #1456f0; font-weight: 800; text-decoration: none; cursor: pointer; }
+  .setup-action.is-primary { background: #2563eb; color: #fff; box-shadow: 0 10px 22px rgba(37,99,235,.18); }
+  .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
+  .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
+  @media (max-width: 1080px) {
+    .setup-steps, .setup-form-grid, .setup-summary-grid { grid-template-columns: 1fr; }
+    .setup-footer { align-items: stretch; flex-direction: column; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set workspace = setup_workspace or {} %}
+{% set program = workspace.program or {} %}
+{% set summary = workspace.summary or {} %}
+{% set urls = workspace.urls or {} %}
+{% set current_step = workspace.step or "basic" %}
+{% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "停用" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
+
+<section class="setup-shell">
+  <header class="setup-guide">
+    <div>
+      <h2>配置向导</h2>
+      <p class="setup-muted">{{ program.program_name or "自动化运营方案" }} · {{ status_label }}</p>
+    </div>
+  </header>
+
+  {% if workspace_tabs %}
+  <nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
+    {% for item in workspace_tabs %}
+    <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+      <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
+    </a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <nav class="setup-steps" aria-label="配置步骤">
+    {% for item in workspace.steps or [] %}
+    <a class="setup-step{% if item.key == current_step %} is-active{% endif %}" href="{{ urls['base'] }}?step={{ item.key }}">
+      <span>第 {{ loop.index }} 步</span>
+      <strong>{{ item.label }}</strong>
+    </a>
+    {% endfor %}
+  </nav>
+
+  {% if current_step == "basic" %}
+  <form class="setup-panel" method="post" action="{{ urls['update'] }}">
+    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+    <input type="hidden" name="next" value="{{ urls['base'] }}?step=basic">
+    <div>
+      <h2>方案身份</h2>
+      <p class="setup-muted">编辑当前方案自己的名称、编码、说明和状态。</p>
+    </div>
+    <div class="setup-form-grid">
+      <label class="setup-field"><span>方案名称</span><input name="program_name" value="{{ program.program_name or '' }}" required></label>
+      <label class="setup-field"><span>方案编码</span><input name="program_code" value="{{ program.program_code or '' }}" required></label>
+      <label class="setup-field">
+        <span>方案状态</span>
+        <select name="status">
+          {% for value, label in [("draft","草稿"),("active","启用"),("paused","停用"),("archived","归档")] %}
+          <option value="{{ value }}" {% if program.status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="setup-field" style="grid-column: 1 / -1;"><span>方案描述</span><textarea name="description">{{ program.description or "" }}</textarea></label>
+    </div>
+    <div class="setup-actions">
+      <button class="setup-action is-primary" type="submit">保存草稿</button>
+      <a class="setup-action" href="{{ urls['base'] }}?step=entry">保存并下一步</a>
+    </div>
+  </form>
+
+  <section class="setup-panel">
+    <div>
+      <h2>创建来源</h2>
+      <p class="setup-muted">复制方案只复制配置，不复制成员、执行记录和运行日志。</p>
+    </div>
+    <div class="setup-summary-grid">
+      <article class="setup-summary-item"><span>创建方式</span><strong>{{ "历史默认方案" if workspace.is_default_program else "独立方案" }}</strong></article>
+      <article class="setup-summary-item"><span>入口数</span><strong>{{ summary.channel_count or 0 }}</strong></article>
+      <article class="setup-summary-item"><span>运营编排</span><strong>{{ summary.workflow_count or 0 }}</strong></article>
+    </div>
+  </section>
+  {% elif current_step == "entry" %}
+  <section class="setup-panel">
+    <div>
+      <h2>入口渠道</h2>
+      <p class="setup-muted">入口渠道在方案内统一绑定，渠道码中心只管理渠道本体。</p>
+    </div>
+    <div class="setup-summary-grid">
+      <article class="setup-summary-item"><span>已绑定入口</span><strong>{{ summary.channel_count or 0 }}</strong></article>
+      <article class="setup-summary-item"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
+      <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
+    </div>
+    <div class="setup-actions">
+      <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">编辑入口渠道</a>
+    </div>
+  </section>
+  {% elif current_step == "segmentation" %}
+  <section class="setup-panel">
+    <div>
+      <h2>分层规则</h2>
+      <p class="setup-muted">当前 Next 方案页保留分层配置入口，具体问卷和画像规则继续在方案数据中落表。</p>
+    </div>
+    <div class="setup-actions">
+      <a class="setup-action" href="/admin/questionnaires">问卷模块</a>
+      <a class="setup-action is-primary" href="{{ urls['base'] }}?step=entry-rule">下一步</a>
+    </div>
+  </section>
+  {% elif current_step == "entry-rule" %}
+  <section class="setup-panel">
+    <div>
+      <h2>入池规则</h2>
+      <p class="setup-muted">配置用户从入口进入方案后的初始人群和阶段流转规则。</p>
+    </div>
+    <div class="setup-actions">
+      <a class="setup-action is-primary" href="{{ urls['base'] }}?step=operations">下一步</a>
+    </div>
+  </section>
+  {% elif current_step == "operations" %}
+  <section class="setup-panel">
+    <div>
+      <h2>运营编排</h2>
+      <p class="setup-muted">运营动作和任务流按当前方案独立统计，不复用默认方案运行数据。</p>
+    </div>
+    <div class="setup-summary-grid">
+      <article class="setup-summary-item"><span>运营动作</span><strong>{{ summary.workflow_count or 0 }}</strong></article>
+      <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
+      <article class="setup-summary-item"><span>方案状态</span><strong>{{ status_label }}</strong></article>
+    </div>
+    <div class="setup-actions">
+      <a class="setup-action is-primary" href="{{ urls['base'] }}?step=publish">下一步</a>
+    </div>
+  </section>
+  {% else %}
+  <section class="setup-panel">
+    <div>
+      <h2>检查并发布</h2>
+      <p class="setup-muted">发布前检查基础信息、入口渠道、分层规则和运营编排是否完整。</p>
+    </div>
+    <div class="setup-summary-grid">
+      <article class="setup-summary-item"><span>基础信息</span><strong>{{ "已填写" if program.program_name and program.program_code else "待完善" }}</strong></article>
+      <article class="setup-summary-item"><span>入口渠道</span><strong>{{ "已配置" if summary.channel_count else "待配置" }}</strong></article>
+      <article class="setup-summary-item"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
+    </div>
+    <div class="setup-actions">
+      <a class="setup-action is-primary" href="{{ urls['overview'] }}">查看概览</a>
+    </div>
+  </section>
+  {% endif %}
+
+  <footer class="setup-footer">
+    <div class="setup-footer-side">
+      <a class="setup-action" href="{{ url_for('api.admin_automation_conversion') }}">返回列表</a>
+      <a class="setup-action" href="{{ urls['overview'] }}">概览</a>
+    </div>
+    <div class="setup-footer-side">
+      <a class="setup-action" href="{{ urls['base'] }}?step=publish">去检查发布</a>
+      <a class="setup-action is-primary" href="{{ urls['base'] }}?step={{ 'entry' if current_step == 'basic' else 'segmentation' if current_step == 'entry' else 'entry-rule' if current_step == 'segmentation' else 'operations' if current_step == 'entry-rule' else 'publish' }}">保存并下一步</a>
+    </div>
+  </footer>
+</section>
+{% endblock %}
