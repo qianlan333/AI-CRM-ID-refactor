@@ -51,6 +51,17 @@ class AdminJobsRepository(Protocol):
     def get_broadcast_job(self, job_id: int) -> dict[str, Any] | None: ...
     def approve_broadcast_job(self, job_id: int, *, approved_by: str) -> dict[str, Any] | None: ...
     def cancel_broadcast_job(self, job_id: int, *, cancelled_by: str, reason: str) -> dict[str, Any] | None: ...
+    def get_broadcast_notification_setting(self, channel: str) -> dict[str, Any] | None: ...
+    def upsert_broadcast_notification_setting(
+        self,
+        *,
+        channel: str,
+        enabled: bool,
+        webhook_url: str,
+        validation_status: str,
+        validated_at: datetime | str | None,
+        last_validation_error: str | None,
+    ) -> dict[str, Any]: ...
     def insert_audit(self, *, operator: str, action_type: str, target_type: str, target_id: str, before: dict[str, Any], after: dict[str, Any]) -> None: ...
 
 
@@ -416,6 +427,56 @@ class PostgresAdminJobsRepository:
             (cancelled_by, reason[:1000], job_id),
         )
 
+    def get_broadcast_notification_setting(self, channel: str) -> dict[str, Any] | None:
+        return self._one(
+            """
+            SELECT channel, enabled, webhook_url, validation_status, validated_at,
+                   last_validation_error, created_at, updated_at
+            FROM broadcast_queue_notification_settings
+            WHERE channel = %s
+            """,
+            (channel,),
+        )
+
+    def upsert_broadcast_notification_setting(
+        self,
+        *,
+        channel: str,
+        enabled: bool,
+        webhook_url: str,
+        validation_status: str,
+        validated_at: datetime | str | None,
+        last_validation_error: str | None,
+    ) -> dict[str, Any]:
+        return self._execute_returning(
+            """
+            INSERT INTO broadcast_queue_notification_settings (
+                channel, enabled, webhook_url, validation_status, validated_at,
+                last_validation_error, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(channel) DO UPDATE SET
+                enabled = excluded.enabled,
+                webhook_url = excluded.webhook_url,
+                validation_status = excluded.validation_status,
+                validated_at = excluded.validated_at,
+                last_validation_error = excluded.last_validation_error,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING channel, enabled, webhook_url, validation_status, validated_at,
+                      last_validation_error, created_at, updated_at
+            """,
+            (channel, enabled, webhook_url, validation_status, validated_at, last_validation_error),
+        ) or {
+            "channel": channel,
+            "enabled": enabled,
+            "webhook_url": webhook_url,
+            "validation_status": validation_status,
+            "validated_at": validated_at,
+            "last_validation_error": last_validation_error,
+            "created_at": _now_text(),
+            "updated_at": _now_text(),
+        }
+
     def insert_audit(self, *, operator: str, action_type: str, target_type: str, target_id: str, before: dict[str, Any], after: dict[str, Any]) -> None:
         self._execute(
             """
@@ -472,6 +533,7 @@ class FixtureAdminJobsRepository:
             {"id": 2, "source_type": "focus_send", "source_id": "focus-2", "source_table": "focus_tasks", "scheduled_for": "2026-04-02 13:05:00", "priority": 90, "batch_key": "batch-b", "status": "queued", "requires_approval": False, "approved_by": "", "approved_at": "", "cancelled_by": "", "cancelled_at": "", "cancel_reason": "", "target_count": 1, "target_summary": "1 个客户", "content_type": "text", "content_summary": "排队中内容", "attempt_count": 0, "last_error": "", "outbound_task_id": 9, "sent_count": 0, "failed_count": 0, "trace_id": "trace-2", "created_by": "fixture", "created_at": "2026-04-02 12:41:00", "updated_at": "2026-04-02 12:41:00", "claimed_at": "", "sent_at": ""},
             {"id": 3, "source_type": "manual", "source_id": "manual-3", "source_table": "manual_sends", "scheduled_for": "2026-04-02 13:10:00", "priority": 80, "batch_key": "batch-c", "status": "sent", "requires_approval": False, "approved_by": "", "approved_at": "", "cancelled_by": "", "cancelled_at": "", "cancel_reason": "", "target_count": 3, "target_summary": "3 个客户", "content_type": "text", "content_summary": "已发送内容", "attempt_count": 1, "last_error": "", "outbound_task_id": 10, "sent_count": 3, "failed_count": 0, "trace_id": "trace-3", "created_by": "fixture", "created_at": "2026-04-02 12:42:00", "updated_at": "2026-04-02 13:11:00", "claimed_at": "2026-04-02 13:10:00", "sent_at": "2026-04-02 13:11:00"},
         ]
+        self.broadcast_notification_settings: dict[str, dict[str, Any]] = {}
         self.audit_logs: list[dict[str, Any]] = []
 
     def _filtered(self, rows: list[dict[str, Any]], *, limit: int, **filters: Any) -> list[dict[str, Any]]:
@@ -579,6 +641,33 @@ class FixtureAdminJobsRepository:
                 row.update({"status": "cancelled", "cancelled_by": cancelled_by, "cancelled_at": _now_text(), "cancel_reason": reason, "updated_at": _now_text()})
                 return copy.deepcopy(row)
         return None
+
+    def get_broadcast_notification_setting(self, channel: str) -> dict[str, Any] | None:
+        return copy.deepcopy(self.broadcast_notification_settings.get(str(channel)))
+
+    def upsert_broadcast_notification_setting(
+        self,
+        *,
+        channel: str,
+        enabled: bool,
+        webhook_url: str,
+        validation_status: str,
+        validated_at: datetime | str | None,
+        last_validation_error: str | None,
+    ) -> dict[str, Any]:
+        existing = self.broadcast_notification_settings.get(channel) or {"created_at": _now_text()}
+        row = {
+            **existing,
+            "channel": channel,
+            "enabled": bool(enabled),
+            "webhook_url": webhook_url,
+            "validation_status": validation_status,
+            "validated_at": validated_at,
+            "last_validation_error": last_validation_error,
+            "updated_at": _now_text(),
+        }
+        self.broadcast_notification_settings[channel] = row
+        return copy.deepcopy(row)
 
     def insert_audit(self, *, operator: str, action_type: str, target_type: str, target_id: str, before: dict[str, Any], after: dict[str, Any]) -> None:
         self.audit_logs.append({"operator": operator, "action_type": action_type, "target_type": target_type, "target_id": target_id, "before": before, "after": after, "created_at": _now_text()})
