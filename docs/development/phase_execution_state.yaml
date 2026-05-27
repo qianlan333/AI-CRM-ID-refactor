@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_task_groups_exact_route_retry
-active_candidate: task_groups_exact_route_cleanup_retry
+current_phase: post_phase7_cleanup_legacy_runtime_recheck
+active_candidate: legacy_runtime_recheck_after_task_groups_cleanup
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#814"
-last_attempted_action: post_phase7_cleanup_task_groups_exact_route_retry_bundle
-last_created_pr: "#814"
-recommended_next_pr: post_phase7_cleanup_legacy_runtime_recheck_bundle
+last_merged_pr: "#815"
+last_attempted_action: post_phase7_cleanup_legacy_runtime_recheck_bundle
+last_created_pr: "#815"
+recommended_next_pr: post_phase7_cleanup_track_acceptance_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -416,9 +416,10 @@ completed_steps:
   - post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_completed
   - post_phase7_cleanup_task_groups_owner_evidence_revalidation_completed
   - post_phase7_cleanup_task_groups_exact_route_retry_completed
+  - post_phase7_cleanup_legacy_runtime_recheck_completed
 
 next_allowed_actions:
-  - post_phase7_cleanup_legacy_runtime_recheck_bundle
+  - post_phase7_cleanup_track_acceptance_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -1033,6 +1034,42 @@ post_phase7_cleanup_task_groups_exact_route_retry:
     - legacy_runtime_retained_pending_recheck
     - high_risk_external_adapters_retained
   recommended_next_bundle: post_phase7_cleanup_legacy_runtime_recheck_bundle
+
+post_phase7_cleanup_legacy_runtime_recheck:
+  status: post_phase7_cleanup_legacy_runtime_recheck_completed
+  bundle_type: post_phase7_cleanup_legacy_runtime_recheck_bundle
+  cleanup_family: legacy_runtime_recheck_after_exact_route_cleanup
+  source_prs:
+    task_groups_exact_route_retry: "#815"
+  task_groups_fallback_removal_executed: true
+  task_groups_production_compat_cleanup_executed: true
+  task_groups_production_compat_hooks_absent: true
+  workflow_nodes_production_compat_retained: true
+  other_production_compat_routes_retained: true
+  fallback_references_retained: true
+  tests_reference_legacy_or_retained_routes: true
+  route_ownership_manifest_retains_legacy_runtime_categories: true
+  wecom_ability_service_references_retained: true
+  safe_runtime_cleanup_candidate_selected: false
+  no_safe_runtime_cleanup_candidate: true
+  blocked_reason:
+    - workflow_nodes_production_compat_retained
+    - other_production_compat_routes_retained
+    - legacy_runtime_categories_still_referenced
+    - tests_and_manifest_still_reference_legacy_categories
+  runtime_deletion_authorized: false
+  runtime_deletion_executed: false
+  fallback_removal_executed_in_this_pr: false
+  production_compat_cleanup_executed_in_this_pr: false
+  wildcard_cleanup_executed: false
+  production_behavior_changed: false
+  delete_ready: false
+  retained_old_code_categories:
+    - workflow_nodes_fallback_and_production_compat_retained
+    - other_production_compat_routes_retained
+    - legacy_runtime_categories_still_referenced
+    - high_risk_external_adapter_runtime_retained
+  recommended_next_bundle: post_phase7_cleanup_track_acceptance_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed

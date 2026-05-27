@@ -1,0 +1,63 @@
+version: 1
+status: post_phase7_cleanup_legacy_runtime_recheck
+bundle_type: post_phase7_cleanup_legacy_runtime_recheck_bundle
+cleanup_family: legacy_runtime_recheck_after_exact_route_cleanup
+
+source_prs:
+  task_groups_exact_route_retry: 815
+
+authorizations:
+  runtime_deletion_authorized: false
+  fallback_removal_authorized: false
+  production_compat_cleanup_authorized: false
+  wildcard_cleanup_authorized: false
+  delete_ready: false
+  production_behavior_change_authorized: false
+
+exact_route_cleanup_handoff:
+  task_groups_fallback_removal_executed: true
+  task_groups_production_compat_cleanup_executed: true
+  wildcard_cleanup_executed: false
+  runtime_deletion_executed: false
+  delete_ready: false
+
+reference_recheck:
+  task_groups_production_compat_hooks_absent: true
+  workflow_nodes_production_compat_retained: true
+  other_production_compat_routes_retained: true
+  fallback_references_retained: true
+  tests_reference_legacy_or_retained_routes: true
+  route_ownership_manifest_retains_legacy_runtime_categories: true
+  wecom_ability_service_references_retained: true
+  high_risk_runtime_categories_retained:
+    - wecom_callback_and_outbound_runtime
+    - payment_runtime
+    - oauth_callback_runtime
+    - media_upload_runtime
+    - timer_execution_runtime
+    - public_submit_runtime
+
+runtime_candidate_result:
+  safe_runtime_cleanup_candidate_selected: false
+  no_safe_runtime_cleanup_candidate: true
+  blocked_reason:
+    - workflow_nodes_production_compat_retained
+    - other_production_compat_routes_retained
+    - legacy_runtime_categories_still_referenced
+    - tests_and_manifest_still_reference_legacy_categories
+
+cleanup_execution:
+  runtime_deletion_executed: false
+  fallback_removal_executed_in_this_pr: false
+  production_compat_cleanup_executed_in_this_pr: false
+  wildcard_cleanup_executed: false
+  delete_ready: false
+
+business_continuity:
+  production_behavior_unchanged: true
+  legacy_runtime_retained: true
+  delete_ready: false
+
+next_bundle:
+  if_safe_candidate_selected: post_phase7_cleanup_first_legacy_runtime_removal_bundle
+  if_no_safe_candidate: post_phase7_cleanup_track_acceptance_bundle

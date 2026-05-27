@@ -36,7 +36,7 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_legacy_runtime_recheck_bundle" in text
+    assert "post_phase7_cleanup_track_acceptance_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1585,6 +1585,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
         "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.md",
         "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
+        "docs/development/post_phase7_cleanup_legacy_runtime_recheck.md",
+        "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
@@ -1618,6 +1620,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
+        "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1647,6 +1650,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
+        "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
