@@ -146,6 +146,21 @@
     return text.length > 34 ? `${text.slice(0, 34)}...` : text;
   }
 
+  function requestErrorMessage(error, fallback) {
+    const payload = (error && error.payload) || {};
+    const detail = payload && typeof payload.detail === "object" ? payload.detail : {};
+    const candidates = [
+      payload.error_message,
+      payload.message,
+      detail.detail,
+      detail.error_message,
+      detail.error_code,
+      error && error.message,
+      fallback,
+    ];
+    return String(candidates.find((item) => String(item || "").trim()) || fallback || "请求失败");
+  }
+
   function renderShell(content) {
     app.innerHTML = content;
     bindSharedEvents();
@@ -429,7 +444,7 @@
       state.groups = normalizeItems(payload);
       state.notice = `已刷新：新增 ${formatNumber(synced.new_count || 0)} 个，更新 ${formatNumber(synced.updated_count || 0)} 个`;
     } catch (error) {
-      state.notice = error.message || "刷新失败";
+      state.notice = requestErrorMessage(error, "刷新失败");
     } finally {
       state.refreshingOwnerGroups = false;
       renderDetail();

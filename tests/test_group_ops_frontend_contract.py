@@ -113,7 +113,18 @@ def test_group_ops_detail_refresh_owner_groups_contract_is_manual_and_owner_scop
     assert "limit: 100" in refresh_source
     assert "owner_userid=${encodeURIComponent(owner)}" in refresh_source
     assert "已刷新：新增" in refresh_source
+    assert "requestErrorMessage(error" in refresh_source
     assert "loadDetailPage(state.plan.id)" not in refresh_source
+
+
+def test_group_ops_detail_refresh_error_uses_backend_sync_reason():
+    source = _source()
+    error_source = _function_source("requestErrorMessage")
+
+    assert "payload.error_message" in error_source
+    assert "detail.detail" in error_source
+    assert "detail.error_code" in error_source
+    assert "Conflict" not in error_source
 
 
 def test_group_ops_detail_imports_standard_send_content_assets():
