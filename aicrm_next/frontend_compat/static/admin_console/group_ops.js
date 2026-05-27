@@ -19,6 +19,10 @@
     webhook: null,
     ownerOptions: [],
     notice: "",
+    showCreate: false,
+    showNodeForm: false,
+    editingNodeId: 0,
+    oneTimeToken: "",
   };
 
   const routes = {
@@ -31,6 +35,8 @@
     apiPlanGroup: (id, chatId) =>
       `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/groups/${encodeURIComponent(chatId)}`,
     apiPlanNodes: (id) => `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/nodes`,
+    apiPlanNode: (id, nodeId) =>
+      `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeId)}`,
     apiWebhook: (id) => `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/webhook`,
     apiWebhookRegenerate: (id) =>
       `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/webhook/regenerate`,
@@ -134,22 +140,45 @@
   function onAction(event) {
     const action = event.currentTarget.dataset.action;
     if (action === "create-plan") return createPlan();
+    if (action === "show-create-plan") return showCreatePlan();
+    if (action === "cancel-create-plan") return cancelCreatePlan();
     if (action === "save-plan") return savePlan();
     if (action === "disable-plan") return disablePlan(event.currentTarget.dataset.planId);
     if (action === "bind-group") return bindGroup(event.currentTarget.dataset.chatId);
     if (action === "remove-group") return removeGroup(event.currentTarget.dataset.chatId);
+    if (action === "show-node-form") return showNodeForm();
+    if (action === "edit-node") return showNodeForm(event.currentTarget.dataset.nodeId);
+    if (action === "save-node") return saveNode();
+    if (action === "cancel-node") return cancelNodeForm();
+    if (action === "delete-node") return deleteNode(event.currentTarget.dataset.nodeId);
     if (action === "copy-webhook") return copyWebhook();
     if (action === "reset-webhook") return resetWebhook();
     return undefined;
   }
 
+  function showCreatePlan() {
+    state.showCreate = true;
+    renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+  }
+
+  function cancelCreatePlan() {
+    state.showCreate = false;
+    renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+  }
+
   async function createPlan() {
+    const owner = currentFormValue("create_owner_userid") || currentFormValue("create_owner_userid_text");
+    if (!owner) {
+      state.notice = "请选择运营成员";
+      renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+      return;
+    }
     const created = await requestJson(routes.apiPlans, {
       method: "POST",
       body: {
-        plan_name: "新建群运营计划",
-        plan_type: "standard",
-        owner_userid: "owner_001",
+        plan_name: currentFormValue("create_plan_name") || "新建群运营计划",
+        plan_type: currentFormValue("create_plan_type") || "standard",
+        owner_userid: owner,
         status: "draft",
       },
     });
@@ -203,6 +232,64 @@
     loadDetailPage(state.plan.id);
   }
 
+  function showNodeForm(nodeId) {
+    state.editingNodeId = Number(nodeId || 0);
+    state.showNodeForm = true;
+    renderDetail();
+  }
+
+  function cancelNodeForm() {
+    state.editingNodeId = 0;
+    state.showNodeForm = false;
+    renderDetail();
+  }
+
+  function editingNode() {
+    return state.nodes.find((node) => Number(node.id) === Number(state.editingNodeId)) || null;
+  }
+
+  function parseAttachments(value) {
+    const text = String(value || "").trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      state.notice = "素材格式无效";
+      renderDetail();
+      throw error;
+    }
+  }
+
+  async function saveNode() {
+    if (!state.plan || !state.plan.id) return;
+    const payload = {
+      day_index: Number(currentFormValue("node_day_index") || 1),
+      trigger_time_label: currentFormValue("node_trigger_time_label"),
+      action_title: currentFormValue("node_action_title"),
+      text_content: currentFormValue("node_text_content"),
+      attachments: parseAttachments(currentFormValue("node_attachments")),
+      sort_order: Number(currentFormValue("node_sort_order") || 0),
+      status: currentFormValue("node_status") || "active",
+    };
+    const nodeId = Number(state.editingNodeId || 0);
+    await requestJson(nodeId ? routes.apiPlanNode(state.plan.id, nodeId) : routes.apiPlanNodes(state.plan.id), {
+      method: nodeId ? "PUT" : "POST",
+      body: payload,
+    });
+    state.notice = nodeId ? "已更新动作" : "已添加动作";
+    state.editingNodeId = 0;
+    state.showNodeForm = false;
+    loadDetailPage(state.plan.id);
+  }
+
+  async function deleteNode(nodeId) {
+    if (!state.plan || !nodeId) return;
+    await requestJson(routes.apiPlanNode(state.plan.id, nodeId), { method: "DELETE" });
+    state.notice = "已删除动作";
+    loadDetailPage(state.plan.id);
+  }
+
   async function copyWebhook() {
     const url = state.webhook && state.webhook.webhook_url;
     if (!url) return;
@@ -216,6 +303,7 @@
   async function resetWebhook() {
     if (!state.plan || !state.plan.id) return;
     state.webhook = await requestJson(routes.apiWebhookRegenerate(state.plan.id), { method: "POST" });
+    state.oneTimeToken = state.webhook.plaintext_token || "";
     state.notice = "已重置";
     renderDetail();
   }
@@ -223,15 +311,39 @@
   async function loadListPage() {
     renderLoading();
     try {
-      const payload = await requestJson(routes.apiPlans);
+      const [payload, groupPayload] = await Promise.all([requestJson(routes.apiPlans), requestJson(routes.apiGroups)]);
       state.plans = normalizeItems(payload);
-      renderList(payload.total || state.plans.length);
+      state.groups = normalizeItems(groupPayload);
+      state.ownerOptions = collectOwners(state.groups, null);
+      state.lastTotal = payload.total || state.plans.length;
+      state.queueCount = payload.queue_count || 0;
+      renderList(state.lastTotal, state.queueCount);
     } catch (error) {
       renderError(error.message);
     }
   }
 
-  function renderList(total) {
+  function renderCreatePanel() {
+    if (!state.showCreate) return "";
+    const owners = state.ownerOptions;
+    const ownerField = owners.length
+      ? `<select name="create_owner_userid">${owners
+          .map((owner) => `<option value="${escapeHtml(owner.userid)}">${escapeHtml(owner.name)}</option>`)
+          .join("")}</select>`
+      : '<input name="create_owner_userid_text" placeholder="运营成员 userid">';
+    return `
+      <section class="group-ops__card">
+        <div class="group-ops__filters">
+          <label class="group-ops__field group-ops__field--wide"><span>计划名称</span><input name="create_plan_name" value="新建群运营计划"></label>
+          <label class="group-ops__field"><span>计划类型</span><select name="create_plan_type"><option value="standard">标准编排计划</option><option value="webhook">Webhook 接收计划</option></select></label>
+          <label class="group-ops__field"><span>运营成员</span>${ownerField}</label>
+          <div class="group-ops__row-actions">${actionButton("保存计划", "create-plan", "group-ops__button--primary")}${actionButton("取消", "cancel-create-plan")}</div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderList(total, queueCount) {
     const boundCount = state.plans.reduce((sum, plan) => sum + Number(plan.bound_group_count || 0), 0);
     const reach = state.plans.reduce((sum, plan) => sum + Number(plan.today_estimated_reach || 0), 0);
     const rows = state.plans
@@ -256,14 +368,16 @@
     renderShell(`
       <div class="group-ops__bar">
         ${pageButton("查看所有群", routes.groups)}
-        ${actionButton("创建计划", "create-plan", "group-ops__button--primary")}
+        ${actionButton("创建计划", "show-create-plan", "group-ops__button--primary")}
       </div>
+      <div class="group-ops__notice" ${state.notice ? "" : "hidden"}>${escapeHtml(state.notice)}</div>
       <section class="group-ops__metric-grid">
         ${metricCard("运营计划", formatNumber(total))}
         ${metricCard("已绑定群", formatNumber(boundCount))}
         ${metricCard("今日预估", formatNumber(reach))}
-        ${metricCard("通知排队队列", "0")}
+        ${metricCard("通知排队队列", formatNumber(queueCount))}
       </section>
+      ${renderCreatePanel()}
       <section class="group-ops__card">
         <div class="group-ops__table-wrap">
           <table class="group-ops__table">
@@ -275,6 +389,7 @@
         </div>
       </section>
     `);
+    state.notice = "";
   }
 
   async function loadDetailPage(planId) {
@@ -370,6 +485,28 @@
   }
 
   function renderNodes() {
+    const current = editingNode() || {
+      day_index: 1,
+      trigger_time_label: "",
+      action_title: "",
+      text_content: "",
+      attachments: [],
+      sort_order: 10,
+      status: "active",
+    };
+    const form = state.showNodeForm
+      ? `
+        <div class="group-ops__filters">
+          <label class="group-ops__field"><span>第几天</span><input name="node_day_index" type="number" min="1" value="${escapeHtml(current.day_index)}"></label>
+          <label class="group-ops__field"><span>时间</span><input name="node_trigger_time_label" value="${escapeHtml(current.trigger_time_label || "")}"></label>
+          <label class="group-ops__field group-ops__field--wide"><span>动作标题</span><input name="node_action_title" value="${escapeHtml(current.action_title || "")}"></label>
+          <label class="group-ops__field group-ops__field--wide"><span>标准话术</span><textarea name="node_text_content">${escapeHtml(current.text_content || "")}</textarea></label>
+          <label class="group-ops__field group-ops__field--wide"><span>素材</span><textarea name="node_attachments">${escapeHtml(JSON.stringify(current.attachments || []))}</textarea></label>
+          <label class="group-ops__field"><span>排序</span><input name="node_sort_order" type="number" value="${escapeHtml(current.sort_order || 0)}"></label>
+          <label class="group-ops__field"><span>状态</span><select name="node_status"><option value="active"${current.status === "active" ? " selected" : ""}>启用</option><option value="draft"${current.status === "draft" ? " selected" : ""}>草稿</option><option value="disabled"${current.status === "disabled" ? " selected" : ""}>停用</option></select></label>
+          <div class="group-ops__row-actions">${actionButton("保存动作", "save-node", "group-ops__button--primary")}${actionButton("取消", "cancel-node")}</div>
+        </div>`
+      : "";
     const rows = state.nodes
       .map(
         (node) => `
@@ -379,13 +516,17 @@
           <td>${escapeHtml(node.action_title || "-")}</td>
           <td><span class="group-ops__summary">${escapeHtml(textSummary(node.text_content))}</span></td>
           <td>${escapeHtml(attachmentLabel(node.attachments))}</td>
-          <td><div class="group-ops__row-actions">${actionButton("编辑", "noop", "")}${actionButton("删除", "noop", "group-ops__button--danger")}</div></td>
+          <td><div class="group-ops__row-actions">
+            ${actionButton("编辑", "edit-node", "").replace(">", ` data-node-id="${escapeHtml(node.id)}">`)}
+            ${actionButton("删除", "delete-node", "group-ops__button--danger").replace(">", ` data-node-id="${escapeHtml(node.id)}">`)}
+          </div></td>
         </tr>`,
       )
       .join("");
     return `
       <section class="group-ops__card">
-        <div class="group-ops__section-head"><h2 class="group-ops__section-title">标准编排</h2></div>
+        <div class="group-ops__section-head"><h2 class="group-ops__section-title">标准编排</h2>${actionButton("添加动作", "show-node-form", "group-ops__button--primary")}</div>
+        ${form}
         <div class="group-ops__table-wrap">
           <table class="group-ops__table">
             <thead><tr><th>第几天</th><th>时间</th><th>动作标题</th><th>标准话术摘要</th><th>素材标签</th><th>编辑 / 删除</th></tr></thead>
@@ -410,8 +551,15 @@
           <div class="group-ops__webhook-line">
             <strong>Token 状态 / 重置入口</strong>
             <span class="group-ops__chip group-ops__chip--ok">Token：${escapeHtml(config.token_status === "generated" ? "已生成" : "未生成")}</span>
-            ${actionButton("重置", "reset-webhook")}
+            ${actionButton("重置 token", "reset-webhook")}
           </div>
+          ${
+            state.oneTimeToken
+              ? `<div class="group-ops__webhook-line"><strong>一次性 token</strong><div class="group-ops__url">${escapeHtml(
+                  state.oneTimeToken,
+                )}</div><span class="group-ops__chip">复制后不可再次查看</span></div>`
+              : ""
+          }
         </div>
       </section>
     `;

@@ -36,6 +36,7 @@ class GroupOpsRepository(Protocol):
     def remove_group(self, plan_id: int, chat_id: str) -> bool: ...
     def list_group_assets(self, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]: ...
     def get_group_asset(self, chat_id: str) -> dict[str, Any] | None: ...
+    def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_node(self, plan_id: int, node_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -94,7 +95,7 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
 class InMemoryGroupOpsRepository:
     source_status = "fixture_local_contract"
 
-    def __init__(self) -> None:
+    def __init__(self, *, seed_groups: bool = True) -> None:
         now = utc_now_iso()
         token = "fixture-webhook-token"
         self._plans: dict[int, dict[str, Any]] = {
@@ -147,17 +148,19 @@ class InMemoryGroupOpsRepository:
                 "archived_at": "",
             },
         }
-        self._groups = _fixture_groups()
+        self._groups = _fixture_groups() if seed_groups else {}
         self._next_plan_group_id = 1
-        self._plan_groups: dict[int, dict[str, dict[str, Any]]] = {
-            1: {
-                "wrOgAAA001": self._snapshot_group(1, self._groups["wrOgAAA001"]),
-                "wrOgAAA002": self._snapshot_group(1, self._groups["wrOgAAA002"]),
-            },
-            2: {
-                "wrOgAAA001": self._snapshot_group(2, self._groups["wrOgAAA001"]),
-            },
-        }
+        self._plan_groups: dict[int, dict[str, dict[str, Any]]] = {1: {}, 2: {}}
+        if seed_groups:
+            self._plan_groups = {
+                1: {
+                    "wrOgAAA001": self._snapshot_group(1, self._groups["wrOgAAA001"]),
+                    "wrOgAAA002": self._snapshot_group(1, self._groups["wrOgAAA002"]),
+                },
+                2: {
+                    "wrOgAAA001": self._snapshot_group(2, self._groups["wrOgAAA001"]),
+                },
+            }
         self._nodes: dict[int, dict[int, dict[str, Any]]] = {
             1: {
                 1: {
@@ -328,6 +331,25 @@ class InMemoryGroupOpsRepository:
         group = self._groups.get(clean_text(chat_id))
         return deepcopy(group) if group else None
 
+    def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int:
+        count = 0
+        for group in groups:
+            chat_id = clean_text(group.get("chat_id"))
+            if not chat_id:
+                continue
+            self._groups[chat_id] = {
+                "chat_id": chat_id,
+                "group_name": clean_text(group.get("group_name") or chat_id),
+                "owner_userid": clean_text(group.get("owner_userid")),
+                "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
+                "internal_member_count": int(group.get("internal_member_count") or 0),
+                "external_member_count": int(group.get("external_member_count") or 0),
+                "synced_at": utc_now_iso(),
+                "status": clean_text(group.get("status") or "active"),
+            }
+            count += 1
+        return count
+
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]:
         rows = list(self._nodes.get(int(plan_id), {}).values())
         rows = [item for item in rows if item.get("status") != "deleted"]
@@ -368,10 +390,13 @@ class InMemoryGroupOpsRepository:
         plan = self._plans.get(int(plan_id))
         if not plan:
             raise NotFoundError("group ops plan not found")
+        plaintext_token = generate_webhook_token()
         plan["webhook_key"] = plan.get("webhook_key") or generate_webhook_key(plan["plan_name"])
-        plan["webhook_token_hash"] = hash_webhook_token(generate_webhook_token())
+        plan["webhook_token_hash"] = hash_webhook_token(plaintext_token)
         plan["updated_at"] = utc_now_iso()
-        return deepcopy(plan)
+        result = deepcopy(plan)
+        result["plaintext_token"] = plaintext_token
+        return result
 
     def find_webhook_event(self, plan_id: int, idempotency_key: str) -> dict[str, Any] | None:
         key = clean_text(idempotency_key)
@@ -432,9 +457,9 @@ def _sqlalchemy_database_url(url: str) -> str:
     return url
 
 
-def reset_group_ops_fixture_state() -> None:
+def reset_group_ops_fixture_state(*, seed_groups: bool = True) -> None:
     global _fixture_repo
-    _fixture_repo = InMemoryGroupOpsRepository()
+    _fixture_repo = InMemoryGroupOpsRepository(seed_groups=seed_groups)
 
 
 def plan_binding_summary(repo: GroupOpsRepository, plan_id: int) -> dict[str, int]:

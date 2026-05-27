@@ -369,6 +369,53 @@ class PostgresGroupOpsRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 
+    def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int:
+        count = 0
+        try:
+            with self._engine.begin() as conn:
+                for group in groups:
+                    chat_id = clean_text(group.get("chat_id"))
+                    if not chat_id:
+                        continue
+                    params = {
+                        "chat_id": chat_id,
+                        "group_name": clean_text(group.get("group_name") or chat_id),
+                        "owner_userid": clean_text(group.get("owner_userid")),
+                        "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
+                        "internal_member_count": _int(group.get("internal_member_count")),
+                        "external_member_count": _int(group.get("external_member_count")),
+                        "status": clean_text(group.get("status") or "active"),
+                    }
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO wecom_group_chat_snapshots (
+                                chat_id, group_name, owner_userid, owner_name,
+                                internal_member_count, external_member_count,
+                                synced_at, status
+                            )
+                            VALUES (
+                                :chat_id, :group_name, :owner_userid, :owner_name,
+                                :internal_member_count, :external_member_count,
+                                CURRENT_TIMESTAMP, :status
+                            )
+                            ON CONFLICT(chat_id) DO UPDATE SET
+                                group_name = excluded.group_name,
+                                owner_userid = excluded.owner_userid,
+                                owner_name = excluded.owner_name,
+                                internal_member_count = excluded.internal_member_count,
+                                external_member_count = excluded.external_member_count,
+                                synced_at = CURRENT_TIMESTAMP,
+                                status = excluded.status
+                            """
+                        ),
+                        params,
+                    )
+                    count += 1
+                return count
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]:
         try:
             with self._engine.connect() as conn:
@@ -467,6 +514,7 @@ class PostgresGroupOpsRepository:
                 if not plan:
                     raise NotFoundError("group ops plan not found")
                 webhook_key = clean_text(plan.get("webhook_key")) or generate_webhook_key(plan["plan_name"])
+                plaintext_token = generate_webhook_token()
                 conn.execute(
                     text(
                         """
@@ -480,10 +528,12 @@ class PostgresGroupOpsRepository:
                     {
                         "plan_id": int(plan_id),
                         "webhook_key": webhook_key,
-                        "webhook_token_hash": hash_webhook_token(generate_webhook_token()),
+                        "webhook_token_hash": hash_webhook_token(plaintext_token),
                     },
                 )
-                return self._get_plan_sql(conn, int(plan_id)) or {}
+                result = self._get_plan_sql(conn, int(plan_id)) or {}
+                result["plaintext_token"] = plaintext_token
+                return result
         except NotFoundError:
             raise
         except SQLAlchemyError as exc:

@@ -3,6 +3,11 @@ from __future__ import annotations
 from tests.group_ops_test_helpers import error_code, group_ops_api_client
 
 
+class FixedQueueStatsGateway:
+    def count_group_ops_queue(self) -> int:
+        return 7
+
+
 def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client):
     response = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/plans")
 
@@ -23,6 +28,17 @@ def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client)
     for item in body["items"]:
         assert required <= set(item)
         assert "next_action" not in item
+
+
+def test_plan_list_returns_group_ops_queue_count(group_ops_api_client, monkeypatch):
+    from aicrm_next.integration_gateway import wecom_group_adapter
+
+    monkeypatch.setattr(wecom_group_adapter, "build_group_ops_queue_stats_gateway", lambda: FixedQueueStatsGateway())
+
+    response = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/plans")
+
+    assert response.status_code == 200
+    assert response.json()["queue_count"] == 7
 
 
 def test_plan_group_binding_allows_only_owner_groups(group_ops_api_client):
@@ -119,3 +135,14 @@ def test_webhook_config_returns_no_plaintext_token_or_examples(group_ops_api_cli
         "description",
     }
     assert not (forbidden & set(body))
+
+
+def test_webhook_regenerate_returns_plaintext_once_but_config_does_not(group_ops_api_client):
+    regenerated = group_ops_api_client.post("/api/admin/automation-conversion/group-ops/plans/2/webhook/regenerate")
+    config = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/plans/2/webhook")
+
+    assert regenerated.status_code == 200
+    assert regenerated.json()["token_status"] == "generated"
+    assert regenerated.json()["plaintext_token"]
+    assert config.status_code == 200
+    assert "plaintext_token" not in config.json()

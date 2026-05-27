@@ -56,6 +56,21 @@ class GroupOpsGroupsRequest(BaseModel):
     offset: int = 0
 
 
+class GroupOpsGroupSyncRequest(BaseModel):
+    owner_userid: str
+    limit: int = 100
+    cursor: str = ""
+    operator: str = "system"
+
+
+class GroupOpsRunDueRequest(BaseModel):
+    operator: str = ""
+    allow_plan_ids: list[int] = Field(default_factory=list)
+    allow_node_ids: list[int] = Field(default_factory=list)
+    max_outbound_tasks: int = 0
+    scheduled_at: str | None = None
+
+
 class GroupOpsWebhookReceiveRequest(BaseModel):
     idempotency_key: str
     send_mode: str = "queued"

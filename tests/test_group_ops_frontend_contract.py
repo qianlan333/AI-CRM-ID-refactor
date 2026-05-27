@@ -48,6 +48,11 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
     assert "<th>计划名称</th><th>类型</th><th>运营成员</th><th>绑定群</th><th>今日预估</th><th>状态</th><th>操作</th>" in source
     assert "编辑" in source
     assert "停用 / 删除" in source
+    assert 'name="create_plan_type"' in source
+    assert "标准编排计划" in source
+    assert "Webhook 接收计划" in source
+    assert "create_owner_userid" in source
+    assert '"owner_001"' not in source
 
     for forbidden in ["下一次动作", "计划详情", "队列策略", "可发主体", "管理员判断"]:
         assert forbidden not in source
@@ -62,8 +67,13 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
         assert label in source
     for label in ["第几天", "时间", "动作标题", "标准话术摘要", "素材标签", "编辑 / 删除"]:
         assert label in source
+    assert "添加动作" in source
+    assert "save-node" in source
+    assert "delete-node" in source
     for label in ["接收方式", "默认动作", "Webhook 接收地址", "POST", "复制地址", "Token 状态 / 重置入口", "Token："]:
         assert label in source
+    assert "一次性 token" in source
+    assert "复制后不可再次查看" in source
 
     for forbidden in ["适用场景", "JSON 示例", "请求字段说明大表", "请求字段说明", "明文 token", "明文 Token"]:
         assert forbidden not in source

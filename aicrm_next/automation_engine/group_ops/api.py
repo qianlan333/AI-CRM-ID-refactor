@@ -16,18 +16,24 @@ from .application import (
     ListGroupOpsNodesQuery,
     ListGroupOpsPlanGroupsQuery,
     ListGroupOpsPlansQuery,
+    PreviewGroupOpsGroupsSyncCommand,
+    PreviewGroupOpsPlanRunDueCommand,
     ReceiveGroupOpsWebhookCommand,
     RegenerateGroupOpsWebhookCommand,
     RemoveGroupOpsPlanGroupCommand,
+    RunGroupOpsPlanDueCommand,
+    SyncGroupOpsGroupsCommand,
     UpdateGroupOpsNodeCommand,
     UpdateGroupOpsPlanCommand,
 )
 from .dto import (
     GroupOpsBindGroupRequest,
+    GroupOpsGroupSyncRequest,
     GroupOpsGroupsRequest,
     GroupOpsNodeRequest,
     GroupOpsPlanCreateRequest,
     GroupOpsPlanListRequest,
+    GroupOpsRunDueRequest,
     GroupOpsPlanUpdateRequest,
     GroupOpsWebhookReceiveRequest,
 )
@@ -47,8 +53,16 @@ def _error_code_for(exc: Exception) -> str:
         return "content_required"
     if "webhook plan is not active" in message:
         return "plan_not_active"
+    if "group ops plan is not active" in message:
+        return "plan_not_active"
     if "invalid webhook token" in message:
         return "invalid_webhook_token"
+    if "allowlist" in message:
+        return "allowlist_required"
+    if "max_outbound_tasks" in message:
+        return "max_outbound_tasks_required"
+    if "customer-group sync is disabled" in message or "wecom group sync" in message:
+        return "wecom_group_sync_blocked"
     if isinstance(exc, NotFoundError):
         return "not_found"
     if isinstance(exc, ContractError):
@@ -188,6 +202,38 @@ def list_group_ops_groups(
             )
         )
     )
+
+
+@router.post("/api/admin/automation-conversion/group-ops/groups/sync/preview")
+def preview_group_ops_groups_sync(payload: GroupOpsGroupSyncRequest) -> JSONResponse:
+    try:
+        return _json_result(PreviewGroupOpsGroupsSyncCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/automation-conversion/group-ops/groups/sync")
+def sync_group_ops_groups(payload: GroupOpsGroupSyncRequest) -> JSONResponse:
+    try:
+        return _json_result(SyncGroupOpsGroupsCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due/preview")
+def preview_group_ops_plan_run_due(plan_id: int, payload: GroupOpsRunDueRequest) -> JSONResponse:
+    try:
+        return _json_result(PreviewGroupOpsPlanRunDueCommand()(plan_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due")
+def run_group_ops_plan_due(plan_id: int, payload: GroupOpsRunDueRequest) -> JSONResponse:
+    try:
+        return _json_result(RunGroupOpsPlanDueCommand()(plan_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/admin/automation-conversion/group-ops/plans/{plan_id}/webhook")
