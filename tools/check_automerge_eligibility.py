@@ -38,6 +38,12 @@ DELETED_LOW_RISK_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
     "README.md",
     "aicrm_next/production_compat/api.py",
+    "docs/claude_code_integration/README.md",
+    "docs/claude_code_integration/patterns.md",
+    "docs/claude_code_integration/rules.md",
+    "docs/claude_code_integration/tools.md",
+    "docs/claude_code_integration/troubleshooting.md",
+    "docs/mcp_usage.md",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
     "tools/run_codex_autopilot_tick.py",
     "scripts/codex_autopilot_tick.sh",
@@ -115,6 +121,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
+        "tests/test_next_production_cutover_readiness.py",
+        "tests/test_next_timer_route_readiness.py",
     }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",

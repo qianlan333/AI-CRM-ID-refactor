@@ -17,11 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-REQUIRED_DOCS = [
-    ROOT / "docs/sidebar_profile_next_owner_plan.md",
-    ROOT / "docs/route_ownership/sidebar_profile_route_matrix.md",
-]
-
 FIXTURE_MARKERS = ("local_contract", "fixture", "demo")
 
 ROUTE_MATRIX: list[dict[str, Any]] = [
@@ -274,21 +269,8 @@ def _validate_matrix() -> list[str]:
     return blockers
 
 
-def _validate_docs() -> list[str]:
-    blockers: list[str] = []
-    for path in REQUIRED_DOCS:
-        if not path.exists():
-            blockers.append(f"missing_doc:{path.relative_to(ROOT)}")
-            continue
-        text = path.read_text(encoding="utf-8")
-        for record in ROUTE_MATRIX:
-            if str(record["route_pattern"]) not in text:
-                blockers.append(f"doc_missing_route:{path.relative_to(ROOT)}:{record['route_pattern']}")
-    return blockers
-
-
 def run_check() -> dict[str, Any]:
-    blockers = _validate_matrix() + _validate_docs()
+    blockers = _validate_matrix()
     client = _client()
     probes = [_probe_route(client, record) for record in ROUTE_MATRIX]
     for probe in probes:

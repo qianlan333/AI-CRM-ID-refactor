@@ -48,9 +48,9 @@ EXPECTED_RUNTIME_BOUNDARIES = {
     "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
 }
 EXPECTED_NEXT_CANDIDATES = {
-    "remaining stale non-runtime docs/reports",
-    "remaining stale checker/test references",
-    "governance config compaction",
+    "non_runtime_cleanup": "nearly_complete",
+    "runtime_fallback_cleanup": "future_separate_track",
+    "high_risk_external_cleanup": "separate_owner_approval_required",
 }
 STOP_IDS = {
     "production_owner_switch",
@@ -219,12 +219,12 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
     if state.get("current_phase") != "post_phase7_active_cleanup":
         blockers.append("current_phase must be post_phase7_active_cleanup")
-    if state.get("last_merged_pr") != "#859":
-        blockers.append("last_merged_pr must record merged cleanup PR #859")
-    if state.get("last_merged_cleanup_wave") != "architecture_documentation_compaction_wave15":
-        blockers.append("last_merged_cleanup_wave must record wave 15 architecture documentation compaction")
-    if state.get("recommended_next_pr") != "stale_product_design_documentation_cleanup_wave16":
-        blockers.append("recommended_next_pr must name wave 16 stale product design documentation cleanup")
+    if state.get("last_merged_pr") != "#861":
+        blockers.append("last_merged_pr must record merged cleanup PR #861")
+    if state.get("last_merged_cleanup_wave") != "stale_product_design_documentation_cleanup_wave16":
+        blockers.append("last_merged_cleanup_wave must record wave 16 stale product design documentation cleanup")
+    if state.get("recommended_next_pr") != "final_non_runtime_cleanup_closeout_wave17":
+        blockers.append("recommended_next_pr must name wave 17 final non-runtime cleanup closeout")
     if state.get("owner_approval_required") is not False:
         blockers.append("owner_approval_required must be false for low-risk governance cleanup")
     if state.get("runtime_behavior_changed") is not False:
@@ -248,9 +248,9 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
     boundaries = _as_strings(state.get("protected_runtime_boundaries"))
     if boundaries != EXPECTED_RUNTIME_BOUNDARIES:
         blockers.append(f"protected_runtime_boundaries must be exactly {sorted(EXPECTED_RUNTIME_BOUNDARIES)}")
-    candidates = _as_strings(state.get("next_cleanup_candidates"))
+    candidates = state.get("next_cleanup_candidates")
     if candidates != EXPECTED_NEXT_CANDIDATES:
-        blockers.append(f"next_cleanup_candidates must be exactly {sorted(EXPECTED_NEXT_CANDIDATES)}")
+        blockers.append(f"next_cleanup_candidates must be exactly {EXPECTED_NEXT_CANDIDATES}")
 
 
 def _validate_stop_conditions(stop: dict[str, Any], blockers: list[str]) -> None:
@@ -301,7 +301,7 @@ def build_report() -> dict[str, Any]:
     }
     details["active_safety_gates"] = sorted(_as_strings(state.get("active_safety_gates")))
     details["protected_runtime_boundaries"] = sorted(_as_strings(state.get("protected_runtime_boundaries")))
-    details["next_cleanup_candidates"] = sorted(_as_strings(state.get("next_cleanup_candidates")))
+    details["next_cleanup_candidates"] = state.get("next_cleanup_candidates")
     details["changed_files"] = sorted(changed)
     return {"overall": "PASS" if not blockers else "FAIL", "ok": not blockers, "blockers": blockers, "warnings": warnings, "details": details}
 

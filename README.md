@@ -32,7 +32,6 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 如果任务偏 MCP / OpenClaw，再补：
 
 - [docs/mcp_usage.md](docs/mcp_usage.md)
-- [docs/openclaw_crm_read_contract.md](docs/openclaw_crm_read_contract.md)
 
 ## 快速启动
 
