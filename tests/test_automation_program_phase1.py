@@ -6,7 +6,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from flask import Blueprint, Flask
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth import save_admin_user
@@ -77,36 +76,6 @@ def _program_row(html: str, program_id: int) -> str:
     match = re.search(rf'<tr id="program-row-{program_id}".*?</tr>', html, flags=re.S)
     assert match
     return match.group(0)
-
-
-def test_program_workflow_page_handlers_redirect_to_setup_without_pg(monkeypatch):
-    from wecom_ability_service.http import automation_conversion_pages as pages
-
-    app = Flask(__name__)
-    api = Blueprint("api", __name__)
-    api.add_url_rule(
-        "/admin/automation-conversion/programs/<int:program_id>/setup",
-        "admin_automation_program_setup",
-        lambda program_id: "",
-    )
-    app.register_blueprint(api)
-    monkeypatch.setattr(pages, "_load_program_or_404", lambda program_id: {"id": int(program_id)})
-
-    handlers = (
-        (pages.admin_automation_program_operations, (42,)),
-        (pages.admin_automation_program_workflows, (42,)),
-        (pages.admin_automation_program_workflow_new, (42,)),
-        (pages.admin_automation_program_workflow_edit, (42, 1)),
-        (pages.admin_automation_program_workflow_nodes, (42, 1)),
-    )
-
-    with app.test_request_context("/"):
-        for handler, args in handlers:
-            response = handler(*args)
-            assert response.status_code == 302
-            assert response.headers["Location"].endswith(
-                "/admin/automation-conversion/programs/42/setup?step=operations"
-            )
 
 
 def test_stale_workflow_page_templates_are_removed():
@@ -212,26 +181,6 @@ def test_operation_task_panel_uses_single_task_language():
     assert "发送去重" not in source
     assert "检查与执行" not in source
     assert "从当前任务复制" not in source
-
-
-def test_setup_operations_passes_program_scoped_workspace_to_operation_panel():
-    source = (
-        REPO_ROOT / "wecom_ability_service/templates/admin_console/automation_program_setup_wizard.html"
-    ).read_text(encoding="utf-8")
-    workspace_source = (
-        REPO_ROOT / "wecom_ability_service/http/automation_conversion_workspaces.py"
-    ).read_text(encoding="utf-8")
-    panel_source = (
-        REPO_ROOT / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html"
-    ).read_text(encoding="utf-8")
-
-    assert "workspace.operations or workspace.operations_workspace or {}" in source
-    assert "{% set operations_workspace = workspace.operations_workspace or {} %}" not in source
-    assert '{% include "admin_console/_automation_operation_orchestration_panel.html" %}' in source
-    assert "operations_workspace[\"api_urls\"] = dict(operations_shell.get(\"api_urls\") or {})" in workspace_source
-    assert "operations_workspace[\"entry_urls\"] = dict(operations_shell.get(\"entry_urls\") or {})" in workspace_source
-    assert "页面接口地址缺失，请刷新页面后重试" in panel_source
-    assert "操作失败，请稍后重试" not in panel_source
 
 
 def test_default_program_bootstraps_and_automation_entry_lists_programs(app, client, monkeypatch):

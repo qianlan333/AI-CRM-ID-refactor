@@ -43,10 +43,10 @@
 - 阶段手动发送：`/api/admin/automation-conversion/stage/<stage_key>/*`
 - SOP：`/api/admin/automation-conversion/sop/*`
 - Dashboard / settings：`/api/admin/automation-conversion/dashboard`、`/api/admin/automation-conversion/settings`
-- Agent / LLM / Review：`/api/admin/automation-conversion/agents*`、`agent-outputs*`、`review-outputs*`
+- Agent / LLM：`/api/admin/automation-conversion/agents*`、`agent-outputs*`
 - 画像分层模板：`/api/admin/automation-conversion/profile-segment-templates*`
 - Workflow / node / execution：`/api/admin/automation-conversion/workflows*`、`workflow-nodes*`、`executions*`
-- Reply monitor / router / jobs：`reply-monitor/*`、`router-*`、`jobs/run-due`
+- Reply monitor / jobs：`reply-monitor/*`、`jobs/run-due`
 
 ### 2.2 当前内部工作面
 

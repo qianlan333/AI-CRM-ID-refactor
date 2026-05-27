@@ -857,17 +857,6 @@ def _automation_group() -> dict:
                 ],
             },
             {
-                "id": "automation-review",
-                "title": "输出评审与发送",
-                "endpoints": [
-                    {"id": "get-auto-review-outputs", "method": "GET", "path": "/api/admin/automation-conversion/review-outputs", "summary": "获取待评审输出", "description": "返回待人工评审的 Agent 话术输出列表。", "auth": "session", "params": [], "request_example": None, "response_example": '{"ok": true, "outputs": [...]}', "curl_example": _curl("GET", "/api/admin/automation-conversion/review-outputs", "session")},
-                    {"id": "post-auto-review-output", "method": "POST", "path": "/api/admin/automation-conversion/review-outputs/<output_id>/review", "summary": "评审输出", "description": "对 Agent 输出进行采用/拒绝评审。", "auth": "session", "params": [{"name": "output_id", "type": "string (path)", "required": True, "description": "输出 ID"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/review-outputs/out_abc/review", "session")},
-                    {"id": "post-auto-send-via-webhook", "method": "POST", "path": "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-webhook", "summary": "通过 Webhook 发送", "description": "将评审通过的输出通过 Webhook 发送。", "auth": "session", "params": [{"name": "output_id", "type": "string (path)", "required": True, "description": "输出 ID"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/review-outputs/out_abc/send-via-webhook", "session")},
-                    {"id": "post-auto-send-via-wecom", "method": "POST", "path": "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-wecom", "summary": "通过企微发送", "description": "将评审通过的输出通过企业微信消息发送给客户。", "auth": "session", "params": [{"name": "output_id", "type": "string (path)", "required": True, "description": "输出 ID"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/review-outputs/out_abc/send-via-wecom", "session")},
-                    {"id": "post-auto-send-via-bazhuayu", "method": "POST", "path": "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu", "summary": "通过八爪鱼发送", "description": "将评审通过的输出通过八爪鱼渠道发送。", "auth": "session", "params": [{"name": "output_id", "type": "string (path)", "required": True, "description": "输出 ID"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/review-outputs/out_abc/send-via-bazhuayu", "session")},
-                ],
-            },
-            {
                 "id": "automation-workflow",
                 "title": "任务流",
                 "endpoints": [
@@ -914,15 +903,6 @@ def _automation_group() -> dict:
                 "endpoints": [
                     {"id": "post-auto-reply-capture", "method": "POST", "path": "/api/admin/automation-conversion/reply-monitor/capture", "summary": "扫描新消息", "description": "手动触发一次自动接话扫描，将最新未处理消息抓取入队。", "auth": "session", "params": [], "request_example": None, "response_example": '{"ok": true, "status": "captured", "message": "扫描完成，新增 3 条入队"}', "curl_example": _curl("POST", "/api/admin/automation-conversion/reply-monitor/capture", "session")},
                     {"id": "post-auto-reply-run-due", "method": "POST", "path": "/api/admin/automation-conversion/reply-monitor/run-due", "summary": "放行到期队列", "description": "手动触发放行逻辑，处理当前到期的自动接话队列。", "auth": "session", "params": [], "request_example": None, "response_example": '{"ok": true, "status": "idle", "message": "本次无到期项"}', "curl_example": _curl("POST", "/api/admin/automation-conversion/reply-monitor/run-due", "session")},
-                ],
-            },
-            {
-                "id": "automation-router",
-                "title": "路由与回调",
-                "endpoints": [
-                    {"id": "get-auto-router-pending", "method": "GET", "path": "/api/admin/automation-conversion/router-pending-callbacks", "summary": "获取待处理路由回调", "description": "返回等待处理的路由回调队列。", "auth": "session", "params": [], "request_example": None, "response_example": '{"ok": true, "callbacks": [...]}', "curl_example": _curl("GET", "/api/admin/automation-conversion/router-pending-callbacks", "session")},
-                    {"id": "post-auto-router-replay", "method": "POST", "path": "/api/admin/automation-conversion/router-callback-replay/<run_id>", "summary": "重放路由回调", "description": "重新执行指定的路由回调。", "auth": "session", "params": [{"name": "run_id", "type": "string (path)", "required": True, "description": "运行 ID"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/router-callback-replay/run_abc", "session")},
-                    {"id": "post-auto-router-check", "method": "POST", "path": "/api/admin/automation-conversion/router-pending-callback-check", "summary": "检查待处理回调", "description": "检查并处理所有待处理的路由回调。", "auth": "session", "params": [], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/automation-conversion/router-pending-callback-check", "session")},
                 ],
             },
             {
