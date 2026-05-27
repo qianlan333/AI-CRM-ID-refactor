@@ -1,0 +1,53 @@
+version: 1
+status: post_phase7_cleanup_owner_standing_approval
+bundle_type: post_phase7_cleanup_owner_standing_approval_bundle
+cleanup_family: owner_standing_route_specific_cleanup_approval
+
+owner_approval:
+  status: granted
+  owner: qianlan
+  approval_source: chat_owner_standing_approval_2026-05-27
+  approved_scope:
+    - route_by_route_low_medium_risk_cleanup
+    - exact_production_compat_entry_cleanup_after_replacement_verified
+    - fallback_entry_cleanup_after_replacement_verified
+  required_gates:
+    - next_native_replacement_exists
+    - checker_tests_pass
+    - manifest_backlog_evidence_updated
+    - rollback_path_documented
+    - unrelated_routes_retained
+
+approved_route_families:
+  - /api/admin/automation-conversion/task-groups*
+  - /api/admin/automation-conversion/workflow-nodes*
+  - /api/admin/automation-conversion/tasks*
+  - /api/admin/automation-conversion/workflows*
+  - /api/admin/automation-conversion/agents*
+  - /api/admin/automation-conversion/agent-outputs*
+  - /api/admin/automation-conversion/agent-runs*
+  - /api/admin/automation-conversion/action-templates*
+  - /api/admin/automation-conversion/profile-segment-templates*
+  - other_internal_admin_routes_proven_equivalent_by_checker_tests
+
+not_authorized:
+  delete_wecom_ability_service_directory: true
+  delete_legacy_flask_app: true
+  delete_wildcard_router: true
+  broad_fallback_removal: true
+  payment_oauth_wecom_callback_public_submit_timer_outbound_cleanup: true
+  live_external_side_effects: true
+  global_delete_ready_true: true
+
+runtime_deletion_policy:
+  runtime_deletion_authorized: false
+  may_propose_after_no_references_recheck: true
+  required_absent_references:
+    - production_compat
+    - fallback
+    - import_graph
+    - manifest
+    - tests
+    - runtime_references
+
+delete_ready: false

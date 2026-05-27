@@ -99,7 +99,6 @@ async def legacy_automation_channel_settings_routes(request: Request) -> Respons
 @router.api_route("/api/admin/automation-conversion/profile-segment-templates/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/agents", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/agents/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agent-outputs", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/agent-outputs/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/agent-runs/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/agent-replay", methods=_ALL_METHODS)
