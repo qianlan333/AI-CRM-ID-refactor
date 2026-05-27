@@ -1625,6 +1625,11 @@ def test_admin_questionnaire_management_page_exists(client):
     assert "问卷管理" in text
     assert "创建新问卷" in text
     assert "创建测评问卷模板" in text
+    assert '<h2>问卷管理</h2>' not in text
+    assert "questionnaire-toolbar" not in text
+    assert "questionnaire-reload-btn" not in text
+    assert 'href="/admin/questionnaires/new"' in text
+    assert 'href="/admin/questionnaires/new?mode=assessment"' in text
     assert "多维测评" in text
     assert "问卷名称" in text
     assert "创建时间" in text
