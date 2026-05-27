@@ -13,6 +13,7 @@
 - `PUT /api/admin/automation-conversion/tasks/{task_id}/send-content/behavior-segments/{segment_key}`
 - `PUT /api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials`
 - `GET /api/admin/automation-conversion/behavior-segment-rules`
+- `POST /api/admin/hxc-dashboard/broadcast-tasks`
 
 ## New Frontend Assets
 
@@ -27,7 +28,10 @@
 ## Migrated Surfaces
 
 - Automation operation send-content configuration is migrated to `AICRMSendContentComposer`.
-- HXC dashboard content package preparation is migrated to `AICRMSendContentComposer`; real broadcast remains a later Next-native backend task.
+- HXC dashboard broadcast is migrated to `AICRMSendContentComposer` plus Next-native `/api/admin/hxc-dashboard/broadcast-tasks`.
+  - The HXC outer page owns `audience_filter`, `selected_customer_ids`, `sender_userid`, `source_id`, and `idempotency_key`.
+  - The standard component owns only `content_text` plus image, miniprogram, and attachment library IDs.
+  - The Next-native API creates an internal task with `dispatch_status=pending_external_dispatch`; it does not upload WeCom media or pretend a real send succeeded.
 - Channel code center welcome copy and materials are migrated to `AICRMSendContentComposer`.
   - The outer channel page still owns channel name, channel code, channel type, owner, entry tag, and link/qrcode fields.
   - The standard component owns only welcome copy plus local image, miniprogram, and attachment IDs.
@@ -42,13 +46,13 @@ This work does not add or rewrite:
 - `production_compat` routes
 - legacy facade routes
 - old Flask operation task routes
-- HXC broadcast backend routes such as `/api/admin/hxc-dashboard/broadcast`
+- legacy HXC broadcast backend routes such as `/api/admin/hxc-dashboard/broadcast`
 - real WeCom send, upload, media resolution, or outbound task execution
 
 ## Ownership Boundary
 
 `SendContentPackage` is the standard component's only backend contract. The component emits text and three local material ID arrays. The automation operation page owns strategy-level decisions: `content_mode`, selected profile template, default behavior rule, and `agent_code`.
 
-HXC / funnel dashboard broadcast remains out of scope for this phase. If a Next-native HXC broadcast backend is needed later, it should be implemented in a separate PR with explicit outbound safety gates.
+HXC / funnel dashboard broadcast now has a Next-native task creation API. Real outbound dispatch, media upload, and media ID resolution remain separate explicit work and must not be hidden behind the old Flask broadcast route.
 
 Campaign step and Sidebar integration are also left for the next frontend integration pass. Channel code center entry tags remain a separate outer-page picker and are not part of `SendContentPackage`.

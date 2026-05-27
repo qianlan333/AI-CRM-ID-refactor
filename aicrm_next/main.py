@@ -19,6 +19,8 @@ from .commerce.repo import reset_commerce_fixture_state
 from .customer_tags.api import router as customer_tags_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
+from .hxc_dashboard.api import router as hxc_dashboard_router
+from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
 from .identity_contact.api import router as identity_router
 from .integration_gateway.api import router as mcp_router
 from .media_library.api import router as media_library_router
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
         reset_commerce_fixture_state()
         reset_media_library_fixture_state()
         reset_admin_jobs_fixture_state()
+        reset_hxc_dashboard_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -78,6 +81,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(platform_router)
     app.include_router(automation_channels_router)
+    app.include_router(hxc_dashboard_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)

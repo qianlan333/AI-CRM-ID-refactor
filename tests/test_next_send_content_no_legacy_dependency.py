@@ -19,6 +19,12 @@ def test_send_content_package_does_not_import_legacy_service() -> None:
         assert LEGACY_TOKEN not in source
 
 
+def test_hxc_dashboard_broadcast_does_not_import_legacy_service() -> None:
+    for path in (ROOT / "aicrm_next" / "hxc_dashboard").glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert LEGACY_TOKEN not in source
+
+
 def test_automation_send_content_logic_does_not_import_legacy_service() -> None:
     for path in [
         "aicrm_next/automation_engine/api.py",
@@ -35,6 +41,7 @@ def test_new_routes_are_not_registered_through_production_compat() -> None:
     assert "send-content" not in source
     assert "material-picker" not in source
     assert "behavior-segment-rules" not in source
+    assert "broadcast-tasks" not in source
 
 
 def test_new_tests_do_not_start_old_flask_app() -> None:
@@ -49,6 +56,9 @@ def test_new_tests_do_not_start_old_flask_app() -> None:
         "test_next_material_picker_api.py",
         "test_next_automation_task_send_content.py",
         "test_next_send_content_no_legacy_dependency.py",
+        "test_next_hxc_broadcast_api.py",
+        "test_next_hxc_broadcast_repo.py",
+        "test_next_hxc_broadcast_frontend_contract.py",
     ]:
         source = (ROOT / "tests" / name).read_text(encoding="utf-8")
         for token in forbidden:

@@ -32,3 +32,9 @@ The component outputs only `content_text` plus the three material ID arrays. Out
 Frontend usage follows the same boundary. `AICRMSendContentComposer` only edits this package. The automation operation page owns unified/profile-layered/behavior-layered/agent mode selection, profile template selection, behavior rule selection, and agent selection.
 
 In agent mode the composer must be opened with `textEnabled=false`, so no manual copy is returned and only material IDs are saved.
+
+## HXC Broadcast Usage
+
+HXC / funnel dashboard broadcast also uses `SendContentPackage`. The HXC page supplies audience and sender context, while `AICRMSendContentComposer` supplies only the text and three material ID arrays. HXC broadcast must call the Next-native `/api/admin/hxc-dashboard/broadcast-tasks` API and must not call the old Flask `/api/admin/hxc-dashboard/broadcast` route.
+
+The HXC API normalizes with `require_body=true`, so empty packages are rejected. It does not upload materials to WeCom or resolve `media_id` in this phase.
