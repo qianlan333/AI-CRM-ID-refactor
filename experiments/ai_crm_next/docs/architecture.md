@@ -34,6 +34,7 @@ The monolith is modular at source boundaries: each context owns API, application
 - MCP must not access repositories directly; it dispatches to application use cases.
 - Read models must not execute writes.
 - Backend context naming must not leak into frontend visible labels.
+- 渠道码中心的新建、编辑和保存必须基于 AI-CRM Next 原生路由、模板和数据访问实现；旧版 `siyuan-crm` / Flask 能力只能作为迁移参考，历史 `automation_channel` 数据要被完整承接，不能用 Next 兼容占位页替代。
 
 ## Avoiding the Old `service.py` Shape
 

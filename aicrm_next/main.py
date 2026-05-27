@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
 from .automation_engine.api import router as automation_router
+from .automation_engine.channels_api import router as automation_channels_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(platform_router)
+    app.include_router(automation_channels_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)

@@ -77,6 +77,87 @@ def test_next_channels_page_stays_next_owned_in_production_data_mode(monkeypatch
     assert "群运营计划" in response.text
 
 
+def test_next_channel_form_pages_render_native_editor(monkeypatch):
+    client = _client(monkeypatch)
+
+    new_response = client.get("/admin/channels/new")
+
+    assert new_response.status_code == 200
+    new_html = new_response.text
+    assert "新建渠道" in new_html
+    assert "渠道名称" in new_html
+    assert "欢迎语与素材" in new_html
+    assert "预览并选择小程序" in new_html
+    assert "Sunset / State" not in new_html
+    assert "本地兼容层" not in new_html
+
+    created = client.post(
+        "/api/admin/channels",
+        json={
+            "channel_type": "wecom_customer_acquisition",
+            "carrier_type": "link",
+            "channel_name": "测试获客链接",
+            "channel_code": "test_link",
+            "customer_channel": "wca_test_link",
+            "link_url": "https://work.weixin.qq.com/ca/test",
+            "welcome_message": "欢迎加入",
+            "welcome_miniprogram_library_ids": [1],
+            "welcome_attachment_library_ids": [2],
+            "entry_tag_id": "tag_1",
+            "entry_tag_name": "核心",
+            "entry_tag_group_name": "客户等级",
+        },
+    )
+    assert created.status_code == 201
+    channel = created.json()["channel"]
+
+    edit_response = client.get(f"/admin/channels/{channel['id']}/edit")
+
+    assert edit_response.status_code == 200
+    edit_html = edit_response.text
+    assert "编辑渠道" in edit_html
+    assert "测试获客链接" in edit_html
+    assert "wca_test_link" in edit_html
+    assert "欢迎加入" in edit_html
+    assert "客户等级 / 核心" in edit_html
+    assert "企微获客助手链接预览" in edit_html
+    assert "channel_admission_pages.js" in edit_html
+    assert "Sunset / State" not in edit_html
+    assert "本地兼容层" not in edit_html
+
+
+def test_next_channel_qrcode_patch_preserves_existing_scene_value(monkeypatch):
+    client = _client(monkeypatch)
+
+    created = client.post(
+        "/api/admin/channels",
+        json={
+            "channel_type": "qrcode",
+            "carrier_type": "qrcode",
+            "channel_name": "测试二维码",
+            "channel_code": "default_qrcode",
+            "scene_value": "aqr_existing_state",
+        },
+    ).json()["channel"]
+
+    updated = client.patch(
+        f"/api/admin/channels/{created['id']}",
+        json={
+            "channel_type": "qrcode",
+            "carrier_type": "qrcode",
+            "channel_name": "测试二维码已编辑",
+            "channel_code": "default_qrcode_edited",
+            "welcome_message": "更新欢迎语",
+        },
+    )
+
+    assert updated.status_code == 200
+    channel = updated.json()["channel"]
+    assert channel["channel_name"] == "测试二维码已编辑"
+    assert channel["channel_code"] == "default_qrcode_edited"
+    assert channel["scene_value"] == "aqr_existing_state"
+
+
 def test_primary_admin_nav_pages_keep_next_shell_in_production_data_mode(monkeypatch):
     import aicrm_next.frontend_compat.legacy_routes as legacy_routes
 
