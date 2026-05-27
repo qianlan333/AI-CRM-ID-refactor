@@ -28,7 +28,6 @@ from .automation_conversion_render import (
     _render_member_ops_page,
     _render_overview_page,
     _render_program_list_page,
-    _render_program_setup_page,
     _render_run_center_page,
 )
 from ..domains.automation_conversion.channel_binding_service import get_channel
@@ -52,7 +51,7 @@ def admin_automation_program_create():
     except ValueError as exc:
         return _render_program_list_page(page_error=str(exc), show_create_form=True)
     return redirect(
-        url_for("api.admin_automation_program_setup", program_id=int((result.get("program") or {}).get("id") or 0)),
+        url_for("api.admin_automation_program_entry_channels", program_id=int((result.get("program") or {}).get("id") or 0)),
         code=302,
     )
 
@@ -81,7 +80,7 @@ def admin_automation_program_copy(program_id: int):
     except (LookupError, ValueError) as exc:
         return _render_program_list_page(page_error=str(exc))
     return redirect(
-        url_for("api.admin_automation_program_setup", program_id=int((result.get("program") or {}).get("id") or 0)),
+        url_for("api.admin_automation_program_entry_channels", program_id=int((result.get("program") or {}).get("id") or 0)),
         code=302,
     )
 
@@ -109,13 +108,6 @@ def _program_status_action(program_id: int, status: str):
     return _program_action_redirect(url_for("api.admin_automation_conversion"))
 
 
-def _program_setup_redirect(program_id: int, step: str):
-    return redirect(
-        url_for("api.admin_automation_program_setup", program_id=int(program_id), step=step),
-        code=302,
-    )
-
-
 def admin_automation_conversion_auto_reply():
     return _render_auto_reply_page()
 
@@ -125,48 +117,9 @@ def admin_automation_program_overview(program_id: int):
     return _render_overview_page(program=program)
 
 
-def admin_automation_program_setup(program_id: int):
-    program = _load_program_or_404(program_id)
-    return _render_program_setup_page(
-        program=program,
-        step=_query_text("step") or "basic",
-        audience_picker=_query_text("audience_picker"),
-    )
-
-
-def admin_automation_program_operations(program_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "operations")
-
-
-def admin_automation_program_workflows(program_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "operations")
-
-
-def admin_automation_program_workflow_new(program_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "operations")
-
-
-def admin_automation_program_workflow_edit(program_id: int, workflow_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "operations")
-
-
-def admin_automation_program_workflow_nodes(program_id: int, workflow_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "operations")
-
-
 def admin_automation_program_executions(program_id: int):
     program = _load_program_or_404(program_id)
     return _render_execution_records_page(program=program)
-
-
-def admin_automation_program_flow_design(program_id: int):
-    _load_program_or_404(program_id)
-    return _program_setup_redirect(program_id, "segmentation")
 
 
 def admin_automation_program_member_ops(program_id: int):
@@ -199,11 +152,9 @@ def admin_automation_conversion_shared_profile_segments():
     if program_id:
         return redirect(
             url_for(
-                "api.admin_automation_program_flow_design",
+                "api.admin_automation_program_entry_channels",
                 program_id=program_id,
-                section="profile-segments",
-            )
-            + "#flow-profile-segments",
+            ),
             code=302,
         )
     return redirect(url_for("api.admin_automation_conversion"), code=302)

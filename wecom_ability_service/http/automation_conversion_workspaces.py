@@ -12,7 +12,6 @@ from ..domains.automation_conversion.orchestration_service import (
     get_agent_replay_payload,
     list_agent_configs,
 )
-from ..domains.automation_conversion.program_setup_service import get_program_setup_payload, normalize_setup_step
 from ..domains.automation_conversion.service import (
     get_debug_payload,
     get_overview_payload,
@@ -477,30 +476,6 @@ def _program_context(program: dict[str, object], *, active_key: str = "overview"
     }
 
 
-def _build_program_setup_workspace(program_id: int, *, step: str = "basic", audience_picker: str = "") -> dict[str, object]:
-    normalized_step = normalize_setup_step(step)
-    payload = get_program_setup_payload(int(program_id), step=normalized_step, audience_picker=audience_picker)
-    base_url = url_for("api.admin_automation_program_setup", program_id=int(program_id))
-    payload["urls"] = {
-        "base": base_url,
-        "basic": url_for("api.api_admin_automation_program_setup_basic", program_id=int(program_id)),
-        "entry_channel": url_for("api.api_admin_automation_program_setup_entry_channel", program_id=int(program_id)),
-        "segmentation": url_for("api.api_admin_automation_program_setup_segmentation", program_id=int(program_id)),
-        "audience_entry_rule": url_for("api.api_admin_automation_program_setup_audience_entry_rule", program_id=int(program_id)),
-        "publish_check": url_for("api.api_admin_automation_program_setup_publish_check", program_id=int(program_id)),
-        "publish_entry": url_for("api.api_admin_automation_program_publish_entry", program_id=int(program_id)),
-        "publish_full": url_for("api.api_admin_automation_program_publish_full", program_id=int(program_id)),
-        "customer_acquisition_links": url_for("api.api_admin_automation_program_customer_acquisition_links", program_id=int(program_id)),
-    }
-    operations_shell = _build_action_orchestration_workspace(program_id=int(program_id))
-    operations_workspace = {**operations_shell, **dict(payload.get("operations") or {})}
-    operations_workspace["api_urls"] = dict(operations_shell.get("api_urls") or {})
-    operations_workspace["entry_urls"] = dict(operations_shell.get("entry_urls") or {})
-    payload["operations"] = operations_workspace
-    payload["operations_workspace"] = operations_workspace
-    return payload
-
-
 __all__ = [
     "_automation_conversion_workspace_tabs",
     "_automation_program_workspace_tabs",
@@ -510,7 +485,6 @@ __all__ = [
     "_build_flow_design_workspace",
     "_build_member_ops_workspace",
     "_build_overview_workspace",
-    "_build_program_setup_workspace",
     "_build_run_center_workspace",
     "_overview_notice",
     "_program_context",
