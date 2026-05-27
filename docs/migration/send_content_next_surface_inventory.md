@@ -21,6 +21,15 @@
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
 - `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/frontend_compat/templates/admin_console/cloud_campaigns_workspace.html`
+
+## Migrated Surfaces
+
+- Campaign Step: 已迁移到 `AICRMSendContentComposer`。
+  - Campaign Step 外层仍由 Campaign 审阅页负责：`day_offset`、`send_time`、`stop_on_reply`、step id、campaign id、审批状态、审阅状态。
+  - 标准组件负责 `SendContentPackage`：`content_text`、`image_library_ids`、`miniprogram_library_ids`、`attachment_library_ids`。
+  - 保存时前端 adapter 同步写回现有 step payload 字段；后端继续落到 `content_payload_json`，老 `content_text` / `content_payload_json` 数据读取不报错。
+  - 本迁移不改变 Agent 生成 campaign 的核心逻辑、真实企微发送、media_id 解析或最终下发链路。
 
 ## Explicit Non-Surfaces
 
@@ -40,4 +49,4 @@ This work does not add or rewrite:
 
 HXC / funnel dashboard broadcast remains out of scope for this phase. If a Next-native HXC broadcast backend is needed later, it should be implemented in a separate PR with explicit outbound safety gates.
 
-Campaign step and Sidebar integration are also left for the next frontend integration pass. This PR provides the standard component and automation operation page integration only.
+Sidebar integration is still left for a later frontend integration pass. This PR does not change Sidebar runtime or outbound sending behavior.
