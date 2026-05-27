@@ -292,6 +292,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "runtime_switch_archaeology_cleanup_wave14" and "remaining stale non-runtime docs/reports" in allowed:
+        return "remaining stale non-runtime docs/reports"
     if recommended == "legacy_retirement_package_cleanup_wave13" and "remaining stale checker/test references" in allowed:
         return "remaining stale checker/test references"
     if recommended == "residual_narrative_documentation_cleanup_wave12" and "remaining stale non-runtime docs/reports" in allowed:
