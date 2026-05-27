@@ -1,0 +1,87 @@
+version: 1
+status: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance
+bundle_type: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle
+cleanup_family: task_groups_owner_evidence_validation_blocker_acceptance
+route_family: /api/admin/automation-conversion/task-groups*
+
+authorizations:
+  evidence_validation_authorized: false
+  exact_route_cleanup_retry_authorized: false
+  fallback_removal_authorized: false
+  production_compat_cleanup_authorized: false
+  production_compat_behavior_change_authorized: false
+  wildcard_cleanup_authorized: false
+  runtime_deletion_authorized: false
+  delete_ready: false
+  production_behavior_change_authorized: false
+
+source_prs:
+  owner_evidence_waiting_acceptance: 806
+  owner_evidence_collection: 802
+  task_groups_evidence_refresh: 798
+  owner_evidence_package_generation: 807
+  owner_evidence_package_blocker_acceptance: 810
+  task_groups_owner_evidence_validation: 811
+
+owner_evidence_recorded:
+  route_specific_owner_approval: true
+  rollback_owner: qianlan
+  risk_acceptance: granted_conditionally
+  approval_timestamp: "2026-05-27T01:31:42Z"
+
+validation_result:
+  validation_blocked: true
+  ready_for_exact_route_fallback_cleanup: false
+  ready_for_exact_route_production_compat_cleanup: false
+  ready_for_exact_route_cleanup_retry: false
+  exact_route_cleanup_retry_authorized: false
+
+evidence_passed:
+  - owner_approval_recorded
+  - rollback_owner_recorded
+  - risk_acceptance_recorded
+  - approval_timestamp_recorded
+  - rollback_plan_generated
+  - route_ownership_proof_collected
+  - production_compat_exact_entry_proof_collected
+  - wildcard_cleanup_not_required
+
+evidence_failed:
+  - latest_main_shadow_compare_not_executed
+  - latest_main_shadow_compare_not_passed
+  - rollback_rehearsal_not_executed
+  - exact_route_cleanup_retry_not_authorized
+
+blocked_routes:
+  - route_family: /api/admin/automation-conversion/task-groups*
+    validation_status: blocked
+    ready_for_exact_route_cleanup: false
+    fallback_removal_executed: false
+    production_compat_cleanup_executed: false
+    runtime_deletion_executed: false
+  - route_family: /api/admin/automation-conversion/workflow-nodes*
+    validation_status: retained_blocker_out_of_scope
+    ready_for_exact_route_cleanup: false
+    fallback_removal_executed: false
+    production_compat_cleanup_executed: false
+    runtime_deletion_executed: false
+
+owner_action_list:
+  - provide_real_latest_main_shadow_compare_execution_evidence
+  - provide_shadow_compare_passed_evidence
+  - provide_rollback_rehearsal_or_dry_run_execution_evidence
+  - confirm_rollback_rehearsal_changes_no_production_behavior
+  - rerun_task_groups_owner_evidence_validation_after_evidence_exists
+
+resume_rules:
+  cleanup_track_status: blocked_waiting_task_groups_shadow_and_rollback_evidence
+  next_allowed_action_without_complete_evidence: none
+  next_if_evidence_complete: post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
+  cleanup_retry_must_not_start_from_this_bundle: true
+
+business_continuity:
+  production_behavior_unchanged: true
+  fallback_retained: true
+  production_compat_retained: true
+  legacy_runtime_retained: true
+  delete_ready: false
