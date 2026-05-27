@@ -64,6 +64,7 @@ from .dto import (
     WorkflowListRequest,
     WorkflowNodeCreateRequest,
     WorkflowNodeListRequest,
+    WorkflowNodeUpdateRequest,
 )
 from .profile_segments import profile_segment_side_effect_safety
 from .profile_segment_repository import (
@@ -893,6 +894,39 @@ class CreateWorkflowNodeCommand(_WorkflowNodeRepositoryOwner):
         except RepositoryProviderError as exc:
             return self._blocked_payload(exc)
         return _workflow_node_response(result, status_code=201)
+
+    __call__ = execute
+
+
+class UpdateWorkflowNodeCommand(_WorkflowNodeRepositoryOwner):
+    def execute(self, node_id: int, request: WorkflowNodeUpdateRequest) -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _workflow_node_production_unavailable_payload()
+        payload = _request_dump(request, exclude_unset=True)
+        try:
+            result = repo.update_workflow_node(
+                int(node_id),
+                payload,
+                operator=str(payload.get("operator") or "system"),
+            )
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _workflow_node_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
+
+    __call__ = execute
+
+
+class DeleteWorkflowNodeCommand(_WorkflowNodeRepositoryOwner):
+    def execute(self, node_id: int, *, operator: str = "system") -> dict[str, Any]:
+        repo = self._repo_or_none()
+        if repo is None:
+            return _workflow_node_production_unavailable_payload()
+        try:
+            result = repo.delete_workflow_node(int(node_id), operator=operator)
+        except RepositoryProviderError as exc:
+            return self._blocked_payload(exc)
+        return _workflow_node_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
 
     __call__ = execute
 

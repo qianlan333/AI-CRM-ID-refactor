@@ -19,6 +19,7 @@ from .application import (
     CreateTaskCommand,
     CreateWorkflowCommand,
     CreateWorkflowNodeCommand,
+    DeleteWorkflowNodeCommand,
     EnterSilentPoolCommand,
     ExitMarketingCommand,
     CreateActionTemplateCommand,
@@ -52,6 +53,7 @@ from .application import (
     SaveProfileSegmentSendContentCommand,
     SaveUnifiedSendContentCommand,
     UpdateTaskCommand,
+    UpdateWorkflowNodeCommand,
     UpdateTaskSendStrategyCommand,
     UpdateProfileSegmentTemplateCommand,
 )
@@ -85,6 +87,7 @@ from .dto import (
     WorkflowListRequest,
     WorkflowNodeCreateRequest,
     WorkflowNodeListRequest,
+    WorkflowNodeUpdateRequest,
 )
 from .group_ops.api import router as group_ops_router
 
@@ -234,6 +237,53 @@ def list_workflow_nodes(
 def create_workflow_node(payload: WorkflowNodeCreateRequest) -> JSONResponse:
     try:
         return _json_result(CreateWorkflowNodeCommand()(payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/workflows/{workflow_id}/nodes")
+def list_workflow_nodes_for_workflow(
+    workflow_id: int,
+    program_id: int | None = None,
+    node_type: str = "",
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    request = WorkflowNodeListRequest(
+        program_id=program_id,
+        workflow_id=workflow_id,
+        node_type=node_type,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListWorkflowNodesQuery()(request))
+
+
+@router.post("/api/admin/automation-conversion/workflows/{workflow_id}/nodes")
+def create_workflow_node_for_workflow(workflow_id: int, payload: WorkflowNodeCreateRequest) -> JSONResponse:
+    try:
+        request = payload.model_copy(update={"workflow_id": workflow_id})
+        return _json_result(CreateWorkflowNodeCommand()(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/automation-conversion/workflow-nodes/{node_id}")
+def update_workflow_node(node_id: int, payload: WorkflowNodeUpdateRequest) -> JSONResponse:
+    try:
+        return _json_result(UpdateWorkflowNodeCommand()(node_id, payload))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.delete("/api/admin/automation-conversion/workflow-nodes/{node_id}")
+def delete_workflow_node(node_id: int, operator: str = "system") -> JSONResponse:
+    try:
+        return _json_result(DeleteWorkflowNodeCommand()(node_id, operator=operator))
     except Exception as exc:
         _raise_http(exc)
 

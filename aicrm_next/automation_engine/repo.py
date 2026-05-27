@@ -21,6 +21,7 @@ from .tasks import TASK_ROUTE_FAMILY, normalize_task_create_payload, task_projec
 from .workflow_nodes import (
     WORKFLOW_NODE_ROUTE_FAMILY,
     normalize_workflow_node_create_payload,
+    normalize_workflow_node_update_payload,
     workflow_node_projection,
     workflow_node_side_effect_safety,
 )
@@ -86,7 +87,10 @@ class AutomationRepository(Protocol):
     def create_workflow(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
     def list_workflow_audit_events(self) -> list[dict[str, Any]]: ...
     def list_workflow_nodes(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
+    def get_workflow_node(self, node_id: int) -> dict[str, Any] | None: ...
     def create_workflow_node(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]: ...
+    def update_workflow_node(self, node_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]: ...
+    def delete_workflow_node(self, node_id: int, *, operator: str) -> dict[str, Any]: ...
     def list_workflow_node_audit_events(self) -> list[dict[str, Any]]: ...
     def list_tasks(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]: ...
     def get_task(self, task_id: int) -> dict[str, Any] | None: ...
@@ -872,6 +876,12 @@ class InMemoryAutomationRepository:
         total = len(rows)
         return deepcopy(rows[offset : offset + limit]), total
 
+    def get_workflow_node(self, node_id: int) -> dict[str, Any] | None:
+        node = self._workflow_nodes.get(int(node_id))
+        if not node:
+            return None
+        return workflow_node_projection(node)
+
     def create_workflow_node(self, payload: dict[str, Any], *, idempotency_key: str, operator: str) -> dict[str, Any]:
         key = str(idempotency_key or "").strip()
         if not key:
@@ -921,6 +931,75 @@ class InMemoryAutomationRepository:
             "status": "succeeded",
         }
         return result
+
+    def update_workflow_node(self, node_id: int, payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
+        current = self.get_workflow_node(node_id)
+        if not current:
+            raise NotFoundError("automation workflow node not found")
+        operator_id = str(operator or payload.get("operator") or "system").strip() or "system"
+        patch = normalize_workflow_node_update_payload({**(payload or {}), "operator": operator_id})
+        updated = deepcopy(current)
+        for key, value in patch.items():
+            if key in {"operator"}:
+                continue
+            updated[key] = deepcopy(value)
+        updated["updated_by"] = operator_id
+        updated["updated_at"] = utc_now_iso()
+        saved = workflow_node_projection(updated)
+        self._workflow_nodes[int(node_id)] = deepcopy(saved)
+        audit_event = self._append_workflow_node_audit_event(
+            operation="update",
+            operator=operator_id,
+            resource_id=int(node_id),
+            before=current,
+            after=saved,
+            request_payload=patch,
+            rollback_payload={
+                "strategy": "restore_previous_workflow_node_metadata",
+                "node_id": int(node_id),
+                "previous_node": current,
+                "delete_approved": False,
+            },
+        )
+        return {"node": deepcopy(saved), "nodes": [deepcopy(saved)], "audit_event": audit_event}
+
+    def delete_workflow_node(self, node_id: int, *, operator: str) -> dict[str, Any]:
+        current = self.get_workflow_node(node_id)
+        if not current:
+            raise NotFoundError("automation workflow node not found")
+        operator_id = str(operator or "system").strip() or "system"
+        archived = workflow_node_projection(
+            {
+                **current,
+                "status": "archived",
+                "archived_at": utc_now_iso(),
+                "updated_by": operator_id,
+                "updated_at": utc_now_iso(),
+            }
+        )
+        self._workflow_nodes[int(node_id)] = deepcopy(archived)
+        rollback_payload = {
+            "strategy": "restore_archived_workflow_node_metadata",
+            "node_id": int(node_id),
+            "previous_node": current,
+            "hard_delete_executed": False,
+        }
+        audit_event = self._append_workflow_node_audit_event(
+            operation="archive",
+            operator=operator_id,
+            resource_id=int(node_id),
+            before=current,
+            after=archived,
+            request_payload={"node_id": int(node_id), "operator": operator_id},
+            rollback_payload=rollback_payload,
+        )
+        return {
+            "node": deepcopy(archived),
+            "nodes": [deepcopy(archived)],
+            "audit_event": audit_event,
+            "rollback_payload": rollback_payload,
+            "hard_delete_executed": False,
+        }
 
     def list_workflow_node_audit_events(self) -> list[dict[str, Any]]:
         return deepcopy(self._workflow_node_audit_events)

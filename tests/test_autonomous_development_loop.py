@@ -21,8 +21,8 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_fields_complete() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "post_phase7_cleanup_track_acceptance"
-    assert data["active_candidate"] == "owner_approved_cleanup_track_acceptance"
+    assert data["current_phase"] == "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup"
+    assert data["active_candidate"] == "workflow_nodes_owner_approved_exact_route_cleanup"
     assert data["capability_owner"] == "aicrm_next.automation_engine"
     assert data["last_merged_pr"] == "#816"
 
@@ -175,6 +175,7 @@ def test_completed_steps_include_phase_4al_readiness_gate() -> None:
     assert "post_phase7_cleanup_task_groups_exact_route_retry_completed" in set(data["completed_steps"])
     assert "post_phase7_cleanup_legacy_runtime_recheck_completed" in set(data["completed_steps"])
     assert "post_phase7_cleanup_track_acceptance_completed" in set(data["completed_steps"])
+    assert "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed" in set(data["completed_steps"])
 
 
 def test_next_allowed_actions_select_post_phase7_tracks_only() -> None:
@@ -430,10 +431,12 @@ def test_workflow_nodes_runtime_completed_without_production_readiness() -> None
     assert readiness["fixture_native_implementation_requires_owner_decision"] is False
     assert readiness["fixture_native_list_create_runtime_completed"] is True
     assert readiness["owner_decision_required"] is False
-    assert set(readiness["implemented_runtime_slices"]) == {
+    assert {
         "workflow_nodes_fixture_local_list",
         "workflow_nodes_fixture_local_metadata_create",
-    }
+    } <= set(readiness["implemented_runtime_slices"])
+    assert "workflow_nodes_fixture_local_workflow_scoped_list_create" in set(readiness["implemented_runtime_slices"])
+    assert "workflow_nodes_fixture_local_update_archive" in set(readiness["implemented_runtime_slices"])
     assert readiness["production_guard_blocks_fixture_success"] is True
     assert readiness["repository_adapter_parity_completed"] is True
     assert readiness["no_database_url_fallback"] is True
@@ -611,7 +614,7 @@ def test_agents_runtime_completed_without_production_readiness() -> None:
 
 def test_agent_outputs_fixture_runtime_completed_with_production_readonly_readiness() -> None:
     data = checker.load_yaml(STATE)
-    assert data["active_candidate"] == "owner_approved_cleanup_track_acceptance"
+    assert data["active_candidate"] == "workflow_nodes_owner_approved_exact_route_cleanup"
     readiness = data["agent_outputs_readiness"]
     assert readiness["metadata_planning_ready"] is True
     assert readiness["metadata_planning_completed"] is True

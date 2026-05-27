@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_track_acceptance
-active_candidate: owner_approved_cleanup_track_acceptance
+current_phase: post_phase7_cleanup_workflow_nodes_owner_approved_cleanup
+active_candidate: workflow_nodes_owner_approved_exact_route_cleanup
 capability_owner: aicrm_next.automation_engine
 last_merged_pr: "#816"
-last_attempted_action: post_phase7_cleanup_track_acceptance_bundle
+last_attempted_action: post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_bundle
 last_created_pr: "#816"
-recommended_next_pr: paused_waiting_owner_evidence
+recommended_next_pr: post_phase7_cleanup_legacy_runtime_recheck_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -418,9 +418,10 @@ completed_steps:
   - post_phase7_cleanup_task_groups_exact_route_retry_completed
   - post_phase7_cleanup_legacy_runtime_recheck_completed
   - post_phase7_cleanup_track_acceptance_completed
+  - post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed
 
 next_allowed_actions:
-  - paused_waiting_owner_evidence
+  - post_phase7_cleanup_legacy_runtime_recheck_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -1118,6 +1119,30 @@ post_phase7_cleanup_track_acceptance:
     - retained_tests_and_evidence_paths
     - high_risk_external_runtime_categories
   recommended_next_bundle: paused_waiting_owner_evidence
+
+post_phase7_cleanup_workflow_nodes_owner_approved_cleanup:
+  status: post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed
+  bundle_type: post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_bundle
+  cleanup_family: workflow_nodes_owner_approved_exact_route_cleanup
+  route_family: /api/admin/automation-conversion/workflow-nodes*
+  owner_approval_status: granted
+  owner: qianlan
+  rollback_owner: qianlan
+  selected_production_compat_entry_removed: /api/admin/automation-conversion/workflow-nodes/{path:path}
+  workflow_nodes_next_native_replacement_verified: true
+  production_compat_cleanup_executed: true
+  wildcard_cleanup_executed: false
+  runtime_deletion_executed: false
+  delete_ready: false
+  unrelated_production_compat_routes_retained: true
+  legacy_runtime_retained: true
+  timer_execution_triggered: false
+  outbound_send_triggered: false
+  external_live_call_triggered: false
+  high_risk_route_affected: false
+  rollback_available: true
+  rollback_method: revert_merge_commit
+  recommended_next_bundle: post_phase7_cleanup_legacy_runtime_recheck_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
@@ -2917,6 +2942,8 @@ workflow_nodes_readiness:
   implemented_runtime_slices:
     - workflow_nodes_fixture_local_list
     - workflow_nodes_fixture_local_metadata_create
+    - workflow_nodes_fixture_local_workflow_scoped_list_create
+    - workflow_nodes_fixture_local_update_archive
   guarded_disabled_runtime_slices: []
   repository_adapter_parity_completed: true
   repository_adapter_backend_flag: AICRM_WORKFLOW_NODES_REPO_BACKEND
@@ -2953,6 +2980,11 @@ workflow_nodes_readiness:
   production_owner_switch_ready: false
   production_write_ready: false
   fallback_removal_ready: false
+  owner_approved_exact_route_cleanup_completed: true
+  production_compat_exact_entry_removed: /api/admin/automation-conversion/workflow-nodes/{path:path}
+  production_compat_cleanup_executed: true
+  wildcard_cleanup_executed: false
+  runtime_deletion_executed: false
   production_repository_route_enablement_ready: false
   delete_ready: false
 

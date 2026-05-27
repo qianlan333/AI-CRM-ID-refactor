@@ -191,6 +191,22 @@ class WorkflowNodeCreateRequest(BaseModel):
     operator: str = "system"
 
 
+class WorkflowNodeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    node_name: str | None = None
+    name: str | None = None
+    node_code: str | None = None
+    code: str | None = None
+    node_type: str | None = None
+    status: str | None = None
+    sort_order: int | None = None
+    position: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
+    operator: str = "system"
+
+
 class TaskListRequest(BaseModel):
     program_id: int | None = None
     workflow_id: int | None = None

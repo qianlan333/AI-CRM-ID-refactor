@@ -13,7 +13,7 @@ from .state_machine import utc_now_iso
 WORKFLOW_NODE_ROUTE_FAMILY = "/api/admin/automation-conversion/workflow-nodes*"
 MAX_NODE_NAME_LENGTH = 160
 MAX_JSON_LENGTH = 20000
-ALLOWED_WORKFLOW_NODE_STATUSES = {"draft", "disabled", "inactive"}
+ALLOWED_WORKFLOW_NODE_STATUSES = {"draft", "disabled", "inactive", "archived"}
 ALLOWED_WORKFLOW_NODE_TYPES = {"manual", "condition", "wait", "message_template", "tagging", "metadata"}
 DANGEROUS_WORKFLOW_NODE_FIELDS = {
     "activate",
@@ -153,6 +153,53 @@ def normalize_workflow_node_create_payload(payload: dict[str, Any]) -> dict[str,
         "created_by": _text(source.get("operator") or source.get("created_by") or "system"),
         "updated_by": _text(source.get("operator") or source.get("updated_by") or "system"),
     }
+
+
+def normalize_workflow_node_update_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    source = deepcopy(payload or {})
+    reject_dangerous_workflow_node_fields(source)
+    patch: dict[str, Any] = {}
+
+    if "node_name" in source or "name" in source:
+        node_name = _text(source.get("node_name") or source.get("name"))
+        if not node_name:
+            raise ContractError("node_name is required")
+        if len(node_name) > MAX_NODE_NAME_LENGTH:
+            raise ContractError(f"node_name must be at most {MAX_NODE_NAME_LENGTH} characters")
+        patch["node_name"] = node_name
+        patch["name"] = node_name
+
+    if "node_code" in source or "code" in source:
+        node_code = _text(source.get("node_code") or source.get("code"))
+        if not node_code:
+            raise ContractError("node_code is required")
+        patch["node_code"] = node_code
+        patch["code"] = node_code
+
+    if "node_type" in source:
+        node_type = _text(source.get("node_type")).lower()
+        if node_type not in ALLOWED_WORKFLOW_NODE_TYPES:
+            raise ContractError(f"workflow node type must be one of: {', '.join(sorted(ALLOWED_WORKFLOW_NODE_TYPES))}")
+        patch["node_type"] = node_type
+
+    if "status" in source:
+        status = _text(source.get("status")).lower()
+        if status not in ALLOWED_WORKFLOW_NODE_STATUSES:
+            raise ContractError(f"workflow node status must be one of: {', '.join(sorted(ALLOWED_WORKFLOW_NODE_STATUSES))}")
+        patch["status"] = status
+
+    if "sort_order" in source:
+        try:
+            patch["sort_order"] = int(source.get("sort_order") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ContractError("sort_order must be an integer") from exc
+
+    for field in ("position", "metadata", "config"):
+        if field in source:
+            patch[field] = _json_object(source.get(field), field=field)
+
+    patch["updated_by"] = _text(source.get("operator") or source.get("updated_by") or "system")
+    return patch
 
 
 def workflow_node_projection(node: dict[str, Any]) -> dict[str, Any]:

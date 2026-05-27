@@ -1488,6 +1488,10 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
         "docs/development/post_phase7_cleanup_track_acceptance.md",
         "docs/development/post_phase7_cleanup_track_acceptance.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approval.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approval.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1522,6 +1526,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
         "tools/check_post_phase7_cleanup_track_acceptance.py",
+        "tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1553,6 +1558,7 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
         "tests/test_post_phase7_cleanup_track_acceptance.py",
+        "tests/test_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 

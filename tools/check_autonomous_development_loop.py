@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS: set[str] = {
-    "paused_waiting_owner_evidence",
+    "post_phase7_cleanup_legacy_runtime_recheck_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = set(ALLOWED_NEXT_ACTIONS)
 REQUIRED_COMPLETED_STEPS = {
@@ -195,6 +195,7 @@ REQUIRED_COMPLETED_STEPS = {
     "post_phase7_cleanup_task_groups_exact_route_retry_completed",
     "post_phase7_cleanup_legacy_runtime_recheck_completed",
     "post_phase7_cleanup_track_acceptance_completed",
+    "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -435,10 +436,10 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "post_phase7_cleanup_track_acceptance":
-        blockers.append("current_phase must be post_phase7_cleanup_track_acceptance")
-    if state.get("active_candidate") != "owner_approved_cleanup_track_acceptance":
-        blockers.append("active_candidate must select owner-approved cleanup track acceptance")
+    if state.get("current_phase") != "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup":
+        blockers.append("current_phase must be post_phase7_cleanup_workflow_nodes_owner_approved_cleanup")
+    if state.get("active_candidate") != "workflow_nodes_owner_approved_exact_route_cleanup":
+        blockers.append("active_candidate must select workflow-nodes owner-approved exact-route cleanup")
     if state.get("capability_owner") != "aicrm_next.automation_engine":
         blockers.append("capability_owner must be aicrm_next.automation_engine")
     if state.get("last_merged_pr") != "#816":
@@ -843,10 +844,10 @@ def build_report() -> dict[str, Any]:
     ):
         if workflow_nodes_readiness.get(field) is not True:
             blockers.append(f"workflow_nodes_readiness.{field} must be true")
-    if set(workflow_nodes_readiness.get("implemented_runtime_slices") or []) != {
+    if not {
         "workflow_nodes_fixture_local_list",
         "workflow_nodes_fixture_local_metadata_create",
-    }:
+    } <= set(workflow_nodes_readiness.get("implemented_runtime_slices") or []):
         blockers.append("workflow_nodes_readiness.implemented_runtime_slices must record fixture local list/create")
     if workflow_nodes_readiness.get("paused") is not False:
         blockers.append("workflow_nodes_readiness.paused must be false after safe fixture runtime")
