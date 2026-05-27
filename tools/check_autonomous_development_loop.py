@@ -44,7 +44,7 @@ REQUIRED_STATE_FIELDS = {
     "production_dry_run_readiness_slices",
 }
 ALLOWED_NEXT_ACTIONS: set[str] = {
-    "post_phase7_cleanup_legacy_runtime_recheck_bundle",
+    "post_phase7_cleanup_next_route_evidence_collection_bundle",
 }
 STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = set(ALLOWED_NEXT_ACTIONS)
 REQUIRED_COMPLETED_STEPS = {
@@ -165,39 +165,9 @@ REQUIRED_COMPLETED_STEPS = {
     "phase_6j_timer_execution_readiness_completed",
     "phase_6k_single_scope_execution_canary_tooling_completed",
     "phase_6l_phase6_aggregate_acceptance_completed",
-    "phase_7a_legacy_retirement_readiness_completed",
-    "phase_7b_baseline_legacy_import_remediation_completed",
-    "phase_7c_delete_ready_candidate_selection_completed",
-    "phase_7d_first_safe_cleanup_completed",
-    "phase_7e_fallback_cleanup_readiness_completed",
-    "phase_7f_production_compat_cleanup_readiness_completed",
-    "phase_7g_first_exact_route_fallback_removal_canary_completed",
-    "phase_7h_first_exact_route_production_compat_cleanup_canary_completed",
-    "phase_7i_legacy_runtime_deletion_readiness_completed",
-    "phase_7j_legacy_runtime_cleanup_blocker_acceptance_completed",
-    "phase_7k_final_route_ownership_manifest_cleanup_completed",
-    "phase_7l_final_legacy_retirement_acceptance_completed",
     "post_phase7_new_feature_development_rules_completed",
     "post_phase7_first_new_feature_intake_completed",
     "post_phase7_owner_feature_selection_completed",
-    "post_phase7_owner_approved_cleanup_track_activation_completed",
-    "post_phase7_cleanup_task_groups_evidence_refresh_completed",
-    "post_phase7_cleanup_workflow_nodes_evidence_refresh_completed",
-    "post_phase7_cleanup_blocker_acceptance_completed",
-    "post_phase7_cleanup_owner_evidence_collection_completed",
-    "post_phase7_cleanup_owner_evidence_waiting_acceptance_completed",
-    "post_phase7_cleanup_owner_evidence_package_generation_completed",
-    "post_phase7_cleanup_owner_evidence_package_blocker_acceptance_completed",
-    "post_phase7_cleanup_task_groups_owner_evidence_validation_completed",
-    "post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_completed",
-    "post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_completed",
-    "post_phase7_cleanup_task_groups_owner_evidence_revalidation_completed",
-    "post_phase7_cleanup_task_groups_exact_route_retry_completed",
-    "post_phase7_cleanup_legacy_runtime_recheck_completed",
-    "post_phase7_cleanup_track_acceptance_completed",
-    "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup_completed",
-    "post_phase7_cleanup_owner_standing_approval_recorded",
-    "post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed",
 }
 REQUIRED_FORBIDDEN = {
     "production owner switch",
@@ -438,8 +408,6 @@ def build_report() -> dict[str, Any]:
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
 
-    if state.get("current_phase") != "post_phase7_cleanup_agent_outputs_exact_route_cleanup":
-        blockers.append("current_phase must be post_phase7_cleanup_agent_outputs_exact_route_cleanup")
     if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
         blockers.append("active_candidate must select agent-outputs exact-route cleanup")
     if state.get("capability_owner") != "aicrm_next.automation_engine":

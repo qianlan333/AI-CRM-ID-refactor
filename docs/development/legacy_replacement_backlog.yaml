@@ -980,7 +980,7 @@ entries:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_6_timer_automation"
     replacement_category: "timer_or_automation_execution"
     priority: "P3"
@@ -991,8 +991,8 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action; keep manifest owner current."
-    recommended_verification: ["tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py", "dry-run or preview smoke", "allowlist and audit guard check", "legacy fallback rollback check"]
-    notes: "Workflow node list/create/update/delete surfaces are Next-native after owner-approved replacement; active_candidate workflow_nodes_owner_approved_exact_route_cleanup; broad workflow, task, payment, OAuth, WeCom, timer, outbound, and public-submit fallbacks remain retained separately."
+    recommended_verification: ["tools/check_production_route_resolution.py", "dry-run or preview smoke", "allowlist and audit guard check", "legacy fallback rollback check"]
+    notes: "Workflow node list/create/update/delete surfaces are Next-native; broad workflow, task, payment, OAuth, WeCom, timer, outbound, and public-submit fallbacks remain retained separately."
   - id: "LRB-046"
     route_pattern: "/api/admin/automation-conversion/dashboard"
     methods: ["GET", "OPTIONS", "HEAD"]
