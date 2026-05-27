@@ -1,18 +1,18 @@
-version: 12
+version: 13
 status: active
 
 autopilot:
   enabled: true
-  mode: bounded_low_risk_governance_cleanup
+  mode: bounded_runtime_fallback_migration
   target_duration_minutes_min: 15
   target_duration_minutes_max: 20
   admin_override_allowed: false
-  runtime_changes_allowed: false
+  runtime_changes_allowed: true
 
-current_phase: post_phase7_active_cleanup
-last_merged_pr: "#861"
-last_merged_cleanup_wave: stale_product_design_documentation_cleanup_wave16
-recommended_next_pr: final_non_runtime_cleanup_closeout_wave17
+current_phase: runtime_fallback_migration
+last_merged_pr: "#862"
+last_merged_cleanup_wave: final_non_runtime_cleanup_closeout_wave17
+recommended_next_pr: runtime_fallback_migration_channels_track1
 owner_approval_required: false
 runtime_behavior_changed: false
 delete_ready: false
@@ -29,12 +29,12 @@ protected_runtime_boundaries:
   - app.py
   - legacy_flask_app.py
   - aicrm_next/main.py
-  - aicrm_next/production_compat/api.py
+  - aicrm_next/production_compat/api.py selected low/medium fallback entries only
   - wecom_ability_service runtime
   - migrations/deploy/nginx/systemd
   - payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths
 
 next_cleanup_candidates:
-  non_runtime_cleanup: nearly_complete
-  runtime_fallback_cleanup: future_separate_track
+  non_runtime_cleanup: complete
+  runtime_fallback_cleanup: active_low_medium_admin_track
   high_risk_external_cleanup: separate_owner_approval_required

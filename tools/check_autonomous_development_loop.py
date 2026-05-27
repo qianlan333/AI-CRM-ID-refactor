@@ -42,14 +42,14 @@ EXPECTED_RUNTIME_BOUNDARIES = {
     "app.py",
     "legacy_flask_app.py",
     "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py",
+    "aicrm_next/production_compat/api.py selected low/medium fallback entries only",
     "wecom_ability_service runtime",
     "migrations/deploy/nginx/systemd",
     "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
 }
 EXPECTED_NEXT_CANDIDATES = {
-    "non_runtime_cleanup": "nearly_complete",
-    "runtime_fallback_cleanup": "future_separate_track",
+    "non_runtime_cleanup": "complete",
+    "runtime_fallback_cleanup": "active_low_medium_admin_track",
     "high_risk_external_cleanup": "separate_owner_approval_required",
 }
 STOP_IDS = {
@@ -68,7 +68,6 @@ PROTECTED_EXACT = {
     "app.py",
     "legacy_flask_app.py",
     "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py",
 }
 PROTECTED_PREFIXES = (
     "wecom_ability_service/",
@@ -86,6 +85,23 @@ GOVERNANCE_ALLOWED_EXACT = {
     "README.md",
     ".github/workflows/ci.yml",
     "scripts/codex_autopilot_tick.sh",
+    "aicrm_next/production_compat/api.py",
+}
+REMOVED_CHANNEL_FALLBACK_STRINGS = {
+    '"/api/admin/channels"',
+    '"/api/admin/channels/{path:path}"',
+    '"/api/admin/channel-welcome-materials"',
+}
+REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
+    '"/wecom/external-contact/callback"',
+    '"/api/wecom/events"',
+    '"/api/h5/wechat/oauth/start"',
+    '"/api/h5/questionnaires/{slug}/submit"',
+    '"/api/admin/automation-conversion/jobs/run-due"',
+    '"/api/admin/automation-conversion/tasks/run-due"',
+    '"/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu"',
+    '"/api/admin/wechat-pay/products"',
+    '"/api/admin/image-library/upload"',
 }
 
 
@@ -217,16 +233,16 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
     missing_state_fields = sorted(REQUIRED_STATE_FIELDS - set(state))
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
-    if state.get("current_phase") != "post_phase7_active_cleanup":
-        blockers.append("current_phase must be post_phase7_active_cleanup")
-    if state.get("last_merged_pr") != "#861":
-        blockers.append("last_merged_pr must record merged cleanup PR #861")
-    if state.get("last_merged_cleanup_wave") != "stale_product_design_documentation_cleanup_wave16":
-        blockers.append("last_merged_cleanup_wave must record wave 16 stale product design documentation cleanup")
-    if state.get("recommended_next_pr") != "final_non_runtime_cleanup_closeout_wave17":
-        blockers.append("recommended_next_pr must name wave 17 final non-runtime cleanup closeout")
+    if state.get("current_phase") != "runtime_fallback_migration":
+        blockers.append("current_phase must be runtime_fallback_migration")
+    if state.get("last_merged_pr") != "#862":
+        blockers.append("last_merged_pr must record merged cleanup PR #862")
+    if state.get("last_merged_cleanup_wave") != "final_non_runtime_cleanup_closeout_wave17":
+        blockers.append("last_merged_cleanup_wave must record wave 17 final non-runtime cleanup closeout")
+    if state.get("recommended_next_pr") != "runtime_fallback_migration_channels_track1":
+        blockers.append("recommended_next_pr must name runtime fallback migration channels track 1")
     if state.get("owner_approval_required") is not False:
-        blockers.append("owner_approval_required must be false for low-risk governance cleanup")
+        blockers.append("owner_approval_required must be false for bounded low/medium admin runtime fallback migration")
     if state.get("runtime_behavior_changed") is not False:
         blockers.append("runtime_behavior_changed must remain false")
     if state.get("delete_ready") is not False:
@@ -235,10 +251,10 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
     autopilot = state.get("autopilot") if isinstance(state.get("autopilot"), dict) else {}
     if autopilot.get("enabled") is not True:
         blockers.append("autopilot.enabled must be true")
-    if autopilot.get("mode") != "bounded_low_risk_governance_cleanup":
-        blockers.append("autopilot.mode must be bounded_low_risk_governance_cleanup")
-    if autopilot.get("runtime_changes_allowed") is not False:
-        blockers.append("autopilot.runtime_changes_allowed must be false")
+    if autopilot.get("mode") != "bounded_runtime_fallback_migration":
+        blockers.append("autopilot.mode must be bounded_runtime_fallback_migration")
+    if autopilot.get("runtime_changes_allowed") is not True:
+        blockers.append("autopilot.runtime_changes_allowed must be true for selected low/medium runtime fallback migration")
     if autopilot.get("admin_override_allowed") is not False:
         blockers.append("autopilot.admin_override_allowed must be false")
 
@@ -276,6 +292,18 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
         blockers.append(f"governance compaction must not touch runtime/protected files: {runtime_changed}")
 
 
+def _validate_runtime_fallback_scope(changed: set[str], blockers: list[str]) -> None:
+    if "aicrm_next/production_compat/api.py" not in changed:
+        return
+    text = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
+    stale_channel_routes = sorted(route for route in REMOVED_CHANNEL_FALLBACK_STRINGS if route in text)
+    if stale_channel_routes:
+        blockers.append(f"selected channel production_compat fallback routes must be removed: {stale_channel_routes}")
+    missing_high_risk = sorted(route for route in REQUIRED_HIGH_RISK_FALLBACK_STRINGS if route not in text)
+    if missing_high_risk:
+        blockers.append(f"high-risk production_compat routes must remain: {missing_high_risk}")
+
+
 def build_report() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -293,6 +321,7 @@ def build_report() -> dict[str, Any]:
     _validate_current_state(state, blockers)
     _validate_stop_conditions(stop, blockers)
     _validate_changed_files(changed, blockers)
+    _validate_runtime_fallback_scope(changed, blockers)
 
     details["state"] = {
         "current_phase": state.get("current_phase"),
