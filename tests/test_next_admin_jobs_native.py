@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import re
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.notification_settings import (
     FeishuWebhookValidationError,
+    build_broadcast_job_hourly_report_message,
+    build_hourly_report_key,
+    get_broadcast_job_hourly_summary,
+    get_previous_hour_window,
     mask_webhook_url,
+    send_broadcast_job_hourly_feishu_report,
     validate_feishu_webhook_url,
 )
 from aicrm_next.admin_jobs.repository import build_admin_jobs_repository
@@ -244,6 +251,209 @@ def test_broadcast_queue_feishu_validate_failure_does_not_leak_webhook(monkeypat
     assert setting["validationStatus"] == "invalid"
     assert setting["enabled"] is False
     assert "top-secret" not in str(setting)
+
+
+def test_broadcast_queue_hourly_window_uses_previous_full_shanghai_hour():
+    tz = ZoneInfo("Asia/Shanghai")
+    window = get_previous_hour_window(now=datetime(2026, 5, 27, 14, 5, 12, 345000, tzinfo=tz))
+
+    assert window["windowStart"] == datetime(2026, 5, 27, 13, 0, 0, 0, tzinfo=tz)
+    assert window["windowEnd"] == datetime(2026, 5, 27, 14, 0, 0, 0, tzinfo=tz)
+    assert window["label"] == "2026-05-27 13:00 - 14:00"
+    assert window["windowStart"].minute == 0
+    assert window["windowStart"].second == 0
+    assert window["windowStart"].microsecond == 0
+
+
+def test_broadcast_queue_hourly_summary_counts_window_by_scheduled_for(monkeypatch):
+    _client(monkeypatch)
+    repo = build_admin_jobs_repository()
+    tz = ZoneInfo("Asia/Shanghai")
+    start = datetime(2026, 5, 27, 13, 0, tzinfo=tz)
+    end = datetime(2026, 5, 27, 14, 0, tzinfo=tz)
+    repo.broadcast_jobs = [
+        {"id": 101, "scheduled_for": start, "status": "sent"},
+        {"id": 102, "scheduled_for": start + timedelta(minutes=15), "status": "failed"},
+        {"id": 103, "scheduled_for": end - timedelta(seconds=1), "status": "queued"},
+        {"id": 104, "scheduled_for": start - timedelta(seconds=1), "status": "sent"},
+        {"id": 105, "scheduled_for": end, "status": "failed"},
+    ]
+
+    summary = get_broadcast_job_hourly_summary(window_start=start, window_end=end, repo=repo)
+
+    assert summary["totalJobs"] == 3
+    assert summary["successJobs"] == 1
+    assert summary["failedJobs"] == 1
+    assert summary["pendingJobs"] == 1
+
+
+def test_broadcast_queue_hourly_report_message_and_key_are_count_only():
+    tz = ZoneInfo("Asia/Shanghai")
+    start = datetime(2026, 5, 27, 13, 0, tzinfo=tz)
+    end = datetime(2026, 5, 27, 14, 0, tzinfo=tz)
+
+    message = build_broadcast_job_hourly_report_message(
+        window_start=start,
+        window_end=end,
+        total_jobs=18,
+        success_jobs=16,
+        failed_jobs=2,
+    )
+
+    assert message == "【群发队列小时报】\n统计窗口：2026-05-27 13:00 - 14:00\n\n任务总数：18\n成功：16\n失败：2"
+    assert "trace" not in message.lower()
+    assert "webhook" not in message.lower()
+    assert build_hourly_report_key(channel="feishu", window_start=start) == "broadcast_jobs:feishu:2026-05-27T13:00:00+08:00"
+
+
+def test_broadcast_queue_hourly_report_skips_when_config_missing_disabled_or_unverified(monkeypatch):
+    _client(monkeypatch)
+    repo = build_admin_jobs_repository()
+    webhook = "https://open.feishu.cn/open-apis/bot/v2/hook/hourly-secret-abcd"
+
+    assert send_broadcast_job_hourly_feishu_report(repo=repo)["status"] == "skipped_no_config"
+
+    repo.upsert_broadcast_notification_setting(
+        channel="feishu",
+        enabled=False,
+        webhook_url=webhook,
+        validation_status="valid",
+        validated_at=datetime.now(tz=ZoneInfo("Asia/Shanghai")),
+        last_validation_error=None,
+    )
+    assert send_broadcast_job_hourly_feishu_report(repo=repo)["status"] == "skipped_disabled"
+
+    repo.upsert_broadcast_notification_setting(
+        channel="feishu",
+        enabled=True,
+        webhook_url=webhook,
+        validation_status="unverified",
+        validated_at=None,
+        last_validation_error=None,
+    )
+    assert send_broadcast_job_hourly_feishu_report(repo=repo)["status"] == "skipped_unverified"
+
+
+def test_broadcast_queue_hourly_report_skips_no_jobs_sends_once_and_records_failure(monkeypatch):
+    _client(monkeypatch)
+    repo = build_admin_jobs_repository()
+    tz = ZoneInfo("Asia/Shanghai")
+    now = datetime(2026, 5, 27, 14, 5, tzinfo=tz)
+    window = get_previous_hour_window(now=now)
+    webhook = "https://open.feishu.cn/open-apis/bot/v2/hook/hourly-secret-abcd"
+    repo.upsert_broadcast_notification_setting(
+        channel="feishu",
+        enabled=True,
+        webhook_url=webhook,
+        validation_status="valid",
+        validated_at=now,
+        last_validation_error=None,
+    )
+    repo.broadcast_jobs = []
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send(url: str, text: str) -> dict[str, object]:
+        sent_messages.append({"url": url, "text": text})
+        return {"ok": True}
+
+    no_jobs = send_broadcast_job_hourly_feishu_report(now=now, repo=repo, sender=fake_send)
+    assert no_jobs == {"status": "skipped_no_jobs", "summary": {"totalJobs": 0, "successJobs": 0, "failedJobs": 0}}
+    assert sent_messages == []
+
+    repo.broadcast_jobs = [
+        {"id": 201, "scheduled_for": window["windowStart"], "status": "sent"},
+        {"id": 202, "scheduled_for": window["windowStart"] + timedelta(minutes=10), "status": "failed"},
+    ]
+    first = send_broadcast_job_hourly_feishu_report(now=now, repo=repo, sender=fake_send)
+    duplicate = send_broadcast_job_hourly_feishu_report(now=now, repo=repo, sender=fake_send)
+    assert first == {"status": "sent", "summary": {"totalJobs": 2, "successJobs": 1, "failedJobs": 1}}
+    assert duplicate == {"status": "skipped_duplicate", "summary": {"totalJobs": 2, "successJobs": 1, "failedJobs": 1}}
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["url"] == webhook
+    assert "任务总数：2" in sent_messages[0]["text"]
+
+    next_now = now + timedelta(hours=1)
+    next_window = get_previous_hour_window(now=next_now)
+    repo.broadcast_jobs = [{"id": 203, "scheduled_for": next_window["windowStart"], "status": "failed"}]
+
+    def failing_send(url: str, text: str) -> dict[str, object]:
+        return {"ok": False, "raw": {"webhook": url, "detail": "external failure body"}}
+
+    failed = send_broadcast_job_hourly_feishu_report(now=next_now, repo=repo, sender=failing_send)
+    report_key = build_hourly_report_key(channel="feishu", window_start=next_window["windowStart"])
+    assert failed["status"] == "failed"
+    assert failed["summary"] == {"totalJobs": 1, "successJobs": 0, "failedJobs": 1}
+    assert "hourly-secret" not in str(failed)
+    assert "external failure body" not in str(failed)
+    assert repo.broadcast_hourly_reports[report_key]["status"] == "failed"
+    assert "hourly-secret" not in str(repo.broadcast_hourly_reports[report_key]["error_message"])
+
+
+def test_broadcast_queue_hourly_report_run_api_requires_auth_and_supports_cron_secret(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setenv("CRON_SECRET", "cron-secret")
+
+    denied = client.post("/api/admin/broadcast-jobs/feishu-hourly-report/run")
+    assert denied.status_code == 401
+
+    monkeypatch.setattr(
+        "aicrm_next.admin_jobs.routes.send_broadcast_job_hourly_feishu_report",
+        lambda: {"status": "sent", "summary": {"totalJobs": 1, "successJobs": 1, "failedJobs": 0}},
+    )
+    cron = client.post(
+        "/api/admin/broadcast-jobs/feishu-hourly-report/run",
+        headers={"Authorization": "Bearer cron-secret"},
+    )
+    assert cron.status_code == 200
+    assert cron.json() == {"ok": True, "status": "sent", "summary": {"totalJobs": 1, "successJobs": 1, "failedJobs": 0}}
+
+
+def test_broadcast_queue_hourly_report_run_api_real_no_jobs_duplicate_and_no_webhook_leak(monkeypatch):
+    client = _client(monkeypatch)
+    token = _admin_action_token(client.get("/admin/jobs?tab=webhooks").text)
+    repo = build_admin_jobs_repository()
+    webhook = "https://open.larksuite.com/open-apis/bot/v2/hook/api-secret-7890"
+    repo.upsert_broadcast_notification_setting(
+        channel="feishu",
+        enabled=True,
+        webhook_url=webhook,
+        validation_status="valid",
+        validated_at=datetime.now(tz=ZoneInfo("Asia/Shanghai")),
+        last_validation_error=None,
+    )
+    repo.broadcast_jobs = []
+
+    no_jobs = client.post(
+        "/api/admin/broadcast-jobs/feishu-hourly-report/run",
+        headers={"X-Admin-Action-Token": token},
+        json={"admin_action_token": token},
+    )
+    assert no_jobs.status_code == 200
+    assert no_jobs.json()["status"] == "skipped_no_jobs"
+    assert "api-secret" not in no_jobs.text
+
+    now_window = get_previous_hour_window()
+    repo.broadcast_jobs = [{"id": 301, "scheduled_for": now_window["windowStart"], "status": "sent"}]
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "aicrm_next.admin_jobs.notification_settings.send_feishu_webhook_message",
+        lambda url, text: calls.append(url) or {"ok": True},
+    )
+    sent = client.post(
+        "/api/admin/broadcast-jobs/feishu-hourly-report/run",
+        headers={"X-Admin-Action-Token": token},
+        json={"admin_action_token": token},
+    )
+    duplicate = client.post(
+        "/api/admin/broadcast-jobs/feishu-hourly-report/run",
+        headers={"X-Admin-Action-Token": token},
+        json={"admin_action_token": token},
+    )
+    assert sent.json()["status"] == "sent"
+    assert duplicate.json()["status"] == "skipped_duplicate"
+    assert calls == [webhook]
+    assert "api-secret" not in sent.text
+    assert "api-secret" not in duplicate.text
 
 
 def test_admin_read_model_count_uses_identifier_not_percent_i(monkeypatch):
