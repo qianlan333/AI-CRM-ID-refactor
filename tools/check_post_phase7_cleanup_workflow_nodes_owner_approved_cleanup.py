@@ -69,15 +69,19 @@ ALLOWED_CHANGED_FILES = {
     "docs/development/post_phase7_cleanup_workflow_nodes_owner_approval.yaml",
     "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.md",
     "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.yaml",
+    "docs/development/post_phase7_cleanup_legacy_runtime_recheck.md",
+    "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
     "docs/development/phase_execution_state.yaml",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
     "docs/development/legacy_replacement_backlog.yaml",
     "docs/development/legacy_replacement_backlog.md",
     "tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
+    "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
     "tools/check_autonomous_development_loop.py",
     "tools/check_automerge_eligibility.py",
     "tools/run_codex_autopilot_tick.py",
     "tests/test_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
+    "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
     "tests/test_autonomous_development_loop.py",
     "tests/test_automerge_eligibility.py",
     "tests/test_codex_autopilot_runtime_contract.py",
@@ -221,14 +225,26 @@ def build_report() -> dict[str, Any]:
     if _list(cleanup_result.get("runtime_deletions_executed")):
         blockers.append("runtime_deletions_executed must be empty")
 
-    if state.get("current_phase") != "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup":
-        blockers.append("phase state must advance to workflow-nodes owner-approved cleanup")
-    if state.get("active_candidate") != "workflow_nodes_owner_approved_exact_route_cleanup":
+    if state.get("current_phase") not in {
+        "post_phase7_cleanup_workflow_nodes_owner_approved_cleanup",
+        "post_phase7_cleanup_legacy_runtime_recheck",
+    }:
+        blockers.append("phase state must be workflow-nodes cleanup or the follow-up legacy runtime recheck")
+    if state.get("active_candidate") not in {
+        "workflow_nodes_owner_approved_exact_route_cleanup",
+        "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup",
+    }:
         blockers.append("phase state active_candidate is incorrect")
-    if state.get("recommended_next_pr") != "post_phase7_cleanup_legacy_runtime_recheck_bundle":
-        blockers.append("next recommended PR must be legacy runtime recheck")
-    if set(_list(state.get("next_allowed_actions"))) != {"post_phase7_cleanup_legacy_runtime_recheck_bundle"}:
-        blockers.append("next_allowed_actions must only allow legacy runtime recheck")
+    if state.get("recommended_next_pr") not in {
+        "post_phase7_cleanup_legacy_runtime_recheck_bundle",
+        "post_phase7_cleanup_track_acceptance_bundle",
+    }:
+        blockers.append("next recommended PR must be legacy runtime recheck or track acceptance")
+    if set(_list(state.get("next_allowed_actions"))) not in (
+        {"post_phase7_cleanup_legacy_runtime_recheck_bundle"},
+        {"post_phase7_cleanup_track_acceptance_bundle"},
+    ):
+        blockers.append("next_allowed_actions must only allow legacy runtime recheck or track acceptance")
     phase = _dict(state.get("post_phase7_cleanup_workflow_nodes_owner_approved_cleanup"))
     if phase.get("production_compat_cleanup_executed") is not True:
         blockers.append("phase state must record workflow-nodes production_compat cleanup")

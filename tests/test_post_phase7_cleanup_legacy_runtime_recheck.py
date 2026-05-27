@@ -19,6 +19,9 @@ def test_checker_passes() -> None:
 def test_source_and_authorizations() -> None:
     data = checker.load_yaml(PLAN_YAML)
     assert data["source_prs"]["task_groups_exact_route_retry"] == 815
+    assert data["source_prs"]["task_groups_legacy_runtime_recheck"] == 816
+    assert data["source_prs"]["cleanup_track_acceptance"] == 817
+    assert data["source_prs"]["workflow_nodes_owner_approved_cleanup"] == 818
     for value in data["authorizations"].values():
         assert value is False
 
@@ -28,6 +31,8 @@ def test_task_groups_cleanup_handoff_and_no_runtime_deletion() -> None:
     handoff = data["exact_route_cleanup_handoff"]
     assert handoff["task_groups_fallback_removal_executed"] is True
     assert handoff["task_groups_production_compat_cleanup_executed"] is True
+    assert handoff["workflow_nodes_production_compat_cleanup_executed"] is True
+    assert handoff["workflow_nodes_production_compat_hook_absent"] is True
     assert handoff["runtime_deletion_executed"] is False
     cleanup = data["cleanup_execution"]
     assert cleanup["runtime_deletion_executed"] is False
@@ -42,11 +47,14 @@ def test_no_safe_runtime_candidate_selected() -> None:
     assert result["blocked_reason"]
 
 
-def test_recheck_proves_task_groups_absent_but_workflow_nodes_retained() -> None:
+def test_recheck_proves_task_groups_and_workflow_nodes_absent_but_unrelated_routes_retained() -> None:
     text = checker.PRODUCTION_COMPAT.read_text(encoding="utf-8")
     assert '"/api/admin/automation-conversion/task-groups"' not in text
     assert '"/api/admin/automation-conversion/task-groups/{path:path}"' not in text
-    assert '"/api/admin/automation-conversion/workflow-nodes/{path:path}"' in text
+    assert '"/api/admin/automation-conversion/workflow-nodes/{path:path}"' not in text
+    assert "wildcard_router" in text
+    for route in checker.RETAINED_PRODUCTION_COMPAT_ROUTES:
+        assert f'"{route}"' in text or f"'{route}'" in text
 
 
 def test_docs_do_not_claim_runtime_deletion_or_delete_ready() -> None:

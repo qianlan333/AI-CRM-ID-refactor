@@ -36,7 +36,7 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_legacy_runtime_recheck_bundle" in text
+    assert "post_phase7_cleanup_track_acceptance_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 

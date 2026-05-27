@@ -5,6 +5,9 @@ cleanup_family: legacy_runtime_recheck_after_exact_route_cleanup
 
 source_prs:
   task_groups_exact_route_retry: 815
+  task_groups_legacy_runtime_recheck: 816
+  cleanup_track_acceptance: 817
+  workflow_nodes_owner_approved_cleanup: 818
 
 authorizations:
   runtime_deletion_authorized: false
@@ -17,14 +20,19 @@ authorizations:
 exact_route_cleanup_handoff:
   task_groups_fallback_removal_executed: true
   task_groups_production_compat_cleanup_executed: true
+  workflow_nodes_production_compat_cleanup_executed: true
+  workflow_nodes_production_compat_hook_absent: true
   wildcard_cleanup_executed: false
   runtime_deletion_executed: false
   delete_ready: false
 
 reference_recheck:
   task_groups_production_compat_hooks_absent: true
-  workflow_nodes_production_compat_retained: true
+  workflow_nodes_production_compat_hook_absent: true
+  workflow_nodes_manifest_owner_next: true
+  workflow_nodes_legacy_fallback_allowed: false
   other_production_compat_routes_retained: true
+  wildcard_router_retained: true
   fallback_references_retained: true
   tests_reference_legacy_or_retained_routes: true
   route_ownership_manifest_retains_legacy_runtime_categories: true
@@ -41,10 +49,13 @@ runtime_candidate_result:
   safe_runtime_cleanup_candidate_selected: false
   no_safe_runtime_cleanup_candidate: true
   blocked_reason:
-    - workflow_nodes_production_compat_retained
     - other_production_compat_routes_retained
-    - legacy_runtime_categories_still_referenced
-    - tests_and_manifest_still_reference_legacy_categories
+    - workflows_tasks_agents_production_compat_routes_retained
+    - high_risk_external_runtime_retained
+    - payment_oauth_wecom_public_submit_timer_outbound_retained
+    - wildcard_router_retained
+    - legacy_runtime_still_referenced_by_retained_production_compat
+    - manifest_and_tests_still_reference_retained_legacy_categories
 
 cleanup_execution:
   runtime_deletion_executed: false
@@ -55,7 +66,12 @@ cleanup_execution:
 
 business_continuity:
   production_behavior_unchanged: true
+  task_groups_cleanup_retained: true
+  workflow_nodes_cleanup_retained: true
+  unrelated_production_compat_retained: true
+  wildcard_router_retained: true
   legacy_runtime_retained: true
+  runtime_deletion_executed: false
   delete_ready: false
 
 next_bundle:
