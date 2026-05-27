@@ -1,0 +1,76 @@
+version: 1
+status: post_phase7_cleanup_track_acceptance
+bundle_type: post_phase7_cleanup_track_acceptance_bundle
+cleanup_family: owner_approved_cleanup_track_acceptance
+
+source_prs:
+  owner_evidence_waiting: 806
+  first_validation: 811
+  validation_blocker_acceptance: 812
+  shadow_rollback_evidence: 813
+  revalidation: 814
+  exact_route_cleanup_retry: 815
+  legacy_runtime_recheck: 816
+
+cleanup_results:
+  fallback_removals_executed:
+    - /api/admin/automation-conversion/task-groups*
+  production_compat_cleanups_executed:
+    - /api/admin/automation-conversion/task-groups*
+  wildcard_cleanup_executed: false
+  runtime_deletions_executed: []
+  delete_ready: false
+
+rollback:
+  available: true
+  rollback_method: revert_merge_commit
+  rollback_commit: 809e6861c2fb9a344c312452d5ac22d131e293e8
+
+runtime_recheck:
+  source_pr: 816
+  safe_runtime_cleanup_candidate_selected: false
+  blocker_reasons:
+    - workflow_nodes_fallback_retained
+    - workflow_nodes_production_compat_retained
+    - other_production_compat_routes_retained
+    - high_risk_external_runtime_retained
+    - manifest_and_tests_still_reference_retained_legacy_categories
+
+authorizations:
+  further_cleanup_authorized_without_owner_evidence: false
+  workflow_nodes_cleanup_authorized: false
+  broad_fallback_removal_authorized: false
+  wildcard_production_compat_cleanup_authorized: false
+  runtime_deletion_authorized: false
+  delete_ready: false
+
+remaining_old_code_categories:
+  - workflow_nodes_fallback
+  - workflow_nodes_production_compat
+  - other_production_compat_route_families
+  - retained_legacy_runtime_templates_adapters
+  - retained_tests_and_evidence_paths
+  - high_risk_external_runtime_categories
+
+business_continuity:
+  production_behavior_unchanged: true
+  fallback_removed_only_for_task_groups_exact_route: true
+  production_compat_cleaned_only_for_task_groups_exact_route: true
+  workflow_nodes_retained: true
+  legacy_runtime_retained: true
+  delete_ready: false
+
+next_owner_actions:
+  if_owner_wants_workflow_nodes_cleanup:
+    - collect_workflow_nodes_owner_evidence
+    - run_workflow_nodes_shadow_compare
+    - run_workflow_nodes_rollback_rehearsal
+    - revalidate_workflow_nodes_evidence
+  if_no_owner_evidence:
+    - keep_cleanup_track_paused
+  automatic_cleanup_without_owner_evidence_allowed: false
+
+next_bundle:
+  if_owner_supplies_workflow_nodes_evidence: post_phase7_cleanup_workflow_nodes_owner_evidence_validation_bundle
+  if_no_owner_evidence: paused_waiting_owner_evidence
+  if_select_next_low_risk_route: post_phase7_cleanup_next_route_evidence_collection_bundle

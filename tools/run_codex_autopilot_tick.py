@@ -87,6 +87,9 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "post_phase7_cleanup_task_groups_exact_route_retry_bundle",
     "post_phase7_cleanup_legacy_runtime_recheck_bundle",
     "post_phase7_cleanup_track_acceptance_bundle",
+    "post_phase7_cleanup_workflow_nodes_owner_evidence_validation_bundle",
+    "post_phase7_cleanup_next_route_evidence_collection_bundle",
+    "paused_waiting_owner_evidence",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -686,6 +689,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
         "docs/development/post_phase7_cleanup_legacy_runtime_recheck.md",
         "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
+        "docs/development/post_phase7_cleanup_track_acceptance.md",
+        "docs/development/post_phase7_cleanup_track_acceptance.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -734,6 +739,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
+        "tools/check_post_phase7_cleanup_track_acceptance.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -782,6 +788,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
+        "tests/test_post_phase7_cleanup_track_acceptance.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
