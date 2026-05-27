@@ -36,10 +36,6 @@ from .automation_conversion_channels import register_routes as register_channel_
 from .automation_conversion_operation_tasks import (
     api_admin_automation_conversion_tasks_run_due,
 )
-from .automation_conversion_segments import (
-    api_admin_automation_program_member_segment_broadcast,
-    api_admin_automation_program_member_segment_search,
-)
 from .automation_conversion_review import (
     api_admin_automation_conversion_review_output,
     api_admin_automation_conversion_review_output_send_via_bazhuayu,
@@ -56,29 +52,10 @@ from .automation_conversion_runtime_api import (
     api_internal_automation_conversion_lobster_results,
     api_internal_automation_conversion_router_test_dispatch,
 )
-from .automation_conversion_setup import (
-    api_admin_automation_program_customer_acquisition_links,
-    api_admin_automation_program_publish_entry,
-    api_admin_automation_program_publish_full,
-    api_admin_automation_program_setup,
-    api_admin_automation_program_setup_audience_entry_rule,
-    api_admin_automation_program_setup_basic,
-    api_admin_automation_program_setup_entry_channel,
-    api_admin_automation_program_setup_publish_check,
-    api_admin_automation_program_setup_segmentation,
-)
 from .automation_conversion_workflows import (
     api_admin_automation_conversion_execution_item_send_via_bazhuayu,
 )
 def register_routes(bp):
-    bp.route(
-        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
-        methods=["POST"],
-    )(api_admin_automation_program_member_segment_search)
-    bp.route(
-        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
-        methods=["POST"],
-    )(api_admin_automation_program_member_segment_broadcast)
     bp.route("/admin/channels", methods=["GET"])(admin_channels_page)
     bp.route("/admin/channels/new", methods=["GET"])(admin_channel_new_page)
     bp.route("/admin/channels/<int:channel_id>/edit", methods=["GET"])(admin_channel_edit_page)
@@ -100,15 +77,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup", methods=["GET"])(api_admin_automation_program_setup)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/basic", methods=["POST"])(api_admin_automation_program_setup_basic)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/entry-channel", methods=["POST"])(api_admin_automation_program_setup_entry_channel)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/segmentation", methods=["POST"])(api_admin_automation_program_setup_segmentation)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/audience-entry-rule", methods=["POST"])(api_admin_automation_program_setup_audience_entry_rule)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/publish-check", methods=["GET"])(api_admin_automation_program_setup_publish_check)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/publish-entry", methods=["POST"])(api_admin_automation_program_publish_entry)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/publish-full", methods=["POST"])(api_admin_automation_program_publish_full)
-    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links", methods=["GET", "POST"])(api_admin_automation_program_customer_acquisition_links)
     register_channel_admission_routes(bp)
     bp.route("/api/admin/automation-conversion/tasks/run-due", methods=["POST"])(api_admin_automation_conversion_tasks_run_due)
     bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)

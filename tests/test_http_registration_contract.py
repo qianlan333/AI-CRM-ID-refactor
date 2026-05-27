@@ -557,10 +557,6 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
     }
 
     expected_by_module = {
-        "automation_conversion_segments": {
-            "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
-            "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
-        },
         "automation_conversion_member_api": {
             "/api/admin/automation-conversion/member/put-in-pool",
             "/api/admin/automation-conversion/member/set-focus",
@@ -574,12 +570,6 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/focus-send-batches/run-due",
             "/api/admin/automation-conversion/sop/config",
             "/api/admin/automation-conversion/sop/run-due",
-        },
-        "automation_conversion_setup": {
-            "/api/admin/automation-conversion/programs/<int:program_id>/setup",
-            "/api/admin/automation-conversion/programs/<int:program_id>/setup/basic",
-            "/api/admin/automation-conversion/programs/<int:program_id>/publish-entry",
-            "/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links",
         },
         "automation_conversion_router_callback_api": {
             "/api/admin/automation-conversion/router-pending-callbacks",
@@ -795,6 +785,17 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "/api/admin/automation-conversion/default-channel-settings/generate-qr",
         "/api/admin/automation-conversion/model-settings",
         "/api/admin/automation-conversion/model-settings/test",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup/basic",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup/entry-channel",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup/segmentation",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup/audience-entry-rule",
+        "/api/admin/automation-conversion/programs/<int:program_id>/setup/publish-check",
+        "/api/admin/automation-conversion/programs/<int:program_id>/publish-entry",
+        "/api/admin/automation-conversion/programs/<int:program_id>/publish-full",
+        "/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links",
+        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
+        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
     }
     removed_endpoints = {
         "admin_automation_conversion_settings",
@@ -820,6 +821,17 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "admin_automation_conversion_reply_monitor_run_due",
         "admin_automation_conversion_stage_send",
         "api_admin_automation_conversion_model_infra_settings_save_legacy",
+        "api_admin_automation_program_setup",
+        "api_admin_automation_program_setup_basic",
+        "api_admin_automation_program_setup_entry_channel",
+        "api_admin_automation_program_setup_segmentation",
+        "api_admin_automation_program_setup_audience_entry_rule",
+        "api_admin_automation_program_setup_publish_check",
+        "api_admin_automation_program_publish_entry",
+        "api_admin_automation_program_publish_full",
+        "api_admin_automation_program_customer_acquisition_links",
+        "api_admin_automation_program_member_segment_search",
+        "api_admin_automation_program_member_segment_broadcast",
     }
     kept_routes = {
         "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview",

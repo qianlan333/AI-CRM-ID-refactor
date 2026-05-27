@@ -41,10 +41,11 @@ def test_legacy_flask_no_longer_registers_known_automation_readonly_aliases() ->
     routes = _route_methods()
     for route in [
         "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
+        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
         "/api/admin/automation-conversion/member",
     ]:
         assert "GET" not in routes.get(route, set()), route
-    assert "POST" in routes["/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search"]
+        assert "POST" not in routes.get(route, set()), route
 
 
 def test_legacy_flask_preserves_program_scoped_workspace_routes() -> None:
@@ -104,7 +105,8 @@ def test_automation_mixed_modules_keep_expected_fallback_route_registrations() -
     ]:
         assert retained in source
     assert 'methods=["GET", "POST"])(api_admin_automation_program_member_segment_search)' not in source
-    assert 'methods=["POST"],\n    )(api_admin_automation_program_member_segment_search)' in source
+    assert "api_admin_automation_program_member_segment_search" not in source
+    assert "api_admin_automation_program_member_segment_broadcast" not in source
 
 
 def test_automation_fallback_files_still_exist() -> None:

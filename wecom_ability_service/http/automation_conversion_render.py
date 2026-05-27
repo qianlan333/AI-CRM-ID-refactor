@@ -24,7 +24,6 @@ from .automation_conversion_workspaces import (
     _build_flow_design_workspace,
     _build_member_ops_workspace,
     _build_overview_workspace,
-    _build_program_setup_workspace,
     _build_run_center_workspace,
     _overview_notice,
     _program_context,
@@ -306,40 +305,6 @@ def _render_channel_form_page(*, channel: dict[str, object] | None = None, page_
         },
         page_error=page_error,
         admin_action_token=ensure_admin_console_action_token(),
-        show_shell_meta=False,
-    )
-
-
-def _render_program_setup_page(
-    *,
-    page_error: str = "",
-    program: dict[str, object] | None = None,
-    step: str = "basic",
-    audience_picker: str = "",
-):
-    program_id = int((program or {}).get("id") or 0)
-    workspace_tabs = []
-    if program_id:
-        workspace_tabs = [
-            item
-            for item in _automation_program_workspace_tabs(program_id, "setup")
-            if item.get("key") in {"overview", "member_ops", "executions"}
-        ]
-    return _render_admin_template(
-        "automation_program_setup_wizard.html",
-        active_nav="automation_conversion",
-        page_title="自动化运营方案",
-        page_summary="",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "方案配置向导", None),
-        ),
-        workspace_tabs=workspace_tabs,
-        program_context=_program_context(program, active_key="setup") if program else None,
-        setup_workspace=_build_program_setup_workspace(program_id, step=step, audience_picker=audience_picker) if program_id else {},
-        admin_action_token=ensure_admin_console_action_token(),
-        page_error=page_error,
         show_shell_meta=False,
     )
 

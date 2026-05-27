@@ -51,8 +51,6 @@ Automation-conversion handlers are split by surface:
 - `automation_conversion_agent_page_actions.py`: agent orchestration page form actions
 - `automation_conversion_auto_reply_actions.py`: auto-reply monitor page actions
 - `automation_conversion_member_api.py`: member action and manual-send JSON APIs
-- `automation_conversion_segments.py`: member segment search and segment broadcast APIs
-- `automation_conversion_setup.py`: program setup, publish, and customer-acquisition APIs
 - `automation_conversion_templates.py`: action templates and profile-segment template APIs
 - `automation_conversion_workflows.py`: workflow, node, dashboard, and execution APIs
 - `automation_conversion_agent_api.py`: agent output, agent config, and router callback APIs
