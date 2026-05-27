@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance
-active_candidate: task_groups_owner_evidence_validation_blocker_acceptance
+current_phase: post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence
+active_candidate: task_groups_shadow_compare_rollback_evidence
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#811"
-last_attempted_action: post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle
-last_created_pr: "#811"
-recommended_next_pr: none_waiting_task_groups_shadow_and_rollback_evidence
+last_merged_pr: "#812"
+last_attempted_action: post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_bundle
+last_created_pr: "#812"
+recommended_next_pr: post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -413,8 +413,10 @@ completed_steps:
   - post_phase7_cleanup_owner_evidence_package_blocker_acceptance_completed
   - post_phase7_cleanup_task_groups_owner_evidence_validation_completed
   - post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_completed
+  - post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_completed
 
-next_allowed_actions: []
+next_allowed_actions:
+  - post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -894,6 +896,39 @@ post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance:
   oauth_callback_cutover: false
   wecom_callback_cutover: false
   recommended_next_bundle: none_waiting_task_groups_shadow_and_rollback_evidence
+
+post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence:
+  status: post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_completed
+  bundle_type: post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence_bundle
+  cleanup_family: task_groups_shadow_compare_rollback_evidence
+  route_family: /api/admin/automation-conversion/task-groups*
+  latest_main_sha: 2059090a473ec098acef9237212a40de8bab215f
+  shadow_compare_command: python3 tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py --latest-main-sha 2059090a473ec098acef9237212a40de8bab215f --shadow-output-json /tmp/task_groups_shadow_compare_evidence.json --rollback-output-json /tmp/task_groups_rollback_rehearsal_evidence.json --combined-output-json /tmp/task_groups_shadow_rollback_evidence.json
+  shadow_compare_output_path: /tmp/task_groups_shadow_compare_evidence.json
+  shadow_compare_executed: true
+  shadow_compare_passed: true
+  rollback_plan_path: "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.md#rollback-plan"
+  rollback_rehearsal_command: python3 tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py --latest-main-sha 2059090a473ec098acef9237212a40de8bab215f --shadow-output-json /tmp/task_groups_shadow_compare_evidence.json --rollback-output-json /tmp/task_groups_rollback_rehearsal_evidence.json --combined-output-json /tmp/task_groups_shadow_rollback_evidence.json
+  rollback_rehearsal_output_path: /tmp/task_groups_rollback_rehearsal_evidence.json
+  rollback_rehearsal_executed: true
+  rollback_rehearsal_passed: true
+  production_db_connected: false
+  production_write_attempted: false
+  production_behavior_changed: false
+  fallback_removed: false
+  fallback_removal_executed: false
+  production_compat_behavior_changed: false
+  production_compat_cleanup_executed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  runtime_deletion_executed: false
+  delete_ready: false
+  timer_execution_enabled: false
+  outbound_send_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  recommended_next_bundle: post_phase7_cleanup_task_groups_owner_evidence_validation_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed

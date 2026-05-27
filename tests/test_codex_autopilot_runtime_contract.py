@@ -33,10 +33,10 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
         ]
     )
     assert report == 0
-    assert prompt.exists() is False
-    assert owner_package.exists() is True
-    text = owner_package.read_text(encoding="utf-8")
-    assert "phase_execution_state has no next_allowed_actions" in text
+    assert prompt.exists() is True
+    assert owner_package.exists() is False
+    text = prompt.read_text(encoding="utf-8")
+    assert "post_phase7_cleanup_task_groups_owner_evidence_validation_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1579,6 +1579,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_validation.yaml",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.md",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.md",
+        "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1607,6 +1609,8 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_post_phase7_cleanup_owner_evidence_package_blocker_acceptance.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_validation.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
+        "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
+        "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1633,6 +1637,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_cleanup_owner_evidence_package_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
+        "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
