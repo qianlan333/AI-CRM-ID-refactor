@@ -14,7 +14,6 @@ SCANNED_DOCS = [
     "docs/project_map.md",
     "docs/llm_handoff.md",
     "docs/module_status_matrix.md",
-    "docs/legacy_retirement_plan.md",
 ]
 
 ENTRY_DOCS = [

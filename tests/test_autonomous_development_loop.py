@@ -22,9 +22,9 @@ def test_phase_execution_state_uses_compact_active_contract() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "post_phase7_active_cleanup"
-    assert data["last_merged_pr"] == "#847"
-    assert data["last_merged_cleanup_wave"] == "residual_governance_cleanup_wave11"
-    assert data["recommended_next_pr"] == "residual_narrative_documentation_cleanup_wave12"
+    assert data["last_merged_pr"] == "#850"
+    assert data["last_merged_cleanup_wave"] == "residual_narrative_documentation_cleanup_wave12"
+    assert data["recommended_next_pr"] == "legacy_retirement_package_cleanup_wave13"
     assert data["owner_approval_required"] is False
     assert data["runtime_behavior_changed"] is False
     assert data["delete_ready"] is False
