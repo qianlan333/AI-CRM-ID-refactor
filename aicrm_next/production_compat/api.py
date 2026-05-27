@@ -94,19 +94,8 @@ async def legacy_automation_channel_settings_routes(request: Request) -> Respons
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/admin/automation-conversion/programs/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agents/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agent-outputs/export", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agent-outputs/export/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agent-replay", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/agent-orchestration/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/action-templates/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/tasks/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/workflows/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/dashboard", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/executions", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/executions/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/execution-items/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/tasks/run-due", methods=["POST", "OPTIONS"])
+@router.api_route("/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu", methods=["POST", "OPTIONS"])
 async def legacy_automation_workspace_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
@@ -162,7 +151,6 @@ async def legacy_image_library_upload_route(request: Request) -> Response:
 @wildcard_router.api_route("/api/admin/channels", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/channels/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/channel-welcome-materials", methods=_ALL_METHODS)
-@wildcard_router.api_route("/admin/automation-conversion/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)
