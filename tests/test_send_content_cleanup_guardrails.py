@@ -10,6 +10,7 @@ TEMPLATES = FRONTEND / "templates" / "admin_console"
 OPERATION_PANEL = TEMPLATES / "_automation_operation_orchestration_panel.html"
 HXC_TEMPLATE = TEMPLATES / "hxc_dashboard.html"
 GROUP_OPS_TEMPLATE = TEMPLATES / "group_ops.html"
+CHANNEL_TEMPLATE = TEMPLATES / "channel_code_form.html"
 CAMPAIGN_TEMPLATE = TEMPLATES / "cloud_campaigns_workspace.html"
 
 
@@ -70,6 +71,10 @@ def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> Non
         (OPERATION_PANEL, ""),
         (HXC_TEMPLATE, ""),
         (GROUP_OPS_TEMPLATE, _read(STATIC / "group_ops.js")),
+        (
+            CHANNEL_TEMPLATE,
+            _read(FRONTEND / "static" / "admin_console" / "channel_admission_pages.js"),
+        ),
     ]
     direct_fetch_markers = [
         "/api/admin/image-library",

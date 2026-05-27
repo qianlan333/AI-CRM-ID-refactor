@@ -299,9 +299,19 @@
 }
 
 .channel-selected-materials,
-.channel-material-list {
+.channel-material-list,
+.channel-welcome-summary {
   display: grid;
   gap: 8px;
+}
+
+.channel-welcome-summary {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.channel-welcome-summary strong {
+  color: var(--text);
 }
 
 .channel-selector-box {
