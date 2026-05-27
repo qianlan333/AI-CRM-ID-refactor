@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract, WeComGroupChatSyncAdapterContract
+from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract, WeComGroupAssetAdapterContract
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import blocked_production_payload
 
@@ -53,6 +53,10 @@ def group_ops_side_effect_safety(**overrides: bool) -> dict[str, bool]:
         "real_queue_worker_created": False,
         "real_group_notice_executed": False,
         "real_mention_all_executed": False,
+        "db_write_executed": False,
+        "outbound_send_executed": False,
+        "no_db_write": True,
+        "no_outbound_send": True,
     }
     safety.update({key: bool(value) for key, value in overrides.items() if key in safety})
     return safety
@@ -328,8 +332,46 @@ class ListGroupOpsGroupsQuery:
         return _response({"items": items, "total": total}, repo=repo)
 
 
-class PreviewGroupOpsGroupsSyncCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None, sync_adapter: WeComGroupChatSyncAdapterContract | None = None) -> None:
+def _group_sync_adapter() -> WeComGroupAssetAdapterContract:
+    from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_asset_adapter
+
+    return build_wecom_group_asset_adapter()
+
+
+def _group_sync_blocked_response(
+    *,
+    owner_userid: str,
+    result: dict[str, Any],
+    repo: GroupOpsRepository,
+) -> dict[str, Any]:
+    mode = clean_text(result.get("mode"))
+    error_code = clean_text(result.get("error_code") or "wecom_group_sync_blocked")
+    status = "disabled" if mode in {"disabled", "staging"} or "disabled" in error_code else "blocked"
+    return {
+        "ok": False,
+        "source_status": str(getattr(repo, "source_status", "fixture_local_contract")),
+        "route_owner": "ai_crm_next",
+        "capability_owner": CAPABILITY_OWNER,
+        "status_code": 409,
+        "owner_userid": owner_userid,
+        "status": status,
+        "sync_status": status,
+        "adapter_mode": mode,
+        "synced_count": 0,
+        "new_count": 0,
+        "updated_count": 0,
+        "skipped_count": int(result.get("skipped_count") or 0),
+        "next_cursor": "",
+        "items": [],
+        "warnings": [clean_text(result.get("error_message")) or "wecom group sync blocked"],
+        "error_code": error_code,
+        "error_message": clean_text(result.get("error_message")) or "wecom group sync blocked",
+        "side_effect_safety": group_ops_side_effect_safety(),
+    }
+
+
+class PreviewGroupOpsOwnerGroupsSyncCommand:
+    def __init__(self, repo: GroupOpsRepository | None = None, sync_adapter: WeComGroupAssetAdapterContract | None = None) -> None:
         self._repo = repo
         self._sync_adapter = sync_adapter
 
@@ -340,46 +382,83 @@ class PreviewGroupOpsGroupsSyncCommand:
         owner = clean_text(request.owner_userid)
         if not owner:
             raise ContractError("owner_userid is required")
-        adapter = self._sync_adapter
-        if adapter is None:
-            from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_chat_sync_adapter
-
-            adapter = build_wecom_group_chat_sync_adapter()
+        adapter = self._sync_adapter or _group_sync_adapter()
         result = adapter.list_group_chats(owner_userid=owner, limit=clamp_limit(request.limit, default=100), cursor=request.cursor)
         if not result.get("ok"):
-            raise ConflictError(clean_text(result.get("error_message")) or "wecom group sync blocked")
+            return _group_sync_blocked_response(owner_userid=owner, result=result, repo=repo)
         groups = normalize_group_snapshots(list(result.get("groups") or []))
         return _response(
             {
+                "owner_userid": owner,
+                "status": "preview",
                 "sync_status": "preview",
                 "adapter_mode": clean_text(result.get("mode")),
                 "items": groups,
                 "total": len(groups),
+                "synced_count": 0,
+                "new_count": 0,
+                "updated_count": 0,
+                "skipped_count": int(result.get("skipped_count") or 0),
                 "next_cursor": clean_text(result.get("next_cursor")),
+                "warnings": [clean_text(item) for item in list(result.get("warnings") or []) if clean_text(item)],
+                "side_effect_safety": group_ops_side_effect_safety(),
             },
             repo=repo,
         )
 
 
-class SyncGroupOpsGroupsCommand(PreviewGroupOpsGroupsSyncCommand):
+class SyncGroupOpsOwnerGroupsCommand(PreviewGroupOpsOwnerGroupsSyncCommand):
     def __call__(self, request: GroupOpsGroupSyncRequest) -> dict[str, Any]:
         preview = super().__call__(request)
+        if preview.get("ok") is False:
+            return preview
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
         groups = list(preview.get("items") or [])
-        synced_count = repo.upsert_group_snapshots(groups)
+        saved_items: list[dict[str, Any]] = []
+        new_count = 0
+        updated_count = 0
+        skipped_count = int(preview.get("skipped_count") or 0)
+        warnings = list(preview.get("warnings") or [])
+        for group in groups:
+            try:
+                saved, action = repo.upsert_group_asset(group)
+            except Exception as exc:
+                skipped_count += 1
+                warnings.append(str(exc))
+                continue
+            saved_items.append(saved)
+            if action == "created":
+                new_count += 1
+            elif action == "updated":
+                updated_count += 1
         return _response(
             {
+                "owner_userid": clean_text(preview.get("owner_userid") or request.owner_userid),
+                "status": "synced",
                 "sync_status": "synced",
                 "adapter_mode": clean_text(preview.get("adapter_mode")),
-                "items": groups,
-                "total": len(groups),
-                "synced_count": synced_count,
+                "items": saved_items,
+                "total": len(saved_items),
+                "synced_count": len(saved_items),
+                "new_count": new_count,
+                "updated_count": updated_count,
+                "skipped_count": skipped_count,
                 "next_cursor": clean_text(preview.get("next_cursor")),
+                "warnings": warnings,
+                "side_effect_safety": group_ops_side_effect_safety(
+                    db_write_executed=bool(saved_items),
+                    no_db_write=False,
+                    no_outbound_send=True,
+                ),
             },
             repo=repo,
         )
+
+
+PreviewGroupOpsGroupsSyncCommand = PreviewGroupOpsOwnerGroupsSyncCommand
+SyncGroupOpsGroupsCommand = SyncGroupOpsOwnerGroupsCommand
 
 
 def _run_due_candidates(

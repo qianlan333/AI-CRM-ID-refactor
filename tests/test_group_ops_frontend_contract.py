@@ -16,6 +16,13 @@ def _source() -> str:
     return GROUP_OPS_TEMPLATE.read_text(encoding="utf-8") + "\n" + GROUP_OPS_JS.read_text(encoding="utf-8")
 
 
+def _function_source(name: str) -> str:
+    source = GROUP_OPS_JS.read_text(encoding="utf-8")
+    start = source.index(f"function {name}")
+    next_function = source.find("\n  function ", start + 1)
+    return source[start:] if next_function == -1 else source[start:next_function]
+
+
 @pytest.fixture()
 def group_ops_frontend_client(monkeypatch):
     pytest.importorskip("fastapi")
@@ -66,8 +73,9 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
 
 def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_requirements():
     source = _source()
+    detail_source = _function_source("renderDetail")
 
-    for label in ["返回列表", "保存计划", "保存接口计划", "运营成员", "绑定群", "固定群包"]:
+    for label in ["返回列表", "保存计划", "保存接口计划", "运营成员", "刷新名下群聊", "绑定群", "固定群包"]:
         assert label in source
     for label in ["绑定群", "内部联系人", "外部联系人", "预计通知"]:
         assert label in source
@@ -90,6 +98,22 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
 
     for forbidden in ["适用场景", "JSON 示例", "请求字段说明大表", "请求字段说明", "明文 token", "明文 Token"]:
         assert forbidden not in source
+    assert "查看所有群" not in detail_source
+    assert "创建计划" not in detail_source
+
+
+def test_group_ops_detail_refresh_owner_groups_contract_is_manual_and_owner_scoped():
+    source = _source()
+    refresh_source = _function_source("refreshOwnerGroups")
+
+    assert "刷新名下群聊" in source
+    assert "/api/admin/automation-conversion/group-ops/groups/sync" in source
+    assert "owner_userid: owner" in refresh_source
+    assert 'operator: "admin_ui"' in refresh_source
+    assert "limit: 100" in refresh_source
+    assert "owner_userid=${encodeURIComponent(owner)}" in refresh_source
+    assert "已刷新：新增" in refresh_source
+    assert "loadDetailPage(state.plan.id)" not in refresh_source
 
 
 def test_group_ops_detail_imports_standard_send_content_assets():

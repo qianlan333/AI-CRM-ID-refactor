@@ -176,22 +176,32 @@ def _fake_group_chat_snapshots(owner_userid: str) -> list[dict[str, Any]]:
     return [dict(item) for item in rows if not owner or item["owner_userid"] == owner]
 
 
-def _member_counts(member_list: list[dict[str, Any]]) -> tuple[int, int]:
+def _member_counts(member_list: list[Any]) -> tuple[int, int, int, list[str]]:
     internal = 0
     external = 0
+    skipped = 0
+    warnings: list[str] = []
     for member in member_list:
-        member_type = int(member.get("type") or 0)
-        if member_type == 1 or (member.get("userid") and not member.get("unionid")):
-            internal += 1
-        else:
-            external += 1
-    return internal, external
+        if not isinstance(member, dict):
+            skipped += 1
+            warnings.append("skipped malformed group member")
+            continue
+        try:
+            member_type = int(member.get("type") or 0)
+            if member_type == 1 or (member.get("userid") and not member.get("unionid")):
+                internal += 1
+            else:
+                external += 1
+        except (TypeError, ValueError):
+            skipped += 1
+            warnings.append("skipped group member with invalid type")
+    return internal, external, skipped, warnings
 
 
 def _normalize_group_chat_detail(detail: dict[str, Any], *, fallback_owner_userid: str = "") -> dict[str, Any]:
     group_chat = detail.get("group_chat") if isinstance(detail.get("group_chat"), dict) else detail
     members = group_chat.get("member_list") if isinstance(group_chat.get("member_list"), list) else []
-    internal, external = _member_counts([item for item in members if isinstance(item, dict)])
+    internal, external, skipped, warnings = _member_counts(members)
     owner_userid = str(group_chat.get("owner") or group_chat.get("owner_userid") or fallback_owner_userid or "").strip()
     return {
         "chat_id": str(group_chat.get("chat_id") or "").strip(),
@@ -200,12 +210,14 @@ def _normalize_group_chat_detail(detail: dict[str, Any], *, fallback_owner_useri
         "owner_name": str(group_chat.get("owner_name") or owner_userid).strip(),
         "internal_member_count": internal,
         "external_member_count": external,
+        "skipped_member_count": skipped,
+        "warnings": warnings,
         "status": "active",
     }
 
 
-class WeComGroupChatSyncAdapter:
-    adapter_name = "WeComGroupChatSyncAdapter"
+class WeComGroupAssetAdapter:
+    adapter_name = "WeComGroupAssetAdapter"
 
     def __init__(self, *, mode: str | None = None) -> None:
         self.mode = (mode or _mode()).strip().lower()
@@ -276,13 +288,23 @@ class WeComGroupChatSyncAdapter:
         }
         list_result = client.list_group_chats(list_payload)
         groups: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        skipped_count = 0
         for item in list_result.get("group_chat_list") or []:
             chat_id = str((item or {}).get("chat_id") or "").strip()
             if not chat_id:
+                skipped_count += 1
+                warnings.append("skipped group chat without chat_id")
                 continue
             detail = self.get_group_chat(chat_id, owner_userid=owner)
             if detail.get("ok") and detail.get("group"):
-                groups.append(dict(detail["group"]))
+                group = dict(detail["group"])
+                skipped_count += int(group.pop("skipped_member_count", 0) or 0)
+                warnings.extend([str(item) for item in group.pop("warnings", []) if str(item or "").strip()])
+                groups.append(group)
+            else:
+                skipped_count += 1
+                warnings.append(str(detail.get("error_message") or f"skipped group chat {chat_id}").strip())
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -292,11 +314,13 @@ class WeComGroupChatSyncAdapter:
             "next_cursor": str(list_result.get("next_cursor") or ""),
             "audit_id": audit["audit_id"],
             "side_effect_executed": True,
+            "skipped_count": skipped_count,
+            "warnings": warnings,
             "error_code": "",
             "error_message": "",
         }
 
-    def get_group_chat(self, chat_id: str, *, owner_userid: str = "") -> Json:
+    def get_group_chat(self, chat_id: str = "", *, need_name: int = 1, owner_userid: str = "") -> Json:
         chat = str(chat_id or "").strip()
         owner = str(owner_userid or "").strip()
         audit = record_audit_event(
@@ -347,7 +371,7 @@ class WeComGroupChatSyncAdapter:
             }
         from .legacy_flask_facade import legacy_wecom_client_from_app
 
-        result = legacy_wecom_client_from_app().get_group_chat(chat)
+        result = legacy_wecom_client_from_app().get_group_chat(chat, need_name=need_name)
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -359,6 +383,10 @@ class WeComGroupChatSyncAdapter:
             "error_code": "",
             "error_message": "",
         }
+
+
+class WeComGroupChatSyncAdapter(WeComGroupAssetAdapter):
+    adapter_name = "WeComGroupChatSyncAdapter"
 
 
 class LegacyBroadcastJobQueueGateway:
@@ -446,8 +474,12 @@ def build_wecom_group_message_adapter() -> WeComGroupMessageAdapter:
     return WeComGroupMessageAdapter()
 
 
-def build_wecom_group_chat_sync_adapter() -> WeComGroupChatSyncAdapter:
-    return WeComGroupChatSyncAdapter()
+def build_wecom_group_asset_adapter() -> WeComGroupAssetAdapter:
+    return WeComGroupAssetAdapter()
+
+
+def build_wecom_group_chat_sync_adapter() -> WeComGroupAssetAdapter:
+    return build_wecom_group_asset_adapter()
 
 
 def build_group_ops_queue_gateway() -> LegacyBroadcastJobQueueGateway:
