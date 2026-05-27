@@ -6,7 +6,7 @@
 
 按 2026-04-21 最新两份回单合并判断，Wave 4 的唯一阻塞 gate 已清绿。`automation_engine` 这一轮收口已达到正式 closeout 条件：formal application owner 已建立，primary caller 已切到 `wecom_ability_service/application/automation_engine/*`，`services.py` 已退为 compatibility shim，workflow/runtime 兼容回归与 application delegate seam 回归均已恢复为绿灯。
 
-本文件用于固化 automation engine 维度的最终 closeout 口径；Wave 4 的全局结论见 [wave4-closeout.md](/Users/qianlan/Downloads/CRM%20开发/AI-CRM%20开发/docs/refactor/wave4-closeout.md)。
+本文件用于固化 automation engine 维度的最终 closeout 口径。
 
 ## 已完成的主线
 
