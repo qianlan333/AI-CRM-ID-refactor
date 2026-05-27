@@ -2,6 +2,8 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -107,33 +109,19 @@
     <div class="admin-card-head admin-card-head--tight">
       <div>
         <h2>欢迎语与素材</h2>
-        <p>欢迎语、小程序、图片和 PDF 素材继续随渠道保存，素材总数最多 9 个。</p>
-      </div>
-      <div class="channel-actions">
-        <a class="admin-button admin-button--secondary" href="/admin/miniprogram-library">小程序素材库</a>
-        <a class="admin-button admin-button--secondary" href="/admin/attachment-library">附件素材库</a>
+        <p>欢迎语、图片、小程序和 PDF/附件由标准发送内容组件统一配置，渠道基础信息和入渠标签仍在外层页面维护。</p>
       </div>
     </div>
     <div class="channel-form-grid">
-      <label class="admin-field channel-form-wide">
-        <span>欢迎语文本</span>
-        <textarea name="welcome_message" rows="4" data-welcome-message>{{ channel.welcome_message or '' }}</textarea>
-      </label>
-      <div class="admin-field">
-        <span>小程序素材</span>
+      <div class="admin-field channel-form-wide">
+        <span>欢迎语和素材</span>
         <div class="channel-selector-box">
-          <div class="channel-selected-materials" data-miniprogram-selected></div>
-          <button class="admin-button admin-button--secondary" type="button" data-open-miniprogram-picker>预览并选择小程序</button>
+          <div class="channel-welcome-summary" data-welcome-content-summary></div>
+          <button class="admin-button admin-button--secondary" type="button" data-open-welcome-composer>配置欢迎语和素材</button>
         </div>
-        <input type="hidden" name="welcome_miniprogram_library_ids" data-miniprogram-ids value="{{ (channel.welcome_miniprogram_library_ids or []) | join(',') }}">
-      </div>
-      <div class="admin-field">
-        <span>图片/PDF素材</span>
-        <div class="channel-selector-box">
-          <div class="channel-selected-materials" data-attachment-selected></div>
-          <button class="admin-button admin-button--secondary" type="button" data-open-attachment-picker>预览并选择图片/PDF</button>
-        </div>
+        <input type="hidden" name="welcome_message" data-welcome-message value="{{ channel.welcome_message or '' }}">
         <input type="hidden" name="welcome_image_library_ids" data-image-ids value="{{ (channel.welcome_image_library_ids or []) | join(',') }}">
+        <input type="hidden" name="welcome_miniprogram_library_ids" data-miniprogram-ids value="{{ (channel.welcome_miniprogram_library_ids or []) | join(',') }}">
         <input type="hidden" name="welcome_attachment_library_ids" data-attachment-ids value="{{ (channel.welcome_attachment_library_ids or []) | join(',') }}">
       </div>
       <div class="admin-field channel-form-wide">
@@ -160,7 +148,7 @@
       <div class="admin-card-head admin-card-head--tight">
         <div>
           <h2 data-resource-picker-title>预览并选择</h2>
-          <p data-resource-picker-subtitle>只选择已有素材，不在渠道页上传原始文件。</p>
+          <p data-resource-picker-subtitle>从已同步的企微标签组中选择，保存时只写入标签编号。</p>
         </div>
         <button class="channel-drawer__close" type="button" data-close-resource-picker>关闭</button>
       </div>
@@ -214,5 +202,7 @@
 {% endblock %}
 
 {% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}"></script>
 {% endblock %}

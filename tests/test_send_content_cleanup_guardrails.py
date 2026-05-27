@@ -9,6 +9,7 @@ STATIC = FRONTEND / "static" / "admin_console"
 TEMPLATES = FRONTEND / "templates" / "admin_console"
 OPERATION_PANEL = TEMPLATES / "_automation_operation_orchestration_panel.html"
 HXC_TEMPLATE = TEMPLATES / "hxc_dashboard.html"
+CHANNEL_TEMPLATE = TEMPLATES / "channel_code_form.html"
 CAMPAIGN_TEMPLATE = TEMPLATES / "cloud_campaigns_workspace.html"
 
 
@@ -66,8 +67,12 @@ def test_standard_send_content_components_still_exist() -> None:
 
 def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> None:
     migrated_pages = [
-        OPERATION_PANEL,
-        HXC_TEMPLATE,
+        (OPERATION_PANEL, ""),
+        (HXC_TEMPLATE, ""),
+        (
+            CHANNEL_TEMPLATE,
+            _read(FRONTEND / "static" / "admin_console" / "channel_admission_pages.js"),
+        ),
     ]
     direct_fetch_markers = [
         "/api/admin/image-library",
@@ -75,8 +80,8 @@ def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> Non
         "/api/admin/attachment-library",
     ]
 
-    for path in migrated_pages:
-        source = _read(path)
+    for path, extra_source in migrated_pages:
+        source = _read(path) + extra_source
         assert "AICRMSendContentComposer.open" in source
         for marker in direct_fetch_markers:
             assert marker not in source
