@@ -18,7 +18,7 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_generates_compact_governance_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
     owner_package = tmp_path / "owner.md"
     report = runner.main(
@@ -36,7 +36,8 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_next_route_evidence_collection_bundle" in text
+    assert "governance config compaction" in text
+    assert "next_cleanup_candidates" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 

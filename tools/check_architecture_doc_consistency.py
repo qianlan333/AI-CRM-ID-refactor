@@ -37,7 +37,6 @@ D96_REQUIRED = [
     "legacy_flask/openclaw_legacy/",
     "physically removed",
     "aicrm_next.integration_gateway",
-    "D7.7",
 ]
 
 LLM_FORBIDDEN_READ_PATTERNS = [
