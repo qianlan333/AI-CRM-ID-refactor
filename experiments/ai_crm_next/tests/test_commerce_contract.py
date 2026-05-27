@@ -90,8 +90,21 @@ def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> No
     wx_tx = client.get("/api/admin/wechat-pay/transactions?payment_status=failed&product_code=course_masked_001&mobile=mobile_masked").json()
     assert wx_tx["ok"] is True
     assert wx_tx["items"][0]["order_no"] == wechat["order_no"]
+    wx_admin_orders = client.get("/api/admin/wechat-pay/orders?status=failed&product_code=course_masked_001&mobile=mobile_masked").json()
+    assert wx_admin_orders["ok"] is True
+    assert wx_admin_orders["items"][0]["transaction_id"] == "transaction_masked_new"
+    assert wx_admin_orders["items"][0]["status_label"] == "支付失败"
     assert client.get(f"/api/admin/wechat-pay/transactions/{wechat['order_no']}").json()["transaction"]["payment_status"] == "failed"
+    detail_page = client.get(f"/admin/wechat-pay/transactions/{wechat['order_no']}")
+    assert detail_page.status_code == 200
+    assert "微信支付订单详情" in detail_page.text
+    assert "transaction_masked_new" in detail_page.text
     assert client.get("/api/admin/alipay/transactions?payment_status=paid").json()["ok"] is True
+
+    export_response = client.post("/api/admin/wechat-pay/order-exports", json={"filters": {"product_code": "course_masked_001"}})
+    assert export_response.status_code == 200
+    assert "text/csv" in export_response.headers["content-type"]
+    assert "微信单号" in export_response.text
 
 
 def test_public_product_page_and_unknown_product_contracts() -> None:

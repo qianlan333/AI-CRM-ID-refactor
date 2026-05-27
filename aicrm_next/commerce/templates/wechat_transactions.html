@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>微信支付交易管理 · AI-CRM Next</title>
+  <style>
+    :root { color-scheme: light; --blue:#2563eb; --blue-soft:#eaf1ff; --line:#dbe5f3; --text:#172033; --muted:#66758a; --page:#f4f7fb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--page); color:var(--text); }
+    .layout { display:grid; grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
+    .sidebar { background:#fff; border-right:1px solid #e5ebf4; padding:18px 12px; }
+    .brand { display:flex; gap:10px; align-items:center; margin-bottom:32px; font-weight:900; font-size:18px; }
+    .mark { width:36px; height:36px; display:grid; place-items:center; border-radius:8px; background:var(--blue); color:#fff; font-size:14px; }
+    .nav-title { margin:22px 0 8px; color:#9aa7b7; font-weight:900; font-size:13px; }
+    .nav-link { display:block; padding:12px 14px; border-radius:8px; color:#46566b; text-decoration:none; font-weight:800; }
+    .nav-link.is-active { background:#eaf1ff; color:#2563eb; }
+    .main { min-width:0; }
+    .topbar { background:#fff; border-bottom:1px solid #e5ebf4; padding:22px 32px; }
+    .crumbs { color:#8b98aa; font-size:13px; font-weight:800; margin-bottom:4px; }
+    h1 { margin:0; font-size:30px; letter-spacing:0; }
+    .summary { margin:8px 0 0; color:var(--muted); font-weight:700; }
+    .page { padding:26px 32px 42px; display:grid; gap:0; }
+    .card { border:1px solid var(--line); background:#fff; box-shadow:0 14px 30px rgba(26,50,86,.07); }
+    .card + .card { margin-top:0; border-top:0; }
+    .card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:24px 28px; border-bottom:1px solid #edf2f8; }
+    .card-head h2 { margin:0; font-size:26px; letter-spacing:0; }
+    .card-head p { margin:8px 0 0; color:var(--muted); font-weight:800; }
+    .body { padding:22px 28px; }
+    .actions, .pager { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    button, select, input { font:inherit; }
+    button, .select { min-height:42px; border:1px solid var(--line); border-radius:999px; background:#fff; color:#1f2a3d; padding:9px 16px; font-weight:900; cursor:pointer; }
+    button.primary { border-color:var(--blue); background:var(--blue); color:#fff; }
+    button.soft { border-color:#c7d7fe; background:var(--blue-soft); color:#1d4ed8; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+    label { display:block; margin-bottom:7px; color:#334155; font-size:13px; font-weight:900; }
+    input, select.field { width:100%; min-height:44px; border:1px solid var(--line); border-radius:12px; background:#fff; padding:9px 12px; color:var(--text); }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; min-width:1100px; border-collapse:separate; border-spacing:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+    th, td { padding:14px 16px; border-bottom:1px solid #edf2f8; text-align:left; vertical-align:top; }
+    th { background:#f7faff; color:#617086; font-size:13px; font-weight:900; white-space:nowrap; }
+    tr:last-child td { border-bottom:0; }
+    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; font-weight:800; }
+    .muted, .sub { color:var(--muted); }
+    .sub { font-size:12px; line-height:1.6; margin-top:3px; }
+    .strong { font-weight:900; }
+    .pill { display:inline-flex; align-items:center; min-height:26px; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:900; background:#eef2f7; color:#475569; }
+    .pill.paid { background:#e7f8ee; color:#0f7a43; }
+    .pill.pending { background:#fff4d6; color:#8a5a00; }
+    .pill.failed { background:#fee2e2; color:#b91c1c; }
+    .pill.partial_refunded { background:#e7efff; color:#1d4ed8; }
+    .empty { display:none; padding:30px; border:1px dashed #b7c6dc; border-radius:12px; color:var(--muted); text-align:center; font-weight:900; }
+    .foot { display:flex; justify-content:space-between; gap:12px; padding:18px 28px; border-top:1px solid #edf2f8; background:#fbfdff; }
+    .link { color:var(--blue); text-decoration:none; font-weight:900; }
+    .toast { margin-top:14px; color:var(--muted); font-weight:800; }
+    @media (max-width:980px){ .layout{grid-template-columns:1fr}.sidebar{display:none}.grid{grid-template-columns:1fr 1fr}.topbar,.page{padding-left:18px;padding-right:18px} }
+    @media (max-width:680px){ .grid{grid-template-columns:1fr}.card-head,.foot{flex-direction:column;align-items:stretch} h1{font-size:24px}.card-head h2{font-size:22px} }
+  </style>
+</head>
+<body data-next-commerce-admin="wechat-pay-transactions">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">CRM</div><div>心流商业客户管理</div></div>
+      <div class="nav-title">运营</div>
+      <a class="nav-link" href="/admin/automation-conversion">自动化运营</a>
+      <a class="nav-link" href="/admin/cloud-orchestrator">AI 助手</a>
+      <a class="nav-link" href="/admin/customers">客户激活 / 客户列表</a>
+      <a class="nav-link" href="/admin/user-ops">漏斗 / 数据看板</a>
+      <a class="nav-link" href="/admin/questionnaires">问卷</a>
+      <a class="nav-link" href="/admin/wecom-tags">企微标签管理</a>
+      <div class="nav-title">交易</div>
+      <a class="nav-link is-active" href="/admin/wechat-pay/transactions">交易管理</a>
+      <a class="nav-link" href="/admin/wechat-pay/products">商品管理</a>
+      <div class="nav-title">素材</div>
+      <a class="nav-link" href="/admin/image-library">图片素材库</a>
+      <a class="nav-link" href="/admin/miniprogram-library">小程序素材库</a>
+      <a class="nav-link" href="/admin/attachment-library">附件素材库</a>
+      <div class="nav-title">配置及后台</div>
+      <a class="nav-link" href="/admin/jobs">同步任务配置 / 同步任务</a>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumbs">客户管理后台 / 交易管理</div>
+        <h1>微信支付交易管理</h1>
+        <p class="summary">按订单创建时间检索微信支付订单、导出筛选结果，并进入独立详情页查看订单状态。</p>
+      </header>
+      <section class="page">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>筛选</h2>
+              <p>默认查看最近 30 天，按订单创建时间倒序；可按商品、手机号、客户身份或微信单号筛选。</p>
+            </div>
+            <div class="actions">
+              <button class="primary" id="searchBtn" type="button">查询</button>
+              <button class="soft" id="exportBtn" type="button">导出筛选结果</button>
+              <button id="resetBtn" type="button">重置</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="grid">
+              <div><label for="mobile">手机号</label><input id="mobile" placeholder="输入手机号"></div>
+              <div><label for="identity">客户身份</label><input id="identity" placeholder="输入客户 ID 或外部联系人 ID"></div>
+              <div><label for="transaction">微信单号</label><input id="transaction" placeholder="输入微信支付单号"></div>
+              <div><label for="product">商品</label><select class="field" id="product"><option value="">全部商品</option>{% for product in product_options %}<option value="{{ product.product_code }}">{{ product.product_name }}</option>{% endfor %}</select></div>
+              <div><label for="createdFrom">订单创建开始</label><input id="createdFrom" type="datetime-local" value="{{ default_filters.created_from }}"></div>
+              <div><label for="createdTo">订单创建结束</label><input id="createdTo" type="datetime-local" value="{{ default_filters.created_to }}"></div>
+              <div><label for="status">状态</label><select class="field" id="status"><option value="">全部</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="partial_refunded">部分退款</option><option value="full_refunded">全额退款</option><option value="failed">支付失败</option></select></div>
+            </div>
+            <div class="toast" id="notice"></div>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <div><h2>订单列表</h2><p id="summary">正在加载订单...</p></div>
+            <div class="actions">
+              <select class="select" id="limit" aria-label="每页条数"><option value="20">每页 20 条</option><option value="50">每页 50 条</option><option value="100">每页 100 条</option></select>
+              <button id="refreshBtn" type="button">刷新</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>订单创建时间</th><th>微信单号</th><th>付款人 / 客户身份</th><th>商品</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+            <div class="empty" id="empty">暂无符合条件的订单。</div>
+          </div>
+          <div class="foot">
+            <div class="muted" id="pageHint">服务端分页。</div>
+            <div class="pager"><button id="prevBtn" type="button">上一页</button><button class="soft" id="nextBtn" type="button">下一页</button></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script>
+    const state = {offset: 0, total: 0, limit: 20};
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value || "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    function filters() {
+      return {
+        mobile: $("mobile").value, identity: $("identity").value, transaction_id: $("transaction").value,
+        product_code: $("product").value, created_from: $("createdFrom").value, created_to: $("createdTo").value,
+        status: $("status").value
+      };
+    }
+    function params() {
+      const out = new URLSearchParams();
+      Object.entries(filters()).forEach(([key, value]) => { if (String(value || "").trim()) out.set(key, value); });
+      out.set("limit", $("limit").value || "20");
+      out.set("offset", String(state.offset));
+      return out;
+    }
+    function render(items) {
+      $("rows").innerHTML = items.map((row) => `<tr>
+        <td>${esc(row.created_at)}</td>
+        <td><span class="mono">${esc(row.transaction_id)}</span></td>
+        <td><div class="strong">${esc(row.payer_name)}</div><div class="sub">${esc(row.mobile || "未记录手机号")} · ${esc(row.userid || row.external_userid || "-")}</div></td>
+        <td><div class="strong">${esc(row.product_name)}</div><div class="sub">${esc(row.product_code)}</div></td>
+        <td class="strong">¥${esc(row.amount_yuan)}</td>
+        <td><span class="pill ${esc(row.status)}">${esc(row.status_label)}</span></td>
+        <td><a class="link" href="${esc(row.detail_url)}">查看详情</a></td>
+      </tr>`).join("");
+      $("empty").style.display = items.length ? "none" : "block";
+    }
+    async function load() {
+      $("summary").textContent = "正在加载订单...";
+      const response = await fetch(`/api/admin/wechat-pay/orders?${params().toString()}`);
+      const data = await response.json();
+      if (!data.ok) {
+        $("summary").textContent = data.error || data.detail || "加载失败";
+        render([]);
+        return;
+      }
+      state.total = data.total || 0;
+      state.limit = data.limit || Number($("limit").value || 20);
+      render(data.items || []);
+      $("summary").textContent = `当前页 ${(data.items || []).length} 条 / 筛选结果 ${state.total} 条`;
+      $("pageHint").textContent = `第 ${Math.floor(state.offset / state.limit) + 1} 页`;
+      $("prevBtn").disabled = state.offset <= 0;
+      $("nextBtn").disabled = !data.has_more;
+    }
+    function resetPage() { state.offset = 0; load(); }
+    $("searchBtn").addEventListener("click", resetPage);
+    $("refreshBtn").addEventListener("click", load);
+    $("limit").addEventListener("change", resetPage);
+    $("resetBtn").addEventListener("click", () => {
+      ["mobile","identity","transaction","product","status"].forEach((id) => { $(id).value = ""; });
+      resetPage();
+    });
+    $("prevBtn").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); load(); });
+    $("nextBtn").addEventListener("click", () => { state.offset += state.limit; load(); });
+    $("exportBtn").addEventListener("click", async () => {
+      $("notice").textContent = "正在生成导出文件...";
+      const response = await fetch("/api/admin/wechat-pay/order-exports", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({filters: filters(), format: "csv"})});
+      if (!response.ok) { $("notice").textContent = "导出失败"; return; }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "wechat-pay-orders.csv"; link.click();
+      URL.revokeObjectURL(url);
+      $("notice").textContent = "导出文件已生成。";
+    });
+    load();
+  </script>
+</body>
+</html>
