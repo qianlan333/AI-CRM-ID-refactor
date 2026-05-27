@@ -108,6 +108,7 @@ REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS = {
     '"/api/admin/attachment-library/{path:path}"',
     '"/api/admin/miniprogram-library"',
     '"/api/admin/miniprogram-library/{path:path}"',
+    '"/api/admin/image-library/upload"',
 }
 REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/wecom/external-contact/callback"',
@@ -118,7 +119,6 @@ REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/api/admin/automation-conversion/tasks/run-due"',
     '"/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu"',
     '"/api/admin/wechat-pay/products"',
-    '"/api/admin/image-library/upload"',
 }
 
 

@@ -133,6 +133,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_http_registration_contract.py",
         "tests/test_next_production_cutover_readiness.py",
         "tests/test_next_timer_route_readiness.py",
+        "tests/test_production_route_resolution.py",
     }
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
