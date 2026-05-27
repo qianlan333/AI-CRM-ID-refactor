@@ -416,6 +416,35 @@ class PostgresGroupOpsRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 
+    def list_owners(self) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            owner_userid AS userid,
+                            COALESCE(NULLIF(MAX(owner_name), ''), owner_userid) AS name,
+                            COUNT(*) AS group_count
+                        FROM wecom_group_chat_snapshots
+                        WHERE status = 'active'
+                          AND owner_userid <> ''
+                        GROUP BY owner_userid
+                        ORDER BY owner_userid ASC
+                        """
+                    )
+                ).fetchall()
+                return [
+                    {
+                        "userid": clean_text((_as_mapping(row) or {}).get("userid")),
+                        "name": clean_text((_as_mapping(row) or {}).get("name") or (_as_mapping(row) or {}).get("userid")),
+                        "group_count": _int((_as_mapping(row) or {}).get("group_count")),
+                    }
+                    for row in rows
+                ]
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]:
         try:
             with self._engine.connect() as conn:

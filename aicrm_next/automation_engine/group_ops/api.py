@@ -14,6 +14,7 @@ from .application import (
     GetGroupOpsWebhookConfigQuery,
     ListGroupOpsGroupsQuery,
     ListGroupOpsNodesQuery,
+    ListGroupOpsOwnersQuery,
     ListGroupOpsPlanGroupsQuery,
     ListGroupOpsPlansQuery,
     PreviewGroupOpsGroupsSyncCommand,
@@ -99,6 +100,14 @@ def list_group_ops_plans(
             GroupOpsPlanListRequest(keyword=keyword, plan_type=plan_type, status=status, limit=limit, offset=offset)
         )
     )
+
+
+@router.get("/api/admin/automation-conversion/group-ops/owners")
+def list_group_ops_owners() -> JSONResponse:
+    try:
+        return _json_result(ListGroupOpsOwnersQuery()())
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.post("/api/admin/automation-conversion/group-ops/plans")
