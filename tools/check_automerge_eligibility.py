@@ -54,6 +54,7 @@ LOW_RISK_EXACT = {
     "docs/claude_code_integration/troubleshooting.md",
     "docs/mcp_usage.md",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
+    "tools/collect_server_readonly_evidence.py",
     "tools/run_codex_autopilot_tick.py",
     "scripts/codex_autopilot_tick.sh",
 }
@@ -125,6 +126,8 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/check_legacy_facade_growth_freeze.py",
+        "tools/check_production_route_resolution.py",
+        "tools/collect_server_readonly_evidence.py",
         "tools/run_codex_autopilot_tick.py",
         "tests/test_architecture_skill_compliance.py",
         "tests/test_autonomous_development_loop.py",

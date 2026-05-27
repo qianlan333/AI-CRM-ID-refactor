@@ -560,13 +560,13 @@ routes:
     capability_owner: aicrm_next.automation_engine
     current_runtime_owner: next
     production_behavior: guarded_preview
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Activation webhook has Next exact route and production_compat fallback; real side effects remain blocked.
-  - route_pattern: /api/customers/automation*
+    notes: Activation webhook has a Next exact route; the broad /api/customer-automation/{path:path} production_compat fallback is removed and real side effects remain blocked.
+  - route_pattern: /api/customers/automation/signup-conversion/batches*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
     current_runtime_owner: production_compat
@@ -575,8 +575,30 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: production_compat fallback for legacy customer automation surfaces.
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy signup conversion batch read/detail routes only; the broad /api/customers/automation/{path:path} fallback is removed.
+  - route_pattern: /api/customers/automation/activation-webhook
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for the legacy plural customer automation webhook path; no new real external behavior is enabled.
+  - route_pattern: /api/customers/automation/webhook-deliveries*
+    methods: [GET, POST, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy webhook delivery read/retry routes only; the broad customer automation wildcard fallback is removed.
   - route_pattern: /api/admin/wechat-pay/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
@@ -758,18 +780,18 @@ routes:
     capability_owner: aicrm_next.frontend_compat
     current_runtime_owner: next
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly page owner; mobile binding writes remain guarded by production_compat fallback.
+    notes: Next exact readonly page owner; broad /sidebar/{path:path} production_compat fallback is removed.
   - route_pattern: /api/sidebar/contact-binding-status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.identity_contact
     current_runtime_owner: next
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
@@ -780,7 +802,7 @@ routes:
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
@@ -791,56 +813,89 @@ routes:
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly customer profile owner; production data failures return degraded/error.
+    notes: Next exact readonly customer profile owner; broad profile production_compat fallback is removed.
   - route_pattern: /api/admin/customers/profile/tags
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly customer profile tags owner; production data failures return degraded/error.
-  - route_pattern: /sidebar*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    notes: Next exact readonly customer profile tags owner; broad profile subpath production_compat fallback is removed.
+  - route_pattern: /api/sidebar/bind-mobile
+    methods: [POST, OPTIONS]
     capability_owner: aicrm_next.frontend_compat
     current_runtime_owner: production_compat
     production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: none
+    external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_admin_ui_data_parity.py
-    notes: production_compat sidebar fallback retained for admin shell compatibility.
-  - route_pattern: /api/sidebar*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy mobile binding write only.
+  - route_pattern: /api/sidebar/jssdk-config
+    methods: [GET, OPTIONS, HEAD]
     capability_owner: aicrm_next.frontend_compat
     current_runtime_owner: production_compat
     production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: none
+    external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_admin_ui_data_parity.py
-    notes: production_compat sidebar API fallback retained for admin shell compatibility.
-  - route_pattern: /api/admin/customers/profile*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy sidebar JSSDK config until a Next-owned signing contract exists.
+  - route_pattern: /api/sidebar/lead-pool*
+    methods: [GET, POST, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy lead-pool status/upsert routes; broad /api/sidebar/{path:path} fallback is removed.
+  - route_pattern: /api/sidebar/signup-tags*
+    methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: production_compat
     production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: none
+    external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_admin_ui_data_parity.py
-    notes: Customer profile production_compat fallback retained until exact Next owner is complete.
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy signup-tag status/mark routes.
+  - route_pattern: /api/sidebar/marketing-status*
+    methods: [GET, POST, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for legacy marketing status read/write routes.
+  - route_pattern: /api/sidebar/v2*
+    methods: [GET, POST, PUT, OPTIONS, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Narrow production_compat fallback retained for sidebar v2 workbench/profile/material/product/order surfaces, including material send; broad sidebar API wildcard fallback is removed.
   - route_pattern: /wecom/external-contact/callback
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.integration_gateway

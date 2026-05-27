@@ -77,6 +77,11 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/sidebar/bind-mobile") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "GET", "/api/customers/automation/signup-conversion/batches") == "production_compat"
+    assert (
+        _endpoint_for(samples, "GET", "/api/customers/automation/signup-conversion/batches")
+        == "aicrm_next.production_compat.api"
+    )
 
 
 def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():

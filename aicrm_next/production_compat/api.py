@@ -106,6 +106,43 @@ async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/sidebar/bind-mobile", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/jssdk-config", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/lead-pool/status", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/lead-pool/upsert-class-term", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/signup-tags/status", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/signup-tags/mark", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/marketing-status", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/marketing-status/set-followup-segment", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/marketing-status/mark-enrolled", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/marketing-status/unmark-enrolled", methods=["POST", "OPTIONS"])
+async def legacy_sidebar_compat_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
+@router.api_route("/api/sidebar/v2/workbench", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/profile", methods=["PUT", "OPTIONS"])
+@router.api_route("/api/sidebar/v2/questionnaires", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/materials", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/materials/image/{image_id:int}/thumbnail", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/materials/send", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/v2/other-staff-messages", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/products", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/sidebar/v2/orders", methods=["GET", "OPTIONS", "HEAD"])
+async def legacy_sidebar_v2_compat_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
+@router.api_route("/api/customers/automation/signup-conversion/batches", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/customers/automation/signup-conversion/batches/{batch_id:int}", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/customers/automation/activation-webhook", methods=["POST", "OPTIONS"])
+@router.api_route("/api/customers/automation/webhook-deliveries", methods=["GET", "OPTIONS", "HEAD"])
+@router.api_route("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry", methods=["POST", "OPTIONS"])
+@router.api_route("/api/customers/automation/webhook-deliveries/retry-due", methods=["POST", "OPTIONS"])
+async def legacy_customer_automation_compat_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/h5/wechat/oauth/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/auth/wecom/{path:path}", methods=_ALL_METHODS)
@@ -122,12 +159,6 @@ async def legacy_public_product_routes(request: Request) -> Response:
 @wildcard_router.api_route("/api/alipay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/sidebar/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/sidebar/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/customers/profile/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/automation-conversion/member/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/customers/automation/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/customer-automation/{path:path}", methods=_ALL_METHODS)
 async def legacy_production_compat_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)

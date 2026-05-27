@@ -110,6 +110,14 @@ REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS = {
     '"/api/admin/miniprogram-library/{path:path}"',
     '"/api/admin/image-library/upload"',
 }
+REMOVED_SIDEBAR_CUSTOMER_FALLBACK_STRINGS = {
+    '"/sidebar/{path:path}"',
+    '"/api/sidebar/{path:path}"',
+    '"/api/admin/customers/profile"',
+    '"/api/admin/customers/profile/{path:path}"',
+    '"/api/customers/automation/{path:path}"',
+    '"/api/customer-automation/{path:path}"',
+}
 REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/wecom/external-contact/callback"',
     '"/api/wecom/events"',
@@ -322,6 +330,12 @@ def _validate_runtime_fallback_scope(changed: set[str], blockers: list[str]) -> 
     stale_media_routes = sorted(route for route in REMOVED_MEDIA_MATERIAL_FALLBACK_STRINGS if route in text)
     if stale_media_routes:
         blockers.append(f"selected media/material production_compat fallback routes must be removed: {stale_media_routes}")
+    stale_sidebar_customer_routes = sorted(route for route in REMOVED_SIDEBAR_CUSTOMER_FALLBACK_STRINGS if route in text)
+    if stale_sidebar_customer_routes:
+        blockers.append(
+            "selected sidebar/customer production_compat fallback routes must be removed: "
+            f"{stale_sidebar_customer_routes}"
+        )
     missing_high_risk = sorted(route for route in REQUIRED_HIGH_RISK_FALLBACK_STRINGS if route not in text)
     if missing_high_risk:
         blockers.append(f"high-risk production_compat routes must remain: {missing_high_risk}")
