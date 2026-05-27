@@ -212,7 +212,12 @@
       <input type="hidden" name="action" value="run-archive-sync">
       <label class="admin-field"><span>开始时间</span><input type="text" name="start_time" value="{{ jobs_payload.archive_runtime.sync_form.start_time }}"></label>
       <label class="admin-field"><span>结束时间</span><input type="text" name="end_time" value="{{ jobs_payload.archive_runtime.sync_form.end_time }}"></label>
-      <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid" value="{{ jobs_payload.archive_runtime.sync_form.owner_userid }}"></label>
+      <label class="admin-field" data-operation-owner-field>
+        <span>负责人账号</span>
+        <input type="hidden" name="owner_userid" value="{{ jobs_payload.archive_runtime.sync_form.owner_userid }}" data-operation-owner-input>
+        <div class="admin-inline-chip" data-operation-owner-label>{{ jobs_payload.archive_runtime.sync_form.owner_userid or "未选择" }}</div>
+        <button class="admin-button admin-button--secondary" type="button" data-operation-owner-picker data-scope="common">选择负责人</button>
+      </label>
       <label class="admin-field"><span>游标</span><input type="text" name="cursor" value="{{ jobs_payload.archive_runtime.sync_form.cursor }}"></label>
       <label class="admin-field"><span>操作人</span><input type="text" name="operator" value="{{ jobs_payload.archive_runtime.sync_form.operator }}" placeholder="填写本次执行人"></label>
       <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>我确认执行同步</span></label>
@@ -542,7 +547,12 @@
         {% endfor %}
       </select>
     </label>
-    <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid" value="{{ jobs_payload.deferred_filters.owner_userid }}"></label>
+    <label class="admin-field" data-operation-owner-field>
+      <span>负责人账号</span>
+      <input type="hidden" name="owner_userid" value="{{ jobs_payload.deferred_filters.owner_userid }}" data-operation-owner-input>
+      <div class="admin-inline-chip" data-operation-owner-label>{{ jobs_payload.deferred_filters.owner_userid or "未选择" }}</div>
+      <button class="admin-button admin-button--secondary" type="button" data-operation-owner-picker data-scope="common">选择负责人</button>
+    </label>
     <label class="admin-field"><span>客户编号</span><input type="text" name="external_userid" value="{{ jobs_payload.deferred_filters.external_userid }}"></label>
     <label class="admin-field"><span>显示数量</span><input type="number" name="job_limit" min="1" max="100" value="{{ jobs_payload.deferred_filters.limit }}"></label>
     <div class="admin-toolbar">
@@ -721,4 +731,31 @@
 
 {% block scripts_extra %}
 <script defer src="{{ url_for('static', filename='admin_console/jobs.js') }}"></script>
+<script>
+(() => {
+  function bindOperationOwnerPickers() {
+    const labelOf = (member) => window.OperationMemberPicker && window.OperationMemberPicker.memberLabel
+      ? window.OperationMemberPicker.memberLabel(member)
+      : (member.user_id || "");
+    document.querySelectorAll("[data-operation-owner-picker]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!window.OperationMemberPicker) return;
+        const field = button.closest("[data-operation-owner-field]");
+        const input = field ? field.querySelector("[data-operation-owner-input]") : null;
+        const label = field ? field.querySelector("[data-operation-owner-label]") : null;
+        window.OperationMemberPicker.open({
+          value: input ? input.value : "",
+          title: "选择运营人员",
+          onSelect: (member) => {
+            if (input) input.value = member.user_id || "";
+            if (label) label.textContent = labelOf(member);
+          },
+        });
+      });
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindOperationOwnerPickers);
+  else bindOperationOwnerPickers();
+})();
+</script>
 {% endblock %}

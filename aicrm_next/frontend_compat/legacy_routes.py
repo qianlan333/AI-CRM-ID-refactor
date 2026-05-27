@@ -19,11 +19,7 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
-from aicrm_next.automation_engine.channels_api import (
-    default_channel_form_payload,
-    get_channel_resource,
-    list_channel_owner_candidates,
-)
+from aicrm_next.automation_engine.channels_api import default_channel_form_payload, get_channel_resource
 from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
@@ -984,7 +980,6 @@ def _channel_form_payload(request: Request, *, channel: dict | None) -> dict:
     channel_id = int((channel or {}).get("id") or 0)
     return {
         "channel": channel or default_channel_form_payload(),
-        "owner_candidates": list_channel_owner_candidates(),
         "is_edit": is_edit,
         "api_urls": {
             "channels": "/api/admin/channels",

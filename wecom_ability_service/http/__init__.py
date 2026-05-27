@@ -28,6 +28,7 @@ from .admin_questionnaires import register_routes as register_admin_questionnair
 from .admin_alipay_pay import register_routes as register_admin_alipay_pay_routes
 from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
 from .admin_wecom_tags import register_routes as register_admin_wecom_tags_routes
+from .common_operation_members import register_routes as register_common_operation_members_routes
 from .wecom_customer_acquisition import register_routes as register_wecom_customer_acquisition_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
 from .cloud_orchestrator_endpoint import register_routes as register_cloud_orchestrator_routes
@@ -104,6 +105,7 @@ HTTP_ROUTE_MODULES = {
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
     "admin_questionnaires": "wecom_ability_service.http.admin_questionnaires",
     "admin_wecom_tags": "wecom_ability_service.http.admin_wecom_tags",
+    "common_operation_members": "wecom_ability_service.http.common_operation_members",
     "wecom_customer_acquisition": "wecom_ability_service.http.wecom_customer_acquisition",
     "cloud_orchestrator": "wecom_ability_service.http.cloud_orchestrator_endpoint",
     "cloud_orchestrator_campaigns": "wecom_ability_service.http.cloud_orchestrator_campaigns",
@@ -168,6 +170,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for legacy questionnaire admin write fallback only; D5 retired admin questionnaire readonly GET ownership",
         "admin_wecom_tags.py for /api/admin/wecom/tags* enterprise customer tag management",
+        "common_operation_members.py for /api/admin/common/operation-members unified operation-member selector API",
         "admin_alipay_pay.py for /admin/alipay/transactions* and /api/admin/alipay* transaction reads and exports",
         "admin_wechat_pay.py for /admin/wechat-pay/transactions* and /api/admin/wechat-pay* transaction management",
         "wecom_customer_acquisition.py for /api/admin/wecom-customer-acquisition-links* and /admin/wecom-customer-acquisition-links/ui",
@@ -223,6 +226,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_alipay_pay", register_admin_alipay_pay_routes),
     ("admin_wechat_pay", register_admin_wechat_pay_routes),
     ("admin_wecom_tags", register_admin_wecom_tags_routes),
+    ("common_operation_members", register_common_operation_members_routes),
     ("wecom_customer_acquisition", register_wecom_customer_acquisition_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("automation_conversion", register_automation_conversion_routes),

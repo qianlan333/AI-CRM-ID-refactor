@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from aicrm_next.common_operation_members import search_operation_members
 from aicrm_next.shared.runtime import raw_database_url
 
 router = APIRouter()
@@ -322,54 +323,18 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
 
 
 def list_channel_owner_candidates() -> list[dict[str, Any]]:
-    conn = _connect()
-    if conn is None:
-        return []
-    queries = [
-        """
-        SELECT wecom_userid AS owner_staff_id, display_name, position, 'directory' AS source
-        FROM admin_wecom_directory_members
-        WHERE is_active = TRUE
-        ORDER BY display_name ASC, wecom_userid ASC
-        """,
-        """
-        SELECT wecom_userid AS owner_staff_id, display_name, '' AS position, 'admin_user' AS source
-        FROM admin_users
-        WHERE is_active = TRUE
-        ORDER BY display_name ASC, wecom_userid ASC
-        """,
-        """
-        SELECT userid AS owner_staff_id, display_name, role AS position, 'owner_role' AS source
-        FROM owner_role_map
-        WHERE active = TRUE
-        ORDER BY display_name ASC, userid ASC
-        """,
+    # Compatibility wrapper for older channel-code callers. The page-level picker
+    # now calls /api/admin/common/operation-members directly.
+    payload = search_operation_members(scope="channel_code", page_size=100)
+    return [
+        {
+            "owner_staff_id": item["user_id"],
+            "display_name": item["display_name"] or item["user_id"],
+            "position": _text((item.get("extra") or {}).get("position") or (item.get("extra") or {}).get("role")),
+            "source": item.get("source") or "",
+        }
+        for item in payload.get("items", [])
     ]
-    rows: list[dict[str, Any]] = []
-    with conn:
-        with conn.cursor() as cur:
-            for query in queries:
-                try:
-                    cur.execute(query)
-                    rows.extend(dict(row) for row in cur.fetchall() or [])
-                except Exception:
-                    continue
-    seen: set[str] = set()
-    candidates: list[dict[str, Any]] = []
-    for row in rows:
-        owner_staff_id = _text(row.get("owner_staff_id"))
-        if not owner_staff_id or owner_staff_id in seen:
-            continue
-        seen.add(owner_staff_id)
-        candidates.append(
-            {
-                "owner_staff_id": owner_staff_id,
-                "display_name": _text(row.get("display_name")) or owner_staff_id,
-                "position": _text(row.get("position")),
-                "source": _text(row.get("source")),
-            }
-        )
-    return candidates
 
 
 def default_channel_form_payload() -> dict[str, Any]:

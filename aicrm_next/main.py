@@ -16,6 +16,7 @@ from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
+from .common_operation_members import router as common_operation_members_router
 from .customer_tags.api import router as customer_tags_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(platform_router)
+    app.include_router(common_operation_members_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
     if legacy_production_facade_enabled():

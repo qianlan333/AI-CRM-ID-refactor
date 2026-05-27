@@ -8,14 +8,6 @@
 {% set payload = channel_form_payload or {} %}
 {% set channel = payload.channel or {} %}
 {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
-{% set owner_candidates = payload.owner_candidates or [] %}
-{% set selected_owner = namespace(display_name='') %}
-{% for item in owner_candidates %}
-  {% if item.owner_staff_id == channel.owner_staff_id %}
-    {% set selected_owner.display_name = item.display_name or item.owner_staff_id %}
-  {% endif %}
-{% endfor %}
-
 <div
   class="channel-page"
   data-channel-admission-page="channel-form"
@@ -60,7 +52,7 @@
         <div class="channel-owner-card">
           <div class="channel-owner-current" data-channel-owner-current>
             {% if channel.owner_staff_id %}
-              <strong>{{ selected_owner.display_name or channel.owner_staff_id }}</strong>
+              <strong>{{ channel.owner_staff_id }}</strong>
               <small>{{ channel.owner_staff_id }}</small>
             {% else %}
               <strong>未选择负责人</strong>
@@ -177,39 +169,6 @@
     </div>
   </aside>
 
-  <aside class="channel-modal" data-channel-owner-modal hidden>
-    <div class="channel-modal__panel">
-      <div class="admin-card-head admin-card-head--tight">
-        <div>
-          <h2>选择负责人</h2>
-          <p>从已同步的企业微信通讯录、后台成员和负责人角色表中选择，不需要手动输入 ID。</p>
-        </div>
-        <button class="channel-drawer__close" type="button" data-channel-owner-picker-close>关闭</button>
-      </div>
-      {% if owner_candidates %}
-      <div class="channel-owner-list">
-        {% for item in owner_candidates %}
-        <div class="channel-owner-row">
-          <div class="channel-owner-title">
-            <strong>{{ item.display_name or item.owner_staff_id }}</strong>
-            <span>{{ item.position or item.source or item.owner_staff_id }}</span>
-            <small>{{ item.owner_staff_id }}</small>
-          </div>
-          <button
-            class="admin-button admin-button--primary"
-            type="button"
-            data-channel-owner-pick
-            data-owner-staff-id="{{ item.owner_staff_id }}"
-            data-owner-display-name="{{ item.display_name or item.owner_staff_id }}"
-          >选择</button>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="channel-muted">还没有可选负责人，请先同步企业微信通讯录或创建后台成员。</p>
-      {% endif %}
-    </div>
-  </aside>
 </div>
 {% endblock %}
 

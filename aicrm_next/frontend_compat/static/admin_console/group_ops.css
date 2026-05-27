@@ -108,6 +108,28 @@
   resize: vertical;
 }
 
+.group-ops__member-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: min(340px, 100%);
+}
+
+.group-ops__member-current {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .group-ops__table-wrap {
   width: 100%;
   overflow-x: auto;

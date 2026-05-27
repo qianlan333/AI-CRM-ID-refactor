@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
+from aicrm_next.common_operation_members import search_operation_members
 
 from .application import (
     AddGroupOpsPlanGroupCommand,
@@ -105,7 +106,25 @@ def list_group_ops_plans(
 @router.get("/api/admin/automation-conversion/group-ops/owners")
 def list_group_ops_owners() -> JSONResponse:
     try:
-        return _json_result(ListGroupOpsOwnersQuery()())
+        members = search_operation_members(scope="group_ops", page_size=100)
+        if not members["items"]:
+            return _json_result(ListGroupOpsOwnersQuery()())
+        return _json_result(
+            {
+                "ok": True,
+                "items": [
+                    {
+                        "userid": item["user_id"],
+                        "name": item["display_name"] or item["user_id"],
+                        "group_count": 0,
+                        **item,
+                    }
+                    for item in members["items"]
+                ],
+                "total": members["total"],
+                "route_owner": "ai_crm_next",
+            }
+        )
     except Exception as exc:
         _raise_http(exc)
 
