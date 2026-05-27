@@ -28,7 +28,7 @@ def test_architecture_skill_contains_required_rules() -> None:
         "legacy Flask 只作为显式 fallback 和生产兼容 facade",
         "`wecom_ability_service/` 保留为 legacy fallback",
         "`openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已物理删除，不得重新引入",
-        "MCP/OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` 的 D7.7 adapter boundary 承接",
+        "MCP/OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` adapter boundary 承接",
         "real external adapter 仍 blocked / fake / staging-disabled",
         "禁止在 frontend_compat 继续新增直接 SQL",
         "禁止 API 层直接 import 其他 context 的 `repo.py` 或 `service.py`",
@@ -95,4 +95,3 @@ def test_architecture_doc_checker_cli_outputs_pass() -> None:
         check=True,
     )
     assert "overall: PASS" in completed.stdout
-

@@ -873,4 +873,4 @@ routes:
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: MCP is owned by aicrm_next.integration_gateway D7.7 adapter boundary; openclaw_service is not an owner and must not be reintroduced.
+    notes: MCP is owned by the aicrm_next.integration_gateway adapter boundary; openclaw_service is not an owner and must not be reintroduced.

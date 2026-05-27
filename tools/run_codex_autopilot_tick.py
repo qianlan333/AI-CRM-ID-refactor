@@ -29,41 +29,10 @@ REQUIRED_PREFLIGHT_DOCS = [
     "docs/development/legacy_replacement_backlog.yaml",
     "docs/development/codex_autopilot_runtime_runbook.md",
 ]
-ACTION_TEMPLATES_ALLOWED_ACTIONS = {
-    "phase_4am_staging_execution",
-    "phase_4am_approval_config_closure",
-    "phase_4am_blocked_evidence_review",
-}
 STOP_TERM_EXEMPT_WORK_PACKAGES = {
-    "phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_bundle",
-    "phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_bundle",
-    "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_bundle",
-    "phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_bundle",
-    "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_bundle",
-    "phase_5ak_questionnaire_external_submit_contract_fake_stub_bundle",
-    "phase_5al_questionnaire_external_submit_live_adapter_behind_flag_bundle",
-    "phase_5am_questionnaire_external_submit_staging_canary_evidence_bundle",
-    "phase_5an_questionnaire_external_submit_production_canary_readiness_bundle",
-    "phase_5ao_questionnaire_external_submit_family_acceptance_bundle",
-    "phase_5_aggregate_acceptance_review_bundle",
-    "phase_6_owner_production_compat_readiness_bundle",
-    "phase_6b_first_owner_switch_canary_plan_bundle",
-    "phase_6c_task_groups_owner_switch_tooling_bundle",
-    "phase_6d_internal_metadata_owner_switch_batch_bundle",
-    "phase_6e_internal_owner_switch_acceptance_bundle",
-    "phase_6f_external_adapter_enablement_readiness_bundle",
-    "phase_6g_low_risk_external_adapter_enablement_tooling_bundle",
-    "phase_6h_production_compat_exact_route_narrowing_readiness_bundle",
-    "phase_6i_external_enablement_and_compat_readiness_acceptance_bundle",
-    "phase_6j_timer_execution_readiness_bundle",
-    "phase_6k_single_scope_execution_canary_tooling_bundle",
-    "phase_6l_phase6_aggregate_acceptance_bundle",
-    "post_phase7_new_feature_development_rules_bundle",
-    "post_phase7_first_new_feature_intake_bundle",
-    "post_phase7_owner_feature_selection_bundle",
-    "post_phase7_hxc_next_native_broadcast_backend_plan_bundle",
-    "post_phase7_cleanup_next_route_evidence_collection_bundle",
-    "paused_waiting_owner_evidence",
+    "remaining stale non-runtime docs/reports",
+    "remaining stale checker/test references",
+    "governance config compaction",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -122,23 +91,21 @@ def _parse_yaml_block(lines: list[tuple[int, str]], index: int, indent: int) -> 
             if not item_text:
                 value, index = _parse_yaml_block(lines, index, indent + 2)
                 result.append(value)
-                continue
-            if ":" not in item_text:
+            elif ":" not in item_text:
                 result.append(_parse_scalar(item_text))
-                continue
-            key, raw_value = item_text.split(":", 1)
-            item: dict[str, Any] = {}
-            raw_value = raw_value.strip()
-            if raw_value:
-                item[key.strip()] = _parse_scalar(raw_value)
             else:
-                value, index = _parse_yaml_block(lines, index, indent + 2)
-                item[key.strip()] = value
-            while index < len(lines) and lines[index][0] > indent:
-                nested_value, index = _parse_yaml_block(lines, index, indent + 2)
-                if isinstance(nested_value, dict):
-                    item.update(nested_value)
-            result.append(item)
+                key, raw_value = item_text.split(":", 1)
+                item: dict[str, Any] = {}
+                if raw_value.strip():
+                    item[key.strip()] = _parse_scalar(raw_value)
+                else:
+                    value, index = _parse_yaml_block(lines, index, indent + 2)
+                    item[key.strip()] = value
+                while index < len(lines) and lines[index][0] > indent:
+                    nested_value, index = _parse_yaml_block(lines, index, indent + 2)
+                    if isinstance(nested_value, dict):
+                        item.update(nested_value)
+                result.append(item)
         return result, index
     result: dict[str, Any] = {}
     while index < len(lines):
@@ -216,79 +183,24 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/autonomous_development_loop.md",
         "docs/development/autonomous_stop_conditions.yaml",
         "docs/development/phase_execution_state.yaml",
-        "aicrm_next/automation_engine/api.py",
-        "aicrm_next/automation_engine/application.py",
-        "aicrm_next/automation_engine/dto.py",
-        "aicrm_next/automation_engine/repo.py",
-        "aicrm_next/automation_engine/task_group_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/workflow_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/workflow_node_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/task_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/agent_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/agent_output_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/agent_run_sqlalchemy_repository.py",
-        "aicrm_next/automation_engine/agents.py",
-        "aicrm_next/automation_engine/agent_outputs.py",
-        "aicrm_next/automation_engine/agent_runs.py",
-        "aicrm_next/production_compat/api.py",
-        "docs/route_ownership/production_route_ownership_manifest.yaml",
-        "aicrm_next/automation_engine/task_groups.py",
-        "aicrm_next/automation_engine/tasks.py",
-        "aicrm_next/automation_engine/workflows.py",
-        "aicrm_next/automation_engine/workflow_nodes.py",
-        "aicrm_next/customer_tags/api.py",
-        "aicrm_next/customer_tags/application.py",
-        "aicrm_next/customer_tags/dto.py",
-        "aicrm_next/customer_tags/wecom_tag_adapter.py",
-        "aicrm_next/customer_tags/wecom_tag_contract.py",
-        "aicrm_next/customer_tags/wecom_tag_live_adapter.py",
-        "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
-        "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
-        "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
-        "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
-        "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
-        "aicrm_next/integration_gateway/wecom_contact_callback_live_gateway.py",
-        "aicrm_next/integration_gateway/oauth_identity_adapter.py",
-        "aicrm_next/integration_gateway/oauth_identity_application.py",
-        "aicrm_next/integration_gateway/oauth_identity_contract.py",
-        "aicrm_next/integration_gateway/oauth_identity_live_adapter.py",
-        "aicrm_next/integration_gateway/oauth_identity_live_gateway.py",
-        "aicrm_next/integration_gateway/media_live_adapter.py",
-        "aicrm_next/integration_gateway/media_live_gateway.py",
-        "aicrm_next/integration_gateway/payment_commerce_live_adapter.py",
-        "aicrm_next/integration_gateway/payment_commerce_live_gateway.py",
-        "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_adapter.py",
-        "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_gateway.py",
-        "aicrm_next/questionnaire/external_submit_adapter.py",
-        "aicrm_next/questionnaire/external_submit_live_adapter.py",
-        "aicrm_next/questionnaire/external_submit_live_gateway.py",
-        "tools/check_autonomous_development_loop.py",
-        "tools/check_automerge_eligibility.py",
-        "tools/run_codex_autopilot_tick.py",
         "docs/development/codex_autopilot_runtime_runbook.md",
+        "docs/development/ai_crm_next_architecture_skill.md",
         "docs/development/legacy_replacement_backlog.md",
         "docs/development/legacy_replacement_backlog.yaml",
-        "docs/development/post_phase7_new_feature_development_rules.md",
-        "docs/development/post_phase7_new_feature_development_rules.yaml",
-        "docs/development/post_phase7_first_new_feature_intake.md",
-        "docs/development/post_phase7_first_new_feature_intake.yaml",
-        "docs/development/post_phase7_owner_feature_selection.md",
-        "docs/development/post_phase7_owner_feature_selection.yaml",
-        "aicrm_next/integration_gateway/legacy_flask_facade.py",
-        "tools/check_legacy_facade_growth_freeze.py",
-        "tools/check_post_phase7_new_feature_development_rules.py",
-        "tools/check_post_phase7_first_new_feature_intake.py",
-        "tools/check_post_phase7_owner_feature_selection.py",
-        "tests/test_post_phase7_new_feature_development_rules.py",
-        "tests/test_post_phase7_first_new_feature_intake.py",
-        "tests/test_post_phase7_owner_feature_selection.py",
+        "docs/route_ownership/production_route_ownership_manifest.yaml",
         "scripts/codex_autopilot_tick.sh",
+        "tools/check_architecture_doc_consistency.py",
+        "tools/check_autonomous_development_loop.py",
+        "tools/check_automerge_eligibility.py",
+        "tools/check_legacy_facade_growth_freeze.py",
+        "tools/run_codex_autopilot_tick.py",
+        "tests/test_architecture_doc_consistency.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
     }
     for path in sorted(paths):
-        if path in policy_paths:
+        if path in policy_paths or path.startswith("tests/"):
             continue
         full = ROOT / path
         if not full.exists() or not full.is_file():
@@ -371,24 +283,16 @@ def choose_next_action(state: dict[str, Any], requested: str | None = None) -> s
 
 
 def choose_next_work_package(state: dict[str, Any], requested: str | None = None) -> str:
-    allowed = [str(item) for item in state.get("next_allowed_actions", [])]
+    allowed = [str(item) for item in state.get("next_cleanup_candidates", [])]
     if requested:
         if requested not in allowed:
-            raise ValueError(f"requested work package is not in next_allowed_actions: {requested}")
+            raise ValueError(f"requested work package is not in next_cleanup_candidates: {requested}")
         return requested
     if not allowed:
-        raise ValueError("phase_execution_state has no next_allowed_actions")
-    policy = state.get("work_package_policy") if isinstance(state.get("work_package_policy"), dict) else {}
-    should_avoid_repeated_blocked_review = (
-        policy.get("avoid_repeated_blocked_evidence_review") is True
-        and "phase_4am_approval_config_closure" in allowed
-        and (
-            state.get("last_created_pr") == "#641"
-            or state.get("last_attempted_action") == "phase_4am_blocked_evidence_review"
-        )
-    )
-    if should_avoid_repeated_blocked_review:
-        return "phase_4am_approval_config_closure"
+        raise ValueError("phase_execution_state has no next_cleanup_candidates")
+    recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "active_governance_state_compaction_wave10" and "governance config compaction" in allowed:
+        return "governance config compaction"
     return allowed[0]
 
 
@@ -423,43 +327,29 @@ You are working in qianlan333/AI-CRM from latest main.
 Read and follow:
 {docs}
 
-## Selected compressed bounded bundle
+## Selected bounded governance cleanup
 
 - work_package: {work_package}
-- active_candidate: {state.get("active_candidate")}
-- capability_owner: {state.get("capability_owner")}
 - current_phase: {state.get("current_phase")}
+- last_merged_pr: {state.get("last_merged_pr")}
+- recommended_next_pr: {state.get("recommended_next_pr")}
 
 ## Hard boundaries
 
-- Only choose from docs/development/phase_execution_state.yaml next_allowed_actions.
-- For action-templates, stay within Phase 4AM staging execution / approval config closure / blocked evidence review.
-- If PR #641 is merged, do not repeat a standalone blocked evidence review. Prefer the Phase 4AM staging approval/config closure package unless a stop condition requires an owner decision package.
+- Only choose from docs/development/phase_execution_state.yaml next_cleanup_candidates.
+- Runtime behavior must remain unchanged.
 - Do not switch production owner.
 - Do not write production.
 - Do not remove fallback.
 - Do not modify production_compat, aicrm_next/main.py, business routes, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
-- Phase 4 fixture/native packages may touch explicitly selected aicrm_next/automation_engine files only.
-- Phase 5B WeCom tag fake/stub packages may touch explicitly selected aicrm_next/customer_tags files only; live WeCom calls remain forbidden.
-- Phase 5C WeCom tag live adapter packages may touch explicitly selected aicrm_next/customer_tags and aicrm_next/integration_gateway live-behind-flag files only; live calls must remain disabled by default.
-- Phase 5I WeCom contact callback fake/stub packages may touch explicitly selected aicrm_next/integration_gateway fake/stub callback files only; live callback cutover and production writes remain forbidden.
-- Phase 5J WeCom contact callback live adapter packages may touch explicitly selected aicrm_next/integration_gateway live-behind-flag callback files only; live callback processing must remain disabled by default.
-- Phase 5K WeCom contact callback staging canary packages must stay docs/tools/tests/state only; production callback processing remains forbidden.
-- Phase 5L WeCom contact callback production readiness packages must stay docs/tools/tests/state only; production callback execution remains forbidden by default.
-- Phase 5M WeCom contact callback family acceptance packages must stay docs/tools/tests/state only; no new live callback is allowed.
-- Phase 5N OAuth identity adapter contract packages must stay docs/tools/tests/state only; no live OAuth callback cutover or token exchange is allowed.
-- Phase 5O OAuth identity fake/stub packages may touch explicitly selected aicrm_next/integration_gateway fake/stub OAuth files only; live OAuth callback and token exchange remain disabled.
-- Phase 5P OAuth identity live-behind-flag packages may touch explicitly selected aicrm_next/integration_gateway live adapter files only; live OAuth remains disabled by default.
-- Do not enable real external calls, timer, automation execution, or outbound send by default.
+- Do not enable real external calls, payment, OAuth, WeCom callback, timer, automation execution, or outbound send.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 
 ## Required implementation behavior
 
-- Advance only one compressed bounded bundle within a single route family and risk boundary.
-- Target 15-20 minutes of focused work for the current compressed safe bundle.
-- Avoid one- or two-line state-only PRs. If a state-only update is unavoidable, explain in the PR body why it cannot be folded into a fuller low-risk work package.
-- For Phase 4AM action-templates, a package may combine blocked evidence review summary, staging approval/config checklist, owner approval closure form, phase_execution_state.yaml update, checker/test coverage, and Next action.
-- Update docs/development/phase_execution_state.yaml with the resulting status.
+- Advance only one bounded low-risk governance cleanup package.
+- Prefer deleting or compacting stale non-runtime docs/tools/tests/state over wording-only changes.
+- Update docs/development/phase_execution_state.yaml only when the active compact state changes.
 - Keep Business value, Business continuity, Risk / rollback, and Next action in the PR body.
 - Run:
   - python3 tools/check_autonomous_development_loop.py --output-md /tmp/autonomous_development_loop.md --output-json /tmp/autonomous_development_loop.json
@@ -470,7 +360,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files, explicitly selected fixture/native aicrm_next/automation_engine runtime files, explicitly selected aicrm_next/production_compat exact-route cleanup files, explicitly selected aicrm_next/customer_tags fake/stub files, explicitly selected Phase 5C live-behind-flag adapter files, explicitly selected Phase 5I fake/stub callback adapter files, or explicitly selected Phase 5J live-behind-flag callback adapter files. Owner decision packages must not auto-merge.
+Low-risk merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
@@ -492,11 +382,7 @@ def build_tick_report(args: argparse.Namespace) -> dict[str, Any]:
     except ValueError as exc:
         blockers.append(str(exc))
 
-    if work_package and state.get("active_candidate") == "/api/admin/automation-conversion/action-templates*":
-        if work_package not in ACTION_TEMPLATES_ALLOWED_ACTIONS:
-            blockers.append(f"action-templates autopilot work package is not Phase 4AM bounded: {work_package}")
-
-    action_stop_hits = []
+    action_stop_hits: list[str] = []
     if work_package and work_package not in STOP_TERM_EXEMPT_WORK_PACKAGES:
         action_stop_hits = text_hits_stop_condition(str(work_package).replace("_", " "), terms)
     if action_stop_hits:

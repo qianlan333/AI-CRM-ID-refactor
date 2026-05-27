@@ -34,9 +34,7 @@ DELETED_LOW_RISK_PREFIXES = (
 DELETED_LOW_RISK_SUFFIXES = (
     "_gray_smoke.py",
 )
-DELETED_LOW_RISK_EXACT = {
-    "tools/d7_contract_check_common.py",
-}
+DELETED_LOW_RISK_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
     "aicrm_next/production_compat/api.py",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
@@ -100,27 +98,18 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/legacy_replacement_backlog.yaml",
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
-        "docs/development/post_phase7_new_feature_development_rules.md",
-        "docs/development/post_phase7_new_feature_development_rules.yaml",
-        "docs/development/post_phase7_first_new_feature_intake.md",
-        "docs/development/post_phase7_first_new_feature_intake.yaml",
-        "docs/development/post_phase7_owner_feature_selection.md",
-        "docs/development/post_phase7_owner_feature_selection.yaml",
+        "docs/development/ai_crm_next_architecture_skill.md",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "scripts/codex_autopilot_tick.sh",
+        "tools/check_architecture_doc_consistency.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/check_legacy_facade_growth_freeze.py",
-        "tools/check_post_phase7_new_feature_development_rules.py",
-        "tools/check_post_phase7_first_new_feature_intake.py",
-        "tools/check_post_phase7_owner_feature_selection.py",
-        "tests/test_post_phase7_new_feature_development_rules.py",
-        "tests/test_post_phase7_first_new_feature_intake.py",
-        "tests/test_post_phase7_owner_feature_selection.py",
         "tools/run_codex_autopilot_tick.py",
+        "tests/test_architecture_doc_consistency.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",

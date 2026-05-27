@@ -56,7 +56,7 @@ def test_stop_condition_terms_are_not_allowed_outside_policy_files(tmp_path: Pat
     assert report["overall"] == "PASS"
 
 
-def test_phase7b_import_boundary_runtime_paths_are_autopilot_deliverable() -> None:
+def test_import_boundary_runtime_paths_remain_explicit_autopilot_deliverables() -> None:
     expected = {
         "aicrm_next/automation_engine/group_ops/domain.py",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",

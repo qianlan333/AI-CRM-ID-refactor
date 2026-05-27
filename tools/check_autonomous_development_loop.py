@@ -20,166 +20,37 @@ REQUIRED_STATE_FIELDS = {
     "status",
     "autopilot",
     "current_phase",
-    "active_candidate",
-    "capability_owner",
     "last_merged_pr",
-    "completed_steps",
-    "next_allowed_actions",
-    "forbidden_without_owner_approval",
-    "action_templates_readiness",
-    "paused_candidates",
-    "task_groups_readiness",
-    "workflows_readiness",
-    "workflow_nodes_readiness",
-    "tasks_readiness",
-    "agents_readiness",
-    "agent_outputs_readiness",
-    "agent_runs_readiness",
-    "agent_replay_readiness",
-    "work_package_policy",
-    "implemented_runtime_slices",
-    "guarded_disabled_runtime_slices",
-    "repository_adapter_parity_slices",
-    "staging_readiness_slices",
-    "production_dry_run_readiness_slices",
-}
-ALLOWED_NEXT_ACTIONS: set[str] = {
-    "post_phase7_cleanup_next_route_evidence_collection_bundle",
-}
-STOP_TERM_EXEMPT_NEXT_ACTIONS: set[str] = set(ALLOWED_NEXT_ACTIONS)
-REQUIRED_COMPLETED_STEPS = {
-    "phase_4al_staging_execution_readiness_gate_completed",
-    "action_templates_staging_approval_config_closure_package_created",
-    "action_templates_staging_owner_decision_package_created",
-    "phase_4an_task_groups_native_contract_planning_completed",
-    "phase_4ao_task_groups_schema_route_surface_confirmation_completed",
-    "phase_4ap_task_groups_fixture_native_contract_planning_completed",
-    "phase_4aq_task_groups_fixture_native_implementation_owner_decision_completed",
-    "phase_4ar_workflows_metadata_planning_completed",
-    "phase_4as_workflows_schema_route_surface_confirmation_completed",
-    "phase_4at_workflows_fixture_native_contract_planning_completed",
-    "phase_4au_workflows_fixture_native_implementation_owner_decision_completed",
-    "phase_4av_workflow_nodes_metadata_planning_completed",
-    "phase_4aw_workflow_nodes_schema_route_surface_confirmation_completed",
-    "phase_4ax_workflow_nodes_fixture_native_contract_planning_completed",
-    "phase_4ay_workflow_nodes_fixture_native_implementation_owner_decision_completed",
-    "phase_4az_next_internal_write_candidate_selection_completed",
-    "phase_4ba_tasks_metadata_planning_completed",
-    "phase_4bb_tasks_schema_route_surface_confirmation_completed",
-    "phase_4bc_tasks_fixture_native_contract_planning_completed",
-    "phase_4bd_tasks_fixture_native_implementation_owner_decision_completed",
-    "phase_4be_agents_metadata_planning_completed",
-    "phase_4bf_agents_schema_route_surface_confirmation_completed",
-    "phase_4bg_agents_fixture_native_contract_planning_completed",
-    "phase_4bh_agents_fixture_native_implementation_owner_decision_completed",
-    "phase_4bi_agent_outputs_metadata_planning_completed",
-    "phase_4bj_agent_outputs_schema_route_surface_confirmation_completed",
-    "phase_4bk_agent_outputs_fixture_native_contract_planning_completed",
-    "phase_4bl_agent_outputs_fixture_native_implementation_owner_decision_completed",
-    "phase_4bm_agent_runs_metadata_planning_completed",
-    "phase_4bn_agent_runs_schema_route_surface_confirmation_completed",
-    "phase_4bo_agent_runs_fixture_native_contract_planning_completed",
-    "phase_4bp_agent_runs_fixture_native_implementation_owner_decision_completed",
-    "phase_4bq_agent_replay_metadata_planning_completed",
-    "phase_4br_task_groups_fixture_native_list_create_runtime_completed",
-    "phase_4bs_workflows_fixture_native_list_create_runtime_completed",
-    "phase_4bt_workflow_nodes_fixture_native_list_create_runtime_completed",
-    "phase_4bu_tasks_fixture_native_list_create_runtime_completed",
-    "phase_4bv_agents_fixture_native_list_create_runtime_completed",
-    "phase_4bw_agent_outputs_fixture_native_list_detail_runtime_completed",
-    "phase_4bx_agent_runs_fixture_native_list_detail_runtime_completed",
-    "phase_4by_agent_replay_discovery_contract_bundle_completed",
-    "phase_4ca_task_groups_repository_adapter_parity_completed",
-    "phase_4cb_workflows_repository_adapter_parity_completed",
-    "phase_4cc_workflow_nodes_repository_adapter_parity_completed",
-    "phase_4cd_tasks_repository_adapter_parity_completed",
-    "phase_4ce_agents_repository_adapter_parity_completed",
-    "phase_4cf_agent_outputs_repository_adapter_parity_completed",
-    "phase_4cg_agent_runs_repository_adapter_parity_completed",
-    "phase_4ch_task_groups_staging_readiness_completed",
-    "phase_4ci_workflows_staging_readiness_completed",
-    "phase_4cj_workflow_nodes_staging_readiness_completed",
-    "phase_4ck_tasks_staging_readiness_completed",
-    "phase_4cl_agents_staging_readiness_completed",
-    "phase_4cm_agent_outputs_staging_readiness_completed",
-    "phase_4cn_agent_runs_staging_readiness_completed",
-    "phase_4co_task_groups_production_dry_run_readiness_completed",
-    "phase_4cp_workflows_production_dry_run_readiness_completed",
-    "phase_4cq_workflow_nodes_production_dry_run_readiness_completed",
-    "phase_4cr_tasks_production_dry_run_readiness_completed",
-    "phase_4cs_agent_runs_production_dry_run_readiness_completed",
-    "phase_4ct_agent_outputs_production_dry_run_readiness_completed",
-    "phase_4cu_internal_write_acceptance_review_completed",
-    "phase_4cv_phase5_readiness_entry_completed",
-    "phase_5a_wecom_tag_adapter_contract_completed",
-    "phase_5b_wecom_tag_fake_stub_adapter_completed",
-    "phase_5c_wecom_tag_live_adapter_behind_flag_completed",
-    "phase_5d_wecom_tag_staging_live_canary_evidence_completed",
-    "phase_5e_wecom_tag_production_canary_readiness_completed",
-    "phase_5f_wecom_tag_production_live_canary_execution_completed",
-    "phase_5g_wecom_tag_family_acceptance_completed",
-    "phase_5h_wecom_customer_contact_adapter_contract_completed",
-    "phase_5i_wecom_customer_contact_fake_stub_adapter_completed",
-    "phase_5j_wecom_customer_contact_live_callback_adapter_behind_flag_completed",
-    "phase_5k_wecom_customer_contact_staging_live_callback_canary_evidence_completed",
-    "phase_5l_wecom_customer_contact_production_callback_canary_readiness_completed",
-    "phase_5m_wecom_customer_contact_callback_family_acceptance_completed",
-    "phase_5n_oauth_identity_adapter_contract_completed",
-    "phase_5o_oauth_identity_fake_stub_adapter_completed",
-    "phase_5p_oauth_identity_live_adapter_behind_flag_completed",
-    "phase_5q_oauth_identity_staging_live_canary_evidence_completed",
-    "phase_5r_oauth_identity_production_canary_readiness_completed",
-    "phase_5s_oauth_identity_production_live_canary_execution_completed",
-    "phase_5t_oauth_identity_family_acceptance_completed",
-    "phase_5u_media_upload_adapter_contract_fake_stub_completed",
-    "phase_5v_media_upload_live_adapter_behind_flag_completed",
-    "phase_5w_media_upload_staging_live_canary_evidence_completed",
-    "phase_5x_media_upload_production_canary_readiness_execution_completed",
-    "phase_5y_media_upload_family_acceptance_completed",
-    "phase_5z_payment_commerce_adapter_contract_fake_stub_completed",
-    "phase_5aa_payment_commerce_live_adapter_behind_flag_completed",
-    "phase_5ab_payment_commerce_staging_sandbox_canary_evidence_completed",
-    "phase_5ac_payment_commerce_production_canary_readiness_completed",
-    "phase_5ad_payment_commerce_production_canary_tooling_completed",
-    "phase_5ae_payment_commerce_family_acceptance_completed",
-    "phase_5af_openclaw_mcp_ai_assist_adapter_contract_fake_stub_completed",
-    "phase_5ag_openclaw_mcp_ai_assist_live_adapter_behind_flag_completed",
-    "phase_5ah_openclaw_mcp_ai_assist_staging_live_canary_evidence_completed",
-    "phase_5ai_openclaw_mcp_ai_assist_production_canary_readiness_completed",
-    "phase_5aj_openclaw_mcp_ai_assist_family_acceptance_completed",
-    "phase_5ak_questionnaire_external_submit_contract_fake_stub_completed",
-    "phase_5al_questionnaire_external_submit_live_adapter_behind_flag_completed",
-    "phase_5am_questionnaire_external_submit_staging_canary_evidence_completed",
-    "phase_5an_questionnaire_external_submit_production_canary_readiness_completed",
-    "phase_5ao_questionnaire_external_submit_family_acceptance_completed",
-    "phase_5_aggregate_acceptance_review_completed",
-    "phase_6a_owner_production_compat_readiness_completed",
-    "phase_6b_task_groups_owner_switch_canary_plan_completed",
-    "phase_6c_task_groups_owner_switch_tooling_completed",
-    "phase_6d_internal_metadata_owner_switch_batch_completed",
-    "phase_6e_internal_owner_switch_acceptance_completed",
-    "phase_6f_external_adapter_enablement_readiness_completed",
-    "phase_6g_low_risk_external_adapter_enablement_tooling_completed",
-    "phase_6h_production_compat_exact_route_narrowing_readiness_completed",
-    "phase_6i_external_enablement_and_compat_readiness_acceptance_completed",
-    "phase_6j_timer_execution_readiness_completed",
-    "phase_6k_single_scope_execution_canary_tooling_completed",
-    "phase_6l_phase6_aggregate_acceptance_completed",
-    "post_phase7_new_feature_development_rules_completed",
-    "post_phase7_first_new_feature_intake_completed",
-    "post_phase7_owner_feature_selection_completed",
-}
-REQUIRED_FORBIDDEN = {
-    "production owner switch",
-    "fallback removal",
-    "production write",
-    "real external call",
-    "timer",
-    "outbound send",
-    "deploy config",
-    "destructive migration",
+    "last_merged_cleanup_wave",
+    "recommended_next_pr",
+    "owner_approval_required",
+    "runtime_behavior_changed",
     "delete_ready",
-    "canary approval",
+    "active_safety_gates",
+    "protected_runtime_boundaries",
+    "next_cleanup_candidates",
+}
+EXPECTED_SAFETY_GATES = {
+    "check_legacy_facade_growth_freeze",
+    "generate_legacy_replacement_backlog",
+    "check_production_route_resolution",
+    "check_automerge_eligibility",
+    "check_autonomous_development_loop",
+    "pr_smoke",
+}
+EXPECTED_RUNTIME_BOUNDARIES = {
+    "app.py",
+    "legacy_flask_app.py",
+    "aicrm_next/main.py",
+    "aicrm_next/production_compat/api.py",
+    "wecom_ability_service runtime",
+    "migrations/deploy/nginx/systemd",
+    "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
+}
+EXPECTED_NEXT_CANDIDATES = {
+    "remaining stale non-runtime docs/reports",
+    "remaining stale checker/test references",
+    "governance config compaction",
 }
 STOP_IDS = {
     "production_owner_switch",
@@ -193,62 +64,28 @@ STOP_IDS = {
     "delete_ready",
     "canary_approval",
 }
-REQUIRED_WORK_PACKAGE_POLICY_TRUE = {
-    "state_only_pr_requires_explanation",
-    "avoid_repeated_blocked_evidence_review",
-    "low_risk_admin_merge_allowed",
-    "admin_merge_requires_eligible_true",
-    "admin_merge_requires_required_checks_green",
-}
-PHASE4_ALLOWED_RUNTIME_FILES = {
+PROTECTED_EXACT = {
+    "app.py",
+    "legacy_flask_app.py",
+    "aicrm_next/main.py",
     "aicrm_next/production_compat/api.py",
-    "aicrm_next/automation_engine/api.py",
-    "aicrm_next/automation_engine/application.py",
-    "aicrm_next/automation_engine/dto.py",
-    "aicrm_next/automation_engine/repo.py",
-    "aicrm_next/automation_engine/task_group_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/workflow_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/workflow_node_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/task_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/agent_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/agent_output_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/agent_run_sqlalchemy_repository.py",
-    "aicrm_next/automation_engine/task_groups.py",
-    "aicrm_next/automation_engine/tasks.py",
-    "aicrm_next/automation_engine/agents.py",
-    "aicrm_next/automation_engine/agent_outputs.py",
-    "aicrm_next/automation_engine/agent_runs.py",
-    "aicrm_next/automation_engine/workflows.py",
-    "aicrm_next/automation_engine/workflow_nodes.py",
-    "aicrm_next/automation_engine/group_ops/domain.py",
-    "aicrm_next/integration_gateway/legacy_flask_facade.py",
-    "aicrm_next/integration_gateway/wecom_group_adapter.py",
-    "aicrm_next/customer_tags/api.py",
-    "aicrm_next/customer_tags/application.py",
-    "aicrm_next/customer_tags/dto.py",
-    "aicrm_next/customer_tags/wecom_tag_adapter.py",
-    "aicrm_next/customer_tags/wecom_tag_contract.py",
-    "aicrm_next/customer_tags/wecom_tag_live_adapter.py",
-    "aicrm_next/integration_gateway/wecom_tag_live_gateway.py",
-    "aicrm_next/integration_gateway/wecom_contact_callback_adapter.py",
-    "aicrm_next/integration_gateway/wecom_contact_callback_application.py",
-    "aicrm_next/integration_gateway/wecom_contact_callback_contract.py",
-    "aicrm_next/integration_gateway/wecom_contact_callback_live_adapter.py",
-    "aicrm_next/integration_gateway/wecom_contact_callback_live_gateway.py",
-    "aicrm_next/integration_gateway/oauth_identity_adapter.py",
-    "aicrm_next/integration_gateway/oauth_identity_application.py",
-    "aicrm_next/integration_gateway/oauth_identity_contract.py",
-    "aicrm_next/integration_gateway/oauth_identity_live_adapter.py",
-    "aicrm_next/integration_gateway/oauth_identity_live_gateway.py",
-    "aicrm_next/integration_gateway/media_live_adapter.py",
-    "aicrm_next/integration_gateway/media_live_gateway.py",
-    "aicrm_next/integration_gateway/payment_commerce_live_adapter.py",
-    "aicrm_next/integration_gateway/payment_commerce_live_gateway.py",
-    "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_adapter.py",
-    "aicrm_next/integration_gateway/openclaw_mcp_ai_assist_live_gateway.py",
-    "aicrm_next/questionnaire/external_submit_adapter.py",
-    "aicrm_next/questionnaire/external_submit_live_adapter.py",
-    "aicrm_next/questionnaire/external_submit_live_gateway.py",
+}
+PROTECTED_PREFIXES = (
+    "wecom_ability_service/",
+    "migrations/",
+    "deploy/",
+    "systemd/",
+    "nginx/",
+)
+GOVERNANCE_ALLOWED_PREFIXES = (
+    "docs/development/",
+    "docs/route_ownership/",
+    "tools/",
+    "tests/",
+)
+GOVERNANCE_ALLOWED_EXACT = {
+    ".github/workflows/ci.yml",
+    "scripts/codex_autopilot_tick.sh",
 }
 
 
@@ -305,23 +142,21 @@ def _parse_yaml_block(lines: list[tuple[int, str]], index: int, indent: int) -> 
             if not item_text:
                 value, index = _parse_yaml_block(lines, index, indent + 2)
                 result.append(value)
-                continue
-            if ":" not in item_text:
+            elif ":" not in item_text:
                 result.append(_parse_scalar(item_text))
-                continue
-            key, raw_value = item_text.split(":", 1)
-            item: dict[str, Any] = {}
-            raw_value = raw_value.strip()
-            if raw_value:
-                item[key.strip()] = _parse_scalar(raw_value)
             else:
-                value, index = _parse_yaml_block(lines, index, indent + 2)
-                item[key.strip()] = value
-            while index < len(lines) and lines[index][0] > indent:
-                nested_value, index = _parse_yaml_block(lines, index, indent + 2)
-                if isinstance(nested_value, dict):
-                    item.update(nested_value)
-            result.append(item)
+                key, raw_value = item_text.split(":", 1)
+                item: dict[str, Any] = {}
+                if raw_value.strip():
+                    item[key.strip()] = _parse_scalar(raw_value)
+                else:
+                    value, index = _parse_yaml_block(lines, index, indent + 2)
+                    item[key.strip()] = value
+                while index < len(lines) and lines[index][0] > indent:
+                    nested_value, index = _parse_yaml_block(lines, index, indent + 2)
+                    if isinstance(nested_value, dict):
+                        item.update(nested_value)
+                result.append(item)
         return result, index
     result: dict[str, Any] = {}
     while index < len(lines):
@@ -342,26 +177,21 @@ def _parse_yaml_block(lines: list[tuple[int, str]], index: int, indent: int) -> 
     return result, index
 
 
-def _load_yaml_without_dependency(path: Path) -> dict[str, Any]:
-    data, _ = _parse_yaml_block(_yaml_lines(path.read_text(encoding="utf-8")), 0, 0)
-    return data if isinstance(data, dict) else {}
-
-
 def load_yaml(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
     try:
         import yaml  # type: ignore
 
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return yaml.safe_load(text) or {}
     except ModuleNotFoundError:
-        return _load_yaml_without_dependency(path)
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+        data, _ = _parse_yaml_block(_yaml_lines(text), 0, 0)
+        return data if isinstance(data, dict) else {}
 
 
 def _as_strings(value: Any) -> set[str]:
-    return {str(item).strip() for item in _as_list(value)}
+    if not isinstance(value, list):
+        return set()
+    return {str(item).strip() for item in value}
 
 
 def _run_git(args: list[str]) -> tuple[bool, str, str]:
@@ -383,6 +213,69 @@ def _changed_files() -> set[str]:
     return changed
 
 
+def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
+    missing_state_fields = sorted(REQUIRED_STATE_FIELDS - set(state))
+    if missing_state_fields:
+        blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
+    if state.get("current_phase") != "post_phase7_active_cleanup":
+        blockers.append("current_phase must be post_phase7_active_cleanup")
+    if state.get("last_merged_pr") != "#845":
+        blockers.append("last_merged_pr must record merged cleanup PR #845")
+    if state.get("last_merged_cleanup_wave") != "stale_phase456_governance_cleanup_wave9":
+        blockers.append("last_merged_cleanup_wave must record wave 9 cleanup")
+    if state.get("recommended_next_pr") != "active_governance_state_compaction_wave10":
+        blockers.append("recommended_next_pr must name wave 10 compaction")
+    if state.get("owner_approval_required") is not False:
+        blockers.append("owner_approval_required must be false for low-risk governance cleanup")
+    if state.get("runtime_behavior_changed") is not False:
+        blockers.append("runtime_behavior_changed must remain false")
+    if state.get("delete_ready") is not False:
+        blockers.append("delete_ready must remain false")
+
+    autopilot = state.get("autopilot") if isinstance(state.get("autopilot"), dict) else {}
+    if autopilot.get("enabled") is not True:
+        blockers.append("autopilot.enabled must be true")
+    if autopilot.get("mode") != "bounded_low_risk_governance_cleanup":
+        blockers.append("autopilot.mode must be bounded_low_risk_governance_cleanup")
+    if autopilot.get("runtime_changes_allowed") is not False:
+        blockers.append("autopilot.runtime_changes_allowed must be false")
+    if autopilot.get("admin_override_allowed") is not False:
+        blockers.append("autopilot.admin_override_allowed must be false")
+
+    gates = _as_strings(state.get("active_safety_gates"))
+    if gates != EXPECTED_SAFETY_GATES:
+        blockers.append(f"active_safety_gates must be exactly {sorted(EXPECTED_SAFETY_GATES)}")
+    boundaries = _as_strings(state.get("protected_runtime_boundaries"))
+    if boundaries != EXPECTED_RUNTIME_BOUNDARIES:
+        blockers.append(f"protected_runtime_boundaries must be exactly {sorted(EXPECTED_RUNTIME_BOUNDARIES)}")
+    candidates = _as_strings(state.get("next_cleanup_candidates"))
+    if candidates != EXPECTED_NEXT_CANDIDATES:
+        blockers.append(f"next_cleanup_candidates must be exactly {sorted(EXPECTED_NEXT_CANDIDATES)}")
+
+
+def _validate_stop_conditions(stop: dict[str, Any], blockers: list[str]) -> None:
+    stop_conditions = stop.get("high_risk_stop_conditions")
+    if not isinstance(stop_conditions, list):
+        blockers.append("autonomous_stop_conditions.high_risk_stop_conditions must be a list")
+        return
+    stop_ids = {str(item.get("id")) for item in stop_conditions if isinstance(item, dict)}
+    missing_stop_ids = sorted(STOP_IDS - stop_ids)
+    if missing_stop_ids:
+        blockers.append(f"autonomous_stop_conditions missing stop ids: {missing_stop_ids}")
+
+
+def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
+    runtime_changed = [
+        path
+        for path in sorted(changed)
+        if path in PROTECTED_EXACT
+        or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)
+        or not (path in GOVERNANCE_ALLOWED_EXACT or path.startswith(GOVERNANCE_ALLOWED_PREFIXES))
+    ]
+    if runtime_changed:
+        blockers.append(f"governance compaction must not touch runtime/protected files: {runtime_changed}")
+
+
 def build_report() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -391,857 +284,24 @@ def build_report() -> dict[str, Any]:
     for path in (DOC, STATE, STOP, MANIFEST, BACKLOG):
         if not path.exists():
             blockers.append(f"missing required file: {path.relative_to(ROOT)}")
-
     if blockers:
         return {"overall": "FAIL", "ok": False, "blockers": blockers, "warnings": warnings, "details": details}
 
     state = load_yaml(STATE)
     stop = load_yaml(STOP)
+    changed = _changed_files()
+    _validate_current_state(state, blockers)
+    _validate_stop_conditions(stop, blockers)
+    _validate_changed_files(changed, blockers)
+
     details["state"] = {
         "current_phase": state.get("current_phase"),
-        "active_candidate": state.get("active_candidate"),
-        "capability_owner": state.get("capability_owner"),
         "last_merged_pr": state.get("last_merged_pr"),
+        "recommended_next_pr": state.get("recommended_next_pr"),
     }
-
-    missing_state_fields = sorted(REQUIRED_STATE_FIELDS - set(state))
-    if missing_state_fields:
-        blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
-
-    if state.get("active_candidate") != "/api/admin/automation-conversion/agent-outputs*":
-        blockers.append("active_candidate must select agent-outputs exact-route cleanup")
-    if state.get("capability_owner") != "aicrm_next.automation_engine":
-        blockers.append("capability_owner must be aicrm_next.automation_engine")
-    if state.get("last_merged_pr") != "#819":
-        blockers.append("last_merged_pr must record latest cleanup PR #819")
-
-    completed = _as_strings(state.get("completed_steps"))
-    missing_completed = sorted(REQUIRED_COMPLETED_STEPS - completed)
-    if missing_completed:
-        blockers.append(f"completed_steps missing required Phase 4AL asset: {missing_completed}")
-
-    next_allowed = _as_strings(state.get("next_allowed_actions"))
-    if set(next_allowed) != ALLOWED_NEXT_ACTIONS:
-        blockers.append(f"next_allowed_actions must be exactly {sorted(ALLOWED_NEXT_ACTIONS)}")
-
-    forbidden = {item.lower() for item in _as_strings(state.get("forbidden_without_owner_approval"))}
-    missing_forbidden = sorted(REQUIRED_FORBIDDEN - forbidden)
-    if missing_forbidden:
-        blockers.append(f"forbidden_without_owner_approval missing high-risk actions: {missing_forbidden}")
-
-    work_package_policy = state.get("work_package_policy") if isinstance(state.get("work_package_policy"), dict) else {}
-    if work_package_policy.get("selection_unit") != "compressed_bounded_bundle":
-        blockers.append("work_package_policy.selection_unit must be compressed_bounded_bundle")
-    if work_package_policy.get("target_duration_minutes_min") != 15:
-        blockers.append("work_package_policy.target_duration_minutes_min must be 15")
-    if work_package_policy.get("target_duration_minutes_max") != 20:
-        blockers.append("work_package_policy.target_duration_minutes_max must be 20")
-    for field in sorted(REQUIRED_WORK_PACKAGE_POLICY_TRUE):
-        if work_package_policy.get(field) is not True:
-            blockers.append(f"work_package_policy.{field} must be true")
-    if work_package_policy.get("admin_merge_for_owner_decision_package_allowed") is not False:
-        blockers.append("work_package_policy.admin_merge_for_owner_decision_package_allowed must be false")
-
-    stop_conditions = _as_list(stop.get("high_risk_stop_conditions"))
-    stop_ids = {str(item.get("id")) for item in stop_conditions if isinstance(item, dict)}
-    missing_stop_ids = sorted(STOP_IDS - stop_ids)
-    if missing_stop_ids:
-        blockers.append(f"autonomous_stop_conditions missing stop ids: {missing_stop_ids}")
-
-    stop_terms: set[str] = set()
-    for item in stop_conditions:
-        if isinstance(item, dict):
-            stop_terms.update(str(term).lower() for term in _as_list(item.get("terms")))
-    for action in next_allowed:
-        normalized = action.replace("_", " ").lower()
-        if action not in STOP_TERM_EXEMPT_NEXT_ACTIONS and any(term and term in normalized for term in stop_terms):
-            blockers.append(f"next_allowed_action contains stop condition term: {action}")
-
-    candidate = str(state.get("active_candidate", ""))
-    manifest_text = MANIFEST.read_text(encoding="utf-8")
-    backlog_text = BACKLOG.read_text(encoding="utf-8")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary", "legacy_runtime_deletion_readiness", "legacy_runtime_cleanup_blocker_acceptance", "final_route_ownership_manifest_cleanup", "final_legacy_retirement_acceptance", "post_phase7_new_feature_development_governance", "post_phase7_feature_intake", "post_phase7_owner_feature_selection", "post_phase7_owner_approved_cleanup_track", "task_groups_cleanup_evidence_refresh", "workflow_nodes_cleanup_evidence_refresh", "cleanup_blocker_acceptance", "cleanup_owner_evidence_collection", "cleanup_owner_evidence_waiting_acceptance", "cleanup_owner_evidence_package_generation", "cleanup_owner_evidence_package_blocker_acceptance", "task_groups_owner_evidence_validation", "task_groups_owner_evidence_validation_blocker_acceptance", "task_groups_shadow_compare_rollback_evidence", "task_groups_owner_evidence_revalidation", "task_groups_exact_route_cleanup_retry", "legacy_runtime_recheck_after_task_groups_cleanup", "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup", "owner_approved_cleanup_track_acceptance"} and candidate not in manifest_text:
-        blockers.append("active_candidate not found in production_route_ownership_manifest.yaml")
-    if candidate not in {"phase_4_internal_write_aggregate", "phase_5_external_adapter_entry", "internal_metadata_owner_switch_batch", "internal_owner_switch_acceptance", "external_adapter_enablement_readiness", "low_risk_external_adapter_enablement_tooling", "production_compat_exact_route_narrowing_readiness", "external_enablement_and_compat_readiness_acceptance", "timer_execution_readiness", "phase_6_aggregate_acceptance", "phase_7_legacy_retirement_readiness", "phase_7_baseline_legacy_import_remediation", "phase_7_delete_ready_candidate_selection", "phase_7_first_safe_cleanup", "phase_7_fallback_cleanup_readiness", "phase_7_production_compat_cleanup_readiness", "task_groups_exact_route_fallback_cleanup_canary", "task_groups_exact_route_production_compat_cleanup_canary", "legacy_runtime_deletion_readiness", "legacy_runtime_cleanup_blocker_acceptance", "final_route_ownership_manifest_cleanup", "post_phase7_new_feature_development_governance", "post_phase7_feature_intake", "post_phase7_owner_feature_selection", "post_phase7_owner_approved_cleanup_track", "task_groups_cleanup_evidence_refresh", "workflow_nodes_cleanup_evidence_refresh", "cleanup_blocker_acceptance", "cleanup_owner_evidence_collection", "cleanup_owner_evidence_waiting_acceptance", "cleanup_owner_evidence_package_generation", "cleanup_owner_evidence_package_blocker_acceptance", "task_groups_owner_evidence_validation", "task_groups_owner_evidence_validation_blocker_acceptance", "task_groups_shadow_compare_rollback_evidence", "task_groups_owner_evidence_revalidation", "task_groups_exact_route_cleanup_retry", "legacy_runtime_recheck_after_task_groups_cleanup", "legacy_runtime_recheck_after_task_groups_and_workflow_nodes_cleanup", "owner_approved_cleanup_track_acceptance"} and candidate not in backlog_text:
-        blockers.append("active_candidate not found in legacy_replacement_backlog.yaml")
-
-    readiness = state.get("action_templates_readiness") if isinstance(state.get("action_templates_readiness"), dict) else {}
-    for field in ("production_owner_switch_ready", "production_write_ready", "fallback_removal_ready", "production_repository_route_enablement_ready"):
-        if readiness.get(field) is not False:
-            blockers.append(f"action_templates_readiness must not declare {field}")
-    if readiness.get("paused") is not True:
-        blockers.append("action_templates_readiness.paused must be true after owner decision package #644")
-    if readiness.get("paused_by_pr") != "#644":
-        blockers.append("action_templates_readiness.paused_by_pr must be #644")
-    if readiness.get("owner_decision_required") is not True:
-        blockers.append("action_templates_readiness.owner_decision_required must be true")
-
-    paused_candidates = state.get("paused_candidates") if isinstance(state.get("paused_candidates"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/action-templates*"
-        and item.get("paused_by_pr") == "#644"
-        and item.get("owner_approval_required") is True
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must include action-templates awaiting owner decision from #644")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/task-groups*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_create_runtime_completed"
-        and str(item.get("paused_by_pr", "")).strip() not in {"", "false"}
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record task-groups fixture/native list/create runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/task-groups*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#686"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record task-groups repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflows*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_create_runtime_completed"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record workflows fixture/native list/create runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflows*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#687"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record workflows repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_create_runtime_completed"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record workflow-nodes fixture/native list/create runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#688"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record workflow-nodes repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/tasks*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_create_runtime_completed"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record tasks fixture/native list/create runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/tasks*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#689"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record tasks repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agents*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_create_runtime_completed"
-        and item.get("paused_by_pr") == "#681"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agents fixture/native list/create runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agents*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#690"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agents repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_detail_runtime_completed"
-        and item.get("paused_by_pr") == "#683"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agent-outputs fixture/native list/detail runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#691"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agent-outputs repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-runs*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "fixture_native_list_detail_runtime_completed"
-        and item.get("paused_by_pr") == "#684"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agent-runs fixture/native list/detail runtime completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-runs*"
-        and item.get("owner_approval_required") is False
-        and item.get("status") == "repository_adapter_parity_completed"
-        and item.get("paused_by_pr") == "#692"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agent-runs repository adapter parity completion")
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-replay"
-        and item.get("owner_approval_required") is True
-        and item.get("status") == "discovery_contract_completed_replay_runtime_deferred"
-        and item.get("paused_by_pr") == "#685"
-        for item in paused_candidates
-    ):
-        blockers.append("paused_candidates must record agent-replay discovery contract completion and runtime deferral")
-
-    task_groups_readiness = state.get("task_groups_readiness") if isinstance(state.get("task_groups_readiness"), dict) else {}
-    if task_groups_readiness.get("native_contract_planning_started") is not True:
-        blockers.append("task_groups_readiness.native_contract_planning_started must be true")
-    if task_groups_readiness.get("native_contract_planning_completed") is not True:
-        blockers.append("task_groups_readiness.native_contract_planning_completed must be true")
-    if task_groups_readiness.get("schema_route_surface_confirmed") is not True:
-        blockers.append("task_groups_readiness.schema_route_surface_confirmed must be true")
-    if task_groups_readiness.get("fixture_native_contract_planning_ready") is not True:
-        blockers.append("task_groups_readiness.fixture_native_contract_planning_ready must be true")
-    if task_groups_readiness.get("fixture_native_contract_planning_completed") is not True:
-        blockers.append("task_groups_readiness.fixture_native_contract_planning_completed must be true")
-    if task_groups_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
-        blockers.append("task_groups_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
-    if task_groups_readiness.get("owner_decision_required") is not False:
-        blockers.append("task_groups_readiness.owner_decision_required must be false after safe fixture runtime")
-    if task_groups_readiness.get("fixture_native_list_create_runtime_completed") is not True:
-        blockers.append("task_groups_readiness.fixture_native_list_create_runtime_completed must be true")
-    if task_groups_readiness.get("production_guard_blocks_fixture_success") is not True:
-        blockers.append("task_groups_readiness.production_guard_blocks_fixture_success must be true")
-    for field in (
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "idempotency_audit_rollback_scaffold_completed",
-        "staging_readiness_bundle_completed",
-        "staging_readiness_preflight_completed",
-        "staging_evidence_gate_completed",
-        "staging_blocked_evidence_output_completed",
-    ):
-        if task_groups_readiness.get(field) is not True:
-            blockers.append(f"task_groups_readiness.{field} must be true")
-    if task_groups_readiness.get("staging_database_url_flag") != "AICRM_TASK_GROUPS_STAGING_DATABASE_URL":
-        blockers.append("task_groups_readiness.staging_database_url_flag must be AICRM_TASK_GROUPS_STAGING_DATABASE_URL")
-    if task_groups_readiness.get("staging_backend_flag") != "AICRM_TASK_GROUPS_REPO_BACKEND":
-        blockers.append("task_groups_readiness.staging_backend_flag must be AICRM_TASK_GROUPS_REPO_BACKEND")
-    if task_groups_readiness.get("staging_approval_flag") != "AICRM_PHASE4CH_STAGING_SMOKE_APPROVED":
-        blockers.append("task_groups_readiness.staging_approval_flag must be AICRM_PHASE4CH_STAGING_SMOKE_APPROVED")
-    if task_groups_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CH_STAGING_WRITE_APPROVED":
-        blockers.append("task_groups_readiness.staging_write_approval_flag must be AICRM_PHASE4CH_STAGING_WRITE_APPROVED")
-    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
-        if task_groups_readiness.get(field) is not False:
-            blockers.append(f"task_groups_readiness.{field} must be false")
-    staging_slices = state.get("staging_readiness_slices") if isinstance(state.get("staging_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/task-groups*"
-        and item.get("slice") == "task_groups_staging_readiness_preflight"
-        for item in staging_slices
-    ):
-        blockers.append("staging_readiness_slices must record task-groups staging readiness preflight")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/task-groups*"
-        and item.get("slice") == "task_groups_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record task-groups readonly dry-run readiness")
-    if set(task_groups_readiness.get("implemented_runtime_slices") or []) != {
-        "task_groups_fixture_local_list",
-        "task_groups_fixture_local_metadata_create",
-    }:
-        blockers.append("task_groups_readiness.implemented_runtime_slices must record fixture local list/create")
-    for field in (
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if task_groups_readiness.get(field) is not False:
-            blockers.append(f"task_groups_readiness.{field} must be false")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if task_groups_readiness.get(field) is not True:
-            blockers.append(f"task_groups_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if task_groups_readiness.get(field) is not False:
-            blockers.append(f"task_groups_readiness.{field} must be false")
-    if task_groups_readiness.get("production_readonly_db_url_flag") != "AICRM_TASK_GROUPS_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("task_groups_readiness.production_readonly_db_url_flag must be AICRM_TASK_GROUPS_READONLY_DRY_RUN_DATABASE_URL")
-    if task_groups_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CO_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("task_groups_readiness.production_readonly_approval_flag must be AICRM_PHASE4CO_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if task_groups_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CO_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("task_groups_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CO_PRODUCTION_CONFIG_REVIEWED")
-
-    workflows_readiness = state.get("workflows_readiness") if isinstance(state.get("workflows_readiness"), dict) else {}
-    if workflows_readiness.get("metadata_planning_ready") is not True:
-        blockers.append("workflows_readiness.metadata_planning_ready must be true")
-    if workflows_readiness.get("metadata_planning_completed") is not True:
-        blockers.append("workflows_readiness.metadata_planning_completed must be true")
-    if workflows_readiness.get("schema_route_surface_confirmation_ready") is not True:
-        blockers.append("workflows_readiness.schema_route_surface_confirmation_ready must be true")
-    if workflows_readiness.get("schema_route_surface_confirmed") is not True:
-        blockers.append("workflows_readiness.schema_route_surface_confirmed must be true")
-    if workflows_readiness.get("fixture_native_contract_planning_ready") is not True:
-        blockers.append("workflows_readiness.fixture_native_contract_planning_ready must be true")
-    if workflows_readiness.get("fixture_native_contract_planning_completed") is not True:
-        blockers.append("workflows_readiness.fixture_native_contract_planning_completed must be true")
-    if workflows_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
-        blockers.append("workflows_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
-    if workflows_readiness.get("owner_decision_required") is not False:
-        blockers.append("workflows_readiness.owner_decision_required must be false after safe fixture runtime")
-    if workflows_readiness.get("fixture_native_list_create_runtime_completed") is not True:
-        blockers.append("workflows_readiness.fixture_native_list_create_runtime_completed must be true")
-    if workflows_readiness.get("production_guard_blocks_fixture_success") is not True:
-        blockers.append("workflows_readiness.production_guard_blocks_fixture_success must be true")
-    for field in (
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "idempotency_audit_rollback_scaffold_completed",
-    ):
-        if workflows_readiness.get(field) is not True:
-            blockers.append(f"workflows_readiness.{field} must be true")
-    if set(workflows_readiness.get("implemented_runtime_slices") or []) != {
-        "workflows_fixture_local_list",
-        "workflows_fixture_local_metadata_create",
-    }:
-        blockers.append("workflows_readiness.implemented_runtime_slices must record fixture local list/create")
-    if workflows_readiness.get("paused") is not False:
-        blockers.append("workflows_readiness.paused must be false after safe fixture runtime")
-    for field in (
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if workflows_readiness.get(field) is not False:
-            blockers.append(f"workflows_readiness.{field} must be false")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflows*"
-        and item.get("slice") == "workflows_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record workflows readonly dry-run readiness")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if workflows_readiness.get(field) is not True:
-            blockers.append(f"workflows_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if workflows_readiness.get(field) is not False:
-            blockers.append(f"workflows_readiness.{field} must be false")
-    if workflows_readiness.get("production_readonly_db_url_flag") != "AICRM_WORKFLOWS_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("workflows_readiness.production_readonly_db_url_flag must be AICRM_WORKFLOWS_READONLY_DRY_RUN_DATABASE_URL")
-    if workflows_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CP_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("workflows_readiness.production_readonly_approval_flag must be AICRM_PHASE4CP_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if workflows_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CP_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("workflows_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CP_PRODUCTION_CONFIG_REVIEWED")
-
-    workflow_nodes_readiness = state.get("workflow_nodes_readiness") if isinstance(state.get("workflow_nodes_readiness"), dict) else {}
-    if workflow_nodes_readiness.get("metadata_planning_ready") is not True:
-        blockers.append("workflow_nodes_readiness.metadata_planning_ready must be true")
-    if workflow_nodes_readiness.get("metadata_planning_completed") is not True:
-        blockers.append("workflow_nodes_readiness.metadata_planning_completed must be true")
-    if workflow_nodes_readiness.get("schema_route_surface_confirmation_ready") is not True:
-        blockers.append("workflow_nodes_readiness.schema_route_surface_confirmation_ready must be true")
-    if workflow_nodes_readiness.get("schema_route_surface_confirmed") is not True:
-        blockers.append("workflow_nodes_readiness.schema_route_surface_confirmed must be true")
-    if workflow_nodes_readiness.get("fixture_native_contract_planning_ready") is not True:
-        blockers.append("workflow_nodes_readiness.fixture_native_contract_planning_ready must be true")
-    if workflow_nodes_readiness.get("fixture_native_contract_planning_completed") is not True:
-        blockers.append("workflow_nodes_readiness.fixture_native_contract_planning_completed must be true")
-    if workflow_nodes_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
-        blockers.append("workflow_nodes_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
-    if workflow_nodes_readiness.get("owner_decision_required") is not False:
-        blockers.append("workflow_nodes_readiness.owner_decision_required must be false after safe fixture runtime")
-    if workflow_nodes_readiness.get("fixture_native_list_create_runtime_completed") is not True:
-        blockers.append("workflow_nodes_readiness.fixture_native_list_create_runtime_completed must be true")
-    if workflow_nodes_readiness.get("production_guard_blocks_fixture_success") is not True:
-        blockers.append("workflow_nodes_readiness.production_guard_blocks_fixture_success must be true")
-    for field in (
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "idempotency_audit_rollback_scaffold_completed",
-    ):
-        if workflow_nodes_readiness.get(field) is not True:
-            blockers.append(f"workflow_nodes_readiness.{field} must be true")
-    if not {
-        "workflow_nodes_fixture_local_list",
-        "workflow_nodes_fixture_local_metadata_create",
-    } <= set(workflow_nodes_readiness.get("implemented_runtime_slices") or []):
-        blockers.append("workflow_nodes_readiness.implemented_runtime_slices must record fixture local list/create")
-    if workflow_nodes_readiness.get("paused") is not False:
-        blockers.append("workflow_nodes_readiness.paused must be false after safe fixture runtime")
-    for field in (
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if workflow_nodes_readiness.get(field) is not False:
-            blockers.append(f"workflow_nodes_readiness.{field} must be false")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/workflow-nodes*"
-        and item.get("slice") == "workflow_nodes_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record workflow-nodes readonly dry-run readiness")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if workflow_nodes_readiness.get(field) is not True:
-            blockers.append(f"workflow_nodes_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if workflow_nodes_readiness.get(field) is not False:
-            blockers.append(f"workflow_nodes_readiness.{field} must be false")
-    if workflow_nodes_readiness.get("production_readonly_db_url_flag") != "AICRM_WORKFLOW_NODES_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("workflow_nodes_readiness.production_readonly_db_url_flag must be AICRM_WORKFLOW_NODES_READONLY_DRY_RUN_DATABASE_URL")
-    if workflow_nodes_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CQ_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("workflow_nodes_readiness.production_readonly_approval_flag must be AICRM_PHASE4CQ_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if workflow_nodes_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CQ_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("workflow_nodes_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CQ_PRODUCTION_CONFIG_REVIEWED")
-
-    tasks_readiness = state.get("tasks_readiness") if isinstance(state.get("tasks_readiness"), dict) else {}
-    for field in (
-        "metadata_planning_ready",
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-        "run_due_excluded",
-        "task_execution_excluded",
-        "workflow_execution_excluded",
-        "timer_execution_excluded",
-        "outbound_send_excluded",
-        "schema_route_surface_confirmed",
-        "fixture_native_contract_planning_ready",
-        "fixture_native_contract_planning_completed",
-        "fixture_native_list_create_runtime_completed",
-        "production_guard_blocks_fixture_success",
-    ):
-        if tasks_readiness.get(field) is not True:
-            blockers.append(f"tasks_readiness.{field} must be true")
-    if tasks_readiness.get("fixture_native_implementation_requires_owner_decision") is not False:
-        blockers.append("tasks_readiness.fixture_native_implementation_requires_owner_decision must be false after safe fixture runtime")
-    if tasks_readiness.get("owner_decision_required") is not False:
-        blockers.append("tasks_readiness.owner_decision_required must be false after safe fixture runtime")
-    if tasks_readiness.get("paused") is not False:
-        blockers.append("tasks_readiness.paused must be false after safe fixture runtime")
-    if set(tasks_readiness.get("implemented_runtime_slices") or []) != {
-        "tasks_fixture_local_list",
-        "tasks_fixture_local_metadata_create",
-    }:
-        blockers.append("tasks_readiness.implemented_runtime_slices must record fixture local list/create")
-    if str(tasks_readiness.get("paused_by_pr", "")).strip() != "#680":
-        blockers.append("tasks_readiness.paused_by_pr must be #680")
-    for field in (
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "idempotency_audit_rollback_scaffold_completed",
-    ):
-        if tasks_readiness.get(field) is not True:
-            blockers.append(f"tasks_readiness.{field} must be true")
-    for field in (
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if tasks_readiness.get(field) is not False:
-            blockers.append(f"tasks_readiness.{field} must be false")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/tasks*"
-        and item.get("slice") == "tasks_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record tasks readonly dry-run readiness")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if tasks_readiness.get(field) is not True:
-            blockers.append(f"tasks_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if tasks_readiness.get(field) is not False:
-            blockers.append(f"tasks_readiness.{field} must be false")
-    if tasks_readiness.get("production_readonly_db_url_flag") != "AICRM_TASKS_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("tasks_readiness.production_readonly_db_url_flag must be AICRM_TASKS_READONLY_DRY_RUN_DATABASE_URL")
-    if tasks_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CR_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("tasks_readiness.production_readonly_approval_flag must be AICRM_PHASE4CR_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if tasks_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CR_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("tasks_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CR_PRODUCTION_CONFIG_REVIEWED")
-
-    agents_readiness = state.get("agents_readiness") if isinstance(state.get("agents_readiness"), dict) else {}
-    for field in (
-        "metadata_planning_ready",
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-        "schema_route_surface_confirmed",
-        "fixture_native_contract_planning_ready",
-        "fixture_native_contract_planning_completed",
-        "fixture_native_list_create_runtime_completed",
-        "production_guard_blocks_fixture_success",
-        "agent_run_execution_excluded",
-        "llm_generation_excluded",
-        "deepseek_adapter_excluded",
-        "openclaw_mcp_excluded",
-        "external_call_excluded",
-    ):
-        if agents_readiness.get(field) is not True:
-            blockers.append(f"agents_readiness.{field} must be true")
-    for field in (
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-        "paused",
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if agents_readiness.get(field) is not False:
-            blockers.append(f"agents_readiness.{field} must be false")
-    if agents_readiness.get("paused_by_pr") != "#681":
-        blockers.append("agents_readiness.paused_by_pr must be #681")
-    if set(agents_readiness.get("implemented_runtime_slices") or []) != {
-        "agents_fixture_local_list",
-        "agents_fixture_local_metadata_create",
-    }:
-        blockers.append("agents_readiness.implemented_runtime_slices must record fixture local list/create")
-    for field in (
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "idempotency_audit_rollback_scaffold_completed",
-        "staging_readiness_bundle_completed",
-        "staging_readiness_preflight_completed",
-        "staging_evidence_gate_completed",
-        "staging_blocked_evidence_output_completed",
-    ):
-        if agents_readiness.get(field) is not True:
-            blockers.append(f"agents_readiness.{field} must be true")
-    if agents_readiness.get("staging_database_url_flag") != "AICRM_AGENTS_STAGING_DATABASE_URL":
-        blockers.append("agents_readiness.staging_database_url_flag must be AICRM_AGENTS_STAGING_DATABASE_URL")
-    if agents_readiness.get("staging_backend_flag") != "AICRM_AGENTS_REPO_BACKEND":
-        blockers.append("agents_readiness.staging_backend_flag must be AICRM_AGENTS_REPO_BACKEND")
-    if agents_readiness.get("staging_approval_flag") != "AICRM_PHASE4CL_STAGING_SMOKE_APPROVED":
-        blockers.append("agents_readiness.staging_approval_flag must be AICRM_PHASE4CL_STAGING_SMOKE_APPROVED")
-    if agents_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CL_STAGING_WRITE_APPROVED":
-        blockers.append("agents_readiness.staging_write_approval_flag must be AICRM_PHASE4CL_STAGING_WRITE_APPROVED")
-    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
-        if agents_readiness.get(field) is not False:
-            blockers.append(f"agents_readiness.{field} must be false")
-
-    agent_outputs_readiness = state.get("agent_outputs_readiness") if isinstance(state.get("agent_outputs_readiness"), dict) else {}
-    for field in (
-        "metadata_planning_ready",
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-        "schema_route_surface_confirmed",
-        "fixture_native_contract_planning_ready",
-        "fixture_native_contract_planning_completed",
-        "fixture_native_list_detail_runtime_completed",
-        "repository_adapter_parity_completed",
-        "no_database_url_fallback",
-        "default_backend_fixture_local",
-        "test_db_parity_harness_completed",
-        "production_guard_blocks_fixture_success",
-        "export_job_creation_excluded",
-        "file_download_excluded",
-        "agent_run_execution_excluded",
-        "llm_generation_excluded",
-        "deepseek_adapter_excluded",
-        "openclaw_mcp_excluded",
-        "external_call_excluded",
-        "staging_readiness_bundle_completed",
-        "staging_readiness_preflight_completed",
-        "staging_evidence_gate_completed",
-        "staging_blocked_evidence_output_completed",
-    ):
-        if agent_outputs_readiness.get(field) is not True:
-            blockers.append(f"agent_outputs_readiness.{field} must be true")
-    if agent_outputs_readiness.get("staging_database_url_flag") != "AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL":
-        blockers.append("agent_outputs_readiness.staging_database_url_flag must be AICRM_AGENT_OUTPUTS_STAGING_DATABASE_URL")
-    if agent_outputs_readiness.get("staging_backend_flag") != "AICRM_AGENT_OUTPUTS_REPO_BACKEND":
-        blockers.append("agent_outputs_readiness.staging_backend_flag must be AICRM_AGENT_OUTPUTS_REPO_BACKEND")
-    if agent_outputs_readiness.get("staging_approval_flag") != "AICRM_PHASE4CM_STAGING_SMOKE_APPROVED":
-        blockers.append("agent_outputs_readiness.staging_approval_flag must be AICRM_PHASE4CM_STAGING_SMOKE_APPROVED")
-    if agent_outputs_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CM_STAGING_WRITE_APPROVED":
-        blockers.append("agent_outputs_readiness.staging_write_approval_flag must be AICRM_PHASE4CM_STAGING_WRITE_APPROVED")
-    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
-        if agent_outputs_readiness.get(field) is not False:
-            blockers.append(f"agent_outputs_readiness.{field} must be false")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-outputs*"
-        and item.get("slice") == "agent_outputs_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record agent-outputs readonly dry-run readiness")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if agent_outputs_readiness.get(field) is not True:
-            blockers.append(f"agent_outputs_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if agent_outputs_readiness.get(field) is not False:
-            blockers.append(f"agent_outputs_readiness.{field} must be false")
-    if agent_outputs_readiness.get("production_readonly_db_url_flag") != "AICRM_AGENT_OUTPUTS_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("agent_outputs_readiness.production_readonly_db_url_flag must be AICRM_AGENT_OUTPUTS_READONLY_DRY_RUN_DATABASE_URL")
-    if agent_outputs_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CT_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("agent_outputs_readiness.production_readonly_approval_flag must be AICRM_PHASE4CT_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if agent_outputs_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CT_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("agent_outputs_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CT_PRODUCTION_CONFIG_REVIEWED")
-    if agent_outputs_readiness.get("idempotency_audit_rollback_scaffold_completed") is not False:
-        blockers.append("agent_outputs_readiness.idempotency_audit_rollback_scaffold_completed must be false for read/detail-only scope")
-    if agent_outputs_readiness.get("paused_by_pr") != "#683":
-        blockers.append("agent_outputs_readiness.paused_by_pr must be #683")
-    if set(agent_outputs_readiness.get("implemented_runtime_slices") or []) != {
-        "agent_outputs_fixture_local_list",
-        "agent_outputs_fixture_local_detail",
-    }:
-        blockers.append("agent_outputs_readiness.implemented_runtime_slices must record fixture local list/detail")
-    for field in (
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-        "paused",
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if agent_outputs_readiness.get(field) is not False:
-            blockers.append(f"agent_outputs_readiness.{field} must be false")
-
-    agent_runs_readiness = state.get("agent_runs_readiness") if isinstance(state.get("agent_runs_readiness"), dict) else {}
-    for field in (
-        "metadata_planning_ready",
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-        "schema_route_surface_confirmed",
-        "fixture_native_contract_planning_ready",
-        "fixture_native_contract_planning_completed",
-        "fixture_native_list_detail_runtime_completed",
-        "production_guard_blocks_fixture_success",
-        "run_creation_excluded",
-        "run_execution_excluded",
-        "replay_execution_excluded",
-        "orchestration_execution_excluded",
-        "llm_generation_excluded",
-        "deepseek_adapter_excluded",
-        "openclaw_mcp_excluded",
-        "external_call_excluded",
-    ):
-        if agent_runs_readiness.get(field) is not True:
-            blockers.append(f"agent_runs_readiness.{field} must be true")
-    if agent_runs_readiness.get("paused_by_pr") != "#684":
-        blockers.append("agent_runs_readiness.paused_by_pr must be #684")
-    if set(agent_runs_readiness.get("implemented_runtime_slices") or []) != {
-        "agent_runs_fixture_local_list",
-        "agent_runs_fixture_local_detail",
-    }:
-        blockers.append("agent_runs_readiness.implemented_runtime_slices must record fixture local list/detail")
-    if agent_runs_readiness.get("repository_adapter_backend_flag") != "AICRM_AGENT_RUNS_REPO_BACKEND":
-        blockers.append("agent_runs_readiness.repository_adapter_backend_flag must be AICRM_AGENT_RUNS_REPO_BACKEND")
-    if agent_runs_readiness.get("repository_adapter_test_db_url_flag") != "AICRM_AGENT_RUNS_TEST_DATABASE_URL":
-        blockers.append("agent_runs_readiness.repository_adapter_test_db_url_flag must be AICRM_AGENT_RUNS_TEST_DATABASE_URL")
-    if agent_runs_readiness.get("repository_adapter_staging_db_url_flag") != "AICRM_AGENT_RUNS_STAGING_DATABASE_URL":
-        blockers.append("agent_runs_readiness.repository_adapter_staging_db_url_flag must be AICRM_AGENT_RUNS_STAGING_DATABASE_URL")
-    if agent_runs_readiness.get("idempotency_audit_rollback_scaffold_completed") is not False:
-        blockers.append("agent_runs_readiness.idempotency_audit_rollback_scaffold_completed must be false for read/detail-only scope")
-    for field in (
-        "staging_readiness_bundle_completed",
-        "staging_readiness_preflight_completed",
-        "staging_evidence_gate_completed",
-        "staging_blocked_evidence_output_completed",
-    ):
-        if agent_runs_readiness.get(field) is not True:
-            blockers.append(f"agent_runs_readiness.{field} must be true")
-    if agent_runs_readiness.get("staging_database_url_flag") != "AICRM_AGENT_RUNS_STAGING_DATABASE_URL":
-        blockers.append("agent_runs_readiness.staging_database_url_flag must be AICRM_AGENT_RUNS_STAGING_DATABASE_URL")
-    if agent_runs_readiness.get("staging_backend_flag") != "AICRM_AGENT_RUNS_REPO_BACKEND":
-        blockers.append("agent_runs_readiness.staging_backend_flag must be AICRM_AGENT_RUNS_REPO_BACKEND")
-    if agent_runs_readiness.get("staging_approval_flag") != "AICRM_PHASE4CN_STAGING_SMOKE_APPROVED":
-        blockers.append("agent_runs_readiness.staging_approval_flag must be AICRM_PHASE4CN_STAGING_SMOKE_APPROVED")
-    if agent_runs_readiness.get("staging_write_approval_flag") != "AICRM_PHASE4CN_STAGING_WRITE_APPROVED":
-        blockers.append("agent_runs_readiness.staging_write_approval_flag must be AICRM_PHASE4CN_STAGING_WRITE_APPROVED")
-    for field in ("staging_smoke_executed", "staging_write_executed", "staging_db_connection_attempted_by_default"):
-        if agent_runs_readiness.get(field) is not False:
-            blockers.append(f"agent_runs_readiness.{field} must be false")
-    for field in (
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-        "paused",
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if agent_runs_readiness.get(field) is not False:
-            blockers.append(f"agent_runs_readiness.{field} must be false")
-    dry_run_slices = state.get("production_dry_run_readiness_slices") if isinstance(state.get("production_dry_run_readiness_slices"), list) else []
-    if not any(
-        isinstance(item, dict)
-        and item.get("route_family") == "/api/admin/automation-conversion/agent-runs*"
-        and item.get("slice") == "agent_runs_production_readonly_dry_run_readiness"
-        and item.get("scope") == "blocked_by_default_readonly_dry_run_evidence"
-        for item in dry_run_slices
-    ):
-        blockers.append("production_dry_run_readiness_slices must record agent-runs readonly dry-run readiness")
-    for field in (
-        "production_dry_run_readiness_bundle_completed",
-        "production_readonly_dry_run_runner_completed",
-        "production_readonly_evidence_gate_completed",
-        "production_readonly_blocked_evidence_output_completed",
-    ):
-        if agent_runs_readiness.get(field) is not True:
-            blockers.append(f"agent_runs_readiness.{field} must be true")
-    for field in ("production_readonly_dry_run_executed", "production_readonly_db_connection_attempted_by_default"):
-        if agent_runs_readiness.get(field) is not False:
-            blockers.append(f"agent_runs_readiness.{field} must be false")
-    if agent_runs_readiness.get("production_readonly_db_url_flag") != "AICRM_AGENT_RUNS_READONLY_DRY_RUN_DATABASE_URL":
-        blockers.append("agent_runs_readiness.production_readonly_db_url_flag must be AICRM_AGENT_RUNS_READONLY_DRY_RUN_DATABASE_URL")
-    if agent_runs_readiness.get("production_readonly_approval_flag") != "AICRM_PHASE4CS_PRODUCTION_READONLY_DRY_RUN_APPROVED":
-        blockers.append("agent_runs_readiness.production_readonly_approval_flag must be AICRM_PHASE4CS_PRODUCTION_READONLY_DRY_RUN_APPROVED")
-    if agent_runs_readiness.get("production_readonly_config_review_flag") != "AICRM_PHASE4CS_PRODUCTION_CONFIG_REVIEWED":
-        blockers.append("agent_runs_readiness.production_readonly_config_review_flag must be AICRM_PHASE4CS_PRODUCTION_CONFIG_REVIEWED")
-
-    agent_replay_readiness = state.get("agent_replay_readiness") if isinstance(state.get("agent_replay_readiness"), dict) else {}
-    for field in (
-        "metadata_planning_ready",
-        "metadata_planning_completed",
-        "schema_route_surface_confirmation_ready",
-        "schema_route_surface_confirmed",
-        "fixture_native_contract_planning_ready",
-        "fixture_native_contract_planning_completed",
-        "fixture_native_runtime_deferred",
-        "discovery_contract_bundle_completed",
-        "paused",
-        "replay_execution_excluded",
-        "run_creation_excluded",
-        "run_execution_excluded",
-        "orchestration_execution_excluded",
-        "agent_output_generation_excluded",
-        "llm_generation_excluded",
-        "deepseek_adapter_excluded",
-        "openclaw_mcp_excluded",
-        "external_call_excluded",
-    ):
-        if agent_replay_readiness.get(field) is not True:
-            blockers.append(f"agent_replay_readiness.{field} must be true")
-    if agent_replay_readiness.get("paused_by_pr") != "#685":
-        blockers.append("agent_replay_readiness.paused_by_pr must be #685")
-    for field in (
-        "fixture_native_implementation_requires_owner_decision",
-        "owner_decision_required",
-    ):
-        if agent_replay_readiness.get(field) is not True:
-            blockers.append(f"agent_replay_readiness.{field} must be true after replay runtime deferral")
-    for field in (
-        "runtime_implementation_ready",
-        "production_owner_switch_ready",
-        "production_write_ready",
-        "fallback_removal_ready",
-        "production_repository_route_enablement_ready",
-        "delete_ready",
-    ):
-        if agent_replay_readiness.get(field) is not False:
-            blockers.append(f"agent_replay_readiness.{field} must be false")
-
-    changed = _changed_files()
-    runtime_changed = [
-        path
-        for path in sorted(changed)
-        if path not in PHASE4_ALLOWED_RUNTIME_FILES
-        and (path.startswith("aicrm_next/")
-        or path.startswith("wecom_ability_service/")
-        or path.startswith("migrations/")
-        or path.startswith("deploy/")
-        or path.startswith("systemd/")
-        or path.startswith("nginx/")
-        or path in {"app.py", "legacy_flask_app.py"})
-    ]
-    if runtime_changed:
-        blockers.append(f"autonomous loop PR must not touch runtime/protected files: {runtime_changed}")
-
-    details["next_allowed_actions"] = sorted(next_allowed)
-    details["forbidden_without_owner_approval"] = sorted(forbidden)
-    details["work_package_policy"] = work_package_policy
+    details["active_safety_gates"] = sorted(_as_strings(state.get("active_safety_gates")))
+    details["protected_runtime_boundaries"] = sorted(_as_strings(state.get("protected_runtime_boundaries")))
+    details["next_cleanup_candidates"] = sorted(_as_strings(state.get("next_cleanup_candidates")))
     details["changed_files"] = sorted(changed)
     return {"overall": "PASS" if not blockers else "FAIL", "ok": not blockers, "blockers": blockers, "warnings": warnings, "details": details}
 
