@@ -291,6 +291,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "residual_governance_cleanup_wave11" and "remaining stale non-runtime docs/reports" in allowed:
+        return "remaining stale non-runtime docs/reports"
     if recommended == "active_governance_state_compaction_wave10" and "governance config compaction" in allowed:
         return "governance config compaction"
     return allowed[0]
