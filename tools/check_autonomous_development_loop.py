@@ -218,12 +218,12 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
     if state.get("current_phase") != "post_phase7_active_cleanup":
         blockers.append("current_phase must be post_phase7_active_cleanup")
-    if state.get("last_merged_pr") != "#850":
-        blockers.append("last_merged_pr must record merged cleanup PR #850")
-    if state.get("last_merged_cleanup_wave") != "residual_narrative_documentation_cleanup_wave12":
-        blockers.append("last_merged_cleanup_wave must record wave 12 residual narrative documentation cleanup")
-    if state.get("recommended_next_pr") != "legacy_retirement_package_cleanup_wave13":
-        blockers.append("recommended_next_pr must name wave 13 legacy retirement package cleanup")
+    if state.get("last_merged_pr") != "#854":
+        blockers.append("last_merged_pr must record merged cleanup PR #854")
+    if state.get("last_merged_cleanup_wave") != "legacy_retirement_package_cleanup_wave13":
+        blockers.append("last_merged_cleanup_wave must record wave 13 legacy retirement package cleanup")
+    if state.get("recommended_next_pr") != "runtime_switch_archaeology_cleanup_wave14":
+        blockers.append("recommended_next_pr must name wave 14 runtime-switch archaeology cleanup")
     if state.get("owner_approval_required") is not False:
         blockers.append("owner_approval_required must be false for low-risk governance cleanup")
     if state.get("runtime_behavior_changed") is not False:
