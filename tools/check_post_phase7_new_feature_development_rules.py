@@ -12,7 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools.check_phase4aq_task_groups_fixture_native_implementation_owner_decision import load_yaml
+from tools.run_codex_autopilot_tick import load_yaml
 
 DOC = ROOT / "docs/development/post_phase7_new_feature_development_rules.md"
 PLAN_YAML = ROOT / "docs/development/post_phase7_new_feature_development_rules.yaml"
