@@ -1,4 +1,4 @@
-version: 10
+version: 11
 status: active
 
 autopilot:
@@ -10,9 +10,9 @@ autopilot:
   runtime_changes_allowed: false
 
 current_phase: post_phase7_active_cleanup
-last_merged_pr: "#856"
-last_merged_cleanup_wave: runtime_switch_archaeology_cleanup_wave14
-recommended_next_pr: architecture_documentation_compaction_wave15
+last_merged_pr: "#859"
+last_merged_cleanup_wave: architecture_documentation_compaction_wave15
+recommended_next_pr: stale_product_design_documentation_cleanup_wave16
 owner_approval_required: false
 runtime_behavior_changed: false
 delete_ready: false

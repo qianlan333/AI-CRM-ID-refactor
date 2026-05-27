@@ -34,12 +34,6 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 - [docs/mcp_usage.md](docs/mcp_usage.md)
 - [docs/openclaw_crm_read_contract.md](docs/openclaw_crm_read_contract.md)
 
-如果任务偏自动化转化业务验收，再补：
-
-- [docs/automation_conversion_acceptance_support_package.md](docs/automation_conversion_acceptance_support_package.md)
-- [docs/automation_conversion_business_acceptance.md](docs/automation_conversion_business_acceptance.md)
-- [docs/automation_conversion_local_runbook.md](docs/automation_conversion_local_runbook.md)
-
 ## 快速启动
 
 ```bash
