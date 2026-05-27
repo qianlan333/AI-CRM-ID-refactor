@@ -21,7 +21,7 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 ## Summary By Capability Owner
 
 - `aicrm_next.ai_assist`: 1 routes; P3=1
-- `aicrm_next.automation_engine`: 24 routes; P1=18, P2=4, P3=2
+- `aicrm_next.automation_engine`: 24 routes; P1=17, P2=4, P3=3
 - `aicrm_next.commerce`: 15 routes; P2=15
 - `aicrm_next.customer_read_model`: 9 routes; P0=7, P1=2
 - `aicrm_next.customer_tags`: 2 routes; P2=2
@@ -36,9 +36,9 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 
 - `keep_guarded_until_adapter_ready`: 1 routes; blocked_or_guarded=1
 - `phase_3_readonly`: 13 routes; readonly=9, shell_or_navigation=4
-- `phase_4_internal_write`: 28 routes; internal_write=22, readonly=3, shell_or_navigation=3
+- `phase_4_internal_write`: 27 routes; internal_write=21, readonly=3, shell_or_navigation=3
 - `phase_5_external_adapter`: 34 routes; adapter_contract=10, external_side_effect=24
-- `phase_6_timer_automation`: 4 routes; timer_or_automation_execution=4
+- `phase_6_timer_automation`: 5 routes; timer_or_automation_execution=5
 
 ## Top 10 Suggested First Replacements
 
@@ -180,7 +180,7 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-044` `/api/admin/automation-conversion/task-groups*`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.automation_engine`
 - `LRB-045` `/api/admin/automation-conversion/tasks*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
 - `LRB-046` `/api/admin/automation-conversion/workflows*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-047` `/api/admin/automation-conversion/workflow-nodes*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-047` `/api/admin/automation-conversion/workflow-nodes*`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.automation_engine`
 - `LRB-048` `/api/admin/automation-conversion/dashboard`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.automation_engine`
 - `LRB-049` `/api/admin/automation-conversion/executions*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
 - `LRB-050` `/api/admin/automation-conversion/execution-items*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`

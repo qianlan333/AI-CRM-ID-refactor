@@ -110,7 +110,6 @@ async def legacy_automation_channel_settings_routes(request: Request) -> Respons
 @router.api_route("/api/admin/automation-conversion/tasks/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/workflows", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/workflows/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/workflow-nodes/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/dashboard", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/executions", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/executions/{path:path}", methods=_ALL_METHODS)

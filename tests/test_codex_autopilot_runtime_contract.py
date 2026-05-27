@@ -36,7 +36,7 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "paused_waiting_owner_evidence" in text
+    assert "post_phase7_cleanup_legacy_runtime_recheck_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1589,6 +1589,10 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
         "docs/development/post_phase7_cleanup_track_acceptance.md",
         "docs/development/post_phase7_cleanup_track_acceptance.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approval.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approval.yaml",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.md",
+        "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.yaml",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
@@ -1624,6 +1628,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
         "tools/check_post_phase7_cleanup_track_acceptance.py",
+        "tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1655,6 +1660,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
         "tests/test_post_phase7_cleanup_track_acceptance.py",
+        "tests/test_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
@@ -1754,7 +1760,10 @@ def test_no_runtime_files_changed_if_git_diff_available() -> None:
     changed = runner.changed_files()
     assert "aicrm_next/main.py" not in changed
     if "aicrm_next/production_compat/api.py" in changed:
-        assert "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml" in changed
+        assert (
+            "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml" in changed
+            or "docs/development/post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.yaml" in changed
+        )
     assert not any(path.startswith("wecom_ability_service/") for path in changed)
     assert not any(path.startswith("migrations/") for path in changed)
 
