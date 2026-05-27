@@ -10,6 +10,10 @@ class WeComGroupMessageAdapterContract(Protocol):
     def create_group_message_task(self, payload: dict[str, Any], *, idempotency_key: str = "") -> Json: ...
 
 
+class WeComGroupChatSyncAdapterContract(Protocol):
+    def list_group_chats(self, *, owner_userid: str, limit: int = 100, cursor: str = "") -> Json: ...
+
+
 class GroupOpsQueueGatewayContract(Protocol):
     def enqueue_group_message(
         self,
@@ -23,3 +27,7 @@ class GroupOpsQueueGatewayContract(Protocol):
         content_summary: str,
         created_by: str = "group_ops_webhook",
     ) -> int: ...
+
+
+class GroupOpsQueueStatsGatewayContract(Protocol):
+    def count_group_ops_queue(self) -> int: ...

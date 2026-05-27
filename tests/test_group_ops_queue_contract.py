@@ -68,6 +68,60 @@ def test_wecom_group_adapter_default_disabled_does_not_call_wecom(monkeypatch):
     assert result["error_code"] == "wecom_group_message_disabled"
 
 
+def test_wecom_group_adapter_production_without_guard_is_blocked(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
+
+    monkeypatch.delenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", raising=False)
+
+    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+        {"sender": "owner_001", "chat_ids": ["wrOgAAA001"], "text": {"content": "hello"}},
+        idempotency_key="pytest-production-guard",
+    )
+
+    assert result["ok"] is False
+    assert result["side_effect_executed"] is False
+    assert result["error_code"] == "production_guard_failed"
+
+
+def test_group_sync_adapter_fake_filters_owner_without_real_wecom(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
+
+    def fail_if_called():
+        raise AssertionError("real WeCom client must not be constructed")
+
+    monkeypatch.setattr("wecom_ability_service.wecom_client.WeComClient.from_app", fail_if_called)
+    result = WeComGroupChatSyncAdapter(mode="fake").list_group_chats(owner_userid="owner_001", limit=10)
+
+    assert result["ok"] is True
+    assert result["side_effect_executed"] is False
+    assert {item["owner_userid"] for item in result["groups"]} == {"owner_001"}
+
+
+def test_group_sync_adapter_production_without_guard_is_blocked(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
+
+    monkeypatch.delenv("AICRM_ENABLE_REAL_WECOM_GROUP_SYNC", raising=False)
+    result = WeComGroupChatSyncAdapter(mode="production").list_group_chats(owner_userid="owner_001", limit=10)
+
+    assert result["ok"] is False
+    assert result["side_effect_executed"] is False
+    assert result["error_code"] == "production_guard_failed"
+
+
+def test_group_ops_queue_stats_counts_only_group_ops_jobs():
+    from aicrm_next.integration_gateway.wecom_group_adapter import LegacyGroupOpsQueueStatsGateway
+
+    gateway = LegacyGroupOpsQueueStatsGateway(
+        legacy_app_factory=lambda: DummyApp(),
+        list_jobs_fn=lambda: [
+            {"id": 1, "source_table": "automation_group_ops_plans", "content_payload": {"channel": "wecom_customer_group"}},
+            {"id": 2, "source_table": "other", "content_payload": {"channel": "text"}},
+        ],
+    )
+
+    assert gateway.count_group_ops_queue() == 1
+
+
 def test_broadcast_handler_reuses_existing_outbound_intent_without_dispatch(monkeypatch):
     from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
 

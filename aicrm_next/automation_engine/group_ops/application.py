@@ -3,27 +3,32 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract
+from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract, WeComGroupChatSyncAdapterContract
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import blocked_production_payload
 
 from . import CAPABILITY_OWNER
 from .domain import (
     assert_group_owned_by_plan,
+    assert_run_due_guard,
+    build_node_group_message_content,
     binding_stats,
     clean_text,
     clamp_limit,
     extract_bearer_token,
     normalize_message_content,
+    normalize_group_snapshots,
     normalize_node_payload,
     verify_webhook_token,
 )
 from .dto import (
     GroupOpsBindGroupRequest,
+    GroupOpsGroupSyncRequest,
     GroupOpsGroupsRequest,
     GroupOpsNodeRequest,
     GroupOpsPlanCreateRequest,
     GroupOpsPlanListRequest,
+    GroupOpsRunDueRequest,
     GroupOpsPlanUpdateRequest,
     GroupOpsWebhookReceiveRequest,
 )
@@ -92,6 +97,15 @@ def _public_base_url() -> str:
     return "https://www.youcangogogo.com"
 
 
+def _queue_count() -> int:
+    try:
+        from aicrm_next.integration_gateway.wecom_group_adapter import build_group_ops_queue_stats_gateway
+
+        return int(build_group_ops_queue_stats_gateway().count_group_ops_queue())
+    except Exception:
+        return 0
+
+
 def _plan_or_404(repo: GroupOpsRepository, plan_id: int) -> dict[str, Any]:
     plan = repo.get_plan(int(plan_id))
     if not plan:
@@ -120,7 +134,7 @@ class ListGroupOpsPlansQuery:
             plan_list_item(plan, groups=repo.list_bound_groups(int(plan["id"])), owner_name=clean_text(plan.get("owner_name")))
             for plan in rows
         ]
-        return _response({"items": items, "total": total}, repo=repo)
+        return _response({"items": items, "total": total, "queue_count": _queue_count()}, repo=repo)
 
 
 class CreateGroupOpsPlanCommand:
@@ -294,6 +308,199 @@ class ListGroupOpsGroupsQuery:
         return _response({"items": items, "total": total}, repo=repo)
 
 
+class PreviewGroupOpsGroupsSyncCommand:
+    def __init__(self, repo: GroupOpsRepository | None = None, sync_adapter: WeComGroupChatSyncAdapterContract | None = None) -> None:
+        self._repo = repo
+        self._sync_adapter = sync_adapter
+
+    def __call__(self, request: GroupOpsGroupSyncRequest) -> dict[str, Any]:
+        repo = _repo_or_block(self._repo)
+        if repo is None:
+            return _production_unavailable()
+        owner = clean_text(request.owner_userid)
+        if not owner:
+            raise ContractError("owner_userid is required")
+        adapter = self._sync_adapter
+        if adapter is None:
+            from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_chat_sync_adapter
+
+            adapter = build_wecom_group_chat_sync_adapter()
+        result = adapter.list_group_chats(owner_userid=owner, limit=clamp_limit(request.limit, default=100), cursor=request.cursor)
+        if not result.get("ok"):
+            raise ConflictError(clean_text(result.get("error_message")) or "wecom group sync blocked")
+        groups = normalize_group_snapshots(list(result.get("groups") or []))
+        return _response(
+            {
+                "sync_status": "preview",
+                "adapter_mode": clean_text(result.get("mode")),
+                "items": groups,
+                "total": len(groups),
+                "next_cursor": clean_text(result.get("next_cursor")),
+            },
+            repo=repo,
+        )
+
+
+class SyncGroupOpsGroupsCommand(PreviewGroupOpsGroupsSyncCommand):
+    def __call__(self, request: GroupOpsGroupSyncRequest) -> dict[str, Any]:
+        preview = super().__call__(request)
+        repo = _repo_or_block(self._repo)
+        if repo is None:
+            return _production_unavailable()
+        groups = list(preview.get("items") or [])
+        synced_count = repo.upsert_group_snapshots(groups)
+        return _response(
+            {
+                "sync_status": "synced",
+                "adapter_mode": clean_text(preview.get("adapter_mode")),
+                "items": groups,
+                "total": len(groups),
+                "synced_count": synced_count,
+                "next_cursor": clean_text(preview.get("next_cursor")),
+            },
+            repo=repo,
+        )
+
+
+def _run_due_candidates(
+    *,
+    repo: GroupOpsRepository,
+    plan: dict[str, Any],
+    allow_plan_ids: list[int] | None = None,
+    allow_node_ids: list[int] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+    if plan.get("plan_type") != "standard":
+        raise ContractError("run-due is only available for standard group ops plans")
+    if plan.get("status") != "active":
+        raise ConflictError("group ops plan is not active")
+    groups = repo.list_bound_groups(int(plan["id"]))
+    if not groups:
+        raise ConflictError("standard plan has no bound groups")
+    nodes = [item for item in repo.list_nodes(int(plan["id"])) if clean_text(item.get("status") or "active") == "active"]
+    allowed_plans = {int(item) for item in allow_plan_ids or []}
+    allowed_nodes = {int(item) for item in allow_node_ids or []}
+    if allowed_nodes and int(plan["id"]) not in allowed_plans:
+        nodes = [item for item in nodes if int(item.get("id") or 0) in allowed_nodes]
+    stats = binding_stats(groups)
+    chat_ids = [clean_text(item.get("chat_id")) for item in groups if clean_text(item.get("chat_id"))]
+    candidates: list[dict[str, Any]] = []
+    for node in nodes:
+        content = build_node_group_message_content(node=node, sender=clean_text(plan.get("owner_userid")))
+        content_payload = dict(content)
+        content_payload["channel"] = "wecom_customer_group"
+        content_payload["sender"] = clean_text(plan.get("owner_userid"))
+        content_payload["chat_ids"] = chat_ids
+        candidates.append(
+            {
+                "plan_id": int(plan["id"]),
+                "node_id": int(node["id"]),
+                "day_index": int(node.get("day_index") or 0),
+                "trigger_time_label": clean_text(node.get("trigger_time_label")),
+                "action_title": clean_text(node.get("action_title")),
+                "chat_ids": chat_ids,
+                "group_count": len(chat_ids),
+                "estimated_reach": int(stats["estimated_reach"]),
+                "content_payload": content_payload,
+                "content_summary": (content.get("text") or {}).get("content", "") or clean_text(node.get("action_title")),
+            }
+        )
+    return candidates, groups, stats
+
+
+class PreviewGroupOpsPlanRunDueCommand:
+    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+        self._repo = repo
+
+    def __call__(self, plan_id: int, request: GroupOpsRunDueRequest) -> dict[str, Any]:
+        repo = _repo_or_block(self._repo)
+        if repo is None:
+            return _production_unavailable()
+        plan = _plan_or_404(repo, plan_id)
+        candidates, groups, stats = _run_due_candidates(
+            repo=repo,
+            plan=plan,
+            allow_plan_ids=request.allow_plan_ids,
+            allow_node_ids=request.allow_node_ids,
+        )
+        if request.max_outbound_tasks:
+            candidates = candidates[: max(0, int(request.max_outbound_tasks))]
+        return _response(
+            {
+                "status": "preview",
+                "plan_id": int(plan_id),
+                "items": candidates,
+                "groups": groups,
+                "summary": stats,
+                "total": len(candidates),
+            },
+            repo=repo,
+        )
+
+
+class RunGroupOpsPlanDueCommand:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        queue_gateway: GroupOpsQueueGatewayContract | None = None,
+    ) -> None:
+        self._repo = repo
+        self._queue_gateway = queue_gateway
+
+    def __call__(self, plan_id: int, request: GroupOpsRunDueRequest) -> dict[str, Any]:
+        repo = _repo_or_block(self._repo)
+        if repo is None:
+            return _production_unavailable()
+        plan = _plan_or_404(repo, plan_id)
+        candidates, groups, stats = _run_due_candidates(
+            repo=repo,
+            plan=plan,
+            allow_plan_ids=request.allow_plan_ids,
+            allow_node_ids=request.allow_node_ids,
+        )
+        node_ids = [int(item["node_id"]) for item in candidates]
+        assert_run_due_guard(
+            plan_id=int(plan_id),
+            node_ids=node_ids,
+            operator=request.operator,
+            allow_plan_ids=request.allow_plan_ids,
+            allow_node_ids=request.allow_node_ids,
+            max_outbound_tasks=request.max_outbound_tasks,
+        )
+        candidates = candidates[: int(request.max_outbound_tasks)]
+        if self._queue_gateway is None:
+            from aicrm_next.integration_gateway.wecom_group_adapter import build_group_ops_queue_gateway
+
+            queue_gateway = build_group_ops_queue_gateway()
+        else:
+            queue_gateway = self._queue_gateway
+        job_ids: list[int] = []
+        for candidate in candidates:
+            job_id = queue_gateway.enqueue_group_message(
+                plan_id=int(plan_id),
+                source_id=f"{plan_id}:node:{candidate['node_id']}",
+                scheduled_at=request.scheduled_at,
+                owner_userid=clean_text(plan.get("owner_userid")),
+                chat_ids=list(candidate["chat_ids"]),
+                content_payload=dict(candidate["content_payload"]),
+                content_summary=clean_text(candidate["content_summary"]),
+                created_by=clean_text(request.operator),
+            )
+            job_ids.append(int(job_id))
+        return _response(
+            {
+                "status": "queued",
+                "plan_id": int(plan_id),
+                "broadcast_job_ids": job_ids,
+                "items": candidates,
+                "groups": groups,
+                "summary": stats,
+                "total": len(candidates),
+            },
+            status_code=202,
+            repo=repo,
+        )
+
+
 class GetGroupOpsWebhookConfigQuery:
     def __init__(self, repo: GroupOpsRepository | None = None) -> None:
         self._repo = repo
@@ -327,8 +534,11 @@ class RegenerateGroupOpsWebhookCommand:
         plan = _plan_or_404(repo, plan_id)
         if plan.get("plan_type") != "webhook":
             raise ContractError("webhook config is only available for webhook plans")
-        repo.regenerate_webhook(int(plan_id))
-        return GetGroupOpsWebhookConfigQuery(repo)(int(plan_id))
+        updated = repo.regenerate_webhook(int(plan_id))
+        config = GetGroupOpsWebhookConfigQuery(repo)(int(plan_id))
+        config["plaintext_token"] = clean_text(updated.get("plaintext_token"))
+        config["token_status"] = "generated"
+        return config
 
 
 class ReceiveGroupOpsWebhookCommand:
@@ -384,6 +594,10 @@ class ReceiveGroupOpsWebhookCommand:
             },
         )
         chat_ids = [clean_text(item.get("chat_id")) for item in groups if clean_text(item.get("chat_id"))]
+        queue_content_payload = dict(normalized_content)
+        queue_content_payload["channel"] = "wecom_customer_group"
+        queue_content_payload["chat_ids"] = chat_ids
+        queue_content_payload["sender"] = clean_text(plan.get("owner_userid"))
         if self._queue_gateway is None:
             from aicrm_next.integration_gateway.wecom_group_adapter import build_group_ops_queue_gateway
 
@@ -397,7 +611,7 @@ class ReceiveGroupOpsWebhookCommand:
                 scheduled_at=request.scheduled_at,
                 owner_userid=clean_text(plan.get("owner_userid")),
                 chat_ids=chat_ids,
-                content_payload=normalized_content,
+                content_payload=queue_content_payload,
                 content_summary=(normalized_content.get("text") or {}).get("content", "") or f"{len(normalized_content.get('attachments') or [])} attachments",
             )
         except Exception as exc:

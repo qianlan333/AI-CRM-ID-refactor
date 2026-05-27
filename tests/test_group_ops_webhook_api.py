@@ -61,6 +61,7 @@ def test_webhook_accepts_and_queues_fixed_group_bundle(group_ops_api_client, mon
     call = gateway.calls[0]
     assert call["owner_userid"] == "owner_001"
     assert call["chat_ids"] == ["wrOgAAA001", "wrOgAAA002", "wrOgAAA003"]
+    assert call["content_payload"]["channel"] == "wecom_customer_group"
     assert call["content_payload"]["sender"] == "owner_001"
     assert call["content_payload"]["text"]["content"].startswith("今天的日课")
 

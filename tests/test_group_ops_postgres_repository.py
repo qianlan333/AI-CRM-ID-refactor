@@ -144,6 +144,20 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     plans, total = repo.list_plans({"limit": 50, "offset": 0})
     groups = repo.list_bound_groups(plan["id"])
     group_assets, group_total = repo.list_group_assets({"bind_status": "bound", "limit": 50, "offset": 0})
+    synced_count = repo.upsert_group_snapshots(
+        [
+            {
+                "chat_id": "wrOgCCC001",
+                "group_name": "同步新增群",
+                "owner_userid": "owner_003",
+                "owner_name": "赵小蓝",
+                "internal_member_count": 3,
+                "external_member_count": 66,
+                "status": "active",
+            }
+        ]
+    )
+    synced_group = repo.get_group_asset("wrOgCCC001")
 
     assert total == 1
     assert plans[0]["owner_name"] == "王小明"
@@ -151,6 +165,8 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert groups[0]["external_member_count_snapshot"] == 150
     assert group_total == 1
     assert group_assets[0]["plan_name"] == "体验课 7 日群运营"
+    assert synced_count == 1
+    assert synced_group["owner_userid"] == "owner_003"
 
 
 def test_group_ops_api_uses_sql_repository_in_production_data_mode(monkeypatch, tmp_path: Path) -> None:

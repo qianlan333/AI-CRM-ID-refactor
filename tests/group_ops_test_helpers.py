@@ -16,6 +16,9 @@ def group_ops_api_client(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENV", "test")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "0")
+    from aicrm_next.automation_engine.group_ops.repo import reset_group_ops_fixture_state
+
+    reset_group_ops_fixture_state()
     return require_fastapi()
 
 

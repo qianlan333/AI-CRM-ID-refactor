@@ -134,6 +134,57 @@ def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     }
 
 
+def normalize_group_snapshots(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for group in groups or []:
+        if not isinstance(group, dict):
+            continue
+        chat_id = clean_text(group.get("chat_id"))
+        if not chat_id:
+            continue
+        normalized.append(
+            {
+                "chat_id": chat_id,
+                "group_name": clean_text(group.get("group_name") or chat_id),
+                "owner_userid": clean_text(group.get("owner_userid")),
+                "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
+                "internal_member_count": int(group.get("internal_member_count") or 0),
+                "external_member_count": int(group.get("external_member_count") or 0),
+                "status": normalize_status(group.get("status") or "active", allowed={"active", "disabled"}, default="active"),
+            }
+        )
+    return normalized
+
+
+def build_node_group_message_content(*, node: dict[str, Any], sender: str) -> dict[str, Any]:
+    return normalize_message_content(
+        text=node.get("text_content") or "",
+        attachments=list(node.get("attachments") or []),
+        sender=sender,
+    )
+
+
+def assert_run_due_guard(
+    *,
+    plan_id: int,
+    node_ids: list[int],
+    operator: str,
+    allow_plan_ids: list[int],
+    allow_node_ids: list[int],
+    max_outbound_tasks: int,
+) -> None:
+    if not clean_text(operator):
+        raise ContractError("operator is required")
+    allowed_plans = {int(item) for item in allow_plan_ids or []}
+    allowed_nodes = {int(item) for item in allow_node_ids or []}
+    if not allowed_plans and not allowed_nodes:
+        raise ContractError("run-due allowlist is required")
+    if int(plan_id) not in allowed_plans and not allowed_nodes.intersection({int(item) for item in node_ids}):
+        raise ContractError("run-due allowlist does not include this plan or node")
+    if int(max_outbound_tasks or 0) < 1:
+        raise ContractError("max_outbound_tasks is required")
+
+
 def assert_group_owned_by_plan(*, group: dict[str, Any], plan: dict[str, Any]) -> None:
     group_owner = clean_text(group.get("owner_userid"))
     plan_owner = clean_text(plan.get("owner_userid"))
