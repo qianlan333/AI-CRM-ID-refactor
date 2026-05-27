@@ -55,6 +55,18 @@ def test_commerce_and_media_admin_routes_return_legacy_shells() -> None:
             assert forbidden not in response.text
 
 
+def test_wechat_transaction_admin_is_next_native_surface() -> None:
+    response = make_client().get("/admin/wechat-pay/transactions")
+    assert response.status_code == 200
+    text = response.text
+    assert 'data-next-commerce-admin="wechat-pay-transactions"' in text
+    assert "微信支付交易管理" in text
+    assert "导出筛选结果" in text
+    assert "/api/admin/wechat-pay/orders" in text
+    assert "生产 wechat_pay_orders 只读列表" not in text
+    assert "production_postgres" not in text
+
+
 def test_media_library_routes_return_restored_card_templates() -> None:
     client = make_client()
 
