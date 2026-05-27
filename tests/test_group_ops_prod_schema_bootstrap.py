@@ -35,3 +35,13 @@ def test_group_ops_alembic_tables_match_production_bootstrap_tables() -> None:
     for table_name in GROUP_OPS_TABLES:
         assert f"CREATE TABLE IF NOT EXISTS {table_name}" in migration_source
         assert f"CREATE TABLE IF NOT EXISTS {table_name}" in bootstrap_source
+
+
+def test_group_ops_node_content_package_column_is_bootstrapped() -> None:
+    migration_source = ALEMBIC_GROUP_OPS.read_text(encoding="utf-8")
+    bootstrap_source = POSTGRES_MIGRATIONS.read_text(encoding="utf-8")
+    followup_migration = (ROOT / "migrations" / "versions" / "0016_group_ops_node_content_package.py").read_text(encoding="utf-8")
+
+    assert "content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in migration_source
+    assert "ADD COLUMN IF NOT EXISTS content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in followup_migration
+    assert "content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in bootstrap_source

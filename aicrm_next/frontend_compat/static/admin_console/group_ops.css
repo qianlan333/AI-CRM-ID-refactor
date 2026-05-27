@@ -236,6 +236,27 @@
   font-size: 13px;
 }
 
+.group-ops__content-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.group-ops__content-summary {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.group-ops__content-summary strong {
+  color: var(--text);
+}
+
 .group-ops__stat {
   min-height: 82px;
   border: 1px solid var(--line);
