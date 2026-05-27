@@ -21,12 +21,6 @@ from .automation_conversion_member_api import (
     api_admin_automation_conversion_stage_manual_send_preview,
     api_admin_automation_conversion_unmark_won,
 )
-from .automation_conversion_channels import (
-    admin_channel_edit_page,
-    admin_channel_new_page,
-    admin_channels_page,
-)
-from .automation_conversion_channels import register_routes as register_channel_admission_routes
 from .automation_conversion_task_runtime import (
     api_admin_automation_conversion_tasks_run_due,
 )
@@ -43,9 +37,6 @@ from .automation_conversion_execution_outbound import (
     api_admin_automation_conversion_execution_item_send_via_bazhuayu,
 )
 def register_routes(bp):
-    bp.route("/admin/channels", methods=["GET"])(admin_channels_page)
-    bp.route("/admin/channels/new", methods=["GET"])(admin_channel_new_page)
-    bp.route("/admin/channels/<int:channel_id>/edit", methods=["GET"])(admin_channel_edit_page)
     bp.route("/api/admin/automation-conversion/member/put-in-pool", methods=["POST"])(api_admin_automation_conversion_put_in_pool)
     bp.route("/api/admin/automation-conversion/member/remove-from-pool", methods=["POST"])(api_admin_automation_conversion_remove_from_pool)
     bp.route("/api/admin/automation-conversion/member/set-focus", methods=["POST"])(api_admin_automation_conversion_set_focus)
@@ -64,7 +55,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
-    register_channel_admission_routes(bp)
     bp.route("/api/admin/automation-conversion/tasks/run-due", methods=["POST"])(api_admin_automation_conversion_tasks_run_due)
     bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_execution_item_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)

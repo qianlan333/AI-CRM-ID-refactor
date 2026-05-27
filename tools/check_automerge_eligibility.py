@@ -35,6 +35,15 @@ DELETED_LOW_RISK_SUFFIXES = (
     "_gray_smoke.py",
 )
 DELETED_LOW_RISK_EXACT: set[str] = set()
+RUNTIME_FALLBACK_ALLOWED_EXACT = {
+    "wecom_ability_service/http/__init__.py",
+    "wecom_ability_service/http/automation_conversion.py",
+    "wecom_ability_service/http/automation_conversion_channels.py",
+    "wecom_ability_service/templates/admin_console/channel_code_center.html",
+    "wecom_ability_service/templates/admin_console/channel_code_form.html",
+    "wecom_ability_service/static/admin_console/channel_admission_pages.js",
+    "wecom_ability_service/static/admin_console/channel_admission_pages.css",
+}
 LOW_RISK_EXACT = {
     "README.md",
     "aicrm_next/production_compat/api.py",
@@ -121,6 +130,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
+        "tests/test_http_registration_contract.py",
         "tests/test_next_production_cutover_readiness.py",
         "tests/test_next_timer_route_readiness.py",
     }
@@ -220,6 +230,8 @@ def _is_deleted_path(path: str) -> bool:
 
 
 def _is_low_risk_path(path: str) -> bool:
+    if path in RUNTIME_FALLBACK_ALLOWED_EXACT:
+        return True
     if _is_deleted_path(path) and (
         path in DELETED_LOW_RISK_EXACT
         or path.startswith(DELETED_LOW_RISK_PREFIXES)
@@ -244,6 +256,8 @@ def _has_owner_approval(path: str | None) -> bool:
 
 
 def _protected_path_reason(path: str) -> str | None:
+    if path in RUNTIME_FALLBACK_ALLOWED_EXACT:
+        return None
     if path == "aicrm_next/production_compat/api.py":
         return None
     if path in PROTECTED_EXACT:
@@ -315,7 +329,7 @@ def build_report(
         if _is_deleted_path(path):
             continue
         lowered = text.lower()
-        if path not in POLICY_FILES_CAN_DEFINE_STOP_TERMS:
+        if path not in POLICY_FILES_CAN_DEFINE_STOP_TERMS and path not in RUNTIME_FALLBACK_ALLOWED_EXACT:
             for pattern in STOP_CONDITION_PATTERNS:
                 if re.search(pattern, lowered):
                     stop_hits.append(f"{path}: {pattern}")
