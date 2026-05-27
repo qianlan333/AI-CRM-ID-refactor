@@ -183,8 +183,8 @@ Retained fallback files:
 - `wecom_ability_service/http/automation_conversion_member_api.py`
 - `wecom_ability_service/http/automation_conversion_delivery.py`
 - `wecom_ability_service/http/automation_conversion_runtime_api.py`
-- `wecom_ability_service/http/automation_conversion_operation_tasks.py`
-- `wecom_ability_service/http/automation_conversion_workflows.py`
+- `wecom_ability_service/http/automation_conversion_task_runtime.py`
+- `wecom_ability_service/http/automation_conversion_execution_outbound.py`
 - `wecom_ability_service/domains/automation_conversion/`
 
 Automation writes, activation webhook, OpenClaw push, workflow runtime, WeCom dispatch, and scheduled runtime capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external/runtime replacement planning is in progress and still does not authorize deletion.
@@ -197,7 +197,7 @@ Deleted files:
 - `docs/generated/route_inventory.md`
 - `docs/generated/route_inventory.json`
 
-D6.5 was limited to no-reference readonly leftovers and stale generated owner inventory. It did not delete write, external, runtime, payment, OAuth, WeCom, OpenClaw, archive, contacts, identity, or MCP fallback code. Full evidence is in `docs/legacy_dead_code_inventory.md`, `docs/legacy_d6_5_dead_cleanup_report.md`, and `tools/check_legacy_dead_cleanup.py`.
+D6.5 was limited to no-reference readonly leftovers and stale generated owner inventory. It did not delete write, external, runtime, payment, OAuth, WeCom, OpenClaw, archive, contacts, identity, or MCP fallback code. The old D6.5 evidence checker/report were later retired after subsequent automation module retirement waves superseded them.
 
 D7 write/external/runtime capabilities remain blocked and must go through replacement planning, tests, production evidence, rollback proof, and human approval before any further removal.
 

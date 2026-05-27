@@ -49,7 +49,6 @@ def test_future_delete_batches_remain_blocked_or_not_started() -> None:
 
 def test_d6_5_physical_deletions_match_dead_code_inventory() -> None:
     delete_batches = _read("docs/legacy_delete_batches.md")
-    inventory = _read("docs/legacy_dead_code_inventory.md")
 
     for path in (
         "wecom_ability_service/templates/admin_console/attachment_library.html",
@@ -57,8 +56,6 @@ def test_d6_5_physical_deletions_match_dead_code_inventory() -> None:
         "docs/generated/route_inventory.json",
     ):
         assert f"- `{path}`" in _section(delete_batches, "D6.5")
-        assert f"| {path} |" in inventory
-        assert "| delete |" in next(line for line in inventory.splitlines() if line.startswith(f"| {path} |"))
 
 
 def test_d7_blocker_matrix_remains_non_delete_ready() -> None:

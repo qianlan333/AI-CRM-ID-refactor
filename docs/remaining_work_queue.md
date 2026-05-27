@@ -32,7 +32,6 @@
 
 | priority | work_item | status | notes |
 | --- | --- | --- | --- |
-| P0 | D6.5 acceptance audit | ready_for_review | run `tools/check_legacy_dead_cleanup.py`, fallback smoke, pytest, and six parity checks |
 | P0 | D7 Write / External capability replacement planning | planning_ready | use `docs/d7_write_external_replacement_plan.md` and start with D7.1 |
 | P0 | D7.1 Media storage / WeCom media adapter contract | accepted_prerequisite | keep as baseline for D7.4 scope isolation; real cloud and WeCom upload remain blocked |
 | P0 | D7.2 Questionnaire submit/OAuth/WeCom tag/external push adapter contract | accepted_prerequisite | keep as baseline for D7.4 scope isolation; real OAuth, WeCom tag writes, and webhook delivery remain blocked |
