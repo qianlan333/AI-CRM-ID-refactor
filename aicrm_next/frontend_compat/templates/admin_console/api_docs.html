@@ -242,6 +242,8 @@
   .apidoc-auth-badge--session { color: #5b21b6; background: #ede9fe; }
   .apidoc-auth-badge--bearer { color: #92400e; background: #fef3c7; }
   .apidoc-auth-badge--public { color: #374151; background: #f3f4f6; }
+  .apidoc-auth-badge--signature { color: #9f1239; background: #ffe4e6; }
+  .apidoc-auth-badge--legacy_proxy { color: #075985; background: #e0f2fe; }
 
   /* ── Groups & Subsections ── */
   .apidoc-group { margin-bottom: 48px; }
@@ -581,7 +583,7 @@
     <span class="apidoc-endpoint-label">{{ ep.summary }}</span>
     {% if ep.auth %}
     <span class="apidoc-auth-badge apidoc-auth-badge--{{ ep.auth }}">
-      {% if ep.auth == "session" %}登录态{% elif ep.auth == "bearer" %}Token{% else %}公开{% endif %}
+      {% if ep.auth == "session" %}登录态{% elif ep.auth == "bearer" %}Token{% elif ep.auth == "signature" %}签名{% elif ep.auth == "legacy_proxy" %}兼容代理{% else %}公开{% endif %}
     </span>
     <button type="button" class="apidoc-md-btn apidoc-md-btn--inline" data-md-id="ep:{{ ep.id }}" onclick="apidocCopyMd(event, this)" title="复制此接口的 Markdown 文档（给 AI 看）">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5"/></svg>
@@ -724,12 +726,12 @@
       <ul>
         <li>每个接口卡片右侧的「复制 MD」按钮 — 复制单个接口的 Markdown 给 AI</li>
         <li>每个分组标题旁的「复制此分组」按钮 — 复制整组接口</li>
-        <li>下方「复制全部 API 文档」按钮 — 复制全部 219 个接口的完整 Markdown，粘贴到 AI 对话即可</li>
+        <li>下方「复制全部 API 文档」按钮 — 复制全部 {{ endpoint_count }} 个接口的完整 Markdown，粘贴到 AI 对话即可</li>
       </ul>
 
       <div class="apidoc-copyall-banner">
         <div class="apidoc-copyall-banner-text">
-          <strong>📋 复制全部 API 文档</strong> — 一键复制所有接口的 Markdown 格式文档（约 100 KB），粘贴给 Claude / ChatGPT 等 AI 即可调用。
+          <strong>📋 复制全部 API 文档</strong> — 一键复制所有接口的 Markdown 格式文档（约 {{ markdown_size_label }}），粘贴给 Claude / ChatGPT 等 AI 即可调用。
         </div>
         <button type="button" class="apidoc-md-btn apidoc-md-btn--primary" data-md-id="full" onclick="apidocCopyMd(event, this)">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5"/></svg>
@@ -760,7 +762,7 @@
               <td>{{ item.summary }}</td>
               <td>
                 <span class="apidoc-auth-badge apidoc-auth-badge--{{ item.auth }}">
-                  {% if item.auth == "session" %}登录态{% elif item.auth == "bearer" %}Token{% else %}公开{% endif %}
+                  {% if item.auth == "session" %}登录态{% elif item.auth == "bearer" %}Token{% elif item.auth == "signature" %}签名{% elif item.auth == "legacy_proxy" %}兼容代理{% else %}公开{% endif %}
                 </span>
               </td>
               <td style="font-size:11px; color:var(--muted);">{{ item.group_title }}</td>

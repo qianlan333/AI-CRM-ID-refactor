@@ -12,7 +12,6 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
 from aicrm_next.admin_read_model.application import (
-    GetAdminApiDocsPageQuery,
     GetAdminConfigPageQuery,
     GetAdminFunnelPageQuery,
     GetAdminJobsPageQuery,
@@ -20,6 +19,7 @@ from aicrm_next.admin_read_model.application import (
     GetAdminTransactionsPageQuery,
     page_row_count,
 )
+from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
 from aicrm_next.automation_engine.channels_api import (
     default_channel_form_payload,
     get_channel_resource,
@@ -1325,13 +1325,16 @@ def admin_api_docs(request: Request):
         page_summary="查看 AI-CRM 后台和外部集成 API 文档。",
         active_endpoint="api.admin_api_docs",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminApiDocsPageQuery()(),
-        title="API 文档",
-        summary="按后台 API、企微回调、支付回调、自动化任务、素材 API 和商品/订单 API 分组展示。",
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "API 文档"},
+            ],
+            **build_api_docs_view_model(frontend_router=router),
+        }
     )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    return templates.TemplateResponse(request, "admin_console/api_docs.html", context)
 
 
 @router.get("/api/frontend-compat/legacy-routes")
