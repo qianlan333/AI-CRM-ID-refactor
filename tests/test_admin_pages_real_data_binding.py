@@ -37,7 +37,7 @@ def test_key_admin_pages_render_server_side_rows_or_stats(monkeypatch):
         "/admin/miniprogram-library",
         "/admin/attachment-library",
         "/admin/jobs",
-        "/admin/config",
+        "/admin/runtime-config",
         "/admin/api-docs",
     ]:
         response = client.get(route)

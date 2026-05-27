@@ -50,7 +50,6 @@ ADMIN_PAGES = [
     "/admin/miniprogram-library",
     "/admin/attachment-library",
     "/admin/jobs",
-    "/admin/config",
     "/admin/api-docs",
 ]
 

@@ -53,6 +53,7 @@ from .admin_shell import (
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+_ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 LEGACY_FRONTEND_ROUTES = [
     "/admin",
@@ -94,6 +95,10 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/miniprogram-library",
     "/admin/attachment-library",
     "/admin/config",
+    "/admin/config/app-settings",
+    "/admin/config/login-access",
+    "/admin/config/checklist",
+    "/setup/wizard",
     "/admin/api-docs",
 ]
 
@@ -1286,13 +1291,22 @@ def admin_jobs(request: Request):
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 
 
-@router.get("/admin/config", name="api.admin_config")
-def admin_config(request: Request):
+@router.api_route("/admin/config", methods=_ALL_METHODS, name="api.admin_config")
+@router.api_route("/admin/config/{path:path}", methods=_ALL_METHODS, name="api.admin_config_legacy_path")
+@router.api_route("/api/admin/config/{path:path}", methods=_ALL_METHODS, name="api.admin_config_legacy_api_path")
+@router.api_route("/setup/wizard", methods=_ALL_METHODS, name="api.setup_wizard")
+@router.api_route("/setup/wizard/save", methods=_ALL_METHODS, name="api.setup_wizard_save")
+async def admin_config_legacy_facade(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
+@router.get("/admin/runtime-config", name="api.admin_runtime_config")
+def admin_runtime_config(request: Request):
     context = _shell_context(
         request=request,
-        page_title="配置",
-        page_summary="集中管理后台配置、登录访问和 MCP 工具配置。",
-        active_endpoint="api.admin_config",
+        page_title="运行配置",
+        page_summary="查看 Next 运行时、发布和外部回调预检状态。",
+        active_endpoint="api.admin_runtime_config",
     )
     _real_data_context(
         context,
