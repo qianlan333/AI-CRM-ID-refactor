@@ -12,7 +12,6 @@
 - `/admin/automation-conversion/programs/<program_id>/flow-design`：流程设计
 - `/admin/automation-conversion/programs/<program_id>/member-ops`：成员运营
 - `/admin/automation-conversion/programs/<program_id>/executions`：执行记录
-- `/admin/automation-conversion/shared/agents`：模型 / Agent 配置
 - `/admin/automation-conversion/shared/model-infra`：共享模型基础设施
 - `/admin/automation-conversion/runtime/debug`：运行调试
 
@@ -27,7 +26,6 @@
 
 internal API：
 
-- `/api/admin/automation-conversion/model-settings`
 - `/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview`
 - `/api/admin/automation-conversion/stage/<stage_key>/manual-send`
 - `/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches`

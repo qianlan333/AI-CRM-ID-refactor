@@ -575,12 +575,6 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/sop/config",
             "/api/admin/automation-conversion/sop/run-due",
         },
-        "automation_conversion_settings": {
-            "/api/admin/automation-conversion/settings",
-            "/api/admin/automation-conversion/default-channel-settings",
-            "/api/admin/automation-conversion/model-settings",
-            "/api/admin/automation-conversion/model-settings/test",
-        },
         "automation_conversion_setup": {
             "/api/admin/automation-conversion/programs/<int:program_id>/setup",
             "/api/admin/automation-conversion/programs/<int:program_id>/setup/basic",
@@ -795,6 +789,12 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "/admin/automation-conversion/shared/agents",
         "/admin/automation-conversion/shared/model-infra",
         "/admin/automation-conversion/runtime/debug",
+        "/api/admin/automation-conversion/settings",
+        "/api/admin/automation-conversion/settings/default-channel/generate",
+        "/api/admin/automation-conversion/default-channel-settings",
+        "/api/admin/automation-conversion/default-channel-settings/generate-qr",
+        "/api/admin/automation-conversion/model-settings",
+        "/api/admin/automation-conversion/model-settings/test",
     }
     removed_endpoints = {
         "admin_automation_conversion_settings",
@@ -822,7 +822,6 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "api_admin_automation_conversion_model_infra_settings_save_legacy",
     }
     kept_routes = {
-        "/api/admin/automation-conversion/model-settings",
         "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview",
         "/api/admin/automation-conversion/stage/<stage_key>/manual-send",
         "/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches",

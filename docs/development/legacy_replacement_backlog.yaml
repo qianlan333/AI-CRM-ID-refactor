@@ -752,50 +752,6 @@ entries:
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program setup/workspace APIs are still served by the legacy production facade while Next owns the readonly list shell."
   - id: "LRB-035"
-    route_pattern: "/api/admin/automation-conversion/settings*"
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-    capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
-    fixture_allowed_in_production: false
-    external_side_effect_risk: "guarded"
-    checker: "tools/check_production_route_resolution.py"
-    replacement_phase: "phase_5_external_adapter"
-    replacement_category: "external_side_effect"
-    priority: "P2"
-    daily_business_critical: true
-    business_continuity_requirement: "During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects."
-    replacement_owner: "aicrm_next.automation_engine"
-    replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
-    fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Automation entry-channel default QR configuration and generation APIs remain legacy-forwarded until the WeCom QR provider flow is fully owned by Next."
-  - id: "LRB-036"
-    route_pattern: "/api/admin/automation-conversion/default-channel-settings*"
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-    capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
-    fixture_allowed_in_production: false
-    external_side_effect_risk: "guarded"
-    checker: "tools/check_production_route_resolution.py"
-    replacement_phase: "phase_5_external_adapter"
-    replacement_category: "external_side_effect"
-    priority: "P2"
-    daily_business_critical: true
-    business_continuity_requirement: "During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects."
-    replacement_owner: "aicrm_next.automation_engine"
-    replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
-    fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Default channel settings workspace APIs share the legacy WeCom QR provider contract during the automation setup cutover."
-  - id: "LRB-037"
     route_pattern: "/api/admin/automation-conversion/profile-segment-templates*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -817,7 +773,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program operations workspace still loads profile segment template options from the legacy production facade."
-  - id: "LRB-038"
+  - id: "LRB-036"
     route_pattern: "/api/admin/automation-conversion/agents*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -839,7 +795,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program operations Agent option/config APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-039"
+  - id: "LRB-037"
     route_pattern: "/api/admin/automation-conversion/agent-outputs*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -861,7 +817,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Post-Phase 7 standing approval removed only the exact /api/admin/automation-conversion/agent-outputs production_compat decorator after confirming the Next-native GET list route and tests; agent-output subpath fallback, export behavior, wildcard routing, and runtime deletion remain retained."
-  - id: "LRB-040"
+  - id: "LRB-038"
     route_pattern: "/api/admin/automation-conversion/agent-runs*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -883,7 +839,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Agent run detail APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-041"
+  - id: "LRB-039"
     route_pattern: "/api/admin/automation-conversion/agent-replay"
     methods: ["GET", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -905,7 +861,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Agent replay API remains legacy-forwarded during the workspace cutover."
-  - id: "LRB-042"
+  - id: "LRB-040"
     route_pattern: "/api/admin/automation-conversion/agent-orchestration*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -927,7 +883,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Agent orchestration APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-043"
+  - id: "LRB-041"
     route_pattern: "/api/admin/automation-conversion/action-templates*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -949,7 +905,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program operations action-template APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-044"
+  - id: "LRB-042"
     route_pattern: "/api/admin/automation-conversion/task-groups*"
     methods: ["GET", "POST", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -971,7 +927,7 @@ entries:
     delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "legacy fallback rollback check"]
     notes: "Post-Phase 7 exact-route cleanup retry removed the selected task-groups production_compat fallback hooks after owner approval, shadow compare, rollback rehearsal, route ownership proof, and exact-entry proof. Rollback restores the two task-groups production_compat decorators only; runtime deletion remains disallowed."
-  - id: "LRB-045"
+  - id: "LRB-043"
     route_pattern: "/api/admin/automation-conversion/tasks*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -993,7 +949,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program operation task APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-046"
+  - id: "LRB-044"
     route_pattern: "/api/admin/automation-conversion/workflows*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1015,7 +971,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program workflow APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-047"
+  - id: "LRB-045"
     route_pattern: "/api/admin/automation-conversion/workflow-nodes*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1037,7 +993,7 @@ entries:
     delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_post_phase7_cleanup_workflow_nodes_owner_approved_cleanup.py", "dry-run or preview smoke", "allowlist and audit guard check", "legacy fallback rollback check"]
     notes: "Workflow node list/create/update/delete surfaces are Next-native after owner-approved replacement; active_candidate workflow_nodes_owner_approved_exact_route_cleanup; broad workflow, task, payment, OAuth, WeCom, timer, outbound, and public-submit fallbacks remain retained separately."
-  - id: "LRB-048"
+  - id: "LRB-046"
     route_pattern: "/api/admin/automation-conversion/dashboard"
     methods: ["GET", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1059,7 +1015,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Program operations dashboard API remains legacy-forwarded during the workspace cutover."
-  - id: "LRB-049"
+  - id: "LRB-047"
     route_pattern: "/api/admin/automation-conversion/executions*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1081,7 +1037,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program execution workspace APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-050"
+  - id: "LRB-048"
     route_pattern: "/api/admin/automation-conversion/execution-items*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1103,7 +1059,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Program execution item APIs remain legacy-forwarded during the workspace cutover."
-  - id: "LRB-051"
+  - id: "LRB-049"
     route_pattern: "/api/admin/automation-conversion*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1125,7 +1081,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_5_automation_adapter_contract.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members."
-  - id: "LRB-052"
+  - id: "LRB-050"
     route_pattern: "/api/customer-automation*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1147,7 +1103,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_5_automation_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Activation webhook has Next exact route and production_compat fallback; real side effects remain blocked."
-  - id: "LRB-053"
+  - id: "LRB-051"
     route_pattern: "/api/customers/automation*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
@@ -1169,7 +1125,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_runtime_gaps.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "production_compat fallback for legacy customer automation surfaces."
-  - id: "LRB-054"
+  - id: "LRB-052"
     route_pattern: "/api/admin/wechat-pay/products*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1191,7 +1147,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_runtime_gaps.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Product management APIs forward to legacy Flask product_service so the admin page can create, edit, copy, publish, delete, and generate QR shares."
-  - id: "LRB-055"
+  - id: "LRB-053"
     route_pattern: "/api/admin/wechat-pay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1213,7 +1169,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact product/transaction routes plus production_compat fallback; real payment provider calls blocked."
-  - id: "LRB-056"
+  - id: "LRB-054"
     route_pattern: "/api/admin/alipay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1235,7 +1191,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked."
-  - id: "LRB-057"
+  - id: "LRB-055"
     route_pattern: "/api/products*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1257,7 +1213,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public product API forwards to legacy Flask/product_service so real PostgreSQL product links opened from QR codes do not hit the Next fake commerce repository."
-  - id: "LRB-058"
+  - id: "LRB-056"
     route_pattern: "/p/{page_slug}"
     methods: ["GET"]
     capability_owner: "aicrm_next.commerce"
@@ -1279,7 +1235,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public product page forwards to legacy Flask/product_service; checkout side effects remain guarded by the legacy payment flow."
-  - id: "LRB-059"
+  - id: "LRB-057"
     route_pattern: "/pay/{product_code}"
     methods: ["GET"]
     capability_owner: "aicrm_next.commerce"
@@ -1301,7 +1257,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Product checkout page forwards to the legacy WeChat-internal H5/JSAPI flow; real provider order creation stays on the legacy guarded /api/h5/wechat-pay* routes."
-  - id: "LRB-060"
+  - id: "LRB-058"
     route_pattern: "/api/orders*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1323,7 +1279,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Order status API exact route plus production_compat fallback."
-  - id: "LRB-061"
+  - id: "LRB-059"
     route_pattern: "/api/checkout*"
     methods: ["POST", "OPTIONS", "GET", "PUT", "PATCH", "DELETE", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1345,7 +1301,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Checkout routes use fake payment adapter unless a separately approved real provider path exists."
-  - id: "LRB-062"
+  - id: "LRB-060"
     route_pattern: "/api/wechat-pay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1367,7 +1323,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "WeChat Pay notify/fallback route family; real provider calls blocked."
-  - id: "LRB-063"
+  - id: "LRB-061"
     route_pattern: "/api/alipay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1389,7 +1345,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Alipay notify/return/fallback route family; real provider calls blocked."
-  - id: "LRB-064"
+  - id: "LRB-062"
     route_pattern: "/api/h5/wechat-pay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1411,7 +1367,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_runtime_gaps.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Legacy H5 WeChat Pay production_compat fallback; real provider calls still blocked."
-  - id: "LRB-065"
+  - id: "LRB-063"
     route_pattern: "/api/h5/alipay*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.commerce"
@@ -1433,7 +1389,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_runtime_gaps.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Legacy H5 Alipay production_compat fallback; real provider calls still blocked."
-  - id: "LRB-066"
+  - id: "LRB-064"
     route_pattern: "/api/admin/image-library*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.media_library"
@@ -1455,7 +1411,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked."
-  - id: "LRB-067"
+  - id: "LRB-065"
     route_pattern: "/api/admin/image-library/upload"
     methods: ["POST", "OPTIONS"]
     capability_owner: "aicrm_next.media_library"
@@ -1477,7 +1433,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Multipart local image upload used by product slices and image pickers stores image_library rows via legacy PostgreSQL without calling external media providers."
-  - id: "LRB-068"
+  - id: "LRB-066"
     route_pattern: "/api/admin/attachment-library*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.media_library"
@@ -1499,7 +1455,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Attachment routes use fake/staging-disabled adapters."
-  - id: "LRB-069"
+  - id: "LRB-067"
     route_pattern: "/api/admin/miniprogram-library*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.media_library"
@@ -1521,7 +1477,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Miniprogram routes use fake/staging-disabled adapters."
-  - id: "LRB-070"
+  - id: "LRB-068"
     route_pattern: "/sidebar/bind-mobile"
     methods: ["GET", "HEAD"]
     capability_owner: "aicrm_next.frontend_compat"
@@ -1543,7 +1499,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_sidebar_profile_next_owner_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Next exact readonly page owner; mobile binding writes remain guarded by production_compat fallback."
-  - id: "LRB-071"
+  - id: "LRB-069"
     route_pattern: "/api/sidebar/contact-binding-status"
     methods: ["GET", "HEAD"]
     capability_owner: "aicrm_next.identity_contact"
@@ -1565,7 +1521,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_sidebar_profile_next_owner_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Next exact readonly binding status owner; production data failures return degraded/error."
-  - id: "LRB-072"
+  - id: "LRB-070"
     route_pattern: "/api/sidebar/customer-context"
     methods: ["GET", "HEAD"]
     capability_owner: "aicrm_next.customer_read_model"
@@ -1587,7 +1543,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_sidebar_profile_next_owner_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Next exact readonly customer context owner; production data failures return degraded/error."
-  - id: "LRB-073"
+  - id: "LRB-071"
     route_pattern: "/api/admin/customers/profile"
     methods: ["GET", "HEAD"]
     capability_owner: "aicrm_next.customer_read_model"
@@ -1609,7 +1565,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_sidebar_profile_next_owner_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Next exact readonly customer profile owner; production data failures return degraded/error."
-  - id: "LRB-074"
+  - id: "LRB-072"
     route_pattern: "/api/admin/customers/profile/tags"
     methods: ["GET", "HEAD"]
     capability_owner: "aicrm_next.customer_read_model"
@@ -1631,7 +1587,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_sidebar_profile_next_owner_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
     notes: "Next exact readonly customer profile tags owner; production data failures return degraded/error."
-  - id: "LRB-075"
+  - id: "LRB-073"
     route_pattern: "/sidebar*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.frontend_compat"
@@ -1653,7 +1609,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_admin_ui_data_parity.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "production_compat sidebar fallback retained for admin shell compatibility."
-  - id: "LRB-076"
+  - id: "LRB-074"
     route_pattern: "/api/sidebar*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.frontend_compat"
@@ -1675,7 +1631,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_admin_ui_data_parity.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "production_compat sidebar API fallback retained for admin shell compatibility."
-  - id: "LRB-077"
+  - id: "LRB-075"
     route_pattern: "/api/admin/customers/profile*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.customer_read_model"
@@ -1697,7 +1653,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_admin_ui_data_parity.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Customer profile production_compat fallback retained until exact Next owner is complete."
-  - id: "LRB-078"
+  - id: "LRB-076"
     route_pattern: "/wecom/external-contact/callback"
     methods: ["GET", "POST", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.integration_gateway"
@@ -1719,7 +1675,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_cutover_readiness.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Callback route forwards through legacy facade; no new real external behavior is enabled here."
-  - id: "LRB-079"
+  - id: "LRB-077"
     route_pattern: "/api/wecom/events"
     methods: ["GET", "POST", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.integration_gateway"
@@ -1741,7 +1697,7 @@ entries:
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_cutover_readiness.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "WeCom event callback route forwards through legacy facade; no new real external behavior is enabled here."
-  - id: "LRB-080"
+  - id: "LRB-078"
     route_pattern: "/mcp"
     methods: ["GET", "POST"]
     capability_owner: "aicrm_next.integration_gateway"

@@ -9,7 +9,7 @@
 - 启用 / 停用 / 删除操作移到编辑 modal 里
 - 删除走硬删 + 引用悬空二次确认（PR-E）
 
-同 ``test_admin_static_contract.py`` 风格。
+同其他静态模板契约测试风格。
 """
 from __future__ import annotations
 

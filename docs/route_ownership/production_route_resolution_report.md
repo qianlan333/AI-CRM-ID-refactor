@@ -1,9 +1,9 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `203`
-- production_compat_route_count: `82`
-- production_compat_catch_all_count: `46`
+- route_count: `285`
+- production_compat_route_count: `70`
+- production_compat_catch_all_count: `35`
 - blockers: `0`
 
 ## Resolution Samples
@@ -22,12 +22,6 @@
 - GET /api/h5/wechat/oauth/start: `production_compat` -> `aicrm_next.production_compat.api.legacy_questionnaire_oauth_routes` (manifest `/api/h5/wechat/oauth*` / `legacy_forward`)
 - GET /api/admin/wecom/tags: `production_compat` -> `aicrm_next.production_compat.api.legacy_admin_wecom_tag_routes` (manifest `/api/admin/wecom/tags*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/overview: `next` -> `aicrm_next.automation_engine.api.automation_overview` (manifest `/api/admin/automation-conversion*` / `guarded_preview`)
-- POST /api/admin/automation-conversion/programs/3/setup/basic: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/programs*` / `legacy_forward`)
-- POST /api/admin/automation-conversion/settings/default-channel/generate: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/settings*` / `legacy_forward`)
-- GET /api/admin/automation-conversion/default-channel-settings: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/default-channel-settings*` / `legacy_forward`)
-- POST /api/admin/automation-conversion/default-channel-settings/generate-qr: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/default-channel-settings*` / `legacy_forward`)
-- GET /api/admin/automation-conversion/profile-segment-templates/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/profile-segment-templates*` / `legacy_forward`)
-- GET /api/admin/automation-conversion/agents/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/agents*` / `legacy_forward`)
 - POST /api/customer-automation/activation-webhook: `next` -> `aicrm_next.automation_engine.api.activation_webhook` (manifest `/api/customer-automation*` / `guarded_preview`)
 - GET /admin/wechat-pay/products: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/admin/wechat-pay/products` / `legacy_forward`)
 - GET /admin/wechat-pay/products/new: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/admin/wechat-pay/products*` / `legacy_forward`)
@@ -53,6 +47,18 @@
 - POST /api/sidebar/bind-mobile: `production_compat` -> `aicrm_next.production_compat.api.legacy_production_compat_routes` (manifest `/api/sidebar*` / `legacy_forward`)
 
 ## Shadowed Exact Routes
+- GET /api/admin/wecom/tags caught by `/api/admin/wecom/tags`
+- POST /api/admin/wecom/tags/sync-due caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/sync caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags caught by `/api/admin/wecom/tags`
+- POST /api/admin/wecom/tag-groups caught by `/api/admin/wecom/tag-groups`
+- GET /api/admin/wecom/tags/fake-stub caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/fake-stub/validate caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/fake-stub/dry-run/mark caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/fake-stub/dry-run/unmark caught by `/api/admin/wecom/tags/{path:path}`
+- GET /api/admin/wecom/tags/live/gate caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/live/mark caught by `/api/admin/wecom/tags/{path:path}`
+- POST /api/admin/wecom/tags/live/unmark caught by `/api/admin/wecom/tags/{path:path}`
 - POST /api/h5/questionnaires/{slug}/submit caught by `/api/h5/questionnaires/{slug}/submit`
 - GET /api/h5/wechat/oauth/start caught by `/api/h5/wechat/oauth/start`
 - GET /api/h5/wechat/oauth/callback caught by `/api/h5/wechat/oauth/callback`
@@ -63,6 +69,9 @@
 - POST /api/admin/wechat-pay/products/{product_id}/disable caught by `/api/admin/wechat-pay/products/{path:path}`
 - GET /api/products/{page_slug} caught by `/api/products/{path:path}`
 - GET /p/{page_slug} caught by `/p/{path:path}`
+- POST /api/admin/image-library/upload caught by `/api/admin/image-library/upload`
+- GET /admin/hxc-dashboard caught by `/admin/hxc-dashboard`
+- GET /admin/hxc-send-config caught by `/admin/hxc-send-config`
 - GET /admin/wechat-pay/products caught by `/admin/wechat-pay/products`
 
 ## Blockers

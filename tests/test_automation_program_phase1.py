@@ -109,24 +109,6 @@ def test_program_workflow_page_handlers_redirect_to_setup_without_pg(monkeypatch
             )
 
 
-def test_active_automation_templates_do_not_show_legacy_workflow_terms():
-    active_template_names = [
-        "automation_program_list.html",
-        "automation_conversion_overview_workspace.html",
-        "automation_conversion_execution_records.html",
-        "automation_conversion_agent_config_workspace.html",
-    ]
-    combined_source = "\n".join(
-        (REPO_ROOT / "wecom_ability_service/templates/admin_console" / name).read_text(encoding="utf-8")
-        for name in active_template_names
-    )
-
-    assert "任务流" not in combined_source
-    assert "节点配置" not in combined_source
-    assert "执行节点" not in combined_source
-    assert "旧入口" not in combined_source
-
-
 def test_stale_workflow_page_templates_are_removed():
     template_dir = REPO_ROOT / "wecom_ability_service/templates/admin_console"
     stale_template_names = [
@@ -262,8 +244,6 @@ def test_default_program_bootstraps_and_automation_entry_lists_programs(app, cli
     assert response.status_code == 200
     assert "自动化运营方案" in html
     assert "id=\"program-create-panel\" class=\"admin-card program-panel\" hidden" in html
-    assert "共享资源" in html
-    assert "/admin/automation-conversion/shared/agents" in html
     assert "运行时中心" in html
     assert "/admin/automation-conversion/runtime" in html
     assert "新建方案" in html
@@ -550,51 +530,6 @@ def test_setup_basic_owner_flows_to_entry_channel(app, client, monkeypatch):
     block_payload = block["payload_json"] if isinstance(block["payload_json"], dict) else json.loads(block["payload_json"])
     assert row["owner_staff_id"] == "sales_owner_02"
     assert block_payload["owner_display_name"] == "销售负责人 02"
-
-
-def test_setup_entry_qrcode_generation_uses_program_owner(app, client, monkeypatch):
-    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
-        save_entry_channel,
-        save_setup_basic,
-    )
-
-    captured = {}
-
-    class _FakeRuntimeClient:
-        def create_contact_way(self, payload: dict) -> dict:
-            captured["payload"] = payload
-            return {"config_id": "cfg-owner", "qr_code": "https://wecom.example/qr/cfg-owner"}
-
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.provider.get_contact_runtime_client",
-        lambda: _FakeRuntimeClient(),
-    )
-    _login(client, app, monkeypatch)
-    program_id = _default_program_id(app)
-    with app.app_context():
-        save_setup_basic(
-            program_id,
-            {
-                "program_name": "负责人生成码方案",
-                "program_code": "signup_conversion_v1",
-                "status": "active",
-                "owner_staff_id": "sales_owner_03",
-                "owner_display_name": "销售负责人 03",
-            },
-            operator_id="test",
-        )
-        save_entry_channel(program_id, {"channel_name": "负责人生成码", "welcome_message": "欢迎"})
-
-    response = client.post(
-        "/api/admin/automation-conversion/settings/default-channel/generate",
-        json={"program_id": program_id},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["channel"]["owner_staff_id"] == "sales_owner_03"
-    assert captured["payload"]["user"] == ["sales_owner_03"]
 
 
 def test_blank_setup_entry_does_not_show_default_qrcode(app, client, monkeypatch):
@@ -1126,7 +1061,7 @@ def test_removed_shared_and_runtime_legacy_routes_are_gone(app, client, monkeypa
 
     assert legacy_agent_config.status_code == 404
     assert legacy_run_center.status_code == 404
-    assert shared_agents.status_code == 200
+    assert shared_agents.status_code == 404
     assert runtime.status_code == 200
 
 

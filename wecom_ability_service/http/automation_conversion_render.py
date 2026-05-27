@@ -19,7 +19,6 @@ from .automation_conversion_workspaces import (
     _automation_conversion_workspace_tabs,
     _automation_program_workspace_tabs,
     _build_action_orchestration_workspace,
-    _build_agent_config_workspace,
     _build_auto_reply_workspace,
     _build_execution_records_workspace,
     _build_flow_design_workspace,
@@ -128,24 +127,6 @@ def _render_auto_reply_page(*, page_error: str = "", page_notice: str = ""):
         auto_reply_workspace=_build_auto_reply_workspace(),
         page_error=page_error,
         page_notice=page_notice,
-        admin_action_token=ensure_admin_console_action_token(),
-    )
-
-
-def _render_agent_config_page(*, page_error: str = ""):
-    return _render_admin_template(
-        "automation_conversion_agent_config_workspace.html",
-        active_nav="automation_conversion",
-        page_title="模型与智能体配置",
-        page_summary="共享层只维护可跨方案复用的智能体本体和大模型配置；画像分层、欢迎语和二维码入口属于具体方案。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("模型与智能体配置", None),
-        ),
-        workspace_tabs=_automation_conversion_workspace_tabs("agent_config"),
-        agent_config_workspace=_build_agent_config_workspace(),
-        page_error=page_error,
         admin_action_token=ensure_admin_console_action_token(),
     )
 
@@ -395,7 +376,6 @@ def _render_program_list_page(*, page_error: str = "", page_notice: str = "", sh
             ("自动化运营方案", None),
         ),
         page_actions=[
-            {"label": "共享资源", "href": url_for("api.admin_automation_conversion_shared_agents"), "variant": "secondary"},
             {"label": "运行时中心", "href": url_for("api.admin_automation_conversion_runtime"), "variant": "secondary"},
             {"label": "新建方案", "href": url_for("api.admin_automation_conversion", create=1) + "#program-create-panel", "variant": "primary"},
         ],

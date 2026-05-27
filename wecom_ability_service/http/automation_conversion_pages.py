@@ -20,7 +20,6 @@ from .automation_conversion_form_helpers import (
     _program_form_payload,
 )
 from .automation_conversion_render import (
-    _render_agent_config_page,
     _render_auto_reply_page,
     _render_channel_center_page,
     _render_channel_form_page,
@@ -193,10 +192,6 @@ def admin_channel_edit_page(channel_id: int):
     if not channel:
         return _render_channel_center_page(page_error="channel_not_found")
     return _render_channel_form_page(channel=channel)
-
-
-def admin_automation_conversion_shared_agents():
-    return _render_agent_config_page()
 
 
 def admin_automation_conversion_shared_profile_segments():

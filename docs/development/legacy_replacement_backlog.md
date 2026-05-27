@@ -21,7 +21,7 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 ## Summary By Capability Owner
 
 - `aicrm_next.ai_assist`: 1 routes; P3=1
-- `aicrm_next.automation_engine`: 24 routes; P1=17, P2=4, P3=3
+- `aicrm_next.automation_engine`: 22 routes; P1=17, P2=2, P3=3
 - `aicrm_next.commerce`: 15 routes; P2=15
 - `aicrm_next.customer_read_model`: 9 routes; P0=7, P1=2
 - `aicrm_next.customer_tags`: 2 routes; P2=2
@@ -37,7 +37,7 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `keep_guarded_until_adapter_ready`: 1 routes; blocked_or_guarded=1
 - `phase_3_readonly`: 13 routes; readonly=9, shell_or_navigation=4
 - `phase_4_internal_write`: 27 routes; internal_write=21, readonly=3, shell_or_navigation=3
-- `phase_5_external_adapter`: 34 routes; adapter_contract=10, external_side_effect=24
+- `phase_5_external_adapter`: 32 routes; adapter_contract=10, external_side_effect=22
 - `phase_6_timer_automation`: 5 routes; timer_or_automation_execution=5
 
 ## Top 10 Suggested First Replacements
@@ -168,49 +168,47 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-032` `/api/admin/automation-conversion/jobs/run-due*`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.automation_engine`
 - `LRB-033` `/api/admin/cloud-orchestrator/campaigns/run-due*`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.ai_assist`
 - `LRB-034` `/api/admin/automation-conversion/programs*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-035` `/api/admin/automation-conversion/settings*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
-- `LRB-036` `/api/admin/automation-conversion/default-channel-settings*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
-- `LRB-037` `/api/admin/automation-conversion/profile-segment-templates*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-038` `/api/admin/automation-conversion/agents*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-039` `/api/admin/automation-conversion/agent-outputs*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-040` `/api/admin/automation-conversion/agent-runs*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-041` `/api/admin/automation-conversion/agent-replay`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.automation_engine`
-- `LRB-042` `/api/admin/automation-conversion/agent-orchestration*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-043` `/api/admin/automation-conversion/action-templates*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-044` `/api/admin/automation-conversion/task-groups*`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.automation_engine`
-- `LRB-045` `/api/admin/automation-conversion/tasks*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-046` `/api/admin/automation-conversion/workflows*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-047` `/api/admin/automation-conversion/workflow-nodes*`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.automation_engine`
-- `LRB-048` `/api/admin/automation-conversion/dashboard`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.automation_engine`
-- `LRB-049` `/api/admin/automation-conversion/executions*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-050` `/api/admin/automation-conversion/execution-items*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-051` `/api/admin/automation-conversion*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-052` `/api/customer-automation*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
-- `LRB-053` `/api/customers/automation*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-054` `/api/admin/wechat-pay/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-055` `/api/admin/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-056` `/api/admin/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-057` `/api/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-058` `/p/{page_slug}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-059` `/pay/{product_code}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-060` `/api/orders*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-061` `/api/checkout*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-062` `/api/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-063` `/api/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-064` `/api/h5/wechat-pay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-065` `/api/h5/alipay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-066` `/api/admin/image-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-067` `/api/admin/image-library/upload`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.media_library`
-- `LRB-068` `/api/admin/attachment-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-069` `/api/admin/miniprogram-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-070` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `shell_or_navigation` / owner `aicrm_next.frontend_compat`
-- `LRB-071` `/api/sidebar/contact-binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
-- `LRB-072` `/api/sidebar/customer-context`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-073` `/api/admin/customers/profile`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-074` `/api/admin/customers/profile/tags`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-075` `/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
-- `LRB-076` `/api/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
-- `LRB-077` `/api/admin/customers/profile*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
-- `LRB-078` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-079` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-080` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`
+- `LRB-035` `/api/admin/automation-conversion/profile-segment-templates*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-036` `/api/admin/automation-conversion/agents*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-037` `/api/admin/automation-conversion/agent-outputs*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-038` `/api/admin/automation-conversion/agent-runs*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-039` `/api/admin/automation-conversion/agent-replay`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.automation_engine`
+- `LRB-040` `/api/admin/automation-conversion/agent-orchestration*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-041` `/api/admin/automation-conversion/action-templates*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-042` `/api/admin/automation-conversion/task-groups*`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.automation_engine`
+- `LRB-043` `/api/admin/automation-conversion/tasks*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-044` `/api/admin/automation-conversion/workflows*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-045` `/api/admin/automation-conversion/workflow-nodes*`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.automation_engine`
+- `LRB-046` `/api/admin/automation-conversion/dashboard`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.automation_engine`
+- `LRB-047` `/api/admin/automation-conversion/executions*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-048` `/api/admin/automation-conversion/execution-items*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-049` `/api/admin/automation-conversion*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-050` `/api/customer-automation*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
+- `LRB-051` `/api/customers/automation*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-052` `/api/admin/wechat-pay/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-053` `/api/admin/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-054` `/api/admin/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-055` `/api/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-056` `/p/{page_slug}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-057` `/pay/{product_code}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-058` `/api/orders*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-059` `/api/checkout*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-060` `/api/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-061` `/api/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-062` `/api/h5/wechat-pay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-063` `/api/h5/alipay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-064` `/api/admin/image-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-065` `/api/admin/image-library/upload`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.media_library`
+- `LRB-066` `/api/admin/attachment-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-067` `/api/admin/miniprogram-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-068` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `shell_or_navigation` / owner `aicrm_next.frontend_compat`
+- `LRB-069` `/api/sidebar/contact-binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
+- `LRB-070` `/api/sidebar/customer-context`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-071` `/api/admin/customers/profile`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-072` `/api/admin/customers/profile/tags`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-073` `/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
+- `LRB-074` `/api/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
+- `LRB-075` `/api/admin/customers/profile*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
+- `LRB-076` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-077` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-078` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`
