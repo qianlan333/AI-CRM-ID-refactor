@@ -37,6 +37,7 @@ class GroupOpsRepository(Protocol):
     def list_group_assets(self, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]: ...
     def get_group_asset(self, chat_id: str) -> dict[str, Any] | None: ...
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
+    def list_owners(self) -> list[dict[str, Any]]: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_node(self, plan_id: int, node_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -349,6 +350,22 @@ class InMemoryGroupOpsRepository:
             }
             count += 1
         return count
+
+    def list_owners(self) -> list[dict[str, Any]]:
+        owners: dict[str, dict[str, Any]] = {}
+        for group in self._groups.values():
+            userid = clean_text(group.get("owner_userid"))
+            if not userid:
+                continue
+            current = owners.setdefault(userid, {"userid": userid, "name": clean_text(group.get("owner_name")) or userid, "group_count": 0})
+            current["group_count"] += 1
+            if group.get("owner_name"):
+                current["name"] = clean_text(group.get("owner_name"))
+        for plan in self._plans.values():
+            userid = clean_text(plan.get("owner_userid"))
+            if userid and userid not in owners:
+                owners[userid] = {"userid": userid, "name": clean_text(plan.get("owner_name")) or userid, "group_count": 0}
+        return [deepcopy(item) for item in sorted(owners.values(), key=lambda item: item["userid"])]
 
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]:
         rows = list(self._nodes.get(int(plan_id), {}).values())

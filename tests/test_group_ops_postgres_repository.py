@@ -158,6 +158,7 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
         ]
     )
     synced_group = repo.get_group_asset("wrOgCCC001")
+    owners = {item["userid"]: item for item in repo.list_owners()}
 
     assert total == 1
     assert plans[0]["owner_name"] == "王小明"
@@ -167,6 +168,8 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert group_assets[0]["plan_name"] == "体验课 7 日群运营"
     assert synced_count == 1
     assert synced_group["owner_userid"] == "owner_003"
+    assert owners["owner_001"]["group_count"] >= 2
+    assert owners["owner_003"]["name"] == "赵小蓝"
 
 
 def test_group_ops_api_uses_sql_repository_in_production_data_mode(monkeypatch, tmp_path: Path) -> None:
