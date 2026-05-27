@@ -32,6 +32,7 @@ from .notification_settings import (
     FEISHU_WEBHOOK_ERROR,
     FeishuWebhookValidationError,
     get_feishu_notification_setting,
+    send_broadcast_job_hourly_feishu_report,
     upsert_feishu_notification_setting,
     validate_feishu_webhook,
 )
@@ -119,6 +120,16 @@ async def _action_token_error(request: Request, payload: dict[str, Any] | None =
         except Exception:
             token = ""
     return validate_admin_action_token(token)
+
+
+async def _cron_or_action_token_error(request: Request, payload: dict[str, Any] | None = None) -> str:
+    header = normalized_text(request.headers.get("Authorization"))
+    secret = normalized_text(os.getenv("CRON_SECRET"))
+    if secret and header.lower().startswith("bearer "):
+        actual = header.split(" ", 1)[1].strip()
+        if hmac.compare_digest(actual, secret):
+            return ""
+    return await _action_token_error(request, payload)
 
 
 def _jobs_context(request: Request, *, page_notice: str = "", page_error: str = "", action_result: dict[str, Any] | None = None, args: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -355,6 +366,16 @@ async def api_admin_broadcast_jobs_validate_feishu_notification_settings(request
         return _jsonable(result)
     status_code = 400 if result.get("message") == FEISHU_WEBHOOK_ERROR else 502
     return JSONResponse(_jsonable(result), status_code=status_code)
+
+
+@router.post("/api/admin/broadcast-jobs/feishu-hourly-report/run")
+async def api_admin_broadcast_jobs_feishu_hourly_report_run(request: Request):
+    payload = await _request_payload(request)
+    token_error = await _cron_or_action_token_error(request, payload)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    result = send_broadcast_job_hourly_feishu_report()
+    return _jsonable({"ok": result.get("status") == "sent", **result})
 
 
 @router.post("/api/admin/broadcast-jobs/{job_id}/approve")

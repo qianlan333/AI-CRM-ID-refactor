@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import ipaddress
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from .domain import normalized_bool, normalized_text
 from .repository import AdminJobsRepository, build_admin_jobs_repository
 
 FEISHU_CHANNEL = "feishu"
 FEISHU_VALIDATION_MESSAGE = "【群发队列监控验证】\n这是一条飞书 webhook 验证消息。收到此消息表示群发队列小时报配置成功。"
+FEISHU_HOURLY_REPORT_TITLE = "【群发队列小时报】"
 FEISHU_WEBHOOK_ERROR = "飞书 webhook 验证失败，请检查地址或机器人配置"
+FEISHU_HOURLY_REPORT_ERROR = "飞书小时报发送失败，请检查 webhook 或机器人配置"
 FEISHU_VALIDATION_STATUSES = {"unverified", "valid", "invalid"}
 _ALLOWED_HOSTS = {"open.feishu.cn", "open.larksuite.com"}
 _ALLOWED_PATH_PREFIX = "/open-apis/bot/v2/hook/"
@@ -19,6 +22,9 @@ _ALLOWED_PATH_PREFIX = "/open-apis/bot/v2/hook/"
 
 class FeishuWebhookValidationError(ValueError):
     pass
+
+
+HourlyReportSender = Callable[[str, str], dict[str, Any]]
 
 
 def validate_feishu_webhook_url(webhook_url: str) -> None:
@@ -200,11 +206,157 @@ def send_feishu_webhook_message(webhook_url: str, text: str) -> dict[str, Any]:
     return {"ok": True, "status_code": int(response.status_code)}
 
 
+def get_previous_hour_window(time_zone: str = "Asia/Shanghai", now: datetime | None = None) -> dict[str, Any]:
+    tz = ZoneInfo(time_zone)
+    current = now or datetime.now(tz)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=tz)
+    else:
+        current = current.astimezone(tz)
+    window_end = current.replace(minute=0, second=0, microsecond=0)
+    window_start = window_end - timedelta(hours=1)
+    return {
+        "windowStart": window_start,
+        "windowEnd": window_end,
+        "label": f"{window_start:%Y-%m-%d %H:%M} - {window_end:%H:%M}",
+    }
+
+
+def get_broadcast_job_hourly_summary(*, window_start: datetime, window_end: datetime, repo: AdminJobsRepository | None = None) -> dict[str, int]:
+    repo = repo or build_admin_jobs_repository()
+    row = repo.broadcast_hourly_summary(window_start=window_start, window_end=window_end)
+    return {
+        "totalJobs": int(row.get("total_jobs") or 0),
+        "successJobs": int(row.get("success_jobs") or 0),
+        "failedJobs": int(row.get("failed_jobs") or 0),
+        "pendingJobs": int(row.get("pending_jobs") or 0),
+        "cancelledJobs": int(row.get("cancelled_jobs") or 0),
+    }
+
+
+def build_broadcast_job_hourly_report_message(
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    total_jobs: int,
+    success_jobs: int,
+    failed_jobs: int,
+) -> str:
+    start = _as_shanghai(window_start)
+    end = _as_shanghai(window_end)
+    return (
+        f"{FEISHU_HOURLY_REPORT_TITLE}\n"
+        f"统计窗口：{start:%Y-%m-%d %H:%M} - {end:%H:%M}\n\n"
+        f"任务总数：{int(total_jobs)}\n"
+        f"成功：{int(success_jobs)}\n"
+        f"失败：{int(failed_jobs)}"
+    )
+
+
+def build_hourly_report_key(*, channel: str = FEISHU_CHANNEL, window_start: datetime) -> str:
+    start = _as_shanghai(window_start)
+    return f"broadcast_jobs:{channel}:{start.isoformat(timespec='seconds')}"
+
+
+def create_hourly_report_pending(
+    *,
+    report_key: str,
+    window_start: datetime,
+    window_end: datetime,
+    channel: str = FEISHU_CHANNEL,
+    repo: AdminJobsRepository | None = None,
+) -> str:
+    repo = repo or build_admin_jobs_repository()
+    return repo.create_broadcast_hourly_report_pending(report_key=report_key, window_start=window_start, window_end=window_end, channel=channel)
+
+
+def mark_hourly_report_sent(*, report_key: str, payload_json: dict[str, Any], repo: AdminJobsRepository | None = None) -> None:
+    repo = repo or build_admin_jobs_repository()
+    repo.mark_broadcast_hourly_report_sent(report_key=report_key, payload_json=payload_json)
+
+
+def mark_hourly_report_failed(*, report_key: str, error_message: str, repo: AdminJobsRepository | None = None) -> None:
+    repo = repo or build_admin_jobs_repository()
+    repo.mark_broadcast_hourly_report_failed(report_key=report_key, error_message=_short_error(error_message) or FEISHU_HOURLY_REPORT_ERROR)
+
+
+def send_broadcast_job_hourly_feishu_report(
+    *,
+    now: datetime | None = None,
+    repo: AdminJobsRepository | None = None,
+    sender: HourlyReportSender | None = None,
+) -> dict[str, Any]:
+    repo = repo or build_admin_jobs_repository()
+    setting = repo.get_broadcast_notification_setting(FEISHU_CHANNEL)
+    if not setting or not normalized_text(setting.get("webhook_url")):
+        return {"status": "skipped_no_config"}
+    if not normalized_bool(setting.get("enabled")):
+        return {"status": "skipped_disabled"}
+    if normalized_text(setting.get("validation_status")) != "valid":
+        return {"status": "skipped_unverified"}
+
+    window = get_previous_hour_window(now=now)
+    window_start = window["windowStart"]
+    window_end = window["windowEnd"]
+    summary = get_broadcast_job_hourly_summary(window_start=window_start, window_end=window_end, repo=repo)
+    public_summary = _public_summary(summary)
+    if public_summary["totalJobs"] <= 0:
+        return {"status": "skipped_no_jobs", "summary": public_summary}
+
+    report_key = build_hourly_report_key(channel=FEISHU_CHANNEL, window_start=window_start)
+    created = create_hourly_report_pending(report_key=report_key, window_start=window_start, window_end=window_end, channel=FEISHU_CHANNEL, repo=repo)
+    if created == "duplicate":
+        return {"status": "skipped_duplicate", "summary": public_summary}
+
+    message = build_broadcast_job_hourly_report_message(
+        window_start=window_start,
+        window_end=window_end,
+        total_jobs=public_summary["totalJobs"],
+        success_jobs=public_summary["successJobs"],
+        failed_jobs=public_summary["failedJobs"],
+    )
+    send = sender or send_feishu_webhook_message
+    try:
+        result = send(normalized_text(setting.get("webhook_url")), message)
+    except Exception:
+        result = {"ok": False}
+    if result.get("ok") is True:
+        mark_hourly_report_sent(
+            report_key=report_key,
+            repo=repo,
+            payload_json={
+                "channel": FEISHU_CHANNEL,
+                "message": message,
+                "summary": public_summary,
+                "windowStart": window_start.isoformat(),
+                "windowEnd": window_end.isoformat(),
+            },
+        )
+        return {"status": "sent", "summary": public_summary}
+    mark_hourly_report_failed(report_key=report_key, error_message=FEISHU_HOURLY_REPORT_ERROR, repo=repo)
+    return {"status": "failed", "summary": public_summary, "message": FEISHU_HOURLY_REPORT_ERROR}
+
+
 def _short_error(value: Any) -> str | None:
     text = normalized_text(value)
     if not text:
         return None
     return text.replace("\n", " ")[:120]
+
+
+def _as_shanghai(value: datetime) -> datetime:
+    tz = ZoneInfo("Asia/Shanghai")
+    if value.tzinfo is None:
+        return value.replace(tzinfo=tz)
+    return value.astimezone(tz)
+
+
+def _public_summary(summary: dict[str, Any]) -> dict[str, int]:
+    return {
+        "totalJobs": int(summary.get("totalJobs") or 0),
+        "successJobs": int(summary.get("successJobs") or 0),
+        "failedJobs": int(summary.get("failedJobs") or 0),
+    }
 
 
 def _iso_or_none(value: Any) -> str | None:

@@ -52,6 +52,10 @@ class AdminJobsRepository(Protocol):
     def approve_broadcast_job(self, job_id: int, *, approved_by: str) -> dict[str, Any] | None: ...
     def cancel_broadcast_job(self, job_id: int, *, cancelled_by: str, reason: str) -> dict[str, Any] | None: ...
     def get_broadcast_notification_setting(self, channel: str) -> dict[str, Any] | None: ...
+    def broadcast_hourly_summary(self, *, window_start: datetime, window_end: datetime) -> dict[str, int]: ...
+    def create_broadcast_hourly_report_pending(self, *, report_key: str, window_start: datetime, window_end: datetime, channel: str) -> str: ...
+    def mark_broadcast_hourly_report_sent(self, *, report_key: str, payload_json: dict[str, Any]) -> None: ...
+    def mark_broadcast_hourly_report_failed(self, *, report_key: str, error_message: str) -> None: ...
     def upsert_broadcast_notification_setting(
         self,
         *,
@@ -401,6 +405,23 @@ class PostgresAdminJobsRepository:
     def broadcast_counts(self) -> dict[str, int]:
         return _status_counts(self._rows("SELECT status, COUNT(*) AS cnt FROM broadcast_jobs GROUP BY status"))
 
+    def broadcast_hourly_summary(self, *, window_start: datetime, window_end: datetime) -> dict[str, int]:
+        row = self._one(
+            """
+            SELECT
+              COUNT(*) AS total_jobs,
+              COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS success_jobs,
+              COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_jobs,
+              COALESCE(SUM(CASE WHEN status IN ('queued', 'claimed', 'waiting_approval') THEN 1 ELSE 0 END), 0) AS pending_jobs,
+              COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_jobs
+            FROM broadcast_jobs
+            WHERE scheduled_for >= %s
+              AND scheduled_for < %s
+            """,
+            (window_start, window_end),
+        )
+        return _count_row(row)
+
     def get_broadcast_job(self, job_id: int) -> dict[str, Any] | None:
         return self._one("SELECT * FROM broadcast_jobs WHERE id = %s", (job_id,))
 
@@ -436,6 +457,47 @@ class PostgresAdminJobsRepository:
             WHERE channel = %s
             """,
             (channel,),
+        )
+
+    def create_broadcast_hourly_report_pending(self, *, report_key: str, window_start: datetime, window_end: datetime, channel: str) -> str:
+        row = self._execute_returning(
+            """
+            INSERT INTO broadcast_job_hourly_reports (
+                report_key, window_start, window_end, channel, status, payload_json,
+                created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, 'pending', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(report_key) DO NOTHING
+            RETURNING report_key
+            """,
+            (report_key, window_start, window_end, channel),
+        )
+        return "created" if row else "duplicate"
+
+    def mark_broadcast_hourly_report_sent(self, *, report_key: str, payload_json: dict[str, Any]) -> None:
+        self._execute(
+            """
+            UPDATE broadcast_job_hourly_reports
+            SET status = 'sent',
+                payload_json = %s::jsonb,
+                error_message = NULL,
+                sent_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE report_key = %s
+            """,
+            (json.dumps(payload_json, ensure_ascii=False), report_key),
+        )
+
+    def mark_broadcast_hourly_report_failed(self, *, report_key: str, error_message: str) -> None:
+        self._execute(
+            """
+            UPDATE broadcast_job_hourly_reports
+            SET status = 'failed',
+                error_message = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE report_key = %s
+            """,
+            (error_message[:200], report_key),
         )
 
     def upsert_broadcast_notification_setting(
@@ -534,6 +596,7 @@ class FixtureAdminJobsRepository:
             {"id": 3, "source_type": "manual", "source_id": "manual-3", "source_table": "manual_sends", "scheduled_for": "2026-04-02 13:10:00", "priority": 80, "batch_key": "batch-c", "status": "sent", "requires_approval": False, "approved_by": "", "approved_at": "", "cancelled_by": "", "cancelled_at": "", "cancel_reason": "", "target_count": 3, "target_summary": "3 个客户", "content_type": "text", "content_summary": "已发送内容", "attempt_count": 1, "last_error": "", "outbound_task_id": 10, "sent_count": 3, "failed_count": 0, "trace_id": "trace-3", "created_by": "fixture", "created_at": "2026-04-02 12:42:00", "updated_at": "2026-04-02 13:11:00", "claimed_at": "2026-04-02 13:10:00", "sent_at": "2026-04-02 13:11:00"},
         ]
         self.broadcast_notification_settings: dict[str, dict[str, Any]] = {}
+        self.broadcast_hourly_reports: dict[str, dict[str, Any]] = {}
         self.audit_logs: list[dict[str, Any]] = []
 
     def _filtered(self, rows: list[dict[str, Any]], *, limit: int, **filters: Any) -> list[dict[str, Any]]:
@@ -625,6 +688,22 @@ class FixtureAdminJobsRepository:
     def broadcast_counts(self) -> dict[str, int]:
         return _simple_counts(self.broadcast_jobs, "status", total_name="total_count")
 
+    def broadcast_hourly_summary(self, *, window_start: datetime, window_end: datetime) -> dict[str, int]:
+        rows = []
+        start_utc = _as_utc(window_start)
+        end_utc = _as_utc(window_end)
+        for row in self.broadcast_jobs:
+            scheduled = _as_utc(_parse_datetime(row.get("scheduled_for"), default_tz=window_start.tzinfo))
+            if start_utc <= scheduled < end_utc:
+                rows.append(row)
+        return {
+            "total_jobs": len(rows),
+            "success_jobs": sum(1 for row in rows if row.get("status") == "sent"),
+            "failed_jobs": sum(1 for row in rows if row.get("status") == "failed"),
+            "pending_jobs": sum(1 for row in rows if row.get("status") in {"queued", "claimed", "waiting_approval"}),
+            "cancelled_jobs": sum(1 for row in rows if row.get("status") == "cancelled"),
+        }
+
     def get_broadcast_job(self, job_id: int) -> dict[str, Any] | None:
         return copy.deepcopy(next((row for row in self.broadcast_jobs if int(row["id"]) == int(job_id)), None))
 
@@ -644,6 +723,35 @@ class FixtureAdminJobsRepository:
 
     def get_broadcast_notification_setting(self, channel: str) -> dict[str, Any] | None:
         return copy.deepcopy(self.broadcast_notification_settings.get(str(channel)))
+
+    def create_broadcast_hourly_report_pending(self, *, report_key: str, window_start: datetime, window_end: datetime, channel: str) -> str:
+        if report_key in self.broadcast_hourly_reports:
+            return "duplicate"
+        self.broadcast_hourly_reports[report_key] = {
+            "report_key": report_key,
+            "window_start": window_start,
+            "window_end": window_end,
+            "channel": channel,
+            "status": "pending",
+            "payload_json": {},
+            "error_message": None,
+            "sent_at": None,
+            "created_at": _now_text(),
+            "updated_at": _now_text(),
+        }
+        return "created"
+
+    def mark_broadcast_hourly_report_sent(self, *, report_key: str, payload_json: dict[str, Any]) -> None:
+        row = self.broadcast_hourly_reports.get(report_key)
+        if not row:
+            return
+        row.update({"status": "sent", "payload_json": copy.deepcopy(payload_json), "error_message": None, "sent_at": _now_text(), "updated_at": _now_text()})
+
+    def mark_broadcast_hourly_report_failed(self, *, report_key: str, error_message: str) -> None:
+        row = self.broadcast_hourly_reports.get(report_key)
+        if not row:
+            return
+        row.update({"status": "failed", "error_message": str(error_message or "")[:200], "updated_at": _now_text()})
 
     def upsert_broadcast_notification_setting(
         self,
@@ -697,6 +805,26 @@ def _simple_counts(rows: list[dict[str, Any]], key: str, *, total_name: str) -> 
     ):
         counts.setdefault(name, 0)
     return counts
+
+
+def _parse_datetime(value: Any, *, default_tz: Any = timezone.utc) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            parsed = datetime.now(timezone.utc)
+        else:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=default_tz or timezone.utc)
+    return parsed
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 _FIXTURE_REPO = FixtureAdminJobsRepository()

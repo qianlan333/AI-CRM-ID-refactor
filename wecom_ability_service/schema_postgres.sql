@@ -165,6 +165,24 @@ CREATE TABLE IF NOT EXISTS broadcast_queue_notification_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_queue_notification_settings_channel
 ON broadcast_queue_notification_settings(channel);
 
+CREATE TABLE IF NOT EXISTS broadcast_job_hourly_reports (
+    id BIGSERIAL PRIMARY KEY,
+    report_key TEXT NOT NULL UNIQUE,
+    window_start TIMESTAMPTZ NOT NULL,
+    window_end TIMESTAMPTZ NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'feishu',
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'sent', 'failed')),
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_message TEXT,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_job_hourly_reports_window
+ON broadcast_job_hourly_reports (channel, window_start DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS contact_tags (
     id BIGSERIAL PRIMARY KEY,
     external_userid TEXT NOT NULL,
