@@ -13,7 +13,7 @@ capability_owner: aicrm_next.automation_engine
 last_merged_pr: "#819"
 last_attempted_action: post_phase7_cleanup_agent_outputs_exact_route_cleanup_bundle
 last_created_pr: pending
-recommended_next_pr: post_phase7_cleanup_legacy_runtime_recheck_bundle
+recommended_next_pr: post_phase7_cleanup_next_route_evidence_collection_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -423,7 +423,7 @@ completed_steps:
   - post_phase7_cleanup_agent_outputs_exact_route_cleanup_completed
 
 next_allowed_actions:
-  - post_phase7_cleanup_legacy_runtime_recheck_bundle
+  - post_phase7_cleanup_next_route_evidence_collection_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -910,12 +910,12 @@ post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence:
   cleanup_family: task_groups_shadow_compare_rollback_evidence
   route_family: /api/admin/automation-conversion/task-groups*
   latest_main_sha: 2059090a473ec098acef9237212a40de8bab215f
-  shadow_compare_command: python3 tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py --latest-main-sha 2059090a473ec098acef9237212a40de8bab215f --shadow-output-json /tmp/task_groups_shadow_compare_evidence.json --rollback-output-json /tmp/task_groups_rollback_rehearsal_evidence.json --combined-output-json /tmp/task_groups_shadow_rollback_evidence.json
+  shadow_compare_command: retired_governance_artifact_removed
   shadow_compare_output_path: /tmp/task_groups_shadow_compare_evidence.json
   shadow_compare_executed: true
   shadow_compare_passed: true
-  rollback_plan_path: "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.md#rollback-plan"
-  rollback_rehearsal_command: python3 tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py --latest-main-sha 2059090a473ec098acef9237212a40de8bab215f --shadow-output-json /tmp/task_groups_shadow_compare_evidence.json --rollback-output-json /tmp/task_groups_rollback_rehearsal_evidence.json --combined-output-json /tmp/task_groups_shadow_rollback_evidence.json
+  rollback_plan_path: retired_governance_artifact_removed
+  rollback_rehearsal_command: retired_governance_artifact_removed
   rollback_rehearsal_output_path: /tmp/task_groups_rollback_rehearsal_evidence.json
   rollback_rehearsal_executed: true
   rollback_rehearsal_passed: true
