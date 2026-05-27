@@ -21,6 +21,7 @@ class CommerceRepository(Protocol):
     def get_order(self, order_no: str) -> dict[str, Any] | None: ...
     def apply_notify(self, order_no: str, provider: str, status: str, transaction_id: str | None) -> dict[str, Any]: ...
     def list_transactions(self, provider: str, filters: dict[str, Any], *, limit: int, offset: int) -> dict[str, Any]: ...
+    def request_refund(self, provider: str, order_no: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 def _seed_products() -> list[dict[str, Any]]:
@@ -77,6 +78,9 @@ def _seed_orders() -> list[dict[str, Any]]:
             "currency": "CNY",
             "payment_status": "paid",
             "transaction_id": "transaction_masked_001",
+            "refunded_amount_total": 0,
+            "active_refund_amount_total": 0,
+            "refund_status": "",
             "paid_at": ts,
             "created_at": ts,
             "updated_at": ts,
@@ -174,6 +178,9 @@ class InMemoryCommerceRepository:
                     return deepcopy(order)
                 order["payment_status"] = next_status
                 order["transaction_id"] = transaction_id or order.get("transaction_id") or f"transaction_fake_{order_no}"
+                order.setdefault("refunded_amount_total", 0)
+                order.setdefault("active_refund_amount_total", 0)
+                order.setdefault("refund_status", "")
                 order["paid_at"] = now_iso() if next_status == "paid" else order.get("paid_at")
                 order["updated_at"] = now_iso()
                 return deepcopy(order)
@@ -191,6 +198,25 @@ class InMemoryCommerceRepository:
         if filters.get("date_to"):
             rows = [row for row in rows if str(row.get("created_at") or "") <= filters["date_to"]]
         return {"items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
+
+    def request_refund(self, provider: str, order_no: str, payload: dict[str, Any]) -> dict[str, Any]:
+        for order in self._orders:
+            if order["order_no"] == order_no:
+                if order["payment_provider"] != provider:
+                    raise ContractError("payment_provider mismatch")
+                active = int(order.get("active_refund_amount_total") or 0)
+                order["active_refund_amount_total"] = active + int(payload.get("refund_amount_total") or 0)
+                order["refund_status"] = "requested"
+                order["updated_at"] = now_iso()
+                return {
+                    "refund": {
+                        "status": "requested",
+                        "status_label": "退款申请已提交",
+                        "out_refund_no": payload.get("out_refund_no", ""),
+                    },
+                    "order": deepcopy(order),
+                }
+        raise NotFoundError("order not found")
 
     def _find_product(self, predicate) -> dict[str, Any] | None:
         for item in self._products:
