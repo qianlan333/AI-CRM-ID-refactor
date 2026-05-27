@@ -19,7 +19,12 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
-from aicrm_next.automation_engine.channels_api import default_channel_form_payload, get_channel_resource
+from aicrm_next.automation_engine.channels_api import (
+    default_channel_form_payload,
+    get_channel_resource,
+    list_program_channel_bindings_resource,
+    list_program_entry_candidate_channels,
+)
 from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
@@ -1134,10 +1139,16 @@ async def admin_channel_edit_page(request: Request, channel_id: int) -> Response
     name="api.admin_automation_program_entry_channels",
 )
 async def admin_automation_program_entry_channels(request: Request, program_id: int) -> Response:
+    data = get_automation_program_with_summary(int(program_id))
+    if not data:
+        return _automation_program_not_found(request, program_id)
+    program = dict(data.get("program") or {})
+    bindings = list_program_channel_bindings_resource(int(program_id))
+    candidate_channels = list_program_entry_candidate_channels(int(program_id))
     context = _shell_context(
         request=request,
         page_title="入口渠道",
-        page_summary="在自动化运营方案内绑定已有渠道码，渠道码中心不提供绑定入口。",
+        page_summary="在自动化运营方案内绑定已有渠道码；普通二维码和企微获客助手链接都可以作为入口。",
         active_endpoint="api.admin_automation_conversion",
     )
     context.update(
@@ -1145,19 +1156,29 @@ async def admin_automation_program_entry_channels(request: Request, program_id: 
             "breadcrumbs": [
                 {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
                 {"label": "自动化运营", "href": request.url_for("api.admin_automation_conversion")},
-                {"label": f"方案 {program_id} 入口渠道"},
+                {
+                    "label": str(program.get("program_name") or f"方案 {program_id}"),
+                    "href": request.url_for("api.admin_automation_program_overview", program_id=program_id),
+                },
+                {"label": "入口渠道"},
             ],
-            "state_title": "入口渠道",
-            "state_body": "生产环境会打开当前方案的入口渠道页，用于绑定已有普通二维码或企微获客助手链接。",
-            "state_items": [
-                "一个渠道同一时间只能 active 绑定一个方案",
-                "绑定不会自动导入历史用户",
-                "扫码或人工导入后才产生入池清洗",
-            ],
-            "actions": [{"label": "渠道码中心", "href": request.url_for("api.admin_channels_page"), "variant": "secondary"}],
+            "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "entry_channels"),
+            "program_context": _automation_program_context(request, program, active_key="entry_channels"),
+            "entry_channels_payload": jsonable_encoder(
+                {
+                    "program": program,
+                    "bindings": bindings,
+                    "candidate_channels": candidate_channels,
+                    "api_urls": {
+                        "bindings": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings",
+                        "binding_base": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings/0",
+                    },
+                }
+            ),
+            "admin_action_token": "",
         }
     )
-    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+    return templates.TemplateResponse(request, "admin_console/automation_conversion_entry_channels.html", context)
 
 
 @router.get("/admin/wechat-pay/transactions", name="api.admin_wechat_pay_transactions_page")

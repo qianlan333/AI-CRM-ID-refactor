@@ -13,6 +13,7 @@
   .setup-step span { font-size: 12px; font-weight: 800; }
   .setup-step strong { font-size: 16px; line-height: 1.35; }
   .setup-panel { display: grid; gap: 16px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .setup-panel-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
   .setup-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .setup-field { display: grid; gap: 7px; }
   .setup-field span { color: #475569; font-size: 13px; font-weight: 800; }
@@ -47,6 +48,7 @@
   .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 1080px) {
     .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid { grid-template-columns: 1fr; }
+    .setup-panel-head { align-items: stretch; flex-direction: column; }
     .setup-footer { align-items: stretch; flex-direction: column; }
   }
 </style>
@@ -127,77 +129,32 @@
   </section>
   {% elif current_step == "entry" %}
   {% set entry = workspace.entry or {} %}
-  {% set qrcode = entry.qrcode_channel or {} %}
   <section class="setup-panel">
-    <div>
-      <h2>入口渠道</h2>
-      <p class="setup-muted">读取当前方案已绑定的二维码、渠道码和企业微信获客助手入口。</p>
-    </div>
-    <div class="setup-summary-grid">
-      <article class="setup-summary-item"><span>已绑定入口</span><strong>{{ (entry.channels or [])|length }}</strong></article>
-      <article class="setup-summary-item"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
-      <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
-    </div>
-    <div class="setup-two-col">
-      <article class="setup-result-card">
-        <h3>当前二维码入口</h3>
-        <div class="setup-result-row"><strong>渠道名称</strong><span>{{ qrcode.channel_name or "-" }}</span></div>
-        <div class="setup-result-row"><strong>渠道编码</strong><span>{{ qrcode.channel_code or "-" }}</span></div>
-        <div class="setup-result-row"><strong>状态</strong><span>{{ qrcode.status or "-" }} / {{ qrcode.binding_status or "-" }}</span></div>
-        <div class="setup-result-row"><strong>初始人群</strong><span>{{ qrcode.initial_audience_label or qrcode.initial_audience_code or "-" }}</span></div>
-        <div class="setup-result-row"><strong>scene_value</strong><span>{{ qrcode.scene_value or "-" }}</span></div>
-        <div class="setup-result-row"><strong>二维码链接</strong><span>{{ qrcode.qr_url or "-" }}</span></div>
-        <div class="setup-result-row"><strong>欢迎语</strong><span>{{ qrcode.welcome_message or "-" }}</span></div>
-      </article>
-      <article class="setup-result-card">
-        <h3>入口配置块</h3>
-        {% set entry_block = workspace.entry_channel or {} %}
-        <div class="setup-result-row"><strong>二维码配置</strong><span>{{ "已保存" if entry_block.qrcode else "未保存" }}</span></div>
-        <div class="setup-result-row"><strong>获客助手</strong><span>{{ (entry.customer_acquisition_links or [])|length }} 条</span></div>
-        <div class="setup-result-row"><strong>免验证</strong><span>{{ "是" if qrcode.auto_accept_friend else "否" }}</span></div>
-        <div class="setup-result-row"><strong>标签</strong><span>{{ qrcode.entry_tag_group_name or "-" }} / {{ qrcode.entry_tag_name or "-" }}</span></div>
-      </article>
+    <div class="setup-panel-head">
+      <div>
+        <h2>入口渠道</h2>
+        <p class="setup-muted">入口渠道已迁移到当前方案的入口渠道页。这里仅保留旧数据只读展示，不再创建、绑定或重新生成渠道。</p>
+      </div>
+      <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">前往入口渠道页</a>
     </div>
     <div class="setup-table-wrap">
       <table class="setup-table">
-        <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>初始人群</th><th>链接/二维码</th><th>更新时间</th></tr></thead>
+        <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>标识</th><th>链接</th></tr></thead>
         <tbody>
           {% for channel in entry.channels or [] %}
+          {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
           <tr>
-            <td>{{ channel.channel_type }} / {{ channel.carrier_type }}</td>
+            <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
             <td>{{ channel.channel_name or channel.channel_code }}</td>
-            <td>{{ channel.status }} / {{ channel.binding_status }}</td>
-            <td>{{ channel.initial_audience_label or channel.initial_audience_code }}</td>
-            <td>{{ channel.final_url or channel.link_url or channel.qr_url or channel.scene_value or "-" }}</td>
-            <td>{{ channel.updated_at or "-" }}</td>
+            <td>{{ channel.status or "-" }}</td>
+            <td>{{ (channel.customer_channel or channel.scene_value or channel.channel_code or "-") if is_link else (channel.scene_value or channel.channel_code or "-") }}</td>
+            <td>{{ channel.final_url or channel.link_url or channel.qr_url or "-" }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="6">当前方案还没有绑定入口。</td></tr>
+          <tr><td colspan="5">当前没有旧入口渠道数据。</td></tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-    <div class="setup-table-wrap">
-      <table class="setup-table">
-        <thead><tr><th>获客助手</th><th>link_id</th><th>初始人群</th><th>状态</th><th>final_url</th><th>最近事件</th></tr></thead>
-        <tbody>
-          {% for link in entry.customer_acquisition_links or [] %}
-          <tr>
-            <td>{{ link.link_name or link.link_id }}</td>
-            <td>{{ link.link_id }}</td>
-            <td>{{ link.initial_audience_code }}</td>
-            <td>{{ link.status }}</td>
-            <td>{{ link.final_url or link.link_url or "-" }}</td>
-            <td>{{ link.last_event_at or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="6">当前方案还没有获客助手入口。</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="setup-actions">
-      <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">编辑入口渠道</a>
     </div>
   </section>
   {% elif current_step == "segmentation" %}
