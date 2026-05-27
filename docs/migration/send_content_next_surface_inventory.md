@@ -22,6 +22,7 @@
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
 - `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/frontend_compat/templates/admin_console/cloud_campaigns_workspace.html`
 - `aicrm_next/frontend_compat/templates/admin_console/group_ops.html`
 - `aicrm_next/frontend_compat/static/admin_console/group_ops.js`
 - `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
@@ -43,6 +44,11 @@
   - 标准组件负责标准话术、图片素材、小程序素材、附件/PDF 素材。
   - `content_package_json` 是标准组件的保存结构；legacy `node_attachments` / `attachments` 仅兼容旧数据和发送 fallback，不再作为运营输入项。
   - 本迁移不改变真实企微发送、media_id 解析或群消息下发链路。
+- Campaign Step: 已迁移到 `AICRMSendContentComposer`。
+  - Campaign Step 外层仍由 Campaign 审阅页负责：`day_offset`、`send_time`、`stop_on_reply`、step id、campaign id、审批状态、审阅状态。
+  - 标准组件负责 `SendContentPackage`：`content_text`、`image_library_ids`、`miniprogram_library_ids`、`attachment_library_ids`。
+  - 保存时前端 adapter 同步写回现有 step payload 字段；后端继续落到 `content_payload_json`，老 `content_text` / `content_payload_json` 数据读取不报错。
+  - 本迁移不改变 Agent 生成 campaign 的核心逻辑、真实企微发送、media_id 解析或最终下发链路。
 
 ## Explicit Non-Surfaces
 
@@ -62,4 +68,4 @@ This work does not add or rewrite:
 
 HXC / funnel dashboard broadcast now has a Next-native task creation API. Real outbound dispatch, media upload, and media ID resolution remain separate explicit work and must not be hidden behind the old Flask broadcast route.
 
-Campaign step and Sidebar integration are also left for the next frontend integration pass. Channel code center entry tags remain a separate outer-page picker and are not part of `SendContentPackage`.
+Sidebar integration is still left for a later frontend integration pass. Channel code center entry tags remain a separate outer-page picker and are not part of `SendContentPackage`.
