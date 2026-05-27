@@ -1,0 +1,71 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+<style>
+  .program-overview { display: grid; gap: 18px; }
+  .overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .overview-card { display: grid; gap: 10px; padding: 18px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .overview-card span { color: #64748b; font-size: 13px; font-weight: 800; }
+  .overview-card strong { color: #111827; font-size: 26px; line-height: 1.15; }
+  .overview-panel { display: grid; gap: 14px; padding: 20px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .overview-panel h2, .overview-panel h3 { margin: 0; color: #111827; }
+  .overview-muted { margin: 0; color: #64748b; line-height: 1.7; }
+  .overview-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .overview-action { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border: 1px solid rgba(37,99,235,.18); border-radius: 10px; background: #eef4ff; color: #1456f0; font-weight: 800; text-decoration: none; }
+  .overview-action.is-primary { background: #2563eb; color: #fff; box-shadow: 0 10px 22px rgba(37,99,235,.18); }
+  @media (max-width: 960px) {
+    .overview-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set workspace = overview_workspace or {} %}
+{% set program = workspace.program or {} %}
+{% set summary = workspace.summary or {} %}
+{% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "停用" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
+
+<section class="program-overview">
+  <section class="overview-panel">
+    <div>
+      <h2>方案概览</h2>
+      <p class="overview-muted">{{ program.program_name or "自动化运营方案" }} · {{ status_label }}</p>
+    </div>
+    {% if workspace_tabs %}
+    <nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
+      {% for item in workspace_tabs %}
+      <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+        <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+  </section>
+
+  <div class="overview-grid">
+    <article class="overview-card"><span>入口数</span><strong>{{ summary.channel_count or 0 }}</strong></article>
+    <article class="overview-card"><span>运营动作</span><strong>{{ summary.workflow_count or 0 }}</strong></article>
+    <article class="overview-card"><span>发布状态</span><strong>{{ summary.publish_status_label or "未发布" }}</strong></article>
+    <article class="overview-card"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
+  </div>
+
+  <section class="overview-panel">
+    <div>
+      <h3>方案信息</h3>
+      <p class="overview-muted">{{ program.description or "当前方案还没有填写描述。" }}</p>
+    </div>
+    <div class="overview-grid">
+      <article class="overview-card"><span>方案名称</span><strong>{{ program.program_name or "-" }}</strong></article>
+      <article class="overview-card"><span>内部 Code</span><strong>{{ program.program_code or "-" }}</strong></article>
+      <article class="overview-card"><span>状态</span><strong>{{ status_label }}</strong></article>
+      <article class="overview-card"><span>更新时间</span><strong>{{ program.updated_at or "-" }}</strong></article>
+    </div>
+    <div class="overview-actions">
+      <a class="overview-action" href="{{ url_for('api.admin_automation_program_copy_form', program_id=program.id) }}">复制方案</a>
+      <a class="overview-action" href="{{ url_for('api.admin_automation_program_entry_channels', program_id=program.id) }}">入口渠道</a>
+      <a class="overview-action is-primary" href="{{ url_for('api.admin_automation_program_setup', program_id=program.id) }}?step=basic">编辑配置</a>
+    </div>
+  </section>
+</section>
+{% endblock %}

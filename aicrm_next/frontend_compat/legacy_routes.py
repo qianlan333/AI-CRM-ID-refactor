@@ -20,16 +20,23 @@ from aicrm_next.admin_read_model.application import (
     GetAdminTransactionsPageQuery,
     page_row_count,
 )
-from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
 from aicrm_next.automation_engine.channels_api import (
     default_channel_form_payload,
     get_channel_resource,
     list_channel_owner_candidates,
 )
+from aicrm_next.automation_engine.programs import (
+    AutomationProgramDataUnavailable,
+    SETUP_STEPS,
+    copy_automation_program,
+    get_automation_program_with_summary,
+    list_automation_programs_payload,
+    update_automation_program_basic_info,
+    update_automation_program_status,
+)
 from aicrm_next.customer_read_model.application import ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
 from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
-from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     LegacyQuestionnaireDataUnavailable,
     get_questionnaire_detail_from_legacy,
@@ -64,6 +71,9 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/channels/new",
     "/admin/channels/{channel_id}/edit",
     "/admin/automation-conversion",
+    "/admin/automation-conversion/programs/{program_id}/setup",
+    "/admin/automation-conversion/programs/{program_id}/overview",
+    "/admin/automation-conversion/programs/{program_id}/copy",
     "/admin/automation-conversion/group-ops/ui",
     "/admin/automation-conversion/group-ops/plans/{plan_id}",
     "/admin/automation-conversion/group-ops/groups/ui",
@@ -100,14 +110,16 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         external_userid = str(path_params.get("external_userid", ""))
         return f"/admin/customers/{external_userid}"
     program_id = str(path_params.get("program_id") or "").strip()
-    if name == "api.admin_automation_program_entry_channels" and program_id:
-        return f"/admin/automation-conversion/programs/{program_id}/entry-channels"
     program_route_map = {
+        "api.admin_automation_program_setup": "setup",
         "api.admin_automation_program_overview": "overview",
+        "api.admin_automation_program_update": "update",
+        "api.admin_automation_program_copy_form": "copy",
         "api.admin_automation_program_copy": "copy",
         "api.admin_automation_program_pause": "pause",
         "api.admin_automation_program_activate": "activate",
         "api.admin_automation_program_archive": "archive",
+        "api.admin_automation_program_entry_channels": "entry-channels",
     }
     if name in program_route_map and program_id:
         base = f"/admin/automation-conversion/programs/{program_id}/{program_route_map[name]}"
@@ -692,36 +704,10 @@ async def admin_questionnaire_external_push_logs(request: Request) -> Response:
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
 def admin_automation_conversion(request: Request):
-    if production_data_ready():
-        try:
-            program_list_payload = list_automation_programs_from_legacy()
-        except LegacyAutomationDataUnavailable:
-            program_list_payload = {"items": [], "default_program": {}, "total": 0, "source_status": "production_unavailable"}
-    else:
-        pools = ListAutomationPoolsQuery()()["pools"]
-        records = ListAutomationExecutionRecordsQuery()(limit=5, offset=0)["items"]
-        program_list_payload = {
-            "items": [
-                {
-                    "program": {
-                        "id": 1,
-                        "program_name": "自动化运营方案",
-                        "program_code": "next_local_preview",
-                        "status": "active",
-                        "updated_at": "2026-05-20T12:00:00Z",
-                        "description": "本地结构校验方案；生产环境读取 PostgreSQL。",
-                    },
-                    "summary": {
-                        "channel_count": len(pools),
-                        "workflow_count": sum(pool.get("active_action_count", 0) for pool in pools),
-                        "latest_execution_at": records[0]["created_at"] if records else "",
-                    },
-                }
-            ],
-            "default_program": {"id": 1, "program_name": "自动化运营方案"},
-            "total": 1,
-            "source_status": "local_contract_probe",
-        }
+    try:
+        program_list_payload = list_automation_programs_payload()
+    except AutomationProgramDataUnavailable:
+        program_list_payload = {"items": [], "default_program": {}, "total": 0, "source_status": "next_postgres_unavailable"}
     context = _shell_context(
         request=request,
         page_title="自动化运营",
@@ -737,6 +723,248 @@ def admin_automation_conversion(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_console/automation_program_list.html", context)
+
+
+def _automation_program_workspace_tabs(request: Request, program_id: int, active_key: str) -> list[dict[str, object]]:
+    tabs = (
+        ("overview", "概览", "api.admin_automation_program_overview"),
+        ("setup", "配置向导", "api.admin_automation_program_setup"),
+        ("entry_channels", "入口渠道", "api.admin_automation_program_entry_channels"),
+    )
+    return [
+        {
+            "key": key,
+            "label": label,
+            "summary": "",
+            "href": _legacy_url_for(endpoint, program_id=int(program_id)),
+            "active": key == active_key,
+        }
+        for key, label, endpoint in tabs
+    ]
+
+
+def _automation_program_context(request: Request, program: dict[str, object], *, active_key: str) -> dict[str, object]:
+    program_id = int(program.get("id") or 0)
+    return {
+        "id": program_id,
+        "program_code": str(program.get("program_code") or ""),
+        "program_name": str(program.get("program_name") or ""),
+        "description": str(program.get("description") or ""),
+        "status": str(program.get("status") or "draft"),
+        "list_href": _legacy_url_for("api.admin_automation_conversion"),
+        "overview_href": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
+        "update_href": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+        "copy_href": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
+        "activate_href": _legacy_url_for("api.admin_automation_program_activate", program_id=program_id),
+        "pause_href": _legacy_url_for("api.admin_automation_program_pause", program_id=program_id),
+        "archive_href": _legacy_url_for("api.admin_automation_program_archive", program_id=program_id),
+        "active_key": active_key,
+    }
+
+
+def _automation_program_not_found(request: Request, program_id: int) -> Response:
+    context = _shell_context(
+        request=request,
+        page_title="自动化运营方案不存在",
+        page_summary="没有找到对应的自动化运营方案。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "自动化运营", "href": request.url_for("api.admin_automation_conversion")},
+                {"label": f"方案 {program_id}"},
+            ],
+            "state_title": "方案不存在",
+            "state_body": f"没有找到 ID 为 {program_id} 的自动化运营方案。",
+            "state_items": ["请从自动化运营方案列表重新进入", "生产环境直接读取 Next PostgreSQL 方案表"],
+            "actions": [{"label": "返回方案列表", "href": request.url_for("api.admin_automation_conversion"), "variant": "primary"}],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
+
+
+def _setup_workspace(request: Request, program: dict[str, object], summary: dict[str, object], *, step: str) -> dict[str, object]:
+    program_id = int(program.get("id") or 0)
+    normalized_step = step if step in {item["key"] for item in SETUP_STEPS} else "basic"
+    return {
+        "program": program,
+        "summary": summary,
+        "step": normalized_step,
+        "steps": list(SETUP_STEPS),
+        "is_default_program": str(program.get("program_code") or "") == "signup_conversion_v1",
+        "basic": dict(program.get("config_json") or {}),
+        "urls": {
+            "base": _legacy_url_for("api.admin_automation_program_setup", program_id=program_id),
+            "overview": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
+            "entry_channels": _legacy_url_for("api.admin_automation_program_entry_channels", program_id=program_id),
+            "update": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+            "copy": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
+        },
+    }
+
+
+def _overview_workspace(request: Request, program: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+    program_id = int(program.get("id") or 0)
+    return {
+        "program": program,
+        "summary": summary,
+        "api_urls": {
+            "dashboard": f"/api/admin/automation-conversion/overview?program_id={program_id}",
+        },
+    }
+
+
+@router.get("/admin/automation-conversion/programs/{program_id:int}/setup", name="api.admin_automation_program_setup")
+def admin_automation_program_setup(request: Request, program_id: int) -> Response:
+    data = get_automation_program_with_summary(int(program_id))
+    if not data:
+        return _automation_program_not_found(request, program_id)
+    program = dict(data.get("program") or {})
+    summary = dict(data.get("summary") or {})
+    context = _shell_context(
+        request=request,
+        page_title="自动化运营方案",
+        page_summary="按方案配置基础信息、入口渠道、分层规则、入池规则、运营编排和发布检查。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "自动化运营方案", "href": request.url_for("api.admin_automation_conversion")},
+                {
+                    "label": str(program.get("program_name") or f"方案 {program_id}"),
+                    "href": request.url_for("api.admin_automation_program_overview", program_id=program_id),
+                },
+            ],
+            "setup_workspace": _setup_workspace(request, program, summary, step=str(request.query_params.get("step") or "basic")),
+            "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
+            "program_context": _automation_program_context(request, program, active_key="setup"),
+            "admin_action_token": "",
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/automation_program_setup_next.html", context)
+
+
+@router.get("/admin/automation-conversion/programs/{program_id:int}/overview", name="api.admin_automation_program_overview")
+def admin_automation_program_overview(request: Request, program_id: int) -> Response:
+    data = get_automation_program_with_summary(int(program_id))
+    if not data:
+        return _automation_program_not_found(request, program_id)
+    program = dict(data.get("program") or {})
+    summary = dict(data.get("summary") or {})
+    context = _shell_context(
+        request=request,
+        page_title="自动化运营方案概览",
+        page_summary="查看当前方案的发布状态、入口、运营编排和最近执行情况。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "自动化运营方案", "href": request.url_for("api.admin_automation_conversion")},
+                {"label": str(program.get("program_name") or f"方案 {program_id}")},
+            ],
+            "overview_workspace": _overview_workspace(request, program, summary),
+            "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "overview"),
+            "program_context": _automation_program_context(request, program, active_key="overview"),
+            "admin_action_token": "",
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/automation_program_overview_next.html", context)
+
+
+@router.get("/admin/automation-conversion/programs/{program_id:int}/copy", name="api.admin_automation_program_copy_form")
+def admin_automation_program_copy_form(request: Request, program_id: int) -> Response:
+    data = get_automation_program_with_summary(int(program_id))
+    if not data:
+        return _automation_program_not_found(request, program_id)
+    program = dict(data.get("program") or {})
+    context = _shell_context(
+        request=request,
+        page_title="复制自动化运营方案",
+        page_summary="复制当前方案配置，不复制成员、执行记录和运行日志。",
+        active_endpoint="api.admin_automation_conversion",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "自动化运营方案", "href": request.url_for("api.admin_automation_conversion")},
+                {"label": "复制方案"},
+            ],
+            "copy_source_program": program,
+            "copy_action": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
+            "cancel_href": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
+            "admin_action_token": "",
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/automation_program_copy_next.html", context)
+
+
+@router.post("/admin/automation-conversion/programs/{program_id:int}/copy", name="api.admin_automation_program_copy")
+async def admin_automation_program_copy(request: Request, program_id: int) -> Response:
+    form = await request.form()
+    copied = copy_automation_program(
+        int(program_id),
+        operator_id="admin",
+        payload={
+            "program_name": form.get("program_name"),
+            "program_code": form.get("program_code"),
+        },
+    )
+    copied_program = dict(copied.get("program") or {})
+    copied_id = int(copied_program.get("id") or 0)
+    return RedirectResponse(
+        _legacy_url_for("api.admin_automation_program_setup", program_id=copied_id, step="basic"),
+        status_code=303,
+    )
+
+
+@router.post("/admin/automation-conversion/programs/{program_id:int}/update", name="api.admin_automation_program_update")
+async def admin_automation_program_update(request: Request, program_id: int) -> Response:
+    form = await request.form()
+    update_automation_program_basic_info(
+        int(program_id),
+        {
+            "program_name": form.get("program_name"),
+            "program_code": form.get("program_code"),
+            "description": form.get("description"),
+            "status": form.get("status"),
+        },
+        operator_id="admin",
+    )
+    next_url = str(form.get("next") or "").strip()
+    if not next_url or not next_url.startswith("/"):
+        next_url = _legacy_url_for("api.admin_automation_program_setup", program_id=program_id, step="basic")
+    return RedirectResponse(next_url, status_code=303)
+
+
+async def _automation_program_status_redirect(request: Request, program_id: int, status: str) -> Response:
+    form = await request.form()
+    update_automation_program_status(int(program_id), status=status, operator_id="admin")
+    next_url = str(form.get("next") or "").strip()
+    if not next_url or not next_url.startswith("/"):
+        next_url = _legacy_url_for("api.admin_automation_conversion")
+    return RedirectResponse(next_url, status_code=303)
+
+
+@router.post("/admin/automation-conversion/programs/{program_id:int}/pause", name="api.admin_automation_program_pause")
+async def admin_automation_program_pause(request: Request, program_id: int) -> Response:
+    return await _automation_program_status_redirect(request, program_id, "paused")
+
+
+@router.post("/admin/automation-conversion/programs/{program_id:int}/activate", name="api.admin_automation_program_activate")
+async def admin_automation_program_activate(request: Request, program_id: int) -> Response:
+    return await _automation_program_status_redirect(request, program_id, "active")
+
+
+@router.post("/admin/automation-conversion/programs/{program_id:int}/archive", name="api.admin_automation_program_archive")
+async def admin_automation_program_archive(request: Request, program_id: int) -> Response:
+    return await _automation_program_status_redirect(request, program_id, "archived")
 
 
 def _group_ops_page_context(
