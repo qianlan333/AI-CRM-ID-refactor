@@ -15,7 +15,6 @@ from aicrm_next.admin_read_model.application import (
     GetAdminApiDocsPageQuery,
     GetAdminConfigPageQuery,
     GetAdminFunnelPageQuery,
-    GetAdminJobsPageQuery,
     GetAdminProductsPageQuery,
     GetAdminTransactionsPageQuery,
     page_row_count,
@@ -86,7 +85,6 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/automation-conversion/group-ops/plans/{plan_id}",
     "/admin/automation-conversion/group-ops/groups/ui",
     "/admin/automation-conversion/programs/{program_id}/entry-channels",
-    "/admin/jobs",
     "/admin/wechat-pay/transactions",
     "/admin/wechat-pay/transactions/{order_id}",
     "/admin/wechat-pay/products",
@@ -1272,23 +1270,6 @@ def admin_dashboard_shell_context() -> dict:
 @router.get("/admin/logout", name="api.admin_logout")
 def admin_logout_stub() -> dict:
     return {"ok": True, "status": "stubbed"}
-
-
-@router.get("/admin/jobs", name="api.admin_jobs")
-def admin_jobs(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="同步任务配置 / 同步任务",
-        page_summary="查看同步任务、消息批次、回调和 timer safe mode 状态。",
-        active_endpoint="api.admin_jobs",
-    )
-    _real_data_context(
-        context,
-        payload=GetAdminJobsPageQuery()(),
-        title="同步任务配置 / 同步任务",
-        summary="展示同步记录、回调事件、消息批次、出站任务和四个 timer 的 safe mode 状态。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 
 
 @router.api_route("/admin/config", methods=_ALL_METHODS, name="api.admin_config")

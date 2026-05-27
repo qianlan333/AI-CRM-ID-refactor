@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
+from .admin_jobs.repository import reset_admin_jobs_fixture_state
+from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
@@ -46,6 +48,7 @@ def create_app() -> FastAPI:
         reset_group_ops_fixture_state()
         reset_commerce_fixture_state()
         reset_media_library_fixture_state()
+        reset_admin_jobs_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -88,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
     app.include_router(send_content_router)
+    app.include_router(admin_jobs_router)
     app.include_router(frontend_compat_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_wildcard_router)

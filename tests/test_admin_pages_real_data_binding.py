@@ -822,5 +822,9 @@ def test_jobs_page_mentions_scheduled_safe_mode_without_disabled_timer_copy(monk
     response = _client(monkeypatch).get("/admin/jobs")
 
     assert response.status_code == 200
-    assert "scheduled_safe_mode" in response.text
+    assert "同步与任务总览" in response.text
+    assert "Webhook 投递" in response.text
+    assert "群发队列" in response.text
+    assert "数据读取状态" not in response.text
+    assert "degraded" not in response.text
     assert "disabled timers" not in response.text.lower()

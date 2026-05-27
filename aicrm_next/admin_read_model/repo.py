@@ -57,15 +57,38 @@ class PostgresAdminReadRepository:
         return rows[0] if rows else {}
 
     def count(self, table: str) -> int:
-        row = self.one(
-            """
-            SELECT CASE WHEN to_regclass(%s) IS NULL THEN 0
-                        ELSE (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', %s), false, true, '')))[1]::text::int
-                   END AS count
-            """,
-            (table, table),
-        )
-        return int(row.get("count") or 0)
+        allowed_tables = {
+            "archived_messages",
+            "sync_runs",
+            "outbound_tasks",
+            "outbound_webhook_deliveries",
+            "user_ops_deferred_jobs",
+            "message_batches",
+            "message_batch_items",
+            "wecom_external_contact_event_logs",
+            "broadcast_jobs",
+            "admin_operation_logs",
+        }
+        if table not in allowed_tables:
+            raise AdminReadModelError(f"count table is not allowed: {table}")
+        try:
+            import psycopg
+            from psycopg import sql
+            from psycopg.rows import dict_row
+        except ModuleNotFoundError as exc:
+            raise AdminReadModelError("psycopg is required for production admin read model") from exc
+        try:
+            with psycopg.connect(_database_url(), row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass(%s) AS table_oid", (table,))
+                    exists = cur.fetchone()
+                    if not exists or not exists.get("table_oid"):
+                        return 0
+                    cur.execute(sql.SQL("SELECT count(*) AS count FROM {}").format(sql.Identifier(table)))
+                    row = cur.fetchone()
+                    return int((row or {}).get("count") or 0)
+        except Exception as exc:
+            raise AdminReadModelError(str(exc)) from exc
 
     def runtime_health(self) -> dict[str, Any]:
         return runtime_health_state()

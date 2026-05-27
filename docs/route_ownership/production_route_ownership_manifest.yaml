@@ -106,15 +106,26 @@ routes:
     notes: Automation conversion detail/setup pages and actions remain legacy-forwarded while the list shell is Next-owned.
   - route_pattern: /admin/jobs
     methods: [GET]
-    capability_owner: aicrm_next.platform_foundation
-    current_runtime_owner: frontend_compat
-    production_behavior: scheduled_safe_mode
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.admin_jobs
+    current_runtime_owner: ai_crm_next
+    production_behavior: native_sync_jobs_console
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_timer_route_readiness.py
-    notes: Jobs page displays timer safe-mode status and does not enable timers.
+    checker: tests/test_next_admin_jobs_native.py
+    notes: Next-native sync jobs console with webhook delivery and broadcast queue operations.
+  - route_pattern: /admin/broadcast-jobs
+    methods: [GET]
+    capability_owner: aicrm_next.admin_jobs
+    current_runtime_owner: ai_crm_next
+    production_behavior: native_broadcast_queue_console
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tests/test_next_admin_jobs_native.py
+    notes: Native queue page over broadcast_jobs and outbound_tasks; approve/cancel operations require action confirmation.
   - route_pattern: /admin/wechat-pay/products
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
