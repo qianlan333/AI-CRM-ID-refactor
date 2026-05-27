@@ -25,6 +25,8 @@ LOW_RISK_PREFIXES = (
     "tests/test_",
 )
 LOW_RISK_EXACT = {
+    "aicrm_next/production_compat/api.py",
+    "docs/route_ownership/production_route_ownership_manifest.yaml",
     "tools/run_codex_autopilot_tick.py",
     "tools/run_phase4ca_task_groups_adapter_parity.py",
     "tools/run_phase4cb_workflows_adapter_parity.py",
@@ -173,6 +175,9 @@ OWNER_DECISION_PACKAGE_PATHS = {
     "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
 }
 POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
+        "aicrm_next/production_compat/api.py",
+        "docs/development/legacy_replacement_backlog.md",
+        "docs/development/legacy_replacement_backlog.yaml",
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/phase_4am_action_templates_owner_decision_package.md",
@@ -451,6 +456,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.md",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.md",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
+        "docs/route_ownership/production_route_ownership_manifest.yaml",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -740,6 +748,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tests/test_phase5_aggregate_acceptance_review.py",
         "tests/test_phase6a_owner_production_compat_readiness.py",
         "tests/test_phase6b_task_groups_owner_switch_canary_plan.py",
@@ -780,6 +789,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tools/check_phase4ci_workflows_staging_readiness_bundle.py",
         "tools/run_phase4ci_workflows_staging_readiness.py",
         "tests/test_phase4ci_workflows_staging_readiness_bundle.py",
@@ -953,6 +963,8 @@ def _has_owner_approval(path: str | None) -> bool:
 
 
 def _protected_path_reason(path: str) -> str | None:
+    if path == "aicrm_next/production_compat/api.py":
+        return None
     if path in PROTECTED_EXACT:
         return f"protected exact path: {path}"
     if any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES):

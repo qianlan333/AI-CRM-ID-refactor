@@ -951,26 +951,26 @@ entries:
     notes: "Program operations action-template APIs remain legacy-forwarded during the workspace cutover."
   - id: "LRB-044"
     route_pattern: "/api/admin/automation-conversion/task-groups*"
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+    methods: ["GET", "POST", "OPTIONS", "HEAD"]
     capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
+    current_runtime_owner: "aicrm_next.automation_engine"
+    production_behavior: "next_native_exact_route"
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
     checker: "tools/check_production_route_resolution.py"
-    replacement_phase: "phase_4_internal_write"
-    replacement_category: "internal_write"
-    priority: "P1"
+    replacement_phase: "keep_guarded_until_adapter_ready"
+    replacement_category: "blocked_or_guarded"
+    priority: "P2"
     daily_business_critical: true
     business_continuity_requirement: "During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects."
     replacement_owner: "aicrm_next.automation_engine"
-    replacement_strategy: "Move command validation and persistence into Next behind idempotent contracts while preserving legacy fallback."
+    replacement_strategy: "Keep guarded until the owning capability publishes a replacement adapter and delete condition."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
-    notes: "Program operation task group APIs remain legacy-forwarded during the workspace cutover."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
+    recommended_verification: ["tools/check_production_route_resolution.py", "legacy fallback rollback check"]
+    notes: "Post-Phase 7 exact-route cleanup retry removed the selected task-groups production_compat fallback hooks after owner approval, shadow compare, rollback rehearsal, route ownership proof, and exact-entry proof. Rollback restores the two task-groups production_compat decorators only; runtime deletion remains disallowed."
   - id: "LRB-045"
     route_pattern: "/api/admin/automation-conversion/tasks*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]

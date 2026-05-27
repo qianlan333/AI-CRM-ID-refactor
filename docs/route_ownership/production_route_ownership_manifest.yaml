@@ -479,16 +479,16 @@ routes:
     checker: tools/check_production_route_resolution.py
     notes: Program operations action-template APIs remain legacy-forwarded during the workspace cutover.
   - route_pattern: /api/admin/automation-conversion/task-groups*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: aicrm_next.automation_engine
+    production_behavior: next_native_exact_route
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operation task group APIs remain legacy-forwarded during the workspace cutover.
+    notes: Post-Phase 7 exact-route cleanup retry removed the selected task-groups production_compat fallback hooks after owner approval, shadow compare, rollback rehearsal, route ownership proof, and exact-entry proof. Rollback restores the two task-groups production_compat decorators only; runtime deletion remains disallowed.
   - route_pattern: /api/admin/automation-conversion/tasks*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

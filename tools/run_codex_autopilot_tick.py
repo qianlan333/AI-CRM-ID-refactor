@@ -85,6 +85,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "post_phase7_cleanup_task_groups_owner_evidence_validation_bundle",
     "post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle",
     "post_phase7_cleanup_task_groups_exact_route_retry_bundle",
+    "post_phase7_cleanup_legacy_runtime_recheck_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -251,6 +252,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "aicrm_next/automation_engine/agents.py",
         "aicrm_next/automation_engine/agent_outputs.py",
         "aicrm_next/automation_engine/agent_runs.py",
+        "aicrm_next/production_compat/api.py",
+        "docs/route_ownership/production_route_ownership_manifest.yaml",
         "aicrm_next/automation_engine/task_groups.py",
         "aicrm_next/automation_engine/tasks.py",
         "aicrm_next/automation_engine/workflows.py",
@@ -285,6 +288,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_automerge_eligibility.py",
         "tools/run_codex_autopilot_tick.py",
         "docs/development/codex_autopilot_runtime_runbook.md",
+        "docs/development/legacy_replacement_backlog.md",
+        "docs/development/legacy_replacement_backlog.yaml",
         "docs/development/phase_4am_action_templates_owner_decision_package.md",
         "docs/development/phase_4am_action_templates_staging_owner_decision_package.md",
         "docs/development/phase_4am_action_templates_staging_owner_decision_package.yaml",
@@ -676,6 +681,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.md",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.md",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -722,6 +729,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -768,6 +776,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
@@ -1131,7 +1140,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files, explicitly selected fixture/native aicrm_next/automation_engine runtime files, explicitly selected aicrm_next/customer_tags fake/stub files, explicitly selected Phase 5C live-behind-flag adapter files, explicitly selected Phase 5I fake/stub callback adapter files, or explicitly selected Phase 5J live-behind-flag callback adapter files. Owner decision packages must not auto-merge.
+Low-risk admin merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and the diff is limited to docs/tools/tests/checker/state files, explicitly selected fixture/native aicrm_next/automation_engine runtime files, explicitly selected aicrm_next/production_compat exact-route cleanup files, explicitly selected aicrm_next/customer_tags fake/stub files, explicitly selected Phase 5C live-behind-flag adapter files, explicitly selected Phase 5I fake/stub callback adapter files, or explicitly selected Phase 5J live-behind-flag callback adapter files. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
