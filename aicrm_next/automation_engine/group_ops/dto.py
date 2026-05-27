@@ -41,6 +41,7 @@ class GroupOpsNodeRequest(BaseModel):
     trigger_time_label: str = ""
     action_title: str = ""
     text_content: str = ""
+    content_package_json: dict[str, Any] = Field(default_factory=dict)
     attachments: list[Any] = Field(default_factory=list)
     sort_order: int = 0
     status: str = "active"

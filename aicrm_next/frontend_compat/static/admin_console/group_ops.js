@@ -71,6 +71,71 @@
       .join("、");
   }
 
+  function normalizeIdList(value) {
+    const raw = Array.isArray(value) ? value : String(value || "").split(",");
+    const ids = [];
+    raw.forEach((item) => {
+      const id = parseInt(String(item).trim(), 10);
+      if (id > 0 && ids.indexOf(id) === -1) ids.push(id);
+    });
+    return ids;
+  }
+
+  function normalizeContentPackage(value) {
+    const data = value && typeof value === "object" ? value : {};
+    return {
+      content_text: String(data.content_text || "").trim(),
+      image_library_ids: normalizeIdList(data.image_library_ids),
+      miniprogram_library_ids: normalizeIdList(data.miniprogram_library_ids),
+      attachment_library_ids: normalizeIdList(data.attachment_library_ids),
+    };
+  }
+
+  function nodeToContentPackage(node) {
+    const current = node || {};
+    if (current.content_package_json && typeof current.content_package_json === "object") {
+      return normalizeContentPackage(current.content_package_json);
+    }
+    return normalizeContentPackage({ content_text: current.text_content || "" });
+  }
+
+  function contentPackageToNodePayload(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    return {
+      text_content: normalized.content_text,
+      content_package_json: normalized,
+    };
+  }
+
+  function contentPackageFromForm() {
+    const raw = currentFormValue("node_content_package_json");
+    if (!raw) return normalizeContentPackage({});
+    try {
+      return normalizeContentPackage(JSON.parse(raw));
+    } catch (error) {
+      return normalizeContentPackage({});
+    }
+  }
+
+  function contentPackageSummary(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    const text = normalized.content_text || "";
+    return {
+      text: text ? (text.length > 60 ? `${text.slice(0, 60)}...` : text) : "未配置话术",
+      imageCount: normalized.image_library_ids.length,
+      miniprogramCount: normalized.miniprogram_library_ids.length,
+      attachmentCount: normalized.attachment_library_ids.length,
+    };
+  }
+
+  if (typeof window !== "undefined") {
+    window.AICRMGroupOpsContentAdapter = {
+      normalizeContentPackage,
+      nodeToContentPackage,
+      contentPackageToNodePayload,
+    };
+  }
+
   function textSummary(value) {
     const text = String(value || "").trim();
     if (!text) return "-";
@@ -149,6 +214,7 @@
     if (action === "remove-group") return removeGroup(event.currentTarget.dataset.chatId);
     if (action === "show-node-form") return showNodeForm();
     if (action === "edit-node") return showNodeForm(event.currentTarget.dataset.nodeId);
+    if (action === "configure-node-content") return openNodeContentComposer();
     if (action === "save-node") return saveNode();
     if (action === "cancel-node") return cancelNodeForm();
     if (action === "delete-node") return deleteNode(event.currentTarget.dataset.nodeId);
@@ -249,31 +315,25 @@
     return state.nodes.find((node) => Number(node.id) === Number(state.editingNodeId)) || null;
   }
 
-  function parseAttachments(value) {
-    const text = String(value || "").trim();
-    if (!text) return [];
-    try {
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      state.notice = "素材格式无效";
-      renderDetail();
-      throw error;
-    }
+  function legacyAttachmentsForNode(value) {
+    return Array.isArray(value) ? value : [];
   }
 
   async function saveNode() {
     if (!state.plan || !state.plan.id) return;
+    const nodeId = Number(state.editingNodeId || 0);
+    const existing = editingNode() || {};
+    const contentPayload = contentPackageToNodePayload(contentPackageFromForm());
     const payload = {
       day_index: Number(currentFormValue("node_day_index") || 1),
       trigger_time_label: currentFormValue("node_trigger_time_label"),
       action_title: currentFormValue("node_action_title"),
-      text_content: currentFormValue("node_text_content"),
-      attachments: parseAttachments(currentFormValue("node_attachments")),
+      text_content: contentPayload.text_content,
+      content_package_json: contentPayload.content_package_json,
+      attachments: legacyAttachmentsForNode(existing.attachments),
       sort_order: Number(currentFormValue("node_sort_order") || 0),
       status: currentFormValue("node_status") || "active",
     };
-    const nodeId = Number(state.editingNodeId || 0);
     await requestJson(nodeId ? routes.apiPlanNode(state.plan.id, nodeId) : routes.apiPlanNodes(state.plan.id), {
       method: nodeId ? "PUT" : "POST",
       body: payload,
@@ -468,6 +528,40 @@
       .join("");
   }
 
+  function refreshNodeContentSummary(contentPackage) {
+    const target = app.querySelector("[data-node-content-summary]");
+    if (!target) return;
+    const summary = contentPackageSummary(contentPackage);
+    target.innerHTML =
+      `<strong>话术：</strong><span>${escapeHtml(summary.text)}</span>` +
+      `<strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>`;
+  }
+
+  function openNodeContentComposer() {
+    const hidden = app.querySelector('[name="node_content_package_json"]');
+    if (!hidden) return;
+    if (!window.AICRMSendContentComposer || typeof window.AICRMSendContentComposer.open !== "function") {
+      state.notice = "标准发送内容组件加载失败，请刷新页面后重试";
+      renderDetail();
+      return;
+    }
+    window.AICRMSendContentComposer.open({
+      title: "配置群运营动作内容",
+      textEnabled: true,
+      value: contentPackageFromForm(),
+      limits: {
+        image: 3,
+        miniprogram: 1,
+        attachment: 9,
+      },
+      onConfirm(contentPackage) {
+        const normalized = normalizeContentPackage(contentPackage);
+        hidden.value = JSON.stringify(normalized);
+        refreshNodeContentSummary(normalized);
+      },
+    });
+  }
+
   function renderStats(summary) {
     if (state.plan.plan_type === "webhook") {
       return `
@@ -492,17 +586,29 @@
       action_title: "",
       text_content: "",
       attachments: [],
+      content_package_json: {},
       sort_order: 10,
       status: "active",
     };
+    const currentContentPackage = nodeToContentPackage(current);
+    const currentContentSummary = contentPackageSummary(currentContentPackage);
     const form = state.showNodeForm
       ? `
         <div class="group-ops__filters">
           <label class="group-ops__field"><span>第几天</span><input name="node_day_index" type="number" min="1" value="${escapeHtml(current.day_index)}"></label>
           <label class="group-ops__field"><span>时间</span><input name="node_trigger_time_label" value="${escapeHtml(current.trigger_time_label || "")}"></label>
           <label class="group-ops__field group-ops__field--wide"><span>动作标题</span><input name="node_action_title" value="${escapeHtml(current.action_title || "")}"></label>
-          <label class="group-ops__field group-ops__field--wide"><span>标准话术</span><textarea name="node_text_content">${escapeHtml(current.text_content || "")}</textarea></label>
-          <label class="group-ops__field group-ops__field--wide"><span>素材</span><textarea name="node_attachments">${escapeHtml(JSON.stringify(current.attachments || []))}</textarea></label>
+          <div class="group-ops__field group-ops__field--wide">
+            <span>话术和素材</span>
+            <div class="group-ops__content-box">
+              <div class="group-ops__content-summary" data-node-content-summary>
+                <strong>话术：</strong><span>${escapeHtml(currentContentSummary.text)}</span>
+                <strong>素材：</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount}</span>
+              </div>
+              <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
+            </div>
+            <input type="hidden" name="node_content_package_json" value="${escapeHtml(JSON.stringify(currentContentPackage))}">
+          </div>
           <label class="group-ops__field"><span>排序</span><input name="node_sort_order" type="number" value="${escapeHtml(current.sort_order || 0)}"></label>
           <label class="group-ops__field"><span>状态</span><select name="node_status"><option value="active"${current.status === "active" ? " selected" : ""}>启用</option><option value="draft"${current.status === "draft" ? " selected" : ""}>草稿</option><option value="disabled"${current.status === "disabled" ? " selected" : ""}>停用</option></select></label>
           <div class="group-ops__row-actions">${actionButton("保存动作", "save-node", "group-ops__button--primary")}${actionButton("取消", "cancel-node")}</div>
@@ -515,7 +621,7 @@
           <td>第 ${escapeHtml(node.day_index)} 天</td>
           <td>${escapeHtml(node.trigger_time_label || "-")}</td>
           <td>${escapeHtml(node.action_title || "-")}</td>
-          <td><span class="group-ops__summary">${escapeHtml(textSummary(node.text_content))}</span></td>
+          <td><span class="group-ops__summary">${escapeHtml(textSummary(nodeToContentPackage(node).content_text || node.text_content))}</span></td>
           <td>${escapeHtml(attachmentLabel(node.attachments))}</td>
           <td><div class="group-ops__row-actions">
             ${actionButton("编辑", "edit-node", "").replace(">", ` data-node-id="${escapeHtml(node.id)}">`)}
