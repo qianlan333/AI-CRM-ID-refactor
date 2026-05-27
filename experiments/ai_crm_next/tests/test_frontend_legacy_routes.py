@@ -65,6 +65,10 @@ def test_wechat_transaction_admin_is_next_native_surface() -> None:
     assert "/api/admin/wechat-pay/orders" in text
     assert "生产 wechat_pay_orders 只读列表" not in text
     assert "production_postgres" not in text
+    detail = make_client().get("/admin/wechat-pay/transactions/order_masked_001")
+    assert detail.status_code == 200
+    assert "申请退款" in detail.text
+    assert "再次完整输入微信单号" in detail.text
 
 
 def test_media_library_routes_return_restored_card_templates() -> None:
