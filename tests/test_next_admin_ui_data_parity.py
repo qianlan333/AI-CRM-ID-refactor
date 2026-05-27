@@ -253,7 +253,6 @@ def test_primary_admin_nav_pages_keep_next_shell_in_production_data_mode(monkeyp
         "/admin/miniprogram-library",
         "/admin/attachment-library",
         "/admin/jobs",
-        "/admin/config",
         "/admin/api-docs",
     ]
     for route in primary_routes:

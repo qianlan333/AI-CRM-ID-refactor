@@ -40,7 +40,7 @@ ADMIN_PAGES = [
     "/admin/miniprogram-library",
     "/admin/attachment-library",
     "/admin/jobs",
-    "/admin/config",
+    "/admin/runtime-config",
     "/admin/api-docs",
     "/admin/automation-conversion",
 ]
@@ -107,7 +107,7 @@ def _bad_marker_hits(route: str, html: str) -> list[str]:
     hits = [f"{route}:{marker}" for marker in BAD_MARKERS if marker.lower() in lower]
     if route == "/admin/customers":
         hits.extend(f"{route}:sample_customer:{marker}" for marker in SAMPLE_CUSTOMERS if marker in visible)
-    if route == "/admin/config" and re.search(r">\s*可用\s*<", visible):
+    if route == "/admin/runtime-config" and re.search(r">\s*可用\s*<", visible):
         hits.append(f"{route}:empty_config_available_card")
     return hits
 
@@ -122,7 +122,7 @@ def _has_real_data(route: str, html: str) -> tuple[bool, int]:
         return rows >= 10, rows
     if route == "/admin/jobs":
         return rows >= 4, rows
-    if route in {"/admin/user-ops", "/admin/user-ops/ui", "/admin/config", "/admin/cloud-orchestrator"}:
+    if route in {"/admin/user-ops", "/admin/user-ops/ui", "/admin/runtime-config", "/admin/cloud-orchestrator"}:
         return cards >= 3 or rows > 0, max(rows, cards)
     if route == "/admin/attachment-library":
         return rows > 0 or "生产数据为空" in html, rows
