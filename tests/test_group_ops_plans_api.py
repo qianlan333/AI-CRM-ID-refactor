@@ -41,6 +41,48 @@ def test_plan_list_returns_group_ops_queue_count(group_ops_api_client, monkeypat
     assert response.json()["queue_count"] == 7
 
 
+def test_owners_api_returns_multiple_fixture_owners(group_ops_api_client):
+    response = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/owners")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    by_userid = {item["userid"]: item for item in items}
+    assert {"owner_001", "owner_002"} <= set(by_userid)
+    assert by_userid["owner_001"]["name"] == "王小明"
+    assert by_userid["owner_002"]["group_count"] >= 1
+
+
+def test_create_standard_plan_uses_requested_owner_and_type(group_ops_api_client):
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={"plan_name": "owner_002 标准计划", "plan_type": "standard", "owner_userid": "owner_002", "status": "draft"},
+    )
+    plan_id = response.json()["item"]["id"]
+    detail = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}")
+
+    assert response.status_code == 201
+    assert response.json()["item"]["plan_type"] == "standard"
+    assert response.json()["item"]["owner_userid"] == "owner_002"
+    assert detail.status_code == 200
+    assert detail.json()["item"]["owner_userid"] == "owner_002"
+
+
+def test_create_webhook_plan_returns_webhook_and_config(group_ops_api_client):
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={"plan_name": "owner_002 Webhook 计划", "plan_type": "webhook", "owner_userid": "owner_002", "status": "draft"},
+    )
+    plan = response.json()["item"]
+    config = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{plan['id']}/webhook")
+
+    assert response.status_code == 201
+    assert plan["plan_type"] == "webhook"
+    assert plan["owner_userid"] == "owner_002"
+    assert config.status_code == 200
+    assert config.json()["method"] == "POST"
+    assert "webhook_url" in config.json()
+
+
 def test_plan_group_binding_allows_only_owner_groups(group_ops_api_client):
     ok_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/groups",

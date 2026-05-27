@@ -41,6 +41,7 @@
     apiWebhookRegenerate: (id) =>
       `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/webhook/regenerate`,
     apiGroups: "/api/admin/automation-conversion/group-ops/groups",
+    apiOwners: "/api/admin/automation-conversion/group-ops/owners",
   };
 
   function normalizeItems(payload) {
@@ -126,15 +127,15 @@
     return element ? element.value : "";
   }
 
-  function collectOwners(groups, plan) {
+  function normalizeOwners(payload, plan) {
     const owners = new Map();
-    if (plan && plan.owner_userid) {
-      owners.set(plan.owner_userid, plan.owner_name || plan.owner_userid);
-    }
-    groups.forEach((group) => {
-      if (group.owner_userid) owners.set(group.owner_userid, group.owner_name || group.owner_userid);
+    normalizeItems(payload).forEach((owner) => {
+      if (owner.userid) owners.set(owner.userid, { userid: owner.userid, name: owner.name || owner.userid, group_count: owner.group_count || 0 });
     });
-    return Array.from(owners.entries()).map(([userid, name]) => ({ userid, name }));
+    if (plan && plan.owner_userid && !owners.has(plan.owner_userid)) {
+      owners.set(plan.owner_userid, { userid: plan.owner_userid, name: plan.owner_name || plan.owner_userid, group_count: 0 });
+    }
+    return Array.from(owners.values());
   }
 
   function onAction(event) {
@@ -311,10 +312,9 @@
   async function loadListPage() {
     renderLoading();
     try {
-      const [payload, groupPayload] = await Promise.all([requestJson(routes.apiPlans), requestJson(routes.apiGroups)]);
+      const [payload, ownersPayload] = await Promise.all([requestJson(routes.apiPlans), requestJson(routes.apiOwners)]);
       state.plans = normalizeItems(payload);
-      state.groups = normalizeItems(groupPayload);
-      state.ownerOptions = collectOwners(state.groups, null);
+      state.ownerOptions = normalizeOwners(ownersPayload, null);
       state.lastTotal = payload.total || state.plans.length;
       state.queueCount = payload.queue_count || 0;
       renderList(state.lastTotal, state.queueCount);
@@ -395,18 +395,19 @@
   async function loadDetailPage(planId) {
     renderLoading();
     try {
-      const [planPayload, groupPayload, allGroupsPayload, nodePayload] = await Promise.all([
+      const [planPayload, groupPayload, allGroupsPayload, nodePayload, ownersPayload] = await Promise.all([
         requestJson(routes.apiPlan(planId)),
         requestJson(routes.apiPlanGroups(planId)),
         requestJson(routes.apiGroups),
         requestJson(routes.apiPlanNodes(planId)),
+        requestJson(routes.apiOwners),
       ]);
       state.plan = planPayload.item || planPayload.plan || planPayload;
       state.planGroups = normalizeItems(groupPayload);
       state.groupSummary = groupPayload.summary || null;
       state.groups = normalizeItems(allGroupsPayload);
       state.nodes = normalizeItems(nodePayload);
-      state.ownerOptions = collectOwners(state.groups, state.plan);
+      state.ownerOptions = normalizeOwners(ownersPayload, state.plan);
       if (state.plan.plan_type === "webhook") {
         state.webhook = await requestJson(routes.apiWebhook(planId));
       } else {
@@ -640,13 +641,14 @@
   async function loadGroupsPage() {
     try {
       const query = groupsQueryParams();
-      const [groupPayload, planPayload] = await Promise.all([
+      const [groupPayload, planPayload, ownersPayload] = await Promise.all([
         requestJson(query ? `${routes.apiGroups}?${query}` : routes.apiGroups),
         state.plans.length ? Promise.resolve({ items: state.plans }) : requestJson(routes.apiPlans),
+        requestJson(routes.apiOwners),
       ]);
       state.groups = normalizeItems(groupPayload);
       state.plans = normalizeItems(planPayload);
-      state.ownerOptions = collectOwners(state.groups, null);
+      state.ownerOptions = normalizeOwners(ownersPayload, null);
       renderGroups();
     } catch (error) {
       renderError(error.message);

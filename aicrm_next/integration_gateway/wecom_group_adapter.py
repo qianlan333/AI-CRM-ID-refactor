@@ -280,10 +280,9 @@ class WeComGroupChatSyncAdapter:
             chat_id = str((item or {}).get("chat_id") or "").strip()
             if not chat_id:
                 continue
-            detail = client.get_group_chat(chat_id)
-            snapshot = _normalize_group_chat_detail(detail, fallback_owner_userid=owner)
-            if snapshot["chat_id"]:
-                groups.append(snapshot)
+            detail = self.get_group_chat(chat_id, owner_userid=owner)
+            if detail.get("ok") and detail.get("group"):
+                groups.append(dict(detail["group"]))
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -291,6 +290,70 @@ class WeComGroupChatSyncAdapter:
             "operation": "list_group_chats",
             "groups": groups,
             "next_cursor": str(list_result.get("next_cursor") or ""),
+            "audit_id": audit["audit_id"],
+            "side_effect_executed": True,
+            "error_code": "",
+            "error_message": "",
+        }
+
+    def get_group_chat(self, chat_id: str, *, owner_userid: str = "") -> Json:
+        chat = str(chat_id or "").strip()
+        owner = str(owner_userid or "").strip()
+        audit = record_audit_event(
+            adapter=self.adapter_name,
+            operation="get_group_chat",
+            mode=self.mode,
+            idempotency_key=_hash_payload({"chat_id": chat, "owner_userid": owner}),
+            side_effect_executed=False,
+            status="blocked" if self.mode in {"disabled", "staging"} else "ok",
+            error_code="wecom_group_sync_disabled" if self.mode in {"disabled", "staging"} else "",
+        )
+        if self.mode in {"disabled", "staging"}:
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "get_group_chat",
+                "group": {},
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": False,
+                "error_code": "wecom_group_sync_disabled",
+                "error_message": "real WeCom customer-group sync is disabled",
+            }
+        if self.mode == "fake":
+            group = next((item for item in _fake_group_chat_snapshots(owner) if item["chat_id"] == chat), None)
+            return {
+                "ok": bool(group),
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "get_group_chat",
+                "group": dict(group or {}),
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": False,
+                "error_code": "" if group else "not_found",
+                "error_message": "" if group else "fake group chat not found",
+            }
+        if not _enabled("AICRM_ENABLE_REAL_WECOM_GROUP_SYNC"):
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "get_group_chat",
+                "group": {},
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": False,
+                "error_code": "production_guard_failed",
+                "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_SYNC is not enabled",
+            }
+        from .legacy_flask_facade import legacy_wecom_client_from_app
+
+        result = legacy_wecom_client_from_app().get_group_chat(chat)
+        return {
+            "ok": True,
+            "adapter": self.adapter_name,
+            "mode": self.mode,
+            "operation": "get_group_chat",
+            "group": _normalize_group_chat_detail(result, fallback_owner_userid=owner),
             "audit_id": audit["audit_id"],
             "side_effect_executed": True,
             "error_code": "",

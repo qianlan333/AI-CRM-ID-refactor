@@ -52,6 +52,8 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
     assert "标准编排计划" in source
     assert "Webhook 接收计划" in source
     assert "create_owner_userid" in source
+    assert "apiOwners" in source
+    assert "/api/admin/automation-conversion/group-ops/owners" in source
     assert '"owner_001"' not in source
 
     for forbidden in ["下一次动作", "计划详情", "队列策略", "可发主体", "管理员判断"]:
@@ -70,6 +72,7 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     assert "添加动作" in source
     assert "save-node" in source
     assert "delete-node" in source
+    assert 'data-action="noop"' not in source
     for label in ["接收方式", "默认动作", "Webhook 接收地址", "POST", "复制地址", "Token 状态 / 重置入口", "Token："]:
         assert label in source
     assert "一次性 token" in source

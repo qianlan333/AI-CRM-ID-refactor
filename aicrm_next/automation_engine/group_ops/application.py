@@ -137,6 +137,26 @@ class ListGroupOpsPlansQuery:
         return _response({"items": items, "total": total, "queue_count": _queue_count()}, repo=repo)
 
 
+class ListGroupOpsOwnersQuery:
+    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+        self._repo = repo
+
+    def __call__(self) -> dict[str, Any]:
+        repo = _repo_or_block(self._repo)
+        if repo is None:
+            return _production_unavailable()
+        owners = [
+            {
+                "userid": clean_text(item.get("userid")),
+                "name": clean_text(item.get("name") or item.get("userid")),
+                "group_count": int(item.get("group_count") or 0),
+            }
+            for item in repo.list_owners()
+            if clean_text(item.get("userid"))
+        ]
+        return _response({"items": owners, "total": len(owners)}, repo=repo)
+
+
 class CreateGroupOpsPlanCommand:
     def __init__(self, repo: GroupOpsRepository | None = None) -> None:
         self._repo = repo

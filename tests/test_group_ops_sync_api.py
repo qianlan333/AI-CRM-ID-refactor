@@ -33,6 +33,7 @@ def test_group_sync_writes_snapshots_and_filters_by_owner(group_ops_api_client, 
         "/api/admin/automation-conversion/group-ops/groups/sync/preview",
         json={"owner_userid": "owner_001", "limit": 10, "operator": "pytest"},
     )
+    after_preview = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=owner_001")
     synced = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/groups/sync",
         json={"owner_userid": "owner_001", "limit": 10, "operator": "pytest"},
@@ -41,6 +42,8 @@ def test_group_sync_writes_snapshots_and_filters_by_owner(group_ops_api_client, 
     owner_002 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=owner_002")
 
     assert preview.status_code == 200
+    assert after_preview.status_code == 200
+    assert after_preview.json()["items"] == []
     assert synced.status_code == 200
     assert synced.json()["synced_count"] == 3
     assert {item["owner_userid"] for item in owner_001.json()["items"]} == {"owner_001"}

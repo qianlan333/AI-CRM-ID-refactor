@@ -96,6 +96,11 @@ def test_group_sync_adapter_fake_filters_owner_without_real_wecom(monkeypatch):
     assert result["side_effect_executed"] is False
     assert {item["owner_userid"] for item in result["groups"]} == {"owner_001"}
 
+    detail = WeComGroupChatSyncAdapter(mode="fake").get_group_chat("wrOgAAA001", owner_userid="owner_001")
+    assert detail["ok"] is True
+    assert detail["side_effect_executed"] is False
+    assert detail["group"]["chat_id"] == "wrOgAAA001"
+
 
 def test_group_sync_adapter_production_without_guard_is_blocked(monkeypatch):
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
