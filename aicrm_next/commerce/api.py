@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.frontend_compat.admin_shell import shell_context
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .admin_transactions import (
@@ -33,7 +34,9 @@ from .application import (
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
+_COMMERCE_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_FRONTEND_COMPAT_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
+templates = Jinja2Templates(directory=[_COMMERCE_TEMPLATES_DIR, _FRONTEND_COMPAT_TEMPLATES_DIR])
 
 
 def _raise_http(exc: Exception) -> None:
@@ -46,30 +49,55 @@ def _raise_http(exc: Exception) -> None:
 
 @router.get("/admin/wechat-pay/transactions", response_class=HTMLResponse, name="api.admin_wechat_pay_transactions_page")
 def admin_wechat_transactions_page(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="微信支付交易管理",
+        page_summary="按订单创建时间检索微信支付订单、导出筛选结果，并进入详情页查看订单与退款状态。",
+        active_endpoint="api.admin_wechat_pay_transactions_page",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "交易管理"},
+    ]
+    context.update(
+        {
+            "default_filters": default_filters(),
+            "product_options": list_wechat_product_options(),
+        }
+    )
     return templates.TemplateResponse(
         request,
         "wechat_transactions.html",
-        {
-            "request": request,
-            "default_filters": default_filters(),
-            "product_options": list_wechat_product_options(),
-        },
+        context,
     )
 
 
 @router.get("/admin/wechat-pay/transactions/{order_id}", response_class=HTMLResponse, name="api.admin_wechat_pay_transaction_detail_page")
 def admin_wechat_transaction_detail_page(request: Request, order_id: str) -> Response:
     order = get_wechat_admin_order(order_id)
-    return templates.TemplateResponse(
-        request,
-        "wechat_transactions.html",
+    context = shell_context(
+        request=request,
+        page_title="微信支付订单详情",
+        page_summary="核对订单状态、退款金额，并提交退款申请。",
+        active_endpoint="api.admin_wechat_pay_transactions_page",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "交易管理", "href": request.url_for("api.admin_wechat_pay_transactions_page")},
+        {"label": "订单详情"},
+    ]
+    context.update(
         {
-            "request": request,
             "detail_order": order,
             "detail_error": "" if order else "订单不存在",
             "default_filters": default_filters(),
             "product_options": list_wechat_product_options(),
-        },
+        }
+    )
+    return templates.TemplateResponse(
+        request,
+        "wechat_transactions.html",
+        context,
         status_code=200 if order else 404,
     )
 

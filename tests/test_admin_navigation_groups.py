@@ -6,6 +6,7 @@ from flask import Blueprint, Flask, render_template
 
 from wecom_ability_service.domains.admin_dashboard import service as admin_dashboard_service
 from wecom_ability_service.http.admin_console import _navigation_with_hrefs
+from tools.check_next_admin_ui_data_parity import TARGET_NAV_GROUPS
 
 
 def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
@@ -16,15 +17,8 @@ def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
     assert [group["title"] for group in groups] == ["运营", "交易", "素材", "配置及后台"]
     operations = groups[0]["items"]
     operations_by_key = {item["key"]: item["label"] for item in operations}
-    assert [item["label"] for item in operations] == [
-        "自动化运营",
-        "渠道码中心",
-        "AI 助手",
-        "客户激活 / 客户列表",
-        "漏斗 / 数据看板",
-        "问卷",
-        "企微标签管理",
-    ]
+    assert [item["label"] for item in operations] == TARGET_NAV_GROUPS[0][1]
+    assert operations_by_key["group_ops"] == "群运营计划"
     assert operations_by_key["user_ops_funnel"] == "漏斗 / 数据看板"
     assert {item["key"]: item["label"] for item in groups[3]["items"]}["jobs"] == "同步任务配置 / 同步任务"
     trade_group = groups[1]
@@ -61,6 +55,14 @@ def test_automation_admin_navigation_includes_material_and_product_entries(monke
     groups = admin_dashboard_service.list_admin_navigation("attachment_library")
 
     assert [group["title"] for group in groups] == ["运营", "素材", "配置及后台"]
+    assert [item["key"] for item in groups[0]["items"]] == [
+        "automation_conversion",
+        "group_ops",
+        "channels",
+        "cloud_orchestrator",
+        "customers",
+        "user_ops_funnel",
+    ]
     material_group = groups[1]
     assert material_group["active"] is True
     assert [item["key"] for item in material_group["items"]] == ["image_library", "miniprogram_library", "attachment_library"]
@@ -77,6 +79,7 @@ def test_admin_base_template_renders_grouped_navigation():
     for endpoint, path in {
         "admin_dashboard_shell_context": "/api/admin/dashboard/shell-context",
         "admin_automation_conversion": "/admin/automation-conversion",
+        "admin_group_ops_ui": "/admin/automation-conversion/group-ops/ui",
         "admin_channels_page": "/admin/channels",
         "admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
         "admin_console_customers": "/admin/customers",
@@ -116,6 +119,7 @@ def test_admin_base_template_renders_grouped_navigation():
     assert re.search(r'class="admin-nav-link is-active"\s+href="/admin/wechat-pay/transactions"', html)
     assert '<div class="admin-nav-section-title">运营</div>' in html
     assert "自动化运营" in html
+    assert "群运营计划" in html
     assert "渠道码中心" in html
     assert "AI 助手" in html
     assert "客户激活 / 客户列表" in html
@@ -140,6 +144,16 @@ def test_legacy_admin_navigation_resolves_retired_next_owned_links(monkeypatch):
 
     links = {item["endpoint"]: item["href"] for group in groups for item in group["items"]}
     assert links["api.admin_automation_conversion"] == "/admin/automation-conversion"
+    assert links["api.admin_group_ops_ui"] == "/admin/automation-conversion/group-ops/ui"
     assert links["api.admin_console_customers"] == "/admin/customers"
     assert links["api.admin_console_questionnaires"] == "/admin/questionnaires"
     assert links["api.admin_console_jobs"] == "/admin/jobs"
+
+
+def test_legacy_admin_navigation_user_ops_keeps_target_operation_group(monkeypatch):
+    monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["super_admin"])
+
+    groups = admin_dashboard_service.list_admin_navigation("user_ops_funnel")
+
+    assert [item["label"] for item in groups[0]["items"]] == TARGET_NAV_GROUPS[0][1]
+    assert {item["key"]: item["active"] for item in groups[0]["items"]}["user_ops_funnel"] is True
