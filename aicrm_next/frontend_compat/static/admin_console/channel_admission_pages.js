@@ -64,6 +64,15 @@
     node.classList.toggle("is-error", tone === "error");
   }
 
+  function safeInit(name, fn) {
+    try {
+      fn();
+    } catch (error) {
+      console.error(`[channel_admission_pages] ${name} init failed`, error);
+      root.dataset[`init${name}Error`] = error.message || "init failed";
+    }
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -434,13 +443,12 @@
   }
 
   function setupWelcomeComposer() {
-    const openButton = root.querySelector("[data-open-welcome-composer]");
-    if (!openButton) return;
     const messageInput = root.querySelector("[data-welcome-message]");
     const miniInput = root.querySelector("[data-miniprogram-ids]");
     const imageInput = root.querySelector("[data-image-ids]");
     const attachmentInput = root.querySelector("[data-attachment-ids]");
     const summary = root.querySelector("[data-welcome-content-summary]");
+    if (!root.querySelector("[data-open-welcome-composer]")) return;
 
     const currentPackage = () => welcomeFieldsToContentPackage({
       welcome_message: messageInput?.value || "",
@@ -462,10 +470,12 @@
       }
     };
 
-    openButton.addEventListener("click", () => {
+    const openWelcomeComposer = () => {
       if (!window.AICRMSendContentComposer || typeof window.AICRMSendContentComposer.open !== "function") {
-        toast("标准发送内容组件加载失败，请刷新页面后重试");
-        setSaveFeedback("标准发送内容组件加载失败，请刷新页面后重试", "error");
+        const message = "标准内容编辑器未加载，请刷新页面后重试";
+        toast(message);
+        setSaveFeedback(message, "error");
+        root.dataset.welcomeComposerError = "composer_not_loaded";
         return;
       }
       window.AICRMSendContentComposer.open({
@@ -487,9 +497,17 @@
           toast("欢迎语和素材已更新");
         },
       });
+    };
+
+    root.addEventListener("click", (event) => {
+      const openButton = event.target.closest("[data-open-welcome-composer]");
+      if (!openButton) return;
+      event.preventDefault();
+      openWelcomeComposer();
     });
 
     renderSummary();
+    root.dataset.welcomeComposerReady = "1";
   }
 
   function setupEntryTagPicker() {
@@ -710,14 +728,14 @@
     }
   }
 
-  setupChannelSearch();
-  setupCopyShare();
-  setupChannelDrawer();
-  setupChannelForm();
-  setupChannelOwnerPicker();
-  setupWelcomeComposer();
-  setupEntryTagPicker();
-  setupBindModal();
-  setupImportPanel();
-  setupEntryActions();
+  safeInit("ChannelSearch", setupChannelSearch);
+  safeInit("CopyShare", setupCopyShare);
+  safeInit("ChannelDrawer", setupChannelDrawer);
+  safeInit("ChannelForm", setupChannelForm);
+  safeInit("ChannelOwnerPicker", setupChannelOwnerPicker);
+  safeInit("WelcomeComposer", setupWelcomeComposer);
+  safeInit("EntryTagPicker", setupEntryTagPicker);
+  safeInit("BindModal", setupBindModal);
+  safeInit("ImportPanel", setupImportPanel);
+  safeInit("EntryActions", setupEntryActions);
 })();
