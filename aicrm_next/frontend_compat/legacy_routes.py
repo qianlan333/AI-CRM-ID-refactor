@@ -29,6 +29,7 @@ from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
     copy_automation_program,
+    get_automation_program_setup_payload,
     get_automation_program_with_summary,
     list_automation_programs_payload,
     update_automation_program_basic_info,
@@ -788,21 +789,44 @@ def _automation_program_not_found(request: Request, program_id: int) -> Response
 def _setup_workspace(request: Request, program: dict[str, object], summary: dict[str, object], *, step: str) -> dict[str, object]:
     program_id = int(program.get("id") or 0)
     normalized_step = step if step in {item["key"] for item in SETUP_STEPS} else "basic"
-    return {
-        "program": program,
-        "summary": summary,
-        "step": normalized_step,
-        "steps": list(SETUP_STEPS),
-        "is_default_program": str(program.get("program_code") or "") == "signup_conversion_v1",
-        "basic": dict(program.get("config_json") or {}),
-        "urls": {
-            "base": _legacy_url_for("api.admin_automation_program_setup", program_id=program_id),
-            "overview": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
-            "entry_channels": _legacy_url_for("api.admin_automation_program_entry_channels", program_id=program_id),
-            "update": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
-            "copy": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
+    try:
+        workspace = get_automation_program_setup_payload(program_id, step=normalized_step)
+    except AutomationProgramDataUnavailable:
+        workspace = {
+            "program": program,
+            "summary": summary,
+            "step": normalized_step,
+            "steps": list(SETUP_STEPS),
+            "is_default_program": str(program.get("program_code") or "") == "signup_conversion_v1",
+            "basic": dict(program.get("config_json") or {}),
+            "entry_channel": {},
+            "entry": {"channels": [], "qrcode_channel": {}, "customer_acquisition_links": []},
+            "segmentation": {},
+            "audience_entry_rule": {},
+            "operations": {"tasks": [], "active_count": 0},
+            "publish_check": {},
+        }
+    workspace["program"] = workspace.get("program") or program
+    workspace["summary"] = workspace.get("summary") or summary
+    workspace["urls"] = {
+        "base": _legacy_url_for("api.admin_automation_program_setup", program_id=program_id),
+        "overview": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
+        "entry_channels": _legacy_url_for("api.admin_automation_program_entry_channels", program_id=program_id),
+        "update": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+        "copy": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
+        "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+    }
+    workspace["operations_workspace"] = {
+        "program_id": program_id,
+        "api_urls": {
+            "groups": f"/api/admin/automation-conversion/task-groups?program_id={program_id}&limit=300",
+            "tasks": f"/api/admin/automation-conversion/tasks?program_id={program_id}&limit=300",
+            "task_base": "/api/admin/automation-conversion/tasks/0",
+            "profile_segment_templates_options": f"/api/admin/automation-conversion/profile-segment-templates/options?program_id={program_id}",
+            "profile_segment_template_detail_base": "/api/admin/automation-conversion/profile-segment-templates/0",
         },
     }
+    return workspace
 
 
 def _overview_workspace(request: Request, program: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
