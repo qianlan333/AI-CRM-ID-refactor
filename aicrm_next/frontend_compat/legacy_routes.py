@@ -601,6 +601,11 @@ def admin_questionnaires(request: Request):
         page_summary="读取生产问卷列表，保留新建、编辑、停用、删除和导出入口。",
         active_endpoint="api.admin_questionnaires",
     )
+    context["page_actions"] = [
+        {"label": "创建新问卷", "href": "/admin/questionnaires/new", "variant": "primary"},
+        {"label": "创建测评问卷模板", "href": "/admin/questionnaires/new?mode=assessment", "variant": "secondary"},
+        {"label": "刷新", "href": "/admin/questionnaires", "variant": "ghost"},
+    ]
     questionnaires = jsonable_encoder(list_payload.get("questionnaires") or list_payload.get("items") or [])
     context["questionnaire_payload"] = {
         "questionnaires": questionnaires,

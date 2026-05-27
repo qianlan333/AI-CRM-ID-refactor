@@ -52,6 +52,7 @@ from ...domains.tags.service import get_signup_status_definition
 from ...infra.json_utils import safe_json_loads as _json_loads
 from ...infra.settings import get_setting
 from ..questionnaire import build_questionnaire_preflight_payload
+from ..questionnaire.preflight_service import runtime_config_value
 from ..tags.service import mark_customer_tags, unmark_customer_tags
 from ..tasks.service import dispatch_wecom_task
 from . import repo
@@ -416,8 +417,8 @@ def build_questionnaire_index_payload() -> dict[str, Any]:
     preflight_error = ""
     try:
         def _lightweight_tag_probe() -> list[dict[str, Any]]:
-            required_keys = ["WECOM_CORP_ID", "WECOM_CONTACT_SECRET", "WECOM_API_BASE"]
-            missing = [key for key in required_keys if not _normalized_text(current_app.config.get(key))]
+            required_keys = ["WECOM_CORP_ID", "WECOM_SECRET", "WECOM_API_BASE"]
+            missing = [key for key in required_keys if not runtime_config_value(current_app.config, key)]
             if missing:
                 raise RuntimeError(f"缺少配置：{', '.join(missing)}")
             return [{"tag_id": "config-ok", "tag_name": "config-ok"}]

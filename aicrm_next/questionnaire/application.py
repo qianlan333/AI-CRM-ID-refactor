@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
@@ -97,17 +98,37 @@ class ExportQuestionnaireQuery:
 
 class GetQuestionnairePreflightQuery:
     def execute(self) -> dict[str, Any]:
+        secret_key = os.getenv("SECRET_KEY", "").strip()
+        wechat_oauth_configured = bool(
+            os.getenv("WECHAT_MP_APP_ID", "").strip()
+            and os.getenv("WECHAT_MP_APP_SECRET", "").strip()
+            and secret_key
+            and secret_key != "dev-secret-key-change-me"
+        )
+        wecom_contact_configured = bool(
+            os.getenv("WECOM_CORP_ID", "").strip()
+            and os.getenv("WECOM_CONTACT_SECRET", "").strip()
+        )
+        wecom_tags_api_available = bool(
+            os.getenv("WECOM_CORP_ID", "").strip()
+            and os.getenv("WECOM_SECRET", "").strip()
+            and os.getenv("WECOM_API_BASE", "https://qyapi.weixin.qq.com").strip()
+        )
         return {
             "ok": True,
             "checks": {
-                "wechat_oauth_configured": False,
-                "wecom_contact_configured": False,
+                "wechat_oauth_configured": wechat_oauth_configured,
+                "wecom_contact_configured": wecom_contact_configured,
                 "debug_session_api_enabled": True,
                 "questionnaire_admin_ui_enabled": True,
-                "wecom_tags_api_available": False,
+                "wecom_tags_api_available": wecom_tags_api_available,
                 "identity_map_available": True,
             },
-            "status": "partial",
+            "status": (
+                "ok"
+                if wechat_oauth_configured and wecom_contact_configured and wecom_tags_api_available
+                else "partial"
+            ),
         }
 
     __call__ = execute
