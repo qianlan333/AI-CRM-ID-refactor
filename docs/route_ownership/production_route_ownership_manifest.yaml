@@ -245,7 +245,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Read paths use production facade; write/enable/delete/export remain guarded by questionnaire contracts.
   - route_pattern: /api/h5/questionnaires*
     methods: [GET, POST]
@@ -256,7 +256,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public questionnaire read routes are Next exact; submit and diagnostics POSTs forward to legacy Flask so OAuth session identity and production submit behavior are preserved.
   - route_pattern: /api/h5/questionnaires/{slug}/submit
     methods: [POST, OPTIONS]
@@ -267,7 +267,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public questionnaire submit forwards to legacy Flask so production validation, identity session, external push, and redirect behavior stay intact.
   - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics
     methods: [POST, OPTIONS]
@@ -278,7 +278,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public H5 diagnostics POST remains on the legacy transport path.
   - route_pattern: /s/{slug}
     methods: [GET]
@@ -289,7 +289,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public H5 page rendered by Next frontend templates; WeChat auth gate uses the retained legacy OAuth transport and session cookie.
   - route_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -300,7 +300,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: OAuth start/callback forward to legacy Flask transport so configured公众号 OAuth redirects to WeChat and writes questionnaire_h5_identity into the legacy session cookie.
   - route_pattern: /api/admin/wecom/tags*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -542,7 +542,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_5_automation_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members.
   - route_pattern: /api/customer-automation*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -553,7 +553,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_5_automation_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Activation webhook has Next exact route and production_compat fallback; real side effects remain blocked.
   - route_pattern: /api/customers/automation*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -586,7 +586,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Next exact product/transaction routes plus production_compat fallback; real payment provider calls blocked.
   - route_pattern: /api/admin/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -597,7 +597,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked.
   - route_pattern: /api/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -608,7 +608,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public product API forwards to legacy Flask/product_service so real PostgreSQL product links opened from QR codes do not hit the Next fake commerce repository.
   - route_pattern: /p/{page_slug}
     methods: [GET]
@@ -619,7 +619,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Public product page forwards to legacy Flask/product_service; checkout side effects remain guarded by the legacy payment flow.
   - route_pattern: /pay/{product_code}
     methods: [GET]
@@ -641,7 +641,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Order status API exact route plus production_compat fallback.
   - route_pattern: /api/checkout*
     methods: [POST, OPTIONS, GET, PUT, PATCH, DELETE, HEAD]
@@ -652,7 +652,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Checkout routes use fake payment adapter unless a separately approved real provider path exists.
   - route_pattern: /api/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -663,7 +663,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: WeChat Pay notify/fallback route family; real provider calls blocked.
   - route_pattern: /api/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -674,7 +674,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Alipay notify/return/fallback route family; real provider calls blocked.
   - route_pattern: /api/h5/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -707,7 +707,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_1_media_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked.
   - route_pattern: /api/admin/image-library/upload
     methods: [POST, OPTIONS]
@@ -729,7 +729,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_1_media_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Attachment routes use fake/staging-disabled adapters.
   - route_pattern: /api/admin/miniprogram-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
@@ -740,7 +740,7 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_1_media_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: Miniprogram routes use fake/staging-disabled adapters.
   - route_pattern: /sidebar/bind-mobile
     methods: [GET, HEAD]
@@ -861,5 +861,5 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_d7_7_mcp_openclaw_adapter_contract.py
+    checker: tools/check_production_route_resolution.py
     notes: MCP is owned by aicrm_next.integration_gateway D7.7 adapter boundary; openclaw_service is not an owner and must not be reintroduced.

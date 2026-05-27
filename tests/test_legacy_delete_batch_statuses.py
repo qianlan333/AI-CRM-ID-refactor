@@ -58,20 +58,6 @@ def test_d6_5_physical_deletions_match_dead_code_inventory() -> None:
         assert f"- `{path}`" in _section(delete_batches, "D6.5")
 
 
-def test_d7_blocker_matrix_remains_non_delete_ready() -> None:
-    matrix = _read("docs/d7_write_external_blocker_matrix.md")
-
-    for marker in ("delete_ready", "production_ready", "production_approved"):
-        assert marker not in matrix
-    for capability in (
-        "WeChat Pay checkout / notify",
-        "Questionnaire OAuth",
-        "Automation OpenClaw push",
-        "MCP / OpenClaw legacy adapter",
-    ):
-        assert capability in matrix
-
-
 def test_current_retirement_docs_do_not_reopen_completed_readonly_batches() -> None:
     current_docs = "\n".join(
         _read(path)

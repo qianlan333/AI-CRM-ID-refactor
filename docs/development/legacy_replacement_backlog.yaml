@@ -474,7 +474,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_4_internal_write"
     replacement_category: "internal_write"
     priority: "P1"
@@ -485,7 +485,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Read paths use production facade; write/enable/delete/export remain guarded by questionnaire contracts."
   - id: "LRB-023"
     route_pattern: "/api/h5/questionnaires*"
@@ -496,7 +496,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -507,7 +507,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public questionnaire read routes are Next exact; submit and diagnostics POSTs forward to legacy Flask so OAuth session identity and production submit behavior are preserved."
   - id: "LRB-024"
     route_pattern: "/api/h5/questionnaires/{slug}/submit"
@@ -518,7 +518,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_4_internal_write"
     replacement_category: "internal_write"
     priority: "P1"
@@ -529,7 +529,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Public questionnaire submit forwards to legacy Flask so production validation, identity session, external push, and redirect behavior stay intact."
   - id: "LRB-025"
     route_pattern: "/api/h5/questionnaires/{slug}/client-diagnostics"
@@ -540,7 +540,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_4_internal_write"
     replacement_category: "internal_write"
     priority: "P1"
@@ -551,7 +551,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Public H5 diagnostics POST remains on the legacy transport path."
   - id: "LRB-026"
     route_pattern: "/s/{slug}"
@@ -562,7 +562,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -573,7 +573,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public H5 page rendered by Next frontend templates; WeChat auth gate uses the retained legacy OAuth transport and session cookie."
   - id: "LRB-027"
     route_pattern: "/api/h5/wechat/oauth*"
@@ -584,7 +584,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_2_questionnaire_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -595,7 +595,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_2_questionnaire_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "OAuth start/callback forward to legacy Flask transport so configured公众号 OAuth redirects to WeChat and writes questionnaire_h5_identity into the legacy session cookie."
   - id: "LRB-028"
     route_pattern: "/api/admin/wecom/tags*"
@@ -1068,7 +1068,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_5_automation_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_4_internal_write"
     replacement_category: "internal_write"
     priority: "P1"
@@ -1079,7 +1079,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_5_automation_adapter_contract.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
     notes: "Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members."
   - id: "LRB-050"
     route_pattern: "/api/customer-automation*"
@@ -1090,7 +1090,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_5_automation_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -1101,7 +1101,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_5_automation_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Activation webhook has Next exact route and production_compat fallback; real side effects remain blocked."
   - id: "LRB-051"
     route_pattern: "/api/customers/automation*"
@@ -1156,7 +1156,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1167,7 +1167,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact product/transaction routes plus production_compat fallback; real payment provider calls blocked."
   - id: "LRB-054"
     route_pattern: "/api/admin/alipay*"
@@ -1178,7 +1178,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1189,7 +1189,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked."
   - id: "LRB-055"
     route_pattern: "/api/products*"
@@ -1200,7 +1200,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -1211,7 +1211,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public product API forwards to legacy Flask/product_service so real PostgreSQL product links opened from QR codes do not hit the Next fake commerce repository."
   - id: "LRB-056"
     route_pattern: "/p/{page_slug}"
@@ -1222,7 +1222,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
     priority: "P2"
@@ -1233,7 +1233,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Public product page forwards to legacy Flask/product_service; checkout side effects remain guarded by the legacy payment flow."
   - id: "LRB-057"
     route_pattern: "/pay/{product_code}"
@@ -1266,7 +1266,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1277,7 +1277,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Order status API exact route plus production_compat fallback."
   - id: "LRB-059"
     route_pattern: "/api/checkout*"
@@ -1288,7 +1288,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1299,7 +1299,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Checkout routes use fake payment adapter unless a separately approved real provider path exists."
   - id: "LRB-060"
     route_pattern: "/api/wechat-pay*"
@@ -1310,7 +1310,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1321,7 +1321,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "WeChat Pay notify/fallback route family; real provider calls blocked."
   - id: "LRB-061"
     route_pattern: "/api/alipay*"
@@ -1332,7 +1332,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_4_product_payment_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1343,7 +1343,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_4_product_payment_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Alipay notify/return/fallback route family; real provider calls blocked."
   - id: "LRB-062"
     route_pattern: "/api/h5/wechat-pay*"
@@ -1398,7 +1398,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_1_media_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1409,7 +1409,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked."
   - id: "LRB-065"
     route_pattern: "/api/admin/image-library/upload"
@@ -1442,7 +1442,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_1_media_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1453,7 +1453,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Attachment routes use fake/staging-disabled adapters."
   - id: "LRB-067"
     route_pattern: "/api/admin/miniprogram-library*"
@@ -1464,7 +1464,7 @@ entries:
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_1_media_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1475,7 +1475,7 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_d7_1_media_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "Miniprogram routes use fake/staging-disabled adapters."
   - id: "LRB-068"
     route_pattern: "/sidebar/bind-mobile"
@@ -1706,7 +1706,7 @@ entries:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "real_blocked"
-    checker: "tools/check_d7_7_mcp_openclaw_adapter_contract.py"
+    checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "adapter_contract"
     priority: "P2"
@@ -1717,5 +1717,5 @@ entries:
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action; keep manifest owner current."
-    recommended_verification: ["tools/check_d7_7_mcp_openclaw_adapter_contract.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
+    recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
     notes: "MCP is owned by aicrm_next.integration_gateway D7.7 adapter boundary; openclaw_service is not an owner and must not be reintroduced."

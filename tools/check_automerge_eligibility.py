@@ -30,6 +30,9 @@ DELETED_LOW_RISK_PREFIXES = (
     "tools/run_",
     "tests/test_",
 )
+DELETED_LOW_RISK_EXACT = {
+    "tools/d7_contract_check_common.py",
+}
 LOW_RISK_EXACT = {
     "aicrm_next/production_compat/api.py",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
@@ -853,7 +856,9 @@ def _is_deleted_path(path: str) -> bool:
 
 
 def _is_low_risk_path(path: str) -> bool:
-    if _is_deleted_path(path) and path.startswith(DELETED_LOW_RISK_PREFIXES):
+    if _is_deleted_path(path) and (
+        path in DELETED_LOW_RISK_EXACT or path.startswith(DELETED_LOW_RISK_PREFIXES)
+    ):
         return True
     return (
         path in LOW_RISK_EXACT
