@@ -47,6 +47,54 @@ def _resolve_external_userid(external_userid: str | None = None, user_id: str | 
     return str(external_userid or user_id or "").strip()
 
 
+def _profile_result_status(result: dict) -> int:
+    return int(result.get("status_code", 200) or 200)
+
+
+def _profile_external_userid(profile_result: dict) -> str:
+    profile = dict(profile_result.get("profile") or profile_result.get("customer") or {})
+    return str(profile.get("external_userid") or profile.get("user_id") or "").strip()
+
+
+def _profile_questionnaire_answers(profile: dict) -> list[dict]:
+    candidate_groups = [
+        profile.get("matched_questions"),
+        dict(profile.get("sidebar_context") or {}).get("matched_questions"),
+        dict(profile.get("marketing_summary") or {}).get("matched_questions"),
+    ]
+    answers: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for group in candidate_groups:
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            question = str(item.get("question") or item.get("title") or item.get("question_text") or item.get("label") or "").strip()
+            answer = str(item.get("answer") or item.get("answer_text") or item.get("value") or item.get("text") or "").strip()
+            if not question and not answer:
+                continue
+            key = (question, answer)
+            if key in seen:
+                continue
+            seen.add(key)
+            answers.append({"question": question or "未命名问题", "answer": answer or "未填写"})
+    return answers
+
+
+def _message_speaker(message: dict, customer: dict) -> str:
+    sender = str(message.get("sender") or "").strip()
+    external_userid = str(customer.get("external_userid") or customer.get("user_id") or "").strip()
+    owner_userid = str(customer.get("owner_userid") or "").strip()
+    customer_name = str(customer.get("customer_name") or external_userid or "客户").strip()
+    owner_name = str(customer.get("owner_display_name") or owner_userid or "负责人").strip()
+    if sender and sender == external_userid:
+        return customer_name
+    if sender and sender == owner_userid:
+        return owner_name
+    return sender or customer_name
+
+
 def _context_for_external_userid(
     external_userid: str,
     *,
@@ -188,3 +236,81 @@ def get_admin_customer_profile_tags(external_userid: str | None = None, user_id:
     )
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(jsonable_encoder(result), status_code=status_code)
+
+
+@router.get("/api/admin/customers/profile/questionnaire-answers")
+def get_admin_customer_profile_questionnaire_answers(
+    external_userid: str | None = None,
+    mobile: str | None = None,
+    user_id: str | None = None,
+):
+    profile_result = GetAdminCustomerProfileQuery()(
+        external_userid=external_userid,
+        mobile=mobile,
+        user_id=user_id,
+    )
+    if not profile_result.get("ok"):
+        return JSONResponse(jsonable_encoder(profile_result), status_code=_profile_result_status(profile_result))
+    profile = dict(profile_result.get("profile") or profile_result.get("customer") or {})
+    answers = _profile_questionnaire_answers(profile)
+    latest_assessment_result = (
+        dict(profile.get("latest_assessment_result") or {})
+        or dict(dict(profile.get("marketing_profile") or {}).get("latest_assessment_result") or {})
+        or dict(dict(profile.get("sidebar_context") or {}).get("latest_assessment_result") or {})
+    )
+    payload = {
+        "ok": True,
+        "external_userid": _profile_external_userid(profile_result),
+        "answers": answers,
+        "count": len(answers),
+        "latest_assessment_result": latest_assessment_result or None,
+        "source_status": profile_result.get("source_status"),
+        "route_owner": "ai_crm_next",
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=200)
+
+
+@router.get("/api/admin/customers/profile/messages")
+def get_admin_customer_profile_messages(
+    external_userid: str | None = None,
+    mobile: str | None = None,
+    user_id: str | None = None,
+    fetch_all: str | None = None,
+    limit: int | None = None,
+):
+    profile_result = GetAdminCustomerProfileQuery()(
+        external_userid=external_userid,
+        mobile=mobile,
+        user_id=user_id,
+    )
+    if not profile_result.get("ok"):
+        return JSONResponse(jsonable_encoder(profile_result), status_code=_profile_result_status(profile_result))
+    customer = dict(profile_result.get("profile") or profile_result.get("customer") or {})
+    resolved_external_userid = _profile_external_userid(profile_result)
+    if not resolved_external_userid:
+        return _input_error("external_userid is required")
+    requested_limit = int(limit or (100 if str(fetch_all or "").strip().lower() in {"1", "true", "yes", "on"} else 30))
+    requested_limit = max(1, min(requested_limit, 100))
+    result = ListRecentMessagesQuery()(RecentMessagesRequest(external_userid=resolved_external_userid, limit=requested_limit))
+    status_code = int(result.pop("status_code", 200) or 200)
+    if not result.get("ok", True):
+        return JSONResponse(jsonable_encoder(result), status_code=status_code)
+    messages = list(result.get("messages") or result.get("items") or [])
+    normalized_messages = [
+        {
+            **dict(message),
+            "speaker": str(dict(message).get("speaker") or _message_speaker(dict(message), customer)),
+            "send_time": dict(message).get("send_time") or dict(message).get("created_at") or dict(message).get("updated_at") or "",
+        }
+        for message in messages
+    ]
+    payload = {
+        "ok": True,
+        "external_userid": resolved_external_userid,
+        "messages": normalized_messages,
+        "count": len(normalized_messages),
+        "limit": requested_limit,
+        "source_status": result.get("source_status") or profile_result.get("source_status"),
+        "route_owner": "ai_crm_next",
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=status_code)

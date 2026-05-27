@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
-from aicrm_next.frontend_compat.legacy_routes import admin_customer_detail_redirect
 from aicrm_next.integration_gateway.dispatch import McpToolDispatcher
 
 
@@ -146,8 +145,12 @@ def test_mcp_get_customer_context_reuses_customer_context_query(monkeypatch):
     assert calls and calls[0].external_userid == "wx_ext_001"
 
 
-def test_admin_customer_detail_redirects_to_context_backed_profile_route():
-    response = admin_customer_detail_redirect("wx_ext_001")
+def test_admin_customer_detail_page_uses_context_backed_profile_route():
+    from aicrm_next.main import create_app
 
-    assert response.status_code == 307
-    assert response.headers["location"] == "/api/admin/customers/profile?external_userid=wx_ext_001"
+    response = TestClient(create_app()).get("/admin/customers/wx_ext_001", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.headers.get("location", "") == ""
+    assert "客户档案" in response.text
+    assert "/api/admin/customers/profile/tags?external_userid=wx_ext_001" in response.text
