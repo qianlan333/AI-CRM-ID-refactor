@@ -42,6 +42,43 @@ def test_target_admin_pages_are_not_404(monkeypatch):
         assert response.status_code != 404, route
 
 
+def test_next_customer_detail_route_renders_profile_page_instead_of_json_redirect(monkeypatch):
+    client = _client(monkeypatch)
+
+    list_response = client.get("/admin/customers")
+    detail_response = client.get("/admin/customers/wx_ext_001?tab=messages", follow_redirects=False)
+    html = detail_response.text
+
+    assert list_response.status_code == 200
+    assert 'href="/admin/customers/wx_ext_001"' in list_response.text
+    assert "/api/admin/customers/profile?external_userid=wx_ext_001" not in list_response.text
+    assert detail_response.status_code == 200
+    assert "text/html" in detail_response.headers["content-type"]
+    assert "客户档案" in html
+    assert "实时标签" in html
+    assert "已填写问卷及答案" in html
+    assert "聊天记录" in html
+    assert "自动化转化" in html
+    assert 'data-initial-section="customer-message-records"' in html
+    assert detail_response.headers.get("location", "") == ""
+
+
+def test_next_customer_profile_section_apis_are_native_readonly_routes(monkeypatch):
+    client = _client(monkeypatch)
+
+    questionnaire_response = client.get("/api/admin/customers/profile/questionnaire-answers?external_userid=wx_ext_001")
+    messages_response = client.get("/api/admin/customers/profile/messages?external_userid=wx_ext_001")
+
+    assert questionnaire_response.status_code == 200
+    assert questionnaire_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert questionnaire_response.json()["route_owner"] == "ai_crm_next"
+    assert "answers" in questionnaire_response.json()
+    assert messages_response.status_code == 200
+    assert messages_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert messages_response.json()["route_owner"] == "ai_crm_next"
+    assert "messages" in messages_response.json()
+
+
 def test_next_channels_page_is_first_level_sidebar_entry(monkeypatch):
     client = _client(monkeypatch)
 
