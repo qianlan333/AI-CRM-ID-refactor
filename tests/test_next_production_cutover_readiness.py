@@ -223,15 +223,13 @@ def test_cutover_checker_requires_dry_run_db_sentinel(monkeypatch):
     assert result["dry_run_db_sentinel_ok"] is False
 
 
-def test_required_docs_exist_and_avoid_forbidden_status_markers():
-    docs = [
-        ROOT / "docs/next_production_route_compatibility_matrix.md",
-        ROOT / "docs/next_production_gap_closure_report.md",
-        ROOT / "docs/next_production_cutover_runbook.md",
-    ]
-    for path in docs:
-        assert path.exists()
-    content = "\n".join(path.read_text() for path in docs)
+def test_cutover_checker_avoids_forbidden_status_markers():
+    content = "\n".join(
+        [
+            (ROOT / "tools/check_next_production_cutover_readiness.py").read_text(encoding="utf-8"),
+            (ROOT / "tools/check_next_production_runtime_gaps.py").read_text(encoding="utf-8"),
+        ]
+    )
     for marker in ("delete_ready", "production_ready", "production_approved"):
         assert marker not in content
 

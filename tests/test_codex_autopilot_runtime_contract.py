@@ -36,7 +36,7 @@ def test_runner_generates_compact_governance_prompt_without_github_when_no_open_
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "remaining stale non-runtime docs/reports" in text
+    assert "non_runtime_cleanup" in text
     assert "next_cleanup_candidates" in text
 
 

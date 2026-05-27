@@ -22,9 +22,9 @@ def test_phase_execution_state_uses_compact_active_contract() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
     assert data["current_phase"] == "post_phase7_active_cleanup"
-    assert data["last_merged_pr"] == "#859"
-    assert data["last_merged_cleanup_wave"] == "architecture_documentation_compaction_wave15"
-    assert data["recommended_next_pr"] == "stale_product_design_documentation_cleanup_wave16"
+    assert data["last_merged_pr"] == "#861"
+    assert data["last_merged_cleanup_wave"] == "stale_product_design_documentation_cleanup_wave16"
+    assert data["recommended_next_pr"] == "final_non_runtime_cleanup_closeout_wave17"
     assert data["owner_approval_required"] is False
     assert data["runtime_behavior_changed"] is False
     assert data["delete_ready"] is False
@@ -53,8 +53,10 @@ def test_protected_runtime_boundaries_are_retained() -> None:
 
 def test_next_cleanup_candidates_are_non_runtime_governance_only() -> None:
     data = checker.load_yaml(STATE)
-    assert set(data["next_cleanup_candidates"]) == checker.EXPECTED_NEXT_CANDIDATES
-    assert all("runtime code" not in item for item in data["next_cleanup_candidates"])
+    assert data["next_cleanup_candidates"] == checker.EXPECTED_NEXT_CANDIDATES
+    assert data["next_cleanup_candidates"]["non_runtime_cleanup"] == "nearly_complete"
+    assert data["next_cleanup_candidates"]["runtime_fallback_cleanup"] == "future_separate_track"
+    assert data["next_cleanup_candidates"]["high_risk_external_cleanup"] == "separate_owner_approval_required"
 
 
 def test_autopilot_settings_disallow_runtime_and_admin_override() -> None:

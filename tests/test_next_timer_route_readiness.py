@@ -221,12 +221,7 @@ def _raise_if_legacy_forwarded():
     raise AssertionError("timer dry-run must not be forwarded to legacy")
 
 
-def test_timer_readiness_docs_do_not_use_forbidden_status_markers():
-    docs = [
-        ROOT / "docs/next_production_route_compatibility_matrix.md",
-        ROOT / "docs/next_production_gap_closure_report.md",
-        ROOT / "docs/next_production_cutover_runbook.md",
-    ]
-    content = "\n".join(path.read_text() for path in docs)
+def test_timer_readiness_checker_does_not_use_forbidden_status_markers():
+    content = (ROOT / "tools/check_next_timer_route_readiness.py").read_text(encoding="utf-8")
     for marker in ("delete_ready", "production_ready", "production_approved"):
         assert marker not in content

@@ -32,6 +32,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "remaining stale non-runtime docs/reports",
     "remaining stale checker/test references",
     "governance config compaction",
+    "non_runtime_cleanup",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -188,6 +189,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/codex_task_template.md",
         "docs/development/legacy_replacement_backlog.md",
         "docs/development/legacy_replacement_backlog.yaml",
+        "docs/claude_code_integration/README.md",
+        "docs/claude_code_integration/patterns.md",
+        "docs/claude_code_integration/rules.md",
+        "docs/claude_code_integration/tools.md",
+        "docs/claude_code_integration/troubleshooting.md",
+        "docs/mcp_usage.md",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "scripts/codex_autopilot_tick.sh",
         "tools/check_architecture_skill_compliance.py",
@@ -284,7 +291,8 @@ def choose_next_action(state: dict[str, Any], requested: str | None = None) -> s
 
 
 def choose_next_work_package(state: dict[str, Any], requested: str | None = None) -> str:
-    allowed = [str(item) for item in state.get("next_cleanup_candidates", [])]
+    raw_candidates = state.get("next_cleanup_candidates", [])
+    allowed = list(raw_candidates) if isinstance(raw_candidates, dict) else [str(item) for item in raw_candidates]
     if requested:
         if requested not in allowed:
             raise ValueError(f"requested work package is not in next_cleanup_candidates: {requested}")
@@ -292,6 +300,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "final_non_runtime_cleanup_closeout_wave17" and "non_runtime_cleanup" in allowed:
+        return "non_runtime_cleanup"
     if recommended == "stale_product_design_documentation_cleanup_wave16" and "remaining stale non-runtime docs/reports" in allowed:
         return "remaining stale non-runtime docs/reports"
     if recommended == "architecture_documentation_compaction_wave15" and "governance config compaction" in allowed:

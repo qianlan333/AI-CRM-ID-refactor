@@ -1,4 +1,4 @@
-version: 11
+version: 12
 status: active
 
 autopilot:
@@ -10,9 +10,9 @@ autopilot:
   runtime_changes_allowed: false
 
 current_phase: post_phase7_active_cleanup
-last_merged_pr: "#859"
-last_merged_cleanup_wave: architecture_documentation_compaction_wave15
-recommended_next_pr: stale_product_design_documentation_cleanup_wave16
+last_merged_pr: "#861"
+last_merged_cleanup_wave: stale_product_design_documentation_cleanup_wave16
+recommended_next_pr: final_non_runtime_cleanup_closeout_wave17
 owner_approval_required: false
 runtime_behavior_changed: false
 delete_ready: false
@@ -35,6 +35,6 @@ protected_runtime_boundaries:
   - payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths
 
 next_cleanup_candidates:
-  - remaining stale non-runtime docs/reports
-  - remaining stale checker/test references
-  - governance config compaction
+  non_runtime_cleanup: nearly_complete
+  runtime_fallback_cleanup: future_separate_track
+  high_risk_external_cleanup: separate_owner_approval_required
