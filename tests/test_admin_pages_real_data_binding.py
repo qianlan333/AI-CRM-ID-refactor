@@ -77,7 +77,7 @@ def test_funnel_dashboard_entry_uses_hxc_dashboard_workspace(monkeypatch):
     assert "立即刷新" in response.text
     assert "发送人管理" in response.text
     assert "/api/admin/hxc-dashboard/refresh" in response.text
-    assert "/api/admin/hxc-dashboard/broadcast" in response.text
+    assert "/api/admin/hxc-dashboard/broadcast-tasks" in response.text
     assert "production_unavailable" not in response.text
     assert "生产漏斗数据读取失败" not in response.text
 

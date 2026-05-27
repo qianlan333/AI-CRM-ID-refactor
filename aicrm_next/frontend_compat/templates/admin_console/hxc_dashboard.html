@@ -444,9 +444,48 @@
     }
   });
 
-  // HXC broadcast still needs a Next-native backend in a later slice. This click only
-  // prepares the standard SendContentPackage and never calls the legacy broadcast route.
   const senderConfigs = JSON.parse(document.getElementById('hxc-send-config-data').textContent);
+  function hxcIdempotencyKey(){
+    if(window.crypto && typeof window.crypto.randomUUID === 'function'){
+      return window.crypto.randomUUID();
+    }
+    return 'hxc-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  }
+  function hxcSelectedCustomerIds(rows){
+    const seen = new Set();
+    const ids = [];
+    rows.forEach((row)=>{
+      const externalUserid = String(row.external_userid || '').trim();
+      if(externalUserid && !seen.has(externalUserid)){
+        seen.add(externalUserid);
+        ids.push(externalUserid);
+      }
+    });
+    return ids;
+  }
+  function hxcAudienceFilter(rows){
+    return {
+      source: 'hxc_dashboard_tabulator_active_filter',
+      filtered_count: rows.length,
+      header_filters: typeof table.getHeaderFilters === 'function' ? table.getHeaderFilters() : [],
+    };
+  }
+  function hxcStatusLabel(status){
+    if(status === 'created') return '已创建';
+    if(status === 'degraded') return '已降级创建';
+    if(status === ['production', 'unavailable'].join('_')) return '生产数据不可用';
+    return status || '未知状态';
+  }
+  function hxcSkipSummary(skippedByReason){
+    const labels = {
+      missing_external_userid: '缺少企微外部联系人 ID',
+      do_not_disturb: '免打扰',
+    };
+    return Object.entries(skippedByReason || {})
+      .filter(([, count])=>Number(count || 0) > 0)
+      .map(([key, count])=>(labels[key] || key) + ' ' + count + ' 人')
+      .join('；') || '无';
+  }
   document.getElementById('hxc-broadcast-btn').addEventListener('click', ()=>{
     const filtered = table.getData("active");
     const rowsWithContact = filtered.filter(r=>r.external_userid && r.external_userid.trim());
@@ -460,6 +499,10 @@
       alert('请先在「发送人管理」中添加至少一个启用的发送人');
       return;
     }
+    if(!window.AICRMSendContentComposer || typeof window.AICRMSendContentComposer.open !== 'function'){
+      alert('标准发送内容组件加载失败，请刷新页面后重试');
+      return;
+    }
 
     window.AICRMSendContentComposer.open({
       title: 'HXC 群发内容',
@@ -471,16 +514,39 @@
         attachment_library_ids: [],
       },
       onConfirm(contentPackage) {
-        const materialCount =
-          (contentPackage.image_library_ids || []).length +
-          (contentPackage.miniprogram_library_ids || []).length +
-          (contentPackage.attachment_library_ids || []).length;
-        alert(
-          '已生成标准内容包，HXC Next-native broadcast 后端将在后续 PR 接入。' +
-          '\n筛选行数: ' + filtered.length +
-          '\n已识别联系人: ' + rowsWithContact.length +
-          '\n素材数: ' + materialCount
-        );
+        const payload = {
+          source_type: 'hxc_dashboard_broadcast',
+          source_id: 'hxc-dashboard',
+          idempotency_key: hxcIdempotencyKey(),
+          sender_userid: activeSenders[0],
+          audience_filter: hxcAudienceFilter(filtered),
+          selected_customer_ids: hxcSelectedCustomerIds(rowsWithContact),
+          content_package: contentPackage,
+          dry_run: false,
+        };
+        fetch('/api/admin/hxc-dashboard/broadcast-tasks', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        })
+          .then(async (resp)=>{
+            const result = await resp.json().catch(()=>({}));
+            if(!resp.ok || !result.ok){
+              throw new Error(result.detail || result.error || '创建 HXC 群发任务失败');
+            }
+            const task = result.task || {};
+            alert(
+              'HXC 群发任务' + hxcStatusLabel(task.status) +
+              '\n筛选总数: ' + Number(task.audience_total || 0) +
+              '\n可发送: ' + Number(task.eligible_count || 0) +
+              '\n跳过: ' + Number(task.skipped_count || 0) +
+              '\n跳过原因: ' + hxcSkipSummary(task.skipped_by_reason) +
+              (task.dispatch_status ? '\n派发状态: ' + task.dispatch_status : '')
+            );
+          })
+          .catch((err)=>{
+            alert('HXC 群发任务创建失败：' + err.message);
+          });
       },
     });
   });
