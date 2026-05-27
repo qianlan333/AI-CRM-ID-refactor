@@ -8,6 +8,7 @@ FRONTEND = ROOT / "aicrm_next" / "frontend_compat"
 STATIC = FRONTEND / "static" / "admin_console"
 TEMPLATES = FRONTEND / "templates" / "admin_console"
 OPERATION_PANEL = TEMPLATES / "_automation_operation_orchestration_panel.html"
+OPERATION_JS = STATIC / "automation_operation_orchestration_panel.js"
 HXC_TEMPLATE = TEMPLATES / "hxc_dashboard.html"
 GROUP_OPS_TEMPLATE = TEMPLATES / "group_ops.html"
 CHANNEL_TEMPLATE = TEMPLATES / "channel_code_form.html"
@@ -19,7 +20,7 @@ def _read(path: Path) -> str:
 
 
 def test_next_automation_operation_panel_has_no_private_asset_binding() -> None:
-    source = _read(OPERATION_PANEL)
+    source = _read(OPERATION_PANEL) + _read(OPERATION_JS)
 
     for forbidden in [
         "请输入图片" + "素材编号",
@@ -69,7 +70,7 @@ def test_standard_send_content_components_still_exist() -> None:
 
 def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> None:
     migrated_pages = [
-        (OPERATION_PANEL, ""),
+        (OPERATION_PANEL, _read(OPERATION_JS)),
         (HXC_TEMPLATE, ""),
         (CAMPAIGN_TEMPLATE, ""),
         (GROUP_OPS_TEMPLATE, _read(STATIC / "group_ops.js")),

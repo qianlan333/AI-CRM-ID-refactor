@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console"
 TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
 HXC_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "hxc_dashboard.html"
+OPERATION_JS = STATIC / "automation_operation_orchestration_panel.js"
+MATERIAL_PICKER_CSS = STATIC / "material_picker.css"
 
 
 def _read(path: Path) -> str:
@@ -26,6 +28,13 @@ def test_material_picker_exists_and_exposes_global_api() -> None:
 
     assert "window.AICRMMaterialPicker" in source
     assert ".open" in source or "{ open }" in source
+
+
+def test_material_picker_hidden_empty_state_overrides_grid_display() -> None:
+    source = _read(MATERIAL_PICKER_CSS)
+
+    assert ".aicrm-material-picker__empty[hidden]" in source
+    assert "display: none !important" in source
 
 
 def test_send_content_composer_excludes_non_standard_controls() -> None:
@@ -51,10 +60,12 @@ def test_operation_panel_references_send_content_composer_assets() -> None:
     assert "send_content_composer.css" in source
     assert "material_picker.js" in source
     assert "material_picker.css" in source
+    assert "automation_operation_orchestration_panel.js" in source
+    assert "(() => {" not in source
 
 
 def test_operation_panel_does_not_prompt_for_material_ids() -> None:
-    source = _read(TEMPLATE)
+    source = _read(TEMPLATE) + _read(OPERATION_JS)
 
     assert "请输入图片" + "素材编号" not in source
     assert "请输入小程序" + "素材编号" not in source
@@ -62,7 +73,7 @@ def test_operation_panel_does_not_prompt_for_material_ids() -> None:
 
 
 def test_operation_panel_contains_profile_template_selector_logic() -> None:
-    source = _read(TEMPLATE)
+    source = _read(OPERATION_JS)
 
     assert "profile-segment-templates/options" in source
     assert "data-profile-template-select" in source
@@ -71,7 +82,7 @@ def test_operation_panel_contains_profile_template_selector_logic() -> None:
 
 
 def test_operation_panel_contains_behavior_rule_logic() -> None:
-    source = _read(TEMPLATE)
+    source = _read(OPERATION_JS)
 
     assert "behavior-segment-rules" in source
     assert "data-behavior-rule-select" in source
@@ -81,7 +92,7 @@ def test_operation_panel_contains_behavior_rule_logic() -> None:
 
 
 def test_operation_panel_contains_agent_selector_logic() -> None:
-    source = _read(TEMPLATE)
+    source = _read(OPERATION_JS)
 
     assert "/api/admin/automation-conversion/agents" in source
     assert "data-agent-select" in source
@@ -89,12 +100,25 @@ def test_operation_panel_contains_agent_selector_logic() -> None:
     assert "agent-materials" in source
 
 
+def test_operation_panel_external_js_has_runtime_ready_and_composer_guard() -> None:
+    source = _read(OPERATION_JS)
+
+    assert "data-operation-panel-ready" in source or "operationPanelReady" in source
+    assert "operationPanelError" in source
+    assert "function openSendContentComposer" in source
+    assert "标准内容编辑器未加载，请刷新页面后重试" in source
+    assert "safeLoadAuxiliary" in source
+    assert "data-config-unified" in source
+    assert "配置话术和素材" in source
+
+
 def test_material_selection_only_uses_material_picker_contract() -> None:
-    panel = _read(TEMPLATE)
+    panel = _read(TEMPLATE) + _read(OPERATION_JS)
     composer = _read(STATIC / "send_content_composer.js")
     picker = _read(STATIC / "material_picker.js")
 
     assert "AICRMMaterialPicker.open" in composer
+    assert "素材选择器未加载，请刷新页面后重试" in composer
     assert "/api/admin/material-picker/items" in picker
     for source in [panel, composer, picker]:
         assert "/api/admin/image-library" not in source

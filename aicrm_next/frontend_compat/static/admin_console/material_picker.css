@@ -131,6 +131,10 @@
   font-weight: 800;
 }
 
+.aicrm-material-picker__empty[hidden] {
+  display: none !important;
+}
+
 .aicrm-material-picker__button {
   border: 1px solid rgba(15, 23, 42, .14);
   border-radius: 10px;

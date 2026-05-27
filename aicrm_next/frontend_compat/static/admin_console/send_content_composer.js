@@ -77,6 +77,7 @@
   }
 
   function open(options) {
+    options = options || {};
     const textEnabled = options.textEnabled !== false;
     const limits = { ...DEFAULT_LIMITS, ...(options.limits || {}) };
     const onConfirm = typeof options.onConfirm === "function" ? options.onConfirm : function () {};
@@ -271,10 +272,15 @@
         return;
       }
       if (event.target.closest("[data-add-material]")) {
+        error.textContent = "";
         const type = state.activeType;
         const field = TYPE_FIELDS[type];
         if (state.value[field].length >= limits[type]) {
           window.alert(`${TYPE_LABELS[type]}最多选择 ${limits[type]} 个`);
+          return;
+        }
+        if (!window.AICRMMaterialPicker || typeof window.AICRMMaterialPicker.open !== "function") {
+          error.textContent = "素材选择器未加载，请刷新页面后重试";
           return;
         }
         window.AICRMMaterialPicker.open({

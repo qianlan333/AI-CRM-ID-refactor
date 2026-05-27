@@ -26,7 +26,10 @@ def test_channel_form_uses_standard_send_content_composer_assets() -> None:
     assert "data-open-welcome-composer" in html
     assert "AICRMSendContentComposer.open" in js
     assert 'title: "配置欢迎语和素材"' in js
-    assert "标准发送内容组件加载失败" in js
+    assert "safeInit" in js
+    assert "welcomeComposerReady" in js
+    assert "welcomeComposerError" in js
+    assert "标准内容编辑器未加载，请刷新页面后重试" in js
 
 
 def test_channel_form_no_longer_uses_private_welcome_material_picker() -> None:
@@ -96,3 +99,137 @@ console.log(JSON.stringify({{ contentPackage, fields, empty }}));
         "miniprogram_library_ids": [],
         "attachment_library_ids": [],
     }
+
+
+def test_channel_welcome_button_opens_composer_with_runtime_event_delegation() -> None:
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(CHANNEL_JS))}, "utf8");
+const listeners = {{}};
+const elements = {{}};
+function element(name, value) {{
+  return elements[name] || (elements[name] = {{
+    value: value || "",
+    textContent: "",
+    innerHTML: "",
+    hidden: false,
+    classList: {{ toggle() {{}} }},
+    dataset: {{}},
+    addEventListener(type, handler) {{ listeners[name + ":" + type] = handler; }},
+    querySelector() {{ return null; }},
+    querySelectorAll() {{ return []; }},
+    closest(selector) {{ return selector === "[data-open-welcome-composer]" ? this : null; }},
+  }});
+}}
+const root = {{
+  dataset: {{ adminToken: "" }},
+  querySelector(selector) {{
+    if (selector === "[data-channel-bootstrap]") return {{ textContent: "{{}}" }};
+    if (selector === "[data-open-welcome-composer]") return element("openButton");
+    if (selector === "[data-welcome-message]") return element("message", "你好");
+    if (selector === "[data-miniprogram-ids]") return element("mini", "34");
+    if (selector === "[data-image-ids]") return element("image", "12");
+    if (selector === "[data-attachment-ids]") return element("attachment", "56");
+    if (selector === "[data-welcome-content-summary]") return element("summary");
+    if (selector === "[data-channel-save-feedback]") return element("feedback");
+    return null;
+  }},
+  querySelectorAll() {{ return []; }},
+  addEventListener(type, handler) {{ listeners["root:" + type] = handler; }},
+}};
+let opened = false;
+const sandbox = {{
+  window: {{
+    AICRMSendContentComposer: {{
+      open(options) {{
+        opened = true;
+        if (options.value.content_text !== "你好") throw new Error("bad text");
+        options.onConfirm({{
+          content_text: "确认话术",
+          image_library_ids: [12, 13],
+          miniprogram_library_ids: [34],
+          attachment_library_ids: [56],
+        }});
+      }},
+    }},
+  }},
+  document: {{ querySelector(selector) {{ return selector === "[data-channel-admission-page]" ? root : null; }} }},
+  navigator: {{}},
+  console,
+}};
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox);
+listeners["root:click"]({{
+  preventDefault() {{}},
+  target: element("openButton"),
+}});
+console.log(JSON.stringify({{
+  opened,
+  ready: root.dataset.welcomeComposerReady,
+  message: element("message").value,
+  images: element("image").value,
+  summary: element("summary").innerHTML,
+}}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    payload = json.loads(result.stdout)
+
+    assert payload["opened"] is True
+    assert payload["ready"] == "1"
+    assert payload["message"] == "确认话术"
+    assert payload["images"] == "12,13"
+    assert "图片 2" in payload["summary"]
+
+
+def test_channel_welcome_missing_composer_sets_readable_error() -> None:
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(CHANNEL_JS))}, "utf8");
+const listeners = {{}};
+function makeElement(value) {{
+  return {{
+    value: value || "",
+    textContent: "",
+    innerHTML: "",
+    hidden: false,
+    classList: {{ toggle() {{}} }},
+    dataset: {{}},
+    closest(selector) {{ return selector === "[data-open-welcome-composer]" ? this : null; }},
+  }};
+}}
+const openButton = makeElement();
+const feedback = makeElement();
+const root = {{
+  dataset: {{}},
+  querySelector(selector) {{
+    if (selector === "[data-channel-bootstrap]") return {{ textContent: "{{}}" }};
+    if (selector === "[data-open-welcome-composer]") return openButton;
+    if (selector === "[data-welcome-message]") return makeElement("");
+    if (selector === "[data-miniprogram-ids]") return makeElement("");
+    if (selector === "[data-image-ids]") return makeElement("");
+    if (selector === "[data-attachment-ids]") return makeElement("");
+    if (selector === "[data-welcome-content-summary]") return makeElement("");
+    if (selector === "[data-channel-save-feedback]") return feedback;
+    return null;
+  }},
+  querySelectorAll() {{ return []; }},
+  addEventListener(type, handler) {{ listeners["root:" + type] = handler; }},
+}};
+const sandbox = {{
+  window: {{}},
+  document: {{ querySelector(selector) {{ return selector === "[data-channel-admission-page]" ? root : null; }} }},
+  navigator: {{}},
+  console,
+}};
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox);
+listeners["root:click"]({{ preventDefault() {{}}, target: openButton }});
+console.log(JSON.stringify({{ error: root.dataset.welcomeComposerError, feedback: feedback.textContent }}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    payload = json.loads(result.stdout)
+
+    assert payload["error"] == "composer_not_loaded"
+    assert "标准内容编辑器未加载" in payload["feedback"]
