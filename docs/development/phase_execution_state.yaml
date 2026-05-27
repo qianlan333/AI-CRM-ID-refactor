@@ -7,13 +7,13 @@ autopilot:
   automerge_requires_eligibility_gate: true
   high_risk_requires_owner_decision_package: true
 
-current_phase: post_phase7_cleanup_owner_evidence_waiting_acceptance
-active_candidate: cleanup_owner_evidence_waiting_acceptance
+current_phase: post_phase7_cleanup_owner_evidence_package_generation
+active_candidate: cleanup_owner_evidence_package_generation
 capability_owner: aicrm_next.automation_engine
-last_merged_pr: "#802"
-last_attempted_action: post_phase7_cleanup_owner_evidence_waiting_acceptance_bundle
-last_created_pr: "#802"
-recommended_next_pr: none_waiting_owner_evidence
+last_merged_pr: "#806"
+last_attempted_action: post_phase7_cleanup_owner_evidence_package_generation_bundle
+last_created_pr: "#806"
+recommended_next_pr: post_phase7_cleanup_owner_evidence_package_blocker_acceptance_bundle
 owner_approval_required: true
 implemented_runtime_slices:
   - route_family: /api/admin/automation-conversion/task-groups*
@@ -409,8 +409,10 @@ completed_steps:
   - post_phase7_cleanup_blocker_acceptance_completed
   - post_phase7_cleanup_owner_evidence_collection_completed
   - post_phase7_cleanup_owner_evidence_waiting_acceptance_completed
+  - post_phase7_cleanup_owner_evidence_package_generation_completed
 
-next_allowed_actions: []
+next_allowed_actions:
+  - post_phase7_cleanup_owner_evidence_package_blocker_acceptance_bundle
 
 post_phase7_new_feature_development_rules:
   status: post_phase7_new_feature_development_rules_completed
@@ -707,6 +709,50 @@ post_phase7_cleanup_owner_evidence_waiting_acceptance:
   oauth_callback_cutover: false
   wecom_callback_cutover: false
   recommended_next_bundle: none_waiting_owner_evidence
+
+post_phase7_cleanup_owner_evidence_package_generation:
+  status: post_phase7_cleanup_owner_evidence_package_generation_completed
+  bundle_type: post_phase7_cleanup_owner_evidence_package_generation_bundle
+  cleanup_family: owner_evidence_package_generation
+  evidence_only: true
+  no_behavior_change: true
+  latest_main_sha: 08f2a2255c389a244e1667fe92e9cb1431b135d8
+  waiting_acceptance_source_pr: 806
+  owner_evidence_collection_source_pr: 802
+  blocker_acceptance_source_pr: 801
+  task_groups_evidence_refresh_source_pr: 798
+  workflow_nodes_evidence_refresh_source_pr: 799
+  blocked_route_families:
+    - /api/admin/automation-conversion/task-groups*
+    - /api/admin/automation-conversion/workflow-nodes*
+  collected_evidence:
+    - route_ownership_manifest_entries
+    - phase6_blocked_shadow_compare_runner_outputs
+    - phase6h_production_compat_exact_route_proposal
+    - rollback_plan_draft
+  owner_required_fields:
+    - owner_approval
+    - rollback_owner
+    - rollback_execution_evidence
+    - risk_acceptance
+    - approval_timestamp
+  task_groups_ready_for_validation: false
+  workflow_nodes_ready_for_validation: false
+  any_route_ready_for_validation: false
+  all_blocked_owner_required: true
+  fallback_removed: false
+  production_compat_behavior_changed: false
+  production_compat_cleanup_executed: false
+  wildcard_cleanup: false
+  legacy_runtime_deleted: false
+  runtime_deletion_executed: false
+  delete_ready: false
+  timer_execution_enabled: false
+  outbound_send_enabled: false
+  payment_behavior_changed: false
+  oauth_callback_cutover: false
+  wecom_callback_cutover: false
+  recommended_next_bundle: post_phase7_cleanup_owner_evidence_package_blocker_acceptance_bundle
 
 phase7l_final_legacy_retirement_acceptance:
   status: phase_7l_final_legacy_retirement_acceptance_completed
