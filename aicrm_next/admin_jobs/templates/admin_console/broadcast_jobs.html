@@ -18,6 +18,52 @@
   </section>
 </section>
 
+<section class="admin-card" data-feishu-monitor-settings>
+  <div class="admin-card-head">
+    <div>
+      <h2>飞书监控配置</h2>
+      <p>配置后，系统会每小时统计上一小时的群发任务，并在有任务时推送任务总数、成功数和失败数。</p>
+    </div>
+  </div>
+  <div class="admin-form-stack">
+    <div class="admin-stat-inline-grid">
+      <article class="admin-mini-stat">
+        <div class="admin-card-label">是否启用</div>
+        <div class="admin-mini-stat-value" data-feishu-enabled>读取中</div>
+      </article>
+      <article class="admin-mini-stat">
+        <div class="admin-card-label">验证状态</div>
+        <div class="admin-mini-stat-value" data-feishu-validation-status>读取中</div>
+      </article>
+      <article class="admin-mini-stat">
+        <div class="admin-card-label">上次验证时间</div>
+        <div class="admin-mini-stat-value" data-feishu-validated-at>-</div>
+      </article>
+      <article class="admin-mini-stat">
+        <div class="admin-card-label">最近验证错误</div>
+        <div class="admin-mini-stat-value admin-mini-stat-value--small" data-feishu-last-error>-</div>
+      </article>
+    </div>
+    <label class="admin-check-line">
+      <input type="checkbox" data-feishu-enabled-input>
+      <span>启用飞书监控</span>
+    </label>
+    <label class="admin-field">
+      <span>webhook 脱敏地址</span>
+      <input type="text" data-feishu-masked readonly value="读取中">
+    </label>
+    <label class="admin-field">
+      <span>webhook URL</span>
+      <input type="url" data-feishu-webhook-input placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx" autocomplete="off">
+    </label>
+    <div class="admin-toolbar">
+      <button type="button" class="admin-button admin-button--primary" data-feishu-save>保存</button>
+      <button type="button" class="admin-button admin-button--secondary" data-feishu-validate>验证 webhook</button>
+    </div>
+    <div class="admin-alert" style="display:none" data-feishu-message></div>
+  </div>
+</section>
+
 <section class="admin-card">
   <div class="admin-card-head">
     <div><h2>任务列表</h2></div>
@@ -126,6 +172,140 @@
 
 {% block head_extra %}
 <script>
+const FEISHU_SETTINGS_API = '/api/admin/broadcast-jobs/notification-settings/feishu';
+const FEISHU_VALIDATE_API = '/api/admin/broadcast-jobs/notification-settings/feishu/validate';
+
+function feishuAdminToken() {
+  return document.body.dataset.adminActionToken || '{{ admin_action_token }}';
+}
+
+function feishuStatusLabel(status) {
+  if (status === 'unconfigured') return '未配置';
+  if (status === 'unverified') return '未验证';
+  if (status === 'valid') return '验证成功';
+  if (status === 'invalid') return '验证失败';
+  return status || '-';
+}
+
+function feishuRender(setting) {
+  const root = document.querySelector('[data-feishu-monitor-settings]');
+  if (!root) return;
+  root.querySelector('[data-feishu-enabled]').textContent = setting.enabled ? '已启用' : '已停用';
+  root.querySelector('[data-feishu-validation-status]').textContent = feishuStatusLabel(setting.validationStatus);
+  root.querySelector('[data-feishu-validated-at]').textContent = setting.validatedAt || '-';
+  root.querySelector('[data-feishu-last-error]').textContent = setting.lastValidationError || '-';
+  root.querySelector('[data-feishu-enabled-input]').checked = !!setting.enabled;
+  root.querySelector('[data-feishu-masked]').value = setting.webhookMasked || '未配置';
+}
+
+function feishuShowMessage(message, ok) {
+  const node = document.querySelector('[data-feishu-message]');
+  if (!node) return;
+  node.textContent = message;
+  node.className = 'admin-alert ' + (ok ? 'admin-alert--success' : 'admin-alert--error');
+  node.style.display = 'block';
+}
+
+function feishuSetLoading(button, loading, label) {
+  if (!button) return;
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  button.disabled = loading;
+  button.textContent = loading ? label : button.dataset.originalText;
+}
+
+function feishuPayload(root) {
+  return {
+    enabled: root.querySelector('[data-feishu-enabled-input]').checked,
+    webhookUrl: root.querySelector('[data-feishu-webhook-input]').value.trim(),
+    admin_action_token: feishuAdminToken()
+  };
+}
+
+async function feishuReadSettings() {
+  const response = await fetch(FEISHU_SETTINGS_API, {
+    headers: {'X-Admin-Action-Token': feishuAdminToken()}
+  });
+  const data = await response.json();
+  if (!response.ok || data.ok === false) throw new Error(data.error || '读取飞书配置失败');
+  feishuRender(data);
+}
+
+async function feishuSaveSettings() {
+  const root = document.querySelector('[data-feishu-monitor-settings]');
+  const button = root.querySelector('[data-feishu-save]');
+  const body = feishuPayload(root);
+  if (!body.webhookUrl) {
+    feishuShowMessage('请填写 webhook 地址。', false);
+    return;
+  }
+  feishuSetLoading(button, true, '保存中...');
+  try {
+    const response = await fetch(FEISHU_SETTINGS_API, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json', 'X-Admin-Action-Token': feishuAdminToken()},
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || '保存失败');
+    feishuRender(data);
+    feishuShowMessage('飞书 webhook 已保存，验证前不会用于监控推送。', true);
+  } catch (error) {
+    feishuShowMessage(error.message || '保存失败', false);
+  } finally {
+    feishuSetLoading(button, false, '');
+  }
+}
+
+async function feishuValidateSettings() {
+  const root = document.querySelector('[data-feishu-monitor-settings]');
+  const button = root.querySelector('[data-feishu-validate]');
+  const body = feishuPayload(root);
+  if (!body.webhookUrl) {
+    feishuShowMessage('请填写 webhook 地址后再验证。', false);
+    return;
+  }
+  feishuSetLoading(button, true, '验证中...');
+  try {
+    const response = await fetch(FEISHU_VALIDATE_API, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Admin-Action-Token': feishuAdminToken()},
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (response.ok && data.ok) {
+      feishuRender({
+        enabled: body.enabled,
+        webhookMasked: data.webhookMasked,
+        validationStatus: data.validationStatus,
+        validatedAt: data.validatedAt,
+        lastValidationError: null
+      });
+      feishuShowMessage('验证成功，测试消息已发送到飞书群。', true);
+      return;
+    }
+    feishuRender({
+      enabled: body.enabled,
+      webhookMasked: data.webhookMasked || root.querySelector('[data-feishu-masked]').value,
+      validationStatus: data.validationStatus || 'invalid',
+      validatedAt: null,
+      lastValidationError: data.message || '飞书 webhook 验证失败'
+    });
+    feishuShowMessage('验证失败，请检查 webhook 地址或飞书机器人配置。', false);
+  } catch (error) {
+    feishuShowMessage('验证失败，请检查 webhook 地址或飞书机器人配置。', false);
+  } finally {
+    feishuSetLoading(button, false, '');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const root = document.querySelector('[data-feishu-monitor-settings]');
+  if (!root) return;
+  root.querySelector('[data-feishu-save]').addEventListener('click', feishuSaveSettings);
+  root.querySelector('[data-feishu-validate]').addEventListener('click', feishuValidateSettings);
+  feishuReadSettings().catch(error => feishuShowMessage(error.message || '读取飞书配置失败', false));
+});
+
 function broadcastJobAction(jobId, action) {
   const token = document.body.dataset.adminActionToken || '{{ admin_action_token }}';
   if (!confirm(action === 'approve' ? '确认审批通过？' : '确认取消此任务？')) return;

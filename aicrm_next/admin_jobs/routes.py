@@ -28,6 +28,13 @@ from .application import (
     execute_jobs_action,
 )
 from .domain import normalized_bool, normalized_text
+from .notification_settings import (
+    FEISHU_WEBHOOK_ERROR,
+    FeishuWebhookValidationError,
+    get_feishu_notification_setting,
+    upsert_feishu_notification_setting,
+    validate_feishu_webhook,
+)
 from .shell import legacy_url_for, shell_context
 
 router = APIRouter()
@@ -304,6 +311,50 @@ def admin_broadcast_jobs(request: Request):
 def api_admin_broadcast_jobs(request: Request):
     payload = build_broadcast_jobs_payload(dict(request.query_params))
     return {"ok": True, "jobs": _jsonable(payload["jobs"]), "counts": payload["counts"], "filters": payload["filters"]}
+
+
+def _with_ok(payload: dict[str, Any]) -> dict[str, Any]:
+    return {"ok": True, **_jsonable(payload)}
+
+
+@router.get("/api/admin/broadcast-jobs/notification-settings/feishu")
+async def api_admin_broadcast_jobs_feishu_notification_settings(request: Request):
+    token_error = await _action_token_error(request)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    return _with_ok(get_feishu_notification_setting())
+
+
+@router.put("/api/admin/broadcast-jobs/notification-settings/feishu")
+async def api_admin_broadcast_jobs_save_feishu_notification_settings(request: Request):
+    payload = await _request_payload(request)
+    token_error = await _action_token_error(request, payload)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    try:
+        setting = upsert_feishu_notification_setting(
+            enabled=normalized_bool(payload.get("enabled")),
+            webhook_url=normalized_text(payload.get("webhookUrl")),
+            validation_status="unverified",
+            validated_at=None,
+            last_validation_error=None,
+        )
+        return _with_ok(setting)
+    except FeishuWebhookValidationError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/admin/broadcast-jobs/notification-settings/feishu/validate")
+async def api_admin_broadcast_jobs_validate_feishu_notification_settings(request: Request):
+    payload = await _request_payload(request)
+    token_error = await _action_token_error(request, payload)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    result = validate_feishu_webhook(webhook_url=normalized_text(payload.get("webhookUrl")), enabled=normalized_bool(payload.get("enabled")))
+    if result.get("ok"):
+        return _jsonable(result)
+    status_code = 400 if result.get("message") == FEISHU_WEBHOOK_ERROR else 502
+    return JSONResponse(_jsonable(result), status_code=status_code)
 
 
 @router.post("/api/admin/broadcast-jobs/{job_id}/approve")

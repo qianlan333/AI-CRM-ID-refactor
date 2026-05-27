@@ -149,6 +149,22 @@ ON outbound_webhook_deliveries (status, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_outbound_webhook_deliveries_next_retry
 ON outbound_webhook_deliveries (next_retry_at, status);
 
+CREATE TABLE IF NOT EXISTS broadcast_queue_notification_settings (
+    id BIGSERIAL PRIMARY KEY,
+    channel TEXT NOT NULL DEFAULT 'feishu',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    webhook_url TEXT NOT NULL,
+    validation_status TEXT NOT NULL DEFAULT 'unverified'
+        CHECK (validation_status IN ('unverified', 'valid', 'invalid')),
+    validated_at TIMESTAMPTZ,
+    last_validation_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_queue_notification_settings_channel
+ON broadcast_queue_notification_settings(channel);
+
 CREATE TABLE IF NOT EXISTS contact_tags (
     id BIGSERIAL PRIMARY KEY,
     external_userid TEXT NOT NULL,
