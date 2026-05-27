@@ -84,6 +84,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "post_phase7_cleanup_owner_evidence_package_blocker_acceptance_bundle",
     "post_phase7_cleanup_task_groups_owner_evidence_validation_bundle",
     "post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance_bundle",
+    "post_phase7_cleanup_task_groups_exact_route_retry_bundle",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -673,6 +674,8 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.yaml",
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.md",
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.md",
+        "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase5_aggregate_acceptance_review.py",
@@ -718,6 +721,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
+        "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "tools/run_phase6g_media_adapter_enablement_gate.py",
         "tools/run_phase6g_wecom_tags_enablement_gate.py",
         "tools/run_phase6g_openclaw_mcp_enablement_gate.py",
@@ -763,6 +767,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
+        "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
         "docs/development/phase_4br_task_groups_fixture_runtime.md",
         "docs/development/phase_4bs_workflows_fixture_runtime.md",
         "docs/development/phase_4bt_workflow_nodes_fixture_runtime.md",
