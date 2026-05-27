@@ -183,14 +183,11 @@ Retained fallback files:
 - `wecom_ability_service/http/automation_conversion_member_api.py`
 - `wecom_ability_service/http/automation_conversion_delivery.py`
 - `wecom_ability_service/http/automation_conversion_runtime_api.py`
-- `wecom_ability_service/http/automation_conversion_router_callback_api.py`
-- `wecom_ability_service/http/automation_conversion_agent_api.py`
 - `wecom_ability_service/http/automation_conversion_operation_tasks.py`
 - `wecom_ability_service/http/automation_conversion_workflows.py`
-- `wecom_ability_service/http/automation_conversion_review.py`
 - `wecom_ability_service/domains/automation_conversion/`
 
-Automation writes, activation webhook, OpenClaw push, workflow runtime, agent runtime, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external/runtime replacement planning is in progress and still does not authorize deletion.
+Automation writes, activation webhook, OpenClaw push, workflow runtime, WeCom dispatch, and scheduled runtime capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external/runtime replacement planning is in progress and still does not authorize deletion.
 
 ### D6.5: Dead Legacy Cleanup
 

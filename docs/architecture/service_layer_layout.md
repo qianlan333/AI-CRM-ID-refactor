@@ -46,24 +46,20 @@ It should register URL rules and import handlers from focused child controllers,
 
 Automation-conversion handlers are split by surface:
 
-- `automation_conversion_pages.py`: page entry points and program CRUD form handlers
 - `automation_conversion_page_actions.py`: page form actions and redirects
 - `automation_conversion_agent_page_actions.py`: agent orchestration page form actions
 - `automation_conversion_auto_reply_actions.py`: auto-reply monitor page actions
+- `automation_conversion_channels.py`: channel center, channel binding, admission logs, and entry-channel member summaries
 - `automation_conversion_member_api.py`: member action and manual-send JSON APIs
 - `automation_conversion_templates.py`: action templates and profile-segment template APIs
 - `automation_conversion_workflows.py`: workflow, node, dashboard, and execution APIs
 - `automation_conversion_agent_api.py`: agent output, agent config, and router callback APIs
-- `automation_conversion_router_callback_api.py`: router callback replay and pending-check APIs
-- `automation_conversion_review.py`: auto-reply review-output APIs
 - `automation_conversion_runtime_api.py`: internal runtime trigger and callback APIs
 - `automation_conversion_delivery.py`: focus-send and SOP v1 delivery APIs
 
 Automation-conversion helper modules are not route owners:
 
 - `_routes_helpers.py`: request parsing, program route helpers, and response-shape helpers
-- `automation_conversion_render.py`: admin template render functions
-- `automation_conversion_workspaces.py`: page workspace payload assembly
 - `automation_conversion_uploads.py`: form upload parsing for manual-send images
 - `automation_conversion_form_helpers.py`: program form payload and redirect helpers
 

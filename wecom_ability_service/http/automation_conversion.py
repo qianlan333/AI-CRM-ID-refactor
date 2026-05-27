@@ -9,15 +9,9 @@ from .automation_conversion_delivery import (
     api_admin_automation_conversion_sop_template_save,
     api_admin_automation_conversion_sop_templates,
 )
-from .automation_conversion_router_callback_api import (
-    api_admin_automation_conversion_router_callback_replay,
-    api_admin_automation_conversion_router_pending_callback_check,
-    api_admin_automation_conversion_router_pending_callbacks,
-)
 from .automation_conversion_member_api import (
     api_admin_automation_conversion_focus_send_batch_create,
     api_admin_automation_conversion_mark_won,
-    api_admin_automation_conversion_member,
     api_admin_automation_conversion_push_openclaw,
     api_admin_automation_conversion_put_in_pool,
     api_admin_automation_conversion_remove_from_pool,
@@ -27,7 +21,7 @@ from .automation_conversion_member_api import (
     api_admin_automation_conversion_stage_manual_send_preview,
     api_admin_automation_conversion_unmark_won,
 )
-from .automation_conversion_pages import (
+from .automation_conversion_channels import (
     admin_channel_edit_page,
     admin_channel_new_page,
     admin_channels_page,
@@ -35,13 +29,6 @@ from .automation_conversion_pages import (
 from .automation_conversion_channels import register_routes as register_channel_admission_routes
 from .automation_conversion_operation_tasks import (
     api_admin_automation_conversion_tasks_run_due,
-)
-from .automation_conversion_review import (
-    api_admin_automation_conversion_review_output,
-    api_admin_automation_conversion_review_output_send_via_bazhuayu,
-    api_admin_automation_conversion_review_output_send_via_webhook,
-    api_admin_automation_conversion_review_output_send_via_wecom,
-    api_admin_automation_conversion_review_outputs,
 )
 from .automation_conversion_runtime_api import (
     api_admin_automation_conversion_jobs_run_due,
@@ -79,14 +66,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     register_channel_admission_routes(bp)
     bp.route("/api/admin/automation-conversion/tasks/run-due", methods=["POST"])(api_admin_automation_conversion_tasks_run_due)
-    bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)
-    bp.route("/api/admin/automation-conversion/router-callback-replay/<run_id>", methods=["POST"])(api_admin_automation_conversion_router_callback_replay)
-    bp.route("/api/admin/automation-conversion/router-pending-callback-check", methods=["POST"])(api_admin_automation_conversion_router_pending_callback_check)
-    bp.route("/api/admin/automation-conversion/review-outputs", methods=["GET"])(api_admin_automation_conversion_review_outputs)
-    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/review", methods=["POST"])(api_admin_automation_conversion_review_output)
-    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-webhook", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_webhook)
-    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-wecom", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_wecom)
-    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_execution_item_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)

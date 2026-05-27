@@ -21,10 +21,8 @@ HTTP_HELPER_MODULE_FILES = {
     "_routes_helpers.py",
     "admin_support.py",
     "automation_conversion_form_helpers.py",
-    "automation_conversion_render.py",
     "automation_conversion_uploads.py",
     "automation_conversion_compat.py",
-    "automation_conversion_workspaces.py",
     "background_jobs.py",
     "callback_runtime.py",
     "common.py",
@@ -38,7 +36,7 @@ HTTP_HELPER_MODULE_FILES = {
 HTTP_LARGE_ROUTE_OWNER_LINE_LIMITS = {
     "admin_config.py": 350,
     "automation_conversion.py": 350,
-    "automation_conversion_channels.py": 360,
+    "automation_conversion_channels.py": 440,
     "internal_auth.py": 360,
 }
 
@@ -235,18 +233,17 @@ def test_automation_conversion_controller_stays_a_route_aggregator():
 def test_automation_conversion_support_helpers_stay_layered():
     http_dir = ROOT / "wecom_ability_service" / "http"
     helper_source = (http_dir / "_routes_helpers.py").read_text(encoding="utf-8")
-    render_source = (http_dir / "automation_conversion_render.py").read_text(encoding="utf-8")
-    workspaces_source = (http_dir / "automation_conversion_workspaces.py").read_text(encoding="utf-8")
 
     assert len(helper_source.splitlines()) <= 200
     for forbidden in ("def _build_", "def _render_", "get_overview_payload", "get_settings_payload", "_render_admin_template"):
         assert forbidden not in helper_source
 
-    for forbidden in ("get_overview_payload", "get_settings_payload", "get_stage_detail_payload"):
-        assert forbidden not in render_source
-
-    for forbidden in ("_render_admin_template", "ensure_admin_console_action_token", "validate_admin_console_action_token"):
-        assert forbidden not in workspaces_source
+    for retired_helper in (
+        "automation_conversion_pages.py",
+        "automation_conversion_render.py",
+        "automation_conversion_workspaces.py",
+    ):
+        assert not (http_dir / retired_helper).exists()
 
 
 def test_cloud_orchestrator_controller_stays_a_route_aggregator():
@@ -571,18 +568,6 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/sop/config",
             "/api/admin/automation-conversion/sop/run-due",
         },
-        "automation_conversion_router_callback_api": {
-            "/api/admin/automation-conversion/router-pending-callbacks",
-            "/api/admin/automation-conversion/router-callback-replay/<run_id>",
-            "/api/admin/automation-conversion/router-pending-callback-check",
-        },
-        "automation_conversion_review": {
-            "/api/admin/automation-conversion/review-outputs",
-            "/api/admin/automation-conversion/review-outputs/<output_id>/review",
-            "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-webhook",
-            "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-wecom",
-            "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu",
-        },
         "automation_conversion_workflows": {
             "/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu",
         },
@@ -796,6 +781,14 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links",
         "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
         "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
+        "/api/admin/automation-conversion/router-pending-callbacks",
+        "/api/admin/automation-conversion/router-callback-replay/<run_id>",
+        "/api/admin/automation-conversion/router-pending-callback-check",
+        "/api/admin/automation-conversion/review-outputs",
+        "/api/admin/automation-conversion/review-outputs/<output_id>/review",
+        "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-webhook",
+        "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-wecom",
+        "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu",
     }
     removed_endpoints = {
         "admin_automation_conversion_settings",
@@ -832,6 +825,14 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "api_admin_automation_program_customer_acquisition_links",
         "api_admin_automation_program_member_segment_search",
         "api_admin_automation_program_member_segment_broadcast",
+        "api_admin_automation_conversion_router_pending_callbacks",
+        "api_admin_automation_conversion_router_callback_replay",
+        "api_admin_automation_conversion_router_pending_callback_check",
+        "api_admin_automation_conversion_review_outputs",
+        "api_admin_automation_conversion_review_output",
+        "api_admin_automation_conversion_review_output_send_via_webhook",
+        "api_admin_automation_conversion_review_output_send_via_wecom",
+        "api_admin_automation_conversion_review_output_send_via_bazhuayu",
     }
     kept_routes = {
         "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview",

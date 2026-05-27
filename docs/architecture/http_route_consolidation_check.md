@@ -69,19 +69,14 @@ Large route-owner files that remain worth considering, ordered by current cleanu
 | `wecom_ability_service/http/public_questionnaire_diagnostics.py` | 60 | focused owner for client diagnostics and debug session endpoint |
 | `wecom_ability_service/http/cloud_orchestrator_campaigns.py` | 189 | campaign member/step handlers have been split into `cloud_orchestrator_campaign_details.py` |
 | `wecom_ability_service/http/cloud_orchestrator_campaign_details.py` | 87 | focused owner for campaign member and step APIs |
-| `wecom_ability_service/http/automation_conversion_agent_api.py` | 222 | router callback handlers have been split into `automation_conversion_router_callback_api.py` |
-| `wecom_ability_service/http/automation_conversion_router_callback_api.py` | 49 | focused owner for router callback replay/check APIs |
-
 Large helper/runtime modules that should not be split just to reduce line count:
 
 | File | Lines | Note |
 | --- | ---: | --- |
 | `wecom_ability_service/http/__init__.py` | 291 | route registry hub; keep centralized so registry/placement contracts stay inspectable |
 | `wecom_ability_service/http/admin_support.py` | 616 | shared admin rendering/action-token helpers; split only by stable helper responsibility |
-| `wecom_ability_service/http/automation_conversion_workspaces.py` | 595 | page payload assembly; better next target is domain/application payload ownership, not more HTTP files |
 | `wecom_ability_service/http/background_jobs.py` | 431 | callback/background runtime; treat separately from route-owner cleanup |
 | `wecom_ability_service/http/sync_support.py` | 379 | sync helper surface; split only with sync-job ownership tests |
-| `wecom_ability_service/http/automation_conversion_render.py` | 353 | render adapter helpers; keep out of the route aggregator |
 | `wecom_ability_service/http/questionnaire_support.py` | 282 | questionnaire helper surface; split only with questionnaire-focused regression tests |
 | `wecom_ability_service/http/sidebar_marketing_support.py` | 264 | sidebar marketing query/command adapter and display payload assembly |
 | `wecom_ability_service/http/image_library_support.py` | 46 | image-library request parsing helpers reused by create and owner controllers |
@@ -95,7 +90,6 @@ The `sidebar.py` lead-pool handlers are split into `sidebar_lead_pool.py`.
 The `sidebar_marketing.py` controller is now a thin HTTP adapter backed by `sidebar_marketing_support.py`.
 The `public_questionnaires.py` diagnostics/debug handlers are split into `public_questionnaire_diagnostics.py`.
 The `cloud_orchestrator_campaigns.py` member/step handlers are split into `cloud_orchestrator_campaign_details.py`.
-The `automation_conversion_agent_api.py` router callback handlers are split into `automation_conversion_router_callback_api.py`.
 D1 legacy retirement has removed `image_library_endpoint.py` and `image_library_create.py`; AI-CRM Next now owns the Media Library readonly route surface, while media write/external fallback remains protected outside this route-owner cleanup.
 The WeChat Pay product and transaction admin route owners are now split from the public H5/JSAPI owner.
 The remaining route-owner files are either already under guardrail or need a separate product-area pass.

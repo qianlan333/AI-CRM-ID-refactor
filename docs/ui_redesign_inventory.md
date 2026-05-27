@@ -21,13 +21,6 @@
 | 路由 | 模板文件 | 当前用途 | 所属端 | 推荐 UI 模板类型 |
 | --- | --- | --- | --- | --- |
 | `/admin/automation-conversion` | `wecom_ability_service/templates/admin_console/automation_program_list.html` | 自动化运营方案列表入口 | admin | Hero + summary cards + program table |
-| `/admin/automation-conversion/programs/<id>/overview` | `wecom_ability_service/templates/admin_console/automation_conversion_overview_workspace.html` | 方案概览、池子用户、执行摘要 | admin | Program hero + KPI grid + data sections |
-| `/admin/automation-conversion/programs/<id>/setup?step=operations` | `wecom_ability_service/templates/admin_console/automation_conversion_action_orchestration.html` | 运营任务编排主入口 | admin | Task orchestration workspace |
-| `/admin/automation-conversion/programs/<id>/operations*` | 无独立模板，302 到 `setup?step=operations` | 旧任务流页兼容跳转 | admin | Redirect only，不单独设计 |
-| `/admin/automation-conversion/programs/<id>/executions` | `wecom_ability_service/templates/admin_console/automation_conversion_execution_records.html` | 查看执行批次与批次内明细 | admin | Batch table + detail panel |
-| `/admin/automation-conversion/programs/<id>/flow-design` | `wecom_ability_service/templates/admin_console/automation_conversion_flow_design_workspace.html` | 方案内流程设计壳层 | admin | Sectioned settings workspace |
-| `/admin/automation-conversion/programs/<id>/member-ops` | `wecom_ability_service/templates/admin_console/automation_conversion_member_ops_workspace.html` | 成员列表、批量动作、上下文只读区 | admin | Content ops workspace |
-| `/admin/automation-conversion/auto-reply` | `wecom_ability_service/templates/admin_console/automation_conversion_auto_reply_workspace.html` | 自动化应答工作区 | admin | Runtime / ops sub-workspace |
 
 ## 3. 配置页
 
