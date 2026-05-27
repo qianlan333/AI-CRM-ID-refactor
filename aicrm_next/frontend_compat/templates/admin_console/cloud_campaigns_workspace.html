@@ -1,10 +1,10 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}">
-<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}"></script>
-<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=send-content-preview-ux-20260527">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=send-content-preview-ux-20260527">
+<script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=send-content-preview-ux-20260527"></script>
+<script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=send-content-preview-ux-20260527"></script>
 {% endblock %}
 
 {% block content %}
