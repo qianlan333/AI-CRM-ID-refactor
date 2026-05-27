@@ -183,7 +183,7 @@ def list_questionnaires(limit: int = 50, offset: int = 0) -> dict:
     return ListQuestionnairesQuery()(limit=limit, offset=offset)
 
 
-@router.get("/api/admin/questionnaires/preflight")
+@router.get("/api/admin/questionnaires/preflight", response_model=None)
 async def questionnaire_preflight(request: Request) -> dict | Response:
     if production_data_ready():
         return await forward_to_legacy_flask(request)
