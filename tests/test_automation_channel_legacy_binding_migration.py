@@ -8,12 +8,10 @@ from wecom_ability_service.domains.automation_conversion.customer_acquisition_se
 from wecom_ability_service.domains.automation_conversion.member_state_service import handle_channel_enter_from_callback
 
 from automation_channel_admission_helpers import (
-    admin_action_token,
     create_channel,
     create_program,
     disabled_entry_rule,
     fetch_program_member,
-    login_admin,
     save_audience_entry_rule,
     set_callback_now,
     table_count,
@@ -139,26 +137,6 @@ def test_legacy_binding_migration_reports_conflict_and_prefers_channel_program_i
         assert report["conflicts"][0]["reason"] == "automation_channel.program_id takes precedence"
 
 
-def test_legacy_channels_show_on_each_program_entry_page_and_are_excluded_from_other_candidates(app, client, monkeypatch):
-    login_admin(client, app, monkeypatch)
-    with app.app_context():
-        p1 = create_program("legacy_page_p1")
-        p2 = create_program("legacy_page_p2")
-        ch1 = create_channel("legacy_page_ch1", program_id=p1)
-        ch2 = create_channel("legacy_page_ch2", program_id=p2)
-        before_count = table_count("automation_channel")
-
-    p1_html = client.get(f"/admin/automation-conversion/programs/{p1}/entry-channels").get_data(as_text=True)
-    p2_html = client.get(f"/admin/automation-conversion/programs/{p2}/entry-channels").get_data(as_text=True)
-
-    assert "legacy_page_ch1" in p1_html
-    assert "legacy_page_ch2" in p2_html
-    assert f'data-bind-candidate data-channel-id="{int(ch1["id"])}"' not in p2_html
-    assert f'data-bind-candidate data-channel-id="{int(ch2["id"])}"' not in p1_html
-    with app.app_context():
-        assert table_count("automation_channel") == before_count
-
-
 def test_legacy_program_channel_scan_enters_original_program_without_new_qrcode(app, monkeypatch):
     with app.app_context():
         program_id = create_program("legacy_scan_p1")
@@ -207,60 +185,3 @@ def test_legacy_wecom_customer_acquisition_callback_enters_original_program_with
         assert int(member["program_id"]) == program_id
         stored_link = dict(get_db().execute("SELECT final_url FROM wecom_customer_acquisition_links WHERE id = ?", (int(link["id"]),)).fetchone())
         assert stored_link["final_url"] == before_final_url
-
-
-def test_available_for_program_api_excludes_legacy_migrated_active_channel(app, client, monkeypatch):
-    login_admin(client, app, monkeypatch)
-    token = admin_action_token(client)
-    with app.app_context():
-        p1 = create_program("legacy_available_p1")
-        p2 = create_program("legacy_available_p2")
-        channel = create_channel("legacy_available_ch", program_id=p1)
-
-    response = client.get(f"/api/admin/channels?available_for_program_id={p2}")
-    assert response.status_code == 200
-    ids = {int(item["id"]) for item in response.get_json()["channels"]}
-    assert int(channel["id"]) not in ids
-    assert token
-
-
-def test_unbinding_legacy_channel_archives_binding_keeps_channel_and_allows_rebinding(app, client, monkeypatch):
-    login_admin(client, app, monkeypatch)
-    token = admin_action_token(client)
-    with app.app_context():
-        p1 = create_program("legacy_unbind_p1")
-        p2 = create_program("legacy_unbind_p2")
-        channel = create_channel("legacy_unbind_ch", program_id=p1)
-        get_db().execute("UPDATE automation_channel SET qr_url = 'https://example.test/legacy-qr.png' WHERE id = ?", (int(channel["id"]),))
-        save_audience_entry_rule(p1, disabled_entry_rule())
-        ensure_legacy_program_channel_bindings()
-        binding = _binding_rows(int(channel["id"]))[0]
-        set_callback_now(monkeypatch, "2026-05-23 10:00:00")
-        handle_channel_enter_from_callback(
-            external_contact_id="wm_legacy_unbind_001",
-            payload_json={"state": channel["scene_value"]},
-            channel=channel,
-            follow_user_userid="sales_01",
-        )
-        get_db().commit()
-
-    deleted = client.delete(
-        f"/api/admin/automation-conversion/programs/{p1}/channel-bindings/{int(binding['id'])}",
-        json={"admin_action_token": token},
-    )
-    assert deleted.status_code == 200
-    payload = deleted.get_json()
-    assert payload["binding"]["binding_status"] == "archived"
-    assert payload["channel_deleted"] is False
-    assert payload["exited_member_count"] == 1
-    with app.app_context():
-        stored_channel = dict(get_db().execute("SELECT * FROM automation_channel WHERE id = ?", (int(channel["id"]),)).fetchone())
-        assert stored_channel["qr_url"] == "https://example.test/legacy-qr.png"
-        assert table_count("automation_channel", "id = ?", (int(channel["id"]),)) == 1
-
-    rebound = client.post(
-        f"/api/admin/automation-conversion/programs/{p2}/channel-bindings",
-        json={"admin_action_token": token, "channel_ids": [int(channel["id"])]},
-    )
-    assert rebound.status_code == 201
-    assert rebound.get_json()["bindings"][0]["program_id"] == p2

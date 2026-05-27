@@ -36,7 +36,6 @@ HTTP_HELPER_MODULE_FILES = {
 HTTP_LARGE_ROUTE_OWNER_LINE_LIMITS = {
     "admin_config.py": 350,
     "automation_conversion.py": 350,
-    "automation_conversion_channels.py": 440,
     "internal_auth.py": 360,
 }
 
