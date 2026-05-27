@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aicrm_next.integration_gateway.legacy_flask_facade import build_legacy_private_message_request_payload
+from aicrm_next.send_content.application import NormalizeSendContentPackageCommand
 from aicrm_next.shared.errors import ContractError
 
 PLAN_TYPES = {"standard", "webhook"}
@@ -107,6 +108,21 @@ def normalize_message_content(*, text: Any = "", attachments: list[Any] | None =
     return normalized
 
 
+def normalize_group_ops_content_package(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        value = {}
+    return NormalizeSendContentPackageCommand()(value, text_enabled=True, require_body=False)
+
+
+def _content_package_has_body(content_package: dict[str, Any]) -> bool:
+    return bool(
+        clean_text(content_package.get("content_text"))
+        or list(content_package.get("image_library_ids") or [])
+        or list(content_package.get("miniprogram_library_ids") or [])
+        or list(content_package.get("attachment_library_ids") or [])
+    )
+
+
 def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
     existing = existing or {}
     day_index = int(payload.get("day_index", existing.get("day_index", 1)) or 1)
@@ -121,16 +137,31 @@ def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     attachments = payload.get("attachments", existing.get("attachments", []))
     if not isinstance(attachments, list):
         raise ContractError("attachments must be a list")
-    text_content = clean_text(payload.get("text_content") if "text_content" in payload else existing.get("text_content"))
-    normalized_content = normalize_message_content(text=text_content, attachments=attachments)
+    status = normalize_status(payload.get("status", existing.get("status", "active")), allowed=NODE_STATUSES, default="active")
+    raw_content_package = payload.get("content_package_json") if "content_package_json" in payload else existing.get("content_package_json")
+    has_content_package = isinstance(raw_content_package, dict) and bool(raw_content_package)
+    if has_content_package:
+        content_package = normalize_group_ops_content_package(raw_content_package)
+        text_content = clean_text(content_package.get("content_text"))
+    else:
+        text_content = clean_text(payload.get("text_content") if "text_content" in payload else existing.get("text_content"))
+        content_package = normalize_group_ops_content_package({"content_text": text_content})
+    if text_content or attachments:
+        normalized_content = normalize_message_content(text=text_content, attachments=attachments)
+        normalized_attachments = normalized_content.get("attachments", [])
+    elif _content_package_has_body(content_package) or status == "draft":
+        normalized_attachments = []
+    else:
+        raise ContractError("content.text or content.attachments is required")
     return {
         "day_index": day_index,
         "trigger_time_label": trigger_time_label,
         "action_title": action_title,
         "text_content": text_content,
-        "attachments": normalized_content.get("attachments", []),
+        "content_package_json": content_package,
+        "attachments": normalized_attachments,
         "sort_order": int(payload.get("sort_order", existing.get("sort_order", 0)) or 0),
-        "status": normalize_status(payload.get("status", existing.get("status", "active")), allowed=NODE_STATUSES, default="active"),
+        "status": status,
     }
 
 

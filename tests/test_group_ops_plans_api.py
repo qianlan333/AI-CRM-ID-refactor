@@ -158,6 +158,109 @@ def test_standard_plan_nodes_save_and_list_in_domain_order(group_ops_api_client)
         assert item["attachments"][0]["msgtype"] == "miniprogram"
 
 
+def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(group_ops_api_client):
+    created_plan = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={
+            "plan_name": "pytest 内容包群运营",
+            "plan_type": "standard",
+            "owner_userid": "owner_001",
+            "status": "draft",
+            "operator": "pytest",
+        },
+    )
+    assert created_plan.status_code == 201
+    plan_id = created_plan.json()["item"]["id"]
+
+    empty_draft = group_ops_api_client.post(
+        f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
+        json={
+            "day_index": 1,
+            "trigger_time_label": "第 1 天 10:00",
+            "action_title": "空内容草稿",
+            "content_package_json": {},
+            "sort_order": 10,
+            "status": "draft",
+        },
+    )
+    assert empty_draft.status_code == 201
+    assert empty_draft.json()["item"]["content_package_json"] == {
+        "content_text": "",
+        "image_library_ids": [],
+        "miniprogram_library_ids": [],
+        "attachment_library_ids": [],
+    }
+
+    text_only = group_ops_api_client.post(
+        f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
+        json={
+            "day_index": 1,
+            "trigger_time_label": "第 1 天 11:00",
+            "action_title": "只有话术",
+            "content_package_json": {"content_text": "  课程提醒  "},
+            "sort_order": 20,
+            "status": "active",
+        },
+    )
+    assert text_only.status_code == 201
+    assert text_only.json()["item"]["text_content"] == "课程提醒"
+
+    material_only = group_ops_api_client.post(
+        f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
+        json={
+            "day_index": 2,
+            "trigger_time_label": "第 2 天 12:00",
+            "action_title": "只有素材",
+            "content_package_json": {
+                "image_library_ids": [12, "12", 34],
+                "miniprogram_library_ids": [56],
+                "attachment_library_ids": [78, 90],
+            },
+            "sort_order": 30,
+            "status": "active",
+        },
+    )
+    assert material_only.status_code == 201
+    material_item = material_only.json()["item"]
+    assert material_item["text_content"] == ""
+    assert material_item["attachments"] == []
+    assert material_item["content_package_json"] == {
+        "content_text": "",
+        "image_library_ids": [12, 34],
+        "miniprogram_library_ids": [56],
+        "attachment_library_ids": [78, 90],
+    }
+
+
+def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_client):
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+        json={
+            "day_index": 3,
+            "trigger_time_label": "第 3 天 10:00",
+            "action_title": "旧附件兼容",
+            "text_content": "旧节点话术",
+            "attachments": [
+                {
+                    "msgtype": "miniprogram",
+                    "miniprogram": {
+                        "appid": "wx123",
+                        "page": "/pages/course/today",
+                        "title": "课程入口",
+                        "pic_media_id": "MEDIA_ID",
+                    },
+                }
+            ],
+            "sort_order": 40,
+            "status": "active",
+        },
+    )
+    assert response.status_code == 201
+    item = response.json()["item"]
+    assert item["content_package_json"]["content_text"] == "旧节点话术"
+    assert item["attachments"][0]["msgtype"] == "miniprogram"
+
+
 def test_webhook_config_returns_no_plaintext_token_or_examples(group_ops_api_client):
     response = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/plans/2/webhook")
 

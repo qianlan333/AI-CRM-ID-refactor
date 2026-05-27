@@ -171,6 +171,12 @@ class InMemoryGroupOpsRepository:
                     "trigger_time_label": "入群后 10 分钟",
                     "action_title": "欢迎语 + 课程入口",
                     "text_content": "欢迎加入体验课群。",
+                    "content_package_json": {
+                        "content_text": "欢迎加入体验课群。",
+                        "image_library_ids": [],
+                        "miniprogram_library_ids": [],
+                        "attachment_library_ids": [],
+                    },
                     "attachments": [],
                     "sort_order": 10,
                     "status": "active",

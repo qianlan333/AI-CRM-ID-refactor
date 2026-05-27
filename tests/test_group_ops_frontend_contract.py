@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -70,8 +72,14 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     for label in ["第几天", "时间", "动作标题", "标准话术摘要", "素材标签", "编辑 / 删除"]:
         assert label in source
     assert "添加动作" in source
+    assert "配置话术和素材" in source
+    assert "AICRMSendContentComposer.open" in source
+    assert "配置群运营动作内容" in source
     assert "save-node" in source
     assert "delete-node" in source
+    assert "node_" + "attachments" not in source
+    assert "node_" + "text_content" not in source
+    assert "素材 " + "JSON" not in source
     assert 'data-action="noop"' not in source
     for label in ["接收方式", "默认动作", "Webhook 接收地址", "POST", "复制地址", "Token 状态 / 重置入口", "Token："]:
         assert label in source
@@ -80,6 +88,91 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
 
     for forbidden in ["适用场景", "JSON 示例", "请求字段说明大表", "请求字段说明", "明文 token", "明文 Token"]:
         assert forbidden not in source
+
+
+def test_group_ops_detail_imports_standard_send_content_assets():
+    source = _source()
+
+    assert "send_content_composer.js" in source
+    assert "send_content_composer.css" in source
+    assert "material_picker.js" in source
+    assert "material_picker.css" in source
+    for forbidden in [
+        "/api/admin/image-" + "library",
+        "/api/admin/miniprogram-" + "library",
+        "/api/admin/attachment-" + "library",
+        "groupOpsMaterial" + "Pick" + "er",
+    ]:
+        assert forbidden not in source
+
+
+def test_group_ops_frontend_content_package_adapter_round_trips():
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(GROUP_OPS_JS))}, "utf8");
+const app = {{
+  dataset: {{}},
+  querySelectorAll() {{ return []; }},
+  querySelector() {{ return null; }},
+  innerHTML: ""
+}};
+const sandbox = {{
+  window: {{}},
+  document: {{ getElementById() {{ return app; }} }},
+  Intl
+}};
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox);
+const adapter = sandbox.window.AICRMGroupOpsContentAdapter;
+const fromOld = adapter.nodeToContentPackage({{ text_content: "  老话术  ", attachments: [{{msgtype:"image"}}] }});
+const fromPackage = adapter.nodeToContentPackage({{
+  content_package_json: {{
+    content_text: "  新话术  ",
+    image_library_ids: [12, "12", 34],
+    miniprogram_library_ids: ["56"],
+    attachment_library_ids: "78, 78, 90"
+  }}
+}});
+const toNode = adapter.contentPackageToNodePayload({{
+  content_text: "  保存话术  ",
+  image_library_ids: ["101", 102],
+  miniprogram_library_ids: [201],
+  attachment_library_ids: ["301", "301", 302]
+}});
+const empty = adapter.normalizeContentPackage({{}});
+console.log(JSON.stringify({{ fromOld, fromPackage, toNode, empty }}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    payload = json.loads(result.stdout)
+
+    assert payload["fromOld"] == {
+        "content_text": "老话术",
+        "image_library_ids": [],
+        "miniprogram_library_ids": [],
+        "attachment_library_ids": [],
+    }
+    assert payload["fromPackage"] == {
+        "content_text": "新话术",
+        "image_library_ids": [12, 34],
+        "miniprogram_library_ids": [56],
+        "attachment_library_ids": [78, 90],
+    }
+    assert payload["toNode"] == {
+        "text_content": "保存话术",
+        "content_package_json": {
+            "content_text": "保存话术",
+            "image_library_ids": [101, 102],
+            "miniprogram_library_ids": [201],
+            "attachment_library_ids": [301, 302],
+        },
+    }
+    assert payload["empty"] == {
+        "content_text": "",
+        "image_library_ids": [],
+        "miniprogram_library_ids": [],
+        "attachment_library_ids": [],
+    }
 
 
 def test_group_ops_all_groups_frontend_contract_has_only_required_columns():

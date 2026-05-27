@@ -23,6 +23,8 @@
 - `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
 - `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
 - `aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js`
+- `aicrm_next/frontend_compat/templates/admin_console/group_ops.html`
+- `aicrm_next/frontend_compat/static/admin_console/group_ops.js`
 
 ## Migrated Surfaces
 
@@ -32,6 +34,11 @@
   - The outer channel page still owns channel name, channel code, channel type, owner, entry tag, and link/qrcode fields.
   - The standard component owns only welcome copy plus local image, miniprogram, and attachment IDs.
   - The short-term save adapter maps `content_text` to `welcome_message`, `image_library_ids` to `welcome_image_library_ids`, `miniprogram_library_ids` to `welcome_miniprogram_library_ids`, and `attachment_library_ids` to `welcome_attachment_library_ids`.
+- 群运营计划标准编排动作: 已迁移到 `AICRMSendContentComposer`。
+  - 外层页面仍负责第几天、时间、动作标题、排序、状态、节点/动作 id。
+  - 标准组件负责标准话术、图片素材、小程序素材、附件/PDF 素材。
+  - `content_package_json` 是标准组件的保存结构；legacy `node_attachments` / `attachments` 仅兼容旧数据和发送 fallback，不再作为运营输入项。
+  - 本迁移不改变真实企微发送、media_id 解析或群消息下发链路。
 
 ## Explicit Non-Surfaces
 
