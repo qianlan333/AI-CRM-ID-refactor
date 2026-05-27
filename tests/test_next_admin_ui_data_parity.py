@@ -77,6 +77,42 @@ def test_next_channels_page_stays_next_owned_in_production_data_mode(monkeypatch
     assert "群运营计划" in response.text
 
 
+def test_primary_admin_nav_pages_keep_next_shell_in_production_data_mode(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    client = _client(monkeypatch)
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+
+    async def fail_forward(_request):
+        raise AssertionError("primary admin navigation pages should not forward to legacy Flask")
+
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fail_forward)
+
+    primary_routes = [
+        "/admin/automation-conversion",
+        "/admin/automation-conversion/group-ops/ui",
+        "/admin/channels",
+        "/admin/cloud-orchestrator/campaigns",
+        "/admin/customers",
+        "/admin/hxc-dashboard",
+        "/admin/questionnaires",
+        "/admin/wecom-tags",
+        "/admin/wechat-pay/transactions",
+        "/admin/wechat-pay/products",
+        "/admin/image-library",
+        "/admin/miniprogram-library",
+        "/admin/attachment-library",
+        "/admin/jobs",
+        "/admin/config",
+        "/admin/api-docs",
+    ]
+    for route in primary_routes:
+        response = client.get(route)
+        assert response.status_code == 200, route
+        assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next", route
+        assert "群运营计划" in response.text, route
+
+
 def test_navigation_definition_matches_screenshot_target():
     assert [(group["title"], [item["label"] for item in group["items"]]) for group in ADMIN_NAV_GROUPS] == checker.TARGET_NAV_GROUPS
 

@@ -836,8 +836,6 @@ async def admin_channels_page(request: Request) -> Response:
 
 @router.get("/admin/channels/new", name="api.admin_channel_new_page")
 async def admin_channel_new_page(request: Request) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     context = _shell_context(
         request=request,
         page_title="新建渠道",
@@ -866,8 +864,6 @@ async def admin_channel_new_page(request: Request) -> Response:
 
 @router.get("/admin/channels/{channel_id:int}/edit", name="api.admin_channel_edit_page")
 async def admin_channel_edit_page(request: Request, channel_id: int) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     context = _shell_context(
         request=request,
         page_title="编辑渠道",
@@ -899,8 +895,6 @@ async def admin_channel_edit_page(request: Request, channel_id: int) -> Response
     name="api.admin_automation_program_entry_channels",
 )
 async def admin_automation_program_entry_channels(request: Request, program_id: int) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     context = _shell_context(
         request=request,
         page_title="入口渠道",
@@ -929,8 +923,6 @@ async def admin_automation_program_entry_channels(request: Request, program_id: 
 
 @router.get("/admin/wechat-pay/transactions", name="api.admin_wechat_pay_transactions_page")
 async def admin_wechat_pay_transactions(request: Request) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     context = _shell_context(
         request=request,
         page_title="微信支付交易管理",
