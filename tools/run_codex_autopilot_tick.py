@@ -19,7 +19,6 @@ OWNER_DECISION_DEFAULT = Path("/tmp/aicrm_codex_owner_decision_package.md")
 LOG_DIR_DEFAULT = ROOT / "logs/codex-autopilot"
 
 REQUIRED_PREFLIGHT_DOCS = [
-    "docs/development/codex_architecture_operating_memory.md",
     "docs/development/autonomous_development_loop.md",
     "docs/development/phase_execution_state.yaml",
     "docs/development/autonomous_stop_conditions.yaml",
@@ -180,6 +179,7 @@ def text_hits_stop_condition(text: str, terms: set[str]) -> list[str]:
 def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
     hits: list[str] = []
     policy_paths = {
+        "README.md",
         "docs/development/autonomous_development_loop.md",
         "docs/development/autonomous_stop_conditions.yaml",
         "docs/development/phase_execution_state.yaml",
@@ -190,12 +190,12 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/development/legacy_replacement_backlog.yaml",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "scripts/codex_autopilot_tick.sh",
-        "tools/check_architecture_doc_consistency.py",
+        "tools/check_architecture_skill_compliance.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/run_codex_autopilot_tick.py",
-        "tests/test_architecture_doc_consistency.py",
+        "tests/test_architecture_skill_compliance.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
@@ -292,6 +292,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
     if not allowed:
         raise ValueError("phase_execution_state has no next_cleanup_candidates")
     recommended = str(state.get("recommended_next_pr", "")).strip()
+    if recommended == "architecture_documentation_compaction_wave15" and "governance config compaction" in allowed:
+        return "governance config compaction"
     if recommended == "runtime_switch_archaeology_cleanup_wave14" and "remaining stale non-runtime docs/reports" in allowed:
         return "remaining stale non-runtime docs/reports"
     if recommended == "legacy_retirement_package_cleanup_wave13" and "remaining stale checker/test references" in allowed:

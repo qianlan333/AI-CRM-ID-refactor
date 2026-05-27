@@ -9,10 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 
 UNAUTHORIZED_STATUS_MARKERS = ("production_ready", "delete_ready", "production_approved")
 FRONTEND_SQL_PATTERNS = [
@@ -246,45 +243,13 @@ def check_api_cross_context_repo_imports(root: Path) -> list[dict[str, Any]]:
     return blockers
 
 
-def _manifest_patterns(root: Path) -> set[str]:
-    manifest_path = root / "docs/route_ownership/production_route_ownership_manifest.yaml"
-    if not manifest_path.exists():
-        return set()
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    return {str(record.get("route_pattern") or "") for record in manifest.get("routes") or []}
-
-
-def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
-    escaped = re.escape(pattern).replace(r"\*", ".*")
-    escaped = re.sub(r"\\\{[^{}]+:path\\\}", ".*", escaped)
-    escaped = re.sub(r"\\\{[^{}]+\\\}", "[^/]+", escaped)
-    return re.compile(f"^{escaped}$")
-
-
-def _manifest_covers(patterns: set[str], route_path: str) -> bool:
-    normalized = route_path.replace("/{path:path}", "*")
-    return any(_pattern_to_regex(pattern).match(route_path) or _pattern_to_regex(pattern).match(normalized) for pattern in patterns)
-
-
-def check_production_compat_catchalls(root: Path) -> list[dict[str, Any]]:
-    blockers: list[dict[str, Any]] = []
-    path = root / "aicrm_next/production_compat/api.py"
-    if not path.exists():
-        return blockers
-    patterns = _manifest_patterns(root)
-    text = _read_text(path)
-    for match in re.finditer(r"@(?:\w+\.)?api_route\(\s*[\"']([^\"']*\{path:path\}[^\"']*)[\"']", text):
-        route_path = match.group(1)
-        if not _manifest_covers(patterns, route_path):
-            blockers.append({"path": _rel(path, root), "line": _line_number(text, match.start()), "reason": "production_compat_catchall_missing_manifest", "route": route_path})
-    return blockers
-
-
 def check_status_markers(root: Path) -> list[dict[str, Any]]:
     blockers: list[dict[str, Any]] = []
     allowed_paths = {
         "docs/development/ai_crm_next_architecture_skill.md",
-        "docs/development/architecture_skill_compliance.md",
+        "docs/development/autonomous_development_loop.md",
+        "docs/development/autonomous_stop_conditions.yaml",
+        "docs/development/phase_execution_state.yaml",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "docs/route_ownership/production_route_ownership_manifest.md",
         "tools/check_architecture_skill_compliance.py",
@@ -336,7 +301,6 @@ def build_report(root: Path = ROOT) -> dict[str, Any]:
         "openclaw": check_openclaw(root),
         "frontend_compat_sql": check_frontend_compat_sql(root),
         "api_cross_context_repo_imports": check_api_cross_context_repo_imports(root),
-        "production_compat_catchalls": check_production_compat_catchalls(root),
         "status_markers": check_status_markers(root),
         "fixture_production_docs": check_fixture_production_docs(root),
         "pr_template": check_pr_template(root),

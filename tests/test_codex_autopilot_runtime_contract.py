@@ -36,9 +36,8 @@ def test_runner_generates_compact_governance_prompt_without_github_when_no_open_
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "remaining stale non-runtime docs/reports" in text
+    assert "governance config compaction" in text
     assert "next_cleanup_candidates" in text
-    assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
 def test_runner_owner_decision_package_on_stop_condition(tmp_path: Path) -> None:

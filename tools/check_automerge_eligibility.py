@@ -36,6 +36,7 @@ DELETED_LOW_RISK_SUFFIXES = (
 )
 DELETED_LOW_RISK_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
+    "README.md",
     "aicrm_next/production_compat/api.py",
     "docs/route_ownership/production_route_ownership_manifest.yaml",
     "tools/run_codex_autopilot_tick.py",
@@ -105,12 +106,12 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/development/autonomous_stop_conditions.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "scripts/codex_autopilot_tick.sh",
-        "tools/check_architecture_doc_consistency.py",
+        "tools/check_architecture_skill_compliance.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/run_codex_autopilot_tick.py",
-        "tests/test_architecture_doc_consistency.py",
+        "tests/test_architecture_skill_compliance.py",
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",

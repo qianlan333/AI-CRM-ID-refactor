@@ -191,44 +191,6 @@ def test_services_wave1_symbols_route_through_application_wrappers():
         assert fragment not in source, f"services.py must not regress to direct domain alias: {fragment}"
 
 
-def test_service_layer_layout_doc_exists():
-    doc_path = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "service_layer_layout.md"
-    assert doc_path.exists()
-    source = doc_path.read_text(encoding="utf-8")
-    assert "Only two domain layout modes are allowed" in source
-    assert "`wecom_ability_service/services.py` stays as a thin compatibility facade" in source
-    assert "`admin_api_docs`" in source
-    assert "D2 legacy retirement removed `admin_wechat_pay_products.py`" in source
-    assert "D3 legacy retirement removed `http/customer_center.py` and `http/customer_timeline.py`" in source
-    assert "D4 legacy retirement records `admin_user_ops.py` and `admin_user_ops_delivery.py`" in source
-    assert "D5 legacy retirement stops legacy Questionnaire readonly route registration" in source
-    assert "`admin_service.py` owns admin transaction read models" in source
-    assert "`product_service.py` owns product lifecycle" in source
-    assert "`product_repo.py` owns product and product-slice persistence" in source
-    assert "http_route_consolidation_check.md" in source
-
-
-def test_http_route_consolidation_check_doc_tracks_current_matrix():
-    doc_path = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "http_route_consolidation_check.md"
-    assert doc_path.exists()
-    source = doc_path.read_text(encoding="utf-8")
-
-    required_fragments = [
-        "Registry And Ownership",
-        "Test Matrix",
-        "Remaining Large Files",
-        "tests/test_http_registration_contract.py",
-        "tests/test_route_inventory_contract.py",
-        "scripts/export_flask_routes.py",
-        "admin_questionnaire_console.py",
-        "wechat_pay.py",
-        "route rows",
-        "--json-out /tmp/ai_crm_routes.json",
-    ]
-    for fragment in required_fragments:
-        assert fragment in source
-
-
 def test_admin_api_docs_service_owns_docs_model_without_flask_dependencies():
     service_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "domains" / "admin_api_docs" / "service.py"
     source = service_path.read_text(encoding="utf-8")

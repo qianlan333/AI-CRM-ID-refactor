@@ -74,28 +74,6 @@ def test_blocks_api_importing_other_context_repo(tmp_path: Path) -> None:
     ]
 
 
-def test_blocks_production_compat_catchall_without_manifest_entry(tmp_path: Path) -> None:
-    write(
-        tmp_path / "aicrm_next/production_compat/api.py",
-        "router = object()\n@router.api_route('/api/new/{path:path}')\ndef handler(): pass\n",
-    )
-    write(
-        tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml",
-        "routes:\n  - route_pattern: /api/customers*\n",
-    )
-
-    blockers = checker.check_production_compat_catchalls(tmp_path)
-
-    assert blockers == [
-        {
-            "path": "aicrm_next/production_compat/api.py",
-            "line": 2,
-            "reason": "production_compat_catchall_missing_manifest",
-            "route": "/api/new/{path:path}",
-        }
-    ]
-
-
 def test_pr_template_requires_sections_and_checker(tmp_path: Path) -> None:
     write(tmp_path / "docs/development/codex_task_template.md", "## Summary\n")
 

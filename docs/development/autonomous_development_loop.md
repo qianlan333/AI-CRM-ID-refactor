@@ -26,7 +26,6 @@ Future Codex loops may run the autonomous development checker and auto-merge eli
 
 Every autopilot iteration must read and follow:
 
-- `docs/development/codex_architecture_operating_memory.md`
 - `docs/development/ai_crm_next_architecture_skill.md`
 - `skills/ai-crm-next-architecture/SKILL.md`
 - `docs/route_ownership/production_route_ownership_manifest.yaml`

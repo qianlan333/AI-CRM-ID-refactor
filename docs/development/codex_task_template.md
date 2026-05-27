@@ -3,8 +3,6 @@
 每个 AI-CRM 开发任务开始前，先读：
 
 - `docs/development/ai_crm_next_architecture_skill.md`
-- `docs/project_map.md`
-- `docs/module_status_matrix.md`
 - 与本任务相关的 route ownership / checker 文档
 
 ## Task Intake
