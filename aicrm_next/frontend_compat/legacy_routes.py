@@ -95,8 +95,9 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         external_userid = str(path_params.get("external_userid", ""))
         return f"/admin/customers/{external_userid}"
     program_id = str(path_params.get("program_id") or "").strip()
+    if name == "api.admin_automation_program_entry_channels" and program_id:
+        return f"/admin/automation-conversion/programs/{program_id}/entry-channels"
     program_route_map = {
-        "api.admin_automation_program_entry_channels": "entry-channels",
         "api.admin_automation_program_overview": "overview",
         "api.admin_automation_program_copy": "copy",
         "api.admin_automation_program_pause": "pause",

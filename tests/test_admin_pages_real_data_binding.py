@@ -465,6 +465,17 @@ def test_automation_conversion_page_uses_production_facade_without_fixture_repo(
     assert 'action="/admin/automation-conversion/programs/7/pause"' in response.text
 
 
+def test_retired_automation_setup_page_is_not_reintroduced(monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion/programs/7/setup?step=basic")
+
+    assert response.status_code == 404
+
+
 def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
