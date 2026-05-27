@@ -19,6 +19,23 @@ def admin_console_questionnaires():
         page_title="问卷管理",
         page_summary="在这里统一管理问卷列表、启停状态和分享入口。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("问卷", None)),
+        page_actions=[
+            {
+                "label": "创建新问卷",
+                "href": url_for("api.admin_console_questionnaire_new"),
+                "variant": "primary",
+            },
+            {
+                "label": "创建测评问卷模板",
+                "href": f"{url_for('api.admin_console_questionnaire_new')}?mode=assessment",
+                "variant": "secondary",
+            },
+            {
+                "label": "刷新",
+                "href": url_for("api.admin_console_questionnaires"),
+                "variant": "ghost",
+            },
+        ],
         questionnaire_payload=payload,
     )
 
