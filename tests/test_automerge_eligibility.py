@@ -1482,6 +1482,12 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.md",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.md",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
+        "docs/development/post_phase7_cleanup_legacy_runtime_recheck.md",
+        "docs/development/post_phase7_cleanup_legacy_runtime_recheck.yaml",
+        "docs/development/post_phase7_cleanup_track_acceptance.md",
+        "docs/development/post_phase7_cleanup_track_acceptance.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1513,6 +1519,9 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
+        "tools/check_post_phase7_cleanup_legacy_runtime_recheck.py",
+        "tools/check_post_phase7_cleanup_track_acceptance.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1541,6 +1550,9 @@ def test_phase6l_phase6_aggregate_acceptance_artifacts_can_define_stop_terms_as_
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
+        "tests/test_post_phase7_cleanup_legacy_runtime_recheck.py",
+        "tests/test_post_phase7_cleanup_track_acceptance.py",
     }
     assert expected <= checker.POLICY_FILES_CAN_DEFINE_STOP_TERMS
 
