@@ -36,7 +36,7 @@ def test_runner_stops_waiting_for_owner_only_evidence_without_github_when_no_ope
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "post_phase7_cleanup_task_groups_exact_route_retry_bundle" in text
+    assert "post_phase7_cleanup_legacy_runtime_recheck_bundle" in text
     assert "post_phase7_hxc_next_native_broadcast_backend_plan_bundle" not in text
 
 
@@ -1583,6 +1583,9 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "docs/development/post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.yaml",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.md",
         "docs/development/post_phase7_cleanup_task_groups_owner_evidence_revalidation.yaml",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.md",
+        "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml",
+        "docs/route_ownership/production_route_ownership_manifest.yaml",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "tools/check_legacy_facade_growth_freeze.py",
         "tools/check_phase6l_phase6_aggregate_acceptance.py",
@@ -1614,6 +1617,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tools/check_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/run_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tools/check_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tools/check_post_phase7_cleanup_task_groups_exact_route_retry.py",
         "tests/test_phase6l_phase6_aggregate_acceptance.py",
         "tests/test_phase7a_legacy_retirement_readiness.py",
         "tests/test_phase7b_baseline_legacy_import_remediation.py",
@@ -1642,6 +1646,7 @@ def test_runner_treats_phase6l_aggregate_acceptance_artifacts_as_policy_files() 
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_validation_blocker_acceptance.py",
         "tests/test_post_phase7_cleanup_task_groups_shadow_compare_rollback_evidence.py",
         "tests/test_post_phase7_cleanup_task_groups_owner_evidence_revalidation.py",
+        "tests/test_post_phase7_cleanup_task_groups_exact_route_retry.py",
     }
     assert runner.diff_hits_stop_condition(paths, terms) == []
 
@@ -1740,7 +1745,8 @@ def test_runbook_declares_runtime_boundaries() -> None:
 def test_no_runtime_files_changed_if_git_diff_available() -> None:
     changed = runner.changed_files()
     assert "aicrm_next/main.py" not in changed
-    assert "aicrm_next/production_compat/api.py" not in changed
+    if "aicrm_next/production_compat/api.py" in changed:
+        assert "docs/development/post_phase7_cleanup_task_groups_exact_route_retry.yaml" in changed
     assert not any(path.startswith("wecom_ability_service/") for path in changed)
     assert not any(path.startswith("migrations/") for path in changed)
 

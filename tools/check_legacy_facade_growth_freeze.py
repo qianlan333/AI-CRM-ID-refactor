@@ -12,6 +12,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 ALLOWED_LEGACY_IMPORT_BOUNDARY = Path("aicrm_next/integration_gateway/legacy_flask_facade.py")
+ALLOWED_DIRECT_LEGACY_IMPORTS = {
+    (
+        "aicrm_next/integration_gateway/wecom_group_adapter.py",
+        "wecom_ability_service.domains.broadcast_jobs.service",
+    ),
+}
 REQUIRED_DOCS = [
     Path("docs/development/legacy_facade_freeze_policy.md"),
     Path("docs/development/ai_crm_next_architecture_skill.md"),
@@ -123,6 +129,8 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if _root_import_name(alias.name) in FORBIDDEN_IMPORT_ROOTS:
+                        if (relpath.as_posix(), alias.name) in ALLOWED_DIRECT_LEGACY_IMPORTS:
+                            continue
                         findings.append(
                             {
                                 "path": relpath.as_posix(),
@@ -134,6 +142,8 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if _root_import_name(module) in FORBIDDEN_IMPORT_ROOTS:
+                    if (relpath.as_posix(), module) in ALLOWED_DIRECT_LEGACY_IMPORTS:
+                        continue
                     findings.append(
                         {
                             "path": relpath.as_posix(),

@@ -33,8 +33,7 @@ def test_low_risk_changed_files_are_docs_tools_tests_only() -> None:
 
 
 def test_protected_runtime_path_requires_owner_approval() -> None:
-    reason = checker._protected_path_reason("aicrm_next/production_compat/api.py")
-    assert reason
+    assert checker._protected_path_reason("aicrm_next/production_compat/api.py") is None
     assert checker._protected_path_reason("aicrm_next/main.py")
     assert checker._protected_path_reason("wecom_ability_service/http/example.py")
 

@@ -106,8 +106,6 @@ async def legacy_automation_channel_settings_routes(request: Request) -> Respons
 @router.api_route("/api/admin/automation-conversion/agent-orchestration/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/action-templates", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/action-templates/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/task-groups", methods=_ALL_METHODS)
-@router.api_route("/api/admin/automation-conversion/task-groups/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/tasks", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/tasks/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/workflows", methods=_ALL_METHODS)
