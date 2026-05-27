@@ -44,8 +44,6 @@ class _EvidenceHandler(BaseHTTPRequestHandler):
         self.send_header("X-AICRM-Route-Owner", self.route_owner)
         self.send_header("X-AICRM-App", self.app_header)
         self.send_header("X-AICRM-Release-SHA", self.release_sha)
-        if self.path == "/sidebar/bind-mobile":
-            self.send_header("X-AICRM-Compatibility-Facade", "legacy_flask_facade")
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
@@ -114,10 +112,10 @@ def test_unexpected_route_owner_is_blocker():
     _EvidenceHandler.route_owner = "ai_crm_next"
 
 
-def test_expected_production_compat_route_owner_is_allowed():
+def test_expected_sidebar_bind_mobile_owner_is_next():
     _EvidenceHandler.seen_methods = []
     _EvidenceHandler.include_fixture_marker = False
-    _EvidenceHandler.route_owner = "production_compat"
+    _EvidenceHandler.route_owner = "ai_crm_next"
     server, url = _server_url(_EvidenceHandler)
     try:
         result = collector.collect(url, timeout=2)
@@ -126,7 +124,7 @@ def test_expected_production_compat_route_owner_is_allowed():
 
     sidebar_probe = next(probe for probe in result["probes"] if probe["path"] == "/sidebar/bind-mobile")
     sidebar_blockers = [blocker for blocker in result["blockers"] if "/sidebar/bind-mobile" in blocker]
-    assert sidebar_probe["runtime_owner"] == "production_compat"
+    assert sidebar_probe["runtime_owner"] == "next"
     assert not any("unexpected_route_owner" in blocker for blocker in sidebar_blockers)
     _EvidenceHandler.route_owner = "ai_crm_next"
 

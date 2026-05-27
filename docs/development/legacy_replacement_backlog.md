@@ -22,9 +22,9 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 
 - `aicrm_next.admin_jobs`: 2 routes; P3=2
 - `aicrm_next.ai_assist`: 1 routes; P3=1
-- `aicrm_next.automation_engine`: 22 routes; P1=17, P2=2, P3=3
+- `aicrm_next.automation_engine`: 26 routes; P1=20, P2=3, P3=3
 - `aicrm_next.commerce`: 15 routes; P2=15
-- `aicrm_next.customer_read_model`: 9 routes; P0=7, P1=2
+- `aicrm_next.customer_read_model`: 10 routes; P0=7, P1=3
 - `aicrm_next.customer_tags`: 2 routes; P2=2
 - `aicrm_next.frontend_compat`: 4 routes; P0=2, P1=2
 - `aicrm_next.identity_contact`: 1 routes; P0=1
@@ -37,8 +37,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 
 - `keep_guarded_until_adapter_ready`: 1 routes; blocked_or_guarded=1
 - `phase_3_readonly`: 13 routes; readonly=9, shell_or_navigation=4
-- `phase_4_internal_write`: 27 routes; internal_write=21, readonly=3, shell_or_navigation=3
-- `phase_5_external_adapter`: 32 routes; adapter_contract=10, external_side_effect=22
+- `phase_4_internal_write`: 31 routes; internal_write=24, readonly=4, shell_or_navigation=3
+- `phase_5_external_adapter`: 33 routes; adapter_contract=10, external_side_effect=23
 - `phase_6_timer_automation`: 6 routes; timer_or_automation_execution=6
 
 ## Top 10 Suggested First Replacements
@@ -186,31 +186,36 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-049` `/api/admin/automation-conversion/execution-items*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
 - `LRB-050` `/api/admin/automation-conversion*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
 - `LRB-051` `/api/customer-automation*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
-- `LRB-052` `/api/customers/automation*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
-- `LRB-053` `/api/admin/wechat-pay/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-054` `/api/admin/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-055` `/api/admin/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-056` `/api/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-057` `/p/{page_slug}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-058` `/pay/{product_code}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-059` `/api/orders*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-060` `/api/checkout*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-061` `/api/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-062` `/api/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
-- `LRB-063` `/api/h5/wechat-pay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-064` `/api/h5/alipay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
-- `LRB-065` `/api/admin/image-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-066` `/api/admin/image-library/upload`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.media_library`
-- `LRB-067` `/api/admin/attachment-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-068` `/api/admin/miniprogram-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-069` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `shell_or_navigation` / owner `aicrm_next.frontend_compat`
-- `LRB-070` `/api/sidebar/contact-binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
-- `LRB-071` `/api/sidebar/customer-context`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-072` `/api/admin/customers/profile`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-073` `/api/admin/customers/profile/tags`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-074` `/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
-- `LRB-075` `/api/sidebar*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
-- `LRB-076` `/api/admin/customers/profile*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
-- `LRB-077` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-078` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-079` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`
+- `LRB-052` `/api/customers/automation/signup-conversion/batches*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-053` `/api/customers/automation/activation-webhook`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.automation_engine`
+- `LRB-054` `/api/customers/automation/webhook-deliveries*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-055` `/api/admin/wechat-pay/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-056` `/api/admin/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-057` `/api/admin/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-058` `/api/products*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-059` `/p/{page_slug}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-060` `/pay/{product_code}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-061` `/api/orders*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-062` `/api/checkout*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-063` `/api/wechat-pay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-064` `/api/alipay*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.commerce`
+- `LRB-065` `/api/h5/wechat-pay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-066` `/api/h5/alipay*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-067` `/api/admin/image-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-068` `/api/admin/image-library/upload`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.media_library`
+- `LRB-069` `/api/admin/attachment-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-070` `/api/admin/miniprogram-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
+- `LRB-071` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `shell_or_navigation` / owner `aicrm_next.frontend_compat`
+- `LRB-072` `/api/sidebar/contact-binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
+- `LRB-073` `/api/sidebar/customer-context`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-074` `/api/admin/customers/profile`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-075` `/api/admin/customers/profile/tags`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
+- `LRB-076` `/api/sidebar/bind-mobile`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.frontend_compat`
+- `LRB-077` `/api/sidebar/jssdk-config`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.frontend_compat`
+- `LRB-078` `/api/sidebar/lead-pool*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-079` `/api/sidebar/signup-tags*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
+- `LRB-080` `/api/sidebar/marketing-status*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.automation_engine`
+- `LRB-081` `/api/sidebar/v2*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
+- `LRB-082` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-083` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-084` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`
