@@ -18,6 +18,8 @@
     nodes: [],
     webhook: null,
     ownerOptions: [],
+    createOwner: null,
+    groupFilterOwner: null,
     notice: "",
     showCreate: false,
     showNodeForm: false,
@@ -41,7 +43,7 @@
     apiWebhookRegenerate: (id) =>
       `/api/admin/automation-conversion/group-ops/plans/${encodeURIComponent(id)}/webhook/regenerate`,
     apiGroups: "/api/admin/automation-conversion/group-ops/groups",
-    apiOwners: "/api/admin/automation-conversion/group-ops/owners",
+    apiMembers: "/api/admin/common/operation-members?scope=group_ops&page_size=100",
   };
 
   function normalizeItems(payload) {
@@ -127,15 +129,67 @@
     return element ? element.value : "";
   }
 
+  function memberLabel(member) {
+    if (window.OperationMemberPicker && typeof window.OperationMemberPicker.memberLabel === "function") {
+      return window.OperationMemberPicker.memberLabel(member);
+    }
+    const userId = member.user_id || member.userid || "";
+    const displayName = member.display_name || member.name || "";
+    return displayName && displayName !== userId ? `${displayName} / ${userId}` : userId;
+  }
+
   function normalizeOwners(payload, plan) {
     const owners = new Map();
-    normalizeItems(payload).forEach((owner) => {
-      if (owner.userid) owners.set(owner.userid, { userid: owner.userid, name: owner.name || owner.userid, group_count: owner.group_count || 0 });
+    normalizeItems(payload).forEach((member) => {
+      const userId = member.user_id || member.userid;
+      if (userId) owners.set(userId, { user_id: userId, display_name: member.display_name || member.name || userId });
     });
     if (plan && plan.owner_userid && !owners.has(plan.owner_userid)) {
-      owners.set(plan.owner_userid, { userid: plan.owner_userid, name: plan.owner_name || plan.owner_userid, group_count: 0 });
+      owners.set(plan.owner_userid, { user_id: plan.owner_userid, display_name: plan.owner_name || plan.owner_userid });
     }
     return Array.from(owners.values());
+  }
+
+  function currentMemberFor(userId) {
+    const normalized = String(userId || "");
+    if (!normalized) return null;
+    return state.ownerOptions.find((member) => member.user_id === normalized) || { user_id: normalized, display_name: normalized };
+  }
+
+  function renderMemberField(name, currentUserId, action, label) {
+    const selected = currentMemberFor(currentUserId);
+    return `
+      <div class="group-ops__member-field" data-member-field="${escapeHtml(name)}">
+        <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml((selected || {}).user_id || "")}">
+        <div class="group-ops__member-current" data-member-current="${escapeHtml(name)}">${escapeHtml(selected ? memberLabel(selected) : "未选择")}</div>
+        ${actionButton(label || (selected ? "更换" : "选择"), action)}
+      </div>
+    `;
+  }
+
+  function setMemberField(name, member) {
+    const input = app.querySelector(`[name="${name}"]`);
+    const current = app.querySelector(`[data-member-current="${name}"]`);
+    if (input) input.value = member.user_id || "";
+    if (current) current.textContent = memberLabel(member);
+  }
+
+  function openMemberPicker({ fieldName, title, value, onPicked }) {
+    if (!window.OperationMemberPicker) {
+      state.notice = "人员加载失败，请稍后重试";
+      if (state.mode === "detail") renderDetail();
+      else if (state.mode === "groups") renderGroups();
+      else renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+      return;
+    }
+    window.OperationMemberPicker.open({
+      value,
+      title: title || "选择运营人员",
+      onSelect: (member) => {
+        setMemberField(fieldName, member);
+        if (typeof onPicked === "function") onPicked(member);
+      },
+    });
   }
 
   function onAction(event) {
@@ -154,6 +208,40 @@
     if (action === "delete-node") return deleteNode(event.currentTarget.dataset.nodeId);
     if (action === "copy-webhook") return copyWebhook();
     if (action === "reset-webhook") return resetWebhook();
+    if (action === "pick-create-owner") return openMemberPicker({
+      fieldName: "create_owner_userid",
+      title: "选择运营人员",
+      value: currentFormValue("create_owner_userid"),
+      onPicked: (member) => {
+        state.createOwner = member;
+      },
+    });
+    if (action === "pick-plan-owner") return openMemberPicker({
+      fieldName: "owner_userid",
+      title: "选择运营人员",
+      value: currentFormValue("owner_userid") || (state.plan || {}).owner_userid,
+      onPicked: () => {
+        const target = app.querySelector("[data-available-groups]");
+        if (target) {
+          target.innerHTML = renderAvailableGroups();
+          bindSharedEvents();
+        }
+      },
+    });
+    if (action === "pick-group-filter-owner") return openMemberPicker({
+      fieldName: "owner_userid",
+      title: "选择群主",
+      value: currentFormValue("owner_userid"),
+      onPicked: (member) => {
+        state.groupFilterOwner = member;
+        loadGroupsPage();
+      },
+    });
+    if (action === "clear-group-filter-owner") {
+      state.groupFilterOwner = null;
+      setMemberField("owner_userid", { user_id: "", display_name: "" });
+      return loadGroupsPage();
+    }
     return undefined;
   }
 
@@ -168,7 +256,7 @@
   }
 
   async function createPlan() {
-    const owner = currentFormValue("create_owner_userid") || currentFormValue("create_owner_userid_text");
+    const owner = currentFormValue("create_owner_userid");
     if (!owner) {
       state.notice = "请选择运营成员";
       renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
@@ -312,7 +400,7 @@
   async function loadListPage() {
     renderLoading();
     try {
-      const [payload, ownersPayload] = await Promise.all([requestJson(routes.apiPlans), requestJson(routes.apiOwners)]);
+      const [payload, ownersPayload] = await Promise.all([requestJson(routes.apiPlans), requestJson(routes.apiMembers)]);
       state.plans = normalizeItems(payload);
       state.ownerOptions = normalizeOwners(ownersPayload, null);
       state.lastTotal = payload.total || state.plans.length;
@@ -325,12 +413,7 @@
 
   function renderCreatePanel() {
     if (!state.showCreate) return "";
-    const owners = state.ownerOptions;
-    const ownerField = owners.length
-      ? `<select name="create_owner_userid">${owners
-          .map((owner) => `<option value="${escapeHtml(owner.userid)}">${escapeHtml(owner.name)}</option>`)
-          .join("")}</select>`
-      : '<input name="create_owner_userid_text" placeholder="运营成员 userid">';
+    const ownerField = renderMemberField("create_owner_userid", (state.createOwner || {}).user_id, "pick-create-owner", state.createOwner ? "更换运营成员" : "选择运营成员");
     return `
       <section class="group-ops__card">
         <div class="group-ops__filters">
@@ -400,7 +483,7 @@
         requestJson(routes.apiPlanGroups(planId)),
         requestJson(routes.apiGroups),
         requestJson(routes.apiPlanNodes(planId)),
-        requestJson(routes.apiOwners),
+        requestJson(routes.apiMembers),
       ]);
       state.plan = planPayload.item || planPayload.plan || planPayload;
       state.planGroups = normalizeItems(groupPayload);
@@ -417,12 +500,6 @@
     } catch (error) {
       renderError(error.message);
     }
-  }
-
-  function renderOwnerOptions(selected) {
-    return state.ownerOptions
-      .map((owner) => `<option value="${escapeHtml(owner.userid)}"${owner.userid === selected ? " selected" : ""}>${escapeHtml(owner.name)}</option>`)
-      .join("");
   }
 
   function groupName(row) {
@@ -586,7 +663,7 @@
           <div class="group-ops__filters">
             <label class="group-ops__field group-ops__field--wide">
               <span>运营成员</span>
-              <select name="owner_userid" data-owner-select>${renderOwnerOptions(state.plan.owner_userid)}</select>
+              ${renderMemberField("owner_userid", state.plan.owner_userid, "pick-plan-owner", "更换运营成员")}
             </label>
             <label class="group-ops__field">
               <span>状态</span>
@@ -612,16 +689,6 @@
       <section class="group-ops__stats-grid">${renderStats(summary)}</section>
       ${isWebhook ? renderWebhook() : renderNodes()}
     `);
-    const ownerSelect = app.querySelector("[data-owner-select]");
-    if (ownerSelect) {
-      ownerSelect.addEventListener("change", () => {
-        const target = app.querySelector("[data-available-groups]");
-        if (target) {
-          target.innerHTML = renderAvailableGroups();
-          bindSharedEvents();
-        }
-      });
-    }
     state.notice = "";
   }
 
@@ -644,7 +711,7 @@
       const [groupPayload, planPayload, ownersPayload] = await Promise.all([
         requestJson(query ? `${routes.apiGroups}?${query}` : routes.apiGroups),
         state.plans.length ? Promise.resolve({ items: state.plans }) : requestJson(routes.apiPlans),
-        requestJson(routes.apiOwners),
+        requestJson(routes.apiMembers),
       ]);
       state.groups = normalizeItems(groupPayload);
       state.plans = normalizeItems(planPayload);
@@ -653,12 +720,6 @@
     } catch (error) {
       renderError(error.message);
     }
-  }
-
-  function renderGroupOwnerFilter() {
-    return state.ownerOptions
-      .map((owner) => `<option value="${escapeHtml(owner.userid)}">${escapeHtml(owner.name)}</option>`)
-      .join("");
   }
 
   function renderPlanFilter() {
@@ -685,7 +746,8 @@
       <section class="group-ops__card">
         <div class="group-ops__filters">
           <label class="group-ops__field group-ops__field--wide"><span>群名 / 群 ID</span><input name="keyword" data-filter></label>
-          <label class="group-ops__field"><span>群主</span><select name="owner_userid" data-filter><option value="">全部</option>${renderGroupOwnerFilter()}</select></label>
+          <label class="group-ops__field"><span>群主</span>${renderMemberField("owner_userid", (state.groupFilterOwner || {}).user_id, "pick-group-filter-owner", state.groupFilterOwner ? "更换群主" : "选择群主")}</label>
+          <div class="group-ops__row-actions">${actionButton("清除群主", "clear-group-filter-owner")}</div>
           <label class="group-ops__field"><span>所属计划</span><select name="plan_id" data-filter><option value="">全部</option>${renderPlanFilter()}</select></label>
           <label class="group-ops__field"><span>已绑定 / 未绑定</span><select name="bind_status" data-filter><option value="">全部</option><option value="bound">已绑定</option><option value="unbound">未绑定</option></select></label>
         </div>

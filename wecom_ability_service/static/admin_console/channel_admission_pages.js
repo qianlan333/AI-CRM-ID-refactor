@@ -369,31 +369,37 @@
   }
 
   function setupChannelOwnerPicker() {
-    const modal = root.querySelector("[data-channel-owner-modal]");
-    if (!modal) return;
     const ownerStaffInput = root.querySelector("[data-channel-owner-staff-id]");
     const ownerCurrent = root.querySelector("[data-channel-owner-current]");
+    const renderOwner = (member, fallbackUserId) => {
+      const userId = (member && member.user_id) || fallbackUserId || "";
+      const label = window.OperationMemberPicker && member
+        ? window.OperationMemberPicker.memberLabel(member)
+        : userId;
+      if (ownerCurrent) {
+        ownerCurrent.innerHTML = "<strong>" + escapeHtml(label || "未选择负责人") + "</strong><small>" + escapeHtml(userId || "从企业微信通讯录或后台成员中选择") + "</small>";
+      }
+    };
+    const currentOwner = ownerStaffInput ? ownerStaffInput.value : "";
+    if (currentOwner && window.OperationMemberPicker && typeof window.OperationMemberPicker.resolve === "function") {
+      window.OperationMemberPicker.resolve(currentOwner).then((member) => {
+        if (member && (!ownerStaffInput || ownerStaffInput.value === currentOwner)) renderOwner(member, currentOwner);
+      }).catch(() => undefined);
+    }
     root.querySelector("[data-channel-owner-picker-open]")?.addEventListener("click", () => {
-      modal.hidden = false;
-    });
-    root.querySelector("[data-channel-owner-picker-close]")?.addEventListener("click", () => {
-      modal.hidden = true;
-    });
-    modal.addEventListener("click", (event) => {
-      if (event.target === modal) {
-        modal.hidden = true;
+      if (!window.OperationMemberPicker) {
+        toast("人员加载失败，请稍后重试");
         return;
       }
-      const pick = event.target.closest("[data-channel-owner-pick]");
-      if (!pick) return;
-      const ownerStaffId = pick.dataset.ownerStaffId || "";
-      const ownerDisplayName = pick.dataset.ownerDisplayName || ownerStaffId;
-      if (ownerStaffInput) ownerStaffInput.value = ownerStaffId;
-      if (ownerCurrent) {
-        ownerCurrent.innerHTML = "<strong>" + escapeHtml(ownerDisplayName || "未选择负责人") + "</strong><small>" + escapeHtml(ownerStaffId || "从企业微信通讯录或后台成员中选择") + "</small>";
-      }
-      modal.hidden = true;
-      toast("已选择负责人：" + (ownerDisplayName || ownerStaffId));
+      window.OperationMemberPicker.open({
+        value: ownerStaffInput ? ownerStaffInput.value : "",
+        title: "选择运营人员",
+        onSelect: (member) => {
+          if (ownerStaffInput) ownerStaffInput.value = member.user_id || "";
+          renderOwner(member, member.user_id || "");
+          toast("已选择负责人：" + (window.OperationMemberPicker.memberLabel(member) || member.user_id || ""));
+        },
+      });
     });
   }
 

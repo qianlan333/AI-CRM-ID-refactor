@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from ...db import get_db
+from ..common_operation_members import search_operation_members
 from ..tags import service as tags_domain_service
 from ..wechat_pay.service import list_products as list_wechat_pay_products
 from . import program_repo, repo, workflow_repo
@@ -152,87 +153,17 @@ def _payload_from_block(blocks: dict[str, dict[str, Any]], block_key: str) -> di
     return dict((blocks.get(block_key) or {}).get("payload_json") or {})
 
 
-def _list_owner_candidates() -> list[dict[str, Any]]:
-    db = get_db()
-    rows: list[dict[str, Any]] = []
-    try:
-        rows.extend(
-            dict(row)
-            for row in db.execute(
-                """
-                SELECT
-                    wecom_userid AS owner_staff_id,
-                    display_name,
-                    position,
-                    is_active,
-                    'directory' AS source
-                FROM admin_wecom_directory_members
-                WHERE is_active = TRUE
-                ORDER BY display_name ASC, wecom_userid ASC
-                """
-            ).fetchall()
-        )
-    except Exception:
-        rows = []
-    try:
-        rows.extend(
-            dict(row)
-            for row in db.execute(
-                """
-                SELECT
-                    wecom_userid AS owner_staff_id,
-                    display_name,
-                    '' AS position,
-                    is_active,
-                    'admin_user' AS source
-                FROM admin_users
-                WHERE is_active = TRUE
-                ORDER BY display_name ASC, wecom_userid ASC
-                """
-            ).fetchall()
-        )
-    except Exception:
-        pass
-    try:
-        rows.extend(
-            dict(row)
-            for row in db.execute(
-                """
-                SELECT
-                    userid AS owner_staff_id,
-                    display_name,
-                    role AS position,
-                    active AS is_active,
-                    'owner_role' AS source
-                FROM owner_role_map
-                WHERE active = TRUE
-                ORDER BY display_name ASC, userid ASC
-                """
-            ).fetchall()
-        )
-    except Exception:
-        pass
-    seen: set[str] = set()
-    candidates: list[dict[str, Any]] = []
-    for row in rows:
-        owner_staff_id = _normalized_text(row.get("owner_staff_id"))
-        if not owner_staff_id or owner_staff_id in seen:
-            continue
-        seen.add(owner_staff_id)
-        display_name = _normalized_text(row.get("display_name")) or owner_staff_id
-        candidates.append(
-            {
-                "owner_staff_id": owner_staff_id,
-                "display_name": display_name,
-                "position": _normalized_text(row.get("position")),
-                "source": _normalized_text(row.get("source")),
-            }
-        )
-    return candidates
-
-
 def list_owner_candidates() -> list[dict[str, Any]]:
-    return _list_owner_candidates()
+    payload = search_operation_members(scope="channel_code", page_size=100)
+    return [
+        {
+            "owner_staff_id": item["user_id"],
+            "display_name": item["display_name"] or item["user_id"],
+            "position": str((item.get("extra") or {}).get("position") or (item.get("extra") or {}).get("role") or ""),
+            "source": item.get("source") or "",
+        }
+        for item in payload.get("items", [])
+    ]
 
 
 def _owner_from_basic_payload(payload: dict[str, Any]) -> dict[str, str]:
@@ -1035,7 +966,7 @@ def get_program_setup_payload(program_id: int, *, step: str = "basic", audience_
         "legacy_fallback_used": legacy_fallback_used,
         "blocks": blocks,
         "basic": _payload_from_block(blocks, BLOCK_BASIC),
-        "owner_candidates": _list_owner_candidates(),
+        "owner_candidates": list_owner_candidates(),
         "program_owner": _program_owner_payload(int(program_id), blocks),
         "entry_channel": _payload_from_block(blocks, BLOCK_ENTRY_CHANNEL),
         "entry": _program_entry_payload(int(program_id)),

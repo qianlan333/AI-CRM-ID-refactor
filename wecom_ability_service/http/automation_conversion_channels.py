@@ -23,7 +23,6 @@ from ..domains.automation_conversion.channel_binding_service import (
     update_program_channel_binding,
 )
 from ..domains.automation_conversion.channel_qrcode_download_service import build_channel_qrcode_download
-from ..domains.automation_conversion.program_setup_service import list_owner_candidates
 from ._routes_helpers import _operator_from_request
 from .admin_console import _breadcrumb_items, _render_admin_template
 from .automation_conversion_compat import parent_patch
@@ -102,7 +101,6 @@ def _render_channel_form_page(*, channel: dict[str, object] | None = None, page_
                 "welcome_miniprogram_library_ids": [],
                 "welcome_attachment_library_ids": [],
             },
-            "owner_candidates": list_owner_candidates(),
             "is_edit": is_edit,
             "api_urls": {
                 "channels": url_for("api.api_admin_channels"),

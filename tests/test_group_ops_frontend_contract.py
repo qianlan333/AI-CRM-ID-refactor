@@ -52,8 +52,10 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
     assert "标准编排计划" in source
     assert "Webhook 接收计划" in source
     assert "create_owner_userid" in source
-    assert "apiOwners" in source
-    assert "/api/admin/automation-conversion/group-ops/owners" in source
+    assert "apiMembers" in source
+    assert "/api/admin/common/operation-members?scope=group_ops" in source
+    assert "OperationMemberPicker.open" in source
+    assert "create_owner_userid_text" not in source
     assert '"owner_001"' not in source
 
     for forbidden in ["下一次动作", "计划详情", "队列策略", "可发主体", "管理员判断"]:

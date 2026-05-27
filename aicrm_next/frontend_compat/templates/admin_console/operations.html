@@ -45,7 +45,12 @@
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_user_ops') }}">
     <input type="hidden" name="tab" value="user-ops">
     <label class="admin-field"><span>关键词</span><input type="text" name="query" value="{{ operations_payload.user_ops_filters.query }}"></label>
-    <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid" value="{{ operations_payload.user_ops_filters.owner_userid }}"></label>
+    <div class="admin-field" data-operation-owner-field>
+      <span>负责人账号</span>
+      <input type="hidden" name="owner_userid" value="{{ operations_payload.user_ops_filters.owner_userid }}" data-operation-owner-input>
+      <div class="admin-inline-chip" data-operation-owner-label>{{ operations_payload.user_ops_filters.owner_userid or "未选择" }}</div>
+      <button class="admin-button admin-button--secondary" type="button" data-operation-owner-picker data-scope="automation">选择负责人</button>
+    </div>
     <label class="admin-field"><span>班期</span><input type="text" name="class_term_no" value="{{ operations_payload.user_ops_filters.class_term_no }}"></label>
     <label class="admin-field"><span>是否已加企微</span><input type="text" name="is_wecom_added" value="{{ operations_payload.user_ops_filters.is_wecom_added }}"></label>
     <label class="admin-field"><span>是否已绑定手机号</span><input type="text" name="is_mobile_bound" value="{{ operations_payload.user_ops_filters.is_mobile_bound }}"></label>
@@ -283,7 +288,12 @@
     <form method="post" action="{{ url_for('api.admin_console_operations_action') }}" class="admin-form-stack">
       <input type="hidden" name="return_tab" value="deferred">
       <input type="hidden" name="action" value="backfill-owner-class-terms">
-      <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid"></label>
+      <div class="admin-field" data-operation-owner-field>
+        <span>负责人账号</span>
+        <input type="hidden" name="owner_userid" data-operation-owner-input>
+        <div class="admin-inline-chip" data-operation-owner-label>未选择</div>
+        <button class="admin-button admin-button--secondary" type="button" data-operation-owner-picker data-scope="automation">选择负责人</button>
+      </div>
       <label class="admin-field"><span>起始班期</span><input type="number" name="class_term_min" min="1" value="1"></label>
       <label class="admin-field"><span>结束班期</span><input type="number" name="class_term_max" min="1" value="5"></label>
       <label class="admin-field"><span>来源说明</span><input type="text" name="entry_source"></label>
@@ -352,4 +362,34 @@
   </div>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+(() => {
+  function bindOperationOwnerPickers() {
+    const picker = window.OperationMemberPicker;
+    const labelOf = (member) => picker && picker.memberLabel ? picker.memberLabel(member) : (member.user_id || "");
+    document.querySelectorAll("[data-operation-owner-picker]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!window.OperationMemberPicker) return;
+        const field = button.closest("[data-operation-owner-field]");
+        const input = field ? field.querySelector("[data-operation-owner-input]") : null;
+        const label = field ? field.querySelector("[data-operation-owner-label]") : null;
+        window.OperationMemberPicker.open({
+          value: input ? input.value : "",
+          title: "选择运营人员",
+          onSelect: (member) => {
+            if (input) input.value = member.user_id || "";
+            if (label) label.textContent = labelOf(member);
+          },
+        });
+      });
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindOperationOwnerPickers);
+  else bindOperationOwnerPickers();
+})();
+</script>
 {% endblock %}
