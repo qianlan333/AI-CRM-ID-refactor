@@ -1625,7 +1625,6 @@ def test_admin_questionnaire_management_page_exists(client):
     assert "问卷管理" in text
     assert "创建新问卷" in text
     assert "创建测评问卷模板" in text
-    assert "多维测评按“模板资产”管理" in text
     assert "多维测评" in text
     assert "问卷名称" in text
     assert "创建时间" in text
@@ -1633,6 +1632,13 @@ def test_admin_questionnaire_management_page_exists(client):
     assert "还没有问卷" in text
     assert "没有匹配的问卷，请调整搜索词或筛选条件" in text
     assert 'data-action="delete"' in text
+    assert "状态摘要" not in text
+    assert "微信授权" not in text
+    assert "企业微信联系人" not in text
+    assert "企业微信标签" not in text
+    assert "多维测评按“模板资产”管理" not in text
+    assert "列表、搜索、筛选和管理动作统一" not in text
+    assert "只在这里处理列表、搜索、筛选和管理动作" not in text
     assert "questionnaire-name-sub" not in text
     assert '<div class="workspace">' not in text
 
@@ -1965,6 +1971,36 @@ def test_questionnaire_preflight_requires_non_default_secret_key(client, app, mo
     data = response.get_json()
     assert response.status_code == 200
     assert data["wechat_oauth_configured"] is False
+
+
+def test_questionnaire_preflight_reads_saved_app_settings(client, app, monkeypatch):
+    app.config.update(
+        WECHAT_MP_APP_ID="",
+        WECHAT_MP_APP_SECRET="",
+        SECRET_KEY="runtime-secret",
+        WECOM_CORP_ID="",
+        WECOM_CONTACT_SECRET="",
+    )
+    with app.app_context():
+        set_settings(
+            {
+                "WECHAT_MP_APP_ID": "wx-saved-app",
+                "WECHAT_MP_APP_SECRET": "wx-saved-secret",
+                "WECOM_CORP_ID": "ww-saved",
+                "WECOM_CONTACT_SECRET": "saved-contact-secret",
+            }
+        )
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        lambda self, dto=None: [],
+    )
+
+    response = client.get("/api/admin/questionnaires/preflight")
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["wechat_oauth_configured"] is True
+    assert data["wecom_contact_configured"] is True
 
 
 def test_questionnaire_preflight_handles_wecom_tags_error(client, monkeypatch):

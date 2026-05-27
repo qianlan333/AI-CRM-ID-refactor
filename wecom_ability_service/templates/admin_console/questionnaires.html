@@ -2,7 +2,6 @@
 
 {% block head_extra %}
 <style>
-  .questionnaire-summary-grid,
   .questionnaire-toolbar,
   .questionnaire-filter-row,
   .questionnaire-row-actions,
@@ -15,32 +14,6 @@
   #questionnaire-empty-state[hidden],
   #questionnaire-table-wrap[hidden] {
     display: none !important;
-  }
-
-  .questionnaire-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px;
-  }
-
-  .questionnaire-summary-card {
-    padding: 16px 18px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    background: rgba(255, 255, 255, 0.72);
-  }
-
-  .questionnaire-summary-label {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-  }
-
-  .questionnaire-summary-value {
-    margin-top: 8px;
-    font-size: 22px;
-    font-weight: 800;
   }
 
   .questionnaire-toolbar {
@@ -109,22 +82,6 @@
     cursor: not-allowed;
   }
 
-  .questionnaire-template-note {
-    margin-bottom: 18px;
-    padding: 14px 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    background: rgba(235, 242, 255, 0.56);
-    color: var(--muted);
-    line-height: 1.7;
-  }
-
-  .questionnaire-template-note strong {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--text);
-  }
-
   .questionnaire-table td:last-child,
   .questionnaire-table th:last-child {
     text-align: right;
@@ -170,41 +127,10 @@
 
 {% block content %}
 <section class="admin-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>状态摘要</h2>
-      <p>这里只保留问卷环境的轻量摘要，不再占用主内容区。</p>
-    </div>
-  </div>
-  {% if questionnaire_payload.preflight_error %}
-  <div class="admin-alert admin-alert--error">{{ questionnaire_payload.preflight_error }}</div>
-  {% endif %}
-  <div class="questionnaire-summary-grid">
-    <article class="questionnaire-summary-card">
-      <div class="questionnaire-summary-label">微信授权</div>
-      <div class="questionnaire-summary-value">{{ "已就绪" if questionnaire_payload.preflight.wechat_oauth_configured else "未配置" }}</div>
-    </article>
-    <article class="questionnaire-summary-card">
-      <div class="questionnaire-summary-label">企业微信联系人</div>
-      <div class="questionnaire-summary-value">{{ "已就绪" if questionnaire_payload.preflight.wecom_contact_configured else "未配置" }}</div>
-    </article>
-    <article class="questionnaire-summary-card">
-      <div class="questionnaire-summary-label">企业微信标签</div>
-      <div class="questionnaire-summary-value">{{ "已就绪" if questionnaire_payload.preflight.wecom_tags_api_available else "失败" }}</div>
-    </article>
-    <article class="questionnaire-summary-card">
-      <div class="questionnaire-summary-label">身份映射</div>
-      <div class="questionnaire-summary-value">{{ "已就绪" if questionnaire_payload.preflight.identity_map_available else "失败" }}</div>
-    </article>
-  </div>
-</section>
-
-<section class="admin-card">
   <div class="questionnaire-toolbar">
     <div class="admin-card-head">
       <div>
         <h2>问卷管理</h2>
-        <p>只在这里处理列表、搜索、筛选和管理动作。</p>
       </div>
     </div>
     <div class="admin-toolbar">
@@ -212,11 +138,6 @@
       <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_console_questionnaire_new') }}?mode=assessment">创建测评问卷模板</a>
       <button id="questionnaire-reload-btn" type="button" class="admin-button admin-button--ghost">刷新</button>
     </div>
-  </div>
-
-  <div class="questionnaire-template-note">
-    <strong>多维测评按“模板资产”管理</strong>
-    先创建测评问卷模板，配置题目、维度、分型和结果页；普通问卷里再通过“添加多维测评模板”整组引用。
   </div>
 
   <div class="questionnaire-filter-row">

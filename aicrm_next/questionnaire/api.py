@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.integration_gateway.legacy_flask_facade import (
+    forward_to_legacy_flask,
     legacy_questionnaire_oauth_is_configured,
     legacy_questionnaire_session_identity,
 )
@@ -183,7 +184,9 @@ def list_questionnaires(limit: int = 50, offset: int = 0) -> dict:
 
 
 @router.get("/api/admin/questionnaires/preflight")
-def questionnaire_preflight() -> dict:
+async def questionnaire_preflight(request: Request) -> dict | Response:
+    if production_data_ready():
+        return await forward_to_legacy_flask(request)
     return GetQuestionnairePreflightQuery()()
 
 
