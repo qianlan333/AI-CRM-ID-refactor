@@ -21,6 +21,17 @@
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
 - `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
+- `aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js`
+
+## Migrated Surfaces
+
+- Automation operation send-content configuration is migrated to `AICRMSendContentComposer`.
+- HXC dashboard content package preparation is migrated to `AICRMSendContentComposer`; real broadcast remains a later Next-native backend task.
+- Channel code center welcome copy and materials are migrated to `AICRMSendContentComposer`.
+  - The outer channel page still owns channel name, channel code, channel type, owner, entry tag, and link/qrcode fields.
+  - The standard component owns only welcome copy plus local image, miniprogram, and attachment IDs.
+  - The short-term save adapter maps `content_text` to `welcome_message`, `image_library_ids` to `welcome_image_library_ids`, `miniprogram_library_ids` to `welcome_miniprogram_library_ids`, and `attachment_library_ids` to `welcome_attachment_library_ids`.
 
 ## Explicit Non-Surfaces
 
@@ -40,4 +51,4 @@ This work does not add or rewrite:
 
 HXC / funnel dashboard broadcast remains out of scope for this phase. If a Next-native HXC broadcast backend is needed later, it should be implemented in a separate PR with explicit outbound safety gates.
 
-Campaign step and Sidebar integration are also left for the next frontend integration pass. This PR provides the standard component and automation operation page integration only.
+Campaign step and Sidebar integration are also left for the next frontend integration pass. Channel code center entry tags remain a separate outer-page picker and are not part of `SendContentPackage`.
