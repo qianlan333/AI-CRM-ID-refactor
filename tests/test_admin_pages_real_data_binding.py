@@ -849,17 +849,28 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
     monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
-    list_response = client.get("/api/admin/cloud-orchestrator/campaigns?review_status=pending_review")
-    step_response = client.patch(
-        "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1",
-        json={"content_text": "updated"},
-    )
+    cases = [
+        ("GET", "/api/admin/cloud-orchestrator/campaigns?review_status=pending_review"),
+        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_probe"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/approve"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/start"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/batch-start"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/pause"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/reject"),
+        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_probe"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/run-due"),
+        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_probe/members"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps"),
+        ("PATCH", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
+        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
+    ]
 
-    assert list_response.status_code == 200
-    assert list_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert list_response.json()["forwarded"] == "GET:/api/admin/cloud-orchestrator/campaigns:review_status=pending_review"
-    assert step_response.status_code == 200
-    assert step_response.json()["forwarded"] == "PATCH:/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1:"
+    for method, path in cases:
+        response = client.request(method, path, json={"content_text": "updated"})
+        assert response.status_code == 200, (method, path, response.text)
+        assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+        assert response.json()["forwarded"] == f"{method}:{path.split('?', 1)[0]}:{path.split('?', 1)[1] if '?' in path else ''}"
 
 
 def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):
