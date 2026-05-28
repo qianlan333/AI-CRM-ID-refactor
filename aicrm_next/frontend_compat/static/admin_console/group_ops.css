@@ -353,6 +353,20 @@
   margin-top: 16px;
 }
 
+.group-ops__modal-notice {
+  margin-top: 10px;
+  border: 1px solid rgba(47, 122, 86, 0.2);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--ok);
+  background: rgba(47, 122, 86, 0.08);
+  font-size: 13px;
+}
+
+.group-ops__modal-notice[hidden] {
+  display: none;
+}
+
 .group-ops__group-picker-list {
   display: grid;
   gap: 8px;

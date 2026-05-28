@@ -85,6 +85,9 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     assert "open-node-modal" in source
     assert "group-ops__modal" in source
     assert "group_picker_keyword" in source
+    assert "groupPickerNotice" in source
+    assert "绑定中" in source
+    assert "requestErrorMessage(error, \"绑定失败\")" in source
     assert "配置话术和素材" in source
     assert "AICRMSendContentComposer.open" in source
     assert "配置群运营动作内容" in source

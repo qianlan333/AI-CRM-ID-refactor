@@ -25,6 +25,8 @@
     showCreate: false,
     showGroupPicker: false,
     groupPickerSearch: "",
+    groupPickerNotice: "",
+    bindingGroups: false,
     showNodeModal: false,
     editingNodeId: 0,
     oneTimeToken: "",
@@ -472,30 +474,45 @@
   function openGroupPicker() {
     state.showGroupPicker = true;
     state.groupPickerSearch = "";
+    state.groupPickerNotice = "";
     renderDetail();
   }
 
   function closeGroupPicker() {
+    if (state.bindingGroups) return;
     state.showGroupPicker = false;
     state.groupPickerSearch = "";
+    state.groupPickerNotice = "";
     renderDetail();
   }
 
   async function confirmGroupPicker() {
-    if (!state.plan || !state.plan.id) return;
+    if (!state.plan || !state.plan.id || state.bindingGroups) return;
     const selected = Array.from(app.querySelectorAll("[data-group-choice]:checked")).map((item) => item.value).filter(Boolean);
     if (!selected.length) {
-      state.notice = "请选择群";
+      state.groupPickerNotice = "请选择群";
       renderDetail();
       return;
     }
-    for (const chatId of selected) {
-      await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId, operator: "admin_ui" } });
+    state.bindingGroups = true;
+    state.groupPickerNotice = "绑定中";
+    renderDetail();
+    try {
+      for (const chatId of selected) {
+        await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId, operator: "admin_ui" } });
+      }
+      state.notice = `已添加 ${formatNumber(selected.length)} 个群`;
+      state.showGroupPicker = false;
+      state.groupPickerSearch = "";
+      state.groupPickerNotice = "";
+      loadDetailPage(state.plan.id);
+    } catch (error) {
+      state.groupPickerNotice = requestErrorMessage(error, "绑定失败");
+      state.notice = "";
+      renderDetail();
+    } finally {
+      state.bindingGroups = false;
     }
-    state.notice = `已添加 ${formatNumber(selected.length)} 个群`;
-    state.showGroupPicker = false;
-    state.groupPickerSearch = "";
-    loadDetailPage(state.plan.id);
   }
 
   async function removeGroup(chatId) {
@@ -787,10 +804,13 @@
             <span>群名 / 群 ID</span>
             <input data-group-picker-search name="group_picker_keyword" value="${escapeHtml(state.groupPickerSearch)}">
           </label>
+          <div class="group-ops__modal-notice" ${state.groupPickerNotice ? "" : "hidden"}>${escapeHtml(state.groupPickerNotice)}</div>
           <div class="group-ops__group-picker-list">${renderGroupPickerOptions()}</div>
           <div class="group-ops__modal-footer">
             ${actionButton("取消", "close-group-picker")}
-            ${actionButton("确认选择", "confirm-group-picker", "group-ops__button--primary")}
+            <button class="group-ops__button group-ops__button--primary" type="button" data-action="confirm-group-picker"${
+              state.bindingGroups ? " disabled" : ""
+            }>${state.bindingGroups ? "绑定中" : "确认选择"}</button>
           </div>
         </div>
       </div>
