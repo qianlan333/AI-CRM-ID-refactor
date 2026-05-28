@@ -107,6 +107,7 @@ async def legacy_public_product_routes(request: Request) -> Response:
 
 
 @router.api_route("/api/sidebar/bind-mobile", methods=["POST", "OPTIONS"])
+@router.api_route("/api/sidebar/jssdk-config", methods=["GET", "HEAD", "OPTIONS"])
 @router.api_route("/api/sidebar/lead-pool/upsert-class-term", methods=["POST", "OPTIONS"])
 @router.api_route("/api/sidebar/signup-tags/mark", methods=["POST", "OPTIONS"])
 @router.api_route("/api/sidebar/marketing-status/set-followup-segment", methods=["POST", "OPTIONS"])
