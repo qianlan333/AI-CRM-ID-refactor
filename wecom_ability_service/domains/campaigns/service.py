@@ -54,6 +54,16 @@ def _new_campaign_code() -> str:
     return f"camp-{uuid.uuid4().hex[:12]}"
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    try:
+        loaded = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _find_active_member_conflicts(*, campaign_id: int, limit: int = 10) -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
@@ -396,10 +406,7 @@ def allocate_campaign_members(
             continue
         seg_id = int(s["segment_id"])
         cs_id = int(s["campaign_segment_id"])
-        try:
-            params = json.loads(s["sql_params_json"] or "{}")
-        except (TypeError, ValueError):
-            params = {}
+        params = _json_object(s["sql_params_json"])
         try:
             member_rows = fetch_member_rows(sql=str(s["sql_query"] or ""), params=params)
         except Exception as exc:  # pragma: no cover - defensive

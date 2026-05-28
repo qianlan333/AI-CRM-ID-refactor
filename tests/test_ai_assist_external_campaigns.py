@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.ai_assist import external_campaigns
 from aicrm_next.main import create_app
+from wecom_ability_service.domains.campaigns import service as campaign_service
+from wecom_ability_service.domains.segments import service as segment_service
 
 
 def test_external_campaign_create_requires_internal_token(monkeypatch) -> None:
@@ -110,3 +112,21 @@ def test_external_campaign_normalizes_multi_day_steps() -> None:
     assert steps[0]["scheduled_for"] == "2026-05-28T16:15:00+08:00"
     assert steps[1]["day_offset"] == 1
     assert steps[1]["send_time"] == "10:30"
+
+
+def test_external_campaign_segment_sql_uses_synthetic_member_id() -> None:
+    sql = external_campaigns._ONE_RECIPIENT_SEGMENT_SQL
+
+    assert "hashtext(external_userid)" in sql
+    assert "hashtext(external_contact_id)" in sql
+    assert "SELECT id AS member_id" not in sql
+    assert "external_contact_id" in sql
+
+
+def test_campaign_segment_params_accept_pg_jsonb_dict() -> None:
+    params = {"external_userid": "wm-test"}
+
+    assert campaign_service._json_object(params) == params
+    assert segment_service._json_object(params) == params
+    assert campaign_service._json_object('{"external_userid":"wm-test"}') == params
+    assert segment_service._json_object('{"external_userid":"wm-test"}') == params
