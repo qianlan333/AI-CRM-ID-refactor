@@ -21,13 +21,14 @@ def test_checker_current_repo_passes() -> None:
 def test_phase_execution_state_uses_compact_active_contract() -> None:
     data = checker.load_yaml(STATE)
     assert checker.REQUIRED_STATE_FIELDS <= set(data)
-    assert data["current_phase"] == "runtime_fallback_migration"
-    assert data["last_merged_pr"] == "#865"
-    assert data["last_merged_cleanup_wave"] == "runtime_fallback_migration_channels_track1"
-    assert data["recommended_next_pr"] == "runtime_fallback_migration_media_material_libraries_track2"
+    assert data["current_phase"] == "post_phase7_cleanup_closeout"
+    assert data["last_merged_pr"] == "#878"
+    assert data["last_merged_cleanup_wave"] == "sidebar_customer_readonly_track3b"
+    assert data["recommended_next_pr"] == "product_development_or_targeted_runtime_migration"
     assert data["owner_approval_required"] is False
     assert data["runtime_behavior_changed"] is False
     assert data["delete_ready"] is False
+    assert data["cleanup_closeout"] == checker.EXPECTED_CLEANUP_CLOSEOUT
     assert "completed_steps" not in data
     assert "active_candidate" not in data
     assert "action_templates_readiness" not in data
@@ -47,25 +48,34 @@ def test_protected_runtime_boundaries_are_retained() -> None:
     assert set(data["protected_runtime_boundaries"]) == checker.EXPECTED_RUNTIME_BOUNDARIES
     assert "app.py" in data["protected_runtime_boundaries"]
     assert "legacy_flask_app.py" in data["protected_runtime_boundaries"]
-    assert "aicrm_next/production_compat/api.py selected low/medium fallback entries only" in data["protected_runtime_boundaries"]
+    assert "aicrm_next/production_compat/api.py high-risk and retained fallback entries only" in data["protected_runtime_boundaries"]
     assert "wecom_ability_service runtime" in data["protected_runtime_boundaries"]
 
 
-def test_next_cleanup_candidates_select_runtime_fallback_track() -> None:
+def test_next_cleanup_candidates_close_global_runtime_fallback_track() -> None:
     data = checker.load_yaml(STATE)
     assert data["next_cleanup_candidates"] == checker.EXPECTED_NEXT_CANDIDATES
     assert data["next_cleanup_candidates"]["non_runtime_cleanup"] == "complete"
-    assert data["next_cleanup_candidates"]["runtime_fallback_cleanup"] == "active_low_medium_admin_track"
+    assert data["next_cleanup_candidates"]["runtime_fallback_cleanup"] == "closed_as_global_task"
+    assert data["next_cleanup_candidates"]["future_runtime_migration"] == "product_specific_only"
     assert data["next_cleanup_candidates"]["high_risk_external_cleanup"] == "separate_owner_approval_required"
 
 
-def test_autopilot_settings_allow_bounded_runtime_fallback_without_admin_override() -> None:
+def test_autopilot_settings_allow_targeted_runtime_migration_without_admin_override() -> None:
     data = checker.load_yaml(STATE)
     autopilot = data["autopilot"]
     assert autopilot["enabled"] is True
-    assert autopilot["mode"] == "bounded_runtime_fallback_migration"
-    assert autopilot["runtime_changes_allowed"] is True
+    assert autopilot["mode"] == "product_development_with_targeted_runtime_migration"
+    assert autopilot["runtime_changes_allowed"] == "targeted_owner_approved_only"
     assert autopilot["admin_override_allowed"] is False
+
+
+def test_completed_and_remaining_runtime_fallback_tracks_are_recorded() -> None:
+    data = checker.load_yaml(STATE)
+    assert set(data["completed_runtime_fallback_tracks"]) == checker.EXPECTED_COMPLETED_RUNTIME_TRACKS
+    remaining = data["remaining_runtime_fallback_tracks"]
+    assert set(remaining["product_specific_migration_required"]) == checker.EXPECTED_REMAINING_RUNTIME_TRACKS
+    assert remaining["handling_rule"] == "migrate only when the related product capability is actively being developed"
 
 
 def test_stop_conditions_complete() -> None:

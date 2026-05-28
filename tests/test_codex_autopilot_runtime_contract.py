@@ -18,7 +18,7 @@ def test_runner_exists_and_mentions_required_preflight_docs() -> None:
         assert path in text
 
 
-def test_runner_generates_runtime_fallback_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
+def test_runner_generates_post_closeout_prompt_without_github_when_no_open_pr(tmp_path: Path) -> None:
     prompt = tmp_path / "prompt.md"
     owner_package = tmp_path / "owner.md"
     report = runner.main(
@@ -36,7 +36,8 @@ def test_runner_generates_runtime_fallback_prompt_without_github_when_no_open_pr
     assert prompt.exists() is True
     assert owner_package.exists() is False
     text = prompt.read_text(encoding="utf-8")
-    assert "runtime_fallback_cleanup" in text
+    assert "future_runtime_migration" in text
+    assert "global deletion task is closed" in text
     assert "next_cleanup_candidates" in text
 
 
