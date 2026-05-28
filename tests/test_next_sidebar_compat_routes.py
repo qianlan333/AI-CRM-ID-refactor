@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+import aicrm_next.production_compat.api as production_api
 from aicrm_next.main import create_app
 
 
@@ -75,8 +77,35 @@ def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):
     assert "X-AICRM-Compatibility-Facade" not in status_response.headers
     assert status_response.json()["error"] == "external_userid is required"
     assert jssdk_response.status_code == 400
-    assert "X-AICRM-Compatibility-Facade" not in jssdk_response.headers
+    assert jssdk_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
     assert jssdk_response.json()["error"] == "url is required"
+
+
+def test_next_production_forwards_sidebar_jssdk_config_to_legacy_facade(monkeypatch):
+    async def fake_forward_to_legacy_flask(request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "corp_id": "ww-test",
+                "agent_id": "1000023",
+                "config": {"signature": "config-signature"},
+                "agent_config": {"signature": "agent-signature"},
+            },
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+    client = _production_client(monkeypatch)
+
+    response = client.get(
+        "/api/sidebar/jssdk-config",
+        params={"url": "https://www.youcangogogo.com/sidebar/bind-mobile"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert response.json()["config"]["signature"] == "config-signature"
+    assert response.json()["agent_config"]["signature"] == "agent-signature"
 
 
 def test_next_forwards_sidebar_detail_dependencies_without_404(monkeypatch):

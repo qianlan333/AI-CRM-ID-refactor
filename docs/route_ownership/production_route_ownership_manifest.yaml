@@ -864,16 +864,16 @@ routes:
     checker: tools/check_production_route_resolution.py
     notes: Narrow production_compat fallback retained for legacy mobile binding write only.
   - route_pattern: /api/sidebar/jssdk-config
-    methods: [GET, HEAD]
+    methods: [GET, HEAD, OPTIONS]
     capability_owner: aicrm_next.frontend_compat
-    current_runtime_owner: next
-    production_behavior: fake_adapter
-    legacy_fallback_allowed: false
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
+    external_side_effect_risk: external_read
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next owns the route and returns a safe blocked response for real JSSDK signing; no WeCom ticket call is enabled in this cleanup.
+    notes: Narrow production_compat fallback retained for the real WeCom JSSDK signature read needed by the customer sidebar to resolve external_userid.
   - route_pattern: /api/sidebar/lead-pool/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine
