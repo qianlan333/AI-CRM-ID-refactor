@@ -300,7 +300,7 @@ def admin_broadcast_jobs(request: Request):
     context = shell_context(
         request=request,
         page_title="群发任务队列",
-        page_summary="统一群发任务队列，展示审批、取消、发送结果和 outbound task 追踪。",
+        page_summary="统一群发任务队列，展示审批、取消和发送结果。",
         active_endpoint="api.admin_jobs",
     )
     context.update(

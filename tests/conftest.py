@@ -210,6 +210,7 @@ _TABLES_TO_TRUNCATE = [
     "message_batch_items",
     "message_batches",
     # — broadcast_jobs
+    "broadcast_job_events",
     "broadcast_jobs",
     # — archive / system
     "archived_messages",

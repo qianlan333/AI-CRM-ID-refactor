@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from aicrm_next.shared.runtime import production_data_ready
@@ -11,6 +13,10 @@ from .domain import (
     BROADCAST_SOURCE_TYPES,
     BROADCAST_STATUSES,
     JOB_TABS,
+    broadcast_business_domain_label,
+    broadcast_channel_label,
+    broadcast_source_type_label,
+    broadcast_target_kind_label,
     normalized_bool,
     normalized_int,
     normalized_text,
@@ -385,6 +391,56 @@ def _iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00:00")
 
 
+def _beijing_time_label(value: Any) -> str:
+    text = normalized_text(value)
+    if not text:
+        return "-"
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+        return parsed.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return re.sub(r"([+-]\d{2}:?\d{2}|Z)$", "", text).strip().replace("T", " ")[:16] or "-"
+
+
+def _broadcast_summary_label(value: Any) -> str:
+    text = normalized_text(value)
+    if not text:
+        return "-"
+    text = re.sub(r"\bworkflow immediate node=(\d+)", r"自动化流程即时节点 \1", text)
+    text = re.sub(r"\bworkflow node=(\d+)", r"自动化流程节点 \1", text)
+    text = re.sub(r"\bcampaign=([A-Za-z0-9_-]+)\s+step=(\d+)", r"营销活动第 \2 步", text)
+    text = re.sub(r"\b(\d+)\s+customer groups?\b", r"\1 个客户群", text)
+    text = re.sub(r"\b(\d+)\s+users?\b", r"\1 人", text)
+    text = text.replace("— ~", " · 约 ")
+    text = text.replace("— ", " · ")
+    text = text.replace("~", "约 ")
+    text = text.replace(" people", " 人").replace(" customer groups", " 个客户群")
+    return text
+
+
+def _broadcast_source_detail(row: dict[str, Any]) -> str:
+    source_id = normalized_text(row.get("source_id"))
+    source_type = normalized_text(row.get("source_type"))
+    source_table = normalized_text(row.get("source_table"))
+    if source_table == "automation_group_ops_plans":
+        return "群运营计划"
+    if source_type == "workflow":
+        match = re.search(r"node[-_:]?(\d+)|:(\d+)$", source_id)
+        node_id = next((item for item in (match.groups() if match else []) if item), "")
+        return f"节点 {node_id}" if node_id else "自动化流程"
+    if source_type == "campaign":
+        match = re.search(r"step[-_:]?(\d+)|:(\d+)$", source_id)
+        step = next((item for item in (match.groups() if match else []) if item), "")
+        return f"第 {step} 步" if step else "营销活动"
+    if source_type == "operation_task":
+        return "运营任务"
+    if source_type == "cloud_plan":
+        return "智能助手方案"
+    return broadcast_source_type_label(source_type)
+
+
 def build_broadcast_jobs_payload(args: Any, repo: AdminJobsRepository | None = None) -> dict[str, Any]:
     repo = repo or build_admin_jobs_repository()
     raw = dict(args or {})
@@ -405,11 +461,24 @@ def build_broadcast_jobs_payload(args: Any, repo: AdminJobsRepository | None = N
 
 
 def _broadcast_job_view(row: dict[str, Any]) -> dict[str, Any]:
+    safe_row = dict(row)
+    idempotency_key = normalized_text(safe_row.pop("idempotency_key", ""))
     status = normalized_text(row.get("status"))
+    domain = normalized_text(row.get("business_domain")) or "unknown"
     return {
-        **row,
+        **safe_row,
         "status_label": status_label(status),
         "status_tone": status_tone(status),
+        "business_domain": domain,
+        "business_domain_label": broadcast_business_domain_label(domain),
+        "source_type_label": broadcast_source_type_label(row.get("source_type")),
+        "source_detail_label": _broadcast_source_detail(row),
+        "channel_label": broadcast_channel_label(row.get("channel")),
+        "target_kind_label": broadcast_target_kind_label(row.get("target_kind")),
+        "target_summary_label": _broadcast_summary_label(row.get("target_summary")),
+        "content_summary_label": _broadcast_summary_label(row.get("content_summary")),
+        "scheduled_for_label": _beijing_time_label(row.get("scheduled_for")),
+        "has_idempotency_key": bool(row.get("has_idempotency_key")) or bool(idempotency_key),
         "can_approve": status == "waiting_approval",
         "can_cancel": status in {"queued", "waiting_approval"},
     }

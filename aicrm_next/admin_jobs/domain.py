@@ -32,6 +32,41 @@ BROADCAST_SOURCE_TYPES = (
     "manual",
 )
 
+BROADCAST_BUSINESS_DOMAIN_LABELS = {
+    "automation_ops": "自动化运营",
+    "ai_assistant": "智能助手",
+    "group_ops": "群运营计划",
+    "manual": "手动",
+    "unknown": "未知",
+}
+
+BROADCAST_SOURCE_TYPE_LABELS = {
+    "campaign": "营销活动",
+    "sop": "标准运营流程",
+    "workflow": "自动化流程",
+    "operation_task": "运营任务",
+    "cloud_plan": "智能助手方案",
+    "focus_send": "重点触达",
+    "deferred": "延迟任务",
+    "manual": "手动群发",
+}
+
+BROADCAST_CHANNEL_LABELS = {
+    "wecom_private": "企微私聊",
+    "wecom_customer_group": "企微客户群",
+    "wechat": "微信",
+    "manual": "手动",
+    "unknown": "未知渠道",
+}
+
+BROADCAST_TARGET_KIND_LABELS = {
+    "external_userid": "客户",
+    "chat_id": "客户群",
+    "mixed": "混合目标",
+    "dynamic": "动态目标",
+    "unknown": "未知目标",
+}
+
 
 def normalized_text(value: Any) -> str:
     return str(value or "").strip()
@@ -86,6 +121,26 @@ def status_label(status: Any) -> str:
     }
     normalized = normalized_text(status).lower()
     return mapping.get(normalized, normalized_text(status) or "-")
+
+
+def broadcast_business_domain_label(value: Any) -> str:
+    normalized = normalized_text(value).lower() or "unknown"
+    return BROADCAST_BUSINESS_DOMAIN_LABELS.get(normalized, normalized_text(value) or "未知")
+
+
+def broadcast_source_type_label(value: Any) -> str:
+    normalized = normalized_text(value).lower()
+    return BROADCAST_SOURCE_TYPE_LABELS.get(normalized, normalized_text(value) or "未知来源")
+
+
+def broadcast_channel_label(value: Any) -> str:
+    normalized = normalized_text(value).lower() or "unknown"
+    return BROADCAST_CHANNEL_LABELS.get(normalized, normalized_text(value) or "未知渠道")
+
+
+def broadcast_target_kind_label(value: Any) -> str:
+    normalized = normalized_text(value).lower() or "unknown"
+    return BROADCAST_TARGET_KIND_LABELS.get(normalized, normalized_text(value) or "未知目标")
 
 
 def webhook_event_label(event_type: Any) -> str:

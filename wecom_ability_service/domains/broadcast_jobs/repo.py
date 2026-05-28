@@ -26,8 +26,18 @@ VALID_SOURCE_TYPES = (
     "manual",
 )
 
+VALID_FAILURE_TYPES = (
+    "before_external_call",
+    "external_call_failed_known",
+    "external_call_unknown",
+    "validation_failed",
+    "handler_error",
+    "unknown",
+)
+
 _BASE_COLUMNS = (
     "id, source_type, source_id, source_table, scheduled_for, priority, batch_key, "
+    "business_domain, idempotency_key, channel, target_kind, failure_type, retry_policy_json, metadata_json, "
     "status, requires_approval, approved_by, approved_at, "
     "cancelled_by, cancelled_at, cancel_reason, "
     "target_external_userids, target_count, target_summary, "
@@ -90,6 +100,12 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     record["content_payload"] = _decode_jsonb(
         record.get("content_payload"), default={}
     )
+    record["retry_policy_json"] = _decode_jsonb(
+        record.get("retry_policy_json"), default={}
+    )
+    record["metadata_json"] = _decode_jsonb(
+        record.get("metadata_json"), default={}
+    )
     record["requires_approval"] = bool(record.get("requires_approval") or False)
     return record
 
@@ -102,6 +118,12 @@ def insert_job(
     scheduled_for: Any,
     priority: int,
     batch_key: str,
+    business_domain: str = "",
+    idempotency_key: str = "",
+    channel: str = "",
+    target_kind: str = "",
+    retry_policy_json: dict[str, Any] | None = None,
+    metadata_json: dict[str, Any] | None = None,
     status: str,
     requires_approval: bool,
     target_external_userids: list[str],
@@ -118,16 +140,24 @@ def insert_job(
         raise ValueError(f"invalid status: {status!r}")
     target_list = list(target_external_userids or [])
     target_count = len(target_list)
+    clean_idempotency_key = str(idempotency_key or "").strip()
+    conflict_sql = (
+        "ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> '' DO NOTHING"
+        if clean_idempotency_key
+        else ""
+    )
     db = get_db()
     row = db.execute(
-        """
+        f"""
         INSERT INTO broadcast_jobs (
             source_type, source_id, source_table, scheduled_for, priority, batch_key,
+            business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
             status, requires_approval,
             target_external_userids, target_count, target_summary,
             content_type, content_payload, content_summary,
             trace_id, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        {conflict_sql}
         RETURNING id
         """,
         (
@@ -137,6 +167,12 @@ def insert_job(
             _normalize_dt(scheduled_for),
             int(priority),
             str(batch_key or ""),
+            str(business_domain or ""),
+            clean_idempotency_key or None,
+            str(channel or ""),
+            str(target_kind or ""),
+            _to_jsonb_text(retry_policy_json or {}, default="{}"),
+            _to_jsonb_text(metadata_json or {}, default="{}"),
             status,
             _bool_to_db(requires_approval),
             _to_jsonb_text(target_list, default="[]"),
@@ -151,6 +187,8 @@ def insert_job(
     )
     result = row.fetchone()
     db.commit()
+    if not result:
+        return 0
     return int(result["id"])
 
 
@@ -159,6 +197,17 @@ def fetch_job_by_id(job_id: int) -> dict[str, Any] | None:
     row = db.execute(
         f"SELECT {_BASE_COLUMNS} FROM broadcast_jobs WHERE id = ? LIMIT 1",
         (int(job_id),),
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def fetch_job_by_idempotency_key(idempotency_key: str) -> dict[str, Any] | None:
+    key = str(idempotency_key or "").strip()
+    if not key:
+        return None
+    row = get_db().execute(
+        f"SELECT {_BASE_COLUMNS} FROM broadcast_jobs WHERE idempotency_key = ? ORDER BY id DESC LIMIT 1",
+        (key,),
     ).fetchone()
     return _row_to_dict(row) if row else None
 
@@ -419,7 +468,10 @@ def mark_sent(
     db.commit()
 
 
-def mark_failed(job_id: int, *, error: str) -> None:
+def mark_failed(job_id: int, *, error: str, failure_type: str = "unknown") -> None:
+    clean_failure_type = str(failure_type or "unknown").strip() or "unknown"
+    if clean_failure_type not in VALID_FAILURE_TYPES:
+        clean_failure_type = "unknown"
     db = get_db()
     db.execute(
         """
@@ -428,10 +480,11 @@ def mark_failed(job_id: int, *, error: str) -> None:
             updated_at = CURRENT_TIMESTAMP,
             claim_token = '',
             lease_expires_at = NULL,
+            failure_type = ?,
             last_error = ?
         WHERE id = ? AND status IN ('claimed', 'queued')
         """,
-        (str(error or "")[:4000], int(job_id)),
+        (clean_failure_type, str(error or "")[:4000], int(job_id)),
     )
     db.commit()
 
@@ -495,3 +548,52 @@ def count_jobs_by_status() -> dict[str, int]:
         "SELECT status, COUNT(*) AS cnt FROM broadcast_jobs GROUP BY status"
     ).fetchall()
     return {str(r["status"]): int(r["cnt"]) for r in rows}
+
+
+def insert_broadcast_job_event(
+    *,
+    job_id: int,
+    event_type: str,
+    from_status: str | None = None,
+    to_status: str | None = None,
+    event_payload: dict[str, Any] | None = None,
+    actor_type: str = "",
+    actor_id: str = "",
+) -> int:
+    row = get_db().execute(
+        """
+        INSERT INTO broadcast_job_events (
+            job_id, event_type, from_status, to_status, event_payload, actor_type, actor_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
+        """,
+        (
+            int(job_id),
+            str(event_type or ""),
+            from_status,
+            to_status,
+            _to_jsonb_text(event_payload or {}, default="{}"),
+            str(actor_type or ""),
+            str(actor_id or ""),
+        ),
+    ).fetchone()
+    get_db().commit()
+    return int(row["id"]) if row else 0
+
+
+def list_broadcast_job_events(job_id: int) -> list[dict[str, Any]]:
+    rows = get_db().execute(
+        """
+        SELECT id, job_id, event_type, from_status, to_status, event_payload, actor_type, actor_id, created_at
+        FROM broadcast_job_events
+        WHERE job_id = ?
+        ORDER BY id ASC
+        """,
+        (int(job_id),),
+    ).fetchall()
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["event_payload"] = _decode_jsonb(item.get("event_payload"), default={})
+        events.append(item)
+    return events
