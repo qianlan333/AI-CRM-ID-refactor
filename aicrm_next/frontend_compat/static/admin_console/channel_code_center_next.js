@@ -49,6 +49,12 @@
     return channel.copy_text || channel.share_url || channel.final_url || channel.link_url || "";
   }
 
+  function historicalScenes(channel) {
+    return Array.isArray(channel.historical_scene_values)
+      ? channel.historical_scene_values.filter(Boolean)
+      : [];
+  }
+
   function toast(message) {
     root.dataset.lastToast = message;
     if (window.AdminConsole && typeof window.AdminConsole.showToast === "function") {
@@ -127,7 +133,11 @@
       channel.channel_code,
       channel.scene_value,
       channel.customer_channel,
+      historicalScenes(channel).join(" "),
     ].join(" ").toLowerCase();
+    const historicalLine = historicalScenes(channel).length
+      ? `<span class="channel-sub">历史回调 State：${escapeHtml(historicalScenes(channel).join(" / "))}</span>`
+      : "";
     const codeLine = link ? `企微渠道参数：${channel.customer_channel || "-"}` : `场景值：${channel.scene_value || "-"}`;
     const typeText = link ? "企微获客助手链接" : "普通二维码";
     const downloadUrl = channel.qr_download_url || `/api/admin/channels/${encodeURIComponent(channel.id)}/qrcode/download`;
@@ -145,6 +155,7 @@
           <strong>${escapeHtml(channel.channel_name || "-")}</strong>
           <span class="channel-code">${escapeHtml(channel.channel_code || "-")}</span>
           <span class="channel-sub">${escapeHtml(codeLine)}</span>
+          ${historicalLine}
         </td>
         <td><span class="channel-pill ${link ? "is-link" : "is-qrcode"}">${typeText}</span></td>
         <td><span class="channel-pill is-status">${escapeHtml(statusLabel(channel.status))}</span></td>

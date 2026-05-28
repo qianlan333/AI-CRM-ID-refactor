@@ -65,6 +65,26 @@ def _json_list(value: Any) -> list[int]:
     return result[:9]
 
 
+def _json_text_list(value: Any, *, max_count: int = 12) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, list):
+        source = value
+    elif isinstance(value, str):
+        try:
+            source = json.loads(value)
+        except ValueError:
+            source = [part.strip() for part in value.split(",")]
+    else:
+        source = []
+    result: list[str] = []
+    for item in source:
+        text = _text(item)
+        if text and text not in result:
+            result.append(text)
+    return result[:max_count]
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -86,6 +106,9 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["channel_code"] = _text(channel.get("channel_code"))
     channel["channel_name"] = _text(channel.get("channel_name"))
     channel["scene_value"] = _text(channel.get("scene_value"))
+    channel["historical_scene_values"] = [
+        item for item in _json_text_list(channel.get("historical_scene_values")) if item != channel["scene_value"]
+    ]
     channel["qr_url"] = _text(channel.get("qr_url"))
     channel["customer_channel"] = _text(channel.get("customer_channel"))
     channel["link_url"] = _text(channel.get("link_url"))
@@ -180,7 +203,8 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                        binding.program_name AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
-                       wca.final_url AS wca_final_url
+                       wca.final_url AS wca_final_url,
+                       COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
@@ -197,6 +221,24 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                 ) binding ON binding.channel_id = c.id
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
+                LEFT JOIN LATERAL (
+                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
+                    FROM (
+                        SELECT
+                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
+                            MAX(e.created_at) AS latest_event_at
+                        FROM wecom_external_contact_event_logs e
+                        JOIN automation_member m ON m.external_contact_id = e.external_userid
+                        WHERE m.source_channel_id = c.id
+                          AND e.change_type = 'add_external_contact'
+                          AND e.external_userid <> ''
+                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
+                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
+                        GROUP BY 1
+                        ORDER BY latest_event_at DESC
+                        LIMIT 12
+                    ) scene_rows
+                ) historical_scenes ON TRUE
                 WHERE c.id = %s
                 """,
                 (int(channel_id),),
@@ -238,7 +280,8 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                        binding.program_name AS bound_program_name,
                        wca.customer_channel AS wca_customer_channel,
                        wca.link_url AS wca_link_url,
-                       wca.final_url AS wca_final_url
+                       wca.final_url AS wca_final_url,
+                       COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
@@ -255,6 +298,24 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                 ) binding ON binding.channel_id = c.id
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
+                LEFT JOIN LATERAL (
+                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
+                    FROM (
+                        SELECT
+                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
+                            MAX(e.created_at) AS latest_event_at
+                        FROM wecom_external_contact_event_logs e
+                        JOIN automation_member m ON m.external_contact_id = e.external_userid
+                        WHERE m.source_channel_id = c.id
+                          AND e.change_type = 'add_external_contact'
+                          AND e.external_userid <> ''
+                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
+                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
+                        GROUP BY 1
+                        ORDER BY latest_event_at DESC
+                        LIMIT 12
+                    ) scene_rows
+                ) historical_scenes ON TRUE
                 {where}
                 ORDER BY c.updated_at DESC, c.id DESC
                 LIMIT %s
