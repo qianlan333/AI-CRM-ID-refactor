@@ -477,6 +477,10 @@ def test_external_campaign_uses_synthetic_member_id_under_global_member_constrai
         assert result["created_count"] == 1, result
 
         campaign_id = int(result["campaigns"][0]["campaign_id"])
+        assert result["campaigns"][0]["review_status"] == "pending_review"
+        assert result["campaigns"][0]["run_status"] == "draft"
+        assert result["campaigns"][0]["scheduled_jobs"] == 0
+        assert result["campaigns"][0]["requires_human_review"] is True
         cur.execute(
             "SELECT member_id, external_contact_id FROM campaign_members WHERE campaign_id = ?",
             (campaign_id,),
@@ -484,6 +488,12 @@ def test_external_campaign_uses_synthetic_member_id_under_global_member_constrai
         row = dict(cur.fetchone())
         assert row["member_id"] != 1
         assert row["external_contact_id"] == "wm-ext-synthetic-target"
+        cur.execute(
+            "SELECT review_status, run_status FROM campaigns WHERE id = ?",
+            (campaign_id,),
+        )
+        campaign_row = dict(cur.fetchone())
+        assert campaign_row == {"review_status": "pending_review", "run_status": "draft"}
     finally:
         cur.execute("DROP INDEX IF EXISTS uq_campaign_members_member_id_test")
         db.commit()

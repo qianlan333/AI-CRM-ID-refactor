@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.ai_assist import external_campaigns
@@ -130,3 +132,12 @@ def test_campaign_segment_params_accept_pg_jsonb_dict() -> None:
     assert segment_service._json_object(params) == params
     assert campaign_service._json_object('{"external_userid":"wm-test"}') == params
     assert segment_service._json_object('{"external_userid":"wm-test"}') == params
+
+
+def test_external_campaign_create_stops_before_start() -> None:
+    source = inspect.getsource(external_campaigns._create_single_recipient_campaign)
+
+    assert "submit_campaign_for_review" in source
+    assert "issue_token" not in source
+    assert "start_campaign" not in source
+    assert "requires_human_review" in source
