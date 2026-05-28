@@ -113,6 +113,64 @@ def test_group_sync_adapter_production_without_guard_is_blocked(monkeypatch):
     assert result["error_code"] == "production_guard_failed"
 
 
+def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
+
+    context = {"active": False, "list_called": False, "detail_called": False}
+
+    class ContextApp(DummyApp):
+        def __enter__(self):
+            context["active"] = True
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            context["active"] = False
+            return False
+
+    class FakeClient:
+        def list_group_chats(self, payload):
+            assert context["active"] is True
+            context["list_called"] = True
+            assert payload["owner_filter"] == {"userid_list": ["owner_live"]}
+            return {"group_chat_list": [{"chat_id": "live_chat_001"}], "next_cursor": ""}
+
+        def get_group_chat(self, chat_id, need_name=1):
+            assert context["active"] is True
+            context["detail_called"] = True
+            assert chat_id == "live_chat_001"
+            assert need_name == 1
+            return {
+                "group_chat": {
+                    "chat_id": "live_chat_001",
+                    "name": "真实客户群",
+                    "owner": "owner_live",
+                    "member_list": [{"userid": "owner_live", "type": 1}, {"external_userid": "wm_live", "type": 2}],
+                }
+            }
+
+    monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_SYNC", "true")
+    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_flask_facade._legacy_app", lambda: ContextApp())
+    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app", lambda: FakeClient())
+
+    result = WeComGroupChatSyncAdapter(mode="production").list_group_chats(owner_userid="owner_live", limit=10)
+
+    assert result["ok"] is True
+    assert result["side_effect_executed"] is True
+    assert context["list_called"] is True
+    assert context["detail_called"] is True
+    assert result["groups"] == [
+        {
+            "chat_id": "live_chat_001",
+            "group_name": "真实客户群",
+            "owner_userid": "owner_live",
+            "owner_name": "owner_live",
+            "internal_member_count": 1,
+            "external_member_count": 1,
+            "status": "active",
+        }
+    ]
+
+
 def test_group_ops_queue_stats_counts_only_group_ops_jobs():
     from aicrm_next.integration_gateway.wecom_group_adapter import LegacyGroupOpsQueueStatsGateway
 

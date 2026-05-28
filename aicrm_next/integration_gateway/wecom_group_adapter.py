@@ -277,16 +277,17 @@ class WeComGroupAssetAdapter:
                 "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_SYNC is not enabled",
             }
 
-        from .legacy_flask_facade import legacy_wecom_client_from_app
-
-        client = legacy_wecom_client_from_app()
         list_payload = {
             "status_filter": 0,
             "owner_filter": {"userid_list": [owner]} if owner else {},
             "cursor": str(cursor or ""),
             "limit": page_size,
         }
-        list_result = client.list_group_chats(list_payload)
+        from .legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
+
+        with _legacy_app().app_context():
+            client = legacy_wecom_client_from_app()
+            list_result = client.list_group_chats(list_payload)
         groups: list[dict[str, Any]] = []
         warnings: list[str] = []
         skipped_count = 0
@@ -369,9 +370,10 @@ class WeComGroupAssetAdapter:
                 "error_code": "production_guard_failed",
                 "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_SYNC is not enabled",
             }
-        from .legacy_flask_facade import legacy_wecom_client_from_app
+        from .legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
 
-        result = legacy_wecom_client_from_app().get_group_chat(chat, need_name=need_name)
+        with _legacy_app().app_context():
+            result = legacy_wecom_client_from_app().get_group_chat(chat, need_name=need_name)
         return {
             "ok": True,
             "adapter": self.adapter_name,
