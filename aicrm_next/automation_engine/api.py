@@ -10,6 +10,7 @@ from aicrm_next.integration_gateway.legacy_automation_facade import (
     get_automation_overview_from_legacy,
     list_automation_pools_from_legacy,
 )
+from aicrm_next.integration_gateway import legacy_sidebar_read_facade
 
 from .application import (
     ApplyActivationWebhookCommand,
@@ -898,3 +899,70 @@ def activation_webhook(payload: ActivationWebhookRequest) -> dict:
         return ApplyActivationWebhookCommand()(payload)
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/customers/automation/signup-conversion/batches")
+def signup_conversion_batches(limit: int = 20, cursor: str = "") -> JSONResponse:
+    try:
+        payload = legacy_sidebar_read_facade.signup_conversion_batch_list(limit=limit, cursor=cursor)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "route_owner": "ai_crm_next"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "degraded": True,
+                "source_status": "production_unavailable",
+                "error_code": "signup_conversion_batches_unavailable",
+                "page_error": str(exc),
+                "route_owner": "ai_crm_next",
+            },
+            status_code=503,
+        )
+    return JSONResponse({"ok": True, "automation_batches": payload, "route_owner": "ai_crm_next"})
+
+
+@router.get("/api/customers/automation/signup-conversion/batches/{batch_id}")
+def signup_conversion_batch(batch_id: int) -> JSONResponse:
+    try:
+        payload = legacy_sidebar_read_facade.signup_conversion_batch_detail(batch_id)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "degraded": True,
+                "source_status": "production_unavailable",
+                "error_code": "signup_conversion_batch_unavailable",
+                "page_error": str(exc),
+                "route_owner": "ai_crm_next",
+            },
+            status_code=503,
+        )
+    if not payload:
+        return JSONResponse({"ok": False, "error": "batch not found", "route_owner": "ai_crm_next"}, status_code=404)
+    return JSONResponse({"ok": True, "automation_batch": payload, "route_owner": "ai_crm_next"})
+
+
+@router.get("/api/customers/automation/webhook-deliveries")
+def customer_automation_webhook_deliveries(
+    event_type: str = "",
+    status: str = "",
+    limit: int = 50,
+) -> JSONResponse:
+    try:
+        payload = legacy_sidebar_read_facade.webhook_delivery_list(event_type=event_type, status=status, limit=limit)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "route_owner": "ai_crm_next"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "degraded": True,
+                "source_status": "production_unavailable",
+                "error_code": "webhook_deliveries_unavailable",
+                "page_error": str(exc),
+                "route_owner": "ai_crm_next",
+            },
+            status_code=503,
+        )
+    return JSONResponse({"ok": True, "deliveries": payload, "route_owner": "ai_crm_next"})

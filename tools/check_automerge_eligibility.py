@@ -46,6 +46,9 @@ RUNTIME_FALLBACK_ALLOWED_EXACT = {
 }
 LOW_RISK_EXACT = {
     "README.md",
+    "aicrm_next/customer_read_model/api.py",
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/integration_gateway/legacy_sidebar_read_facade.py",
     "aicrm_next/production_compat/api.py",
     "docs/claude_code_integration/README.md",
     "docs/claude_code_integration/patterns.md",

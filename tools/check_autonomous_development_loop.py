@@ -77,6 +77,9 @@ PROTECTED_PREFIXES = (
     "nginx/",
 )
 RUNTIME_FALLBACK_ALLOWED_EXACT = {
+    "aicrm_next/customer_read_model/api.py",
+    "aicrm_next/automation_engine/api.py",
+    "aicrm_next/integration_gateway/legacy_sidebar_read_facade.py",
     "wecom_ability_service/http/__init__.py",
     "wecom_ability_service/http/automation_conversion.py",
     "wecom_ability_service/http/automation_conversion_channels.py",
@@ -117,6 +120,20 @@ REMOVED_SIDEBAR_CUSTOMER_FALLBACK_STRINGS = {
     '"/api/admin/customers/profile/{path:path}"',
     '"/api/customers/automation/{path:path}"',
     '"/api/customer-automation/{path:path}"',
+    '"/api/sidebar/jssdk-config"',
+    '"/api/sidebar/lead-pool/status"',
+    '"/api/sidebar/signup-tags/status"',
+    '"/api/sidebar/marketing-status"',
+    '"/api/sidebar/v2/workbench"',
+    '"/api/sidebar/v2/questionnaires"',
+    '"/api/sidebar/v2/materials"',
+    '"/api/sidebar/v2/materials/image/{image_id:int}/thumbnail"',
+    '"/api/sidebar/v2/other-staff-messages"',
+    '"/api/sidebar/v2/products"',
+    '"/api/sidebar/v2/orders"',
+    '"/api/customers/automation/signup-conversion/batches"',
+    '"/api/customers/automation/signup-conversion/batches/{batch_id:int}"',
+    '"/api/customers/automation/webhook-deliveries"',
 }
 REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/wecom/external-contact/callback"',

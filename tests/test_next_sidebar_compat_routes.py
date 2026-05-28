@@ -75,7 +75,7 @@ def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):
     assert "X-AICRM-Compatibility-Facade" not in status_response.headers
     assert status_response.json()["error"] == "external_userid is required"
     assert jssdk_response.status_code == 400
-    assert jssdk_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "X-AICRM-Compatibility-Facade" not in jssdk_response.headers
     assert jssdk_response.json()["error"] == "url is required"
 
 
