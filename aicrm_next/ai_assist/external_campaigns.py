@@ -15,6 +15,23 @@ JsonDict = dict[str, Any]
 
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
+_ONE_RECIPIENT_SEGMENT_SQL = """
+SELECT member_id, external_contact_id
+FROM (
+    SELECT id AS member_id, external_userid AS external_contact_id, 0 AS source_rank
+    FROM user_ops_pool_current
+    WHERE external_userid = %(external_userid)s
+    UNION ALL
+    SELECT id AS member_id, external_contact_id, 1 AS source_rank
+    FROM automation_member
+    WHERE external_contact_id = %(external_userid)s
+      AND NOT EXISTS (
+          SELECT 1 FROM user_ops_pool_current WHERE external_userid = %(external_userid)s
+      )
+) matched
+ORDER BY source_rank ASC, member_id DESC
+LIMIT 1
+"""
 
 
 class ExternalCampaignError(Exception):
@@ -354,10 +371,7 @@ def _create_single_recipient_campaign(
             segment_code=segment_code,
             display_name=f"{group_label} · {external_userid}",
             description="External token protected one-recipient campaign segment.",
-            sql_query=(
-                "SELECT id AS member_id, external_contact_id "
-                "FROM automation_member WHERE external_contact_id = %(external_userid)s"
-            ),
+            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
             sql_params={"external_userid": external_userid},
             source_type="external_campaign",
             tags=("external_campaign", owner_userid),
