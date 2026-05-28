@@ -170,8 +170,14 @@ def test_channel_center_list_keeps_edit_links_and_nonblocking_clicks():
     template = _read(CHANNEL_CENTER_TEMPLATE)
 
     assert "channel_code_center_next.js" in template
+    assert "搜索渠道名称" in template
+    assert "渠道编码 / 场景值" not in template
     assert '"/api/admin/channels?limit=300"' in source
     assert "Array.isArray(data.channels)" in source
+    assert "String(channel.channel_name || \"\").toLowerCase()" in source
+    assert "channel.channel_code" not in source
+    assert "channel.scene_value" not in source
+    assert "历史回调 State" not in source
     assert "/admin/channels/${encodeURIComponent(channel.id)}/edit" in source
     assert "data-open-channel-drawer" in source
     assert "data-copy-channel-link" in source
