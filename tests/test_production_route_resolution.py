@@ -66,6 +66,8 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/customers/automation/signup-conversion/batches/1") == "aicrm_next.automation_engine.api"
     assert _owner_for(samples, "GET", "/api/customers/automation/webhook-deliveries") == "next"
     assert _endpoint_for(samples, "GET", "/api/customers/automation/webhook-deliveries") == "aicrm_next.automation_engine.api"
+    assert _owner_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "aicrm_next.automation_engine.api"
 
 
 def test_high_risk_legacy_facade_routes_remain_production_compat_owned():

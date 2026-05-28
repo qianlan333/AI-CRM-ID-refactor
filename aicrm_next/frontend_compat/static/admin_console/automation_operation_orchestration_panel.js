@@ -41,6 +41,8 @@
       setupProfileSegments: [],
       behaviorRules: [],
       agents: [],
+      agentLoadStatus: "idle",
+      agentLoadMessage: "",
       preview: {},
     };
     const labels = {
@@ -49,12 +51,6 @@
       audience: { pending_questionnaire: "待填问卷", operating: "运营中", converted: "已转化" },
     };
     const VALID_MODES = new Set(["unified", "profile_layered", "behavior_layered", "agent"]);
-    const FALLBACK_AGENTS = [
-      { agent_code: "hxc_activation", agent_name: "黄小璨激活 Agent（备用）", agent_type: "fallback" },
-      { agent_code: "welcome_agent", agent_name: "欢迎接待 Agent（备用）", agent_type: "fallback" },
-      { agent_code: "pricing_agent", agent_name: "价格答疑 Agent（备用）", agent_type: "fallback" },
-      { agent_code: "followup_agent", agent_name: "跟进推进 Agent（备用）", agent_type: "fallback" },
-    ];
     const normalizeContentMode = (mode) => (VALID_MODES.has(String(mode || "")) ? String(mode) : "unified");
     const dom = {
       groupFilter: root.querySelector("[data-group-filter]"),
@@ -348,8 +344,19 @@
     }
 
     async function loadAgents() {
-      const data = await requestJson(endpoints.agents);
-      state.agents = mergeByValue(data.items || data.agents || data.options || [], FALLBACK_AGENTS, (agent) => agent.agent_code || agent.code || agent.value);
+      state.agentLoadStatus = "loading";
+      state.agentLoadMessage = "";
+      try {
+        const data = await requestJson(endpoints.agents);
+        state.agents = mergeByValue(data.items || data.agents || data.options || [], [], (agent) => agent.agent_code || agent.code || agent.value);
+        state.agentLoadStatus = state.agents.length ? "ready" : "empty";
+        state.agentLoadMessage = state.agents.length ? "" : "智能体列表为空，请检查 Agent 接口/生产数据源";
+      } catch (error) {
+        state.agents = [];
+        state.agentLoadStatus = "error";
+        state.agentLoadMessage = "智能体列表加载失败，请检查 Agent 接口/生产数据源";
+        throw error;
+      }
     }
 
     async function safeLoadAuxiliary() {
@@ -561,8 +568,13 @@
           })
         )
         .join("");
+      const statusMessage =
+        state.agentLoadStatus === "error" || state.agentLoadStatus === "empty"
+          ? `<div class="op-task-feedback" style="display:block">${escapeHtml(state.agentLoadMessage)}</div>`
+          : "";
       return `
         <label class="op-task-field"><span>智能体</span><select data-agent-select>${options}</select></label>
+        ${statusMessage}
         <div class="op-task-strategy-head">
           <div><h4>Agent 个性化素材</h4><div class="op-task-muted">${escapeHtml(contentSummary(agentConfig, true))}</div></div>
           <button class="op-task-button is-soft" type="button" data-config-agent-materials>配置素材</button>

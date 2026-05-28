@@ -404,14 +404,14 @@ routes:
   - route_pattern: /api/admin/automation-conversion/agents*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operations Agent option/config APIs remain legacy-forwarded during the workspace cutover.
+    notes: Next-native Agent metadata/options route backed by production Postgres automation_agents; legacy automation_agent_config is backfilled into the Next table.
   - route_pattern: /api/admin/automation-conversion/agent-outputs*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

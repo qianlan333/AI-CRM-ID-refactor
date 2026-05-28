@@ -67,12 +67,10 @@ class SqlAlchemyAgentRepository(InMemoryAutomationRepository):
             with self._engine.connect() as conn:
                 clauses = []
                 params: dict[str, Any] = {"limit": limit, "offset": offset}
-                for field, value in (
-                    ("program_id", program_id),
-                    ("workflow_id", workflow_id),
-                    ("node_id", node_id),
-                    ("task_id", task_id),
-                ):
+                if program_id not in (None, ""):
+                    clauses.append("(program_id = :program_id OR COALESCE(program_id, 0) = 0)")
+                    params["program_id"] = int(program_id)
+                for field, value in (("workflow_id", workflow_id), ("node_id", node_id), ("task_id", task_id)):
                     if value not in (None, ""):
                         clauses.append(f"{field} = :{field}")
                         params[field] = int(value)

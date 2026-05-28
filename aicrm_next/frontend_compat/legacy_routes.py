@@ -44,7 +44,6 @@ from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     list_questionnaires_from_legacy,
 )
 from .admin_shell import (
-    ADMIN_NAV_GROUPS,
     legacy_url_for as _legacy_url_for,
     nav_items as _nav_items,
     shell_context as _shell_context,
@@ -799,7 +798,7 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
             "task_preview_audience_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0/preview-audience",
             "profile_segment_templates_options": f"/api/admin/automation-conversion/profile-segment-templates/options?program_id={program_id}",
             "profile_segment_template_detail_base": "/api/admin/automation-conversion/profile-segment-templates/0",
-            "agents_options": f"/api/admin/automation-conversion/agents?program_id={program_id}&limit=200",
+            "agents_options": f"/api/admin/automation-conversion/agents/options?program_id={program_id}&limit=200",
             "behavior_segment_rules": "/api/admin/automation-conversion/behavior-segment-rules",
         },
     }

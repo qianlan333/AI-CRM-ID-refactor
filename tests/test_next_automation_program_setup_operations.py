@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy import text
+from sqlalchemy.pool import StaticPool
 
+from aicrm_next.automation_engine import application as automation_application
+from aicrm_next.automation_engine import repo as automation_repo
+from aicrm_next.automation_engine.repo import DEFAULT_AGENT_DEFINITIONS
 from aicrm_next.automation_engine.repo import _sqlalchemy_database_url
 from aicrm_next.main import app
 
@@ -37,14 +43,96 @@ def test_operation_setup_panel_exposes_next_native_task_and_group_controls() -> 
     assert "preview-audience" in script
     assert "collectOperationTaskPayload" in script
     assert "setupProfileSegments" in script
-    assert "FALLBACK_AGENTS" in script
-    assert "hxc_activation" in script
+    assert "agentLoadStatus" in script
+    assert "智能体列表加载失败，请检查 Agent 接口/生产数据源" in script
+    assert "智能体列表为空，请检查 Agent 接口/生产数据源" in script
+    assert "FALLBACK_AGENTS" not in script
 
 
 def test_operation_setup_uses_psycopg3_sqlalchemy_urls() -> None:
     assert _sqlalchemy_database_url("postgres://u:p@db.local:5432/app") == "postgresql+psycopg://u:p@db.local:5432/app"
     assert _sqlalchemy_database_url("postgresql://u:p@db.local:5432/app") == "postgresql+psycopg://u:p@db.local:5432/app"
     assert _sqlalchemy_database_url("postgresql+psycopg://u:p@db.local:5432/app") == "postgresql+psycopg://u:p@db.local:5432/app"
+
+
+def test_operation_setup_agent_options_are_next_postgres_backed_under_production_data_ready(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE automation_agents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    program_id INTEGER NOT NULL DEFAULT 0,
+                    workflow_id INTEGER NOT NULL DEFAULT 0,
+                    node_id INTEGER NOT NULL DEFAULT 0,
+                    task_id INTEGER NOT NULL DEFAULT 0,
+                    agent_code TEXT NOT NULL,
+                    agent_name TEXT NOT NULL DEFAULT '',
+                    agent_type TEXT NOT NULL DEFAULT 'assistant',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    archived_at TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+        )
+        for definition in DEFAULT_AGENT_DEFINITIONS:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO automation_agents (
+                        program_id, workflow_id, node_id, task_id, agent_code, agent_name,
+                        agent_type, status, sort_order, metadata_json, config_json, enabled,
+                        created_by, updated_by
+                    )
+                    VALUES (
+                        0, 0, 0, 0, :agent_code, :agent_name,
+                        :agent_type, 'active', :sort_order, '{}', '{}', 1,
+                        'test', 'test'
+                    )
+                    """
+                ),
+                definition,
+            )
+
+    monkeypatch.setattr(automation_application, "production_environment", lambda: True)
+    monkeypatch.setattr(automation_application, "production_data_ready", lambda: True)
+    monkeypatch.setattr(automation_application, "agent_postgres_enabled", lambda: True)
+    monkeypatch.setattr(
+        automation_application,
+        "build_automation_repository",
+        lambda **kwargs: automation_repo.build_automation_repository(
+            agent_backend=kwargs.get("agent_backend") or "postgres",
+            agent_engine=engine,
+        ),
+    )
+
+    source = (ROOT / "aicrm_next" / "frontend_compat" / "legacy_routes.py").read_text(encoding="utf-8")
+    assert '"agents_options": f"/api/admin/automation-conversion/agents/options?program_id={program_id}&limit=200"' in source
+
+    client = TestClient(app)
+    response = client.get("/api/admin/automation-conversion/agents/options?program_id=1&limit=200")
+    assert response.status_code == 200
+    payload = response.json()
+    expected_codes = {item["agent_code"] for item in DEFAULT_AGENT_DEFINITIONS}
+    returned_codes = {item["agent_code"] for item in payload["items"]}
+    assert expected_codes <= returned_codes
+    assert payload["count"] >= 5
+    assert {item["value"] for item in payload["options"]} >= expected_codes
+    assert all(item.get("label") and item.get("agent_name") for item in payload["options"])
 
 
 def test_operation_setup_next_api_creates_groups_tasks_and_status_actions() -> None:
