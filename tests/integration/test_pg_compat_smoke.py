@@ -427,6 +427,68 @@ def test_campaign_allocation_handles_schema_without_optional_columns(app, monkey
     assert row["external_contact_id"] == "wm-optional-column-compat"
 
 
+def test_external_campaign_uses_synthetic_member_id_under_global_member_constraint(app):
+    """外部单人 campaign 不应被 automation_member.id 的旧全局唯一约束卡住。"""
+    from aicrm_next.ai_assist.external_campaigns import create_external_campaigns
+    from wecom_ability_service.db import get_db
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_members_member_id_test ON campaign_members (member_id)")
+    try:
+        cur.execute(
+            """
+            INSERT INTO automation_member (id, external_contact_id, phone, current_audience_code, in_pool)
+            VALUES (?, ?, ?, 'operating', ?)
+            ON CONFLICT (id) DO UPDATE SET external_contact_id = excluded.external_contact_id
+            """,
+            (1, "wm-ext-synthetic-target", "17640055555", True),
+        )
+        cur.execute(
+            """
+            INSERT INTO contacts (external_userid, owner_userid, customer_name, remark)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (external_userid) DO UPDATE SET owner_userid = excluded.owner_userid
+            """,
+            ("wm-ext-synthetic-target", "HuangYouCan", "synthetic target", "synthetic target"),
+        )
+        cur.execute(
+            """
+            INSERT INTO campaign_members
+                (campaign_id, campaign_segment_id, segment_id, member_id, external_contact_id, status)
+            VALUES (999001, 999001, 999001, 1, 'wm-occupied-member-id', 'completed')
+            """,
+        )
+        db.commit()
+
+        result = create_external_campaigns(
+            {
+                "owner_userid": "HuangYouCan",
+                "external_userid": "wm-ext-synthetic-target",
+                "scheduled_for": "2099-01-01 10:00",
+                "timezone": "Asia/Shanghai",
+                "message": "hello",
+                "idempotency_key": "synthetic-member-id-test",
+                "group_code": "synthetic-member-id-test",
+                "group_label": "synthetic member id test",
+                "intent": "test synthetic member allocation",
+            }
+        )
+        assert result["created_count"] == 1, result
+
+        campaign_id = int(result["campaigns"][0]["campaign_id"])
+        cur.execute(
+            "SELECT member_id, external_contact_id FROM campaign_members WHERE campaign_id = ?",
+            (campaign_id,),
+        )
+        row = dict(cur.fetchone())
+        assert row["member_id"] != 1
+        assert row["external_contact_id"] == "wm-ext-synthetic-target"
+    finally:
+        cur.execute("DROP INDEX IF EXISTS uq_campaign_members_member_id_test")
+        db.commit()
+
+
 def test_campaign_dispatch_resolves_source_member_id_before_fk_touch_log(app):
     """Campaign member_id may be a source-pool row id, not automation_member.id.
 

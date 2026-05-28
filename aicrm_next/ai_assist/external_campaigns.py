@@ -18,11 +18,15 @@ _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
 _ONE_RECIPIENT_SEGMENT_SQL = """
 SELECT member_id, external_contact_id
 FROM (
-    SELECT id AS member_id, external_userid AS external_contact_id, 0 AS source_rank
+    SELECT (900000000000 + 2147483648 + hashtext(external_userid)::bigint) AS member_id,
+           external_userid AS external_contact_id,
+           0 AS source_rank
     FROM user_ops_pool_current
     WHERE external_userid = %(external_userid)s
     UNION ALL
-    SELECT id AS member_id, external_contact_id, 1 AS source_rank
+    SELECT (900000000000 + 2147483648 + hashtext(external_contact_id)::bigint) AS member_id,
+           external_contact_id,
+           1 AS source_rank
     FROM automation_member
     WHERE external_contact_id = %(external_userid)s
       AND NOT EXISTS (
@@ -379,6 +383,13 @@ def _create_single_recipient_campaign(
             session_id=_text(payload.get("session_id")),
             activate=True,
         )
+    elif _text(segment.get("source_type")) == "external_campaign":
+        segment = segment_service.update_segment(
+            segment_code=segment_code,
+            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
+            sql_params={"external_userid": external_userid},
+            operator=operator,
+        )
     if int(segment.get("cached_headcount") or 0) != 1:
         raise ExternalCampaignError(
             f"target_headcount_invalid:{external_userid}:{segment.get('cached_headcount')}",
@@ -431,8 +442,15 @@ def _create_single_recipient_campaign(
         )
     allocation = campaign_service.allocate_campaign_members(campaign_id=int(campaign["id"]))
     if int(allocation.get("allocated") or 0) != 1:
+        try:
+            campaign_service.delete_campaign(campaign_id=int(campaign["id"]))
+        except Exception:
+            pass
         raise ExternalCampaignError(
-            f"campaign_member_allocation_failed:{external_userid}:{allocation.get('allocated')}",
+            (
+                f"campaign_member_allocation_failed:{external_userid}:{allocation.get('allocated')}"
+                f":errors={allocation.get('errors') or []}"
+            ),
             status_code=409,
         )
     campaign_service.submit_campaign_for_review(campaign_id=int(campaign["id"]), operator=operator)
