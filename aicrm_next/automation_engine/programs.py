@@ -57,6 +57,22 @@ DEFAULT_AUDIENCE_ENTRY_RULES = (
     },
 )
 AUDIENCE_REVIEW_STEP_KEYS = {"order_product", "questionnaire", "conversion_product"}
+AUDIENCE_STAGE_LABELS = {
+    "pending_questionnaire": "待填问卷",
+    "operating": "运营中",
+    "converted": "已转化",
+    "order_review": "订单审核",
+    "questionnaire_review": "问卷审核",
+    "conversion_review": "成交审核",
+    "finished": "已结束",
+    "exited": "已退出",
+}
+BEHAVIOR_TIER_LABELS = {
+    "lt_2": "少于 2 次互动",
+    "between_2_9": "2-9 次互动",
+    "gte_10": "10 次及以上互动",
+    "unknown": "未识别行为分层",
+}
 
 
 _FIXTURE_PROGRAM = {
@@ -115,7 +131,7 @@ def _sqlalchemy_database_url(url: str) -> str:
 
 def _program_summary(program: dict[str, Any], summary: dict[str, Any] | None = None) -> dict[str, Any]:
     summary = dict(summary or {})
-    publish_state = dict(summary.get("publish_state") or {})
+    publish_state = _effective_publish_state(program, summary)
     full_published = bool(publish_state.get("full_published"))
     entry_published = bool(publish_state.get("entry_published"))
     publish_status = "full" if full_published else "entry" if entry_published else "unpublished"
@@ -128,6 +144,23 @@ def _program_summary(program: dict[str, Any], summary: dict[str, Any] | None = N
         "publish_status": publish_status,
         "publish_status_label": publish_label,
     }
+
+
+def _effective_publish_state(program: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+    publish_state = dict(summary.get("publish_state") or {})
+    if "entry_published" in publish_state or "full_published" in publish_state:
+        return publish_state
+    if _clean_text(program.get("status")) != "active":
+        return publish_state
+    entry_ready = bool(summary.get("entry_publish_ready"))
+    full_ready = bool(summary.get("full_publish_ready"))
+    if not entry_ready and int(summary.get("channel_count") or 0) > 0:
+        entry_ready = True
+    if full_ready:
+        return {"entry_published": True, "full_published": True, "source": "derived_from_next_read_model"}
+    if entry_ready:
+        return {"entry_published": True, "full_published": False, "source": "derived_from_next_read_model"}
+    return publish_state
 
 
 def _fixture_summary() -> dict[str, Any]:
@@ -704,6 +737,107 @@ def _publish_check_from_parts(
     }
 
 
+def _segment_row(key: str, label: str, count: int, *, kind: str) -> dict[str, Any]:
+    normalized_key = _clean_text(key) or "unknown"
+    return {
+        "key": normalized_key,
+        "label": _clean_text(label) or normalized_key,
+        "count": int(count or 0),
+        "kind": kind,
+    }
+
+
+def _configured_profile_segment_labels(segmentation: dict[str, Any], profile_categories: list[dict[str, Any]]) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    strategies = dict(segmentation.get("strategies") or {})
+    normal = dict(strategies.get("normal_question_rules") or {})
+    for index, row in enumerate(list(normal.get("categories") or segmentation.get("normal_question_categories") or [])):
+        item = dict(row or {})
+        key = _clean_text(item.get("category_key")) or f"category_{index + 1}"
+        labels[key] = _clean_text(item.get("category_name")) or key
+    for row in list(segmentation.get("score_segment_rows") or []):
+        item = dict(row or {})
+        key = _clean_text(item.get("segment_key"))
+        if key:
+            labels[key] = _clean_text(item.get("segment_name")) or key
+    for row in profile_categories:
+        item = dict(row or {})
+        key = _clean_text(item.get("category_key"))
+        if key:
+            labels[key] = _clean_text(item.get("category_name")) or key
+    return labels
+
+
+def _overview_payload_from_parts(
+    *,
+    program: dict[str, Any],
+    summary: dict[str, Any],
+    audience_counts: list[dict[str, Any]],
+    stage_counts: list[dict[str, Any]],
+    profile_counts: list[dict[str, Any]],
+    behavior_counts: list[dict[str, Any]],
+    segmentation: dict[str, Any],
+    profile_categories: list[dict[str, Any]],
+) -> dict[str, Any]:
+    profile_labels = _configured_profile_segment_labels(segmentation, profile_categories)
+    audience_rows = [
+        _segment_row(
+            _clean_text(item.get("key")),
+            AUDIENCE_STAGE_LABELS.get(_clean_text(item.get("key")), _clean_text(item.get("key"))),
+            int(item.get("total") or 0),
+            kind="audience",
+        )
+        for item in audience_counts
+    ]
+    stage_rows = [
+        _segment_row(
+            _clean_text(item.get("key")),
+            AUDIENCE_STAGE_LABELS.get(_clean_text(item.get("key")), _clean_text(item.get("key"))),
+            int(item.get("total") or 0),
+            kind="stage",
+        )
+        for item in stage_counts
+    ]
+    profile_rows = [
+        _segment_row(
+            _clean_text(item.get("key")) or "unknown",
+            profile_labels.get(_clean_text(item.get("key")), "未识别画像分层" if not _clean_text(item.get("key")) else _clean_text(item.get("key"))),
+            int(item.get("total") or 0),
+            kind="profile",
+        )
+        for item in profile_counts
+    ]
+    behavior_rows = [
+        _segment_row(
+            _clean_text(item.get("key")) or "unknown",
+            BEHAVIOR_TIER_LABELS.get(_clean_text(item.get("key")) or "unknown", _clean_text(item.get("key"))),
+            int(item.get("total") or 0),
+            kind="behavior",
+        )
+        for item in behavior_counts
+    ]
+    return {
+        "program": program,
+        "summary": summary,
+        "audience_segments": audience_rows,
+        "stage_segments": stage_rows,
+        "profile_segments": profile_rows,
+        "behavior_segments": behavior_rows,
+        "profile_segment_template": {
+            "enabled": bool(profile_categories),
+            "categories": [
+                _segment_row(
+                    _clean_text(item.get("category_key")),
+                    _clean_text(item.get("category_name")),
+                    next((row["count"] for row in profile_rows if row["key"] == _clean_text(item.get("category_key"))), 0),
+                    kind="profile",
+                )
+                for item in profile_categories
+            ],
+        },
+    }
+
+
 def _project_entry_channel(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row.get("id") or 0),
@@ -936,6 +1070,61 @@ class PostgresAutomationProgramRepository:
             "operations": operations,
             "publish_state": _payload_from_block(blocks, BLOCK_PUBLISH_STATE),
             "publish_check": publish_check,
+        }
+
+    def get_overview_payload(self, program_id: int) -> dict[str, Any]:
+        current = self.get_program_with_summary(int(program_id))
+        if not current:
+            raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+        with self._engine.connect() as conn:
+            blocks = self._fetch_config_blocks(conn, int(program_id))
+            segmentation = _payload_from_block(blocks, BLOCK_SEGMENTATION)
+            profile_categories = self._fetch_profile_categories(conn, int(program_id))
+            audience_counts = self._fetch_member_group_counts(conn, int(program_id), "current_audience_code")
+            stage_counts = self._fetch_member_group_counts(conn, int(program_id), "current_stage_code")
+            profile_counts = self._fetch_segment_key_counts(conn, int(program_id), "profile_segment_key")
+            behavior_counts = self._fetch_segment_key_counts(conn, int(program_id), "behavior_tier_key")
+        return _overview_payload_from_parts(
+            program=dict(current.get("program") or {}),
+            summary=dict(current.get("summary") or {}),
+            audience_counts=audience_counts,
+            stage_counts=stage_counts,
+            profile_counts=profile_counts,
+            behavior_counts=behavior_counts,
+            segmentation=segmentation,
+            profile_categories=profile_categories,
+        )
+
+    def publish_program(self, program_id: int, *, operator_id: str, scope: str) -> dict[str, Any]:
+        payload = self.get_setup_payload(int(program_id), step="publish")
+        check = dict(payload.get("publish_check") or {})
+        group_key = "full" if scope == "full" else "entry"
+        group = dict(check.get(group_key) or {})
+        if not bool(group.get("passed")):
+            raise ValueError("完整自动化发布检查未通过" if group_key == "full" else "入口发布检查未通过")
+        with self._engine.begin() as conn:
+            state = {"entry_published": True, "full_published": group_key == "full", "published_by": _clean_text(operator_id), "published_at": datetime.now(UTC).isoformat()}
+            block = self._upsert_config_block(conn, int(program_id), BLOCK_PUBLISH_STATE, state, status="published")
+            conn.execute(
+                text(
+                    """
+                    UPDATE automation_program
+                    SET status = 'active',
+                        updated_by = :operator_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :program_id
+                    """
+                ),
+                {"program_id": int(program_id), "operator_id": _clean_text(operator_id)},
+            )
+        refreshed = self.get_program_with_summary(int(program_id))
+        if not refreshed:
+            raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+        return {
+            "program": refreshed["program"],
+            "summary": refreshed["summary"],
+            "publish_state": block,
+            "publish_check": self.get_setup_payload(int(program_id), step="publish").get("publish_check") or {},
         }
 
     def copy_program(self, program_id: int, *, operator_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1399,8 +1588,13 @@ class PostgresAutomationProgramRepository:
                         p.*,
                         COALESCE(bindings.channel_count, 0) AS channel_count,
                         COALESCE(workflows.workflow_count, 0) AS workflow_count,
+                        COALESCE(operation_tasks.operation_task_count, 0) AS operation_task_count,
+                        COALESCE(operation_tasks.active_operation_task_count, 0) AS active_operation_task_count,
                         executions.latest_execution_at AS latest_execution_at,
-                        publish_state.payload_json AS publish_state
+                        publish_state.payload_json AS publish_state,
+                        basic_block.payload_json AS basic_payload,
+                        segmentation_block.payload_json AS segmentation_payload,
+                        audience_block.payload_json AS audience_payload
                     FROM automation_program p
                     LEFT JOIN LATERAL (
                         SELECT COUNT(*) AS channel_count
@@ -1415,6 +1609,14 @@ class PostgresAutomationProgramRepository:
                           AND w.status <> 'archived'
                     ) workflows ON true
                     LEFT JOIN LATERAL (
+                        SELECT
+                            COUNT(*) AS operation_task_count,
+                            COUNT(*) FILTER (WHERE t.status = 'active') AS active_operation_task_count
+                        FROM automation_operation_task t
+                        WHERE t.program_id = p.id
+                          AND t.status <> 'archived'
+                    ) operation_tasks ON true
+                    LEFT JOIN LATERAL (
                         SELECT MAX(COALESCE(CAST(e.scheduled_for AS TEXT), CAST(e.updated_at AS TEXT), CAST(e.created_at AS TEXT), '')) AS latest_execution_at
                         FROM automation_workflow_execution e
                         WHERE e.program_id = p.id
@@ -1422,6 +1624,15 @@ class PostgresAutomationProgramRepository:
                     LEFT JOIN automation_program_config_block publish_state
                       ON publish_state.program_id = p.id
                      AND publish_state.block_key = 'publish_state'
+                    LEFT JOIN automation_program_config_block basic_block
+                      ON basic_block.program_id = p.id
+                     AND basic_block.block_key = 'basic'
+                    LEFT JOIN automation_program_config_block segmentation_block
+                      ON segmentation_block.program_id = p.id
+                     AND segmentation_block.block_key = 'questionnaire_segmentation'
+                    LEFT JOIN automation_program_config_block audience_block
+                      ON audience_block.program_id = p.id
+                     AND audience_block.block_key = 'audience_entry_rule'
                     {where_sql}
                     ORDER BY
                         CASE p.status
@@ -1465,6 +1676,79 @@ class PostgresAutomationProgramRepository:
                 "updated_at": _stringify_datetime(item.get("updated_at")),
             }
         return blocks
+
+    def _fetch_member_group_counts(self, conn: Any, program_id: int, column: str) -> list[dict[str, Any]]:
+        if column not in {"current_audience_code", "current_stage_code"}:
+            raise ValueError("unsupported automation member group column")
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(NULLIF({column}, ''), 'unknown') AS key, COUNT(*) AS total
+                FROM automation_program_member
+                WHERE program_id = :program_id
+                  AND in_program = true
+                GROUP BY COALESCE(NULLIF({column}, ''), 'unknown')
+                ORDER BY total DESC, key ASC
+                """
+            ),
+            {"program_id": int(program_id)},
+        ).mappings().all()
+        return [{"key": _clean_text(row.get("key")), "total": int(row.get("total") or 0)} for row in rows]
+
+    def _fetch_segment_key_counts(self, conn: Any, program_id: int, key: str) -> list[dict[str, Any]]:
+        if key not in {"profile_segment_key", "behavior_tier_key"}:
+            raise ValueError("unsupported automation segment key")
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(NULLIF(COALESCE(pm.state_payload_json ->> :key, am.{key}, ''), ''), 'unknown') AS key, COUNT(*) AS total
+                FROM automation_program_member pm
+                LEFT JOIN LATERAL (
+                    SELECT {key}
+                    FROM automation_member am
+                    WHERE am.external_contact_id = pm.external_contact_id
+                    ORDER BY am.updated_at DESC, am.id DESC
+                    LIMIT 1
+                ) am ON true
+                WHERE pm.program_id = :program_id
+                  AND pm.in_program = true
+                GROUP BY COALESCE(NULLIF(COALESCE(pm.state_payload_json ->> :key, am.{key}, ''), ''), 'unknown')
+                ORDER BY total DESC, key ASC
+                """
+            ),
+            {"program_id": int(program_id), "key": key},
+        ).mappings().all()
+        return [{"key": _clean_text(row.get("key")), "total": int(row.get("total") or 0)} for row in rows]
+
+    def _fetch_profile_categories(self, conn: Any, program_id: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.category_key, c.category_name, c.sort_order
+                FROM automation_profile_segment_template t
+                JOIN automation_profile_segment_category c ON c.template_id = t.id
+                WHERE t.enabled = true
+                  AND c.enabled = true
+                  AND (t.program_id = :program_id OR t.program_id IS NULL)
+                ORDER BY
+                  CASE WHEN t.program_id = :program_id THEN 0 ELSE 1 END,
+                  t.updated_at DESC,
+                  c.sort_order ASC,
+                  c.id ASC
+                LIMIT 50
+                """
+            ),
+            {"program_id": int(program_id)},
+        ).mappings().all()
+        seen: set[str] = set()
+        categories: list[dict[str, Any]] = []
+        for row in rows:
+            key = _clean_text(row.get("category_key"))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            categories.append({"category_key": key, "category_name": _clean_text(row.get("category_name")) or key})
+        return categories
 
     def _fetch_entry_payload(self, conn: Any, program_id: int) -> dict[str, Any]:
         rows = conn.execute(
@@ -1967,12 +2251,35 @@ class PostgresAutomationProgramRepository:
             program,
             {
                 "channel_count": row.get("channel_count"),
-                "workflow_count": row.get("workflow_count"),
+                "workflow_count": row.get("operation_task_count") or row.get("workflow_count"),
                 "latest_execution_at": row.get("latest_execution_at"),
                 "publish_state": _json_loads(row.get("publish_state"), default={}),
+                "entry_publish_ready": self._entry_publish_ready(program, row),
+                "full_publish_ready": self._full_publish_ready(program, row),
             },
         )
         return {"program": program, "summary": summary}
+
+    def _entry_publish_ready(self, program: dict[str, Any], row: dict[str, Any]) -> bool:
+        if _clean_text(program.get("status")) == "archived":
+            return False
+        has_config = bool(_json_loads(row.get("basic_payload"), default={}))
+        is_default = _clean_text(program.get("program_code")) == "signup_conversion_v1"
+        return (is_default or has_config) and int(row.get("channel_count") or 0) > 0
+
+    def _full_publish_ready(self, program: dict[str, Any], row: dict[str, Any]) -> bool:
+        segmentation = _json_loads(row.get("segmentation_payload"), default={})
+        audience = _json_loads(row.get("audience_payload"), default={})
+        rules = list(audience.get("rules") or []) or list(
+            _audience_rule_view_model(audience, program_id=int(program.get("id") or 0)).get("rules") or []
+        )
+        return (
+            self._entry_publish_ready(program, row)
+            and bool(segmentation.get("questionnaire_id"))
+            and _has_segmentation(segmentation)
+            and bool(rules)
+            and int(row.get("active_operation_task_count") or 0) > 0
+        )
 
 
 def _build_postgres_repository() -> PostgresAutomationProgramRepository:
@@ -2011,6 +2318,28 @@ def get_automation_program_setup_payload(program_id: int, *, step: str = "basic"
     if int(program_id) == int(_FIXTURE_PROGRAM["id"]):
         return _fixture_setup_payload(int(program_id), step=step)
     raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+
+
+def get_automation_program_overview_payload(program_id: int) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().get_overview_payload(int(program_id))
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    if int(program_id) != int(_FIXTURE_PROGRAM["id"]):
+        raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+    program = deepcopy(_FIXTURE_PROGRAM)
+    program["id"] = int(program_id)
+    return _overview_payload_from_parts(
+        program=program,
+        summary=_fixture_summary(),
+        audience_counts=[{"key": "pending_questionnaire", "total": 1}],
+        stage_counts=[{"key": "pending_questionnaire", "total": 1}],
+        profile_counts=[{"key": "unknown", "total": 1}],
+        behavior_counts=[{"key": "unknown", "total": 1}],
+        segmentation=_FIXTURE_SEGMENTATION_BY_PROGRAM.get(int(program_id), {}),
+        profile_categories=[],
+    )
 
 
 def copy_automation_program(program_id: int, *, operator_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -2255,3 +2584,47 @@ def update_automation_program_status(program_id: int, *, status: str, operator_i
     updated["id"] = int(program_id)
     updated["status"] = status
     return {"program": updated, "summary": _fixture_summary()}
+
+
+def publish_automation_program_entry(program_id: int, *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().publish_program(int(program_id), operator_id=operator_id, scope="entry")
+        except ValueError:
+            raise
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    payload = _fixture_setup_payload(int(program_id), step="publish")
+    if not bool(((payload.get("publish_check") or {}).get("entry") or {}).get("passed")):
+        raise ValueError("入口发布检查未通过")
+    program = deepcopy(_FIXTURE_PROGRAM)
+    program["id"] = int(program_id)
+    program["status"] = "active"
+    return {
+        "program": program,
+        "summary": _program_summary(program, {"channel_count": 1, "publish_state": {"entry_published": True, "full_published": False}}),
+        "publish_state": {"entry_published": True, "full_published": False},
+        "publish_check": payload.get("publish_check") or {},
+    }
+
+
+def publish_automation_program_full(program_id: int, *, operator_id: str) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().publish_program(int(program_id), operator_id=operator_id, scope="full")
+        except ValueError:
+            raise
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    payload = _fixture_setup_payload(int(program_id), step="publish")
+    if not bool(((payload.get("publish_check") or {}).get("full") or {}).get("passed")):
+        raise ValueError("完整自动化发布检查未通过")
+    program = deepcopy(_FIXTURE_PROGRAM)
+    program["id"] = int(program_id)
+    program["status"] = "active"
+    return {
+        "program": program,
+        "summary": _program_summary(program, {"channel_count": 1, "publish_state": {"entry_published": True, "full_published": True}}),
+        "publish_state": {"entry_published": True, "full_published": True},
+        "publish_check": payload.get("publish_check") or {},
+    }
