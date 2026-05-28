@@ -38,6 +38,7 @@ class GroupOpsBindGroupRequest(BaseModel):
 
 class GroupOpsNodeRequest(BaseModel):
     day_index: int = 1
+    scheduled_time: str = ""
     trigger_time_label: str = ""
     action_title: str = ""
     text_content: str = ""

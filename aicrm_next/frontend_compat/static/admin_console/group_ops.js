@@ -23,7 +23,9 @@
     refreshingOwnerGroups: false,
     notice: "",
     showCreate: false,
-    showNodeForm: false,
+    showGroupPicker: false,
+    groupPickerSearch: "",
+    showNodeModal: false,
     editingNodeId: 0,
     oneTimeToken: "",
   };
@@ -47,6 +49,41 @@
     apiGroupsSync: "/api/admin/automation-conversion/group-ops/groups/sync",
     apiMembers: "/api/admin/common/operation-members?scope=group_ops&page_size=100",
   };
+
+  const GROUP_OPS_SCHEDULED_TIME_OPTIONS = Object.freeze([
+    "08:00",
+    "08:30",
+    "09:00",
+    "09:30",
+    "10:00",
+    "10:30",
+    "11:00",
+    "11:30",
+    "12:00",
+    "12:30",
+    "13:00",
+    "13:30",
+    "14:00",
+    "14:30",
+    "15:00",
+    "15:30",
+    "16:00",
+    "16:30",
+    "17:00",
+    "17:30",
+    "18:00",
+    "18:30",
+    "19:00",
+    "19:30",
+    "20:00",
+    "20:30",
+    "21:00",
+    "21:30",
+    "22:00",
+    "22:30",
+    "23:00",
+    "23:30",
+  ]);
 
   function normalizeItems(payload) {
     if (!payload || !Array.isArray(payload.items)) return [];
@@ -73,6 +110,27 @@
       .map((item) => item && (item.msgtype || item.type || item.name || "素材"))
       .filter(Boolean)
       .join("、");
+  }
+
+  function materialTypeLabels(node) {
+    const labels = [];
+    const contentPackage = normalizeContentPackage((node || {}).content_package_json || {});
+    if (contentPackage.image_library_ids.length) labels.push("图片");
+    if (contentPackage.miniprogram_library_ids.length) labels.push("小程序");
+    if (contentPackage.attachment_library_ids.length) labels.push("附件");
+    legacyAttachmentsForNode((node || {}).attachments).forEach((item) => {
+      const msgtype = String((item && item.msgtype) || "").toLowerCase();
+      if (msgtype === "image" && labels.indexOf("图片") === -1) labels.push("图片");
+      if (msgtype === "miniprogram" && labels.indexOf("小程序") === -1) labels.push("小程序");
+      if (msgtype && !["image", "miniprogram"].includes(msgtype) && labels.indexOf("附件") === -1) labels.push("附件");
+    });
+    return labels;
+  }
+
+  function materialChips(node) {
+    const labels = materialTypeLabels(node);
+    if (!labels.length) return "-";
+    return labels.map((label) => `<span class="group-ops__chip group-ops__chip--neutral">${escapeHtml(label)}</span>`).join("");
   }
 
   function normalizeIdList(value) {
@@ -137,6 +195,7 @@
       normalizeContentPackage,
       nodeToContentPackage,
       contentPackageToNodePayload,
+      scheduledTimeOptions: () => GROUP_OPS_SCHEDULED_TIME_OPTIONS.slice(),
     };
   }
 
@@ -198,6 +257,12 @@
       element.addEventListener("change", onFilterChange);
       element.addEventListener("keydown", (event) => {
         if (event.key === "Enter") onFilterChange();
+      });
+    });
+    app.querySelectorAll("[data-group-picker-search]").forEach((element) => {
+      element.addEventListener("input", (event) => {
+        state.groupPickerSearch = event.currentTarget.value || "";
+        renderDetail();
       });
     });
   }
@@ -283,12 +348,15 @@
     if (action === "refresh-owner-groups") return refreshOwnerGroups();
     if (action === "disable-plan") return disablePlan(event.currentTarget.dataset.planId);
     if (action === "bind-group") return bindGroup(event.currentTarget.dataset.chatId);
+    if (action === "open-group-picker") return openGroupPicker();
+    if (action === "close-group-picker") return closeGroupPicker();
+    if (action === "confirm-group-picker") return confirmGroupPicker();
     if (action === "remove-group") return removeGroup(event.currentTarget.dataset.chatId);
-    if (action === "show-node-form") return showNodeForm();
-    if (action === "edit-node") return showNodeForm(event.currentTarget.dataset.nodeId);
+    if (action === "open-node-modal") return openNodeModal();
+    if (action === "edit-node") return openNodeModal(event.currentTarget.dataset.nodeId);
     if (action === "configure-node-content") return openNodeContentComposer();
     if (action === "save-node") return saveNode();
-    if (action === "cancel-node") return cancelNodeForm();
+    if (action === "cancel-node") return closeNodeModal();
     if (action === "delete-node") return deleteNode(event.currentTarget.dataset.nodeId);
     if (action === "copy-webhook") return copyWebhook();
     if (action === "reset-webhook") return resetWebhook();
@@ -385,7 +453,7 @@
       body: {
         plan_name: currentFormValue("plan_name") || state.plan.plan_name,
         plan_code: state.plan.plan_code,
-        plan_type: state.plan.plan_type,
+        plan_type: currentFormValue("plan_type") || state.plan.plan_type,
         owner_userid: currentFormValue("owner_userid") || state.plan.owner_userid,
         status: currentFormValue("status") || state.plan.status,
       },
@@ -398,6 +466,35 @@
     if (!state.plan || !chatId) return;
     await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId } });
     state.notice = "已添加";
+    loadDetailPage(state.plan.id);
+  }
+
+  function openGroupPicker() {
+    state.showGroupPicker = true;
+    state.groupPickerSearch = "";
+    renderDetail();
+  }
+
+  function closeGroupPicker() {
+    state.showGroupPicker = false;
+    state.groupPickerSearch = "";
+    renderDetail();
+  }
+
+  async function confirmGroupPicker() {
+    if (!state.plan || !state.plan.id) return;
+    const selected = Array.from(app.querySelectorAll("[data-group-choice]:checked")).map((item) => item.value).filter(Boolean);
+    if (!selected.length) {
+      state.notice = "请选择群";
+      renderDetail();
+      return;
+    }
+    for (const chatId of selected) {
+      await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId, operator: "admin_ui" } });
+    }
+    state.notice = `已添加 ${formatNumber(selected.length)} 个群`;
+    state.showGroupPicker = false;
+    state.groupPickerSearch = "";
     loadDetailPage(state.plan.id);
   }
 
@@ -451,15 +548,15 @@
     }
   }
 
-  function showNodeForm(nodeId) {
+  function openNodeModal(nodeId) {
     state.editingNodeId = Number(nodeId || 0);
-    state.showNodeForm = true;
+    state.showNodeModal = true;
     renderDetail();
   }
 
-  function cancelNodeForm() {
+  function closeNodeModal() {
     state.editingNodeId = 0;
-    state.showNodeForm = false;
+    state.showNodeModal = false;
     renderDetail();
   }
 
@@ -478,7 +575,7 @@
     const contentPayload = contentPackageToNodePayload(contentPackageFromForm());
     const payload = {
       day_index: Number(currentFormValue("node_day_index") || 1),
-      trigger_time_label: currentFormValue("node_trigger_time_label"),
+      scheduled_time: currentFormValue("node_scheduled_time") || "20:00",
       action_title: currentFormValue("node_action_title"),
       text_content: contentPayload.text_content,
       content_package_json: contentPayload.content_package_json,
@@ -492,7 +589,7 @@
     });
     state.notice = nodeId ? "已更新动作" : "已添加动作";
     state.editingNodeId = 0;
-    state.showNodeForm = false;
+    state.showNodeModal = false;
     loadDetailPage(state.plan.id);
   }
 
@@ -650,23 +747,54 @@
       .join("");
   }
 
-  function renderAvailableGroups() {
+  function availableGroupsForCurrentOwner() {
     const selectedOwner = currentFormValue("owner_userid") || (state.plan && state.plan.owner_userid) || "";
     const bound = new Set(state.planGroups.map((group) => group.chat_id));
-    const rows = state.groups.filter((group) => group.owner_userid === selectedOwner && !bound.has(group.chat_id));
+    return state.groups.filter((group) => group.owner_userid === selectedOwner && !bound.has(group.chat_id));
+  }
+
+  function renderGroupPickerOptions() {
+    const keyword = String(state.groupPickerSearch || "").trim().toLowerCase();
+    const rows = availableGroupsForCurrentOwner().filter((group) => {
+      if (!keyword) return true;
+      return `${group.group_name || ""} ${group.chat_id || ""}`.toLowerCase().includes(keyword);
+    });
     if (!rows.length) return '<div class="group-ops__empty">暂无可选群</div>';
     return rows
       .map(
         (group) => `
-        <div class="group-ops__group-item">
+        <label class="group-ops__group-item group-ops__group-choice">
+          <input type="checkbox" data-group-choice value="${escapeHtml(group.chat_id)}">
           <div>
             <div class="group-ops__group-name"><strong>${escapeHtml(group.group_name)}</strong></div>
             <div class="group-ops__group-meta">${escapeHtml(group.chat_id)}</div>
           </div>
-          ${actionButton("添加", "bind-group", "group-ops__button--primary").replace(">", ` data-chat-id="${escapeHtml(group.chat_id)}">`)}
-        </div>`,
+        </label>`,
       )
       .join("");
+  }
+
+  function renderGroupPickerModal() {
+    if (!state.showGroupPicker) return "";
+    return `
+      <div class="group-ops__modal-mask" role="dialog" aria-modal="true">
+        <div class="group-ops__modal group-ops__modal--groups">
+          <div class="group-ops__modal-head">
+            <h3>选择群</h3>
+            ${actionButton("关闭", "close-group-picker")}
+          </div>
+          <label class="group-ops__field">
+            <span>群名 / 群 ID</span>
+            <input data-group-picker-search name="group_picker_keyword" value="${escapeHtml(state.groupPickerSearch)}">
+          </label>
+          <div class="group-ops__group-picker-list">${renderGroupPickerOptions()}</div>
+          <div class="group-ops__modal-footer">
+            ${actionButton("取消", "close-group-picker")}
+            ${actionButton("确认选择", "confirm-group-picker", "group-ops__button--primary")}
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   function renderRefreshOwnerGroupsButton() {
@@ -728,10 +856,17 @@
     `;
   }
 
+  function renderScheduledTimeOptions(value) {
+    const current = GROUP_OPS_SCHEDULED_TIME_OPTIONS.includes(value) ? value : "20:00";
+    return GROUP_OPS_SCHEDULED_TIME_OPTIONS.map(
+      (option) => `<option value="${escapeHtml(option)}"${option === current ? " selected" : ""}>${escapeHtml(option)}</option>`,
+    ).join("");
+  }
+
   function renderNodes() {
     const current = editingNode() || {
       day_index: 1,
-      trigger_time_label: "",
+      scheduled_time: "20:00",
       action_title: "",
       text_content: "",
       attachments: [],
@@ -741,26 +876,36 @@
     };
     const currentContentPackage = nodeToContentPackage(current);
     const currentContentSummary = contentPackageSummary(currentContentPackage);
-    const form = state.showNodeForm
+    const modal = state.showNodeModal
       ? `
-        <div class="group-ops__filters">
-          <label class="group-ops__field"><span>第几天</span><input name="node_day_index" type="number" min="1" value="${escapeHtml(current.day_index)}"></label>
-          <label class="group-ops__field"><span>时间</span><input name="node_trigger_time_label" value="${escapeHtml(current.trigger_time_label || "")}"></label>
-          <label class="group-ops__field group-ops__field--wide"><span>动作标题</span><input name="node_action_title" value="${escapeHtml(current.action_title || "")}"></label>
-          <div class="group-ops__field group-ops__field--wide">
-            <span>话术和素材</span>
-            <div class="group-ops__content-box">
-              <div class="group-ops__content-summary" data-node-content-summary>
-                <strong>话术：</strong><span>${escapeHtml(currentContentSummary.text)}</span>
-                <strong>素材：</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount}</span>
-              </div>
-              <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
+        <div class="group-ops__modal-mask" role="dialog" aria-modal="true">
+          <div class="group-ops__modal group-ops__modal--action">
+            <div class="group-ops__modal-head">
+              <h3>${state.editingNodeId ? "编辑动作" : "添加动作"}</h3>
+              ${actionButton("关闭", "cancel-node")}
             </div>
-            <input type="hidden" name="node_content_package_json" value="${escapeHtml(JSON.stringify(currentContentPackage))}">
+            <div class="group-ops__action-modal-grid">
+              <div class="group-ops__schedule-fields">
+                <label class="group-ops__field"><span>第几天</span><input name="node_day_index" type="number" min="1" value="${escapeHtml(current.day_index)}"></label>
+                <label class="group-ops__field"><span>发送时间</span><select name="node_scheduled_time">${renderScheduledTimeOptions(current.scheduled_time)}</select></label>
+                <label class="group-ops__field group-ops__field--wide"><span>动作标题</span><input name="node_action_title" value="${escapeHtml(current.action_title || "")}"></label>
+                <label class="group-ops__field"><span>排序</span><input name="node_sort_order" type="number" value="${escapeHtml(current.sort_order || 0)}"></label>
+                <label class="group-ops__field"><span>状态</span><select name="node_status"><option value="active"${current.status === "active" ? " selected" : ""}>启用</option><option value="draft"${current.status === "draft" ? " selected" : ""}>草稿</option><option value="disabled"${current.status === "disabled" ? " selected" : ""}>停用</option></select></label>
+              </div>
+              <aside class="group-ops__content-box">
+                <div class="group-ops__content-summary" data-node-content-summary>
+                  <strong>话术摘要</strong><span>${escapeHtml(currentContentSummary.text)}</span>
+                  <strong>素材数量</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount}</span>
+                </div>
+                <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
+                <input type="hidden" name="node_content_package_json" value="${escapeHtml(JSON.stringify(currentContentPackage))}">
+              </aside>
+            </div>
+            <div class="group-ops__modal-footer">
+              ${actionButton("取消", "cancel-node")}
+              ${actionButton("保存动作", "save-node", "group-ops__button--primary")}
+            </div>
           </div>
-          <label class="group-ops__field"><span>排序</span><input name="node_sort_order" type="number" value="${escapeHtml(current.sort_order || 0)}"></label>
-          <label class="group-ops__field"><span>状态</span><select name="node_status"><option value="active"${current.status === "active" ? " selected" : ""}>启用</option><option value="draft"${current.status === "draft" ? " selected" : ""}>草稿</option><option value="disabled"${current.status === "disabled" ? " selected" : ""}>停用</option></select></label>
-          <div class="group-ops__row-actions">${actionButton("保存动作", "save-node", "group-ops__button--primary")}${actionButton("取消", "cancel-node")}</div>
         </div>`
       : "";
     const rows = state.nodes
@@ -768,10 +913,10 @@
         (node) => `
         <tr>
           <td>第 ${escapeHtml(node.day_index)} 天</td>
-          <td>${escapeHtml(node.trigger_time_label || "-")}</td>
+          <td>${escapeHtml(node.scheduled_time || "-")}</td>
           <td>${escapeHtml(node.action_title || "-")}</td>
           <td><span class="group-ops__summary">${escapeHtml(textSummary(nodeToContentPackage(node).content_text || node.text_content))}</span></td>
-          <td>${escapeHtml(attachmentLabel(node.attachments))}</td>
+          <td><div class="group-ops__chip-row">${materialChips(node)}</div></td>
           <td><div class="group-ops__row-actions">
             ${actionButton("编辑", "edit-node", "").replace(">", ` data-node-id="${escapeHtml(node.id)}">`)}
             ${actionButton("删除", "delete-node", "group-ops__button--danger").replace(">", ` data-node-id="${escapeHtml(node.id)}">`)}
@@ -781,15 +926,15 @@
       .join("");
     return `
       <section class="group-ops__card">
-        <div class="group-ops__section-head"><h2 class="group-ops__section-title">标准编排</h2>${actionButton("添加动作", "show-node-form", "group-ops__button--primary")}</div>
-        ${form}
+        <div class="group-ops__section-head"><h2 class="group-ops__section-title">标准编排</h2>${actionButton("添加动作", "open-node-modal", "group-ops__button--primary")}</div>
         <div class="group-ops__table-wrap">
           <table class="group-ops__table">
-            <thead><tr><th>第几天</th><th>时间</th><th>动作标题</th><th>标准话术摘要</th><th>素材标签</th><th>编辑 / 删除</th></tr></thead>
+            <thead><tr><th>第几天</th><th>发送时间</th><th>动作标题</th><th>标准话术摘要</th><th>素材标签</th><th>编辑 / 删除</th></tr></thead>
             <tbody>${rows || '<tr><td colspan="6" class="group-ops__empty">暂无节点</td></tr>'}</tbody>
           </table>
         </div>
       </section>
+      ${modal}
     `;
   }
 
@@ -832,18 +977,18 @@
     renderShell(`
       <div class="group-ops__bar">
         ${pageButton("返回列表", routes.list)}
-        ${actionButton(isWebhook ? "保存接口计划" : "保存计划", "save-plan", "group-ops__button--primary")}
+        ${actionButton("保存计划", "save-plan", "group-ops__button--primary")}
       </div>
       <div class="group-ops__notice" ${state.notice ? "" : "hidden"}>${escapeHtml(state.notice)}</div>
       <section class="group-ops__detail-grid">
         <article class="group-ops__card">
           <div class="group-ops__section-head"><h2 class="group-ops__section-title">运营成员</h2></div>
-          <div class="group-ops__filters">
-            <label class="group-ops__field group-ops__field--wide">
+          <div class="group-ops__owner-grid">
+            <label class="group-ops__field">
               <span>运营成员</span>
               ${renderMemberField("owner_userid", state.plan.owner_userid, "pick-plan-owner", "更换运营成员")}
             </label>
-            <div class="group-ops__field">${renderRefreshOwnerGroupsButton()}</div>
+            <div class="group-ops__field group-ops__field--button"><span>&nbsp;</span>${renderRefreshOwnerGroupsButton()}</div>
             <label class="group-ops__field">
               <span>状态</span>
               <select name="status">
@@ -852,21 +997,33 @@
                 <option value="disabled"${state.plan.status === "disabled" ? " selected" : ""}>停用</option>
               </select>
             </label>
-            <label class="group-ops__field group-ops__field--wide">
+            <label class="group-ops__field">
               <span>计划名称</span>
               <input name="plan_name" value="${escapeHtml(state.plan.plan_name || "")}">
+            </label>
+            <label class="group-ops__field">
+              <span>计划类型</span>
+              <select name="plan_type">
+                <option value="standard"${state.plan.plan_type === "standard" ? " selected" : ""}>标准编排计划</option>
+                <option value="webhook"${state.plan.plan_type === "webhook" ? " selected" : ""}>Webhook 接收计划</option>
+              </select>
             </label>
           </div>
         </article>
         <article class="group-ops__card">
-          <div class="group-ops__section-head"><h2 class="group-ops__section-title">${isWebhook ? "固定群包" : "绑定群"}</h2></div>
+          <div class="group-ops__section-head">
+            <div>
+              <h2 class="group-ops__section-title">绑定群</h2>
+              <div class="group-ops__group-meta">通过弹窗选择当前运营成员名下客户群</div>
+            </div>
+            ${actionButton("选择群", "open-group-picker", "group-ops__button--primary")}
+          </div>
           <div class="group-ops__group-list">${renderBoundGroups()}</div>
-          <div class="group-ops__section-head" style="margin-top:14px"><h3 class="group-ops__section-title">可选群</h3></div>
-          <div class="group-ops__group-list" data-available-groups>${renderAvailableGroups()}</div>
         </article>
       </section>
       <section class="group-ops__stats-grid">${renderStats(summary)}</section>
       ${isWebhook ? renderWebhook() : renderNodes()}
+      ${renderGroupPickerModal()}
     `);
     state.notice = "";
   }

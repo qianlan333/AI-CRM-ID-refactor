@@ -114,16 +114,16 @@ def test_standard_plan_nodes_save_and_list_in_domain_order(group_ops_api_client)
     plan_id = created_plan.json()["item"]["id"]
 
     nodes = [
-        (3, "第 3 天 20:00", "第三天复盘", 30),
-        (1, "入群后 10 分钟", "欢迎语 + 课程入口", 10),
-        (2, "第 2 天 12:30", "第二天提醒", 20),
+        (3, "20:00", "第三天复盘", 30),
+        (1, "08:00", "欢迎语 + 课程入口", 10),
+        (2, "12:30", "第二天提醒", 20),
     ]
-    for day_index, trigger_time_label, action_title, sort_order in nodes:
+    for day_index, scheduled_time, action_title, sort_order in nodes:
         response = group_ops_api_client.post(
             f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
             json={
                 "day_index": day_index,
-                "trigger_time_label": trigger_time_label,
+                "scheduled_time": scheduled_time,
                 "action_title": action_title,
                 "text_content": f"{action_title}正文",
                 "attachments": [
@@ -147,10 +147,11 @@ def test_standard_plan_nodes_save_and_list_in_domain_order(group_ops_api_client)
     assert listed.status_code == 200
     items = listed.json()["items"]
     assert [item["day_index"] for item in items] == [1, 2, 3]
+    assert [item["scheduled_time"] for item in items] == ["08:00", "12:30", "20:00"]
     for item in items:
         assert {
             "day_index",
-            "trigger_time_label",
+            "scheduled_time",
             "action_title",
             "text_content",
             "attachments",
@@ -176,7 +177,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
         f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
         json={
             "day_index": 1,
-            "trigger_time_label": "第 1 天 10:00",
+            "scheduled_time": "10:00",
             "action_title": "空内容草稿",
             "content_package_json": {},
             "sort_order": 10,
@@ -195,7 +196,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
         f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
         json={
             "day_index": 1,
-            "trigger_time_label": "第 1 天 11:00",
+            "scheduled_time": "11:00",
             "action_title": "只有话术",
             "content_package_json": {"content_text": "  课程提醒  "},
             "sort_order": 20,
@@ -209,7 +210,7 @@ def test_standard_plan_nodes_accept_content_package_for_drafts_and_materials(gro
         f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/nodes",
         json={
             "day_index": 2,
-            "trigger_time_label": "第 2 天 12:00",
+            "scheduled_time": "12:00",
             "action_title": "只有素材",
             "content_package_json": {
                 "image_library_ids": [12, "12", 34],
@@ -237,7 +238,7 @@ def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_cl
         "/api/admin/automation-conversion/group-ops/plans/1/nodes",
         json={
             "day_index": 3,
-            "trigger_time_label": "第 3 天 10:00",
+            "scheduled_time": "10:00",
             "action_title": "旧附件兼容",
             "text_content": "旧节点话术",
             "attachments": [
@@ -259,6 +260,59 @@ def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_cl
     item = response.json()["item"]
     assert item["content_package_json"]["content_text"] == "旧节点话术"
     assert item["attachments"][0]["msgtype"] == "miniprogram"
+
+
+def test_standard_plan_nodes_reject_invalid_scheduled_time(group_ops_api_client):
+    for scheduled_time in ["20:15", "07:30", "24:00"]:
+        response = group_ops_api_client.post(
+            "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+            json={
+                "day_index": 1,
+                "scheduled_time": scheduled_time,
+                "action_title": f"非法时间 {scheduled_time}",
+                "text_content": "非法时间测试",
+                "attachments": [],
+                "sort_order": 10,
+                "status": "active",
+            },
+        )
+        assert response.status_code == 400
+
+
+def test_standard_plan_nodes_accept_boundary_scheduled_time(group_ops_api_client):
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+        json={
+            "day_index": 1,
+            "scheduled_time": "23:30",
+            "action_title": "晚间提醒",
+            "text_content": "23:30 提醒",
+            "attachments": [],
+            "sort_order": 50,
+            "status": "active",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["item"]["scheduled_time"] == "23:30"
+
+
+def test_standard_plan_nodes_derive_scheduled_time_from_legacy_trigger_time_label(group_ops_api_client):
+    response = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+        json={
+            "day_index": 4,
+            "trigger_time_label": "第 4 天 20:30",
+            "action_title": "旧字段兼容",
+            "text_content": "旧字段兼容正文",
+            "attachments": [],
+            "sort_order": 60,
+            "status": "active",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["item"]["scheduled_time"] == "20:30"
 
 
 def test_webhook_config_returns_no_plaintext_token_or_examples(group_ops_api_client):
