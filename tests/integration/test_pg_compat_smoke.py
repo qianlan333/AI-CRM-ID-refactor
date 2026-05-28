@@ -378,6 +378,55 @@ def test_propose_campaign_segment_sql_carries_external_contact_id(app):
     assert rows[1]["external_contact_id"] == "wm-pc-002"
 
 
+def test_campaign_allocation_handles_schema_without_optional_columns(app, monkeypatch):
+    """生产旧表缺少可选列时，allocation 仍要能写入 campaign_members。"""
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+
+    _insert_segment_with_known_member(
+        app,
+        segment_code="seg-optional-column-compat",
+        member_id=888003,
+        external_id="wm-optional-column-compat",
+    )
+    monkeypatch.setattr(
+        campaign_service,
+        "_table_columns",
+        lambda table_name: {
+            "campaign_id",
+            "campaign_segment_id",
+            "segment_id",
+            "member_id",
+            "external_contact_id",
+            "status",
+        },
+    )
+
+    overview = campaign_service.propose_campaign(
+        display_name="optional column compat",
+        intent="验证旧 schema 可选列兼容",
+        segments=[{
+            "segment_code": "seg-optional-column-compat",
+            "priority": 100,
+            "steps": [
+                {"step_index": 0, "day_offset": 0, "send_time": "10:00",
+                 "content_text": "hi", "stop_on_reply": True},
+            ],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    assert overview["allocation"]["allocated"] == 1, overview["allocation"]
+
+    cur = get_db().cursor()
+    cur.execute(
+        "SELECT member_id, external_contact_id FROM campaign_members WHERE campaign_id = ?",
+        (int(overview["campaign"]["id"]),),
+    )
+    row = dict(cur.fetchone())
+    assert row["member_id"] == 888003
+    assert row["external_contact_id"] == "wm-optional-column-compat"
+
+
 def test_campaign_dispatch_resolves_source_member_id_before_fk_touch_log(app):
     """Campaign member_id may be a source-pool row id, not automation_member.id.
 
