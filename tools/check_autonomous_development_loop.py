@@ -26,7 +26,10 @@ REQUIRED_STATE_FIELDS = {
     "owner_approval_required",
     "runtime_behavior_changed",
     "delete_ready",
+    "cleanup_closeout",
     "active_safety_gates",
+    "completed_runtime_fallback_tracks",
+    "remaining_runtime_fallback_tracks",
     "protected_runtime_boundaries",
     "next_cleanup_candidates",
 }
@@ -42,15 +45,40 @@ EXPECTED_RUNTIME_BOUNDARIES = {
     "app.py",
     "legacy_flask_app.py",
     "aicrm_next/main.py",
-    "aicrm_next/production_compat/api.py selected low/medium fallback entries only",
+    "aicrm_next/production_compat/api.py high-risk and retained fallback entries only",
     "wecom_ability_service runtime",
     "migrations/deploy/nginx/systemd",
     "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
 }
 EXPECTED_NEXT_CANDIDATES = {
     "non_runtime_cleanup": "complete",
-    "runtime_fallback_cleanup": "active_low_medium_admin_track",
+    "runtime_fallback_cleanup": "closed_as_global_task",
+    "future_runtime_migration": "product_specific_only",
     "high_risk_external_cleanup": "separate_owner_approval_required",
+}
+EXPECTED_CLEANUP_CLOSEOUT = {
+    "global_non_runtime_cleanup": "complete",
+    "low_medium_admin_runtime_fallback_migration": "complete_enough_for_product_development",
+    "global_deletion_task_status": "closed",
+    "broad_legacy_runtime_deletion_authorized": False,
+    "continue_deletion_mode": False,
+}
+EXPECTED_COMPLETED_RUNTIME_TRACKS = {
+    "channels_entry_channel_next_ownership",
+    "channel_legacy_runtime_cleanup_after_next_entry_bindings",
+    "media_material_libraries_next_ownership",
+    "sidebar_customer_broad_fallback_narrowing",
+    "sidebar_customer_readonly_cleanup",
+}
+EXPECTED_REMAINING_RUNTIME_TRACKS = {
+    "wecom_callback_events",
+    "questionnaire_oauth_public_submit",
+    "wecom_tags_tag_groups",
+    "payment_checkout_orders_public_products",
+    "automation_runtime_run_due_reply_monitor_jobs",
+    "automation_member_manual_send_focus_sop",
+    "sidebar_write_external_paths",
+    "hxc_dashboard_cloud_orchestrator",
 }
 STOP_IDS = {
     "production_owner_switch",
@@ -140,10 +168,13 @@ REQUIRED_HIGH_RISK_FALLBACK_STRINGS = {
     '"/api/wecom/events"',
     '"/api/h5/wechat/oauth/start"',
     '"/api/h5/questionnaires/{slug}/submit"',
+    '"/api/admin/wecom/tags"',
     '"/api/admin/automation-conversion/jobs/run-due"',
     '"/api/admin/automation-conversion/tasks/run-due"',
     '"/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu"',
     '"/api/admin/wechat-pay/products"',
+    '"/api/orders/{path:path}"',
+    '"/api/checkout/{path:path}"',
 }
 
 
@@ -275,16 +306,16 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
     missing_state_fields = sorted(REQUIRED_STATE_FIELDS - set(state))
     if missing_state_fields:
         blockers.append(f"phase_execution_state missing fields: {missing_state_fields}")
-    if state.get("current_phase") != "runtime_fallback_migration":
-        blockers.append("current_phase must be runtime_fallback_migration")
-    if state.get("last_merged_pr") != "#865":
-        blockers.append("last_merged_pr must record merged runtime fallback migration PR #865")
-    if state.get("last_merged_cleanup_wave") != "runtime_fallback_migration_channels_track1":
-        blockers.append("last_merged_cleanup_wave must record channels runtime fallback migration track 1")
-    if state.get("recommended_next_pr") != "runtime_fallback_migration_media_material_libraries_track2":
-        blockers.append("recommended_next_pr must name runtime fallback migration media/material libraries track 2")
+    if state.get("current_phase") != "post_phase7_cleanup_closeout":
+        blockers.append("current_phase must be post_phase7_cleanup_closeout")
+    if state.get("last_merged_pr") != "#878":
+        blockers.append("last_merged_pr must record merged runtime fallback cleanup PR #878")
+    if state.get("last_merged_cleanup_wave") != "sidebar_customer_readonly_track3b":
+        blockers.append("last_merged_cleanup_wave must record sidebar/customer readonly track 3b")
+    if state.get("recommended_next_pr") != "product_development_or_targeted_runtime_migration":
+        blockers.append("recommended_next_pr must point to product development or targeted runtime migration")
     if state.get("owner_approval_required") is not False:
-        blockers.append("owner_approval_required must be false for bounded low/medium admin runtime fallback migration")
+        blockers.append("owner_approval_required must be false for the closeout checkpoint")
     if state.get("runtime_behavior_changed") is not False:
         blockers.append("runtime_behavior_changed must remain false")
     if state.get("delete_ready") is not False:
@@ -293,12 +324,30 @@ def _validate_current_state(state: dict[str, Any], blockers: list[str]) -> None:
     autopilot = state.get("autopilot") if isinstance(state.get("autopilot"), dict) else {}
     if autopilot.get("enabled") is not True:
         blockers.append("autopilot.enabled must be true")
-    if autopilot.get("mode") != "bounded_runtime_fallback_migration":
-        blockers.append("autopilot.mode must be bounded_runtime_fallback_migration")
-    if autopilot.get("runtime_changes_allowed") is not True:
-        blockers.append("autopilot.runtime_changes_allowed must be true for selected low/medium runtime fallback migration")
+    if autopilot.get("mode") != "product_development_with_targeted_runtime_migration":
+        blockers.append("autopilot.mode must be product_development_with_targeted_runtime_migration")
+    if autopilot.get("runtime_changes_allowed") != "targeted_owner_approved_only":
+        blockers.append("autopilot.runtime_changes_allowed must be targeted_owner_approved_only")
     if autopilot.get("admin_override_allowed") is not False:
         blockers.append("autopilot.admin_override_allowed must be false")
+
+    if state.get("cleanup_closeout") != EXPECTED_CLEANUP_CLOSEOUT:
+        blockers.append(f"cleanup_closeout must be exactly {EXPECTED_CLEANUP_CLOSEOUT}")
+    completed_tracks = _as_strings(state.get("completed_runtime_fallback_tracks"))
+    if completed_tracks != EXPECTED_COMPLETED_RUNTIME_TRACKS:
+        blockers.append(f"completed_runtime_fallback_tracks must be exactly {sorted(EXPECTED_COMPLETED_RUNTIME_TRACKS)}")
+    remaining_tracks = state.get("remaining_runtime_fallback_tracks")
+    if not isinstance(remaining_tracks, dict):
+        blockers.append("remaining_runtime_fallback_tracks must be a mapping")
+    else:
+        product_specific = _as_strings(remaining_tracks.get("product_specific_migration_required"))
+        if product_specific != EXPECTED_REMAINING_RUNTIME_TRACKS:
+            blockers.append(
+                "remaining_runtime_fallback_tracks.product_specific_migration_required "
+                f"must be exactly {sorted(EXPECTED_REMAINING_RUNTIME_TRACKS)}"
+            )
+        if remaining_tracks.get("handling_rule") != "migrate only when the related product capability is actively being developed":
+            blockers.append("remaining_runtime_fallback_tracks.handling_rule must preserve product-specific migration rule")
 
     gates = _as_strings(state.get("active_safety_gates"))
     if gates != EXPECTED_SAFETY_GATES:

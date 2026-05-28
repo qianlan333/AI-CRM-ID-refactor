@@ -34,6 +34,7 @@ STOP_TERM_EXEMPT_WORK_PACKAGES = {
     "governance config compaction",
     "non_runtime_cleanup",
     "runtime_fallback_cleanup",
+    "future_runtime_migration",
 }
 OWNER_DECISION_LABELS = {"owner-decision-required", "automerge-blocked"}
 AUTOPILOT_SAFE_LABEL = "autopilot-safe"
@@ -317,6 +318,8 @@ def choose_next_work_package(state: dict[str, Any], requested: str | None = None
         "runtime_fallback_migration_media_material_libraries_track2",
     } and "runtime_fallback_cleanup" in allowed:
         return "runtime_fallback_cleanup"
+    if recommended == "product_development_or_targeted_runtime_migration" and "future_runtime_migration" in allowed:
+        return "future_runtime_migration"
     if recommended == "final_non_runtime_cleanup_closeout_wave17" and "non_runtime_cleanup" in allowed:
         return "non_runtime_cleanup"
     if recommended == "stale_product_design_documentation_cleanup_wave16" and "remaining stale non-runtime docs/reports" in allowed:
@@ -363,7 +366,7 @@ You are working in qianlan333/AI-CRM from latest main.
 Read and follow:
 {docs}
 
-## Selected bounded runtime fallback migration
+## Selected post-closeout work package
 
 - work_package: {work_package}
 - current_phase: {state.get("current_phase")}
@@ -374,7 +377,8 @@ Read and follow:
 
 - Only choose from docs/development/phase_execution_state.yaml next_cleanup_candidates.
 - Business behavior must remain unchanged.
-- Switch production owner only for the selected low/medium-risk admin fallback route family after Next parity is already present.
+- The global deletion task is closed.
+- Migrate fallback only as part of product-specific development with owner-approved replacement and rollback evidence.
 - Do not write production.
 - Do not remove high-risk fallback.
 - Do not modify aicrm_next/main.py, business route implementations, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
@@ -383,8 +387,8 @@ Read and follow:
 
 ## Required implementation behavior
 
-- Advance only one bounded low/medium-risk runtime fallback package.
-- Prefer removing or narrowing selected production_compat entries only after Next-native coverage is verified.
+- Advance only one product-specific package or stop with an owner decision package when the selected action touches high-risk runtime behavior.
+- Do not start broad cleanup or global deletion waves.
 - Update docs/development/phase_execution_state.yaml only when the active compact state changes.
 - Keep Business value, Business continuity, Risk / rollback, and Next action in the PR body.
 - Run:
@@ -396,7 +400,7 @@ Read and follow:
 
 ## Auto-merge boundary
 
-Low/medium-risk merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and production_compat edits are limited to the selected admin fallback route family. Owner decision packages must not auto-merge.
+Low-risk merge is allowed only when eligibility is true, GitHub required checks are green, no stop condition exists, and runtime behavior is unchanged. Owner decision packages must not auto-merge.
 """
     output_path.write_text(prompt, encoding="utf-8")
 
