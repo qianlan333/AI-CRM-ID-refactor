@@ -39,18 +39,27 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
     assert created.status_code == 201
     channel = created.json()["channel"]
     channel_id = int(channel["id"])
+    channels_api._FIXTURE_CHANNELS[channel_id]["historical_scene_values"] = ["aqr_legacy_runtime"]
 
     listed = client.get("/api/admin/channels")
     assert listed.status_code == 200
-    assert any(int(item["id"]) == channel_id for item in listed.json()["channels"])
+    listed_channel = next(item for item in listed.json()["channels"] if int(item["id"]) == channel_id)
+    assert listed_channel["historical_scene_values"] == ["aqr_legacy_runtime"]
 
     detail = client.get(f"/api/admin/channels/{channel_id}")
     assert detail.status_code == 200
     assert detail.json()["channel"]["channel_name"] == "Next 普通二维码"
+    assert detail.json()["channel"]["historical_scene_values"] == ["aqr_legacy_runtime"]
+
+    edit_page = client.get(f"/admin/channels/{channel_id}/edit")
+    assert edit_page.status_code == 200
+    assert "历史回调 State" in edit_page.text
+    assert "aqr_legacy_runtime" in edit_page.text
 
     updated = client.patch(f"/api/admin/channels/{channel_id}", json={"channel_name": "Next 普通二维码已更新"})
     assert updated.status_code == 200
     assert updated.json()["channel"]["channel_name"] == "Next 普通二维码已更新"
+    assert updated.json()["channel"]["historical_scene_values"] == ["aqr_legacy_runtime"]
 
     contacts = client.get(f"/api/admin/channels/{channel_id}/contacts")
     assert contacts.status_code == 200

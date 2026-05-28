@@ -49,6 +49,18 @@
         <span>渠道编码</span>
         <input name="channel_code" value="{{ channel.channel_code or '' }}" placeholder="CH-LIVE-0522">
       </label>
+      {% if channel.historical_scene_values %}
+      <div class="admin-field">
+        <span>历史回调 State</span>
+        <div class="channel-selector-box">
+          <div class="channel-selected-materials">
+            {% for scene in channel.historical_scene_values %}
+              <span class="channel-material-chip">{{ scene }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="admin-field">
         <span>负责人</span>
         <div class="channel-owner-card">
