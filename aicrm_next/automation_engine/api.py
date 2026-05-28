@@ -658,6 +658,32 @@ def list_agents(
     return _json_result(ListAgentsQuery()(request))
 
 
+@router.get("/api/admin/automation-conversion/agents/options")
+def agent_options(
+    program_id: int | None = None,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    task_id: int | None = None,
+    agent_type: str = "",
+    status: str = "",
+    include_archived: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+) -> JSONResponse:
+    request = AgentListRequest(
+        program_id=program_id,
+        workflow_id=workflow_id,
+        node_id=node_id,
+        task_id=task_id,
+        agent_type=agent_type,
+        status=status,
+        include_archived=include_archived,
+        limit=limit,
+        offset=offset,
+    )
+    return _json_result(ListAgentsQuery()(request))
+
+
 @router.post("/api/admin/automation-conversion/agents")
 def create_agent(payload: AgentCreateRequest) -> JSONResponse:
     try:

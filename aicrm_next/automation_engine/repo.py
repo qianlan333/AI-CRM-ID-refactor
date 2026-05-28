@@ -56,6 +56,14 @@ AGENT_RUN_TEST_DATABASE_URL_ENV = "AICRM_AGENT_RUNS_TEST_DATABASE_URL"
 AGENT_RUN_STAGING_DATABASE_URL_ENV = "AICRM_AGENT_RUNS_STAGING_DATABASE_URL"
 AGENT_RUN_SQL_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
 
+DEFAULT_AGENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {"agent_code": "central_router_agent", "agent_name": "中央路由 Agent", "agent_type": "classifier", "sort_order": 10},
+    {"agent_code": "welcome_agent", "agent_name": "欢迎接待 Agent", "agent_type": "assistant", "sort_order": 20},
+    {"agent_code": "pricing_agent", "agent_name": "价格答疑 Agent", "agent_type": "assistant", "sort_order": 30},
+    {"agent_code": "proof_agent", "agent_name": "案例证明 Agent", "agent_type": "assistant", "sort_order": 40},
+    {"agent_code": "closing_agent", "agent_name": "成交推进 Agent", "agent_type": "followup", "sort_order": 50},
+)
+
 
 def _sqlalchemy_database_url(url: str) -> str:
     if url.startswith("postgres://"):
@@ -384,46 +392,25 @@ class InMemoryAutomationRepository:
         self._task_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._task_audit_events: list[dict[str, Any]] = []
         self._agents: dict[int, dict[str, Any]] = {
-            1: agent_projection(
+            index: agent_projection(
                 {
-                    "id": 1,
-                    "program_id": 1,
-                    "workflow_id": 1,
-                    "node_id": 1,
-                    "task_id": 1,
-                    "agent_code": "phase4bg_review_agent",
-                    "agent_name": "Fixture 审阅 Agent",
-                    "agent_type": "reviewer",
-                    "status": "draft",
-                    "sort_order": 10,
-                    "metadata": {"source": "fixture"},
+                    "id": index,
+                    "program_id": 0,
+                    "workflow_id": 0,
+                    "node_id": 0,
+                    "task_id": 0,
+                    "status": "active",
+                    "metadata": {"source": "next_default_fixture"},
                     "config": {"description": "metadata only"},
+                    "enabled": True,
                     "created_by": "fixture",
                     "updated_by": "fixture",
                     "created_at": "2026-05-20T09:40:00Z",
                     "updated_at": "2026-05-20T09:40:00Z",
+                    **definition,
                 }
-            ),
-            2: agent_projection(
-                {
-                    "id": 2,
-                    "program_id": 1,
-                    "workflow_id": 1,
-                    "node_id": 2,
-                    "task_id": 2,
-                    "agent_code": "phase4bg_followup_agent",
-                    "agent_name": "Fixture 跟进 Agent",
-                    "agent_type": "followup",
-                    "status": "inactive",
-                    "sort_order": 20,
-                    "metadata": {"source": "fixture"},
-                    "config": {"description": "metadata only"},
-                    "created_by": "fixture",
-                    "updated_by": "fixture",
-                    "created_at": "2026-05-20T09:45:00Z",
-                    "updated_at": "2026-05-20T09:45:00Z",
-                }
-            ),
+            )
+            for index, definition in enumerate(DEFAULT_AGENT_DEFINITIONS, start=1)
         }
         self._agent_idempotency: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._agent_audit_events: list[dict[str, Any]] = []
@@ -1138,7 +1125,9 @@ class InMemoryAutomationRepository:
         limit = int(filters.get("limit") or 50)
         offset = int(filters.get("offset") or 0)
         rows = [agent_projection(item) for item in self._agents.values()]
-        for field, value in (("program_id", program_id), ("workflow_id", workflow_id), ("node_id", node_id), ("task_id", task_id)):
+        if program_id not in (None, ""):
+            rows = [item for item in rows if int(item.get("program_id") or 0) in {0, int(program_id)}]
+        for field, value in (("workflow_id", workflow_id), ("node_id", node_id), ("task_id", task_id)):
             if value not in (None, ""):
                 rows = [item for item in rows if int(item.get(field) or 0) == int(value)]
         if agent_type:
@@ -1546,7 +1535,11 @@ def _agent_repository_backend() -> str:
 
 
 def _agent_database_url() -> str:
-    return str(os.getenv(AGENT_TEST_DATABASE_URL_ENV) or os.getenv(AGENT_STAGING_DATABASE_URL_ENV) or "").strip()
+    return str(os.getenv(AGENT_TEST_DATABASE_URL_ENV) or os.getenv(AGENT_STAGING_DATABASE_URL_ENV) or raw_database_url()).strip()
+
+
+def agent_postgres_enabled() -> bool:
+    return _agent_repository_backend() in AGENT_SQL_BACKENDS or bool(production_data_ready() and raw_database_url())
 
 
 def _agent_output_repository_backend() -> str:
@@ -1630,8 +1623,19 @@ def build_automation_repository(
             SqlAlchemyWorkflowNodeRepository(engine),
             capability_owner="automation_engine.workflow_nodes",
         )
+    explicit_non_task_backend = any(
+        value is not None
+        for value in (
+            task_group_backend,
+            workflow_backend,
+            workflow_node_backend,
+            agent_backend,
+            agent_output_backend,
+            agent_run_backend,
+        )
+    )
     selected_task_backend = str(task_backend or _task_repository_backend()).strip().lower()
-    if task_backend is None and production_data_ready() and raw_database_url():
+    if task_backend is None and not explicit_non_task_backend and production_data_ready() and raw_database_url():
         selected_task_backend = "postgres"
     if selected_task_backend in TASK_SQL_BACKENDS:
         engine = task_engine
@@ -1649,6 +1653,8 @@ def build_automation_repository(
             capability_owner="automation_engine.tasks",
         )
     selected_agent_backend = str(agent_backend or _agent_repository_backend()).strip().lower()
+    if agent_backend is None and not explicit_non_task_backend and production_data_ready() and raw_database_url():
+        selected_agent_backend = "postgres"
     if selected_agent_backend in AGENT_SQL_BACKENDS:
         engine = agent_engine
         if engine is None:
@@ -1658,10 +1664,10 @@ def build_automation_repository(
                     f"{AGENT_TEST_DATABASE_URL_ENV} or {AGENT_STAGING_DATABASE_URL_ENV} is required when {AGENT_BACKEND_ENV}=sqlalchemy"
                 )
             engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
-        from .agent_sqlalchemy_repository import SqlAlchemyAgentRepository
+        from .agent_postgres_repository import PostgresAgentRepository
 
         return assert_repository_allowed(
-            SqlAlchemyAgentRepository(engine),
+            PostgresAgentRepository(engine),
             capability_owner="automation_engine.agents",
         )
     selected_agent_output_backend = str(agent_output_backend or _agent_output_repository_backend()).strip().lower()

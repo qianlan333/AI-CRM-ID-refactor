@@ -25,7 +25,6 @@ from .agent_outputs import agent_output_run_projection, agent_output_side_effect
 from .agent_runs import agent_run_side_effect_safety
 from .action_template_repository import (
     ActionTemplateIdempotencyConflict,
-    InMemoryActionTemplateRepository,
     build_action_template_repository,
     action_template_sqlalchemy_enabled,
 )
@@ -72,7 +71,7 @@ from .profile_segment_repository import (
     build_profile_segment_template_repository,
     profile_segment_template_sqlalchemy_enabled,
 )
-from .repo import AutomationRepository, build_automation_repository, task_postgres_enabled
+from .repo import AutomationRepository, agent_postgres_enabled, build_automation_repository, task_postgres_enabled
 from .state_machine import apply_transition, normalize_followup_type
 from .task_groups import task_group_side_effect_safety
 from .tasks import task_side_effect_safety
@@ -631,7 +630,9 @@ class _AgentRepositoryOwner:
 
     def _repo_or_none(self) -> AutomationRepository | None:
         if (production_environment() or production_data_ready()) and self._repo is None:
-            return None
+            if not agent_postgres_enabled():
+                return None
+            self._repo = build_automation_repository(agent_backend="postgres")
         if self._repo is None:
             self._repo = build_automation_repository()
         return self._repo
@@ -1178,10 +1179,19 @@ class ListAgentsQuery(_AgentRepositoryOwner):
             rows, total = repo.list_agents(_request_dump(request))
         except RepositoryProviderError as exc:
             return self._blocked_payload(exc)
+        options = [
+            {
+                **item,
+                "value": item.get("agent_code") or item.get("code") or "",
+                "label": item.get("agent_name") or item.get("name") or item.get("agent_code") or "",
+            }
+            for item in rows
+        ]
         return _agent_response(
             {
                 "items": rows,
                 "agents": rows,
+                "options": options,
                 "total": total,
                 "count": len(rows),
                 "limit": request.limit,
