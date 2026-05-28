@@ -132,7 +132,7 @@ def test_operation_panel_contains_profile_template_selector_logic() -> None:
     assert "profile-segment-templates/options" in source
     assert "data-profile-template-select" in source
     assert "profile_segment_template_id" in source
-    assert "当前画像模板还没有可填写的分层" in source
+    assert "当前方案分层规则还没有可填写的分层" in source
 
 
 def test_operation_panel_contains_behavior_rule_logic() -> None:

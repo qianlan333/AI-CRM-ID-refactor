@@ -70,6 +70,7 @@ _FIXTURE_PROGRAM = {
 }
 _FIXTURE_OPERATION_GROUPS: list[dict[str, Any]] = []
 _FIXTURE_OPERATION_TASKS: list[dict[str, Any]] = []
+_FIXTURE_SEGMENTATION_BY_PROGRAM: dict[int, dict[str, Any]] = {}
 _FIXTURE_OPERATION_GROUP_ID = 1000
 _FIXTURE_OPERATION_TASK_ID = 5000
 
@@ -189,15 +190,18 @@ def _fixture_setup_payload(program_id: int, *, step: str = "basic") -> dict[str,
             "customer_acquisition_links": [],
         },
         "segmentation": _segmentation_view_model(
-            {
-                "questionnaire_id": None,
-                "default_strategy": "normal_question_rules",
-                "strategies": {},
-            },
+            _FIXTURE_SEGMENTATION_BY_PROGRAM.get(
+                int(program_id),
+                {
+                    "questionnaire_id": None,
+                    "default_strategy": "normal_question_rules",
+                    "strategies": {},
+                },
+            ),
             program_id=int(program_id),
         ),
         "audience_entry_rule": _audience_rule_view_model({}, program_id=int(program_id)),
-        "operations": {"tasks": []},
+        "operations": {"tasks": [], **_operation_profile_context_from_segmentation(_FIXTURE_SEGMENTATION_BY_PROGRAM.get(int(program_id), {}))},
         "publish_state": {},
         "publish_check": _publish_check_from_parts(
             program,
@@ -372,6 +376,40 @@ def _segmentation_view_model(payload: dict[str, Any], *, program_id: int) -> dic
             "available_templates": [],
         },
     }
+
+
+def _operation_profile_context_from_segmentation(payload: dict[str, Any] | None, *, template_id: int | None = None) -> dict[str, Any]:
+    normalized = _normalize_segmentation_payload(payload or {})
+    normal = dict((normalized.get("strategies") or {}).get("normal_question_rules") or {})
+    categories = list(normal.get("categories") or [])
+    segments = [
+        {
+            "segment_key": _clean_text(category.get("category_key")) or f"category_{index}",
+            "segment_name": _clean_text(category.get("category_name")) or f"分类 {index}",
+            "category_key": _clean_text(category.get("category_key")) or f"category_{index}",
+            "category_name": _clean_text(category.get("category_name")) or f"分类 {index}",
+            "description": _clean_text(category.get("description")),
+            "option_ids": list(category.get("option_ids") or []),
+            "option_snapshots": list(category.get("option_snapshots") or []),
+            "source": "setup_segmentation",
+        }
+        for index, category in enumerate(categories, start=1)
+    ]
+    template_name = _clean_text(normal.get("segmentation_question_title")) or "当前方案分层规则"
+    templates = []
+    if segments:
+        templates.append(
+            {
+                "id": int(template_id or 0),
+                "template_id": int(template_id or 0),
+                "template_code": "setup_segmentation",
+                "template_name": f"{template_name} · 当前方案分层",
+                "label": f"{template_name} · 当前方案分层",
+                "source": "setup_segmentation",
+                "enabled": True,
+            }
+        )
+    return {"profile_templates": templates, "profile_segments": segments}
 
 
 def _selected_product_snapshot(selected_product_id: Any, provided: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -812,6 +850,7 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
 
 
 def _fixture_operation_payload(program_id: int) -> dict[str, Any]:
+    profile_context = _operation_profile_context_from_segmentation(_FIXTURE_SEGMENTATION_BY_PROGRAM.get(int(program_id), {}))
     groups = [
         _project_operation_task_group(item)
         for item in _FIXTURE_OPERATION_GROUPS
@@ -832,6 +871,7 @@ def _fixture_operation_payload(program_id: int) -> dict[str, Any]:
         "items": tasks,
         "total": len(tasks),
         "active_count": sum(1 for item in tasks if item.get("status") == "active"),
+        **profile_context,
     }
 
 
@@ -1685,6 +1725,35 @@ class PostgresAutomationProgramRepository:
         ]
 
     def _fetch_operations_payload(self, conn: Any, program_id: int) -> dict[str, Any]:
+        segmentation_row = conn.execute(
+            text(
+                """
+                SELECT payload_json
+                FROM automation_program_config_block
+                WHERE program_id = :program_id
+                  AND block_key = :block_key
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"program_id": int(program_id), "block_key": BLOCK_SEGMENTATION},
+        ).mappings().first()
+        template_row = conn.execute(
+            text(
+                """
+                SELECT id
+                FROM automation_profile_segment_template
+                WHERE template_code = :template_code
+                  AND enabled = true
+                LIMIT 1
+                """
+            ),
+            {"template_code": f"setup_normal_option_category_{int(program_id)}"},
+        ).mappings().first()
+        profile_context = _operation_profile_context_from_segmentation(
+            _json_loads((segmentation_row or {}).get("payload_json"), default={}),
+            template_id=int((template_row or {}).get("id") or 0) or None,
+        )
         group_rows = conn.execute(
             text(
                 """
@@ -1721,6 +1790,7 @@ class PostgresAutomationProgramRepository:
             "items": tasks,
             "total": len(tasks),
             "active_count": sum(1 for item in tasks if item.get("status") == "active"),
+            **profile_context,
         }
 
     def list_operation_tasks(self, program_id: int) -> dict[str, Any]:
@@ -1982,6 +2052,7 @@ def save_automation_program_segmentation(program_id: int, payload: dict[str, Any
             return _build_postgres_repository().save_segmentation(int(program_id), normalized, operator_id=operator_id)
         except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
             raise AutomationProgramDataUnavailable(str(exc)) from exc
+    _FIXTURE_SEGMENTATION_BY_PROGRAM[int(program_id)] = deepcopy(normalized)
     return {
         "segmentation": {
             "id": 0,
