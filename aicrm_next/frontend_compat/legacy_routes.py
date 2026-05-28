@@ -778,15 +778,29 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "update": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
         "copy": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
         "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+        "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
+        "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
     }
     workspace["operations_workspace"] = {
         "program_id": program_id,
         "api_urls": {
-            "groups": f"/api/admin/automation-conversion/task-groups?program_id={program_id}&limit=300",
-            "tasks": f"/api/admin/automation-conversion/tasks?program_id={program_id}&limit=300",
-            "task_base": "/api/admin/automation-conversion/tasks/0",
+            "groups": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups",
+            "task_groups": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups",
+            "task_group_detail_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-task-groups/0",
+            "tasks": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks",
+            "operation_tasks": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks",
+            "task_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0",
+            "operation_task_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0",
+            "task_detail_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0",
+            "task_copy_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0/copy",
+            "task_activate_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0/activate",
+            "task_pause_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0/pause",
+            "task_delete_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0",
+            "task_preview_audience_base": f"/api/admin/automation-conversion/programs/{program_id}/setup/operation-tasks/0/preview-audience",
             "profile_segment_templates_options": f"/api/admin/automation-conversion/profile-segment-templates/options?program_id={program_id}",
             "profile_segment_template_detail_base": "/api/admin/automation-conversion/profile-segment-templates/0",
+            "agents_options": f"/api/admin/automation-conversion/agents?program_id={program_id}&limit=200",
+            "behavior_segment_rules": "/api/admin/automation-conversion/behavior-segment-rules",
         },
     }
     return workspace
