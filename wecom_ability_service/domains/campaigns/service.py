@@ -133,6 +133,71 @@ def _ensure_campaign_editable(camp: dict[str, Any]) -> None:
         raise PermissionError(f"campaign run_status={run_status} not editable")
 
 
+def _table_columns(table_name: str) -> set[str]:
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            """,
+            (table_name,),
+        )
+        columns = {str(row["column_name"]) for row in (cur.fetchall() or [])}
+        if columns:
+            return columns
+    except Exception:
+        try:
+            if hasattr(db, "rollback"):
+                db.rollback()
+        except Exception:
+            pass
+    return set()
+
+
+def _insert_campaign_member(
+    *,
+    cur: Any,
+    campaign_member_columns: set[str],
+    campaign_id: int,
+    campaign_segment_id: int,
+    segment_id: int,
+    member_id: int,
+    external_contact_id: str,
+    trace_id: str,
+) -> None:
+    columns = [
+        "campaign_id",
+        "campaign_segment_id",
+        "segment_id",
+        "member_id",
+        "external_contact_id",
+        "status",
+    ]
+    values: list[Any] = [
+        int(campaign_id),
+        int(campaign_segment_id),
+        int(segment_id),
+        int(member_id),
+        external_contact_id,
+        "pending",
+    ]
+    if "current_step_index" in campaign_member_columns:
+        columns.append("current_step_index")
+        values.append(-1)
+    if "trace_id" in campaign_member_columns:
+        columns.append("trace_id")
+        values.append(trace_id)
+    placeholders = ", ".join("?" for _ in values)
+    cur.execute(
+        f"INSERT INTO campaign_members ({', '.join(columns)}) VALUES ({placeholders})",
+        tuple(values),
+    )
+
+
 # ---------- 创建 / 编辑 -----------------------------------------------------
 
 def create_campaign_draft(
@@ -323,6 +388,8 @@ def allocate_campaign_members(
     collision = 0
     per_segment: dict[int, dict[str, int]] = {}
     seen_member_ids: set[int] = set()
+    allocation_errors: list[dict[str, Any]] = []
+    campaign_member_columns = _table_columns("campaign_members")
 
     for s in seg_rows:
         if str(s["status"] or "") != "active":
@@ -358,37 +425,46 @@ def allocate_campaign_members(
                 mr = cur.fetchone()
                 external = str(mr["external_contact_id"] or "") if mr else ""
             try:
-                cur.execute(
-                    """
-                    INSERT INTO campaign_members
-                        (campaign_id, campaign_segment_id, segment_id, member_id,
-                         external_contact_id, status, current_step_index,
-                         trace_id)
-                    VALUES (?, ?, ?, ?, ?, 'pending', -1, ?)
-                    """,
-                    (
-                        int(campaign_id),
-                        cs_id,
-                        seg_id,
-                        int(mid),
-                        external,
-                        trace_id,
-                    ),
+                sp_name = f"_campaign_member_alloc_{cs_id}_{int(mid)}"
+                cur.execute(f"SAVEPOINT {sp_name}")
+                _insert_campaign_member(
+                    cur=cur,
+                    campaign_member_columns=campaign_member_columns,
+                    campaign_id=int(campaign_id),
+                    campaign_segment_id=cs_id,
+                    segment_id=seg_id,
+                    member_id=int(mid),
+                    external_contact_id=external,
+                    trace_id=trace_id,
                 )
+                cur.execute(f"RELEASE SAVEPOINT {sp_name}")
                 seen_member_ids.add(mid)
                 allocated += 1
                 bucket["allocated"] += 1
             except Exception as exc:
-                # UNIQUE 约束兜底（极端并发情况下）
+                try:
+                    cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                    cur.execute(f"RELEASE SAVEPOINT {sp_name}")
+                except Exception:
+                    pass
                 logger.debug("allocate skip mid=%s reason=%s", mid, exc)
                 collision += 1
                 bucket["skipped"] += 1
+                if len(allocation_errors) < 10:
+                    allocation_errors.append(
+                        {
+                            "member_id": int(mid),
+                            "campaign_segment_id": cs_id,
+                            "reason": str(exc),
+                        }
+                    )
     db.commit()
     return {
         "campaign_id": campaign_id,
         "allocated": allocated,
         "skipped_collisions": collision,
         "per_segment": per_segment,
+        "errors": allocation_errors,
         "trace_id": trace_id,
     }
 
