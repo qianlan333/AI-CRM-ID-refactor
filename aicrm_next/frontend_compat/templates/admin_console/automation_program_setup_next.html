@@ -556,6 +556,8 @@
       {% endfor %}
     </div>
     <div class="setup-actions">
+      <button class="setup-action" type="button" data-publish-entry {% if not ((checks.get("entry") or {}).get("passed")) %}disabled{% endif %}>发布入口</button>
+      <button class="setup-action is-primary" type="button" data-publish-full {% if not ((checks.get("full") or {}).get("passed")) %}disabled{% endif %}>发布完整自动化</button>
       <a class="setup-action is-primary" href="{{ urls['overview'] }}">查看概览</a>
     </div>
   </section>
@@ -573,6 +575,9 @@
       {% elif current_step == "entry-rule" %}
       <button class="setup-action" type="button" data-save-and-publish>去检查发布</button>
       <button class="setup-action is-primary" type="button" data-save-and-next data-next-step="operations">保存并下一步</button>
+      {% elif current_step == "publish" %}
+      <button class="setup-action" type="button" data-publish-entry {% if not (((workspace.publish_check or {}).get("entry") or {}).get("passed")) %}disabled{% endif %}>发布入口</button>
+      <button class="setup-action is-primary" type="button" data-publish-full {% if not (((workspace.publish_check or {}).get("full") or {}).get("passed")) %}disabled{% endif %}>发布完整自动化</button>
       {% else %}
       <a class="setup-action" href="{{ urls['base'] }}?step=publish">去检查发布</a>
       <a class="setup-action is-primary" href="{{ urls['base'] }}?step={{ 'entry' if current_step == 'basic' else 'segmentation' if current_step == 'entry' else 'entry-rule' if current_step == 'segmentation' else 'operations' if current_step == 'entry-rule' else 'publish' }}">保存并下一步</a>
@@ -960,6 +965,48 @@
     });
   });
   updateNextSteps();
+})();
+</script>
+{% endif %}
+{% if current_step == "publish" %}
+<script>
+(() => {
+  const root = document.querySelector("[data-setup-root]");
+  if (!root) return;
+  const urls = JSON.parse(root.dataset.urls || "{}");
+  const feedback = root.querySelector("[data-setup-feedback]");
+  const showFeedback = (message, ok = false) => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.classList.toggle("is-success", ok);
+    feedback.style.display = "block";
+    feedback.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  const postJson = async (url) => {
+    const response = await fetch(url, { method: "POST", headers: {"Accept": "application/json"} });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.detail || data.error || "发布失败，请稍后重试");
+    return data;
+  };
+  const bindPublish = (selector, urlKey, label) => {
+    root.querySelectorAll(selector).forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const data = await postJson(urls[urlKey]);
+          const status = (data.summary || {}).publish_status_label || label;
+          showFeedback(`${status}，正在刷新发布状态`, true);
+          window.setTimeout(() => { window.location.href = urls.overview || window.location.href; }, 550);
+        } catch (error) {
+          button.disabled = false;
+          showFeedback(error.message || "发布失败，请先处理检查项");
+        }
+      });
+    });
+  };
+  bindPublish("[data-publish-entry]", "publish_entry", "入口已发布");
+  bindPublish("[data-publish-full]", "publish_full", "完整自动化已发布");
 })();
 </script>
 {% endif %}

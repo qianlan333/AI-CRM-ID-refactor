@@ -490,6 +490,17 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
         },
     }
     monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(
+        legacy_routes,
+        "get_automation_program_overview_payload",
+        lambda program_id: {
+            **program_data,
+            "audience_segments": [{"key": "operating", "label": "运营中", "count": 8}],
+            "stage_segments": [{"key": "questionnaire_review", "label": "问卷审核", "count": 3}],
+            "profile_segments": [{"key": "high", "label": "高意向", "count": 5}],
+            "behavior_segments": [{"key": "gte_10", "label": "10 次及以上互动", "count": 2}],
+        },
+    )
 
     client = TestClient(create_app(), raise_server_exceptions=False)
     setup_response = client.get("/admin/automation-conversion/programs/7/setup?step=basic")
@@ -504,6 +515,10 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
     assert overview_response.status_code == 200
     assert "方案概览" in overview_response.text
     assert "入口已发布" in overview_response.text
+    assert "运行概况" in overview_response.text
+    assert "分层人数" in overview_response.text
+    assert "高意向" in overview_response.text
+    assert "10 次及以上互动" in overview_response.text
     assert copy_response.status_code == 200
     assert "复制自动化运营方案" in copy_response.text
     assert 'action="/admin/automation-conversion/programs/7/copy"' in copy_response.text
@@ -593,9 +608,34 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             ],
         },
         "segmentation": {
+            "questionnaire_id": 9,
+            "available_questionnaires": [
+                {
+                    "id": 9,
+                    "title": "信息收集测试",
+                    "status": "published",
+                    "question_count": 1,
+                    "questions": [
+                        {
+                            "id": 19,
+                            "title": "你当前最关注什么",
+                            "options": [{"id": 1, "option_text": "先了解"}],
+                        }
+                    ],
+                }
+            ],
+            "question_rows": [
+                {
+                    "id": 19,
+                    "title": "你当前最关注什么",
+                    "options": [{"id": 1, "option_text": "先了解"}],
+                }
+            ],
             "selected_questionnaire": {"title": "信息收集测试"},
             "default_strategy": "normal_question_rules",
             "normal_question_rules": {
+                "segmentation_question_id": 19,
+                "selected_question": {"id": 19, "title": "你当前最关注什么"},
                 "segmentation_question_title": "你当前最关注什么",
                 "category_rows": [
                     {
@@ -652,8 +692,8 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             ],
         },
         "publish_check": {
-            "entry": {"items": [{"label": "至少有一个当前方案入口", "passed": True, "message": "已完成"}]},
-            "full": {"items": [{"label": "存在启用中的运营任务", "passed": True, "message": "已完成"}]},
+            "entry": {"passed": True, "items": [{"label": "至少有一个当前方案入口", "passed": True, "message": "已完成"}]},
+            "full": {"passed": True, "items": [{"label": "存在启用中的运营任务", "passed": True, "message": "已完成"}]},
         },
     }
 
@@ -668,7 +708,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
     assertions = {
         "entry": ["默认渠道二维码", "aqr_260521_b91c", "获客助手链接", "https://wework.qpic.cn/example"],
         "segmentation": ["信息收集测试", "你当前最关注什么", "入门用户", "高意向"],
-        "entry-rule": ["入口进入后", "任一当前方案入口", "问卷提交后", "成交标记"],
+        "entry-rule": ["扫码进入", "当前方案入口", "问卷审核", "已转化"],
         "operations": ["首日欢迎触达", "峰会跟进", "运营中", "unified"],
         "publish": ["入口发布检查", "至少有一个当前方案入口", "完整自动化发布检查", "存在启用中的运营任务"],
     }
@@ -678,6 +718,11 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
         for marker in markers:
             assert marker in response.text, (step, marker)
         assert "Not Found" not in response.text
+    publish_response = client.get("/admin/automation-conversion/programs/7/setup?step=publish")
+    assert 'data-publish-entry' in publish_response.text
+    assert 'data-publish-full' in publish_response.text
+    assert "/api/admin/automation-conversion/programs/7/publish-entry" in publish_response.text
+    assert "/api/admin/automation-conversion/programs/7/publish-full" in publish_response.text
     entry_response = client.get("/admin/automation-conversion/programs/7/setup?step=entry")
     assert "前往入口渠道页" in entry_response.text
     assert "当前二维码入口" not in entry_response.text
@@ -794,6 +839,24 @@ def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
     assert response.status_code == 200
     assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
     assert "legacy-auth-forwarded:GET:/login:next=/admin/automation-conversion/programs/7/entry-channels" in response.text
+
+
+def test_automation_program_summary_derives_publish_state_from_next_readiness():
+    from aicrm_next.automation_engine.programs import _program_summary
+
+    entry = _program_summary(
+        {"id": 7, "status": "active"},
+        {"channel_count": 1, "entry_publish_ready": True, "full_publish_ready": False},
+    )
+    full = _program_summary(
+        {"id": 8, "status": "active"},
+        {"channel_count": 1, "entry_publish_ready": True, "full_publish_ready": True},
+    )
+
+    assert entry["publish_status"] == "entry"
+    assert entry["publish_status_label"] == "入口已发布"
+    assert full["publish_status"] == "full"
+    assert full["publish_status_label"] == "完整自动化已发布"
 
 
 def test_admin_wecom_tag_routes_forward_to_legacy(monkeypatch):

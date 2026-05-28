@@ -29,6 +29,7 @@ from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
     copy_automation_program,
+    get_automation_program_overview_payload,
     get_automation_program_setup_payload,
     get_automation_program_with_summary,
     list_automation_programs_payload,
@@ -779,6 +780,8 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
         "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
         "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
+        "publish_entry": f"/api/admin/automation-conversion/programs/{program_id}/publish-entry",
+        "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
     }
     workspace["operations_workspace"] = {
         "program_id": program_id,
@@ -806,14 +809,15 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
 
 
 def _overview_workspace(request: Request, program: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+    del request
     program_id = int(program.get("id") or 0)
-    return {
-        "program": program,
-        "summary": summary,
-        "api_urls": {
-            "dashboard": f"/api/admin/automation-conversion/overview?program_id={program_id}",
-        },
-    }
+    try:
+        workspace = get_automation_program_overview_payload(program_id)
+    except AutomationProgramDataUnavailable as exc:
+        workspace = {"program": program, "summary": summary, "page_error": str(exc)}
+    workspace["program"] = workspace.get("program") or program
+    workspace["summary"] = workspace.get("summary") or summary
+    return workspace
 
 
 @router.get("/admin/automation-conversion/programs/{program_id:int}/setup", name="api.admin_automation_program_setup")
