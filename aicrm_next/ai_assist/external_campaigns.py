@@ -334,7 +334,6 @@ def _create_single_recipient_campaign(
     strict_owner_match: bool,
 ) -> JsonDict:
     from wecom_ability_service.domains.campaigns import service as campaign_service
-    from wecom_ability_service.domains.cloud_orchestrator import approval_token
     from wecom_ability_service.domains.segments import service as segment_service
 
     external_userid = _text(recipient["external_userid"])
@@ -453,32 +452,21 @@ def _create_single_recipient_campaign(
             ),
             status_code=409,
         )
-    campaign_service.submit_campaign_for_review(campaign_id=int(campaign["id"]), operator=operator)
-    issued = approval_token.issue_token(
-        plan_id=campaign_code,
-        operator=operator,
-        scope="start_campaign",
-        ttl_seconds=300,
-        metadata={"source": "external_token_api", "group_code": group_code},
-    )
-    started = campaign_service.start_campaign(
-        campaign_id=int(campaign["id"]),
-        human_approver=operator,
-        approval_token_value=_text(issued.get("token")),
-    )
-    scheduled_jobs = _count_open_campaign_jobs(campaign_id=int(started["id"]))
+    submitted = campaign_service.submit_campaign_for_review(campaign_id=int(campaign["id"]), operator=operator)
+    scheduled_jobs = _count_open_campaign_jobs(campaign_id=int(submitted["id"]))
     return {
         "campaign_code": campaign_code,
-        "campaign_id": int(started["id"]),
+        "campaign_id": int(submitted["id"]),
         "external_userid": external_userid,
         "segment_code": segment_code,
         "status": "created",
-        "review_status": _text(started.get("review_status")),
-        "run_status": _text(started.get("run_status")),
+        "review_status": _text(submitted.get("review_status")),
+        "run_status": _text(submitted.get("run_status")),
         "anchor_date": anchor_date,
         "first_scheduled_for": first_dt.isoformat(),
         "step_count": len(steps),
         "scheduled_jobs": scheduled_jobs,
+        "requires_human_review": True,
     }
 
 
