@@ -38,6 +38,7 @@
       currentTask: null,
       profileTemplates: [],
       profileSegments: [],
+      setupProfileSegments: [],
       behaviorRules: [],
       agents: [],
       preview: {},
@@ -48,6 +49,12 @@
       audience: { pending_questionnaire: "待填问卷", operating: "运营中", converted: "已转化" },
     };
     const VALID_MODES = new Set(["unified", "profile_layered", "behavior_layered", "agent"]);
+    const FALLBACK_AGENTS = [
+      { agent_code: "hxc_activation", agent_name: "黄小璨激活 Agent（备用）", agent_type: "fallback" },
+      { agent_code: "welcome_agent", agent_name: "欢迎接待 Agent（备用）", agent_type: "fallback" },
+      { agent_code: "pricing_agent", agent_name: "价格答疑 Agent（备用）", agent_type: "fallback" },
+      { agent_code: "followup_agent", agent_name: "跟进推进 Agent（备用）", agent_type: "fallback" },
+    ];
     const normalizeContentMode = (mode) => (VALID_MODES.has(String(mode || "")) ? String(mode) : "unified");
     const dom = {
       groupFilter: root.querySelector("[data-group-filter]"),
@@ -268,7 +275,11 @@
 
     async function loadProfileTemplates() {
       const data = await requestJson(endpoints.profileOptions);
-      state.profileTemplates = data.items || data.options || data.templates || [];
+      state.profileTemplates = mergeByValue(
+        state.profileTemplates,
+        normalizeProfileTemplates(data.items || data.options || data.templates || []),
+        (item) => item.id ?? item.template_id ?? item.value
+      );
     }
 
     function normalizeSegments(raw) {
@@ -289,7 +300,35 @@
         .filter((item) => item.segment_key);
     }
 
+    function mergeByValue(primary, fallback, valueGetter) {
+      const seen = new Set();
+      return []
+        .concat(primary || [], fallback || [])
+        .filter((item) => {
+          const rawValue = valueGetter(item);
+          const value = String(rawValue ?? "").trim();
+          if (!value || seen.has(value)) return false;
+          seen.add(value);
+          return true;
+        });
+    }
+
+    function normalizeProfileTemplates(raw) {
+      const rows = Array.isArray(raw) ? raw : [];
+      return rows
+        .map((item) => {
+          const id = item.id ?? item.template_id ?? item.value ?? 0;
+          const name = item.label || item.name || item.template_name || item.code || item.template_code || id;
+          return { ...item, id, template_id: id, label: name, template_name: name };
+        })
+        .filter((item) => item.label || item.template_name);
+    }
+
     async function loadProfileSegments(templateId) {
+      if (!Number(templateId) && state.setupProfileSegments.length) {
+        state.profileSegments = state.setupProfileSegments;
+        return state.profileSegments;
+      }
       if (!templateId) {
         state.profileSegments = [];
         return [];
@@ -310,7 +349,7 @@
 
     async function loadAgents() {
       const data = await requestJson(endpoints.agents);
-      state.agents = data.items || data.agents || data.options || [];
+      state.agents = mergeByValue(data.items || data.agents || data.options || [], FALLBACK_AGENTS, (agent) => agent.agent_code || agent.code || agent.value);
     }
 
     async function safeLoadAuxiliary() {
@@ -326,6 +365,11 @@
       const data = await requestJson(endpoints.tasks);
       state.groups = data.groups || [];
       state.tasks = data.tasks || data.items || [];
+      const setupTemplates = normalizeProfileTemplates(data.profile_templates || data.profile_segment_templates || []);
+      const setupSegments = normalizeSegments(data.profile_segments || data.segmentation_profile_segments || []);
+      state.profileTemplates = mergeByValue(setupTemplates, state.profileTemplates, (item) => item.id ?? item.template_id ?? item.value);
+      state.setupProfileSegments = setupSegments;
+      if (setupSegments.length) state.profileSegments = setupSegments;
       syncGroupControls();
       const selected = state.currentTask ? state.tasks.find((item) => Number(item.id) === currentId()) : state.tasks[0];
       setCurrentTask(selected || null);
@@ -451,10 +495,11 @@
 
     function renderProfile(content) {
       const selectedTemplateId = Number(content.profile_segment_template_id || 0);
-      const options = [`<option value="">请选择画像模板</option>`]
+      const templates = normalizeProfileTemplates(state.profileTemplates);
+      const options = [`<option value="">请选择分层规则</option>`]
         .concat(
-          state.profileTemplates.map((item) => {
-            const id = item.id || item.template_id || item.value || "";
+          templates.map((item) => {
+            const id = item.id ?? item.template_id ?? item.value ?? "";
             const name = item.label || item.name || item.template_name || item.code || id;
             return `<option value="${escapeHtml(id)}" ${Number(id) === selectedTemplateId ? "selected" : ""}>${escapeHtml(name)}</option>`;
           })
@@ -473,9 +518,9 @@
               </article>`;
             })
             .join("")
-        : `<div class="op-task-empty">当前画像模板还没有可填写的分层，请先选择包含分层分类的画像模板。</div>`;
+        : `<div class="op-task-empty">当前方案分层规则还没有可填写的分层，请先在第 3 步配置分层分类。</div>`;
       return `
-        <label class="op-task-field"><span>画像模板</span><select data-profile-template-select>${options}</select></label>
+        <label class="op-task-field"><span>分层规则</span><select data-profile-template-select>${options}</select></label>
         <div class="op-task-segments">${rows}</div>`;
     }
 
@@ -588,8 +633,8 @@
     function openProfileComposer(segmentKey, segmentName) {
       const content = operationContent();
       const templateId = Number(dom.strategyPanel.querySelector("[data-profile-template-select]")?.value || content.profile_segment_template_id || 0);
-      if (!templateId) {
-        showFeedback(dom.feedback, "请先选择画像模板");
+      if (!templateId && !state.setupProfileSegments.length) {
+        showFeedback(dom.feedback, "请先选择分层规则");
         return;
       }
       openSendContentComposer({
@@ -696,12 +741,13 @@
 
     root.addEventListener("change", async (event) => {
       if (event.target.matches("[data-profile-template-select]")) {
-        const templateId = Number(event.target.value || 0);
-        if (templateId) {
-          await updateStrategy({ content_mode: "profile_layered", profile_segment_template_id: templateId }).catch((error) =>
-            showFeedback(dom.feedback, error.message || "画像模板保存失败")
+        const rawTemplateId = String(event.target.value || "");
+        const templateId = Number(rawTemplateId || 0);
+        if (rawTemplateId || state.setupProfileSegments.length) {
+          await updateStrategy({ content_mode: "profile_layered", profile_segment_template_id: templateId || null }).catch((error) =>
+            showFeedback(dom.feedback, error.message || "分层规则保存失败")
           );
-          await loadProfileSegments(templateId).catch((error) => showFeedback(dom.feedback, error.message || "画像模板详情加载失败"));
+          await loadProfileSegments(templateId).catch((error) => showFeedback(dom.feedback, error.message || "分层规则详情加载失败"));
         } else {
           state.profileSegments = [];
         }

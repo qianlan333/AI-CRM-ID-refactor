@@ -36,6 +36,9 @@ def test_operation_setup_panel_exposes_next_native_task_and_group_controls() -> 
     assert 'data-task-action="copy"' in script
     assert "preview-audience" in script
     assert "collectOperationTaskPayload" in script
+    assert "setupProfileSegments" in script
+    assert "FALLBACK_AGENTS" in script
+    assert "hxc_activation" in script
 
 
 def test_operation_setup_uses_psycopg3_sqlalchemy_urls() -> None:
@@ -118,3 +121,65 @@ def test_operation_setup_send_content_routes_bind_to_operation_task() -> None:
     assert updated["content_mode"] == "unified"
     assert updated["unified_content_json"]["content_text"] == "统一话术"
     assert updated["unified_content_json"]["image_library_ids"] == [1]
+
+
+def test_operation_setup_profile_mode_reuses_saved_segmentation_categories() -> None:
+    client = TestClient(app)
+
+    save_response = client.post(
+        "/api/admin/automation-conversion/programs/1/setup/segmentation",
+        json={
+            "questionnaire_id": 21,
+            "default_strategy": "normal_question_rules",
+            "normal_question_mode": "single_question_option_category",
+            "segmentation_question_id": 301,
+            "normal_question_categories": [
+                {
+                    "category_key": "workplace",
+                    "category_name": "职场人",
+                    "option_ids": [401, 402],
+                    "option_snapshots": [
+                        {"id": 401, "option_text": "还在职场安心升级打怪"},
+                        {"id": 402, "option_text": "正在面对转型焦虑"},
+                    ],
+                },
+                {
+                    "category_key": "founder",
+                    "category_name": "创业者",
+                    "option_ids": [403],
+                    "option_snapshots": [{"id": 403, "option_text": "主副业两手抓"}],
+                },
+            ],
+        },
+    )
+    assert save_response.status_code == 200
+
+    operations_response = client.get("/api/admin/automation-conversion/programs/1/setup/operation-tasks")
+    assert operations_response.status_code == 200
+    payload = operations_response.json()
+    assert payload["profile_templates"][0]["source"] == "setup_segmentation"
+    assert payload["profile_segments"] == [
+        {
+            "segment_key": "workplace",
+            "segment_name": "职场人",
+            "category_key": "workplace",
+            "category_name": "职场人",
+            "description": "",
+            "option_ids": [401, 402],
+            "option_snapshots": [
+                {"id": 401, "option_text": "还在职场安心升级打怪"},
+                {"id": 402, "option_text": "正在面对转型焦虑"},
+            ],
+            "source": "setup_segmentation",
+        },
+        {
+            "segment_key": "founder",
+            "segment_name": "创业者",
+            "category_key": "founder",
+            "category_name": "创业者",
+            "description": "",
+            "option_ids": [403],
+            "option_snapshots": [{"id": 403, "option_text": "主副业两手抓"}],
+            "source": "setup_segmentation",
+        },
+    ]
