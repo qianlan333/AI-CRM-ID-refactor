@@ -75,13 +75,16 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     source = _source()
     detail_source = _function_source("renderDetail")
 
-    for label in ["返回列表", "保存计划", "保存接口计划", "运营成员", "刷新名下群聊", "绑定群", "固定群包"]:
+    for label in ["返回列表", "保存计划", "运营成员", "刷新名下群聊", "绑定群", "选择群"]:
         assert label in source
     for label in ["绑定群", "内部联系人", "外部联系人", "预计通知"]:
         assert label in source
-    for label in ["第几天", "时间", "动作标题", "标准话术摘要", "素材标签", "编辑 / 删除"]:
+    for label in ["第几天", "发送时间", "动作标题", "标准话术摘要", "素材标签", "编辑 / 删除"]:
         assert label in source
     assert "添加动作" in source
+    assert "open-node-modal" in source
+    assert "group-ops__modal" in source
+    assert "group_picker_keyword" in source
     assert "配置话术和素材" in source
     assert "AICRMSendContentComposer.open" in source
     assert "配置群运营动作内容" in source
@@ -91,6 +94,11 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     assert "node_" + "text_content" not in source
     assert "素材 " + "JSON" not in source
     assert 'data-action="noop"' not in source
+    assert "data-available-groups" not in source
+    assert "renderAvailableGroups" not in source
+    assert "素材 JSON" not in source
+    for forbidden_time in ["入群后 10 分钟", "入群后 30 分钟", "入群后 1 小时"]:
+        assert forbidden_time not in GROUP_OPS_JS.read_text(encoding="utf-8")
     for label in ["接收方式", "默认动作", "Webhook 接收地址", "POST", "复制地址", "Token 状态 / 重置入口", "Token："]:
         assert label in source
     assert "一次性 token" in source
@@ -100,6 +108,7 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
         assert forbidden not in source
     assert "查看所有群" not in detail_source
     assert "创建计划" not in detail_source
+    assert "保存接口计划" not in detail_source
 
 
 def test_group_ops_detail_refresh_owner_groups_contract_is_manual_and_owner_scoped():
@@ -125,6 +134,36 @@ def test_group_ops_detail_refresh_error_uses_backend_sync_reason():
     assert "detail.detail" in error_source
     assert "detail.error_code" in error_source
     assert "Conflict" not in error_source
+
+
+def test_group_ops_detail_scheduled_time_options_contract():
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(GROUP_OPS_JS))}, "utf8");
+const app = {{
+  dataset: {{}},
+  querySelectorAll() {{ return []; }},
+  querySelector() {{ return null; }},
+  innerHTML: ""
+}};
+const sandbox = {{
+  window: {{}},
+  document: {{ getElementById() {{ return app; }} }},
+  Intl
+}};
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox);
+console.log(JSON.stringify(sandbox.window.AICRMGroupOpsContentAdapter.scheduledTimeOptions()));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    options = json.loads(result.stdout)
+
+    assert "08:00" in options
+    assert "20:30" in options
+    assert "23:30" in options
+    assert "07:30" not in options
+    assert "24:00" not in options
 
 
 def test_group_ops_detail_imports_standard_send_content_assets():

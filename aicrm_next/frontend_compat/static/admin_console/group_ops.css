@@ -89,6 +89,10 @@
   min-width: min(360px, 100%);
 }
 
+.group-ops__field--button {
+  justify-content: end;
+}
+
 .group-ops__field input,
 .group-ops__field select,
 .group-ops__field textarea,
@@ -128,6 +132,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.group-ops__owner-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.7fr);
+  gap: 12px;
+  align-items: end;
 }
 
 .group-ops__table-wrap {
@@ -258,6 +269,22 @@
   font-size: 13px;
 }
 
+.group-ops__group-choice {
+  grid-template-columns: auto minmax(0, 1fr);
+  cursor: pointer;
+}
+
+.group-ops__group-choice input {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.group-ops__chip-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .group-ops__content-box {
   display: grid;
   gap: 10px;
@@ -277,6 +304,74 @@
 
 .group-ops__content-summary strong {
   color: var(--text);
+}
+
+.group-ops__modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.34);
+}
+
+.group-ops__modal {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.group-ops__modal--action {
+  width: min(920px, 100%);
+}
+
+.group-ops__modal-head,
+.group-ops__modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-ops__modal-head {
+  margin-bottom: 14px;
+}
+
+.group-ops__modal-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.group-ops__modal-footer {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.group-ops__group-picker-list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  margin-top: 12px;
+  overflow: auto;
+}
+
+.group-ops__action-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.group-ops__schedule-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .group-ops__stat {
@@ -343,6 +438,10 @@
   .group-ops__detail-grid {
     grid-template-columns: 1fr;
   }
+
+  .group-ops__action-modal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -358,5 +457,10 @@
 
   .group-ops__field {
     width: 100%;
+  }
+
+  .group-ops__owner-grid,
+  .group-ops__schedule-fields {
+    grid-template-columns: 1fr;
   }
 }

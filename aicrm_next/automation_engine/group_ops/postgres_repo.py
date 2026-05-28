@@ -12,7 +12,14 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 
-from .domain import clean_text, generate_webhook_key, generate_webhook_token, hash_webhook_token, normalize_plan_payload
+from .domain import (
+    clean_text,
+    derive_node_scheduled_time,
+    generate_webhook_key,
+    generate_webhook_token,
+    hash_webhook_token,
+    normalize_plan_payload,
+)
 
 
 def _json_dumps(value: Any) -> str:
@@ -783,10 +790,12 @@ class PostgresGroupOpsRepository:
     def _row_to_node(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if not row:
             return None
+        scheduled_time = derive_node_scheduled_time(row) or "20:00"
         return {
             "id": _int(row.get("id")),
             "plan_id": _int(row.get("plan_id")),
             "day_index": _int(row.get("day_index")),
+            "scheduled_time": scheduled_time,
             "trigger_time_label": clean_text(row.get("trigger_time_label")),
             "action_title": clean_text(row.get("action_title")),
             "text_content": clean_text(row.get("text_content")),
@@ -834,9 +843,10 @@ class PostgresGroupOpsRepository:
         return params
 
     def _node_params(self, payload: dict[str, Any]) -> dict[str, Any]:
+        scheduled_time = clean_text(payload.get("scheduled_time") or payload.get("trigger_time_label"))
         return {
             "day_index": _int(payload.get("day_index")) or 1,
-            "trigger_time_label": clean_text(payload.get("trigger_time_label")),
+            "trigger_time_label": scheduled_time,
             "action_title": clean_text(payload.get("action_title")),
             "text_content": clean_text(payload.get("text_content")),
             "attachments_json": _json_dumps(list(payload.get("attachments") or [])),

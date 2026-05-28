@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +17,7 @@ NODE_STATUSES = {"draft", "active", "disabled"}
 GROUP_BINDING_STATUSES = {"active", "removed"}
 WEBHOOK_EVENT_STATUSES = {"accepted", "queued", "duplicate", "rejected", "failed"}
 WEBHOOK_SEND_MODES = {"queued"}
+SCHEDULED_TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 
 def utc_now_iso() -> str:
@@ -46,6 +48,37 @@ def normalize_status(value: Any, *, allowed: set[str], default: str) -> str:
     if status not in allowed:
         raise ContractError(f"invalid status: {status}")
     return status
+
+
+def scheduled_time_options() -> list[str]:
+    return [f"{hour:02d}:{minute:02d}" for hour in range(8, 24) for minute in (0, 30)]
+
+
+def extract_scheduled_time(value: Any) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    match = re.search(r"(?:[01]\d|2[0-3]):[0-5]\d", text)
+    return match.group(0) if match else ""
+
+
+def normalize_scheduled_time(value: Any) -> str:
+    scheduled_time = clean_text(value)
+    if not SCHEDULED_TIME_PATTERN.match(scheduled_time):
+        raise ContractError("scheduled_time must use HH:MM")
+    if scheduled_time not in set(scheduled_time_options()):
+        raise ContractError("scheduled_time must be 08:00-23:30 in 30 minute steps")
+    return scheduled_time
+
+
+def derive_node_scheduled_time(node: dict[str, Any]) -> str:
+    direct = clean_text(node.get("scheduled_time"))
+    if direct:
+        try:
+            return normalize_scheduled_time(direct)
+        except ContractError:
+            return ""
+    return extract_scheduled_time(node.get("trigger_time_label"))
 
 
 def normalize_plan_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -128,9 +161,13 @@ def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     day_index = int(payload.get("day_index", existing.get("day_index", 1)) or 1)
     if day_index < 1:
         raise ContractError("day_index must be >= 1")
-    trigger_time_label = clean_text(payload.get("trigger_time_label") or existing.get("trigger_time_label"))
-    if not trigger_time_label:
-        raise ContractError("trigger_time_label is required")
+    scheduled_source = (
+        payload.get("scheduled_time")
+        or derive_node_scheduled_time(existing)
+        or extract_scheduled_time(payload.get("trigger_time_label"))
+    )
+    scheduled_time = normalize_scheduled_time(scheduled_source)
+    trigger_time_label = scheduled_time
     action_title = clean_text(payload.get("action_title") or existing.get("action_title"))
     if not action_title:
         raise ContractError("action_title is required")
@@ -155,6 +192,7 @@ def normalize_node_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
         raise ContractError("content.text or content.attachments is required")
     return {
         "day_index": day_index,
+        "scheduled_time": scheduled_time,
         "trigger_time_label": trigger_time_label,
         "action_title": action_title,
         "text_content": text_content,

@@ -145,7 +145,8 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
         plan["id"],
         {
             "day_index": 1,
-            "trigger_time_label": "入群后 10 分钟",
+            "scheduled_time": "20:00",
+            "trigger_time_label": "20:00",
             "action_title": "欢迎动作",
             "text_content": "欢迎入群",
             "attachments": [],

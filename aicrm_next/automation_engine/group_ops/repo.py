@@ -13,6 +13,7 @@ from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 from .domain import (
     binding_stats,
     clean_text,
+    derive_node_scheduled_time,
     generate_webhook_key,
     generate_webhook_token,
     hash_webhook_token,
@@ -169,7 +170,8 @@ class InMemoryGroupOpsRepository:
                     "id": 1,
                     "plan_id": 1,
                     "day_index": 1,
-                    "trigger_time_label": "入群后 10 分钟",
+                    "scheduled_time": "20:00",
+                    "trigger_time_label": "20:00",
                     "action_title": "欢迎语 + 课程入口",
                     "text_content": "欢迎加入体验课群。",
                     "content_package_json": {
@@ -386,7 +388,11 @@ class InMemoryGroupOpsRepository:
         rows = list(self._nodes.get(int(plan_id), {}).values())
         rows = [item for item in rows if item.get("status") != "deleted"]
         rows.sort(key=lambda item: (int(item.get("day_index") or 0), int(item.get("sort_order") or 0), int(item["id"])))
-        return deepcopy(rows)
+        normalized_rows = []
+        for row in deepcopy(rows):
+            row["scheduled_time"] = derive_node_scheduled_time(row) or "20:00"
+            normalized_rows.append(row)
+        return normalized_rows
 
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
