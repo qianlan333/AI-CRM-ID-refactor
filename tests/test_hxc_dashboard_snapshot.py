@@ -108,8 +108,20 @@ def test_build_crm_sql_no_placeholders():
 def test_phone_aux_sql_normalizes_phone_collation():
     sql = svc._HXC_PHONE_AUX_SQL
 
-    assert "phone COLLATE utf8mb4_unicode_ci AS phone" in sql
-    assert "GROUP BY phone COLLATE utf8mb4_unicode_ci" in sql
+    assert f"phone COLLATE {svc.HXC_TEXT_COLLATION} AS phone" in sql
+    assert f"GROUP BY phone COLLATE {svc.HXC_TEXT_COLLATION}" in sql
+
+
+def test_hxc_mysql_sql_normalizes_text_join_collation():
+    """黄小璨 MySQL 历史表主外键 collation 不一致; 文本联表必须显式归一."""
+    collation = svc.HXC_TEXT_COLLATION
+
+    assert f"u.id COLLATE {collation} = c.user_id COLLATE {collation}" in svc._HXC_USERS_SQL
+    assert f"c.id COLLATE {collation} = m.session_id COLLATE {collation}" in svc._HXC_USERS_SQL
+    assert f"ub.user_id COLLATE {collation} = u.id COLLATE {collation}" in svc._HXC_PROFILE_SQL
+    assert f"ass.user_id COLLATE {collation} = u.id COLLATE {collation}" in svc._HXC_PROFILE_SQL
+    assert f"credits.user_id COLLATE {collation} = u.id COLLATE {collation}" in svc._HXC_PROFILE_SQL
+    assert f"c.id COLLATE {collation} = cs.session_id COLLATE {collation}" in svc._HXC_CONSULT_SQL
 
 
 def test_build_snapshot_row_funnel_only_member():
