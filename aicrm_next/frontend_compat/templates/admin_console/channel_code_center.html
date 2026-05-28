@@ -43,7 +43,7 @@
         <p>渠道码中心只管理渠道资产。绑定自动化运营入口请进入具体方案的“入口渠道”页面。</p>
       </div>
       <div class="channel-actions">
-        <input class="channel-search" type="search" data-channel-search placeholder="搜索名称 / 渠道编码 / 场景值">
+        <input class="channel-search" type="search" data-channel-search placeholder="搜索渠道名称">
         <a class="admin-button admin-button--primary" href="{{ url_for('api.admin_channel_new_page') }}">新建渠道</a>
       </div>
     </div>
@@ -81,5 +81,5 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/channel_code_center_next.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/channel_code_center_next.js') }}?v=channel-center-name-only-20260528"></script>
 {% endblock %}
