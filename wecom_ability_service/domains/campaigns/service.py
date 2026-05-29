@@ -772,6 +772,8 @@ def list_campaigns(
     review_status: str = "",
     run_status: str = "",
     limit: int = 500,
+    offset: int = 0,
+    group_code: str = "",
 ) -> list[dict[str, Any]]:
     db = get_db()
     cur = db.cursor()
@@ -783,7 +785,10 @@ def list_campaigns(
     if run_status:
         where.append("run_status = ?")
         args.append(run_status)
-    args.append(int(limit))
+    if group_code:
+        where.append("CAST(c.metadata_json AS TEXT) LIKE ?")
+        args.append(f'%"{group_code}"%')
+    args.extend([max(1, min(int(limit or 500), 5000)), max(0, int(offset or 0))])
     cur.execute(
         f"""
         SELECT c.id, c.campaign_code, c.display_name, c.intent, c.anchor_mode, c.anchor_date,
@@ -793,7 +798,7 @@ def list_campaigns(
                (SELECT COUNT(*) FROM campaign_segments cs WHERE cs.campaign_id = c.id) AS segment_count,
                (SELECT COUNT(*) FROM campaign_members cm WHERE cm.campaign_id = c.id) AS member_count
         FROM campaigns c WHERE {' AND '.join(where)}
-        ORDER BY c.id DESC LIMIT ?
+        ORDER BY c.id DESC LIMIT ? OFFSET ?
         """,
         tuple(args),
     )
@@ -811,6 +816,8 @@ def list_campaigns(
                 meta = {}
         d["group_code"] = str(meta.get("group_code") or "")
         d["group_label"] = str(meta.get("group_label") or "")
+        if group_code and d["group_code"] != group_code:
+            continue
         rows.append(d)
     return rows
 
