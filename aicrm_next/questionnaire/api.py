@@ -26,6 +26,7 @@ from .application import (
     GetPublicQuestionnaireQuery,
     GetQuestionnaireDetailQuery,
     GetQuestionnairePreflightQuery,
+    GetQuestionnaireShareQuery,
     GetSubmissionResultQuery,
     LatestSubmitDebugQuery,
     ListQuestionnairesQuery,
@@ -33,6 +34,7 @@ from .application import (
     StartWechatOAuthQuery,
     SubmitQuestionnaireCommand,
     UpsertQuestionnaireCommand,
+    build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
@@ -173,6 +175,21 @@ def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> 
     return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
 
 
+def _questionnaire_share_url(request: Request, questionnaire: dict[str, Any]) -> str:
+    public_url = str(questionnaire.get("public_url") or "").strip()
+    if public_url.startswith(("http://", "https://")):
+        return public_url
+    public_path = str(questionnaire.get("public_path") or public_url or "").strip()
+    if not public_path:
+        slug = str(questionnaire.get("slug") or "").strip()
+        public_path = f"/s/{slug}" if slug else ""
+    if not public_path:
+        return ""
+    if not public_path.startswith("/"):
+        public_path = f"/{public_path}"
+    return f"{str(request.base_url).rstrip('/')}{public_path}"
+
+
 @router.get("/api/admin/questionnaires")
 def list_questionnaires(limit: int = 50, offset: int = 0) -> dict:
     if production_data_ready():
@@ -208,6 +225,31 @@ def get_questionnaire(questionnaire_id: int) -> dict:
                 get_questionnaire_detail_from_legacy(questionnaire_id)
             )
         return GetQuestionnaireDetailQuery()(questionnaire_id)
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/questionnaires/{questionnaire_id}/share")
+def get_questionnaire_share(questionnaire_id: int, request: Request) -> dict:
+    try:
+        if production_data_ready():
+            payload = _questionnaire_payload_with_nested_questions(
+                get_questionnaire_detail_from_legacy(questionnaire_id)
+            )
+            questionnaire = payload.get("questionnaire") if isinstance(payload.get("questionnaire"), dict) else payload
+            return {
+                "ok": True,
+                "share": build_questionnaire_share_payload(
+                    questionnaire,
+                    share_url=_questionnaire_share_url(request, questionnaire),
+                ),
+            }
+        detail = GetQuestionnaireDetailQuery()(questionnaire_id)
+        questionnaire = detail["questionnaire"]
+        return GetQuestionnaireShareQuery()(
+            questionnaire_id,
+            share_url=_questionnaire_share_url(request, questionnaire),
+        )
     except Exception as exc:
         _raise_http(exc)
 
