@@ -3712,6 +3712,7 @@
                 <option value="" ${!state.questionnaire.external_push_type ? 'selected' : ''}></option>
                 <option value="subscription" ${state.questionnaire.external_push_type === 'subscription' ? 'selected' : ''}>subscription</option>
                 <option value="premium" ${state.questionnaire.external_push_type === 'premium' ? 'selected' : ''}>premium</option>
+                <option value="trial" ${state.questionnaire.external_push_type === 'trial' ? 'selected' : ''}>首月权益</option>
               </select>
             </label>
             <label class="field">expires_at_ts
