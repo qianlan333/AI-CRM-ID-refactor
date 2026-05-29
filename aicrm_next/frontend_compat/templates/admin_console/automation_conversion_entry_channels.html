@@ -97,7 +97,7 @@
               <td>{{ item.final_url or item.link_url or item.qr_url or "-" }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="6">没有可绑定渠道。一个渠道只能启用绑定一个自动化运营方案。</td></tr>
+            <tr><td colspan="6">没有可绑定渠道。请先去<a href="/admin/channels">渠道码中心</a>创建渠道，或解绑其他方案占用的渠道。</td></tr>
             {% endfor %}
           </tbody>
         </table>

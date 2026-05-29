@@ -193,6 +193,7 @@ def _fixture_setup_payload(program_id: int, *, step: str = "basic") -> dict[str,
             "channels": [
                 {
                     "id": 1,
+                    "binding_id": 101,
                     "channel_name": "默认渠道二维码",
                     "channel_code": "next_local_qrcode",
                     "channel_type": "qrcode",
@@ -206,8 +207,11 @@ def _fixture_setup_payload(program_id: int, *, step: str = "basic") -> dict[str,
                     "binding_status": "active",
                 }
             ],
+            "candidate_channels": [],
+            "api_urls": _entry_channel_api_urls(int(program_id)),
             "qrcode_channel": {
                 "id": 1,
+                "binding_id": 101,
                 "channel_name": "默认渠道二维码",
                 "channel_code": "next_local_qrcode",
                 "channel_type": "qrcode",
@@ -766,6 +770,13 @@ def _configured_profile_segment_labels(segmentation: dict[str, Any], profile_cat
         if key:
             labels[key] = _clean_text(item.get("category_name")) or key
     return labels
+
+
+def _entry_channel_api_urls(program_id: int) -> dict[str, str]:
+    return {
+        "bindings": f"/api/admin/automation-conversion/programs/{int(program_id)}/channel-bindings",
+        "binding_base": f"/api/admin/automation-conversion/programs/{int(program_id)}/channel-bindings/0",
+    }
 
 
 def _overview_payload_from_parts(
@@ -1775,6 +1786,8 @@ class PostgresAutomationProgramRepository:
         ).mappings().all()
         channels = [_project_entry_channel(dict(row)) for row in rows]
         qrcode = next((item for item in channels if item.get("carrier_type") != "link" and item.get("channel_type") != "wecom_customer_acquisition"), {})
+        from aicrm_next.automation_engine.channels_api import list_program_entry_candidate_channels
+
         link_rows = conn.execute(
             text(
                 """
@@ -1789,6 +1802,8 @@ class PostgresAutomationProgramRepository:
         ).mappings().all()
         return {
             "channels": channels,
+            "candidate_channels": list_program_entry_candidate_channels(int(program_id)),
+            "api_urls": _entry_channel_api_urls(int(program_id)),
             "qrcode_channel": dict(qrcode or {}),
             "customer_acquisition_links": [_project_customer_acquisition_link(dict(row)) for row in link_rows],
         }

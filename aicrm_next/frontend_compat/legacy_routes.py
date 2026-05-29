@@ -783,6 +783,18 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "publish_entry": f"/api/admin/automation-conversion/programs/{program_id}/publish-entry",
         "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
     }
+    entry = dict(workspace.get("entry") or {})
+    entry.setdefault("api_urls", {
+        "bindings": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings",
+        "binding_base": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings/0",
+    })
+    if normalized_step == "entry":
+        if "candidate_channels" not in entry:
+            try:
+                entry["candidate_channels"] = list_program_entry_candidate_channels(program_id)
+            except Exception:
+                entry["candidate_channels"] = []
+    workspace["entry"] = entry
     workspace["operations_workspace"] = {
         "program_id": program_id,
         "api_urls": {

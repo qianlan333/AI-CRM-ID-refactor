@@ -641,6 +641,8 @@
         body: JSON.stringify({
           admin_action_token: adminToken,
           channel_ids: ids,
+          initial_audience_code: "pending_questionnaire",
+          operator_id: "next_admin",
         }),
       }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {
