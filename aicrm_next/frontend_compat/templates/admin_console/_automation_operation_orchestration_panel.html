@@ -2,12 +2,13 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=send-content-preview-ux-20260527">
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=send-content-preview-ux-20260527">
 <style>
-  .op-task-workspace { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
+  .op-task-workspace { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
   .op-task-card, .op-task-panel { border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: #fff; min-width: 0; }
-  .op-task-panel { display: grid; gap: 16px; padding: 16px; }
+  .op-task-panel { display: grid; gap: 16px; padding: 0; border: 0; background: transparent; }
+  .op-task-panel[hidden], .op-task-empty[hidden] { display: none !important; }
   .op-task-card__head { display: grid; gap: 12px; padding: 16px; border-bottom: 1px solid rgba(15,23,42,.06); }
   .op-task-card__head h2, .op-task-section h3 { margin: 0; color: #1f2329; }
-  .op-task-sidebar { display: grid; gap: 12px; padding: 16px; max-height: calc(100vh - 220px); overflow: auto; }
+  .op-task-sidebar { display: grid; gap: 12px; padding: 14px; max-height: calc(100vh - 220px); overflow: auto; }
   .op-task-tools { display: grid; gap: 10px; }
   .op-task-tools__row, .op-task-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .op-task-button { border: 1px solid rgba(15,23,42,.12); border-radius: 10px; background: #f8fafc; color: #1f2329; padding: 9px 12px; font-weight: 800; cursor: pointer; }
@@ -30,7 +31,7 @@
   .op-task-grid--wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .op-task-field { display: grid; gap: 6px; min-width: 0; }
   .op-task-field > span { color: #667085; font-size: 13px; font-weight: 900; }
-  .op-task-field input, .op-task-field select, .op-task-field textarea { width: 100%; padding: 11px 12px; border: 1px solid rgba(15,23,42,.12); border-radius: 10px; background: #fff; }
+  .op-task-field input, .op-task-field select, .op-task-field textarea, .op-task-control { width: 100%; padding: 11px 12px; border: 1px solid rgba(15,23,42,.12); border-radius: 10px; background: #fff; color: #111827; font: inherit; }
   .op-task-field textarea { min-height: 88px; resize: vertical; }
   .op-task-mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
   .op-task-mode { display: grid; place-items: center; min-height: 64px; padding: 12px; border: 1px solid rgba(15,23,42,.10); border-radius: 14px; background: #fff; font-weight: 900; cursor: pointer; text-align: center; }
@@ -58,8 +59,8 @@
     <div class="op-task-card__head">
       <h2>运营任务</h2>
       <div class="op-task-tools">
-        <select class="op-task-field" data-group-filter aria-label="分组筛选"></select>
-        <input class="op-task-field" data-task-search placeholder="搜索任务标题" aria-label="搜索任务标题">
+        <select class="op-task-control" data-group-filter aria-label="分组筛选"></select>
+        <input class="op-task-control" data-task-search placeholder="搜索任务标题" aria-label="搜索任务标题">
         <div class="op-task-tools__row">
           <button class="op-task-button is-primary" type="button" data-create-task>新增任务</button>
           <button class="op-task-button is-soft" type="button" data-create-group>新增分组</button>
@@ -78,7 +79,10 @@
     <div class="op-task-empty" data-task-empty>还没有运营任务</div>
     <div class="op-task-panel" data-task-form hidden>
       <section class="op-task-section">
-        <h3>任务基础信息</h3>
+        <div class="op-task-strategy-head">
+          <h3>任务基础信息</h3>
+          <button class="op-task-button is-primary" type="button" data-save-task>保存任务</button>
+        </div>
         <div class="op-task-grid">
           <label class="op-task-field"><span>任务名称</span><input data-field="task_name"></label>
           <label class="op-task-field"><span>所属分组</span><select data-field="group_id"></select></label>

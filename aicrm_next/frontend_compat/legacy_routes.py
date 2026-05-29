@@ -780,7 +780,6 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
         "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
         "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
-        "publish_entry": f"/api/admin/automation-conversion/programs/{program_id}/publish-entry",
         "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
     }
     entry = dict(workspace.get("entry") or {})
@@ -856,6 +855,7 @@ def admin_automation_program_setup(request: Request, program_id: int) -> Respons
                 },
             ],
             "setup_workspace": _setup_workspace(request, program, summary, step=str(request.query_params.get("step") or "basic")),
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "program_context": _automation_program_context(request, program, active_key="setup"),
             "admin_action_token": "",

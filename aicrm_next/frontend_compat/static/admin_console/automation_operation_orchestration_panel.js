@@ -602,8 +602,7 @@
       }
       if (mode === "profile_layered") {
         await loadProfileTemplates().catch(() => {});
-        state.currentTask.operation_content = { ...content, content_mode: "profile_layered" };
-        renderStrategyPanel();
+        await updateStrategy({ content_mode: "profile_layered", profile_segment_template_id: content.profile_segment_template_id || null });
         return;
       }
       if (mode === "behavior_layered") {
@@ -613,11 +612,7 @@
       }
       if (mode === "agent") {
         await loadAgents().catch(() => {});
-        if (content.agent_config_json.agent_code) await updateStrategy({ content_mode: "agent", agent_code: content.agent_config_json.agent_code });
-        else {
-          state.currentTask.operation_content = { ...content, content_mode: "agent" };
-          renderStrategyPanel();
-        }
+        await updateStrategy({ content_mode: "agent", agent_code: content.agent_config_json.agent_code || "" });
         return;
       }
       await updateStrategy({ content_mode: "unified" });
@@ -735,6 +730,7 @@
         if (event.target.closest("[data-create-group]")) await createGroup().catch((error) => showFeedback(dom.listFeedback, error.message || "新增失败"));
         if (event.target.closest("[data-delete-group]")) await deleteSelectedGroup().catch((error) => showFeedback(dom.listFeedback, error.message || "删除分组失败"));
         if (event.target.closest("[data-preview-audience]")) await previewAudience().catch((error) => showFeedback(dom.feedback, error.message || "预览失败"));
+        if (event.target.closest("[data-save-task]")) await saveBaseTask("", false).catch((error) => showFeedback(dom.feedback, error.message || "保存任务失败"));
         if (event.target.closest("[data-config-unified]")) openUnifiedComposer();
         const profileButton = event.target.closest("[data-config-profile-segment]");
         if (profileButton) openProfileComposer(profileButton.dataset.configProfileSegment || "", profileButton.closest("[data-segment-name]")?.dataset.segmentName || "");
@@ -779,6 +775,11 @@
     });
     dom.groupFilter?.addEventListener("change", renderList);
 
+    window.__automationOperationSaveCurrent = async () => {
+      if (!state.currentTask) return true;
+      await saveBaseTask("", true);
+      return true;
+    };
     window.__automationOperationSaveDraft = async () => saveBaseTask("draft", true);
     window.__automationOperationPublish = async () => saveBaseTask("active", true);
 
