@@ -1,6 +1,6 @@
 # Automation Ops Scheduler
 
-`scripts/run_automation_ops_scheduler.py` is the business-domain scheduler for automation ops. It only creates due `broadcast_jobs` rows. Real WeCom delivery stays in `scripts/run_broadcast_queue_worker.py`, `broadcast_jobs.handlers`, `tasks.service`, and the WeCom adapter guard.
+`scripts/run_automation_ops_scheduler.py` is the business-domain scheduler for automation ops. It creates due `broadcast_jobs` rows and refreshes backend-owned read models such as the HXC dashboard snapshot. Real WeCom delivery stays in `scripts/run_broadcast_queue_worker.py`, `broadcast_jobs.handlers`, `tasks.service`, and the WeCom adapter guard.
 
 ## group_ops due_at
 
@@ -42,9 +42,14 @@ The `broadcast_jobs` unique idempotency guard is still the final protection, so 
 
 The same runner calls `run_due_operation_tasks(...)` for `scheduled_daily` operation tasks. That service pre-schedules `operation_task` jobs into `broadcast_jobs`; the worker later resolves the audience and sends through the existing operation-task handler.
 
+## HXC dashboard snapshot
+
+The HXC dashboard is backend-refreshed. The scheduler checks `user_ops_hxc_dashboard_meta` every minute and calls `refresh_hxc_dashboard_snapshot(...)` only when the latest successful snapshot is at least 30 minutes old. The admin page must not auto-POST `/api/admin/hxc-dashboard/refresh`; it only reads the snapshot and keeps the manual refresh button for operator-initiated repair.
+
 ## Responsibility Boundary
 
 - Automation ops scheduler: compute due business work and enqueue `broadcast_jobs`.
+- HXC dashboard scheduler path: refresh the snapshot read model at a 30-minute cadence.
 - Broadcast queue worker: claim due queue rows and dispatch handlers.
 - Handlers and tasks service: create recoverable outbound intent.
 - WeCom adapter: decide whether fake, blocked, or production side effects may run.

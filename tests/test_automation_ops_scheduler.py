@@ -30,8 +30,13 @@ def test_automation_ops_scheduler_calls_operation_task_and_group_ops(monkeypatch
             "errors": [],
         }
 
+    def fake_hxc_dashboard_summary(*, now, operator):
+        calls.append(f"hxc_dashboard:{operator}:{now.isoformat()}")
+        return {"attempted": False, "skipped_reason": "fresh_snapshot"}
+
     monkeypatch.setattr(scheduler, "_operation_task_summary", fake_operation_task_summary)
     monkeypatch.setattr(scheduler, "_group_ops_summary", fake_group_ops_summary)
+    monkeypatch.setattr(scheduler, "_hxc_dashboard_summary", fake_hxc_dashboard_summary)
 
     now = datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc)
     summary = scheduler.run(now=now, operator="pytest")
@@ -39,6 +44,7 @@ def test_automation_ops_scheduler_calls_operation_task_and_group_ops(monkeypatch
     assert calls == [
         "operation_task:pytest:2026-05-29T08:00:00+00:00",
         "group_ops:pytest:2026-05-29T08:00:00+00:00",
+        "hxc_dashboard:pytest:2026-05-29T08:00:00+00:00",
     ]
     assert summary == {
         "scanned_at": "2026-05-29T08:00:00+00:00",
@@ -48,5 +54,71 @@ def test_automation_ops_scheduler_calls_operation_task_and_group_ops(monkeypatch
         "group_ops_skipped_future": 5,
         "group_ops_skipped_duplicate": 6,
         "operation_task_enqueued_jobs": 2,
+        "hxc_dashboard_refresh": {"attempted": False, "skipped_reason": "fresh_snapshot"},
         "errors": [],
+    }
+
+
+def test_hxc_dashboard_scheduler_skips_fresh_snapshot(monkeypatch):
+    calls: list[str] = []
+
+    def fake_latest_snapshot_meta():
+        return {"finished_at": "2026-05-29T07:45:00+00:00", "status": "success"}
+
+    def fake_refresh_snapshot(*, trigger_source):
+        calls.append(trigger_source)
+        return {"ok": True, "row_count": 1}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.hxc_dashboard_snapshot_service.get_latest_snapshot_meta",
+        fake_latest_snapshot_meta,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.hxc_dashboard_snapshot_service.refresh_hxc_dashboard_snapshot",
+        fake_refresh_snapshot,
+    )
+
+    result = scheduler._hxc_dashboard_summary(
+        now=datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc),
+        operator="pytest",
+    )
+
+    assert calls == []
+    assert result["attempted"] is False
+    assert result["skipped_reason"] == "fresh_snapshot"
+    assert result["latest_refresh_at"] == "2026-05-29T07:45:00+00:00"
+    assert result["next_refresh_after"] == "2026-05-29T08:15:00+00:00"
+
+
+def test_hxc_dashboard_scheduler_refreshes_stale_snapshot(monkeypatch):
+    calls: list[str] = []
+
+    def fake_latest_snapshot_meta():
+        return {"finished_at": "2026-05-29 07:20:00", "status": "success"}
+
+    def fake_refresh_snapshot(*, trigger_source):
+        calls.append(trigger_source)
+        return {"ok": True, "row_count": 1266}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.hxc_dashboard_snapshot_service.get_latest_snapshot_meta",
+        fake_latest_snapshot_meta,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.hxc_dashboard_snapshot_service.refresh_hxc_dashboard_snapshot",
+        fake_refresh_snapshot,
+    )
+
+    result = scheduler._hxc_dashboard_summary(
+        now=datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc),
+        operator="pytest",
+    )
+
+    assert calls == ["pytest:hxc_dashboard_30m"]
+    assert result == {
+        "attempted": True,
+        "ok": True,
+        "status": "success",
+        "row_count": 1266,
+        "error": "",
     }
