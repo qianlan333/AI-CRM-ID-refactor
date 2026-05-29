@@ -136,6 +136,9 @@ def _handle_workflow(job: dict[str, Any]) -> dict[str, Any]:
     if str(payload.get("channel") or "").strip() == "wecom_customer_group":
         existing_outbound_task_id = int(job.get("outbound_task_id") or 0)
         if existing_outbound_task_id:
+            from ..tasks.service import assert_group_outbound_exact_target_verified
+
+            assert_group_outbound_exact_target_verified(existing_outbound_task_id)
             return {
                 "ok": True,
                 "sent_count": len(payload.get("chat_ids") or []),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ...wecom_client import WeComClient
@@ -77,6 +78,34 @@ def _sync_conversion_truth_from_feedback(
 
 def save_outbound_task(task_type: str, request_payload: dict[str, Any], response_payload: dict[str, Any]) -> int:
     return repo.save_outbound_task(task_type, request_payload, response_payload)
+
+
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _group_exact_target_error(result: dict[str, Any]) -> str:
+    if not isinstance(result, dict):
+        return "wecom group adapter returned malformed response"
+    if not result.get("ok"):
+        return _normalized_text(result.get("error_message")) or _normalized_text(result.get("error_code")) or "wecom group adapter failed"
+    if result.get("exact_target_required") and result.get("exact_target_verified") is not True:
+        requested = result.get("requested_chat_ids")
+        if not requested and isinstance(result.get("target"), dict):
+            requested = result["target"].get("requested_chat_ids")
+        return (
+            "wecom group exact target not verified; "
+            f"requested_chat_ids={list(requested or [])}"
+        )
+    return ""
 
 
 def save_local_private_message_draft(
@@ -206,18 +235,27 @@ def dispatch_wecom_group_task_with_intent(
         payload,
         idempotency_key=f"broadcast_job:{broadcast_job_id or ''}:outbound:{local_id}",
     )
-    if not result.get("ok"):
+    exact_target_error = _group_exact_target_error(result)
+    if exact_target_error:
         repo.update_outbound_task_status(
             int(local_id),
-            status="blocked",
+            status="failed",
             response_payload=result,
         )
-        raise RuntimeError(result.get("error_message") or result.get("error_code") or "wecom group adapter blocked")
+        raise RuntimeError(exact_target_error)
     repo.update_outbound_task_status(int(local_id), status="created", response_payload=result)
     return {
         "task_id": local_id,
         "wecom_result": result,
     }
+
+
+def assert_group_outbound_exact_target_verified(outbound_task_id: int) -> None:
+    outbound = get_outbound_task(int(outbound_task_id))
+    response_payload = _json_dict((outbound or {}).get("response_payload"))
+    error = _group_exact_target_error(response_payload)
+    if error:
+        raise RuntimeError(error)
 
 
 def record_conversion_feedback(

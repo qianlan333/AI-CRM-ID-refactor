@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 class DummyApp:
     def app_context(self):
@@ -83,6 +85,85 @@ def test_wecom_group_adapter_staging_blocks_real_send(monkeypatch):
     assert result["ok"] is False
     assert result["side_effect_executed"] is False
     assert result["error_code"] == "wecom_group_message_disabled"
+
+
+def test_wecom_group_adapter_rejects_empty_chat_ids(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
+
+    def fail_if_called():
+        raise AssertionError("real WeCom client must not be constructed")
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        fail_if_called,
+    )
+
+    with pytest.raises(ValueError, match="chat_ids is required"):
+        WeComGroupMessageAdapter(mode="production").create_group_message_task(
+            {"sender": "owner_001", "text": {"content": "hello"}},
+            idempotency_key="pytest-empty-chat-ids",
+        )
+
+
+def test_wecom_group_adapter_maps_requested_chat_ids_to_official_wecom_payload(monkeypatch):
+    # WeCom add_msg_template uses chat_id_list for customer-group targets; sender
+    # alone expands to the member's customer scope, so internal chat_ids must not
+    # leak through as an ignored field.
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
+
+    captured: dict = {}
+
+    class FakeClient:
+        def create_group_message_task(self, payload):
+            captured.update(payload)
+            return {"errcode": 0, "errmsg": "ok", "msgid": "msg_exact_001", "fail_list": []}
+
+    monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FakeClient(),
+    )
+
+    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+        {"sender": "owner_001", "chat_ids": ["chat_001"], "text": {"content": "hello"}},
+        idempotency_key="pytest-exact-chat-id-list",
+    )
+
+    assert result["ok"] is True
+    assert result["exact_target_verified"] is True
+    assert result["requested_chat_ids"] == ["chat_001"]
+    assert result["target"]["requested_chat_ids"] == ["chat_001"]
+    assert captured["chat_type"] == "group"
+    assert captured["sender"] == "owner_001"
+    assert captured["chat_id_list"] == ["chat_001"]
+    assert captured["allow_select"] is False
+    assert "chat_ids" not in captured
+
+
+def test_wecom_group_adapter_fails_when_exact_target_cannot_be_verified(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
+
+    class FakeClient:
+        def create_group_message_task(self, payload):
+            return {"errcode": 0, "errmsg": "ok", "fail_list": []}
+
+    monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FakeClient(),
+    )
+
+    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+        {"sender": "owner_001", "chat_ids": ["chat_001"], "text": {"content": "hello"}},
+        idempotency_key="pytest-no-msgid",
+    )
+
+    assert result["ok"] is False
+    assert result["side_effect_executed"] is True
+    assert result["exact_target_required"] is True
+    assert result["exact_target_verified"] is False
+    assert result["requested_chat_ids"] == ["chat_001"]
+    assert result["error_code"] == "wecom_group_exact_target_not_verified"
 
 
 def test_wecom_group_adapter_production_without_guard_is_blocked(monkeypatch):
@@ -212,6 +293,18 @@ def test_broadcast_handler_reuses_existing_outbound_intent_without_dispatch(monk
         "wecom_ability_service.domains.tasks.service.dispatch_wecom_group_task_with_intent",
         fail_dispatch,
     )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.get_outbound_task",
+        lambda task_id: {
+            "id": task_id,
+            "response_payload": {
+                "ok": True,
+                "exact_target_required": True,
+                "exact_target_verified": True,
+                "requested_chat_ids": ["wrOgAAA001", "wrOgAAA002"],
+            },
+        },
+    )
     result = execute_job(
         {
             "id": 66,
@@ -264,6 +357,40 @@ def test_broadcast_handler_dispatches_group_channel_once(monkeypatch):
     assert calls[0]["broadcast_job_id"] == 67
 
 
+def test_broadcast_handler_fails_existing_group_outbound_without_exact_target(monkeypatch):
+    from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.get_outbound_task",
+        lambda task_id: {
+            "id": task_id,
+            "response_payload": {
+                "ok": True,
+                "exact_target_required": True,
+                "exact_target_verified": False,
+                "requested_chat_ids": ["wrOgAAA001"],
+            },
+        },
+    )
+
+    result = execute_job(
+        {
+            "id": 68,
+            "source_type": "workflow",
+            "outbound_task_id": 780,
+            "content_payload": {
+                "channel": "wecom_customer_group",
+                "sender": "owner_001",
+                "chat_ids": ["wrOgAAA001"],
+                "text": {"content": "hello"},
+            },
+        }
+    )
+
+    assert result["ok"] is False
+    assert "exact target not verified" in result["error"]
+
+
 def test_group_ops_worker_fake_mode_marks_sent_without_side_effect(app, monkeypatch):
     import json
     import sys
@@ -314,3 +441,66 @@ def test_group_ops_worker_fake_mode_marks_sent_without_side_effect(app, monkeypa
     assert job["status"] == "sent"
     assert payload["mode"] == "fake"
     assert payload["side_effect_executed"] is False
+    assert payload["requested_chat_ids"] == ["wrOgAAA001"]
+    assert payload["exact_target_required"] is True
+    assert payload["exact_target_verified"] is True
+
+
+def test_group_ops_worker_fails_when_exact_target_cannot_be_verified(app, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+
+    import sys
+    from pathlib import Path
+
+    scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import run_broadcast_queue_worker as worker  # type: ignore[import-not-found]
+
+    class UnverifiedAdapter:
+        def create_group_message_task(self, payload, *, idempotency_key=""):
+            return {
+                "ok": True,
+                "mode": "production",
+                "side_effect_executed": True,
+                "exact_target_required": True,
+                "exact_target_verified": False,
+                "requested_chat_ids": list(payload.get("chat_ids") or []),
+                "target": {"requested_chat_ids": list(payload.get("chat_ids") or [])},
+                "result": {"errcode": 0, "errmsg": "ok", "msgid": "msg_unverified"},
+            }
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.wecom_group_adapter.build_wecom_group_message_adapter",
+        lambda: UnverifiedAdapter(),
+    )
+
+    with app.app_context():
+        job_id = queue_service.enqueue_job(
+            source_type="workflow",
+            source_id="1:node:10:due:20260528T0200Z:groups:unverified",
+            source_table="automation_group_ops_plans",
+            scheduled_for=datetime.now(timezone.utc) - timedelta(minutes=1),
+            target_external_userids=[],
+            target_summary="1 customer groups",
+            content_type="wecom_customer_group",
+            content_payload={
+                "channel": "wecom_customer_group",
+                "sender": "owner_001",
+                "chat_ids": ["wrOgAAA001"],
+                "text": {"content": "hello"},
+            },
+            content_summary="hello",
+            allow_empty_targets=True,
+        )
+
+        summary = worker.run(batch_size=1)
+        job = queue_service.get_job(job_id)
+
+    assert summary["sent_ok"] == 0
+    assert summary["sent_failed"] == 1
+    assert job["status"] == "failed"
+    assert "exact target not verified" in job["last_error"]
+    assert "wrOgAAA001" in job["last_error"]
