@@ -130,6 +130,10 @@ def test_setup_page_removes_global_duplicate_ui(monkeypatch) -> None:
     basic = _setup_page(client, "basic")
     assert '<h2>配置向导</h2>' not in basic
     assert "setup-guide" not in basic
+    assert "setup-titlebar" not in basic
+    assert basic.count('class="admin-page-title"') == 1
+    assert basic.count("按方案配置基础信息、入口渠道、分层规则、入池规则、运营编排和发布检查。") == 1
+    assert "setup-topbar-tabs" in basic
     assert 'class="setup-action" href="/admin/automation-conversion/programs/7">概览</a>' not in basic
 
     assert "保存草稿" not in _setup_page(client, "entry-rule")
@@ -180,6 +184,7 @@ def test_operations_step_uses_single_real_task_workspace(monkeypatch) -> None:
     html = _setup_page(_client_with_setup(monkeypatch), "operations")
 
     assert "读取当前方案已有运营任务" not in html
+    assert "直接编辑运营任务、分组、触发条件和内容模式；所有操作走当前 Next 任务 API。" not in html
     assert "<th>任务</th><th>分组</th><th>状态</th><th>触发</th><th>目标人群</th><th>内容模式</th><th>更新时间</th>" not in html
     assert "data-operation-task-root" in html
     assert "data-task-search" in html
@@ -196,6 +201,8 @@ def test_operations_step_uses_single_real_task_workspace(monkeypatch) -> None:
     assert "按消息数分层群发" in html
     assert "Agent 改写 / 个性化" in html
     assert "data-save-task" in html
+    assert ".setup-panel--operations { padding: 0; border: 0; background: transparent; box-shadow: none; }" in html
+    assert ".op-task-panel { display: grid; gap: 16px; padding: 0; border: 0; background: transparent; }" in html
     assert ">下一步</a>" not in html
 
 
