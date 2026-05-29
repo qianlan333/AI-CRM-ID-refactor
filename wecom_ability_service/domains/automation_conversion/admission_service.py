@@ -437,6 +437,57 @@ def _upsert_legacy_projection(
     return dict(legacy or {})
 
 
+def _realtime_operation_task_hook(
+    *,
+    member_id: int = 0,
+    external_contact_id: str = "",
+    operator_id: str = "",
+    entry_source: str = "program_admission",
+) -> dict[str, Any]:
+    try:
+        from aicrm_next.automation_engine.audience_transition.application import handle_committed_audience_transition
+
+        hook = handle_committed_audience_transition(
+            member_id=int(member_id or 0),
+            external_userid=_normalized_text(external_contact_id),
+            operator_id=_normalized_text(operator_id) or entry_source,
+            entry_source=entry_source,
+        )
+    except Exception as exc:
+        try:
+            get_db().rollback()
+        except Exception:
+            pass
+        hook = {
+            "audience_entry_id": 0,
+            "audience_code": "",
+            "entry_reason": "",
+            "realtime_operation_tasks_ran": 0,
+            "realtime_operation_tasks_enqueued_count": 0,
+            "realtime_operation_tasks_results": [],
+            "realtime_operation_tasks_error": str(exc),
+        }
+    payload = dict(hook or {})
+    payload["ok"] = not bool(_normalized_text(payload.get("realtime_operation_tasks_error")))
+    return payload
+
+
+def _with_realtime_operation_task_hook(result: dict[str, Any], hook: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(result or {})
+    for key in (
+        "audience_entry_id",
+        "audience_code",
+        "entry_reason",
+        "realtime_operation_tasks_ran",
+        "realtime_operation_tasks_enqueued_count",
+        "realtime_operation_tasks_results",
+        "realtime_operation_tasks_error",
+    ):
+        payload[key] = hook.get(key)
+    payload["realtime_task_hook"] = dict(hook or {})
+    return payload
+
+
 def _resolve_segmentation(program_id: int, member_identity: dict[str, Any]) -> dict[str, Any]:
     from . import workflow_service
 
@@ -693,13 +744,21 @@ def admit_channel_contact_to_program(
             }
         )
         get_db().commit()
-        return {
-            "admission_status": ADMISSION_DUPLICATE_ACTIVE,
-            "accepted": False,
-            "reason": "duplicate_active_member",
-            "program_member": program_member,
-            "admission_attempt": attempt,
-        }
+        hook = _realtime_operation_task_hook(
+            external_contact_id=external_contact_id,
+            operator_id=_normalized_text(trigger_type) or "program_admission",
+            entry_source="program_admission",
+        )
+        return _with_realtime_operation_task_hook(
+            {
+                "admission_status": ADMISSION_DUPLICATE_ACTIVE,
+                "accepted": False,
+                "reason": "duplicate_active_member",
+                "program_member": program_member,
+                "admission_attempt": attempt,
+            },
+            hook,
+        )
     member_mode = "new"
     if existing and not bool(existing.get("in_program")):
         policy = _reentry_policy(program, binding)
@@ -805,16 +864,25 @@ def admit_channel_contact_to_program(
         snapshot=snapshot,
     )
     get_db().commit()
-    return {
-        "admission_status": resolved["admission_status"],
-        "accepted": resolved["admission_status"] in {ADMISSION_ACCEPTED, ADMISSION_WAITING, ADMISSION_CONVERTED},
-        "reason": resolved["entry_reason"],
-        "program_member": program_member,
-        "stage_history": stage_history,
-        "admission_attempt": attempt,
-        "legacy_member": legacy_member,
-        "cleaning_result": resolved,
-    }
+    hook = _realtime_operation_task_hook(
+        member_id=int((legacy_member or {}).get("id") or 0),
+        external_contact_id=external_contact_id,
+        operator_id=_normalized_text(trigger_type) or "program_admission",
+        entry_source="program_admission",
+    )
+    return _with_realtime_operation_task_hook(
+        {
+            "admission_status": resolved["admission_status"],
+            "accepted": resolved["admission_status"] in {ADMISSION_ACCEPTED, ADMISSION_WAITING, ADMISSION_CONVERTED},
+            "reason": resolved["entry_reason"],
+            "program_member": program_member,
+            "stage_history": stage_history,
+            "admission_attempt": attempt,
+            "legacy_member": legacy_member,
+            "cleaning_result": resolved,
+        },
+        hook,
+    )
 
 
 def record_standalone_channel_attempt(
