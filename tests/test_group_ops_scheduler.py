@@ -99,13 +99,53 @@ def test_active_standard_plan_due_node_enqueues_broadcast_job():
 
     assert summary["group_ops_enqueued_jobs"] == 1
     call = queue.calls[0]
-    assert call["scheduled_at"] == "2026-05-28T10:00+08:00"
+    assert call["scheduled_at"] == "2026-05-28T10:00:00+08:00"
     assert call["chat_ids"] == ["wrOgAAA001"]
     assert call["content_payload"]["channel"] == "wecom_customer_group"
     assert call["content_payload"]["sender"] == "owner_001"
     assert call["content_payload"]["chat_ids"] == ["wrOgAAA001"]
     assert call["content_payload"]["text"]["content"] == "hello group"
     assert "attachments" in call["content_payload"]
+
+
+def test_group_ops_due_at_uses_business_timezone():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan(created_at="2026-05-29T05:05:00+00:00")],
+        groups={1: [_group(created_at="2026-05-29T05:05:00+00:00")]},
+        nodes={1: [_node(scheduled_time="13:00", trigger_time_label="13:00")]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 29, 5, 10, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["scheduled_at"] == "2026-05-29T13:00:00+08:00"
+
+
+def test_group_ops_future_node_uses_business_timezone():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan(created_at="2026-05-29T05:05:00+00:00")],
+        groups={1: [_group(created_at="2026-05-29T05:05:00+00:00")]},
+        nodes={1: [_node(scheduled_time="14:00", trigger_time_label="14:00")]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 29, 5, 10, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 0
+    assert summary["group_ops_skipped_future"] == 1
+    assert queue.calls == []
+
+
+def test_group_ops_day_index_uses_business_date():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan(created_at="2026-05-29T05:05:00+00:00")],
+        groups={1: [_group(created_at="2026-05-29T05:05:00+00:00")]},
+        nodes={1: [_node(day_index=2, scheduled_time="13:00", trigger_time_label="13:00")]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 30, 5, 10, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["scheduled_at"] == "2026-05-30T13:00:00+08:00"
 
 
 def test_future_due_node_does_not_enqueue():
@@ -163,6 +203,24 @@ def test_scheduler_is_idempotent_on_repeated_runs():
     assert len(queue.calls) == 1
 
 
+def test_group_ops_scheduler_idempotent_after_timezone_fix():
+    seen: set[str] = set()
+    queue = RecordingQueueGateway(seen)
+    repo = FakeGroupOpsRepo(
+        plans=[_plan(created_at="2026-05-29T05:05:00+00:00")],
+        groups={1: [_group(created_at="2026-05-29T05:05:00+00:00")]},
+        nodes={1: [_node(scheduled_time="13:00", trigger_time_label="13:00")]},
+    )
+
+    first, _ = _run(repo, queue=queue, seen=seen, now=datetime(2026, 5, 29, 5, 10, tzinfo=timezone.utc))
+    second, _ = _run(repo, queue=queue, seen=seen, now=datetime(2026, 5, 29, 5, 10, tzinfo=timezone.utc))
+
+    assert first["group_ops_enqueued_jobs"] == 1
+    assert second["group_ops_enqueued_jobs"] == 0
+    assert second["group_ops_skipped_duplicate"] == 1
+    assert len(queue.calls) == 1
+
+
 def test_groups_with_same_due_at_merge_into_one_job():
     repo = FakeGroupOpsRepo(
         plans=[_plan()],
@@ -193,3 +251,116 @@ def test_groups_with_different_due_at_do_not_merge():
 
     assert summary["group_ops_enqueued_jobs"] == 2
     assert [call["chat_ids"] for call in queue.calls] == [["wrOgAAA001"], ["wrOgAAA002"]]
+
+
+def test_group_ops_content_package_text_enqueues():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={
+            1: [
+                _node(
+                    text_content="",
+                    content_package_json={
+                        "content_text": "package hello group",
+                        "image_library_ids": [],
+                        "miniprogram_library_ids": [],
+                        "attachment_library_ids": [],
+                    },
+                )
+            ]
+        },
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["content_payload"]["text"]["content"] == "package hello group"
+
+
+def test_group_ops_text_and_attachment_enqueues():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={1: [_node(attachments=[{"msgtype": "file", "file": {"media_id": "file-media-001"}}])]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["content_payload"]["text"]["content"] == "hello group"
+    assert queue.calls[0]["content_payload"]["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-001"}}]
+
+
+def test_group_ops_bad_node_does_not_block_good_node(monkeypatch):
+    from wecom_ability_service.domains import image_library
+
+    def fail_resolve(image_id):
+        raise RuntimeError(f"missing image {image_id}")
+
+    monkeypatch.setattr(image_library, "resolve_image_media_id", fail_resolve)
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={
+            1: [
+                _node(
+                    id=9,
+                    text_content="",
+                    content_package_json={
+                        "content_text": "",
+                        "image_library_ids": [404],
+                        "miniprogram_library_ids": [],
+                        "attachment_library_ids": [],
+                    },
+                ),
+                _node(id=10, text_content="good node"),
+            ]
+        },
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["content_payload"]["text"]["content"] == "good node"
+    assert summary["errors"] == [
+        {
+            "scope": "group_ops_node",
+            "plan_id": 1,
+            "node_id": 9,
+            "error": "image_library_resolve_failed:id=404:missing image 404",
+        }
+    ]
+
+
+def test_group_ops_unresolvable_content_package_records_node_error(monkeypatch):
+    from wecom_ability_service.domains import image_library
+
+    monkeypatch.setattr(image_library, "resolve_image_media_id", lambda image_id: "")
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={
+            1: [
+                _node(
+                    id=9,
+                    text_content="",
+                    content_package_json={
+                        "content_text": "",
+                        "image_library_ids": [404],
+                        "miniprogram_library_ids": [],
+                        "attachment_library_ids": [],
+                    },
+                ),
+                _node(id=10, text_content="good node"),
+            ]
+        },
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["content_payload"]["text"]["content"] == "good node"
+    assert summary["errors"][0]["scope"] == "group_ops_node"
+    assert summary["errors"][0]["node_id"] == 9
+    assert "image_library_resolve_failed:id=404" in summary["errors"][0]["error"]
