@@ -120,6 +120,24 @@ def test_claim_due_only_pulls_queued_and_due(app):
             assert j["status"] == "claimed"
 
 
+def test_claim_due_order_is_scheduled_priority_id(app):
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        later = _enqueue(scheduled_for=now - timedelta(minutes=1), source_id="later", content_payload={"fn_name": "send_text", "wecom_payload": {"content": "later"}})
+        high_priority = _enqueue(scheduled_for=now - timedelta(minutes=3), source_id="high-priority", content_payload={"fn_name": "send_text", "wecom_payload": {"content": "high"}})
+        same_time_first = _enqueue(scheduled_for=now - timedelta(minutes=2), source_id="same-first", content_payload={"fn_name": "send_text", "wecom_payload": {"content": "first"}})
+        same_time_second = _enqueue(scheduled_for=now - timedelta(minutes=2), source_id="same-second", content_payload={"fn_name": "send_text", "wecom_payload": {"content": "second"}})
+        from wecom_ability_service.db import get_db
+
+        get_db().execute("UPDATE broadcast_jobs SET priority = 10 WHERE id = ?", (int(high_priority),))
+        get_db().execute("UPDATE broadcast_jobs SET priority = 1 WHERE id = ?", (int(same_time_second),))
+        get_db().commit()
+
+        claimed = queue_service.claim_due_jobs(limit=10, now=now)
+
+    assert [item["id"] for item in claimed] == [high_priority, same_time_second, same_time_first, later]
+
+
 def test_mark_sent_updates_status_and_records_outbound(app):
     with app.app_context():
         now = datetime.now(timezone.utc)
