@@ -1,0 +1,317 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .radar-layout {
+    display: grid;
+    gap: 18px;
+  }
+
+  .radar-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .radar-form-grid .admin-field--wide {
+    grid-column: 1 / -1;
+  }
+
+  .radar-toggle-row,
+  .radar-actions,
+  .radar-link-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .radar-actions {
+    justify-content: flex-end;
+  }
+
+  .radar-table td {
+    vertical-align: top;
+  }
+
+  .radar-table td:last-child,
+  .radar-table th:last-child {
+    text-align: right;
+  }
+
+  .radar-title {
+    font-size: 15px;
+    font-weight: 850;
+  }
+
+  .radar-url,
+  .radar-muted {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .radar-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+  }
+
+  .radar-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .radar-stat {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fbfcff;
+  }
+
+  .radar-stat-value {
+    font-size: 20px;
+    font-weight: 900;
+  }
+
+  .radar-toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 60;
+    max-width: 320px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: rgba(29, 38, 56, 0.94);
+    color: #fff;
+  }
+
+  .radar-toast.is-error {
+    background: rgba(174, 68, 54, 0.96);
+  }
+
+  @media (max-width: 960px) {
+    .radar-form-grid,
+    .radar-stat-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .radar-actions,
+    .radar-table td:last-child,
+    .radar-table th:last-child {
+      text-align: left;
+      justify-content: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="radar-layout">
+  <section class="admin-card">
+    <form id="radar-create-form" class="radar-form-grid">
+      <label class="admin-field">
+        <span>标题</span>
+        <input name="title" type="text" required placeholder="例如：5 月直播报名页">
+      </label>
+      <label class="admin-field">
+        <span>来源渠道</span>
+        <input name="source_channel" type="text" placeholder="wechat_group">
+      </label>
+      <label class="admin-field admin-field--wide">
+        <span>目标 URL</span>
+        <input name="original_url" type="url" required placeholder="https://example.com/landing">
+      </label>
+      <label class="admin-field">
+        <span>Campaign ID</span>
+        <input name="campaign_id" type="text">
+      </label>
+      <label class="admin-field">
+        <span>Staff ID</span>
+        <input name="staff_id" type="text">
+      </label>
+      <div class="radar-toggle-row admin-field--wide">
+        <label><input name="enabled" type="checkbox" checked> 启用</label>
+        <label><input name="auth_required" type="checkbox"> 需要授权</label>
+      </div>
+      <div class="radar-actions admin-field--wide">
+        <button class="admin-button admin-button--ghost" type="button" id="radar-refresh">刷新</button>
+        <button class="admin-button admin-button--primary" type="submit">创建外链</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="admin-card">
+    <div class="radar-stat-grid" id="radar-stat-grid" hidden></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-table-wrap">
+      <table class="admin-table radar-table">
+        <thead>
+          <tr>
+            <th>外链</th>
+            <th>归因</th>
+            <th>状态</th>
+            <th>统计</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="radar-link-rows">
+          <tr><td colspan="5">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+(() => {
+  const rowsEl = document.querySelector("#radar-link-rows");
+  const formEl = document.querySelector("#radar-create-form");
+  const refreshEl = document.querySelector("#radar-refresh");
+  const statsEl = document.querySelector("#radar-stat-grid");
+
+  const toast = (message, isError = false) => {
+    const el = document.createElement("div");
+    el.className = `radar-toast${isError ? " is-error" : ""}`;
+    el.textContent = message;
+    document.body.appendChild(el);
+    window.setTimeout(() => el.remove(), 2200);
+  };
+
+  const fetchJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      headers: {"Content-Type": "application/json", ...(options.headers || {})},
+      ...options,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.detail || payload.page_error || "请求失败");
+    }
+    return payload;
+  };
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+
+  const renderStats = (stats) => {
+    const items = [
+      ["总点击", stats.total_clicks],
+      ["授权点击", stats.authorized_clicks],
+      ["唯一用户", stats.unique_users],
+      ["今日点击", stats.today_clicks],
+      ["最近点击", stats.last_clicked_at || "-"],
+    ];
+    statsEl.innerHTML = items.map(([label, value]) => `
+      <div class="radar-stat">
+        <div class="radar-muted">${label}</div>
+        <div class="radar-stat-value">${value}</div>
+      </div>
+    `).join("");
+    statsEl.hidden = false;
+  };
+
+  const loadStats = async (id) => {
+    const payload = await fetchJson(`/api/admin/radar-links/${id}/stats`);
+    renderStats(payload.stats || {});
+  };
+
+  const setEnabled = async (id, enabled) => {
+    await fetchJson(`/api/admin/radar-links/${id}/${enabled ? "enable" : "disable"}`, {method: "POST", body: "{}"});
+    toast(enabled ? "已启用" : "已停用");
+    await loadLinks();
+  };
+
+  const copyLink = async (url) => {
+    await navigator.clipboard.writeText(url);
+    toast("链接已复制");
+  };
+
+  const renderRows = (items) => {
+    if (!items.length) {
+      rowsEl.innerHTML = `<tr><td colspan="5">暂无雷达外链</td></tr>`;
+      return;
+    }
+    rowsEl.innerHTML = items.map((item) => `
+      <tr>
+        <td>
+          <div class="radar-title">${escapeHtml(item.title)}</div>
+          <div class="radar-link-line">
+            <span class="radar-code">${escapeHtml(item.wrapper_url)}</span>
+          </div>
+          <div class="radar-url">${escapeHtml(item.original_url)}</div>
+        </td>
+        <td>
+          <div>${escapeHtml(item.source_channel || "-")}</div>
+          <div class="radar-muted">${escapeHtml(item.campaign_id || "-")} · ${escapeHtml(item.staff_id || "-")}</div>
+        </td>
+        <td>${item.enabled ? "启用中" : "已停用"} · ${item.auth_required ? "授权" : "直达"}</td>
+        <td>
+          <button class="admin-button admin-button--ghost" type="button" data-stats="${item.id}">查看</button>
+        </td>
+        <td>
+          <div class="radar-actions">
+            <button class="admin-button admin-button--secondary" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制链接</button>
+            <button class="admin-button admin-button--ghost" type="button" data-toggle="${item.id}" data-enabled="${item.enabled ? "0" : "1"}">
+              ${item.enabled ? "停用" : "启用"}
+            </button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+  };
+
+  async function loadLinks() {
+    const payload = await fetchJson("/api/admin/radar-links");
+    renderRows(payload.items || []);
+  }
+
+  formEl.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(formEl);
+    const payload = {
+      title: data.get("title") || "",
+      original_url: data.get("original_url") || "",
+      enabled: data.has("enabled"),
+      auth_required: data.has("auth_required"),
+      source_channel: data.get("source_channel") || "",
+      campaign_id: data.get("campaign_id") || "",
+      staff_id: data.get("staff_id") || "",
+    };
+    try {
+      await fetchJson("/api/admin/radar-links", {method: "POST", body: JSON.stringify(payload)});
+      formEl.reset();
+      formEl.elements.enabled.checked = true;
+      toast("已创建");
+      await loadLinks();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+
+  rowsEl.addEventListener("click", async (event) => {
+    const target = event.target.closest("button");
+    if (!target) return;
+    try {
+      if (target.dataset.copy) await copyLink(target.dataset.copy);
+      if (target.dataset.toggle) await setEnabled(target.dataset.toggle, target.dataset.enabled === "1");
+      if (target.dataset.stats) await loadStats(target.dataset.stats);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+
+  refreshEl.addEventListener("click", () => loadLinks().catch((error) => toast(error.message, true)));
+  loadLinks().catch((error) => {
+    rowsEl.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+  });
+})();
+</script>
+{% endblock %}

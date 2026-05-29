@@ -50,6 +50,7 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
+        "api.admin_radar_links": "/admin/radar-links",
         "api.admin_console_global_questionnaire_external_push_logs": "/admin/questionnaires/external-push-logs",
         "api.admin_console_global_questionnaire_external_push_logs_retry_batch": "/admin/questionnaires/external-push-logs/retry-batch",
         "api.admin_console_global_questionnaire_external_push_logs_retry": "/admin/questionnaires/external-push-logs/"
@@ -106,6 +107,7 @@ ADMIN_NAV_GROUPS = [
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
             {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
             {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_questionnaires"},
+            {"key": "radar_links", "label": "雷达外链", "endpoint": "api.admin_radar_links"},
             {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
         ],
     },

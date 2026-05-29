@@ -33,6 +33,8 @@ from .production_compat.api import router as production_compat_router
 from .production_compat.api import wildcard_router as production_compat_wildcard_router
 from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
+from .radar_links.api import router as radar_links_router
+from .radar_links.repo import reset_radar_links_fixture_state
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
@@ -53,6 +55,7 @@ def create_app() -> FastAPI:
         reset_media_library_fixture_state()
         reset_admin_jobs_fixture_state()
         reset_hxc_dashboard_fixture_state()
+        reset_radar_links_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -92,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(identity_router)
     app.include_router(questionnaire_router)
+    app.include_router(radar_links_router)
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)
