@@ -3715,6 +3715,7 @@
                 <option value="" ${!state.questionnaire.external_push_type ? 'selected' : ''}></option>
                 <option value="subscription" ${state.questionnaire.external_push_type === 'subscription' ? 'selected' : ''}>订阅版</option>
                 <option value="premium" ${state.questionnaire.external_push_type === 'premium' ? 'selected' : ''}>私教版</option>
+                <option value="trial" ${state.questionnaire.external_push_type === 'trial' ? 'selected' : ''}>首月权益</option>
               </select>
             </label>
             <label class="field">到期时间戳

@@ -56,7 +56,7 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
     "frequency",
     "remark",
 }
-QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"subscription", "premium"}
+QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"subscription", "premium", "trial"}
 QUESTIONNAIRE_ROW_SELECT = """
     SELECT id, slug, name, title, description, is_disabled, redirect_url,
            answer_display_mode,
@@ -363,7 +363,7 @@ def _normalize_questionnaire_payload(
     if external_push_enabled and not external_push_url:
         raise ValueError("external_push_url is required when external_push_enabled is enabled")
     if external_push_type and external_push_type not in QUESTIONNAIRE_EXTERNAL_PUSH_TYPES:
-        raise ValueError("external_push_type must be subscription or premium")
+        raise ValueError("external_push_type must be subscription, premium or trial")
     if _questionnaire_exists_by_slug(slug, exclude_id=questionnaire_id):
         if has_explicit_slug:
             raise ValueError("slug already exists")
