@@ -11,8 +11,9 @@ def test_hxc_dashboard_template_has_auto_refresh_contract():
         "wecom_ability_service/templates/admin_console/hxc_dashboard.html"
     ).read_text()
 
-    assert "AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000" in template
-    assert 'triggerSource: "auto_10m"' in template
+    assert "AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000" in template
+    assert 'triggerSource: "auto_30m"' in template
+    assert "normalized += 'Z'" in template
     assert "hxc-auto-refresh-status" in template
 
 
@@ -213,8 +214,8 @@ def test_admin_dashboard_page_renders(client, app):
     assert "139****5678" in body
     assert "成长额度余额" in body
     assert "推荐话题状态" in body
-    assert "AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000" in body
-    assert 'triggerSource: "auto_10m"' in body
+    assert "AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000" in body
+    assert 'triggerSource: "auto_30m"' in body
 
 
 def test_admin_dashboard_has_send_config_link(client, app):
