@@ -2,15 +2,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, time, timezone, timedelta
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract
 from aicrm_next.shared.errors import ContractError
 
 from .domain import build_node_group_message_content, clean_text, derive_node_scheduled_time
+from .integration_gateway import resolve_group_ops_content_package_materials
 from .repo import GroupOpsRepository, build_group_ops_repository
+
+
+DEFAULT_GROUP_OPS_TIMEZONE = "Asia/Shanghai"
+
+
+def _business_timezone() -> ZoneInfo:
+    name = clean_text(os.getenv("AICRM_GROUP_OPS_TIMEZONE")) or DEFAULT_GROUP_OPS_TIMEZONE
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo(DEFAULT_GROUP_OPS_TIMEZONE)
 
 
 def _parse_datetime(value: Any, *, fallback: datetime) -> datetime:
@@ -25,11 +39,12 @@ def _parse_datetime(value: Any, *, fallback: datetime) -> datetime:
         except ValueError:
             return fallback
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=fallback.tzinfo or timezone.utc)
+        return parsed.replace(tzinfo=timezone.utc)
     return parsed
 
 
-def _due_at_for_group(*, plan: dict[str, Any], node: dict[str, Any], group: dict[str, Any]) -> datetime:
+def _due_at_for_group(*, plan: dict[str, Any], node: dict[str, Any], group: dict[str, Any], business_tz: ZoneInfo | None = None) -> datetime:
+    tz = business_tz or _business_timezone()
     fallback_start = _parse_datetime(plan.get("created_at"), fallback=datetime.now(timezone.utc))
     group_start = _parse_datetime(group.get("created_at"), fallback=fallback_start)
     scheduled_time = derive_node_scheduled_time(node)
@@ -37,8 +52,9 @@ def _due_at_for_group(*, plan: dict[str, Any], node: dict[str, Any], group: dict
         raise ContractError("group ops node scheduled_time must use HH:MM")
     hour, minute = [int(item) for item in scheduled_time.split(":", 1)]
     day_index = max(1, int(node.get("day_index") or 1))
-    due_date = group_start.date() + timedelta(days=day_index - 1)
-    return datetime.combine(due_date, time(hour=hour, minute=minute), tzinfo=group_start.tzinfo)
+    start_anchor_local = group_start.astimezone(tz)
+    due_date = start_anchor_local.date() + timedelta(days=day_index - 1)
+    return datetime.combine(due_date, time(hour=hour, minute=minute), tzinfo=tz)
 
 
 def _minute_key(value: datetime) -> str:
@@ -103,6 +119,7 @@ class GroupOpsDueScheduler:
         if current_time.tzinfo is None:
             current_time = current_time.replace(tzinfo=timezone.utc)
         summary = GroupOpsSchedulerSummary(scanned_at=current_time.isoformat())
+        business_tz = _business_timezone()
         repo = self._repo or build_group_ops_repository()
         if repo is None:
             summary.errors.append({"scope": "group_ops", "error": "group ops repository unavailable"})
@@ -132,15 +149,27 @@ class GroupOpsDueScheduler:
                     if clean_text(node.get("status") or "active") == "active"
                 ]
                 for node in nodes:
-                    self._schedule_node(
-                        summary=summary,
-                        queue_gateway=queue_gateway,
-                        plan=plan,
-                        node=node,
-                        groups=groups,
-                        now=current_time,
-                        operator=operator,
-                    )
+                    node_id = int(node.get("id") or 0)
+                    try:
+                        self._schedule_node(
+                            summary=summary,
+                            queue_gateway=queue_gateway,
+                            plan=plan,
+                            node=node,
+                            groups=groups,
+                            now=current_time,
+                            operator=operator,
+                            business_tz=business_tz,
+                        )
+                    except Exception as exc:
+                        summary.errors.append(
+                            {
+                                "scope": "group_ops_node",
+                                "plan_id": plan_id,
+                                "node_id": node_id,
+                                "error": str(exc),
+                            }
+                        )
             except Exception as exc:
                 summary.errors.append({"scope": "group_ops_plan", "plan_id": plan_id, "error": str(exc)})
         return summary.as_dict()
@@ -155,8 +184,16 @@ class GroupOpsDueScheduler:
         groups: list[dict[str, Any]],
         now: datetime,
         operator: str,
+        business_tz: ZoneInfo,
     ) -> None:
-        content = build_node_group_message_content(node=node, sender=clean_text(plan.get("owner_userid")))
+        content_package = node.get("content_package_json") if isinstance(node.get("content_package_json"), dict) else {}
+        resolved_attachments, resolved_image_media_ids = resolve_group_ops_content_package_materials(content_package)
+        content = build_node_group_message_content(
+            node=node,
+            sender=clean_text(plan.get("owner_userid")),
+            resolved_attachments=resolved_attachments,
+            resolved_image_media_ids=resolved_image_media_ids,
+        )
         base_payload = dict(content)
         base_payload.setdefault("attachments", [])
         base_payload["channel"] = "wecom_customer_group"
@@ -166,7 +203,7 @@ class GroupOpsDueScheduler:
         content_hash = _content_hash(base_payload)
         due_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
         for group in groups:
-            due_at = _due_at_for_group(plan=plan, node=node, group=group)
+            due_at = _due_at_for_group(plan=plan, node=node, group=group, business_tz=business_tz)
             if due_at.astimezone(timezone.utc) > now.astimezone(timezone.utc):
                 summary.group_ops_skipped_future += 1
                 continue
@@ -184,7 +221,8 @@ class GroupOpsDueScheduler:
             due_at = bucket["due_at"]
             chat_hash = _stable_hash(chat_ids)
             source_id = f"{int(plan['id'])}:node:{int(node['id'])}:due:{_minute_key(due_at)}:groups:{chat_hash}"
-            idempotency_key = f"group_ops:{source_id}:{due_at.isoformat(timespec='minutes')}"
+            scheduled_at = due_at.isoformat(timespec="seconds")
+            idempotency_key = f"group_ops:{source_id}:{scheduled_at}"
             if self._duplicate_checker(idempotency_key):
                 summary.group_ops_skipped_duplicate += 1
                 continue
@@ -193,7 +231,7 @@ class GroupOpsDueScheduler:
             job_id = queue_gateway.enqueue_group_message(
                 plan_id=int(plan["id"]),
                 source_id=source_id,
-                scheduled_at=due_at.isoformat(timespec="minutes"),
+                scheduled_at=scheduled_at,
                 owner_userid=clean_text(plan.get("owner_userid")),
                 chat_ids=chat_ids,
                 content_payload=content_payload,

@@ -123,12 +123,19 @@ def normalize_attachments_for_builder(attachments: list[Any]) -> tuple[list[dict
     return normalized_attachments, image_media_ids
 
 
-def normalize_message_content(*, text: Any = "", attachments: list[Any] | None = None, sender: str = "") -> dict[str, Any]:
-    builder_attachments, image_media_ids = normalize_attachments_for_builder(list(attachments or []))
+def normalize_message_content(
+    *,
+    text: Any = "",
+    attachments: list[Any] | None = None,
+    image_media_ids: list[Any] | None = None,
+    sender: str = "",
+) -> dict[str, Any]:
+    builder_attachments, attachment_image_media_ids = normalize_attachments_for_builder(list(attachments or []))
+    builder_image_ids = [clean_text(item) for item in list(image_media_ids or []) if clean_text(item)]
     payload: dict[str, Any] = {
         "content": clean_text(text),
         "attachments": builder_attachments,
-        "image_media_ids": image_media_ids,
+        "image_media_ids": attachment_image_media_ids + builder_image_ids,
     }
     if sender:
         payload["sender"] = clean_text(sender)
@@ -225,10 +232,19 @@ def normalize_group_snapshots(groups: list[dict[str, Any]]) -> list[dict[str, An
     return normalized
 
 
-def build_node_group_message_content(*, node: dict[str, Any], sender: str) -> dict[str, Any]:
+def build_node_group_message_content(
+    *,
+    node: dict[str, Any],
+    sender: str,
+    resolved_attachments: list[dict[str, Any]] | None = None,
+    resolved_image_media_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    content_package = node.get("content_package_json") if isinstance(node.get("content_package_json"), dict) else {}
+    text_content = clean_text(node.get("text_content")) or clean_text(content_package.get("content_text"))
     return normalize_message_content(
-        text=node.get("text_content") or "",
-        attachments=list(node.get("attachments") or []),
+        text=text_content,
+        attachments=list(node.get("attachments") or []) + list(resolved_attachments or []),
+        image_media_ids=list(resolved_image_media_ids or []),
         sender=sender,
     )
 
