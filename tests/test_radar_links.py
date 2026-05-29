@@ -136,6 +136,85 @@ def test_fake_oauth_callback_with_unionid_records_authorized_click_and_redirects
     assert events[0]["unionid"] == "unionid_from_fake_callback"
 
 
+def test_real_radar_oauth_start_builds_wechat_authorize_url_under_explicit_flag(client, monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_WECHAT_OAUTH_MODE", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH", "1")
+    monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-radar-app")
+    monkeypatch.setenv("WECHAT_MP_APP_SECRET", "radar-secret")
+    monkeypatch.setenv("WECHAT_MP_OAUTH_SCOPE", "snsapi_userinfo")
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "https://crm.example.com")
+    link = _create_link(client, auth_required=True)
+
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    assert landing_response.status_code == 302
+    start_response = client.get(landing_response.headers["location"], follow_redirects=False)
+
+    assert start_response.status_code == 302
+    parsed = urlparse(start_response.headers["location"])
+    values = parse_qs(parsed.query)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "open.weixin.qq.com"
+    assert parsed.path == "/connect/oauth2/authorize"
+    assert parsed.fragment == "wechat_redirect"
+    assert values["appid"] == ["wx-radar-app"]
+    assert values["scope"] == ["snsapi_userinfo"]
+    assert values["state"][0] == _state_from_oauth_start_location(landing_response.headers["location"])
+    assert values["redirect_uri"][0].startswith("https://crm.example.com/api/h5/radar/oauth/callback?state=")
+
+
+def test_real_radar_oauth_callback_exchanges_code_and_records_unionid(client, monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_WECHAT_OAUTH_MODE", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH", "1")
+    monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-radar-app")
+    monkeypatch.setenv("WECHAT_MP_APP_SECRET", "radar-secret")
+    monkeypatch.setenv("WECHAT_MP_OAUTH_SCOPE", "snsapi_userinfo")
+    from wecom_ability_service.infra import wechat_oauth
+
+    def fake_exchange_wechat_oauth_code(*, app_id: str, app_secret: str, code: str, timeout: int = 15):
+        assert app_id == "wx-radar-app"
+        assert app_secret == "radar-secret"
+        assert code == "real-code"
+        return {"openid": "openid_real", "access_token": "access-token-real"}
+
+    def fake_fetch_wechat_userinfo(*, access_token: str, openid: str, timeout: int = 15):
+        assert access_token == "access-token-real"
+        assert openid == "openid_real"
+        return {"openid": openid, "unionid": "unionid_real"}
+
+    monkeypatch.setattr(wechat_oauth, "exchange_wechat_oauth_code", fake_exchange_wechat_oauth_code)
+    monkeypatch.setattr(wechat_oauth, "fetch_wechat_userinfo", fake_fetch_wechat_userinfo)
+    link = _create_link(client, auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+
+    callback_response = client.get(
+        "/api/h5/radar/oauth/callback",
+        params={"state": state, "code": "real-code"},
+        follow_redirects=False,
+    )
+
+    assert callback_response.status_code == 302
+    assert callback_response.headers["location"] == "https://example.com/landing"
+    events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
+    stages = [event["stage"] for event in events]
+    assert stages == ["authorized_click", "oauth_callback", "landing"]
+    assert events[0]["openid"] == "openid_real"
+    assert events[0]["unionid"] == "unionid_real"
+
+
+def test_real_radar_oauth_requires_explicit_flag(client, monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_WECHAT_OAUTH_MODE", "production")
+    monkeypatch.delenv("AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH", raising=False)
+    monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-radar-app")
+    link = _create_link(client, auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+
+    response = client.get(landing_response.headers["location"], follow_redirects=False)
+
+    assert response.status_code == 400
+    assert "production mode is not enabled" in response.text
+
+
 def test_stats_returns_required_click_fields(client):
     link = _create_link(client, auth_required=True)
     landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
