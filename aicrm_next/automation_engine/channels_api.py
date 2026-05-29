@@ -253,6 +253,13 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
         channels = [_serialize_channel(item) for item in _FIXTURE_CHANNELS.values()]
         if status:
             channels = [item for item in channels if item.get("status") == status]
+        if int(available_for_program_id or 0) > 0:
+            active_channel_ids = {
+                int(item.get("channel_id") or 0)
+                for item in _FIXTURE_PROGRAM_BINDINGS.values()
+                if _text(item.get("binding_status")) == "active"
+            }
+            channels = [item for item in channels if int(item.get("id") or 0) not in active_channel_ids]
         return sorted(channels, key=lambda item: int(item.get("id") or 0), reverse=True)[:limit]
     params: list[Any] = []
     where = ""

@@ -2,6 +2,7 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
 <style>
   .setup-shell { display: grid; gap: 18px; min-width: 0; }
   .setup-guide { display: grid; gap: 14px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
@@ -175,34 +176,90 @@
   </section>
   {% elif current_step == "entry" %}
   {% set entry = workspace.entry or {} %}
-  <section class="setup-panel">
-    <div class="setup-panel-head">
-      <div>
-        <h2>入口渠道</h2>
-        <p class="setup-muted">入口渠道已迁移到当前方案的入口渠道页。这里仅保留旧数据只读展示，不再创建、绑定或重新生成渠道。</p>
+  {% set entry_payload = {"program": program, "bindings": entry.channels or [], "candidate_channels": entry.candidate_channels or [], "api_urls": entry.api_urls or {}} %}
+  <div
+    class="channel-page"
+    data-channel-admission-page="entry-channels"
+    data-program-id="{{ program.id }}"
+    data-api-bindings="{{ (entry.api_urls or {}).bindings }}"
+    data-admin-token="{{ admin_action_token }}"
+  >
+    <script type="application/json" data-channel-bootstrap>{{ entry_payload | tojson }}</script>
+    <section class="setup-panel">
+      <div class="setup-panel-head">
+        <div>
+          <h2>入口渠道</h2>
+          <p class="setup-muted">入口渠道用于承接不同二维码或企微获客助手链接进入的人群。一个方案可以绑定多个入口渠道；渠道本体请在渠道码中心维护。</p>
+        </div>
+        <div class="setup-actions">
+          <button class="setup-action is-primary" type="button" data-open-bind-modal>绑定已有渠道码</button>
+          <a class="setup-action" href="{{ urls['entry_channels'] }}">前往入口渠道页</a>
+        </div>
       </div>
-      <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">前往入口渠道页</a>
-    </div>
-    <div class="setup-table-wrap">
-      <table class="setup-table">
-        <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>标识</th><th>链接</th></tr></thead>
-        <tbody>
-          {% for channel in entry.channels or [] %}
-          {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
-          <tr>
-            <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
-            <td>{{ channel.channel_name or channel.channel_code }}</td>
-            <td>{{ channel.status or "-" }}</td>
-            <td>{{ (channel.customer_channel or channel.scene_value or channel.channel_code or "-") if is_link else (channel.scene_value or channel.channel_code or "-") }}</td>
-            <td>{{ channel.final_url or channel.link_url or channel.qr_url or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5">当前没有旧入口渠道数据。</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+      <div class="setup-summary-grid">
+        <article class="setup-summary-item"><span>已绑定渠道数量</span><strong>{{ (entry.channels or []) | length }}</strong></article>
+        <article class="setup-summary-item"><span>可绑定候选</span><strong>{{ (entry.candidate_channels or []) | length }}</strong></article>
+        <article class="setup-summary-item"><span>渠道维护</span><strong><a href="/admin/channels">渠道码中心</a></strong></article>
+      </div>
+      <div class="setup-table-wrap">
+        <table class="setup-table">
+          <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>标识</th><th>链接</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for channel in entry.channels or [] %}
+            {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
+            <tr data-bound-channel-id="{{ channel.id }}" data-binding-id="{{ channel.binding_id }}" data-bound-carrier="{{ 'link' if is_link else 'qrcode' }}">
+              <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
+              <td>{{ channel.channel_name or channel.channel_code }}</td>
+              <td>{{ {"active":"启用","paused":"暂停","archived":"已解绑"}.get(channel.binding_status, channel.status or "-") }}</td>
+              <td>{{ (channel.customer_channel or channel.scene_value or channel.channel_code or "-") if is_link else (channel.scene_value or channel.channel_code or "-") }}</td>
+              <td>{{ channel.final_url or channel.link_url or channel.qr_url or "-" }}</td>
+              <td>
+                <button class="setup-action" type="button" data-unbind-channel data-binding-id="{{ channel.binding_id }}" {% if not channel.binding_id %}disabled{% endif %}>解绑</button>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">当前方案还没有绑定渠道，请绑定已有渠道码。</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="channel-modal" data-bind-modal hidden>
+      <div class="channel-modal__panel">
+        <div class="setup-modal__head">
+          <div>
+            <h2>绑定已有渠道码</h2>
+            <p class="setup-muted">可多选普通二维码或企微获客助手链接；已被其他方案 active 绑定的渠道不会出现在这里。</p>
+          </div>
+          <button class="setup-action" type="button" data-close-bind-modal>关闭</button>
+        </div>
+        <div class="setup-table-wrap">
+          <table class="setup-table">
+            <thead><tr><th>选择</th><th>渠道</th><th>类型</th><th>状态</th><th>标识</th><th>链接</th></tr></thead>
+            <tbody>
+              {% for item in entry.candidate_channels or [] %}
+              {% set is_link = item.carrier_type == "link" or item.channel_type == "wecom_customer_acquisition" %}
+              <tr data-bind-candidate data-channel-id="{{ item.id }}" data-candidate-carrier="{{ 'link' if is_link else 'qrcode' }}">
+                <td><input type="checkbox" value="{{ item.id }}" data-bind-channel-checkbox></td>
+                <td><strong>{{ item.channel_name or item.channel_code }}</strong><span class="channel-code">{{ item.channel_code }}</span></td>
+                <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
+                <td>{{ item.status or "active" }}</td>
+                <td>{{ (item.customer_channel or item.scene_value or item.channel_code or "-") if is_link else (item.scene_value or item.channel_code or "-") }}</td>
+                <td>{{ item.final_url or item.link_url or item.qr_url or "-" }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6">没有可绑定渠道。请先去<a href="/admin/channels">渠道码中心</a>创建渠道，或解绑其他方案占用的渠道。</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="setup-actions">
+          <button class="setup-action is-primary" type="button" data-confirm-bind>确认绑定</button>
+        </div>
+      </div>
+    </aside>
+  </div>
   {% elif current_step == "segmentation" %}
   {% set segmentation = workspace.segmentation or {} %}
   {% set normal = segmentation.normal_question_rules or {} %}
@@ -585,6 +642,9 @@
     </div>
   </footer>
 </section>
+{% if current_step == "entry" %}
+<script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}"></script>
+{% endif %}
 {% if current_step == "segmentation" %}
 <script>
 (() => {

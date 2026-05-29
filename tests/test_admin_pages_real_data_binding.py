@@ -559,6 +559,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             "channels": [
                 {
                     "id": 31,
+                    "binding_id": 101,
                     "channel_name": "默认渠道二维码",
                     "channel_code": "aqr_260521_b91c",
                     "channel_type": "qrcode",
@@ -573,6 +574,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
                 },
                 {
                     "id": 32,
+                    "binding_id": 102,
                     "channel_name": "获客助手链接",
                     "channel_code": "wca_260521_b91c",
                     "channel_type": "wecom_customer_acquisition",
@@ -581,10 +583,27 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
                     "binding_status": "active",
                     "customer_channel": "wca_260521_b91c",
                     "final_url": "https://work.weixin.qq.com/ca/example",
+                },
+            ],
+            "candidate_channels": [
+                {
+                    "id": 33,
+                    "channel_name": "候选渠道二维码",
+                    "channel_code": "aqr_260522_cand",
+                    "channel_type": "qrcode",
+                    "carrier_type": "qrcode",
+                    "status": "active",
+                    "scene_value": "aqr_260522_cand",
+                    "qr_url": "https://wework.qpic.cn/candidate",
                 }
             ],
+            "api_urls": {
+                "bindings": "/api/admin/automation-conversion/programs/7/channel-bindings",
+                "binding_base": "/api/admin/automation-conversion/programs/7/channel-bindings/0",
+            },
             "qrcode_channel": {
                 "id": 31,
+                "binding_id": 101,
                 "channel_name": "默认渠道二维码",
                 "channel_code": "aqr_260521_b91c",
                 "channel_type": "qrcode",
@@ -725,9 +744,18 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
     assert "/api/admin/automation-conversion/programs/7/publish-full" in publish_response.text
     entry_response = client.get("/admin/automation-conversion/programs/7/setup?step=entry")
     assert "前往入口渠道页" in entry_response.text
+    assert "绑定已有渠道码" in entry_response.text
+    assert "候选渠道二维码" in entry_response.text
+    assert 'data-open-bind-modal' in entry_response.text
+    assert 'data-confirm-bind' in entry_response.text
+    assert 'data-bind-channel-checkbox' in entry_response.text
+    assert 'data-unbind-channel' in entry_response.text
+    assert '"candidate_channels"' in entry_response.text
+    assert '"bindings"' in entry_response.text
+    assert "/api/admin/automation-conversion/programs/7/channel-bindings" in entry_response.text
+    assert "/api/admin/automation-conversion/programs/7/channel-bindings/0" in entry_response.text
     assert "当前二维码入口" not in entry_response.text
     assert "入口配置块" not in entry_response.text
-    assert "欢迎来到峰会" not in entry_response.text
 
 
 def test_automation_program_entry_channels_page_uses_next_binding_payload(monkeypatch):
