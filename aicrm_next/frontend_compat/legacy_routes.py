@@ -582,17 +582,17 @@ def admin_questionnaires(request: Request):
         list_payload = {
             "questionnaires": [
                 {
-                    "id": "local_contract_questionnaire",
-                    "slug": "local-contract-questionnaire",
-                    "title": "本地结构校验问卷",
-                    "name": "本地结构校验问卷",
+                    "id": 1,
+                    "slug": "hxc-activation-v1",
+                    "title": "黄小璨激活问卷",
+                    "name": "黄小璨激活问卷",
                     "enabled": True,
                     "is_disabled": False,
                     "created_at": "2026-05-20T00:00:00Z",
                     "updated_at": "2026-05-20T00:00:00Z",
                     "submission_count": 0,
                     "assessment_enabled": False,
-                    "public_path": "/s/local-contract-questionnaire",
+                    "public_path": "/s/hxc-activation-v1",
                 }
             ],
             "total": 1,

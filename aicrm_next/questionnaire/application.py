@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import quote
 
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
@@ -92,6 +93,50 @@ class ExportQuestionnaireQuery:
         if export is None:
             raise NotFoundError("questionnaire not found")
         return {"ok": True, "export": export}
+
+    __call__ = execute
+
+
+def _normalized_share_url(value: str) -> str:
+    return str(value or "").strip()
+
+
+def _questionnaire_share_qr_data_url(share_url: str) -> str:
+    from io import BytesIO
+
+    import segno
+
+    qr = segno.make(_normalized_share_url(share_url), error="m", micro=False)
+    buffer = BytesIO()
+    qr.save(buffer, kind="svg", scale=6, xmldecl=False, svgns=True, nl=False)
+    svg = buffer.getvalue().decode("utf-8")
+    return "data:image/svg+xml;charset=UTF-8," + quote(svg)
+
+
+def build_questionnaire_share_payload(questionnaire: dict[str, Any], *, share_url: str) -> dict[str, Any]:
+    normalized = summary_projection(questionnaire)
+    url = _normalized_share_url(share_url)
+    if not url:
+        raise ContractError("questionnaire share url is required")
+    return {
+        "questionnaire_id": normalized["id"],
+        "slug": normalized["slug"],
+        "title": normalized["title"] or normalized["name"],
+        "url": url,
+        "public_path": normalized["public_path"],
+        "qr_data_url": _questionnaire_share_qr_data_url(url),
+    }
+
+
+class GetQuestionnaireShareQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo or build_questionnaire_repository()
+
+    def execute(self, questionnaire_id: int, *, share_url: str) -> dict[str, Any]:
+        item = self._repo.get_questionnaire(questionnaire_id)
+        if not item:
+            raise NotFoundError("questionnaire not found")
+        return {"ok": True, "share": build_questionnaire_share_payload(item, share_url=share_url)}
 
     __call__ = execute
 
