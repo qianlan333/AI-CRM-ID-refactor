@@ -67,6 +67,7 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires/{questionnaire_id}/external-push-logs",
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/retry-batch",
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/{push_log_id}/retry",
+    "/admin/radar-links",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/hxc-dashboard",
@@ -630,6 +631,21 @@ def admin_questionnaire_new(request: Request):
 @router.get("/admin/questionnaires/{questionnaire_id:int}", name="api.admin_console_questionnaire_detail")
 def admin_questionnaire_detail(request: Request, questionnaire_id: int):
     return _questionnaire_editor_response(request, questionnaire_id=questionnaire_id)
+
+
+@router.get("/admin/radar-links", name="api.admin_radar_links")
+def admin_radar_links(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="雷达外链",
+        page_summary="创建可追踪外链，查看点击、授权和基础统计。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "雷达外链"},
+    ]
+    return templates.TemplateResponse(request, "admin_console/radar_links.html", context)
 
 
 @router.api_route(

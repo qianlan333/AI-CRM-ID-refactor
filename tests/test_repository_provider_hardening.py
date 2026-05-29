@@ -27,6 +27,7 @@ def test_create_app_does_not_reset_fixture_state_in_production(monkeypatch):
         "reset_automation_fixture_state",
         "reset_commerce_fixture_state",
         "reset_media_library_fixture_state",
+        "reset_radar_links_fixture_state",
     ]
     old = {name: getattr(module, name) for name in names}
     for name in names:
@@ -47,12 +48,14 @@ def test_fixture_repositories_allowed_in_fixture_mode(monkeypatch):
     from aicrm_next.commerce.repo import build_commerce_repository
     from aicrm_next.media_library.repo import build_media_library_repository
     from aicrm_next.questionnaire.repo import build_questionnaire_repository
+    from aicrm_next.radar_links.repo import build_radar_links_repository
     from aicrm_next.automation_engine.repo import build_automation_repository
     from aicrm_next.admin_read_model.repo import build_admin_read_repository
 
     assert build_commerce_repository().__class__.__name__.startswith("InMemory")
     assert build_media_library_repository().__class__.__name__.startswith("InMemory")
     assert build_questionnaire_repository().__class__.__name__.startswith("InMemory")
+    assert build_radar_links_repository().__class__.__name__.startswith("InMemory")
     assert build_automation_repository().__class__.__name__.startswith("InMemory")
     assert build_admin_read_repository().__class__.__name__.startswith("LocalContract")
 
@@ -63,6 +66,7 @@ def test_production_data_ready_blocks_fixture_repository_builders(monkeypatch):
     from aicrm_next.commerce.repo import build_commerce_repository
     from aicrm_next.media_library.repo import build_media_library_repository
     from aicrm_next.questionnaire.repo import build_questionnaire_repository
+    from aicrm_next.radar_links.repo import build_radar_links_repository
     from aicrm_next.automation_engine.repo import build_automation_repository
     from aicrm_next.customer_read_model.repo import build_customer_read_model_repository
 
@@ -70,6 +74,7 @@ def test_production_data_ready_blocks_fixture_repository_builders(monkeypatch):
         build_commerce_repository,
         build_media_library_repository,
         build_questionnaire_repository,
+        build_radar_links_repository,
         build_automation_repository,
         build_customer_read_model_repository,
     ]:
