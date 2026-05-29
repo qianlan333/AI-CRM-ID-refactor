@@ -1025,6 +1025,116 @@ def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
     assert int(progressed["current_step_index"]) == 0
 
 
+def test_pause_campaign_cancels_open_campaign_broadcast_jobs(app):
+    """暂停 Campaign 必须同步取消已经预排期的 broadcast_jobs。"""
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+
+    _insert_segment_with_known_member(app, segment_code="seg-pause-cancel", member_id=970, external_id="ext-970")
+    overview = campaign_service.propose_campaign(
+        display_name="pause cancels queue",
+        intent="暂停时取消预排期 job",
+        segments=[{
+            "segment_code": "seg-pause-cancel",
+            "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "hello"}],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+    token = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="alice",
+        approval_token_value=token["token"],
+    )
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ? AND status = 'queued'",
+        (f"{camp_id}:%",),
+    )
+    assert int(cur.fetchone()["c"]) == 1
+
+    campaign_service.pause_campaign(campaign_id=camp_id, reason="test pause")
+
+    cur.execute(
+        "SELECT status, cancel_reason FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ?",
+        (f"{camp_id}:%",),
+    )
+    row = cur.fetchone()
+    assert row["status"] == "cancelled"
+    assert row["cancel_reason"] == "test pause"
+
+
+def test_claimed_campaign_job_checks_live_pause_before_dispatch(app):
+    """即使 job 已经 claimed，worker 真发前也要按实时 run_status 拦截。"""
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.broadcast_jobs import handlers
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+
+    _insert_segment_with_known_member(app, segment_code="seg-claimed-pause", member_id=971, external_id="ext-971")
+    overview = campaign_service.propose_campaign(
+        display_name="claimed pause guard",
+        intent="claimed 后暂停也不能发送",
+        segments=[{
+            "segment_code": "seg-claimed-pause",
+            "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "hello"}],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+    token = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="alice",
+        approval_token_value=token["token"],
+    )
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "UPDATE broadcast_jobs SET scheduled_for = ? WHERE source_type = 'campaign' AND source_id LIKE ?",
+        ("2020-01-01 00:00:00+00:00", f"{camp_id}:%"),
+    )
+    db.commit()
+
+    claimed = queue_service.claim_due_jobs(limit=10)
+    claimed_campaign_jobs = [j for j in claimed if j.get("source_type") == "campaign" and str(j.get("source_id") or "").startswith(f"{camp_id}:")]
+    assert len(claimed_campaign_jobs) == 1
+
+    campaign_service.pause_campaign(campaign_id=camp_id, reason="claimed pause")
+
+    dispatched: list[dict[str, Any]] = []
+
+    def _fake_dispatch(task_type: str, fn_name: str, payload: dict, **kwargs) -> dict:
+        dispatched.append(payload)
+        return {"task_id": 971}
+
+    with patch(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
+        side_effect=_fake_dispatch,
+    ):
+        result = handlers.execute_job(claimed_campaign_jobs[0])
+
+    assert result["ok"] is False
+    assert result["error"] == "campaign_not_active:paused"
+    assert dispatched == []
+
+
 def test_start_campaign_prequeues_first_step_at_step_timezone(app):
     """start 时直接同步第一步排期, 并按 step.timezone 写入精确发送时间。"""
     from zoneinfo import ZoneInfo

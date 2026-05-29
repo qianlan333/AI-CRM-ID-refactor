@@ -610,11 +610,40 @@ def start_campaign(
 def pause_campaign(*, campaign_id: int, reason: str = "") -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
+    now = _now_iso()
     cur.execute(
         "UPDATE campaigns SET run_status = 'paused', paused_at = ?, paused_reason = ?, updated_at = ? "
         "WHERE id = ? AND run_status = 'active'",
-        (_now_iso(), str(reason)[:200], _now_iso(), int(campaign_id)),
+        (now, str(reason)[:200], now, int(campaign_id)),
     )
+    if cur.rowcount:
+        # Campaign jobs are keyed as "{campaign_id}:{campaign_segment_id}:{step_index}"
+        # (and older jobs as "{campaign_id}:{step_index}").  Pausing must stop
+        # already scheduled queue entries too; otherwise the worker can still
+        # send from broadcast_jobs after the campaign is paused.
+        cur.execute(
+            """
+            UPDATE broadcast_jobs
+            SET status = 'cancelled',
+                cancelled_by = ?,
+                cancelled_at = CURRENT_TIMESTAMP,
+                cancel_reason = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE source_type = 'campaign'
+              AND source_id LIKE ?
+              AND status IN ('queued', 'waiting_approval')
+            """,
+            (
+                "campaign_pause",
+                (str(reason) or "campaign paused")[:1000],
+                f"{int(campaign_id)}:%",
+            ),
+        )
+        logger.info(
+            "campaign %s paused; cancelled %s open broadcast job(s)",
+            campaign_id,
+            int(cur.rowcount or 0),
+        )
     db.commit()
     return get_campaign(campaign_id=campaign_id) or {}
 

@@ -232,6 +232,56 @@ def _load_pending_member_context(*, member_row_id: int) -> dict[str, Any] | None
     return dict(row) if row else None
 
 
+def _load_live_campaign_context(campaign: dict[str, Any]) -> dict[str, Any] | None:
+    campaign_id = int(campaign.get("id") or 0)
+    campaign_code = str(campaign.get("campaign_code") or "").strip()
+    if not campaign_id and not campaign_code:
+        return None
+    db = get_db()
+    cur = db.cursor()
+    if campaign_id:
+        cur.execute(
+            "SELECT id, campaign_code, run_status, owner_userid, trace_id FROM campaigns WHERE id = ?",
+            (campaign_id,),
+        )
+    else:
+        cur.execute(
+            "SELECT id, campaign_code, run_status, owner_userid, trace_id FROM campaigns WHERE campaign_code = ?",
+            (campaign_code,),
+        )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def _restore_running_members_for_skipped_campaign(members: list[dict[str, Any]]) -> int:
+    member_ids: list[int] = []
+    for item in members:
+        try:
+            cm_id = int(item.get("cm_id") or 0)
+        except (TypeError, ValueError):
+            cm_id = 0
+        if cm_id:
+            member_ids.append(cm_id)
+    if not member_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in member_ids)
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        f"""
+        UPDATE campaign_members
+        SET status = 'pending',
+            last_error_text = ?,
+            updated_at = ?
+        WHERE id IN ({placeholders})
+          AND status = 'running'
+        """,
+        tuple(["campaign_not_active"] + [_now_iso()] + member_ids),
+    )
+    db.commit()
+    return int(cur.rowcount or 0)
+
+
 def _claim_due_member(*, member_row_id: int) -> bool:
     db = get_db()
     cur = db.cursor()
@@ -417,6 +467,22 @@ def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
     resume_outbound_task_id = int(batch_data.get("resume_outbound_task_id") or 0) or None
     if not members:
         return {"ok": False, "error": "empty batch"}
+    live_campaign = _load_live_campaign_context(campaign)
+    if not live_campaign:
+        return {"ok": False, "error": "campaign_not_found"}
+    if str(live_campaign.get("run_status") or "") != "active":
+        restored = _restore_running_members_for_skipped_campaign(members)
+        logger.info(
+            "skip campaign batch because campaign is not active: campaign=%s run_status=%s restored_members=%s",
+            live_campaign.get("campaign_code") or campaign.get("campaign_code"),
+            live_campaign.get("run_status"),
+            restored,
+        )
+        return {
+            "ok": False,
+            "error": f"campaign_not_active:{live_campaign.get('run_status')}",
+            "failure_type": "campaign_not_active",
+        }
     # 预排期的 job 没有 request_payload，执行时现场 resolve + claim
     is_pre_scheduled = not request_payload
     if is_pre_scheduled:
