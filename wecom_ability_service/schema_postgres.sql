@@ -1102,6 +1102,45 @@ CREATE TABLE IF NOT EXISTS wecom_external_contact_event_logs (
 CREATE INDEX IF NOT EXISTS idx_external_contact_event_logs_status
 ON wecom_external_contact_event_logs (process_status, updated_at);
 
+CREATE TABLE IF NOT EXISTS radar_links (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(64) NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    original_url TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    auth_required BOOLEAN NOT NULL DEFAULT FALSE,
+    source_channel TEXT NOT NULL DEFAULT '',
+    campaign_id TEXT NOT NULL DEFAULT '',
+    staff_id TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_links_enabled
+ON radar_links (enabled, id DESC);
+
+CREATE TABLE IF NOT EXISTS radar_click_events (
+    id BIGSERIAL PRIMARY KEY,
+    link_id BIGINT NOT NULL REFERENCES radar_links(id) ON DELETE CASCADE,
+    code VARCHAR(64) NOT NULL DEFAULT '',
+    stage VARCHAR(64) NOT NULL,
+    openid TEXT NOT NULL DEFAULT '',
+    unionid TEXT NOT NULL DEFAULT '',
+    external_userid TEXT NOT NULL DEFAULT '',
+    source_channel TEXT NOT NULL DEFAULT '',
+    campaign_id TEXT NOT NULL DEFAULT '',
+    staff_id TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_click_events_link_created
+ON radar_click_events (link_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_radar_click_events_stage
+ON radar_click_events (link_id, stage, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS questionnaires (
     id BIGSERIAL PRIMARY KEY,
     slug VARCHAR(128) NOT NULL UNIQUE,

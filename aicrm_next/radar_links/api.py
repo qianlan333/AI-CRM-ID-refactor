@@ -33,7 +33,7 @@ def _raise_http(exc: Exception) -> None:
                 "ok": False,
                 "degraded": True,
                 "source_status": "production_unavailable",
-                "error_code": "fixture_repository_blocked_in_production",
+                "error_code": "radar_links_repository_unavailable",
                 "detail": str(exc),
             },
         ) from exc

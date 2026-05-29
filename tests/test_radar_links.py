@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -9,7 +10,9 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.radar_links.repo import build_radar_links_repository
-from aicrm_next.shared.repository_provider import RepositoryProviderError
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -160,14 +163,15 @@ def test_public_redirect_query_cannot_override_original_url(client):
     assert response.headers["location"] == "https://example.com/fixed"
 
 
-def test_radar_links_fixture_repo_blocked_when_production_data_ready(monkeypatch):
+def test_radar_links_uses_postgres_repo_when_production_data_ready(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
     monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
 
-    with pytest.raises(RepositoryProviderError):
-        build_radar_links_repository()
+    repo = build_radar_links_repository()
+
+    assert repo.__class__.__name__ == "PostgresRadarLinksRepository"
 
 
 def test_radar_links_api_does_not_return_fixture_success_when_production_data_ready(monkeypatch):
@@ -179,4 +183,13 @@ def test_radar_links_api_does_not_return_fixture_success_when_production_data_re
     response = TestClient(create_app(), raise_server_exceptions=False).get("/api/admin/radar-links")
 
     assert response.status_code == 503
-    assert "fixture_repository_blocked_in_production" in response.text
+    assert "production_unavailable" in response.text
+    assert "fixture_repository_blocked_in_production" not in response.text
+
+
+def test_postgres_schema_includes_radar_tables():
+    schema = (ROOT / "wecom_ability_service" / "schema_postgres.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS radar_links" in schema
+    assert "CREATE TABLE IF NOT EXISTS radar_click_events" in schema
+    assert "idx_radar_click_events_link_created" in schema
