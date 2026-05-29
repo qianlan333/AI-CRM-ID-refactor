@@ -780,7 +780,6 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
         "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
         "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
-        "publish_entry": f"/api/admin/automation-conversion/programs/{program_id}/publish-entry",
         "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
     }
     entry = dict(workspace.get("entry") or {})

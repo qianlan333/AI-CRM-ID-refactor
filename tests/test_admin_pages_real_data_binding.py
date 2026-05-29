@@ -728,7 +728,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
         "entry": ["默认渠道二维码", "aqr_260521_b91c", "获客助手链接", "https://wework.qpic.cn/example"],
         "segmentation": ["信息收集测试", "你当前最关注什么", "入门用户", "高意向"],
         "entry-rule": ["扫码进入", "当前方案入口", "问卷审核", "已转化"],
-        "operations": ["首日欢迎触达", "峰会跟进", "运营中", "unified"],
+        "operations": ["运营编排", "data-operation-task-root", "data-task-list", "data-save-task"],
         "publish": ["入口发布检查", "至少有一个当前方案入口", "完整自动化发布检查", "存在启用中的运营任务"],
     }
     for step, markers in assertions.items():
@@ -738,10 +738,11 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             assert marker in response.text, (step, marker)
         assert "Not Found" not in response.text
     publish_response = client.get("/admin/automation-conversion/programs/7/setup?step=publish")
-    assert 'data-publish-entry' in publish_response.text
     assert 'data-publish-full' in publish_response.text
-    assert "/api/admin/automation-conversion/programs/7/publish-entry" in publish_response.text
     assert "/api/admin/automation-conversion/programs/7/publish-full" in publish_response.text
+    assert "发布入口" not in publish_response.text
+    assert "查看概览" not in publish_response.text
+    assert publish_response.text.count("发布完整自动化") == 1
     entry_response = client.get("/admin/automation-conversion/programs/7/setup?step=entry")
     assert "前往入口渠道页" in entry_response.text
     assert "绑定已有渠道码" in entry_response.text
