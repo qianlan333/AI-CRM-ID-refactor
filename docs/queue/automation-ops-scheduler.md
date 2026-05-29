@@ -1,0 +1,69 @@
+# Automation Ops Scheduler
+
+`scripts/run_automation_ops_scheduler.py` is the business-domain scheduler for automation ops. It only creates due `broadcast_jobs` rows. Real WeCom delivery stays in `scripts/run_broadcast_queue_worker.py`, `broadcast_jobs.handlers`, `tasks.service`, and the WeCom adapter guard.
+
+## group_ops due_at
+
+Only standard group operation plans are scanned:
+
+- `plan_type = standard`
+- plan `status = active`
+- node `status = active`
+- at least one active bound group
+- node content can be normalized into a WeCom customer-group payload
+
+For every active plan node and every active bound group:
+
+1. Read `scheduled_time`; if missing, derive `HH:MM` from `trigger_time_label`.
+2. Use `automation_group_ops_plan_groups.created_at` as the group start time.
+3. If a binding has no `created_at`, use `automation_group_ops_plans.created_at`.
+4. Compute `due_at = start_date + (day_index - 1) days + scheduled_time`.
+5. If `due_at <= now`, enqueue through `LegacyBroadcastJobQueueGateway.enqueue_group_message`.
+
+Groups with the same `plan_id`, `node_id`, `due_at` minute, owner, and content hash are merged into one job. Their `content_payload.chat_ids` contains all due `chat_id` values. Groups with different `due_at` values are not merged.
+
+The queue job keeps the current group_ops contract: `source_type=workflow`, `source_table=automation_group_ops_plans`, `business_domain=group_ops`, `channel=wecom_customer_group`, `target_kind=chat_id`, and `content_type=wecom_customer_group`. `scheduled_for` is the computed `due_at`, not scheduler runtime.
+
+## Idempotency
+
+The scheduler uses a stable source/idempotency shape that includes:
+
+- `plan_id`
+- `node_id`
+- `due_at` minute
+- sorted `chat_ids` hash
+
+The `broadcast_jobs` unique idempotency guard is still the final protection, so rerunning the timer does not duplicate queue rows.
+
+## operation_task
+
+The same runner calls `run_due_operation_tasks(...)` for `scheduled_daily` operation tasks. That service pre-schedules `operation_task` jobs into `broadcast_jobs`; the worker later resolves the audience and sends through the existing operation-task handler.
+
+## Responsibility Boundary
+
+- Automation ops scheduler: compute due business work and enqueue `broadcast_jobs`.
+- Broadcast queue worker: claim due queue rows and dispatch handlers.
+- Handlers and tasks service: create recoverable outbound intent.
+- WeCom adapter: decide whether fake, blocked, or production side effects may run.
+
+The scheduler must not call WeCom directly.
+
+## WeCom Modes
+
+- `AICRM_WECOM_GROUP_ADAPTER_MODE=fake`: worker can mark group jobs sent, while the adapter records `side_effect_executed=false`.
+- `AICRM_WECOM_GROUP_ADAPTER_MODE=disabled` or `staging`: group sending is blocked and jobs fail or remain blocked through the adapter path.
+- `AICRM_WECOM_GROUP_ADAPTER_MODE=production`: real group messages still require `AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE=true`; otherwise the production guard fails.
+
+## systemd
+
+Install and enable the scheduler timer alongside the existing broadcast worker:
+
+```bash
+sudo cp deploy/openclaw-automation-ops-scheduler.service /etc/systemd/system/
+sudo cp deploy/openclaw-automation-ops-scheduler.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now openclaw-automation-ops-scheduler.timer
+sudo systemctl status openclaw-automation-ops-scheduler.timer
+```
+
+The timer runs every minute. Idempotency makes this safe even when no tasks are due.

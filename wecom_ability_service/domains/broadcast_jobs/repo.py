@@ -110,6 +110,35 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     return record
 
 
+def _claim_order_key(item: dict[str, Any]) -> tuple[tuple[int, float | str], int, int]:
+    scheduled = item.get("scheduled_for")
+    if isinstance(scheduled, datetime):
+        value = scheduled
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return (
+            (0, value.astimezone(timezone.utc).timestamp()),
+            int(item.get("priority") or 100),
+            int(item.get("id") or 0),
+        )
+    text_value = str(scheduled or "").strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text_value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return (
+            (0, parsed.astimezone(timezone.utc).timestamp()),
+            int(item.get("priority") or 100),
+            int(item.get("id") or 0),
+        )
+    except ValueError:
+        return (
+            (1, text_value),
+            int(item.get("priority") or 100),
+            int(item.get("id") or 0),
+        )
+
+
 def insert_job(
     *,
     source_type: str,
@@ -314,7 +343,8 @@ def claim_due_jobs(
         (str(claim_token or ""), lease_expires_at, cutoff, int(limit)),
     ).fetchall()
     db.commit()
-    return [_row_to_dict(r) for r in rows]
+    claimed = [_row_to_dict(r) for r in rows]
+    return sorted(claimed, key=_claim_order_key)
 
 
 def recover_stale_claimed_jobs(

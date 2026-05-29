@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+
+class RecordingQueueGateway:
+    def __init__(self, seen: set[str] | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.seen = seen if seen is not None else set()
+
+    def enqueue_group_message(self, **kwargs):
+        self.calls.append(kwargs)
+        self.seen.add(f"group_ops:{kwargs['source_id']}:{kwargs['scheduled_at']}")
+        return 9000 + len(self.calls)
+
+
+class FakeGroupOpsRepo:
+    def __init__(
+        self,
+        *,
+        plans: list[dict[str, Any]] | None = None,
+        groups: dict[int, list[dict[str, Any]]] | None = None,
+        nodes: dict[int, list[dict[str, Any]]] | None = None,
+    ) -> None:
+        self.plans = plans or []
+        self.groups = groups or {}
+        self.nodes = nodes or {}
+
+    def list_plans(self, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+        rows = [
+            plan
+            for plan in self.plans
+            if (not filters.get("plan_type") or plan.get("plan_type") == filters.get("plan_type"))
+            and (not filters.get("status") or plan.get("status") == filters.get("status"))
+        ]
+        return list(rows), len(rows)
+
+    def list_bound_groups(self, plan_id: int) -> list[dict[str, Any]]:
+        return list(self.groups.get(int(plan_id), []))
+
+    def list_nodes(self, plan_id: int) -> list[dict[str, Any]]:
+        return list(self.nodes.get(int(plan_id), []))
+
+
+def _plan(**overrides):
+    return {
+        "id": 1,
+        "plan_type": "standard",
+        "status": "active",
+        "owner_userid": "owner_001",
+        "created_at": "2026-05-28T09:00:00+08:00",
+        **overrides,
+    }
+
+
+def _group(chat_id="wrOgAAA001", **overrides):
+    return {
+        "chat_id": chat_id,
+        "status": "active",
+        "created_at": "2026-05-28T09:10:00+08:00",
+        **overrides,
+    }
+
+
+def _node(**overrides):
+    return {
+        "id": 10,
+        "plan_id": 1,
+        "day_index": 1,
+        "scheduled_time": "10:00",
+        "trigger_time_label": "10:00",
+        "action_title": "Welcome",
+        "text_content": "hello group",
+        "attachments": [],
+        "status": "active",
+        **overrides,
+    }
+
+
+def _run(repo, queue=None, seen=None, now=None):
+    from aicrm_next.automation_engine.group_ops.scheduler import run_group_ops_due_scheduler
+
+    seen = seen if seen is not None else set()
+    queue = queue or RecordingQueueGateway(seen)
+    return run_group_ops_due_scheduler(
+        repo=repo,
+        queue_gateway=queue,
+        duplicate_checker=lambda key: key in seen,
+        now=now or datetime(2026, 5, 28, 10, 1, tzinfo=timezone.utc),
+        operator="pytest-scheduler",
+    ), queue
+
+
+def test_active_standard_plan_due_node_enqueues_broadcast_job():
+    repo = FakeGroupOpsRepo(plans=[_plan()], groups={1: [_group()]}, nodes={1: [_node()]})
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    call = queue.calls[0]
+    assert call["scheduled_at"] == "2026-05-28T10:00+08:00"
+    assert call["chat_ids"] == ["wrOgAAA001"]
+    assert call["content_payload"]["channel"] == "wecom_customer_group"
+    assert call["content_payload"]["sender"] == "owner_001"
+    assert call["content_payload"]["chat_ids"] == ["wrOgAAA001"]
+    assert call["content_payload"]["text"]["content"] == "hello group"
+    assert "attachments" in call["content_payload"]
+
+
+def test_future_due_node_does_not_enqueue():
+    repo = FakeGroupOpsRepo(plans=[_plan()], groups={1: [_group()]}, nodes={1: [_node(scheduled_time="20:00")]})
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 0
+    assert summary["group_ops_skipped_future"] == 1
+    assert queue.calls == []
+
+
+def test_disabled_plan_does_not_enqueue():
+    repo = FakeGroupOpsRepo(plans=[_plan(status="disabled")], groups={1: [_group()]}, nodes={1: [_node()]})
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_scanned_plans"] == 0
+    assert queue.calls == []
+
+
+def test_draft_or_disabled_node_does_not_enqueue():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={1: [_node(id=10, status="draft"), _node(id=11, status="disabled")]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 0
+    assert queue.calls == []
+
+
+def test_plan_without_bound_groups_does_not_enqueue():
+    repo = FakeGroupOpsRepo(plans=[_plan()], groups={1: []}, nodes={1: [_node()]})
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 0
+    assert queue.calls == []
+
+
+def test_scheduler_is_idempotent_on_repeated_runs():
+    seen: set[str] = set()
+    queue = RecordingQueueGateway(seen)
+    repo = FakeGroupOpsRepo(plans=[_plan()], groups={1: [_group()]}, nodes={1: [_node()]})
+
+    first, _ = _run(repo, queue=queue, seen=seen, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+    second, _ = _run(repo, queue=queue, seen=seen, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert first["group_ops_enqueued_jobs"] == 1
+    assert second["group_ops_enqueued_jobs"] == 0
+    assert second["group_ops_skipped_duplicate"] == 1
+    assert len(queue.calls) == 1
+
+
+def test_groups_with_same_due_at_merge_into_one_job():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group("wrOgAAA001"), _group("wrOgAAA002")]},
+        nodes={1: [_node()]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert queue.calls[0]["chat_ids"] == ["wrOgAAA001", "wrOgAAA002"]
+    assert queue.calls[0]["content_payload"]["chat_ids"] == ["wrOgAAA001", "wrOgAAA002"]
+
+
+def test_groups_with_different_due_at_do_not_merge():
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={
+            1: [
+                _group("wrOgAAA001", created_at="2026-05-27T09:10:00+08:00"),
+                _group("wrOgAAA002", created_at="2026-05-28T09:10:00+08:00"),
+            ]
+        },
+        nodes={1: [_node()]},
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 2
+    assert [call["chat_ids"] for call in queue.calls] == [["wrOgAAA001"], ["wrOgAAA002"]]

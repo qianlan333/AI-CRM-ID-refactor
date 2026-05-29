@@ -213,7 +213,7 @@ def dispatch_wecom_group_task_with_intent(
             response_payload=result,
         )
         raise RuntimeError(result.get("error_message") or result.get("error_code") or "wecom group adapter blocked")
-    repo.update_outbound_task_status(int(local_id), status="created", response_payload=result.get("result") or result)
+    repo.update_outbound_task_status(int(local_id), status="created", response_payload=result)
     return {
         "task_id": local_id,
         "wecom_result": result,
