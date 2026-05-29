@@ -14,13 +14,17 @@ logger = logging.getLogger(__name__)
 def cloud_orchestrator_list_campaigns() -> Response:
     review_status = (request.args.get("review_status") or "").strip()
     run_status = (request.args.get("run_status") or "").strip()
-    limit = int(request.args.get("limit") or 500)
+    group_code = (request.args.get("group_code") or "").strip()
+    limit = int(request.args.get("limit") or 5000)
+    offset = int(request.args.get("offset") or 0)
     rows = campaign_service.list_campaigns(
         review_status=review_status,
         run_status=run_status,
+        group_code=group_code,
         limit=limit,
+        offset=offset,
     )
-    return jsonify({"ok": True, "campaigns": rows})
+    return jsonify({"ok": True, "campaigns": rows, "count": len(rows), "limit": limit, "offset": offset})
 
 
 def cloud_orchestrator_get_campaign(campaign_code: str) -> Response:
@@ -94,8 +98,7 @@ def cloud_orchestrator_batch_start_campaigns() -> Response:
     if not group_code or not operator:
         return jsonify({"ok": False, "error": "group_code and operator are required"}), 400
 
-    all_camps = campaign_service.list_campaigns(limit=500)
-    group_camps = [c for c in all_camps if c.get("group_code") == group_code]
+    group_camps = campaign_service.list_campaigns(group_code=group_code, limit=5000)
     if not group_camps:
         return jsonify({"ok": False, "error": "no campaigns found for group_code"}), 404
 

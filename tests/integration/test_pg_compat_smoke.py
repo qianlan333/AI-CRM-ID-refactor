@@ -754,6 +754,76 @@ def test_propose_campaign_group_code_round_trip(app):
     assert standalone["group_label"] == ""
 
 
+def test_cloud_campaign_group_over_500_is_listed_and_batch_started(app):
+    """Admin review surface must not truncate one group at the old 500-row list cap."""
+    import json as _json
+
+    from unittest.mock import patch
+
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+
+    db = get_db()
+    cur = db.cursor()
+    group_code = "grp_over_500_for_admin_review"
+    metadata = _json.dumps({"group_code": group_code, "group_label": "Over 500 group"})
+    rows = [
+        (
+            f"camp-over-500-{idx:03d}",
+            f"Over 500 #{idx:03d}",
+            "bulk over 500",
+            "campaign_start_date",
+            "2026-05-30",
+            "pending_review",
+            "draft",
+            "SenderX",
+            metadata,
+        )
+        for idx in range(505)
+    ]
+    cur.executemany(
+        """
+        INSERT INTO campaigns
+            (campaign_code, display_name, intent, anchor_mode, anchor_date,
+             review_status, run_status, owner_userid, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    db.commit()
+
+    listed = campaign_service.list_campaigns(group_code=group_code, limit=1000)
+    assert len(listed) == 505
+    assert {row["group_code"] for row in listed} == {group_code}
+
+    started: list[int] = []
+
+    def fake_start_campaign(*, campaign_id: int, human_approver: str, approval_token_value: str):
+        started.append(int(campaign_id))
+        return {"id": campaign_id, "run_status": "active"}
+
+    client = app.test_client()
+    with patch(
+        "wecom_ability_service.http.cloud_orchestrator_campaigns.approval_token_module.issue_token",
+        return_value={"token": "approval-token"},
+    ), patch(
+        "wecom_ability_service.http.cloud_orchestrator_campaigns.campaign_service.start_campaign",
+        side_effect=fake_start_campaign,
+    ):
+        response = client.post(
+            "/api/admin/cloud-orchestrator/campaigns/batch-start",
+            json={"group_code": group_code, "operator": "tester"},
+        )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["started_count"] == 505
+    assert body["skipped_count"] == 0
+    assert body["failed_count"] == 0
+    assert len(started) == 505
+
+
 def test_pg_bug_200_register_member_reply_clears_next_due(app):
     """``register_member_reply`` 把 next_due_at 清空 —— PR #200 修了 SET = '' 写入。"""
     from wecom_ability_service.db import get_db
