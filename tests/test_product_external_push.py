@@ -266,6 +266,7 @@ def test_signature_and_retry_api(app, client, monkeypatch):
         {"enabled": True, "webhook_url": "https://example.com/retry", "secret": "retry-secret"},
         operator="pytest",
     )
+    stored_config = external_push_repo.get_product_config(product["id"]) or {}
     first_sig = external_push_service.sign_webhook_payload("retry-secret", "1778888888", '{"a":1}')
     assert first_sig == external_push_service.sign_webhook_payload("retry-secret", "1778888888", '{"a":1}')
     assert first_sig != external_push_service.sign_webhook_payload("retry-secret", "1778888888", '{"a":2}')
@@ -273,7 +274,7 @@ def test_signature_and_retry_api(app, client, monkeypatch):
     delivery = external_push_repo.create_delivery_once(
         {
             "tenant_id": "aicrm",
-            "config_id": config["id"],
+            "config_id": stored_config["id"],
             "event_type": "transaction.paid",
             "delivery_id": external_push_repo.generate_delivery_id(),
             "target_type": "product",

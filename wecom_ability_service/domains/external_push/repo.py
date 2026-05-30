@@ -186,17 +186,18 @@ def list_due_outbox_events(*, limit: int = 20) -> list[dict[str, Any]]:
 
 
 def mark_outbox_status(outbox_id: int, *, status: str, retry_count: int | None = None, next_retry_at: str | None = None) -> dict[str, Any] | None:
+    normalized_next_retry_at = _normalized_text(next_retry_at) or None
     row = get_db().execute(
         """
         UPDATE domain_event_outbox
         SET status = ?,
             retry_count = COALESCE(?, retry_count),
-            next_retry_at = CASE WHEN ? = '' THEN NULL ELSE COALESCE(?::timestamptz, next_retry_at) END,
+            next_retry_at = ?::timestamptz,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         RETURNING *
         """,
-        (_normalized_text(status), retry_count, _normalized_text(next_retry_at), _normalized_text(next_retry_at), int(outbox_id)),
+        (_normalized_text(status), retry_count, normalized_next_retry_at, int(outbox_id)),
     ).fetchone()
     get_db().commit()
     return _serialize_outbox(dict(row) if row else None)
@@ -270,6 +271,7 @@ def update_delivery_result(
     error_message: str,
     next_retry_at: str | None,
 ) -> dict[str, Any]:
+    normalized_next_retry_at = _normalized_text(next_retry_at) or None
     row = get_db().execute(
         """
         UPDATE external_push_delivery
@@ -281,7 +283,7 @@ def update_delivery_result(
             response_status = ?,
             response_body = ?,
             error_message = ?,
-            next_retry_at = CASE WHEN ? = '' THEN NULL ELSE ?::timestamptz END,
+            next_retry_at = ?::timestamptz,
             updated_at = CURRENT_TIMESTAMP
         WHERE delivery_id = ?
         RETURNING *
@@ -295,8 +297,7 @@ def update_delivery_result(
             response_status,
             _normalized_text(response_body),
             _normalized_text(error_message),
-            _normalized_text(next_retry_at),
-            _normalized_text(next_retry_at),
+            normalized_next_retry_at,
             _normalized_text(delivery_id),
         ),
     ).fetchone()
