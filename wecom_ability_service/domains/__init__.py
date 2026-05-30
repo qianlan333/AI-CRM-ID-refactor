@@ -145,6 +145,14 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         persistence_modules=("repo.py",),
         notes="Contact snapshot, description sync, and WeCom contact reads.",
     ),
+    "external_push": DomainLayoutSpec(
+        name="external_push",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        allowed_companion_modules=("security.py",),
+        notes="Generic target-scoped external push configs, delivery logs, webhook signing, and retry workers.",
+    ),
     "group_chats": DomainLayoutSpec(
         name="group_chats",
         mode="simple",

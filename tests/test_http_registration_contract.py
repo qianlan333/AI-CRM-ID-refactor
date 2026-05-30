@@ -34,6 +34,7 @@ HTTP_HELPER_MODULE_FILES = {
     "sync_support.py",
 }
 HTTP_LARGE_ROUTE_OWNER_LINE_LIMITS = {
+    "admin_wechat_pay.py": 360,
     "admin_config.py": 350,
     "automation_conversion.py": 350,
     "internal_auth.py": 360,

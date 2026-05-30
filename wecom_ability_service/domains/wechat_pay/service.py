@@ -482,6 +482,10 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
     out_trade_no = _normalized_text(transaction.get("out_trade_no"))
     if not out_trade_no:
         raise WeChatPayOrderError("out_trade_no_missing")
+    previous_order = repo.get_order(out_trade_no)
+    was_paid = _normalized_text((previous_order or {}).get("status")) == "paid" or _normalized_text(
+        (previous_order or {}).get("trade_state")
+    ) == "SUCCESS"
     order = repo.update_order_from_transaction(transaction)
     if not order:
         _recover_missing_order_from_transaction(transaction, event_type=event_type)
@@ -489,6 +493,11 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
     if not order:
         raise WeChatPayOrderError("order_not_found")
     order = _enrich_recovered_order_from_transaction(order, transaction)
+    is_now_paid = _normalized_text(order.get("status")) == "paid" or _normalized_text(order.get("trade_state")) == "SUCCESS"
+    if is_now_paid and not was_paid:
+        from ..external_push import service as external_push_service
+
+        external_push_service.enqueue_transaction_paid_event(order)
     repo.insert_event(
         out_trade_no=out_trade_no,
         event_type=event_type,
