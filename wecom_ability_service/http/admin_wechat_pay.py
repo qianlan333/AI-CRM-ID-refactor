@@ -4,6 +4,7 @@ from typing import Any
 
 from flask import jsonify, request, send_file, url_for
 
+from ..domains.external_push import service as external_push_service
 from ..domains.wechat_pay import admin_service, product_service
 from .admin_console import _breadcrumb_items, _render_admin_template
 from .internal_auth import (
@@ -151,6 +152,34 @@ def api_admin_wechat_pay_product_share(product_id: int):
         return _error_response(exc, status_code=404)
 
 
+def api_admin_wechat_pay_product_external_push(product_id: int):
+    try:
+        if request.method == "GET":
+            return jsonify({"ok": True, "config": external_push_service.get_product_external_push_config(product_id)})
+        token_response = _mutation_token_error()
+        if token_response:
+            return token_response
+        config = external_push_service.save_product_external_push_config(
+            product_id,
+            _json_payload(),
+            operator=current_admin_operator(),
+        )
+        return jsonify({"ok": True, "config": config})
+    except external_push_service.ExternalPushError as exc:
+        return _error_response(exc, status_code=404 if str(exc) == "商品不存在" else 400)
+
+
+def api_admin_wechat_pay_product_external_push_test(product_id: int):
+    token_response = _mutation_token_error()
+    if token_response:
+        return token_response
+    try:
+        result = external_push_service.send_product_external_push_test(product_id)
+        return jsonify({"ok": True, "result": result})
+    except external_push_service.ExternalPushError as exc:
+        return _error_response(exc, status_code=404 if str(exc) == "商品不存在" else 400)
+
+
 def api_admin_wechat_pay_product_lead_plans():
     return jsonify({"ok": True, "items": product_service.list_lead_plan_options()})
 
@@ -278,6 +307,24 @@ def api_admin_wechat_pay_order_refund(order_id: int):
         return _error_response(exc)
 
 
+def api_admin_wechat_pay_order_external_push_deliveries(order_id: int):
+    try:
+        return jsonify({"ok": True, "items": external_push_service.list_order_deliveries(order_id)})
+    except external_push_service.ExternalPushError as exc:
+        return _error_response(exc, status_code=404)
+
+
+def api_admin_wechat_pay_order_external_push_delivery_retry(order_id: int, delivery_id: str):
+    token_response = _mutation_token_error()
+    if token_response:
+        return token_response
+    try:
+        result = external_push_service.retry_order_delivery(order_id, delivery_id)
+        return jsonify({"ok": True, "result": result})
+    except external_push_service.ExternalPushError as exc:
+        return _error_response(exc, status_code=404 if "不存在" in str(exc) else 400)
+
+
 def register_routes(bp) -> None:
     bp.route("/admin/wechat-pay/products", methods=["GET"])(admin_wechat_pay_products_page)
     bp.route("/admin/wechat-pay/products/new", methods=["GET"])(admin_wechat_pay_product_new_page)
@@ -292,8 +339,12 @@ def register_routes(bp) -> None:
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/disable", methods=["POST"])(api_admin_wechat_pay_product_disable)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/copy", methods=["POST"])(api_admin_wechat_pay_product_copy)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/share", methods=["GET"])(api_admin_wechat_pay_product_share)
+    bp.route("/api/admin/wechat-pay/products/<int:product_id>/external-push", methods=["GET", "PUT"])(api_admin_wechat_pay_product_external_push)
+    bp.route("/api/admin/wechat-pay/products/<int:product_id>/external-push/test", methods=["POST"])(api_admin_wechat_pay_product_external_push_test)
     bp.route("/api/admin/wechat-pay/orders", methods=["GET"])(api_admin_wechat_pay_orders)
     bp.route("/api/admin/wechat-pay/orders/<int:order_id>/refunds", methods=["POST"])(api_admin_wechat_pay_order_refund)
+    bp.route("/api/admin/wechat-pay/orders/<int:order_id>/external-push-deliveries", methods=["GET"])(api_admin_wechat_pay_order_external_push_deliveries)
+    bp.route("/api/admin/wechat-pay/orders/<int:order_id>/external-push-deliveries/<delivery_id>/retry", methods=["POST"])(api_admin_wechat_pay_order_external_push_delivery_retry)
     bp.route("/api/admin/wechat-pay/order-exports", methods=["POST"])(api_admin_wechat_pay_order_exports)
     bp.route("/api/admin/wechat-pay/order-exports/<job_id>", methods=["GET"])(api_admin_wechat_pay_order_export)
     bp.route("/api/admin/wechat-pay/order-exports/<job_id>/download", methods=["GET"])(api_admin_wechat_pay_order_export_download)
