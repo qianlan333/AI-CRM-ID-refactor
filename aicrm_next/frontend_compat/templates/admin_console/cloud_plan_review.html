@@ -132,7 +132,7 @@
 
   .cloud-plan-row {
     display: grid;
-    grid-template-columns: minmax(220px, 1.4fr) minmax(120px, .7fr) minmax(120px, .8fr) minmax(130px, .8fr) repeat(3, minmax(82px, .5fr)) minmax(92px, .5fr) minmax(100px, .5fr);
+    grid-template-columns: minmax(280px, 1.6fr) minmax(140px, .8fr) minmax(150px, .8fr) minmax(100px, .5fr) minmax(92px, .5fr) minmax(110px, .5fr);
     gap: 12px;
     align-items: center;
     padding: 14px;
@@ -374,7 +374,7 @@
     }
   }
 </style>
-<script defer src="{{ url_for('static', filename='admin_console/cloud_plan_review.js') }}?v=20260531-recipient-approval"></script>
+<script defer src="{{ url_for('static', filename='admin_console/cloud_plan_review.js') }}?v=20260531-remove-list-columns"></script>
 {% endblock %}
 
 {% block content %}
@@ -388,7 +388,7 @@
   {% if page_mode == "list" %}
   <section class="cloud-plan-toolbar" aria-label="计划筛选">
     <div class="cloud-plan-filters">
-      <input class="cloud-plan-input" data-plan-keyword type="search" placeholder="搜索计划名称、计划编号、发送人">
+      <input class="cloud-plan-input" data-plan-keyword type="search" placeholder="搜索计划名称、发送人">
       <select class="cloud-plan-select" data-plan-status aria-label="状态">
         <option value="">全部状态</option>
         <option value="pending_review">待审批</option>
@@ -422,12 +422,9 @@
   <section aria-label="计划列表">
     <div class="cloud-plan-row cloud-plan-row--head" aria-hidden="true">
       <div>计划名称</div>
-      <div>计划编号</div>
       <div>创建人 / 发送人</div>
       <div>更新时间</div>
       <div>目标人数</div>
-      <div>已批准</div>
-      <div>待处理</div>
       <div>状态</div>
       <div>查看详情</div>
     </div>

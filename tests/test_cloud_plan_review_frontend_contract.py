@@ -33,6 +33,10 @@ def test_plan_list_page_contract(monkeypatch):
     assert "一级页加载人员" in html
     assert "0 人" in html
     assert "计划列表加载中" in html
+    assert "计划编号" not in html
+    assert "<div>已批准</div>" not in html
+    assert "<div>待处理</div>" not in html
+    assert "搜索计划名称、发送人" in html
     assert "查看详情" in html
     assert "data-page-mode=\"list\"" in html
     assert "cloud_plan_review.js" in html
@@ -68,6 +72,9 @@ def test_plan_review_static_contract():
     combined = template + "\n" + script
 
     assert "params.set(\"limit\", \"20\")" in script
+    assert "plan.approved_count" not in script
+    assert "plan.pending_count" not in script
+    assert "cloud-plan-code" not in script
     assert "limit: String(PAGE_SIZE)" in script
     assert "PAGE_SIZE = 50" in script
     assert "recipients?${params.toString()}" in script

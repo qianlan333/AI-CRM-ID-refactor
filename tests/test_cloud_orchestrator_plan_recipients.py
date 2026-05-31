@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
 from aicrm_next.main import create_app
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _client(monkeypatch) -> TestClient:
@@ -47,6 +51,17 @@ def test_plan_list_groups_legacy_campaign_rows(monkeypatch):
     assert legacy["target_count"] == 3
     assert legacy["approved_count"] == 3
     assert "recipients" not in legacy
+
+
+def test_legacy_campaign_plan_queries_qualify_ambiguous_columns():
+    source = (ROOT / "aicrm_next" / "cloud_orchestrator" / "repository.py").read_text(encoding="utf-8")
+
+    assert "SELECT MAX(id) AS id" not in source
+    assert "MAX(intent) AS intent" not in source
+    assert "STRING_AGG(DISTINCT NULLIF(owner_userid, '')" not in source
+    assert source.count("SELECT MAX(c.id) AS id") >= 2
+    assert source.count("MAX(c.intent) AS intent") >= 2
+    assert source.count("STRING_AGG(DISTINCT NULLIF(c.owner_userid, '')") >= 2
 
 
 def test_empty_cloud_plan_shell_does_not_hide_legacy_group(monkeypatch):
