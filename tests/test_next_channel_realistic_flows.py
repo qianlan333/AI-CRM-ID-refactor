@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
+import json
+
 import pytest
 
+from aicrm_next.channel_entry import repo as channel_repo
 from aicrm_next.channel_entry.application import (
     decrypt_callback_body,
     diagnose_channel_runtime,
@@ -57,6 +62,8 @@ class RuntimeHarness:
         self.tag_calls: list[dict] = []
         self.welcome_errcode = 0
         self.tag_errcode = 0
+        self.return_db_timestamps = False
+        self.validate_effect_json = False
 
     def install(self, monkeypatch):
         monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_value", lambda scene: self.current_scenes.get(scene))
@@ -110,9 +117,14 @@ class RuntimeHarness:
 
     def upsert_contact(self, **kwargs):
         row = {"id": len(self.contacts) + 1, **kwargs}
+        if self.return_db_timestamps:
+            now = datetime(2026, 5, 31, 15, 35, 5, tzinfo=timezone.utc)
+            row.update({"created_at": now, "updated_at": now, "last_channel_entered_at": now})
         existing = next((item for item in self.contacts if item["channel_id"] == kwargs["channel_id"] and item["external_contact_id"] == kwargs["external_contact_id"]), None)
         if existing:
             existing.update(kwargs)
+            if self.return_db_timestamps:
+                existing.update({key: row[key] for key in ("created_at", "updated_at", "last_channel_entered_at")})
             return existing
         self.contacts.append(row)
         return row
@@ -123,6 +135,9 @@ class RuntimeHarness:
         return None
 
     def upsert_effect(self, **kwargs):
+        if self.validate_effect_json:
+            json.dumps(kwargs.get("request_json") or {})
+            json.dumps(kwargs.get("response_json") or {})
         row = {"id": len(self.effect_logs) + 1, **kwargs}
         self.effect_logs.append(row)
         if kwargs["status"] == "success":
@@ -174,6 +189,36 @@ def test_realistic_active_program_flow_has_qr_alias_effects_and_member(runtime):
     assert runtime.tag_calls[0]["add_tags"] == ["tag-next-real"]
     assert ("owner-a", "wm-real", "tag-next-real") in runtime.tags
     assert {row["effect_type"] for row in runtime.effect_logs} >= {"channel_contact", "welcome_message", "entry_tag", "program_admission"}
+
+
+def test_effect_log_json_payload_accepts_database_scalar_types():
+    wrapped = channel_repo._json(
+        {
+            "created_at": datetime(2026, 5, 31, 15, 35, 5, tzinfo=timezone.utc),
+            "amount": Decimal("9.90"),
+            "nested": [{"updated_at": datetime(2026, 5, 31, 15, 36, 5, tzinfo=timezone.utc)}],
+        }
+    )
+
+    decoded = json.loads(wrapped.dumps(wrapped.obj))
+
+    assert decoded["created_at"] == "2026-05-31T15:35:05+00:00"
+    assert decoded["amount"] == "9.90"
+    assert decoded["nested"][0]["updated_at"] == "2026-05-31T15:36:05+00:00"
+
+
+def test_channel_contact_db_timestamps_do_not_block_baseline_effects(runtime):
+    runtime.return_db_timestamps = True
+    runtime.validate_effect_json = True
+
+    result = process_channel_entry(_command(external="wm-db-datetime"))
+
+    assert result["handled"] is True
+    assert result["welcome_message"]["sent"] is True
+    assert result["entry_tag"]["applied"] is True
+    assert result["program_member_written"] is True
+    channel_contact_effect = next(row for row in runtime.effect_logs if row["effect_type"] == "channel_contact")
+    assert channel_contact_effect["response_json"]["created_at"] == "2026-05-31T15:35:05+00:00"
 
 
 def test_no_binding_runs_standalone_baseline(runtime):
@@ -396,4 +441,3 @@ def test_real_qr_acceptance_blocked_without_approved_staging_env(monkeypatch):
     ]
 
     assert missing
-

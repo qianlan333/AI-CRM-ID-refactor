@@ -114,8 +114,8 @@ def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempo
         external_contact_id=command.external_contact_id,
         owner_staff_id=command.follow_user_userid,
         reason=reason,
-        request_json=request_json or {},
-        response_json=response_json or {},
+        request_json=repo.json_safe(request_json or {}),
+        response_json=repo.json_safe(response_json or {}),
     )
 
 

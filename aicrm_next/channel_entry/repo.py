@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
+from decimal import Decimal
 import json
 from typing import Any
+from uuid import UUID
 
 from aicrm_next.shared.runtime import raw_database_url
 
@@ -24,10 +27,34 @@ def _connect():
     return psycopg.connect(url, row_factory=dict_row)
 
 
+def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(json_safe(value if value is not None else {}), ensure_ascii=False)
+
+
 def _json(value: Any) -> Any:
     from psycopg.types.json import Jsonb
 
-    return Jsonb(value if value is not None else {})
+    return Jsonb(json_safe(value if value is not None else {}), dumps=_json_dumps)
 
 
 def find_channel_by_scene_value(scene_value: str) -> dict[str, Any] | None:
