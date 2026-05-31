@@ -1133,18 +1133,6 @@ ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS file_size_snapshot BIGINT NOT N
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 UPDATE radar_links SET target_type = 'link' WHERE target_type IS NULL OR target_type = '';
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'radar_links_target_type_check'
-    ) THEN
-        ALTER TABLE radar_links
-        ADD CONSTRAINT radar_links_target_type_check
-        CHECK (target_type IN ('link', 'image', 'pdf'));
-    END IF;
-END $$;
 
 CREATE INDEX IF NOT EXISTS idx_radar_links_enabled
 ON radar_links (enabled, id DESC);
