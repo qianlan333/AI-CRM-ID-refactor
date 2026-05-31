@@ -190,7 +190,7 @@ def radar_content_view(request: Request, code: str):
     radar_link = result["radar_link"]
     title = html.escape(str(radar_link.get("title") or "内容预览"), quote=True)
     target_type = str(result.get("target_type") or "")
-    resource_url = f"/api/h5/radar-contents/{code}/{'image' if target_type == 'image' else 'pdf'}"
+    resource_url = html.escape(f"/api/h5/radar-contents/{code}/{'image' if target_type == 'image' else 'pdf'}", quote=True)
     if target_type == "image":
         body = f"""
 <!doctype html>
@@ -200,13 +200,21 @@ def radar_content_view(request: Request, code: str):
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{title}</title>
   <style>
-    body {{ margin: 0; background: #0f1115; color: #f7f7f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    header {{ padding: 14px 16px; font-size: 16px; font-weight: 600; background: #171a21; }}
-    main {{ min-height: calc(100vh - 50px); display: flex; align-items: flex-start; justify-content: center; }}
-    img {{ display: block; width: 100%; max-width: 960px; height: auto; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }}
+    header {{ position: sticky; top: 0; z-index: 2; padding: 14px 16px; border-bottom: 1px solid #e5e7eb; background: rgba(255, 255, 255, 0.96); font-size: 16px; font-weight: 800; }}
+    main {{ min-height: calc(100vh - 50px); display: flex; align-items: flex-start; justify-content: center; padding: 0; }}
+    img {{ display: block; width: 100%; max-width: 960px; height: auto; background: #fff; }}
+    .fallback {{ display: none; width: 100%; padding: 40px 18px; color: #6b7280; text-align: center; }}
   </style>
 </head>
-<body><header>{title}</header><main><img src="{resource_url}" alt="{title}"></main></body>
+<body>
+  <header>{title}</header>
+  <main>
+    <img src="{resource_url}" alt="{title}" onerror="this.style.display='none';document.querySelector('.fallback').style.display='block';">
+    <div class="fallback">内容暂时无法查看</div>
+  </main>
+</body>
 </html>
 """
     else:
@@ -218,12 +226,24 @@ def radar_content_view(request: Request, code: str):
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{title}</title>
   <style>
-    body {{ margin: 0; background: #f6f7f9; color: #20242a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    header {{ padding: 12px 16px; font-size: 16px; font-weight: 600; background: #fff; border-bottom: 1px solid #e6e8ee; }}
-    iframe {{ display: block; width: 100%; height: calc(100vh - 48px); border: 0; background: #fff; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }}
+    header {{ position: sticky; top: 0; z-index: 2; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: rgba(255, 255, 255, 0.96); font-size: 16px; font-weight: 800; }}
+    .viewer {{ width: 100%; height: calc(100vh - 48px); background: #fff; }}
+    iframe, embed {{ display: block; width: 100%; height: 100%; border: 0; background: #fff; }}
+    .fallback {{ display: none; padding: 40px 18px; color: #6b7280; text-align: center; }}
   </style>
 </head>
-<body><header>{title}</header><iframe src="{resource_url}" title="{title}"></iframe></body>
+<body>
+  <header>{title}</header>
+  <main class="viewer">
+    <iframe src="{resource_url}" title="{title}" onerror="this.style.display='none';document.querySelector('.fallback').style.display='block';"></iframe>
+    <div class="fallback">内容暂时无法查看</div>
+  </main>
+  <script>
+    // PDF.js can replace the iframe here later without changing the signed resource URL contract.
+  </script>
+</body>
 </html>
 """
     return HTMLResponse(content=body)
