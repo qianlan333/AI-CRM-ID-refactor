@@ -327,6 +327,13 @@ def test_pdf_radar_content_requires_viewer_session_and_streams_inline_pdf(client
     )
     assert callback_response.headers["location"] == f"/radar/view/{link['code']}"
 
+    viewer_response = client.get(callback_response.headers["location"])
+    assert viewer_response.status_code == 200
+    assert "pdfjs-dist" in viewer_response.text
+    assert "/api/h5/radar-contents/" in viewer_response.text
+    assert "<iframe" not in viewer_response.text
+    assert "下载" not in viewer_response.text
+
     pdf_response = client.get(f"/api/h5/radar-contents/{link['code']}/pdf")
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
