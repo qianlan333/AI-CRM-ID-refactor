@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from urllib.parse import quote
 
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
@@ -102,15 +101,9 @@ def _normalized_share_url(value: str) -> str:
 
 
 def _questionnaire_share_qr_data_url(share_url: str) -> str:
-    from io import BytesIO
+    from aicrm_next.shared.share_qr import svg_qr_data_url
 
-    import segno
-
-    qr = segno.make(_normalized_share_url(share_url), error="m", micro=False)
-    buffer = BytesIO()
-    qr.save(buffer, kind="svg", scale=6, xmldecl=False, svgns=True, nl=False)
-    svg = buffer.getvalue().decode("utf-8")
-    return "data:image/svg+xml;charset=UTF-8," + quote(svg)
+    return svg_qr_data_url(_normalized_share_url(share_url), encoding="url")
 
 
 def build_questionnaire_share_payload(questionnaire: dict[str, Any], *, share_url: str) -> dict[str, Any]:

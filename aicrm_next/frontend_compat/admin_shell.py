@@ -51,6 +51,9 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
         "api.admin_radar_links": "/admin/radar-links",
+        "api.admin_radar_link_new": "/admin/radar-links/new",
+        "api.admin_radar_link_edit": "/admin/radar-links/" + str(path_params.get("link_id", "")).strip() + "/edit",
+        "api.admin_radar_link_detail": "/admin/radar-links/" + str(path_params.get("link_id", "")).strip() + "/detail",
         "api.admin_console_global_questionnaire_external_push_logs": "/admin/questionnaires/external-push-logs",
         "api.admin_console_global_questionnaire_external_push_logs_retry_batch": "/admin/questionnaires/external-push-logs/retry-batch",
         "api.admin_console_global_questionnaire_external_push_logs_retry": "/admin/questionnaires/external-push-logs/"
