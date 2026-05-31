@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.channel_entry.application import diagnose_channel_runtime
+from aicrm_next.channel_entry.schemas import DiagnoseChannelRuntimeQuery
+from aicrm_next.channel_entry.wecom_adapter import set_wecom_adapter
 from aicrm_next.main import create_app
 
 
@@ -29,3 +32,36 @@ def test_dry_run_and_repair_routes_are_next_native(monkeypatch):
     assert repair.status_code == 200
     assert repair.json()["source"] == "aicrm_next.channel_entry"
 
+
+def test_runtime_diagnosis_reports_real_adapter_readiness(monkeypatch):
+    channel = {
+        "id": 10,
+        "channel_code": "c",
+        "channel_name": "C",
+        "scene_value": "scene-a",
+        "status": "active",
+        "welcome_message": "欢迎加入",
+        "entry_tag_id": "tag-a",
+    }
+    monkeypatch.setenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", "true")
+    monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
+    monkeypatch.delenv("WECOM_CONTACT_SECRET", raising=False)
+    monkeypatch.delenv("WECOM_SECRET", raising=False)
+    set_wecom_adapter(None)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_value", lambda scene: channel)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_scene_alias", lambda **kwargs: {"id": 1, **kwargs})
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_scene_aliases", lambda channel_id: [{"id": 1, "scene_value": "scene-a", "source": "current_scene"}])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: [{"id": 20, "program_id": 30, "program_status": "archived"}])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_entry_effect_logs", lambda **kwargs: [{"effect_type": "welcome_message", "reason": "missing_wecom_config"}])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_recent_events", lambda scene, limit=20: [])
+
+    result = diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(scene_value="scene-a"))
+
+    assert result["callback_route_owner"] == "aicrm_next.channel_entry"
+    assert result["real_wecom_adapter_enabled"] is False
+    assert result["real_wecom_adapter_reason"] == "missing_wecom_config"
+    assert result["can_send_welcome"] is False
+    assert result["can_mark_tag"] is False
+    assert result["can_create_contact_way"] is False
+    assert result["missing_config"] == ["WECOM_CONTACT_SECRET"]
+    assert result["expected_program_admission_result"] == "program_archived"

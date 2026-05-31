@@ -57,6 +57,7 @@ def main() -> int:
         "/wecom/external-contact/callback",
         "/api/wecom/events",
         "/api/admin/channels/runtime-diagnosis",
+        "/api/admin/channels/{channel_id}/qrcode/generate",
         "/api/admin/channels/repair-entry",
     ):
         if route not in manifest:

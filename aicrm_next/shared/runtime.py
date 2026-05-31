@@ -84,6 +84,7 @@ def runtime_route_map_state() -> dict:
         "wecom_callback_routes": {
             "/wecom/external-contact/callback": "aicrm_next.channel_entry.api",
             "/api/wecom/events": "aicrm_next.channel_entry.api",
+            "/api/admin/channels/{channel_id}/qrcode/generate": "aicrm_next.channel_entry.api",
         },
         "next_live_callback_gateway_enabled": True,
         "legacy_callback_fallback_enabled": False,

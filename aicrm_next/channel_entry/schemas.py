@@ -36,6 +36,14 @@ class DiagnoseChannelRuntimeQuery(BaseModel):
     channel_id: int | None = None
 
 
+class GenerateChannelQrCodeCommand(BaseModel):
+    channel_id: int
+    scene_value: str = ""
+    operator_id: str = ""
+    owner_staff_id: str = ""
+    skip_verify: bool | None = None
+
+
 class DryRunChannelEntryCommand(ProcessChannelEntryCommand):
     dry_run: bool = True
 
@@ -44,4 +52,3 @@ class RepairChannelEntryCommand(BaseModel):
     event_log_id: int | None = None
     external_userid: str = ""
     scene_value: str = ""
-
