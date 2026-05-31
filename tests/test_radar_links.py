@@ -68,6 +68,9 @@ def test_admin_radar_links_page_is_in_operations_nav(client):
     assert response.status_code == 200
     assert "内容雷达" in response.text
     assert "/api/admin/radar-links" in response.text
+    assert "<th>PV</th>" in response.text
+    assert "<th>UV</th>" in response.text
+    assert "<th>雷达链接</th>" not in response.text
 
 
 @pytest.mark.parametrize("original_url", ["javascript:alert(1)", "data:text/plain,hello", "file:///tmp/a", "ftp://example.com/a"])
@@ -283,6 +286,30 @@ def test_radar_link_new_options_and_admin_subpages_render(client):
         assert response.status_code == 200
         assert "内容雷达" in response.text
 
+    detail_response = client.get(f"/admin/radar-links/{link['id']}/detail")
+    assert "unionid" in detail_response.text
+    assert "外部联系人ID" in detail_response.text
+    assert "导出 CSV" in detail_response.text
+    assert "user_agent" not in detail_response.text
+    assert "openid" not in detail_response.text
+
+
+def test_radar_link_form_hides_internal_tracking_fields_and_type_sections(client):
+    link = _create_link(client, target_type="pdf", media_item_id="attachment_masked_001", original_url="")
+
+    response = client.get(f"/admin/radar-links/{link['id']}/edit")
+
+    assert response.status_code == 200
+    assert "来源渠道" not in response.text
+    assert "员工归属" not in response.text
+    assert "活动 ID" not in response.text
+    assert 'name="source_channel" type="hidden"' in response.text
+    assert 'name="staff_id" type="hidden"' in response.text
+    assert 'name="campaign_id" type="hidden"' in response.text
+    assert ".radar-field[hidden]" in response.text
+    assert 'data-link-config' in response.text
+    assert 'data-media-config hidden' in response.text
+
 
 def test_radar_link_share_returns_full_url_and_base64_svg_qr(client):
     link = _create_link(client, title="课程介绍 PDF")
@@ -313,6 +340,28 @@ def test_radar_events_support_stage_filter_and_mask_identity(client):
     assert [event["stage"] for event in payload["events"]] == ["authorized"]
     assert payload["events"][0]["unionid_masked"] == "unioni...ents"
     assert "unionid" not in payload["events"][0]
+
+
+def test_radar_events_export_returns_identity_time_only(client):
+    link = _create_link(client, auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get(
+        "/api/h5/radar/oauth/callback",
+        params={"state": state, "unionid": "unionid_export", "external_userid": "wm_external_001"},
+        follow_redirects=False,
+    )
+
+    response = client.get(f"/api/admin/radar-links/{link['id']}/events/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment;" in response.headers["content-disposition"]
+    lines = response.text.lstrip("\ufeff").splitlines()
+    assert lines[0] == "unionid,external_userid,created_at"
+    assert "unionid_export,wm_external_001," in response.text
+    assert "openid" not in response.text
+    assert "user_agent" not in response.text
 
 
 def test_public_redirect_query_cannot_override_original_url(client):

@@ -44,7 +44,7 @@
     .radar-toolbar { align-items: stretch; flex-direction: column; }
     .questionnaire-share-row { grid-template-columns: 1fr; }
     .radar-table-card { overflow-x: auto; }
-    .radar-table { min-width: 980px; }
+    .radar-table { min-width: 860px; }
   }
 </style>
 {% endblock %}
@@ -85,16 +85,15 @@
           <th>内容名称</th>
           <th>类型</th>
           <th>状态</th>
-          <th>雷达链接</th>
-          <th>访问</th>
-          <th>授权用户</th>
+          <th>PV</th>
+          <th>UV</th>
           <th>查看</th>
           <th>最近查看</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody data-rows>
-        <tr><td colspan="9" class="radar-empty">列表加载中...</td></tr>
+        <tr><td colspan="8" class="radar-empty">列表加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -198,11 +197,11 @@
   function render() {
     const list = filteredItems();
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="9" class="radar-empty">还没有内容雷达，点击新建开始创建</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="8" class="radar-empty">还没有内容雷达，点击新建开始创建</td></tr>`;
       return;
     }
     if (!list.length) {
-      rowsEl.innerHTML = `<tr><td colspan="9" class="radar-empty">没有匹配的内容雷达</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="8" class="radar-empty">没有匹配的内容雷达</td></tr>`;
       return;
     }
     rowsEl.innerHTML = list.map((item) => `
@@ -210,7 +209,6 @@
         <td><div class="radar-title">${escapeHtml(item.title || "未命名内容")}</div><div class="radar-muted">${escapeHtml(item.file_name_snapshot || item.original_url || item.media_item_id || "-")}</div></td>
         <td><span class="radar-badge ${escapeHtml(item.target_type || "")}">${escapeHtml(labels[item.target_type] || item.target_type)}</span></td>
         <td><span class="${item.enabled ? "radar-status-on" : "radar-status-off"}">${item.enabled ? "启用" : "停用"}</span></td>
-        <td><div class="radar-code">${escapeHtml(shortUrl(item.wrapper_url))}</div><button class="radar-button" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制</button></td>
         <td>${Number(item.total_landings || 0)}</td>
         <td>${Number(item.authorized_users || 0)}</td>
         <td>${Number(item.view_count || 0)}</td>
@@ -228,13 +226,13 @@
   }
 
   async function load() {
-    rowsEl.innerHTML = `<tr><td colspan="9" class="radar-empty">列表加载中...</td></tr>`;
+    rowsEl.innerHTML = `<tr><td colspan="8" class="radar-empty">列表加载中...</td></tr>`;
     try {
       const payload = await fetchJson("/api/admin/radar-links");
       items = payload.items || payload.radar_links || [];
       render();
     } catch (error) {
-      rowsEl.innerHTML = `<tr><td colspan="9" class="radar-empty">${escapeHtml(error.message || "列表加载失败")}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="8" class="radar-empty">${escapeHtml(error.message || "列表加载失败")}</td></tr>`;
     }
   }
 

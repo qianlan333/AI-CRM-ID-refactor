@@ -10,6 +10,7 @@
   .radar-panel-body { display: grid; gap: 18px; padding: 18px; }
   .radar-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .radar-field { display: grid; gap: 6px; }
+  .radar-field[hidden] { display: none !important; }
   .radar-field.wide { grid-column: 1 / -1; }
   .radar-field label, .radar-field > span { color: #374151; font-size: 13px; font-weight: 800; }
   .radar-field input, .radar-field select { min-height: 42px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; }
@@ -53,18 +54,9 @@
             <option value="pdf">PDF 预览</option>
           </select>
         </div>
-        <div class="radar-field">
-          <label for="radar-source">来源渠道</label>
-          <input id="radar-source" name="source_channel" placeholder="manual">
-        </div>
-        <div class="radar-field">
-          <label for="radar-staff">员工归属</label>
-          <input id="radar-staff" name="staff_id" placeholder="HuangYouCan">
-        </div>
-        <div class="radar-field">
-          <label for="radar-campaign">活动 ID（可选）</label>
-          <input id="radar-campaign" name="campaign_id" placeholder="campaign_id">
-        </div>
+        <input name="source_channel" type="hidden">
+        <input name="staff_id" type="hidden">
+        <input name="campaign_id" type="hidden">
       </div>
       <div class="radar-switches">
         <label class="radar-check"><input type="checkbox" name="enabled"> 是否启用</label>
