@@ -186,13 +186,20 @@ def _handle_operation_task(job: dict[str, Any]) -> dict[str, Any]:
 
 @register("cloud_plan")
 def _handle_cloud_plan(job: dict[str, Any]) -> dict[str, Any]:
-    from ..cloud_orchestrator.broadcast_planner import execute_committed_plan
+    from ..cloud_orchestrator.broadcast_planner import execute_recipient_messages
 
     payload = job.get("content_payload") or {}
     plan_id = str(payload.get("plan_id") or "").strip()
     if not plan_id:
         return {"ok": False, "error": "cloud_plan job missing plan_id"}
-    return execute_committed_plan(plan_id=plan_id)
+    recipient_id = payload.get("recipient_id")
+    if recipient_id:
+        return execute_recipient_messages(
+            plan_id=plan_id,
+            recipient_id=int(recipient_id),
+            broadcast_job_id=int(job.get("id") or 0) or None,
+        )
+    return {"ok": False, "error": "cloud_plan bulk job is disabled; approve an individual recipient"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

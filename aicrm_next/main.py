@@ -17,6 +17,8 @@ from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
 from .common_operation_members import router as common_operation_members_router
+from .cloud_orchestrator.api import router as cloud_orchestrator_router
+from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from .customer_tags.api import router as customer_tags_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
@@ -56,6 +58,7 @@ def create_app() -> FastAPI:
         reset_admin_jobs_fixture_state()
         reset_hxc_dashboard_fixture_state()
         reset_radar_links_fixture_state()
+        reset_cloud_plan_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -100,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
+    app.include_router(cloud_orchestrator_router)
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)
     app.include_router(frontend_compat_router)
