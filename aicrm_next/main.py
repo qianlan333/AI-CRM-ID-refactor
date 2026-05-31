@@ -12,6 +12,7 @@ from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channels_api import router as automation_channels_router
+from .channel_entry.api import router as channel_entry_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(platform_router)
     app.include_router(common_operation_members_router)
+    app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
     if legacy_production_facade_enabled():
