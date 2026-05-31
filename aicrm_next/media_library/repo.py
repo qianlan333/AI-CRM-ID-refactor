@@ -194,7 +194,7 @@ class InMemoryMediaLibraryRepository:
         return None
 
     def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None:
-        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720"}:
+        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720", "mobile_1080", "large_1440"}:
             return None
         item = self.get_item("image", image_id, include_data=True)
         if not item:

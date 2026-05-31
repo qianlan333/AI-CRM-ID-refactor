@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import base64
+import binascii
+from io import BytesIO
+import hashlib
 import os
+import secrets
 from typing import Any
 
 from aicrm_next.integration_gateway.questionnaire_adapters import WeChatOAuthAdapter, build_wechat_oauth_adapter
-from aicrm_next.media_library.application import GetMediaItemQuery
+from aicrm_next.media_library.application import GetImageVariantQuery, GetMediaItemQuery, UploadAttachmentCommand
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.share_qr import safe_qr_download_filename, svg_qr_data_url
 
@@ -22,6 +26,13 @@ from .domain import (
 )
 from .dto import RadarLinkCreateRequest, RadarLinkUpdateRequest
 from .repo import RadarLinksRepository, build_radar_links_repository
+
+
+PDF_MAX_FILE_SIZE = 50 * 1024 * 1024
+PDF_UPLOAD_PART_SIZE = 1024 * 1024
+PDF_PAGE_MAX_FILE_SIZE = 2 * 1024 * 1024
+
+_PDF_UPLOADS: dict[str, dict[str, Any]] = {}
 
 
 def _secret_key() -> str:
@@ -53,6 +64,9 @@ class CreateRadarLinkCommand:
 
     def execute(self, payload: RadarLinkCreateRequest, *, base_url: str = "") -> dict[str, Any]:
         saved = self._repo.save_link(_normalize_with_media(payload.model_dump()))
+        if normalize_target_type(str(saved.get("target_type") or "link")) == "pdf":
+            ProcessRadarPdfPreviewCommand(self._repo)(int(saved["id"]))
+            saved = self._repo.get_link(int(saved["id"])) or saved
         return {"ok": True, "radar_link": radar_link_projection(saved, base_url=base_url)}
 
     __call__ = execute
@@ -90,6 +104,9 @@ class UpdateRadarLinkCommand:
                 item = self._repo.save_link(_normalize_with_media({**current, **updates}), link_id)
         if not item:
             raise NotFoundError("radar link not found")
+        if normalize_target_type(str(item.get("target_type") or "link")) == "pdf":
+            ProcessRadarPdfPreviewCommand(self._repo)(int(item["id"]))
+            item = self._repo.get_link(int(item["id"])) or item
         return {"ok": True, "radar_link": radar_link_projection(item, base_url=base_url)}
 
     __call__ = execute
@@ -256,6 +273,276 @@ class ExportRadarLinkEventsQuery:
             if offset >= int(total or 0) or not batch:
                 break
         return {"ok": True, "link_id": link_id, "items": rows, "total": len(rows)}
+
+    __call__ = execute
+
+
+class InitiateRadarPdfUploadCommand:
+    def execute(self, *, file_name: str, file_size: int, mime_type: str) -> dict[str, Any]:
+        normalized_name = str(file_name or "").strip() or "content.pdf"
+        normalized_mime = str(mime_type or "application/octet-stream").split(";")[0].strip().lower()
+        if not normalized_name.lower().endswith(".pdf") and normalized_mime != "application/pdf":
+            raise ContractError("unsupported_mime_type: only PDF uploads are supported")
+        if int(file_size or 0) <= 0:
+            raise ContractError("invalid_pdf: file_size is required")
+        if int(file_size or 0) > PDF_MAX_FILE_SIZE:
+            raise ContractError("request_body_too_large: pdf file too large; max 50MB")
+        upload_id = secrets.token_urlsafe(18)
+        _PDF_UPLOADS[upload_id] = {
+            "file_name": normalized_name,
+            "file_size": int(file_size),
+            "mime_type": "application/pdf",
+            "part_size": PDF_UPLOAD_PART_SIZE,
+            "parts": {},
+        }
+        return {"ok": True, "upload_id": upload_id, "part_size": PDF_UPLOAD_PART_SIZE, "max_file_size": PDF_MAX_FILE_SIZE}
+
+    __call__ = execute
+
+
+class UploadRadarPdfPartCommand:
+    def execute(self, upload_id: str, part_no: int, *, content: bytes) -> dict[str, Any]:
+        upload = _PDF_UPLOADS.get(str(upload_id or "").strip())
+        if not upload:
+            raise NotFoundError("pdf upload not found")
+        if int(part_no or 0) <= 0:
+            raise ContractError("invalid_part_no: part_no must start from 1")
+        if not content:
+            raise ContractError("invalid_pdf: upload part is empty")
+        if len(content) > int(upload["part_size"]):
+            raise ContractError("request_body_too_large: upload part is too large")
+        upload["parts"][int(part_no)] = bytes(content)
+        return {"ok": True, "upload_id": upload_id, "part_no": int(part_no), "received_size": len(content)}
+
+    __call__ = execute
+
+
+class CompleteRadarPdfUploadCommand:
+    def execute(self, upload_id: str, *, name: str = "", tags: Any = None) -> dict[str, Any]:
+        upload = _PDF_UPLOADS.get(str(upload_id or "").strip())
+        if not upload:
+            raise NotFoundError("pdf upload not found")
+        expected_parts = (int(upload["file_size"]) + int(upload["part_size"]) - 1) // int(upload["part_size"])
+        missing = [part_no for part_no in range(1, expected_parts + 1) if part_no not in upload["parts"]]
+        if missing:
+            raise ContractError("missing_upload_part: missing part " + ",".join(str(item) for item in missing))
+        content = b"".join(upload["parts"][part_no] for part_no in range(1, expected_parts + 1))
+        if len(content) != int(upload["file_size"]):
+            raise ContractError("invalid_pdf: uploaded file size mismatch")
+        if not content.startswith(b"%PDF-"):
+            raise ContractError("invalid_pdf: invalid PDF file")
+        result = UploadAttachmentCommand()(
+            file_bytes=content,
+            file_name=str(upload["file_name"]),
+            content_type="application/pdf",
+            name=name,
+            tags=tags,
+        )
+        _PDF_UPLOADS.pop(str(upload_id or "").strip(), None)
+        item = result["item"]
+        return {
+            "ok": True,
+            "media_item_id": str(item.get("id") or ""),
+            "item": item,
+            "pdf_processing_status": "pending",
+        }
+
+    __call__ = execute
+
+
+class ProcessRadarPdfPreviewCommand:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, link_id: int) -> dict[str, Any]:
+        link = self._repo.get_link(link_id)
+        if not link:
+            raise NotFoundError("radar link not found")
+        if normalize_target_type(str(link.get("target_type") or "link")) != "pdf":
+            raise ContractError("pdf preview is only available for pdf radar content")
+        media_id = str(link.get("media_item_id") or "").strip()
+        if not media_id:
+            raise ContractError("media_item_id is required")
+        self._repo.set_pdf_processing_status(link_id, status="processing")
+        self._record_processing_event(link, "pdf_processing_started")
+        try:
+            item = GetMediaItemQuery("attachment")(media_id, include_data=True)["item"]
+            data = _decode_media_base64(str(item.get("data_base64") or ""))
+            assets = _render_pdf_preview_assets(data, link_id=link_id, media_item_id=media_id)
+            self._repo.replace_pdf_preview_assets(link_id, media_id, assets)
+            page_count = max([int(asset.get("page_no") or 0) for asset in assets] or [0])
+            self._repo.set_pdf_processing_status(link_id, status="ready", page_count=page_count)
+            self._record_processing_event(link, "pdf_processing_succeeded")
+            return {"ok": True, "link_id": link_id, "pdf_processing_status": "ready", "pdf_page_count": page_count}
+        except Exception as exc:
+            message = str(exc) or "pdf preview processing failed"
+            self._repo.set_pdf_processing_status(
+                link_id,
+                status="failed",
+                error_code="pdf_processing_failed",
+                error_message=message[:500],
+            )
+            self._record_processing_event(link, "pdf_processing_failed", error_code="pdf_processing_failed")
+            return {"ok": False, "link_id": link_id, "pdf_processing_status": "failed", "error_code": "pdf_processing_failed", "error_message": message}
+
+    def _record_processing_event(self, link: dict[str, Any], stage: str, *, error_code: str = "") -> None:
+        payload = _view_event_payload(link, stage=stage, request_meta={})
+        payload["error_code"] = error_code
+        self._repo.record_click_event(payload)
+
+    __call__ = execute
+
+
+class GetRadarPdfProcessingStatusQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, link_id: int) -> dict[str, Any]:
+        link = self._repo.get_link(link_id)
+        if not link:
+            raise NotFoundError("radar link not found")
+        return {
+            "ok": True,
+            "link_id": link_id,
+            "pdf_processing_status": str(link.get("pdf_processing_status") or "pending"),
+            "pdf_page_count": int(link.get("pdf_page_count") or 0),
+            "pdf_preview_error_code": str(link.get("pdf_preview_error_code") or ""),
+            "pdf_preview_error_message": str(link.get("pdf_preview_error_message") or ""),
+        }
+
+    __call__ = execute
+
+
+class GetRadarPdfPreviewManifestQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, code: str, *, viewer_session: str | None, request_meta: dict[str, Any]) -> dict[str, Any]:
+        link = _require_viewable_content(self._repo, code, viewer_session)
+        if normalize_target_type(str(link.get("target_type") or "link")) != "pdf":
+            raise NotFoundError("radar pdf manifest not found")
+        media_id = str(link.get("media_item_id") or "")
+        assets = self._repo.list_pdf_preview_assets(int(link["id"]), media_id)
+        status = str(link.get("pdf_processing_status") or ("ready" if assets else "processing"))
+        if not assets and status in {"", "pending", "processing"}:
+            result = ProcessRadarPdfPreviewCommand(self._repo)(int(link["id"]))
+            link = self._repo.get_link(int(link["id"])) or link
+            assets = self._repo.list_pdf_preview_assets(int(link["id"]), media_id)
+            status = str(result.get("pdf_processing_status") or link.get("pdf_processing_status") or "processing")
+        self._repo.record_click_event(_view_event_payload(link, stage="pdf_manifest_loaded", request_meta=request_meta))
+        pages = [
+            {
+                "page_no": int(item.get("page_no") or 0),
+                "width": int(item.get("width") or 0),
+                "height": int(item.get("height") or 0),
+                "file_size": int(item.get("file_size") or 0),
+                "status": str(item.get("status") or "ready"),
+                "error_code": str(item.get("error_code") or ""),
+                "url": f"/api/h5/radar-contents/{code}/pdf/pages/{int(item.get('page_no') or 0)}",
+            }
+            for item in assets
+        ]
+        return {
+            "ok": True,
+            "target_type": "pdf",
+            "title": str(link.get("title") or "PDF 预览"),
+            "preview_mode": "page_image",
+            "processing_status": status or "processing",
+            "page_count": int(link.get("pdf_page_count") or len(pages) or 0),
+            "pages": pages,
+            "error_code": str(link.get("pdf_preview_error_code") or ""),
+            "error_message": str(link.get("pdf_preview_error_message") or ""),
+        }
+
+    __call__ = execute
+
+
+class GetRadarPdfPreviewPageQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, code: str, page_no: int, *, viewer_session: str | None, request_meta: dict[str, Any]) -> dict[str, Any]:
+        link = _require_viewable_content(self._repo, code, viewer_session)
+        if normalize_target_type(str(link.get("target_type") or "link")) != "pdf":
+            raise NotFoundError("radar pdf page not found")
+        media_id = str(link.get("media_item_id") or "")
+        asset = self._repo.get_pdf_preview_asset(int(link["id"]), media_id, int(page_no))
+        if not asset or str(asset.get("status") or "") != "ready":
+            payload = _view_event_payload(link, stage="pdf_page_error", request_meta=request_meta)
+            payload["query_params_json"] = {"page_no": int(page_no)}
+            payload["error_code"] = str((asset or {}).get("error_code") or "pdf_page_not_ready")
+            self._repo.record_click_event(payload)
+            raise NotFoundError("radar pdf page not found")
+        content = _decode_media_base64(str(asset.get("preview_data_base64") or ""))
+        payload = _view_event_payload(link, stage="pdf_page_loaded", request_meta=request_meta)
+        payload["query_params_json"] = {"page_no": int(page_no)}
+        self._repo.record_click_event(payload)
+        return {
+            "ok": True,
+            "content": content,
+            "mime_type": str(asset.get("preview_mime_type") or "image/jpeg"),
+            "file_size": len(content),
+        }
+
+    __call__ = execute
+
+
+class GetRadarImageManifestQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, code: str, *, viewer_session: str | None, request_meta: dict[str, Any]) -> dict[str, Any]:
+        link = _require_viewable_content(self._repo, code, viewer_session)
+        if normalize_target_type(str(link.get("target_type") or "link")) != "image":
+            raise NotFoundError("radar image manifest not found")
+        self._repo.record_click_event(_view_event_payload(link, stage="image_manifest_loaded", request_meta=request_meta))
+        image_id = str(link.get("media_item_id") or "")
+        return {
+            "ok": True,
+            "target_type": "image",
+            "title": str(link.get("title") or "图片预览"),
+            "variants": {
+                "mobile_1080": f"/api/h5/radar-contents/{code}/image/variants/mobile_1080",
+                "large_1440": f"/api/h5/radar-contents/{code}/image/variants/large_1440",
+                "original": f"/api/h5/radar-contents/{code}/image/variants/original",
+            },
+            "media_item_id": image_id,
+        }
+
+    __call__ = execute
+
+
+class GetRadarImageVariantResourceQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, code: str, variant_key: str, *, viewer_session: str | None, request_meta: dict[str, Any]) -> dict[str, Any]:
+        link = _require_viewable_content(self._repo, code, viewer_session)
+        if normalize_target_type(str(link.get("target_type") or "link")) != "image":
+            raise NotFoundError("radar image variant not found")
+        image_id = str(link.get("media_item_id") or "")
+        try:
+            variant = GetImageVariantQuery()(image_id, variant_key)["variant"]
+            content = variant.get("bytes") or b""
+            mime_type = str(variant.get("mime_type") or "image/png")
+        except Exception:
+            fallback = GetRadarContentResourceQuery(self._repo)(code, target_type="image", viewer_session=viewer_session, request_meta=request_meta)
+            content = fallback["content"]
+            mime_type = str(fallback.get("mime_type") or "image/png")
+        payload = _view_event_payload(link, stage="image_variant_loaded", request_meta=request_meta)
+        payload["query_params_json"] = {"variant_key": variant_key}
+        self._repo.record_click_event(payload)
+        return {"ok": True, "content": content, "mime_type": mime_type}
+
+    __call__ = execute
+
+
+class GetRadarPdfBytesQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, code: str, *, viewer_session: str | None, request_meta: dict[str, Any]) -> dict[str, Any]:
+        return GetRadarContentResourceQuery(self._repo)(code, target_type="pdf", viewer_session=viewer_session, request_meta=request_meta)
 
     __call__ = execute
 
@@ -475,7 +762,16 @@ class GetRadarContentResourceQuery:
 
 
 class RecordRadarContentEventCommand:
-    ALLOWED_STAGES = {"viewer_open", "image_loaded", "pdf_opened"}
+    ALLOWED_STAGES = {
+        "viewer_open",
+        "image_loaded",
+        "pdf_opened",
+        "pdf_manifest_loaded",
+        "pdf_page_loaded",
+        "pdf_page_error",
+        "image_manifest_loaded",
+        "image_variant_loaded",
+    }
 
     def __init__(self, repo: RadarLinksRepository | None = None) -> None:
         self._repo = repo or build_radar_links_repository()
@@ -508,6 +804,160 @@ def _list_stats_summary(stats: dict[str, Any]) -> dict[str, Any]:
         "view_count": int(stats.get("view_opens") or stats.get("viewer_opens") or 0),
         "last_viewed_at": str(stats.get("last_viewed_at") or ""),
     }
+
+
+def _decode_media_base64(data_base64: str) -> bytes:
+    try:
+        return base64.b64decode(str(data_base64 or ""), validate=False)
+    except (binascii.Error, ValueError) as exc:
+        raise ContractError("invalid_media_data: media data is invalid") from exc
+
+
+def _pdf_page_count(pdf_bytes: bytes) -> int:
+    markers = pdf_bytes.count(b"/Type /Page")
+    if markers > 0:
+        pages_marker = pdf_bytes.count(b"/Type /Pages")
+        return max(1, markers - pages_marker)
+    return 1
+
+
+def _render_pdf_preview_assets(pdf_bytes: bytes, *, link_id: int, media_item_id: str) -> list[dict[str, Any]]:
+    if not pdf_bytes.startswith(b"%PDF-"):
+        raise ContractError("invalid_pdf: invalid PDF file")
+    rendered = _render_pdf_preview_assets_with_pymupdf(pdf_bytes, link_id=link_id, media_item_id=media_item_id)
+    if rendered:
+        return rendered
+    page_count = _pdf_page_count(pdf_bytes)
+    digest = hashlib.sha256(pdf_bytes).hexdigest()
+    assets: list[dict[str, Any]] = []
+    for page_no in range(1, page_count + 1):
+        payload, width, height, mime_type, quality = _render_placeholder_pdf_page(page_no, page_count)
+        assets.append(
+            {
+                "media_item_id": media_item_id,
+                "link_id": int(link_id),
+                "radar_link_id": int(link_id),
+                "source_file_hash": digest,
+                "page_no": page_no,
+                "page_count": page_count,
+                "preview_mime_type": mime_type,
+                "preview_storage_key": f"radar_pdf_preview/{media_item_id}/{digest[:16]}/{page_no}.jpg",
+                "preview_data_base64": base64.b64encode(payload).decode("ascii"),
+                "preview_public_url": "",
+                "width": width,
+                "height": height,
+                "file_size": len(payload),
+                "render_dpi": 144,
+                "render_quality": quality,
+                "status": "ready" if len(payload) <= PDF_PAGE_MAX_FILE_SIZE else "failed",
+                "error_code": "" if len(payload) <= PDF_PAGE_MAX_FILE_SIZE else "preview_too_large",
+                "error_message": "" if len(payload) <= PDF_PAGE_MAX_FILE_SIZE else "preview page exceeds 2MB",
+            }
+        )
+    return assets
+
+
+def _render_pdf_preview_assets_with_pymupdf(pdf_bytes: bytes, *, link_id: int, media_item_id: str) -> list[dict[str, Any]]:
+    try:
+        import fitz  # type: ignore
+        from PIL import Image
+    except Exception:
+        return []
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise ContractError("invalid_pdf: invalid PDF file") from exc
+    digest = hashlib.sha256(pdf_bytes).hexdigest()
+    page_count = max(1, int(getattr(doc, "page_count", 0) or len(doc)))
+    assets: list[dict[str, Any]] = []
+    for index in range(page_count):
+        page_no = index + 1
+        try:
+            page = doc.load_page(index)
+            pix = page.get_pixmap(matrix=fitz.Matrix(144 / 72, 144 / 72), alpha=False)
+            image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            payload, width, height, quality = _encode_pdf_page_image(image)
+            status = "ready" if len(payload) <= PDF_PAGE_MAX_FILE_SIZE else "failed"
+            error_code = "" if status == "ready" else "preview_too_large"
+            error_message = "" if status == "ready" else "preview page exceeds 2MB"
+        except Exception as exc:
+            payload, width, height, quality = b"", 0, 0, 0
+            status = "failed"
+            error_code = "pdf_page_render_failed"
+            error_message = str(exc)[:500]
+        assets.append(
+            {
+                "media_item_id": media_item_id,
+                "link_id": int(link_id),
+                "radar_link_id": int(link_id),
+                "source_file_hash": digest,
+                "page_no": page_no,
+                "page_count": page_count,
+                "preview_mime_type": "image/jpeg",
+                "preview_storage_key": f"radar_pdf_preview/{media_item_id}/{digest[:16]}/{page_no}.jpg",
+                "preview_data_base64": base64.b64encode(payload).decode("ascii") if payload else "",
+                "preview_public_url": "",
+                "width": width,
+                "height": height,
+                "file_size": len(payload),
+                "render_dpi": 144,
+                "render_quality": quality,
+                "status": status,
+                "error_code": error_code,
+                "error_message": error_message,
+            }
+        )
+    return assets
+
+
+def _encode_pdf_page_image(image: Any) -> tuple[bytes, int, int, int]:
+    quality = 82
+    current = image
+    while True:
+        out = BytesIO()
+        current.save(out, "JPEG", quality=quality, optimize=True)
+        payload = out.getvalue()
+        if len(payload) <= PDF_PAGE_MAX_FILE_SIZE:
+            return payload, int(current.width), int(current.height), quality
+        if quality > 46:
+            quality -= 8
+            continue
+        longest = max(int(current.width), int(current.height))
+        if longest <= 1600:
+            return payload, int(current.width), int(current.height), quality
+        scale = 1600 / float(longest)
+        current = current.resize((max(1, int(current.width * scale)), max(1, int(current.height * scale))))
+
+
+def _render_placeholder_pdf_page(page_no: int, page_count: int) -> tuple[bytes, int, int, str, int]:
+    try:
+        from PIL import Image, ImageDraw
+
+        width, height = 1080, 1528
+        image = Image.new("RGB", (width, height), "#ffffff")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((0, 0, width, 94), fill="#f3f4f6")
+        draw.text((42, 34), f"PDF preview page {page_no} / {page_count}", fill="#111827")
+        draw.rectangle((42, 150, width - 42, height - 80), outline="#d1d5db", width=3)
+        draw.text((72, 190), "PDF preview generated by AI-CRM Next", fill="#374151")
+        out = BytesIO()
+        quality = 82
+        image.save(out, "JPEG", quality=quality, optimize=True)
+        payload = out.getvalue()
+        while len(payload) > PDF_PAGE_MAX_FILE_SIZE and quality > 45:
+            quality -= 8
+            out = BytesIO()
+            image.save(out, "JPEG", quality=quality, optimize=True)
+            payload = out.getvalue()
+        return payload, width, height, "image/jpeg", quality
+    except Exception:
+        # 1x1 JPEG fallback. Keeps the adapter usable even when Pillow is absent.
+        payload = base64.b64decode(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////"
+            "////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////"
+            "////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASP/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASP/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Aqf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IV//2gAMAwEAAgADAAAAEP/EFBQRAQAAAAAAAAAAAAAAAAAAARD/2gAIAQMBAT8QH//EFBQRAQAAAAAAAAAAAAAAAAAAARD/2gAIAQIBAT8QH//EFBABAQAAAAAAAAAAAAAAAAAAARD/2gAIAQEAAT8QH//Z"
+        )
+        return payload, 1, 1, "image/jpeg", 82
 
 
 def _media_item_snapshot(link: dict[str, Any]) -> dict[str, Any]:
@@ -551,7 +1001,12 @@ def _normalize_with_media(payload: dict[str, Any]) -> dict[str, Any]:
     media_item = GetMediaItemQuery(media_kind)(media_id, include_data=False)["item"] if media_id else None
     normalized.update(validate_media_for_target(target_type, media_item))
     normalized["original_url"] = ""
-    normalized["preview_mode"] = str(normalized.get("preview_mode") or ("inline_image" if target_type == "image" else "inline_pdf"))
+    normalized["preview_mode"] = str(normalized.get("preview_mode") or ("inline_image" if target_type == "image" else "page_image"))
+    if target_type == "pdf":
+        normalized.setdefault("pdf_processing_status", "pending")
+        normalized.setdefault("pdf_page_count", 0)
+        normalized.setdefault("pdf_preview_error_code", "")
+        normalized.setdefault("pdf_preview_error_message", "")
     return normalized
 
 

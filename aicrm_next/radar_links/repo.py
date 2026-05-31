@@ -34,6 +34,18 @@ class RadarLinksRepository(Protocol):
         end_at: str = "",
     ) -> tuple[list[dict[str, Any]], int]: ...
     def stats(self, link_id: int) -> dict[str, Any] | None: ...
+    def set_pdf_processing_status(
+        self,
+        link_id: int,
+        *,
+        status: str,
+        page_count: int = 0,
+        error_code: str = "",
+        error_message: str = "",
+    ) -> dict[str, Any] | None: ...
+    def replace_pdf_preview_assets(self, link_id: int, media_item_id: str, assets: list[dict[str, Any]]) -> None: ...
+    def list_pdf_preview_assets(self, link_id: int, media_item_id: str) -> list[dict[str, Any]]: ...
+    def get_pdf_preview_asset(self, link_id: int, media_item_id: str, page_no: int) -> dict[str, Any] | None: ...
 
 
 def _now() -> str:
@@ -51,8 +63,10 @@ class InMemoryRadarLinksRepository:
     def reset(self) -> None:
         self._links: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
+        self._pdf_assets: list[dict[str, Any]] = []
         self._next_id = 1
         self._next_event_id = 1
+        self._next_pdf_asset_id = 1
 
     def _new_code(self) -> str:
         while True:
@@ -101,6 +115,10 @@ class InMemoryRadarLinksRepository:
                 "file_name_snapshot": str(payload.get("file_name_snapshot", item.get("file_name_snapshot", "")) or "").strip(),
                 "mime_type_snapshot": str(payload.get("mime_type_snapshot", item.get("mime_type_snapshot", "")) or "").strip(),
                 "file_size_snapshot": int(payload.get("file_size_snapshot", item.get("file_size_snapshot", 0)) or 0),
+                "pdf_processing_status": str(payload.get("pdf_processing_status", item.get("pdf_processing_status", "")) or "").strip(),
+                "pdf_page_count": int(payload.get("pdf_page_count", item.get("pdf_page_count", 0)) or 0),
+                "pdf_preview_error_code": str(payload.get("pdf_preview_error_code", item.get("pdf_preview_error_code", "")) or "").strip(),
+                "pdf_preview_error_message": str(payload.get("pdf_preview_error_message", item.get("pdf_preview_error_message", "")) or "").strip(),
                 "enabled": bool(payload.get("enabled", item.get("enabled", True))),
                 "auth_required": bool(payload.get("auth_required", item.get("auth_required", True))),
                 "source_channel": str(payload.get("source_channel", item.get("source_channel", "")) or "").strip(),
@@ -203,6 +221,58 @@ class InMemoryRadarLinksRepository:
             "last_viewed_at": last_viewed_at,
         }
 
+    def set_pdf_processing_status(
+        self,
+        link_id: int,
+        *,
+        status: str,
+        page_count: int = 0,
+        error_code: str = "",
+        error_message: str = "",
+    ) -> dict[str, Any] | None:
+        item = next((entry for entry in self._links if int(entry["id"]) == int(link_id)), None)
+        if item is None:
+            return None
+        item["pdf_processing_status"] = str(status or "").strip()
+        item["pdf_page_count"] = int(page_count or 0)
+        item["pdf_preview_error_code"] = str(error_code or "").strip()
+        item["pdf_preview_error_message"] = str(error_message or "").strip()
+        item["updated_at"] = _now()
+        return deepcopy(item)
+
+    def replace_pdf_preview_assets(self, link_id: int, media_item_id: str, assets: list[dict[str, Any]]) -> None:
+        normalized_media_id = str(media_item_id or "").strip()
+        self._pdf_assets = [
+            item
+            for item in self._pdf_assets
+            if not (int(item.get("link_id") or 0) == int(link_id) and str(item.get("media_item_id") or "") == normalized_media_id)
+        ]
+        for asset in assets:
+            row = deepcopy(asset)
+            row["id"] = self._next_pdf_asset_id
+            self._next_pdf_asset_id += 1
+            row["link_id"] = int(link_id)
+            row["media_item_id"] = normalized_media_id
+            row["created_at"] = row.get("created_at") or _now()
+            row["updated_at"] = row.get("updated_at") or _now()
+            self._pdf_assets.append(row)
+
+    def list_pdf_preview_assets(self, link_id: int, media_item_id: str) -> list[dict[str, Any]]:
+        normalized_media_id = str(media_item_id or "").strip()
+        rows = [
+            deepcopy(item)
+            for item in self._pdf_assets
+            if int(item.get("link_id") or 0) == int(link_id) and str(item.get("media_item_id") or "") == normalized_media_id
+        ]
+        rows.sort(key=lambda item: int(item.get("page_no") or 0))
+        return rows
+
+    def get_pdf_preview_asset(self, link_id: int, media_item_id: str, page_no: int) -> dict[str, Any] | None:
+        for item in self.list_pdf_preview_assets(link_id, media_item_id):
+            if int(item.get("page_no") or 0) == int(page_no):
+                return item
+        return None
+
 
 class PostgresRadarLinksRepository:
     def __init__(self, database_url: str | None = None) -> None:
@@ -230,6 +300,7 @@ class PostgresRadarLinksRepository:
         return """
             id, code, title, target_type, original_url, media_item_id, preview_mode,
             file_name_snapshot, mime_type_snapshot, file_size_snapshot,
+            pdf_processing_status, pdf_page_count, pdf_preview_error_code, pdf_preview_error_message,
             enabled, auth_required, source_channel, campaign_id, staff_id, created_by,
             created_at, updated_at, deleted_at
         """
@@ -290,9 +361,10 @@ class PostgresRadarLinksRepository:
                     INSERT INTO radar_links (
                         code, title, target_type, original_url, media_item_id, preview_mode,
                         file_name_snapshot, mime_type_snapshot, file_size_snapshot,
+                        pdf_processing_status, pdf_page_count, pdf_preview_error_code, pdf_preview_error_message,
                         enabled, auth_required, source_channel, campaign_id, staff_id, created_by
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -305,6 +377,10 @@ class PostgresRadarLinksRepository:
                         str(payload.get("file_name_snapshot") or "").strip(),
                         str(payload.get("mime_type_snapshot") or "").strip(),
                         int(payload.get("file_size_snapshot") or 0),
+                        str(payload.get("pdf_processing_status") or "").strip(),
+                        int(payload.get("pdf_page_count") or 0),
+                        str(payload.get("pdf_preview_error_code") or "").strip(),
+                        str(payload.get("pdf_preview_error_message") or "").strip(),
                         bool(payload.get("enabled", True)),
                         bool(payload.get("auth_required", True)),
                         str(payload.get("source_channel") or "").strip(),
@@ -325,6 +401,10 @@ class PostgresRadarLinksRepository:
                         file_name_snapshot = %s,
                         mime_type_snapshot = %s,
                         file_size_snapshot = %s,
+                        pdf_processing_status = %s,
+                        pdf_page_count = %s,
+                        pdf_preview_error_code = %s,
+                        pdf_preview_error_message = %s,
                         enabled = %s,
                         auth_required = %s,
                         source_channel = %s,
@@ -344,6 +424,10 @@ class PostgresRadarLinksRepository:
                         str(payload.get("file_name_snapshot") or "").strip(),
                         str(payload.get("mime_type_snapshot") or "").strip(),
                         int(payload.get("file_size_snapshot") or 0),
+                        str(payload.get("pdf_processing_status") or "").strip(),
+                        int(payload.get("pdf_page_count") or 0),
+                        str(payload.get("pdf_preview_error_code") or "").strip(),
+                        str(payload.get("pdf_preview_error_message") or "").strip(),
                         bool(payload.get("enabled", True)),
                         bool(payload.get("auth_required", True)),
                         str(payload.get("source_channel") or "").strip(),
@@ -495,6 +579,102 @@ class PostgresRadarLinksRepository:
             "last_event_at": str((row or {}).get("last_event_at") or ""),
             "last_viewed_at": str((row or {}).get("last_viewed_at") or ""),
         }
+
+    def set_pdf_processing_status(
+        self,
+        link_id: int,
+        *,
+        status: str,
+        page_count: int = 0,
+        error_code: str = "",
+        error_message: str = "",
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                f"""
+                UPDATE radar_links
+                SET pdf_processing_status = %s,
+                    pdf_page_count = %s,
+                    pdf_preview_error_code = %s,
+                    pdf_preview_error_message = %s,
+                    updated_at = NOW()
+                WHERE id = %s AND deleted_at IS NULL
+                RETURNING {self._link_select_columns()}
+                """,
+                (str(status or ""), int(page_count or 0), str(error_code or ""), str(error_message or ""), int(link_id)),
+            ).fetchone()
+        return self._row(row)
+
+    def replace_pdf_preview_assets(self, link_id: int, media_item_id: str, assets: list[dict[str, Any]]) -> None:
+        normalized_media_id = str(media_item_id or "").strip()
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM radar_pdf_preview_assets WHERE link_id = %s AND media_item_id = %s",
+                (int(link_id), normalized_media_id),
+            )
+            for asset in assets:
+                conn.execute(
+                    """
+                    INSERT INTO radar_pdf_preview_assets (
+                        media_item_id, radar_link_id, link_id, source_file_hash, page_no, page_count,
+                        preview_mime_type, preview_storage_key, preview_data_base64, preview_public_url,
+                        width, height, file_size, render_dpi, render_quality,
+                        status, error_code, error_message
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        normalized_media_id,
+                        int(link_id),
+                        int(link_id),
+                        str(asset.get("source_file_hash") or ""),
+                        int(asset.get("page_no") or 0),
+                        int(asset.get("page_count") or 0),
+                        str(asset.get("preview_mime_type") or "image/jpeg"),
+                        str(asset.get("preview_storage_key") or ""),
+                        str(asset.get("preview_data_base64") or ""),
+                        str(asset.get("preview_public_url") or ""),
+                        int(asset.get("width") or 0),
+                        int(asset.get("height") or 0),
+                        int(asset.get("file_size") or 0),
+                        int(asset.get("render_dpi") or 144),
+                        int(asset.get("render_quality") or 82),
+                        str(asset.get("status") or "ready"),
+                        str(asset.get("error_code") or ""),
+                        str(asset.get("error_message") or ""),
+                    ),
+                )
+
+    def list_pdf_preview_assets(self, link_id: int, media_item_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, media_item_id, link_id, radar_link_id, source_file_hash, page_no, page_count,
+                    preview_mime_type, preview_storage_key, preview_data_base64, preview_public_url,
+                    width, height, file_size, render_dpi, render_quality,
+                    status, error_code, error_message, created_at, updated_at
+                FROM radar_pdf_preview_assets
+                WHERE link_id = %s AND media_item_id = %s
+                ORDER BY page_no ASC
+                """,
+                (int(link_id), str(media_item_id or "").strip()),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_pdf_preview_asset(self, link_id: int, media_item_id: str, page_no: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, media_item_id, link_id, radar_link_id, source_file_hash, page_no, page_count,
+                    preview_mime_type, preview_storage_key, preview_data_base64, preview_public_url,
+                    width, height, file_size, render_dpi, render_quality,
+                    status, error_code, error_message, created_at, updated_at
+                FROM radar_pdf_preview_assets
+                WHERE link_id = %s AND media_item_id = %s AND page_no = %s
+                """,
+                (int(link_id), str(media_item_id or "").strip(), int(page_no)),
+            ).fetchone()
+        return self._row(row)
 
 
 _DEFAULT_REPO = InMemoryRadarLinksRepository()

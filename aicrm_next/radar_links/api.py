@@ -5,7 +5,7 @@ import html
 import io
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
@@ -13,21 +13,31 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError
 
 from .application import (
     CompleteRadarOAuthCallbackCommand,
+    CompleteRadarPdfUploadCommand,
     CreateRadarLinkCommand,
     ExportRadarLinkEventsQuery,
+    GetRadarImageManifestQuery,
+    GetRadarImageVariantResourceQuery,
     GetRadarContentResourceQuery,
+    GetRadarPdfBytesQuery,
+    GetRadarPdfPreviewManifestQuery,
+    GetRadarPdfPreviewPageQuery,
+    GetRadarPdfProcessingStatusQuery,
     GetRadarLinkQuery,
     GetRadarLinkNewOptionsQuery,
     GetRadarLinkShareQuery,
     GetRadarLinkStatsQuery,
     GetRadarViewerPageQuery,
+    InitiateRadarPdfUploadCommand,
     ListRadarLinkEventsQuery,
     ListRadarLinksQuery,
+    ProcessRadarPdfPreviewCommand,
     RecordRadarContentEventCommand,
     ResolveRadarLandingQuery,
     SetRadarLinkEnabledCommand,
     StartRadarOAuthQuery,
     UpdateRadarLinkCommand,
+    UploadRadarPdfPartCommand,
 )
 from aicrm_next.media_library.application import UploadAttachmentCommand, UploadImageCommand
 from .dto import RadarLinkCreateRequest, RadarLinkUpdateRequest
@@ -51,7 +61,9 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, ContractError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        text = str(exc)
+        error_code = text.split(":", 1)[0] if ":" in text else "contract_error"
+        raise HTTPException(status_code=400, detail={"ok": False, "error_code": error_code, "message": text}) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -208,6 +220,51 @@ def export_radar_link_events(
     )
 
 
+@router.post("/api/admin/radar-links/{link_id}/pdf/reprocess")
+def reprocess_radar_pdf_preview(link_id: int) -> dict[str, Any]:
+    try:
+        return ProcessRadarPdfPreviewCommand()(link_id)
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/radar-links/{link_id}/pdf/processing-status")
+def get_radar_pdf_processing_status(link_id: int) -> dict[str, Any]:
+    try:
+        return GetRadarPdfProcessingStatusQuery()(link_id)
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/radar-links/pdf-uploads/initiate")
+def initiate_radar_pdf_upload(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return InitiateRadarPdfUploadCommand()(
+            file_name=str(payload.get("file_name") or ""),
+            file_size=int(payload.get("file_size") or 0),
+            mime_type=str(payload.get("mime_type") or ""),
+        )
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/radar-links/pdf-uploads/{upload_id}/parts/{part_no}")
+async def upload_radar_pdf_part(upload_id: str, part_no: int, request: Request) -> dict[str, Any]:
+    try:
+        return UploadRadarPdfPartCommand()(upload_id, part_no, content=await request.body())
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/radar-links/pdf-uploads/{upload_id}/complete")
+def complete_radar_pdf_upload(upload_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    try:
+        return CompleteRadarPdfUploadCommand()(upload_id, name=str(payload.get("name") or ""), tags=payload.get("tags") or "radar_content")
+    except Exception as exc:
+        _raise_http(exc)
+
+
 @router.get("/r/{code}")
 def radar_public_redirect(request: Request, code: str):
     try:
@@ -248,8 +305,8 @@ def radar_content_view(request: Request, code: str):
     radar_link = result["radar_link"]
     title = html.escape(str(radar_link.get("title") or "内容预览"), quote=True)
     target_type = str(result.get("target_type") or "")
-    resource_url = html.escape(f"/api/h5/radar-contents/{code}/{'image' if target_type == 'image' else 'pdf'}", quote=True)
     if target_type == "image":
+        manifest_url = html.escape(f"/api/h5/radar-contents/{code}/image/manifest", quote=True)
         body = f"""
 <!doctype html>
 <html lang="zh-CN">
@@ -269,13 +326,30 @@ def radar_content_view(request: Request, code: str):
 <body>
   <header>{title}</header>
   <main>
-    <img src="{resource_url}" alt="{title}" onerror="this.style.display='none';document.querySelector('.fallback').style.display='block';">
-    <div class="fallback">内容暂时无法查看</div>
+    <img data-image alt="{title}" loading="lazy" onerror="this.style.display='none';document.querySelector('.fallback').style.display='block';">
+    <div class="fallback">图片加载失败，请稍后重试</div>
   </main>
+  <script>
+    (async function () {{
+      try {{
+        var response = await fetch("{manifest_url}", {{credentials: "same-origin", cache: "no-store"}});
+        if (!response.ok) throw new Error("manifest unavailable");
+        var manifest = await response.json();
+        var variants = manifest.variants || {{}};
+        var image = document.querySelector("[data-image]");
+        image.src = variants.mobile_1080 || variants.large_1440 || variants.original || "/api/h5/radar-contents/{code}/image";
+        if (variants.large_1440) image.srcset = (variants.mobile_1080 || image.src) + " 1080w, " + variants.large_1440 + " 1440w";
+      }} catch (error) {{
+        document.querySelector("[data-image]").style.display = "none";
+        document.querySelector(".fallback").style.display = "block";
+      }}
+    }})();
+  </script>
 </body>
 </html>
 """
     else:
+        manifest_url = html.escape(f"/api/h5/radar-contents/{code}/manifest", quote=True)
         body = f"""
 <!doctype html>
 <html lang="zh-CN">
@@ -288,7 +362,9 @@ def radar_content_view(request: Request, code: str):
     body {{ margin: 0; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }}
     header {{ position: sticky; top: 0; z-index: 2; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: rgba(255, 255, 255, 0.96); font-size: 16px; font-weight: 800; }}
     .viewer {{ min-height: calc(100vh - 48px); padding: 10px 0 24px; background: #eef1f6; }}
-    .page {{ display: block; width: calc(100vw - 16px); max-width: 860px; height: auto; margin: 0 auto 10px; background: #fff; box-shadow: 0 1px 6px rgba(15, 23, 42, .12); }}
+    .page-wrap {{ width: calc(100vw - 16px); max-width: 860px; min-height: 70vh; margin: 0 auto 10px; background: #fff; box-shadow: 0 1px 6px rgba(15, 23, 42, .12); display: grid; place-items: center; color: #6b7280; }}
+    .page-wrap img {{ display: block; width: 100%; height: auto; }}
+    .counter {{ padding: 10px 16px 24px; color: #6b7280; text-align: center; }}
     .state {{ padding: 40px 18px; color: #6b7280; text-align: center; }}
     .state[hidden] {{ display: none; }}
   </style>
@@ -298,56 +374,81 @@ def radar_content_view(request: Request, code: str):
   <main class="viewer">
     <div class="state" data-pdf-state>内容加载中...</div>
     <div data-pdf-pages></div>
+    <div class="counter" data-pdf-counter hidden></div>
   </main>
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
     (function () {{
       var state = document.querySelector("[data-pdf-state]");
       var pages = document.querySelector("[data-pdf-pages]");
-      function fail() {{
+      var counter = document.querySelector("[data-pdf-counter]");
+      var manifest = null;
+      var loaded = {{}};
+      var pollCount = 0;
+      function showState(message) {{
         if (state) {{
           state.hidden = false;
-          state.textContent = "内容暂时无法查看";
+          state.textContent = message;
         }}
       }}
-      function fitScale(page) {{
-        var viewport = page.getViewport({{scale: 1}});
-        var width = Math.max(280, Math.min(window.innerWidth - 16, 860));
-        return width / viewport.width;
+      function updateCounter(pageNo) {{
+        if (!counter || !manifest) return;
+        counter.hidden = false;
+        counter.textContent = "第 " + pageNo + " / " + manifest.page_count + " 页";
       }}
-      async function renderPage(pdf, pageNumber) {{
-        var page = await pdf.getPage(pageNumber);
-        var viewport = page.getViewport({{scale: fitScale(page)}});
-        var canvas = document.createElement("canvas");
-        var context = canvas.getContext("2d");
-        canvas.className = "page";
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        canvas.style.width = Math.floor(viewport.width) + "px";
-        canvas.style.height = Math.floor(viewport.height) + "px";
-        pages.appendChild(canvas);
-        await page.render({{canvasContext: context, viewport: viewport}}).promise;
+      function preload(pageNo) {{
+        if (!manifest || pageNo > manifest.page_count || loaded["preload-" + pageNo]) return;
+        var page = (manifest.pages || []).find(function (item) {{ return Number(item.page_no) === pageNo; }});
+        if (!page) return;
+        loaded["preload-" + pageNo] = true;
+        var img = new Image();
+        img.src = page.url;
       }}
-      async function start() {{
-        if (!window.pdfjsLib) {{
-          fail();
-          return;
-        }}
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
-        try {{
-          var response = await fetch("{resource_url}", {{credentials: "same-origin", cache: "no-store"}});
-          if (!response.ok) throw new Error("pdf unavailable");
-          var data = await response.arrayBuffer();
-          var pdf = await window.pdfjsLib.getDocument({{data: data}}).promise;
-          if (state) state.hidden = true;
-          for (var i = 1; i <= pdf.numPages; i += 1) {{
-            await renderPage(pdf, i);
+      function loadPage(wrapper) {{
+        var pageNo = Number(wrapper.dataset.pageNo || "0");
+        if (!pageNo || loaded[pageNo]) return;
+        loaded[pageNo] = true;
+        var img = document.createElement("img");
+        img.loading = "lazy";
+        img.alt = "PDF 第 " + pageNo + " 页";
+        img.src = wrapper.dataset.src;
+        img.onload = function () {{ wrapper.textContent = ""; wrapper.appendChild(img); updateCounter(pageNo); preload(pageNo + 1); }};
+        img.onerror = function () {{ wrapper.textContent = "该页加载失败"; }};
+      }}
+      function renderPages() {{
+        pages.innerHTML = "";
+        (manifest.pages || []).forEach(function (page) {{
+          var wrapper = document.createElement("div");
+          wrapper.className = "page-wrap";
+          wrapper.dataset.pageNo = page.page_no;
+          wrapper.dataset.src = page.url;
+          wrapper.textContent = "第 " + page.page_no + " 页";
+          pages.appendChild(wrapper);
+        }});
+        if (state) state.hidden = true;
+        var observer = new IntersectionObserver(function (entries) {{
+          entries.forEach(function (entry) {{ if (entry.isIntersecting) loadPage(entry.target); }});
+        }}, {{rootMargin: "480px 0px"}});
+        document.querySelectorAll(".page-wrap").forEach(function (node) {{ observer.observe(node); }});
+        var first = document.querySelector(".page-wrap");
+        if (first) loadPage(first);
+      }}
+      async function loadManifest() {{
+        var response = await fetch("{manifest_url}", {{credentials: "same-origin", cache: "no-store"}});
+        if (!response.ok) throw new Error("manifest unavailable");
+        manifest = await response.json();
+        if (manifest.processing_status === "ready") {{
+          renderPages();
+        }} else if (manifest.processing_status === "processing" || manifest.processing_status === "pending") {{
+          showState("内容处理中，请稍后刷新");
+          if (pollCount < 15) {{
+            pollCount += 1;
+            window.setTimeout(loadManifest, 2000);
           }}
-        }} catch (err) {{
-          fail();
+        }} else {{
+          showState("PDF 预览生成失败，请联系管理员");
         }}
       }}
-      start();
+      loadManifest().catch(function () {{ showState("内容处理中，请稍后刷新"); }});
     }})();
   </script>
 </body>
@@ -369,17 +470,104 @@ def radar_content_image(request: Request, code: str):
     )
 
 
-@router.get("/api/h5/radar-contents/{code}/pdf")
-def radar_content_pdf(request: Request, code: str):
+@router.get("/api/h5/radar-contents/{code}/image/manifest")
+def radar_content_image_manifest(request: Request, code: str) -> dict[str, Any]:
     try:
-        result = GetRadarContentResourceQuery()(code, target_type="pdf", viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+        return GetRadarImageManifestQuery()(code, viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/h5/radar-contents/{code}/image/variants/{variant_key}")
+def radar_content_image_variant(request: Request, code: str, variant_key: str):
+    try:
+        result = GetRadarImageVariantResourceQuery()(
+            code,
+            variant_key,
+            viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE),
+            request_meta=_request_meta(request),
+        )
+    except Exception as exc:
+        _raise_http(exc)
+    return Response(
+        content=result["content"],
+        media_type=str(result.get("mime_type") or "image/png"),
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.get("/api/h5/radar-contents/{code}/manifest")
+def radar_content_pdf_manifest(request: Request, code: str) -> dict[str, Any]:
+    try:
+        return GetRadarPdfPreviewManifestQuery()(code, viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/h5/radar-contents/{code}/pdf/pages/{page_no}")
+def radar_content_pdf_page(request: Request, code: str, page_no: int):
+    try:
+        result = GetRadarPdfPreviewPageQuery()(
+            code,
+            page_no,
+            viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE),
+            request_meta=_request_meta(request),
+        )
+    except Exception as exc:
+        _raise_http(exc)
+    return Response(
+        content=result["content"],
+        media_type=str(result.get("mime_type") or "image/jpeg"),
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.get("/api/h5/radar-contents/{code}/pdf")
+def radar_content_pdf(request: Request, code: str, range_header: str | None = Header(default=None, alias="Range")):
+    try:
+        result = GetRadarPdfBytesQuery()(code, viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
     except Exception as exc:
         _raise_http(exc)
     file_name = str(result.get("file_name") or "content.pdf").replace('"', "")
+    return _pdf_response(bytes(result["content"]), file_name=file_name, range_header=range_header)
+
+
+def _pdf_response(content: bytes, *, file_name: str, range_header: str | None) -> Response:
+    base_headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{file_name}"',
+        "Cache-Control": "private, max-age=300",
+    }
+    total = len(content)
+    value = str(range_header or "").strip()
+    if not value:
+        return Response(content=content, media_type="application/pdf", headers={**base_headers, "Content-Length": str(total)})
+    if not value.startswith("bytes=") or "," in value:
+        return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{total}"})
+    start_text, _, end_text = value[len("bytes=") :].partition("-")
+    try:
+        if start_text:
+            start = int(start_text)
+            end = int(end_text) if end_text else total - 1
+        else:
+            suffix = int(end_text)
+            start = max(0, total - suffix)
+            end = total - 1
+    except ValueError:
+        return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{total}"})
+    if start < 0 or end < start or start >= total:
+        return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{total}"})
+    end = min(end, total - 1)
+    chunk = content[start : end + 1]
     return Response(
-        content=result["content"],
+        content=chunk,
+        status_code=206,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{file_name}"', "Cache-Control": "private, max-age=300"},
+        headers={
+            **base_headers,
+            "Content-Range": f"bytes {start}-{end}/{total}",
+            "Content-Length": str(len(chunk)),
+        },
     )
 
 

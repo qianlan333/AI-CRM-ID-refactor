@@ -143,6 +143,7 @@
   let activeShareUrl = "";
 
   const labels = {link: "链接", image: "图片", pdf: "PDF"};
+  const pdfStatusLabels = {pending: "未处理", processing: "处理中", ready: "可预览", failed: "处理失败"};
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const shortUrl = (value) => String(value || "").replace(window.location.origin, "");
   const formatDate = (value) => {
@@ -206,7 +207,7 @@
     }
     rowsEl.innerHTML = list.map((item) => `
       <tr class="${item.enabled ? "" : "radar-row-disabled"}">
-        <td><div class="radar-title">${escapeHtml(item.title || "未命名内容")}</div><div class="radar-muted">${escapeHtml(item.file_name_snapshot || item.original_url || item.media_item_id || "-")}</div></td>
+        <td><div class="radar-title">${escapeHtml(item.title || "未命名内容")}</div><div class="radar-muted">${escapeHtml(item.file_name_snapshot || item.original_url || item.media_item_id || "-")}</div>${item.target_type === "pdf" ? `<div class="radar-muted">PDF 状态：${escapeHtml(pdfStatusLabels[item.pdf_processing_status] || "未处理")}</div>` : ""}</td>
         <td><span class="radar-badge ${escapeHtml(item.target_type || "")}">${escapeHtml(labels[item.target_type] || item.target_type)}</span></td>
         <td><span class="${item.enabled ? "radar-status-on" : "radar-status-off"}">${item.enabled ? "启用" : "停用"}</span></td>
         <td>${Number(item.total_landings || 0)}</td>

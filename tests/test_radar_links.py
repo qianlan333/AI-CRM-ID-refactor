@@ -293,6 +293,21 @@ def test_radar_link_new_options_and_admin_subpages_render(client):
     assert "user_agent" not in detail_response.text
     assert "openid" not in detail_response.text
 
+def test_radar_link_form_hides_internal_tracking_fields_and_type_sections(client):
+    link = _create_link(client, target_type="pdf", media_item_id="attachment_masked_001", original_url="")
+
+    response = client.get(f"/admin/radar-links/{link['id']}/edit")
+
+    assert response.status_code == 200
+    assert "来源渠道" not in response.text
+    assert "员工归属" not in response.text
+    assert "活动 ID" not in response.text
+    assert 'name="source_channel" type="hidden"' in response.text
+    assert 'name="staff_id" type="hidden"' in response.text
+    assert 'name="campaign_id" type="hidden"' in response.text
+    assert ".radar-field[hidden]" in response.text
+    assert 'data-link-config' in response.text
+    assert 'data-media-config hidden' in response.text
 
 def test_radar_link_form_hides_internal_tracking_fields_and_type_sections(client):
     link = _create_link(client, target_type="pdf", media_item_id="attachment_masked_001", original_url="")
@@ -447,8 +462,10 @@ def test_pdf_radar_content_requires_viewer_session_and_streams_inline_pdf(client
 
     viewer_response = client.get(callback_response.headers["location"])
     assert viewer_response.status_code == 200
-    assert "pdfjs-dist" in viewer_response.text
-    assert "/api/h5/radar-contents/" in viewer_response.text
+    assert "pdfjs-dist" not in viewer_response.text
+    assert "cdn.jsdelivr" not in viewer_response.text
+    assert f"/api/h5/radar-contents/{link['code']}/manifest" in viewer_response.text
+    assert "IntersectionObserver" in viewer_response.text
     assert "<iframe" not in viewer_response.text
     assert "下载" not in viewer_response.text
 
@@ -459,6 +476,167 @@ def test_pdf_radar_content_requires_viewer_session_and_streams_inline_pdf(client
 
     stats = client.get(f"/api/admin/radar-links/{link['id']}/stats").json()["stats"]
     assert stats["pdf_opened"] == 1
+
+
+def test_radar_pdf_upload_accepts_3mb_10mb_and_octet_stream_pdf(client):
+    for file_name, size, content_type in [
+        ("three-mb.pdf", 3 * 1024 * 1024, "application/pdf"),
+        ("ten-mb.pdf", 10 * 1024 * 1024, "application/pdf"),
+        ("octet.pdf", 3 * 1024 * 1024, "application/octet-stream"),
+    ]:
+        payload = b"%PDF-" + b"0" * (size - 5)
+        response = client.post(
+            "/api/admin/radar-links/upload-pdf",
+            files={"pdf": (file_name, payload, content_type)},
+        )
+        assert response.status_code == 200, response.text
+        item = response.json()["item"]
+        assert item["mime_type"] == "application/pdf"
+        assert item["file_size"] == size
+
+
+def test_radar_pdf_upload_rejects_too_large_and_fake_pdf(client):
+    too_large = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("too-large.pdf", b"%PDF-" + b"0" * (50 * 1024 * 1024), "application/pdf")},
+    )
+    assert too_large.status_code == 400
+    assert "request_body_too_large" in too_large.text
+
+    fake = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("fake.pdf", b"not a pdf", "application/pdf")},
+    )
+    assert fake.status_code == 400
+    assert "invalid_pdf" in fake.text
+
+
+def test_radar_pdf_chunk_upload_supports_out_of_order_and_retries(client):
+    payload = b"%PDF-" + b"a" * (3 * 1024 * 1024 - 5)
+    initiate = client.post(
+        "/api/admin/radar-links/pdf-uploads/initiate",
+        json={"file_name": "chunked.pdf", "file_size": len(payload), "mime_type": "application/pdf"},
+    )
+    assert initiate.status_code == 200, initiate.text
+    upload = initiate.json()
+    part_size = upload["part_size"]
+    upload_id = upload["upload_id"]
+    parts = [payload[index : index + part_size] for index in range(0, len(payload), part_size)]
+
+    missing_complete = client.post(f"/api/admin/radar-links/pdf-uploads/{upload_id}/complete", json={"name": "chunked"})
+    assert missing_complete.status_code == 400
+    assert "missing_upload_part" in missing_complete.text
+
+    assert client.put(f"/api/admin/radar-links/pdf-uploads/{upload_id}/parts/2", content=parts[1]).status_code == 200
+    assert client.put(f"/api/admin/radar-links/pdf-uploads/{upload_id}/parts/1", content=parts[0]).status_code == 200
+    assert client.put(f"/api/admin/radar-links/pdf-uploads/{upload_id}/parts/2", content=parts[1]).status_code == 200
+    assert client.put(f"/api/admin/radar-links/pdf-uploads/{upload_id}/parts/3", content=parts[2]).status_code == 200
+
+    complete = client.post(f"/api/admin/radar-links/pdf-uploads/{upload_id}/complete", json={"name": "chunked", "tags": "radar_content"})
+    assert complete.status_code == 200, complete.text
+    assert complete.json()["media_item_id"]
+    assert complete.json()["item"]["file_size"] == len(payload)
+
+
+def test_radar_pdf_manifest_page_images_and_range(client):
+    upload_response = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("manifest.pdf", b"%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n", "application/pdf")},
+    )
+    media_id = upload_response.json()["item"]["id"]
+    link = _create_link(client, target_type="pdf", media_item_id=media_id, original_url="", auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get("/api/h5/radar/oauth/callback", params={"state": state, "unionid": "unionid_manifest"}, follow_redirects=False)
+
+    manifest = client.get(f"/api/h5/radar-contents/{link['code']}/manifest")
+    assert manifest.status_code == 200, manifest.text
+    data = manifest.json()
+    assert data["preview_mode"] == "page_image"
+    assert data["processing_status"] == "ready"
+    assert data["page_count"] == 1
+    assert data["pages"][0]["file_size"] < 2 * 1024 * 1024
+    assert "storage.invalid" not in manifest.text
+
+    page = client.get(f"/api/h5/radar-contents/{link['code']}/pdf/pages/1")
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("image/")
+    assert page.headers["cache-control"].startswith("private")
+
+    ranged = client.get(f"/api/h5/radar-contents/{link['code']}/pdf", headers={"Range": "bytes=0-9"})
+    assert ranged.status_code == 206
+    assert ranged.headers["accept-ranges"] == "bytes"
+    assert ranged.headers["content-range"].startswith("bytes 0-9/")
+    assert ranged.headers["content-type"].startswith("application/pdf")
+    assert ranged.headers["content-disposition"].startswith("inline;")
+
+    invalid = client.get(f"/api/h5/radar-contents/{link['code']}/pdf", headers={"Range": "bytes=999999-1000000"})
+    assert invalid.status_code == 416
+
+    events = client.get(f"/api/admin/radar-links/{link['id']}/events?stage=pdf_page_loaded").json()["events"]
+    assert events[0]["query_params_json"]["page_no"] == 1
+
+
+def test_radar_pdf_manifest_requires_authorized_viewer_session(client):
+    upload_response = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("locked.pdf", b"%PDF-1.4\n", "application/pdf")},
+    )
+    media_id = upload_response.json()["item"]["id"]
+    link = _create_link(client, target_type="pdf", media_item_id=media_id, original_url="", auth_required=True)
+
+    response = client.get(f"/api/h5/radar-contents/{link['code']}/manifest")
+
+    assert response.status_code == 400
+    assert "viewer session" in response.text
+
+
+def test_radar_pdf_wechat_viewer_uses_page_image_without_external_cdn(client):
+    upload_response = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("wechat.pdf", b"%PDF-1.4\n", "application/pdf")},
+    )
+    media_id = upload_response.json()["item"]["id"]
+    link = _create_link(client, target_type="pdf", media_item_id=media_id, original_url="", auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get("/api/h5/radar/oauth/callback", params={"state": state, "unionid": "unionid_wechat"}, follow_redirects=False)
+
+    response = client.get(
+        f"/radar/view/{link['code']}",
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger/8.0.47"},
+    )
+
+    assert response.status_code == 200
+    assert f"/api/h5/radar-contents/{link['code']}/manifest" in response.text
+    assert "pdfjs-dist" not in response.text
+    assert "cdn.jsdelivr" not in response.text
+    assert "arrayBuffer" not in response.text
+
+
+def test_radar_image_manifest_and_octet_stream_upload(client):
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b5f0AAAAASUVORK5CYII="
+    )
+    upload = client.post(
+        "/api/admin/radar-links/upload-image",
+        files={"image": ("mobile.png", png, "application/octet-stream")},
+    )
+    assert upload.status_code == 200, upload.text
+    media_id = upload.json()["item"]["id"]
+    link = _create_link(client, target_type="image", media_item_id=media_id, original_url="", auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get("/api/h5/radar/oauth/callback", params={"state": state, "unionid": "unionid_image_manifest"}, follow_redirects=False)
+
+    manifest = client.get(f"/api/h5/radar-contents/{link['code']}/image/manifest")
+    assert manifest.status_code == 200
+    assert "mobile_1080" in manifest.json()["variants"]
+
+    variant = client.get(f"/api/h5/radar-contents/{link['code']}/image/variants/mobile_1080")
+    assert variant.status_code == 200
+    assert variant.headers["content-type"].startswith("image/")
+    assert "attachment" not in variant.headers.get("content-disposition", "")
 
 
 def test_radar_links_uses_postgres_repo_when_production_data_ready(monkeypatch):
@@ -493,4 +671,6 @@ def test_postgres_schema_includes_radar_tables():
     assert "target_type TEXT NOT NULL DEFAULT 'link'" in schema
     assert "media_item_id TEXT NOT NULL DEFAULT ''" in schema
     assert "ip_hash TEXT NOT NULL DEFAULT ''" in schema
+    assert "CREATE TABLE IF NOT EXISTS radar_pdf_preview_assets" in schema
+    assert "pdf_processing_status TEXT NOT NULL DEFAULT ''" in schema
     assert "idx_radar_click_events_link_created" in schema

@@ -118,6 +118,7 @@
   const toastEl = document.querySelector("[data-toast]");
   let toastTimer = null;
   let currentLink = null;
+  const pdfStatusLabels = {pending: "未处理", processing: "处理中", ready: "可预览", failed: "处理失败"};
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const messageFrom = (payload, fallback) => String(payload?.error || payload?.detail || payload?.message || fallback);
@@ -150,10 +151,12 @@
     const title = detail.title || detail.file_name || detail.name || id;
     const mime = detail.mime_type || detail.content_type || detail.metadata?.mime_type || "-";
     const size = detail.file_size || detail.size || detail.metadata?.file_size || 0;
+    const pdfStatus = detail.pdf_processing_status ? `<div class="radar-muted">处理状态：${escapeHtml(pdfStatusLabels[detail.pdf_processing_status] || detail.pdf_processing_status)}${detail.pdf_page_count ? ` · ${escapeHtml(detail.pdf_page_count)} 页` : ""}</div>` : "";
     selectedMedia.innerHTML = `
       <strong>${escapeHtml(title)}</strong>
       <div class="radar-muted">${escapeHtml(mime)} · ${escapeHtml(formatBytes(size))}</div>
       <div class="radar-muted">media_item_id: ${escapeHtml(String(id))}</div>
+      ${pdfStatus}
     `;
   }
   function updateTypeView() {
@@ -174,8 +177,32 @@
       if (file.size > 10 * 1024 * 1024) throw new Error("文件过大");
       return;
     }
-    if (file.type !== "application/pdf") throw new Error("PDF 格式不支持");
+    if (file.type && !["application/pdf", "application/octet-stream"].includes(file.type)) throw new Error("PDF 格式不支持");
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") throw new Error("PDF 格式不支持");
     if (file.size > 50 * 1024 * 1024) throw new Error("文件过大");
+  }
+  async function uploadPdfInParts(file, title) {
+    const initiate = await fetchJson("/api/admin/radar-links/pdf-uploads/initiate", {
+      method: "POST",
+      body: JSON.stringify({file_name: file.name, file_size: file.size, mime_type: file.type || "application/pdf"}),
+    });
+    const partSize = Number(initiate.part_size || 1048576);
+    let partNo = 1;
+    for (let start = 0; start < file.size; start += partSize) {
+      const chunk = file.slice(start, Math.min(file.size, start + partSize));
+      const response = await fetch(`/api/admin/radar-links/pdf-uploads/${encodeURIComponent(initiate.upload_id)}/parts/${partNo}`, {
+        method: "PUT",
+        body: chunk,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(messageFrom(payload, "上传失败"));
+      partNo += 1;
+    }
+    const complete = await fetchJson(`/api/admin/radar-links/pdf-uploads/${encodeURIComponent(initiate.upload_id)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({name: title || file.name, tags: "radar_content"}),
+    });
+    return String(complete.media_item_id || complete.item?.id || "");
   }
   async function uploadMedia(type, title) {
     const file = fileEl.files[0];
@@ -189,6 +216,9 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) throw new Error(messageFrom(payload, "上传失败"));
       return String(payload.item?.id || "");
+    }
+    if (file.size > 1024 * 1024) {
+      return uploadPdfInParts(file, title);
     }
     body.append("attachment", file);
     body.append("name", title || file.name);
@@ -220,6 +250,8 @@
       title: currentLink.file_name_snapshot || currentLink.media_item_id,
       mime_type: currentLink.mime_type_snapshot,
       file_size: currentLink.file_size_snapshot,
+      pdf_processing_status: currentLink.pdf_processing_status,
+      pdf_page_count: currentLink.pdf_page_count,
     });
     updateTypeView();
   }
