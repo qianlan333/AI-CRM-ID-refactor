@@ -135,7 +135,8 @@ def test_fake_oauth_callback_with_unionid_records_authorized_click_and_redirects
     events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
     stages = [event["stage"] for event in events]
     assert stages == ["redirect", "authorized", "oauth_callback", "oauth_start", "landing"]
-    assert events[1]["unionid"] == "unionid_from_fake_callback"
+    assert events[1]["unionid_masked"] == "unioni...back"
+    assert "unionid" not in events[1]
 
 
 def test_real_radar_oauth_start_builds_wechat_authorize_url_under_explicit_flag(client, monkeypatch):
@@ -200,8 +201,10 @@ def test_real_radar_oauth_callback_exchanges_code_and_records_unionid(client, mo
     events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
     stages = [event["stage"] for event in events]
     assert stages == ["redirect", "authorized", "oauth_callback", "oauth_start", "landing"]
-    assert events[1]["openid"] == "openid_real"
-    assert events[1]["unionid"] == "unionid_real"
+    assert events[1]["openid_masked"] == "openid...real"
+    assert events[1]["unionid_masked"] == "unioni...real"
+    assert "openid" not in events[1]
+    assert "unionid" not in events[1]
 
 
 def test_real_radar_oauth_requires_explicit_flag(client, monkeypatch):
@@ -244,6 +247,72 @@ def test_stats_returns_required_click_fields(client):
     assert stats["unique_users"] == 1
     assert stats["today_clicks"] == 1
     assert stats["last_clicked_at"]
+
+
+def test_list_radar_links_includes_list_summary_fields(client):
+    link = _create_link(client, auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get("/api/h5/radar/oauth/callback", params={"state": state, "unionid": "unionid_list"}, follow_redirects=False)
+
+    response = client.get("/api/admin/radar-links")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert {
+        "total_landings",
+        "authorized_users",
+        "view_count",
+        "last_viewed_at",
+        "created_at",
+        "updated_at",
+    } <= set(item)
+    assert item["total_landings"] == 1
+    assert item["authorized_users"] == 1
+
+
+def test_radar_link_new_options_and_admin_subpages_render(client):
+    options = client.get("/api/admin/radar-links/new/options")
+    assert options.status_code == 200
+    assert options.json()["defaults"]["source_channel"] == "manual"
+    assert options.json()["defaults"]["staff_id"] == "HuangYouCan"
+
+    link = _create_link(client)
+    for path in ["/admin/radar-links/new", f"/admin/radar-links/{link['id']}/edit", f"/admin/radar-links/{link['id']}/detail"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "内容雷达" in response.text
+
+
+def test_radar_link_share_returns_full_url_and_base64_svg_qr(client):
+    link = _create_link(client, title="课程介绍 PDF")
+
+    response = client.get(f"/api/admin/radar-links/{link['id']}/share")
+
+    assert response.status_code == 200
+    share = response.json()["share"]
+    assert share["title"] == "课程介绍 PDF"
+    assert share["url"] == f"https://testserver/r/{link['code']}"
+    assert share["path"] == f"/r/{link['code']}"
+    assert share["qr_data_url"].startswith("data:image/svg+xml;base64,")
+    assert share["download_filename"] == "课程介绍 PDF二维码.svg"
+
+
+def test_radar_events_support_stage_filter_and_mask_identity(client):
+    link = _create_link(client, auth_required=True)
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    client.get("/api/h5/radar/oauth/callback", params={"state": state, "unionid": "unionid_events"}, follow_redirects=False)
+
+    response = client.get(f"/api/admin/radar-links/{link['id']}/events?stage=authorized")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["link"]["wrapper_url"] == f"https://testserver/r/{link['code']}"
+    assert payload["pagination"]["has_more"] is False
+    assert [event["stage"] for event in payload["events"]] == ["authorized"]
+    assert payload["events"][0]["unionid_masked"] == "unioni...ents"
+    assert "unionid" not in payload["events"][0]
 
 
 def test_public_redirect_query_cannot_override_original_url(client):

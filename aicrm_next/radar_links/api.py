@@ -14,6 +14,8 @@ from .application import (
     CreateRadarLinkCommand,
     GetRadarContentResourceQuery,
     GetRadarLinkQuery,
+    GetRadarLinkNewOptionsQuery,
+    GetRadarLinkShareQuery,
     GetRadarLinkStatsQuery,
     GetRadarViewerPageQuery,
     ListRadarLinkEventsQuery,
@@ -94,6 +96,14 @@ def list_radar_links(request: Request, limit: int = 50, offset: int = 0) -> dict
         _raise_http(exc)
 
 
+@router.get("/api/admin/radar-links/new/options")
+def get_radar_link_new_options() -> dict[str, Any]:
+    try:
+        return GetRadarLinkNewOptionsQuery()()
+    except Exception as exc:
+        _raise_http(exc)
+
+
 @router.post("/api/admin/radar-links")
 def create_radar_link(request: Request, payload: RadarLinkCreateRequest) -> dict[str, Any]:
     try:
@@ -114,6 +124,14 @@ def get_radar_link(request: Request, link_id: int) -> dict[str, Any]:
 def update_radar_link(request: Request, link_id: int, payload: RadarLinkUpdateRequest) -> dict[str, Any]:
     try:
         return UpdateRadarLinkCommand()(link_id, payload, base_url=_base_url(request))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/radar-links/{link_id}/share")
+def get_radar_link_share(request: Request, link_id: int) -> dict[str, Any]:
+    try:
+        return GetRadarLinkShareQuery()(link_id, base_url=_base_url(request))
     except Exception as exc:
         _raise_http(exc)
 
@@ -143,9 +161,25 @@ def get_radar_link_stats(link_id: int) -> dict[str, Any]:
 
 
 @router.get("/api/admin/radar-links/{link_id}/events")
-def list_radar_link_events(link_id: int, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+def list_radar_link_events(
+    request: Request,
+    link_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    stage: str = "",
+    start_at: str = "",
+    end_at: str = "",
+) -> dict[str, Any]:
     try:
-        return ListRadarLinkEventsQuery()(link_id, limit=limit, offset=offset)
+        return ListRadarLinkEventsQuery()(
+            link_id,
+            limit=limit,
+            offset=offset,
+            stage=stage,
+            start_at=start_at,
+            end_at=end_at,
+            base_url=_base_url(request),
+        )
     except Exception as exc:
         _raise_http(exc)
 

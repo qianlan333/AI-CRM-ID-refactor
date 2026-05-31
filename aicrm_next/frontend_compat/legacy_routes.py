@@ -68,6 +68,9 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/retry-batch",
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/{push_log_id}/retry",
     "/admin/radar-links",
+    "/admin/radar-links/new",
+    "/admin/radar-links/{link_id}/edit",
+    "/admin/radar-links/{link_id}/detail",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/hxc-dashboard",
@@ -638,14 +641,68 @@ def admin_radar_links(request: Request):
     context = _shell_context(
         request=request,
         page_title="内容雷达",
-        page_summary="创建可追踪的链接、图片、PDF。用户授权后查看内容，系统记录访问、授权、预览和最近查看。",
+        page_summary="查看内容雷达列表，搜索、筛选、分享并进入新建或编辑。",
         active_endpoint="api.admin_radar_links",
     )
+    context["page_actions"] = [{"label": "新建内容雷达", "href": "/admin/radar-links/new", "variant": "primary"}]
     context["breadcrumbs"] = [
         {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
         {"label": "内容雷达"},
     ]
     return templates.TemplateResponse(request, "admin_console/radar_links.html", context)
+
+
+@router.get("/admin/radar-links/new", name="api.admin_radar_link_new")
+def admin_radar_link_new(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="新建内容雷达",
+        page_summary="配置外部链接、图片或 PDF 内容，保存后生成可追踪分享链接。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": "新建内容雷达"},
+    ]
+    context["radar_form_mode"] = "new"
+    context["radar_link_id"] = 0
+    return templates.TemplateResponse(request, "admin_console/radar_link_form.html", context)
+
+
+@router.get("/admin/radar-links/{link_id:int}/edit", name="api.admin_radar_link_edit")
+def admin_radar_link_edit(request: Request, link_id: int):
+    context = _shell_context(
+        request=request,
+        page_title="编辑内容雷达",
+        page_summary="维护内容雷达的基础配置、素材来源与启用状态。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": f"编辑 #{link_id}"},
+    ]
+    context["radar_form_mode"] = "edit"
+    context["radar_link_id"] = int(link_id)
+    return templates.TemplateResponse(request, "admin_console/radar_link_form.html", context)
+
+
+@router.get("/admin/radar-links/{link_id:int}/detail", name="api.admin_radar_link_detail")
+def admin_radar_link_detail(request: Request, link_id: int):
+    context = _shell_context(
+        request=request,
+        page_title="内容雷达详情",
+        page_summary="查看谁在什么时间点击、授权和查看过这条内容雷达。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": f"详情 #{link_id}"},
+    ]
+    context["radar_link_id"] = int(link_id)
+    return templates.TemplateResponse(request, "admin_console/radar_link_detail.html", context)
 
 
 @router.api_route(

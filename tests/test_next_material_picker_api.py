@@ -121,6 +121,8 @@ def test_material_picker_attachment_shape(client) -> None:
     item = response.json()["items"][0]
     assert item["type"] == "attachment"
     assert {"file_name", "mime_type", "file_size"} <= set(item["metadata"])
+    assert item["mime_type"] == "application/pdf"
+    assert item["metadata"]["mime_type"] == "application/pdf"
 
 
 def test_material_picker_unknown_type_returns_400_json(client) -> None:
@@ -130,4 +132,3 @@ def test_material_picker_unknown_type_returns_400_json(client) -> None:
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert response.json()["ok"] is False
-
