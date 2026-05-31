@@ -734,7 +734,26 @@ def handle_channel_enter_from_callback(
     initial_audience_code: str = "",
     event_action: str = "qrcode_enter",
     send_welcome_message: bool = False,
+    event_log_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
+    from .channel_entry_orchestrator import handle_channel_entry_from_callback
+
+    return handle_channel_entry_from_callback(
+        external_contact_id=external_contact_id,
+        phone=phone,
+        payload_json=payload_json,
+        operator_id=operator_id,
+        channel=channel,
+        source_type=source_type,
+        follow_user_userid=follow_user_userid,
+        initial_audience_code=initial_audience_code,
+        event_action=event_action,
+        send_welcome_message=send_welcome_message,
+        event_log_id=event_log_id,
+        dry_run=dry_run,
+    )
+
     channel_scene = ""
     if not channel:
         channel_scene = _extract_channel_scene(payload_json or {})
@@ -987,6 +1006,8 @@ def handle_qrcode_enter_from_callback(
     operator_id: str = "",
     follow_user_userid: str = "",
     send_welcome_message: bool = False,
+    event_log_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     return handle_channel_enter_from_callback(
         external_contact_id=external_contact_id,
@@ -997,6 +1018,8 @@ def handle_qrcode_enter_from_callback(
         source_type=SOURCE_TYPE_QRCODE,
         event_action="qrcode_enter",
         send_welcome_message=send_welcome_message,
+        event_log_id=event_log_id,
+        dry_run=dry_run,
     )
 
 

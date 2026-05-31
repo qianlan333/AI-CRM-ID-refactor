@@ -148,6 +148,7 @@ def handle_qrcode_enter_from_callback(
     operator_id: str = "",
     follow_user_userid: str = "",
     send_welcome_message: bool = False,
+    event_log_id: int | None = None,
 ) -> dict[str, object]:
     normalized_payload_json: dict[str, object] = {}
     if isinstance(payload_json, str):
@@ -165,6 +166,7 @@ def handle_qrcode_enter_from_callback(
         operator_id=str(operator_id or "").strip(),
         follow_user_userid=str(follow_user_userid or "").strip(),
         send_welcome_message=bool(send_welcome_message),
+        event_log_id=int(event_log_id or 0) or None,
     )
 
 
@@ -359,6 +361,7 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 operator_id=user_id or "wecom_callback",
                 follow_user_userid=user_id,
                 send_welcome_message=change_type in {"add_external_contact", "add_half_external_contact"},
+                event_log_id=event_log_id,
             )
             if bool(qrcode_result.get("handled")):
                 callback_logger.info(

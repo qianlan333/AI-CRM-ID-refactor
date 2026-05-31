@@ -1862,6 +1862,75 @@ def _ensure_postgres_automation_program_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_channel_scene_alias (
+            id BIGSERIAL PRIMARY KEY,
+            corp_id TEXT NOT NULL DEFAULT '',
+            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            scene_value TEXT NOT NULL,
+            config_id TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            carrier_type TEXT NOT NULL DEFAULT 'qrcode',
+            provider_name TEXT NOT NULL DEFAULT 'wecom_contact_way',
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'retired', 'revoked')),
+            source TEXT NOT NULL DEFAULT '',
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ,
+            retired_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_scene_alias_corp_scene UNIQUE (corp_id, scene_value)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_scene_alias_channel_status
+        ON automation_channel_scene_alias (channel_id, status)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_channel_entry_effect_log (
+            id BIGSERIAL PRIMARY KEY,
+            event_log_id BIGINT,
+            channel_id BIGINT REFERENCES automation_channel(id) ON DELETE SET NULL,
+            scene_value TEXT NOT NULL DEFAULT '',
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            effect_type TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            status TEXT NOT NULL
+                CHECK (status IN ('skipped', 'attempted', 'success', 'failed')),
+            reason TEXT NOT NULL DEFAULT '',
+            request_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_entry_effect_idempotency UNIQUE (effect_type, idempotency_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_channel
+        ON automation_channel_entry_effect_log (channel_id, created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_scene
+        ON automation_channel_entry_effect_log (scene_value, created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_external
+        ON automation_channel_entry_effect_log (external_contact_id, created_at DESC)
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS automation_channel_contact (
             id BIGSERIAL PRIMARY KEY,
             channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
