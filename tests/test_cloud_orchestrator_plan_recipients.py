@@ -49,6 +49,37 @@ def test_plan_list_groups_legacy_campaign_rows(monkeypatch):
     assert "recipients" not in legacy
 
 
+def test_empty_cloud_plan_shell_does_not_hide_legacy_group(monkeypatch):
+    client = _client(monkeypatch)
+    repo = build_cloud_plan_repository()
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+    repo.plans.append(
+        {
+            "id": 99,
+            "plan_id": plan_id,
+            "display_name": "空的新计划壳",
+            "intent": "空的新计划壳",
+            "owner_userid": "ZhaoYanFang",
+            "candidate_count": 0,
+            "review_status": "pending_review",
+            "run_status": "draft",
+            "status": "draft",
+            "selection_json": {},
+            "updated_at": "2026-05-31T10:00:00",
+        }
+    )
+
+    plans = client.get("/api/admin/cloud-orchestrator/plans?limit=20&offset=0").json()["plans"]
+    matching = [plan for plan in plans if plan["plan_id"] == plan_id]
+    detail = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}").json()["plan"]
+
+    assert len(matching) == 1
+    assert matching[0]["source_type"] == "legacy_campaign"
+    assert matching[0]["target_count"] == 3
+    assert detail["source_type"] == "legacy_campaign"
+    assert detail["target_count"] == 3
+
+
 def test_legacy_campaign_group_detail_recipients_and_messages(monkeypatch):
     client = _client(monkeypatch)
     plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"

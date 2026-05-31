@@ -142,6 +142,27 @@ def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
 _LEGACY_GROUP_KEY_SQL = "COALESCE(NULLIF(c.metadata_json->>'group_code', ''), c.campaign_code)"
 _LEGACY_GROUP_KEY_UPDATE_SQL = _LEGACY_GROUP_KEY_SQL.replace("c.", "")
 _LEGACY_GROUP_LABEL_SQL = "COALESCE(MAX(NULLIF(c.metadata_json->>'group_label', '')), MAX(NULLIF(c.display_name, '')), " + _LEGACY_GROUP_KEY_SQL + ")"
+_CLOUD_HAS_RECIPIENTS_SQL = """
+EXISTS (
+    SELECT 1
+    FROM cloud_broadcast_plan_recipients cpr
+    WHERE cpr.plan_id = cloud_broadcast_plans.plan_id
+)
+"""
+_CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL = f"""
+EXISTS (
+    SELECT 1
+    FROM campaigns c
+    WHERE {_LEGACY_GROUP_KEY_SQL} = cloud_broadcast_plans.plan_id
+)
+"""
+_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL = f"""
+EXISTS (
+    SELECT 1
+    FROM cloud_broadcast_plan_recipients cpr
+    WHERE cpr.plan_id = {_LEGACY_GROUP_KEY_SQL}
+)
+"""
 
 
 class PostgresCloudPlanRepository:
@@ -219,7 +240,11 @@ class PostgresCloudPlanRepository:
             like = f"%{keyword.lower()}%"
             clauses.append("(LOWER(plan_id) LIKE %s OR LOWER(COALESCE(display_name, intent, '')) LIKE %s OR LOWER(COALESCE(owner_userid, '')) LIKE %s)")
             params.extend([like, like, like])
-        cloud_where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        cloud_clauses = [
+            *clauses,
+            f"({_CLOUD_HAS_RECIPIENTS_SQL} OR NOT {_CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL})",
+        ]
+        cloud_where = " WHERE " + " AND ".join(cloud_clauses)
         legacy_clauses: list[str] = []
         legacy_params: list[Any] = []
         if status:
@@ -272,9 +297,7 @@ class PostgresCloudPlanRepository:
                            'legacy_campaign' AS source_type
                     FROM campaigns c
                     LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = {_LEGACY_GROUP_KEY_SQL}
-                    )
+                    WHERE NOT {_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL}
                     """
                 + legacy_where
                 + f"""
@@ -302,9 +325,7 @@ class PostgresCloudPlanRepository:
                             UNION ALL
                             SELECT {_LEGACY_GROUP_KEY_SQL} AS plan_id FROM campaigns c
                             LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = {_LEGACY_GROUP_KEY_SQL}
-                            )
+                            WHERE NOT {_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL}
                             """
                         + legacy_where
                         + f"""
@@ -325,6 +346,38 @@ class PostgresCloudPlanRepository:
             stats = {**self._stats_for_plan_ids(conn, cloud_ids), **self._legacy_stats_for_plan_ids(conn, legacy_ids)}
         return [_plan_view(dict(row), stats.get(str(row["plan_id"]), {})) for row in rows], total
 
+    def _legacy_group_plan_row(self, conn, plan_id: str):
+        return conn.execute(
+            f"""
+            SELECT MAX(id) AS id,
+                   {_LEGACY_GROUP_KEY_SQL} AS plan_id,
+                   MAX(intent) AS intent,
+                   {_LEGACY_GROUP_LABEL_SQL} AS display_name,
+                   STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
+                   COUNT(cm.id) AS candidate_count,
+                   jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
+                   CASE
+                       WHEN BOOL_AND(c.review_status = 'approved') THEN 'approved'
+                       WHEN BOOL_OR(c.review_status = 'rejected') AND NOT BOOL_OR(c.review_status <> 'rejected') THEN 'rejected'
+                       ELSE 'pending_review'
+                   END AS review_status,
+                   CASE
+                       WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                       WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
+                       WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                       ELSE 'draft'
+                   END AS run_status,
+                   CASE WHEN BOOL_OR(c.run_status = 'active') THEN 'active' ELSE 'draft' END AS status,
+                   MAX(c.updated_at) AS updated_at,
+                   'legacy_campaign' AS source_type
+            FROM campaigns c
+            LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
+            WHERE {_LEGACY_GROUP_KEY_SQL} = %s
+            GROUP BY {_LEGACY_GROUP_KEY_SQL}
+            """,
+            (_text(plan_id),),
+        ).fetchone()
+
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -336,37 +389,15 @@ class PostgresCloudPlanRepository:
                 """,
                 (_text(plan_id),),
             ).fetchone()
-            if not row:
-                row = conn.execute(
-                    f"""
-                    SELECT MAX(id) AS id,
-                           {_LEGACY_GROUP_KEY_SQL} AS plan_id,
-                           MAX(intent) AS intent,
-                           {_LEGACY_GROUP_LABEL_SQL} AS display_name,
-                           STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
-                           COUNT(cm.id) AS candidate_count,
-                           jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
-                           CASE
-                               WHEN BOOL_AND(c.review_status = 'approved') THEN 'approved'
-                               WHEN BOOL_OR(c.review_status = 'rejected') AND NOT BOOL_OR(c.review_status <> 'rejected') THEN 'rejected'
-                               ELSE 'pending_review'
-                           END AS review_status,
-                           CASE
-                               WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
-                               WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
-                               WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
-                               ELSE 'draft'
-                           END AS run_status,
-                           CASE WHEN BOOL_OR(c.run_status = 'active') THEN 'active' ELSE 'draft' END AS status,
-                           MAX(c.updated_at) AS updated_at,
-                           'legacy_campaign' AS source_type
-                    FROM campaigns c
-                    LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-                    WHERE {_LEGACY_GROUP_KEY_SQL} = %s
-                    GROUP BY {_LEGACY_GROUP_KEY_SQL}
-                    """,
+            if row:
+                materialized = conn.execute(
+                    "SELECT 1 FROM cloud_broadcast_plan_recipients WHERE plan_id = %s LIMIT 1",
                     (_text(plan_id),),
                 ).fetchone()
+                if not materialized:
+                    row = self._legacy_group_plan_row(conn, plan_id) or row
+            else:
+                row = self._legacy_group_plan_row(conn, plan_id)
                 if not row:
                     return None
             if _text(row.get("source_type")) == "legacy_campaign":
@@ -819,7 +850,15 @@ class InMemoryCloudPlanRepository:
         }
 
     def list_plans(self, *, status: str = "", keyword: str = "", limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
-        rows = [item for item in [*self.plans, *self.legacy_plans] if (not status or item.get("review_status") == status or item.get("status") == status or item.get("run_status") == status)]
+        legacy_plan_ids = {item["plan_id"] for item in self.legacy_plans}
+        materialized_cloud_plan_ids = {item["plan_id"] for item in self.recipients}
+        cloud_rows = [
+            item
+            for item in self.plans
+            if item["plan_id"] in materialized_cloud_plan_ids or item["plan_id"] not in legacy_plan_ids
+        ]
+        legacy_rows = [item for item in self.legacy_plans if item["plan_id"] not in materialized_cloud_plan_ids]
+        rows = [item for item in [*cloud_rows, *legacy_rows] if (not status or item.get("review_status") == status or item.get("status") == status or item.get("run_status") == status)]
         if keyword:
             rows = [item for item in rows if keyword.lower() in (item.get("display_name", "") + item.get("plan_id", "")).lower()]
         total = len(rows)
@@ -827,7 +866,15 @@ class InMemoryCloudPlanRepository:
         return [_plan_view(copy.deepcopy(item), self._stats(item["plan_id"])) for item in rows], total
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
-        for item in [*self.plans, *self.legacy_plans]:
+        materialized_cloud_plan_ids = {item["plan_id"] for item in self.recipients}
+        if plan_id not in materialized_cloud_plan_ids:
+            for item in self.legacy_plans:
+                if item["plan_id"] == plan_id:
+                    return _plan_view(copy.deepcopy(item), self._stats(plan_id))
+        for item in self.plans:
+            if item["plan_id"] == plan_id:
+                return _plan_view(copy.deepcopy(item), self._stats(plan_id))
+        for item in self.legacy_plans:
             if item["plan_id"] == plan_id:
                 return _plan_view(copy.deepcopy(item), self._stats(plan_id))
         return None
