@@ -235,6 +235,27 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def update_channel_qrcode(*, channel_id: int, scene_value: str, qr_url: str, config_id: str = "") -> dict[str, Any]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE automation_channel
+            SET scene_value = %s,
+                qr_url = %s,
+                qr_ticket = %s,
+                carrier_type = CASE WHEN carrier_type = '' THEN 'qrcode' ELSE carrier_type END,
+                channel_type = CASE WHEN channel_type = '' THEN 'qrcode' ELSE channel_type END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING *
+            """,
+            (text(scene_value), text(qr_url), text(config_id), int(channel_id)),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else {}
+
+
 def upsert_channel_contact(*, channel_id: int, external_contact_id: str, owner_staff_id: str, source_payload: dict[str, Any]) -> dict[str, Any]:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -532,4 +553,3 @@ def decode_payload_json(value: Any) -> dict[str, Any]:
         except ValueError:
             return {}
     return {}
-
