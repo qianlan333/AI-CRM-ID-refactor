@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+
+from .application import (
+    decrypt_callback_body,
+    diagnose_channel_runtime,
+    dry_run_channel_entry,
+    encrypted_success_reply,
+    process_wecom_external_contact_event,
+    repair_channel_entry,
+    verify_callback_echostr,
+)
+from .schemas import (
+    DiagnoseChannelRuntimeQuery,
+    ProcessChannelEntryCommand,
+    ProcessWeComExternalContactEventCommand,
+    RepairChannelEntryCommand,
+)
+
+router = APIRouter()
+
+
+async def _handle_callback(request: Request) -> Response:
+    query = {key: str(value) for key, value in request.query_params.items()}
+    try:
+        if request.method == "GET":
+            return Response(verify_callback_echostr(query), media_type="text/plain")
+        event_data, plain_xml = decrypt_callback_body(query=query, body=await request.body())
+        process_wecom_external_contact_event(
+            ProcessWeComExternalContactEventCommand(
+                corp_id=str(event_data.get("ToUserName") or ""),
+                event_data=event_data,
+                payload_xml=plain_xml,
+                route=str(request.url.path),
+            )
+        )
+        return Response(encrypted_success_reply(query), media_type="application/xml")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.api_route("/wecom/external-contact/callback", methods=["GET", "POST", "OPTIONS", "HEAD"])
+async def external_contact_callback(request: Request) -> Response:
+    if request.method in {"OPTIONS", "HEAD"}:
+        return Response("", media_type="text/plain")
+    return await _handle_callback(request)
+
+
+@router.api_route("/api/wecom/events", methods=["GET", "POST", "OPTIONS", "HEAD"])
+async def wecom_events(request: Request) -> Response:
+    if request.method in {"OPTIONS", "HEAD"}:
+        return Response("", media_type="text/plain")
+    return await _handle_callback(request)
+
+
+@router.get("/api/admin/channels/runtime-diagnosis")
+def runtime_diagnosis(scene_value: str = "") -> dict:
+    return diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(scene_value=scene_value))
+
+
+@router.get("/api/admin/channels/{channel_id:int}/runtime-diagnosis")
+def runtime_diagnosis_by_channel(channel_id: int) -> dict:
+    return diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(channel_id=int(channel_id)))
+
+
+@router.post("/api/admin/channels/runtime-diagnosis/dry-run")
+def runtime_diagnosis_dry_run(payload: dict) -> dict:
+    result = dry_run_channel_entry(
+        ProcessChannelEntryCommand(
+            external_contact_id=str(payload.get("external_userid") or payload.get("external_contact_id") or "dry_run_external_userid").strip(),
+            payload_json={"State": str(payload.get("state") or payload.get("scene_value") or "").strip(), "WelcomeCode": str(payload.get("welcome_code") or "")},
+            follow_user_userid=str(payload.get("follow_user_userid") or "").strip(),
+            event_action=str(payload.get("change_type") or "add_external_contact").strip(),
+            send_welcome_message=bool(payload.get("welcome_code") or payload.get("welcome_code_present")),
+            dry_run=True,
+        )
+    )
+    return {"ok": True, "planned_actions": result, "source": "aicrm_next.channel_entry"}
+
+
+@router.post("/api/admin/channels/repair-entry")
+def repair_entry(payload: dict) -> JSONResponse:
+    result = repair_channel_entry(
+        RepairChannelEntryCommand(
+            event_log_id=int(payload.get("event_log_id") or 0) or None,
+            external_userid=str(payload.get("external_userid") or payload.get("external_contact_id") or "").strip(),
+            scene_value=str(payload.get("scene_value") or payload.get("state") or "").strip(),
+        )
+    )
+    return JSONResponse({"ok": bool(result.get("handled")), "result": result, "source": "aicrm_next.channel_entry"})
+

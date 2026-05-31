@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
+from aicrm_next.channel_entry import repo as channel_entry_repo
 from aicrm_next.shared.runtime import raw_database_url
 
 router = APIRouter()
@@ -222,22 +223,12 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
-                    FROM (
-                        SELECT
-                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
-                            MAX(e.created_at) AS latest_event_at
-                        FROM wecom_external_contact_event_logs e
-                        JOIN automation_member m ON m.external_contact_id = e.external_userid
-                        WHERE m.source_channel_id = c.id
-                          AND e.change_type = 'add_external_contact'
-                          AND e.external_userid <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
-                        GROUP BY 1
-                        ORDER BY latest_event_at DESC
-                        LIMIT 12
-                    ) scene_rows
+                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
+                    FROM automation_channel_scene_alias a
+                    WHERE a.channel_id = c.id
+                      AND a.scene_value <> c.scene_value
+                      AND a.status <> 'revoked'
+                    LIMIT 12
                 ) historical_scenes ON TRUE
                 WHERE c.id = %s
                 """,
@@ -306,22 +297,12 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
-                    FROM (
-                        SELECT
-                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
-                            MAX(e.created_at) AS latest_event_at
-                        FROM wecom_external_contact_event_logs e
-                        JOIN automation_member m ON m.external_contact_id = e.external_userid
-                        WHERE m.source_channel_id = c.id
-                          AND e.change_type = 'add_external_contact'
-                          AND e.external_userid <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
-                        GROUP BY 1
-                        ORDER BY latest_event_at DESC
-                        LIMIT 12
-                    ) scene_rows
+                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
+                    FROM automation_channel_scene_alias a
+                    WHERE a.channel_id = c.id
+                      AND a.scene_value <> c.scene_value
+                      AND a.status <> 'revoked'
+                    LIMIT 12
                 ) historical_scenes ON TRUE
                 {where}
                 ORDER BY c.updated_at DESC, c.id DESC
@@ -585,7 +566,13 @@ def _save_fixture_channel(payload: dict[str, Any], channel_id: int | None = None
         _NEXT_ID += 1
     now = datetime.now(UTC).isoformat()
     channel = {**existing, **data, "id": int(channel_id), "updated_at": now, "created_at": existing.get("created_at") or now}
+    old_scene = _text(existing.get("scene_value"))
     _FIXTURE_CHANNELS[int(channel_id)] = channel
+    aliases = list(channel.get("_scene_aliases") or [])
+    for scene in [old_scene, _text(channel.get("scene_value"))]:
+        if scene and scene not in aliases:
+            aliases.append(scene)
+    channel["_scene_aliases"] = aliases
     return _serialize_channel(channel)
 
 
@@ -637,6 +624,19 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
                 )
                 saved_id = int((cur.fetchone() or {}).get("id") or 0)
         conn.commit()
+    old_scene = _text((existing or {}).get("scene_value"))
+    new_scene = _text(data.get("scene_value"))
+    if old_scene and old_scene != new_scene:
+        channel_entry_repo.upsert_channel_scene_alias(channel_id=saved_id, scene_value=old_scene, status="retired", source="channel_save_previous_scene")
+    if new_scene:
+        channel_entry_repo.upsert_channel_scene_alias(
+            channel_id=saved_id,
+            scene_value=new_scene,
+            qr_url=_text(data.get("qr_url")),
+            carrier_type=_text(data.get("carrier_type")) or "qrcode",
+            status="active",
+            source="channel_save_current_scene",
+        )
     return get_channel_resource(saved_id) or {"id": saved_id, **data}
 
 

@@ -975,26 +975,59 @@ routes:
     notes: Narrow production_compat fallback retained for sidebar v2 material send writes only.
   - route_pattern: /wecom/external-contact/callback
     methods: [GET, POST, OPTIONS, HEAD]
-    capability_owner: aicrm_next.integration_gateway
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_next_production_cutover_readiness.py
-    notes: Callback route forwards through legacy facade; no new real external behavior is enabled here.
+    checker: tools/check_channel_entry_next_owner.py
+    notes: WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback requires explicit AICRM_ALLOW_LEGACY_WECOM_CALLBACK_FALLBACK=true and is not the default path.
   - route_pattern: /api/wecom/events
     methods: [GET, POST, OPTIONS, HEAD]
-    capability_owner: aicrm_next.integration_gateway
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
     delete_ready: false
-    checker: tools/check_next_production_cutover_readiness.py
-    notes: WeCom event callback route forwards through legacy facade; no new real external behavior is enabled here.
+    checker: tools/check_channel_entry_next_owner.py
+    notes: WeCom event callback is owned by aicrm_next.channel_entry and processes external-contact entry events through the Next pipeline.
+  - route_pattern: /api/admin/channels/runtime-diagnosis
+    methods: [GET, POST]
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_channel_entry_next_owner.py
+    notes: Next-native channel runtime diagnosis and dry-run endpoints.
+  - route_pattern: /api/admin/channels/{channel_id}/runtime-diagnosis
+    methods: [GET]
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_channel_entry_next_owner.py
+    notes: Next-native channel runtime diagnosis by channel id.
+  - route_pattern: /api/admin/channels/repair-entry
+    methods: [POST]
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_channel_entry_next_owner.py
+    notes: Next-native channel entry repair; welcome resend is not faked when WelcomeCode is unavailable.
   - route_pattern: /mcp
     methods: [GET, POST]
     capability_owner: aicrm_next.integration_gateway

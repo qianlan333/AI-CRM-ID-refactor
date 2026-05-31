@@ -5,18 +5,11 @@ from fastapi.responses import JSONResponse, Response
 
 from aicrm_next.integration_gateway.legacy_automation_facade import get_automation_member_detail_from_legacy
 from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
-from aicrm_next.integration_gateway.wecom_callback_facade import handle_wecom_callback_via_legacy
 
 router = APIRouter()
 wildcard_router = APIRouter()
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-
-
-@router.api_route("/wecom/external-contact/callback", methods=["GET", "POST", "OPTIONS", "HEAD"])
-@router.api_route("/api/wecom/events", methods=["GET", "POST", "OPTIONS", "HEAD"])
-async def wecom_callback_routes(request: Request) -> Response:
-    return await handle_wecom_callback_via_legacy(request)
 
 
 @router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
