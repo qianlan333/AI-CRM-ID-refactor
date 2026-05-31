@@ -62,3 +62,12 @@
 - 修改 `production_compat` 必须同步 route ownership manifest 和 checker。
 - 禁止任何绕过 import guard 的动态 legacy import；唯一例外是
   `aicrm_next/integration_gateway/legacy_flask_facade.py`。
+
+## G. Retired Legacy Runtime
+
+- WeCom channel-entry callback owner is `aicrm_next.channel_entry`.
+- `/wecom/external-contact/callback`, `/api/wecom/events`,
+  `/api/admin/channels/runtime-diagnosis`, and `/api/admin/channels/repair-entry`
+  must not be forwarded to legacy Flask.
+- Legacy channel-entry runtime is retired; rollback is a previous release
+  rollback, not a dual-run fallback flag.

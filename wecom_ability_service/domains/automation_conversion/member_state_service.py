@@ -737,22 +737,7 @@ def handle_channel_enter_from_callback(
     event_log_id: int | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    from .channel_entry_orchestrator import handle_channel_entry_from_callback
-
-    return handle_channel_entry_from_callback(
-        external_contact_id=external_contact_id,
-        phone=phone,
-        payload_json=payload_json,
-        operator_id=operator_id,
-        channel=channel,
-        source_type=source_type,
-        follow_user_userid=follow_user_userid,
-        initial_audience_code=initial_audience_code,
-        event_action=event_action,
-        send_welcome_message=send_welcome_message,
-        event_log_id=event_log_id,
-        dry_run=dry_run,
-    )
+    raise RuntimeError("Legacy channel entry is retired. Use aicrm_next.channel_entry.")
 
     channel_scene = ""
     if not channel:

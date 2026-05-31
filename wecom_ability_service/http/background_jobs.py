@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime
 
@@ -21,7 +20,6 @@ from ..application.identity_contact.dto import (
     ReplaceFollowUsersCommandDTO,
     UpsertExternalContactIdentityCommandDTO,
 )
-from ..application.automation_engine.commands import HandleQrcodeEnterFromCallbackCommand
 from ..application.user_ops.commands import (
     RunDueUserOpsDeferredJobsCommand,
     ScheduleUserOpsAutoAssignClassTermJobCommand,
@@ -150,24 +148,7 @@ def handle_qrcode_enter_from_callback(
     send_welcome_message: bool = False,
     event_log_id: int | None = None,
 ) -> dict[str, object]:
-    normalized_payload_json: dict[str, object] = {}
-    if isinstance(payload_json, str):
-        try:
-            parsed_payload = json.loads(payload_json)
-            normalized_payload_json = parsed_payload if isinstance(parsed_payload, dict) else {}
-        except json.JSONDecodeError:
-            normalized_payload_json = {}
-    else:
-        normalized_payload_json = dict(payload_json or {})
-    return HandleQrcodeEnterFromCallbackCommand()(
-        external_contact_id=str(external_contact_id or "").strip(),
-        phone=str(phone or "").strip(),
-        payload_json=normalized_payload_json,
-        operator_id=str(operator_id or "").strip(),
-        follow_user_userid=str(follow_user_userid or "").strip(),
-        send_welcome_message=bool(send_welcome_message),
-        event_log_id=int(event_log_id or 0) or None,
-    )
+    raise RuntimeError("Legacy channel entry is retired. Use aicrm_next.channel_entry.")
 
 
 def _run_app_task(
@@ -354,22 +335,6 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 preferred_userid=user_id,
             )
             _refresh_external_contact_identity_owner(corp_id=corp_id, external_userid=external_userid)
-            qrcode_result = handle_qrcode_enter_from_callback(
-                external_contact_id=external_userid,
-                phone=str(normalized_contact.get("mobile") or "").strip(),
-                payload_json=event_log.get("payload_json") or {},
-                operator_id=user_id or "wecom_callback",
-                follow_user_userid=user_id,
-                send_welcome_message=change_type in {"add_external_contact", "add_half_external_contact"},
-                event_log_id=event_log_id,
-            )
-            if bool(qrcode_result.get("handled")):
-                callback_logger.info(
-                    "external contact qrcode automation handled external_userid=%s welcome=%s entry_tag=%s",
-                    external_userid,
-                    qrcode_result.get("welcome_message"),
-                    qrcode_result.get("entry_tag"),
-                )
             if change_type in {"add_external_contact", "add_half_external_contact"}:
                 scheduled_auto_assign_job = ScheduleUserOpsAutoAssignClassTermJobCommand()(
                     ScheduleUserOpsAutoAssignClassTermJobCommandDTO(

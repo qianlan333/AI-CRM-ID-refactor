@@ -36,12 +36,6 @@ from .automation_conversion_runtime_api import (
 from .automation_conversion_execution_outbound import (
     api_admin_automation_conversion_execution_item_send_via_bazhuayu,
 )
-from .channel_runtime_diagnosis import (
-    api_admin_channel_repair_entry,
-    api_admin_channel_runtime_diagnosis,
-    api_admin_channel_runtime_diagnosis_by_channel,
-    api_admin_channel_runtime_diagnosis_dry_run,
-)
 def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/put-in-pool", methods=["POST"])(api_admin_automation_conversion_put_in_pool)
     bp.route("/api/admin/automation-conversion/member/remove-from-pool", methods=["POST"])(api_admin_automation_conversion_remove_from_pool)
@@ -70,7 +64,3 @@ def register_routes(bp):
     bp.route("/api/internal/automation-conversion/laohuang-chat-results", methods=["POST"])(api_internal_automation_conversion_laohuang_chat_results)
     bp.route("/api/internal/automation-conversion/router-test-dispatch", methods=["POST"])(api_internal_automation_conversion_router_test_dispatch)
     bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])(api_admin_automation_conversion_jobs_run_due)
-    bp.route("/api/admin/channels/runtime-diagnosis", methods=["GET"])(api_admin_channel_runtime_diagnosis)
-    bp.route("/api/admin/channels/<int:channel_id>/runtime-diagnosis", methods=["GET"])(api_admin_channel_runtime_diagnosis_by_channel)
-    bp.route("/api/admin/channels/runtime-diagnosis/dry-run", methods=["POST"])(api_admin_channel_runtime_diagnosis_dry_run)
-    bp.route("/api/admin/channels/repair-entry", methods=["POST"])(api_admin_channel_repair_entry)

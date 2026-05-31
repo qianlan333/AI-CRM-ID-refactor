@@ -465,7 +465,6 @@ def repair_channel_entry(command: RepairChannelEntryCommand) -> dict[str, Any]:
 
 
 def runtime_route_map_payload() -> dict[str, Any]:
-    fallback_enabled = text(os.getenv("AICRM_ALLOW_LEGACY_WECOM_CALLBACK_FALLBACK")).lower() in {"1", "true", "yes", "on"}
     return {
         "route_owner": "ai_crm_next",
         "wecom_callback_routes": {
@@ -474,7 +473,7 @@ def runtime_route_map_payload() -> dict[str, Any]:
         },
         "next_live_callback_gateway_enabled": True,
         "callback_async_enabled": "next_task_queue",
-        "legacy_callback_fallback_enabled": fallback_enabled,
+        "legacy_callback_fallback_enabled": False,
         "web_release_sha": text(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA")) or "unknown",
         "worker_release_sha": text(os.getenv("WORKER_RELEASE_SHA")) or "unknown",
     }
