@@ -293,7 +293,6 @@ def test_radar_link_new_options_and_admin_subpages_render(client):
     assert "user_agent" not in detail_response.text
     assert "openid" not in detail_response.text
 
-
 def test_radar_link_form_hides_internal_tracking_fields_and_type_sections(client):
     link = _create_link(client, target_type="pdf", media_item_id="attachment_masked_001", original_url="")
 
@@ -309,7 +308,6 @@ def test_radar_link_form_hides_internal_tracking_fields_and_type_sections(client
     assert ".radar-field[hidden]" in response.text
     assert 'data-link-config' in response.text
     assert 'data-media-config hidden' in response.text
-
 
 def test_radar_link_share_returns_full_url_and_base64_svg_qr(client):
     link = _create_link(client, title="课程介绍 PDF")
