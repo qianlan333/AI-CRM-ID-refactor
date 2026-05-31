@@ -229,19 +229,68 @@ def radar_content_view(request: Request, code: str):
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }}
     header {{ position: sticky; top: 0; z-index: 2; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: rgba(255, 255, 255, 0.96); font-size: 16px; font-weight: 800; }}
-    .viewer {{ width: 100%; height: calc(100vh - 48px); background: #fff; }}
-    iframe, embed {{ display: block; width: 100%; height: 100%; border: 0; background: #fff; }}
-    .fallback {{ display: none; padding: 40px 18px; color: #6b7280; text-align: center; }}
+    .viewer {{ min-height: calc(100vh - 48px); padding: 10px 0 24px; background: #eef1f6; }}
+    .page {{ display: block; width: calc(100vw - 16px); max-width: 860px; height: auto; margin: 0 auto 10px; background: #fff; box-shadow: 0 1px 6px rgba(15, 23, 42, .12); }}
+    .state {{ padding: 40px 18px; color: #6b7280; text-align: center; }}
+    .state[hidden] {{ display: none; }}
   </style>
 </head>
 <body>
   <header>{title}</header>
   <main class="viewer">
-    <iframe src="{resource_url}" title="{title}" onerror="this.style.display='none';document.querySelector('.fallback').style.display='block';"></iframe>
-    <div class="fallback">内容暂时无法查看</div>
+    <div class="state" data-pdf-state>内容加载中...</div>
+    <div data-pdf-pages></div>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
-    // PDF.js can replace the iframe here later without changing the signed resource URL contract.
+    (function () {{
+      var state = document.querySelector("[data-pdf-state]");
+      var pages = document.querySelector("[data-pdf-pages]");
+      function fail() {{
+        if (state) {{
+          state.hidden = false;
+          state.textContent = "内容暂时无法查看";
+        }}
+      }}
+      function fitScale(page) {{
+        var viewport = page.getViewport({{scale: 1}});
+        var width = Math.max(280, Math.min(window.innerWidth - 16, 860));
+        return width / viewport.width;
+      }}
+      async function renderPage(pdf, pageNumber) {{
+        var page = await pdf.getPage(pageNumber);
+        var viewport = page.getViewport({{scale: fitScale(page)}});
+        var canvas = document.createElement("canvas");
+        var context = canvas.getContext("2d");
+        canvas.className = "page";
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = Math.floor(viewport.width) + "px";
+        canvas.style.height = Math.floor(viewport.height) + "px";
+        pages.appendChild(canvas);
+        await page.render({{canvasContext: context, viewport: viewport}}).promise;
+      }}
+      async function start() {{
+        if (!window.pdfjsLib) {{
+          fail();
+          return;
+        }}
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+        try {{
+          var response = await fetch("{resource_url}", {{credentials: "same-origin", cache: "no-store"}});
+          if (!response.ok) throw new Error("pdf unavailable");
+          var data = await response.arrayBuffer();
+          var pdf = await window.pdfjsLib.getDocument({{data: data}}).promise;
+          if (state) state.hidden = true;
+          for (var i = 1; i <= pdf.numPages; i += 1) {{
+            await renderPage(pdf, i);
+          }}
+        }} catch (err) {{
+          fail();
+        }}
+      }}
+      start();
+    }})();
   </script>
 </body>
 </html>
