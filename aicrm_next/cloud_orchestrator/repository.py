@@ -139,6 +139,11 @@ def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
     return "pending", "pending"
 
 
+_LEGACY_GROUP_KEY_SQL = "COALESCE(NULLIF(c.metadata_json->>'group_code', ''), c.campaign_code)"
+_LEGACY_GROUP_KEY_UPDATE_SQL = _LEGACY_GROUP_KEY_SQL.replace("c.", "")
+_LEGACY_GROUP_LABEL_SQL = "COALESCE(MAX(NULLIF(c.metadata_json->>'group_label', '')), MAX(NULLIF(c.display_name, '')), " + _LEGACY_GROUP_KEY_SQL + ")"
+
+
 class PostgresCloudPlanRepository:
     def __init__(self, database_url: str | None = None) -> None:
         self._database_url = _psycopg_url(_text(database_url or raw_database_url() or os.getenv("DATABASE_URL")))
@@ -187,18 +192,18 @@ class PostgresCloudPlanRepository:
         if not plan_ids:
             return {}
         rows = conn.execute(
-            """
-            SELECT c.campaign_code AS plan_id,
+            f"""
+            SELECT {_LEGACY_GROUP_KEY_SQL} AS plan_id,
                    COUNT(cm.id) AS target_count,
-                   COALESCE(SUM(CASE WHEN cm.status IN ('running', 'queued', 'completed', 'sent', 'failed') THEN 1 ELSE 0 END), 0) AS approved_count,
-                   COALESCE(SUM(CASE WHEN cm.status IN ('pending', 'paused') THEN 1 ELSE 0 END), 0) AS pending_count,
-                   COALESCE(SUM(CASE WHEN cm.status IN ('cancelled', 'stopped') THEN 1 ELSE 0 END), 0) AS rejected_count,
+                   COALESCE(SUM(CASE WHEN c.review_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
+                   COALESCE(SUM(CASE WHEN c.review_status NOT IN ('approved', 'rejected') THEN 1 ELSE 0 END), 0) AS pending_count,
+                   COALESCE(SUM(CASE WHEN c.review_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
                    COALESCE(SUM(CASE WHEN cm.status IN ('completed', 'sent') THEN 1 ELSE 0 END), 0) AS sent_count,
                    COALESCE(SUM(CASE WHEN cm.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
             FROM campaigns c
             LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-            WHERE c.campaign_code = ANY(%s)
-            GROUP BY c.campaign_code
+            WHERE {_LEGACY_GROUP_KEY_SQL} = ANY(%s)
+            GROUP BY {_LEGACY_GROUP_KEY_SQL}
             """,
             (plan_ids,),
         ).fetchall()
@@ -215,10 +220,17 @@ class PostgresCloudPlanRepository:
             clauses.append("(LOWER(plan_id) LIKE %s OR LOWER(COALESCE(display_name, intent, '')) LIKE %s OR LOWER(COALESCE(owner_userid, '')) LIKE %s)")
             params.extend([like, like, like])
         cloud_where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        legacy_clauses = [
-            clause.replace("plan_id", "campaign_code").replace("status = %s", "run_status = %s")
-            for clause in clauses
-        ]
+        legacy_clauses: list[str] = []
+        legacy_params: list[Any] = []
+        if status:
+            legacy_clauses.append("(COALESCE(c.review_status, '') = %s OR COALESCE(c.run_status, '') = %s)")
+            legacy_params.extend([status, status])
+        if keyword:
+            like = f"%{keyword.lower()}%"
+            legacy_clauses.append(
+                f"(LOWER({_LEGACY_GROUP_KEY_SQL}) LIKE %s OR LOWER(COALESCE(c.metadata_json->>'group_label', c.display_name, c.intent, '')) LIKE %s OR LOWER(COALESCE(c.owner_userid, '')) LIKE %s)"
+            )
+            legacy_params.extend([like, like, like])
         legacy_where = " AND " + " AND ".join(legacy_clauses) if legacy_clauses else ""
         limit = _limit(limit, default=20, maximum=100)
         offset = _offset(offset)
@@ -232,18 +244,42 @@ class PostgresCloudPlanRepository:
                     FROM cloud_broadcast_plans
                     """
                 + cloud_where
-                + """
+                + f"""
                     UNION ALL
-                    SELECT id, campaign_code AS plan_id, intent, display_name, owner_userid,
-                           0 AS candidate_count, metadata_json AS selection_json,
-                           review_status, run_status, run_status AS status, updated_at,
+                    SELECT MAX(id) AS id,
+                           {_LEGACY_GROUP_KEY_SQL} AS plan_id,
+                           MAX(intent) AS intent,
+                           {_LEGACY_GROUP_LABEL_SQL} AS display_name,
+                           STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
+                           COUNT(cm.id) AS candidate_count,
+                           jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
+                           CASE
+                               WHEN BOOL_AND(c.review_status = 'approved') THEN 'approved'
+                               WHEN BOOL_OR(c.review_status = 'rejected') AND NOT BOOL_OR(c.review_status <> 'rejected') THEN 'rejected'
+                               ELSE 'pending_review'
+                           END AS review_status,
+                           CASE
+                               WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                               WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
+                               WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                               ELSE 'draft'
+                           END AS run_status,
+                           CASE
+                               WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                               ELSE 'draft'
+                           END AS status,
+                           MAX(c.updated_at) AS updated_at,
                            'legacy_campaign' AS source_type
-                    FROM campaigns
+                    FROM campaigns c
+                    LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
                     WHERE NOT EXISTS (
-                        SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = campaigns.campaign_code
+                        SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = {_LEGACY_GROUP_KEY_SQL}
                     )
                     """
                 + legacy_where
+                + f"""
+                    GROUP BY {_LEGACY_GROUP_KEY_SQL}
+                    """
                 + """
                 )
                 SELECT *
@@ -252,7 +288,7 @@ class PostgresCloudPlanRepository:
                 LIMIT %s OFFSET %s
                 """
                 ,
-                tuple([*params, *params, limit, offset]),
+                tuple([*params, *legacy_params, limit, offset]),
             ).fetchall()
             total = int(
                 (
@@ -262,19 +298,23 @@ class PostgresCloudPlanRepository:
                             SELECT plan_id FROM cloud_broadcast_plans
                             """
                         + cloud_where
-                        + """
+                + f"""
                             UNION ALL
-                            SELECT campaign_code AS plan_id FROM campaigns
+                            SELECT {_LEGACY_GROUP_KEY_SQL} AS plan_id FROM campaigns c
+                            LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
                             WHERE NOT EXISTS (
-                                SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = campaigns.campaign_code
+                                SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = {_LEGACY_GROUP_KEY_SQL}
                             )
                             """
                         + legacy_where
+                        + f"""
+                            GROUP BY {_LEGACY_GROUP_KEY_SQL}
+                            """
                         + """
                         )
                         SELECT COUNT(*) AS total FROM merged
                         """,
-                        tuple([*params, *params]),
+                        tuple([*params, *legacy_params]),
                     ).fetchone()
                     or {}
                 ).get("total")
@@ -298,13 +338,32 @@ class PostgresCloudPlanRepository:
             ).fetchone()
             if not row:
                 row = conn.execute(
-                    """
-                    SELECT id, campaign_code AS plan_id, intent, display_name, owner_userid,
-                           0 AS candidate_count, metadata_json AS selection_json,
-                           review_status, run_status, run_status AS status, updated_at,
+                    f"""
+                    SELECT MAX(id) AS id,
+                           {_LEGACY_GROUP_KEY_SQL} AS plan_id,
+                           MAX(intent) AS intent,
+                           {_LEGACY_GROUP_LABEL_SQL} AS display_name,
+                           STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
+                           COUNT(cm.id) AS candidate_count,
+                           jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
+                           CASE
+                               WHEN BOOL_AND(c.review_status = 'approved') THEN 'approved'
+                               WHEN BOOL_OR(c.review_status = 'rejected') AND NOT BOOL_OR(c.review_status <> 'rejected') THEN 'rejected'
+                               ELSE 'pending_review'
+                           END AS review_status,
+                           CASE
+                               WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                               WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
+                               WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                               ELSE 'draft'
+                           END AS run_status,
+                           CASE WHEN BOOL_OR(c.run_status = 'active') THEN 'active' ELSE 'draft' END AS status,
+                           MAX(c.updated_at) AS updated_at,
                            'legacy_campaign' AS source_type
-                    FROM campaigns
-                    WHERE campaign_code = %s
+                    FROM campaigns c
+                    LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
+                    WHERE {_LEGACY_GROUP_KEY_SQL} = %s
+                    GROUP BY {_LEGACY_GROUP_KEY_SQL}
                     """,
                     (_text(plan_id),),
                 ).fetchone()
@@ -368,7 +427,7 @@ class PostgresCloudPlanRepository:
                     SELECT COUNT(*) AS total
                     FROM campaign_members cm
                     JOIN campaigns c ON c.id = cm.campaign_id
-                    WHERE c.campaign_code = %s
+                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
                     """
                     + status_clause,
                     tuple(params),
@@ -386,7 +445,7 @@ class PostgresCloudPlanRepository:
             FROM campaign_members cm
             JOIN campaigns c ON c.id = cm.campaign_id
             LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
-            WHERE c.campaign_code = %s
+            WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s
             """
             + status_clause
             + " ORDER BY cm.id ASC LIMIT %s OFFSET %s",
@@ -439,7 +498,7 @@ class PostgresCloudPlanRepository:
                     FROM campaign_members cm
                     JOIN campaigns c ON c.id = cm.campaign_id
                     LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
-                    WHERE c.campaign_code = %s AND cm.id = %s
+                    WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s AND cm.id = %s
                     """,
                     (_text(plan_id), legacy_id),
                 ).fetchone()
@@ -499,7 +558,10 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute("SELECT * FROM campaigns WHERE campaign_code = %s FOR UPDATE", (_text(plan_id),)).fetchone()
+                legacy_before = conn.execute(
+                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
+                    (_text(plan_id),),
+                ).fetchone()
                 if not legacy_before:
                     return None
                 if _text(legacy_before.get("review_status")) == "rejected":
@@ -508,7 +570,7 @@ class PostgresCloudPlanRepository:
                     """
                     UPDATE campaigns
                     SET review_status = 'approved', updated_at = CURRENT_TIMESTAMP
-                    WHERE campaign_code = %s
+                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
                     RETURNING *
                     """,
                     (_text(plan_id),),
@@ -536,7 +598,10 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute("SELECT * FROM campaigns WHERE campaign_code = %s FOR UPDATE", (_text(plan_id),)).fetchone()
+                legacy_before = conn.execute(
+                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
+                    (_text(plan_id),),
+                ).fetchone()
                 if not legacy_before:
                     return None
                 row = conn.execute(
@@ -544,7 +609,7 @@ class PostgresCloudPlanRepository:
                     UPDATE campaigns
                     SET review_status = 'rejected', run_status = CASE WHEN run_status = 'active' THEN run_status ELSE 'cancelled' END,
                         paused_reason = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE campaign_code = %s
+                    WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s
                     RETURNING *
                     """,
                     (_text(reason)[:200], _text(plan_id)),
@@ -717,21 +782,23 @@ class InMemoryCloudPlanRepository:
         self.legacy_plans = [
             {
                 "id": 10,
-                "plan_id": "camp_legacy",
-                "display_name": "老 Campaign 计划",
-                "intent": "老 Campaign 计划",
-                "owner_userid": "LegacyOwner",
-                "candidate_count": 0,
-                "review_status": "pending_review",
-                "run_status": "draft",
+                "plan_id": "standard_subscription_20260530_1000_zhaoyanfang_v1",
+                "display_name": "Standard 订阅 v1.6.3 触达 · ZhaoYanFang · 2026-05-30 10:00",
+                "intent": "Standard 订阅 v1.6.3 触达",
+                "owner_userid": "ZhaoYanFang",
+                "candidate_count": 3,
+                "review_status": "approved",
+                "run_status": "active",
                 "status": "draft",
-                "selection_json": {},
+                "selection_json": {"group_code": "standard_subscription_20260530_1000_zhaoyanfang_v1"},
                 "updated_at": now,
                 "source_type": "legacy_campaign",
             }
         ]
         self.legacy_recipients = [
-            {"id": -11, "plan_id": "camp_legacy", "external_userid": "wm_legacy", "owner_userid": "LegacyOwner", "display_name": "老客户", "planned_message_count": 2, "approval_status": "pending", "send_status": "pending", "updated_at": now, "source_type": "legacy_campaign", "supports_recipient_approval": False}
+            {"id": -11, "plan_id": "standard_subscription_20260530_1000_zhaoyanfang_v1", "external_userid": "wm_legacy_a", "owner_userid": "ZhaoYanFang", "display_name": "老客户 A", "planned_message_count": 2, "approval_status": "approved", "send_status": "queued", "updated_at": now, "source_type": "legacy_campaign", "supports_recipient_approval": False},
+            {"id": -12, "plan_id": "standard_subscription_20260530_1000_zhaoyanfang_v1", "external_userid": "wm_legacy_b", "owner_userid": "ZhaoYanFang", "display_name": "老客户 B", "planned_message_count": 2, "approval_status": "approved", "send_status": "queued", "updated_at": now, "source_type": "legacy_campaign", "supports_recipient_approval": False},
+            {"id": -13, "plan_id": "standard_subscription_20260530_1000_zhaoyanfang_v1", "external_userid": "wm_legacy_c", "owner_userid": "ZhaoYanFang", "display_name": "老客户 C", "planned_message_count": 2, "approval_status": "approved", "send_status": "sent", "updated_at": now, "source_type": "legacy_campaign", "supports_recipient_approval": False},
         ]
         self.legacy_messages = [
             {"id": -101, "recipient_id": -11, "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "老话术 1", "content_payload_json": {}, "attachments_json": [], "status": "pending", "source_type": "legacy_campaign"},
