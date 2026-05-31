@@ -157,16 +157,20 @@ class DeleteMediaItemCommand:
 def _validate_image_upload(*, file_bytes: bytes, file_name: str, content_type: str) -> str:
     if not file_bytes:
         raise ContractError("image file is empty")
-    if len(file_bytes) > 2 * 1024 * 1024:
-        raise ContractError("image file too large; max 2MB")
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise ContractError("image file too large; max 10MB")
     lower_name = file_name.lower()
     normalized = "image/jpeg" if content_type in {"image/jpg", "image/jpeg"} or lower_name.endswith((".jpg", ".jpeg")) else content_type
-    if normalized not in {"image/png", "image/jpeg"}:
-        raise ContractError("only JPG/PNG images are supported")
+    if lower_name.endswith(".webp") and normalized in {"application/octet-stream", "image/webp"}:
+        normalized = "image/webp"
+    if normalized not in {"image/png", "image/jpeg", "image/webp"}:
+        raise ContractError("only JPG/PNG/WEBP images are supported")
     if normalized == "image/png" and not file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ContractError("invalid PNG image")
     if normalized == "image/jpeg" and not file_bytes.startswith(b"\xff\xd8"):
         raise ContractError("invalid JPG image")
+    if normalized == "image/webp" and not (file_bytes.startswith(b"RIFF") and file_bytes[8:12] == b"WEBP"):
+        raise ContractError("invalid WEBP image")
     return normalized
 
 
@@ -214,12 +218,20 @@ class UploadAttachmentCommand:
     def __call__(self, *, file_bytes: bytes, file_name: str, content_type: str, name: str = "", tags: Any = None) -> dict[str, Any]:
         if not file_bytes:
             raise ContractError("attachment file is empty")
+        normalized_type = str(content_type or "application/octet-stream").split(";")[0].strip().lower()
+        if file_name.lower().endswith(".pdf") and normalized_type in {"application/octet-stream", "application/pdf"}:
+            normalized_type = "application/pdf"
+        if normalized_type == "application/pdf":
+            if len(file_bytes) > 50 * 1024 * 1024:
+                raise ContractError("pdf file too large; max 50MB")
+            if not file_bytes.startswith(b"%PDF-"):
+                raise ContractError("invalid PDF file")
         item = self._repo.save_item(
             "attachment",
             {
                 "name": name or file_name,
                 "file_name": file_name,
-                "mime_type": content_type or "application/octet-stream",
+                "mime_type": normalized_type or "application/octet-stream",
                 "file_size": len(file_bytes),
                 "data_base64": base64.b64encode(file_bytes).decode("ascii"),
                 "tags": normalize_tags(tags),

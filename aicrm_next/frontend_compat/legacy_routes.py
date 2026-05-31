@@ -637,13 +637,13 @@ def admin_questionnaire_detail(request: Request, questionnaire_id: int):
 def admin_radar_links(request: Request):
     context = _shell_context(
         request=request,
-        page_title="雷达外链",
-        page_summary="创建可追踪外链，查看点击、授权和基础统计。",
+        page_title="内容雷达",
+        page_summary="创建可追踪链接、图片和 PDF 内容，查看点击、授权和预览统计。",
         active_endpoint="api.admin_radar_links",
     )
     context["breadcrumbs"] = [
         {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
-        {"label": "雷达外链"},
+        {"label": "内容雷达"},
     ]
     return templates.TemplateResponse(request, "admin_console/radar_links.html", context)
 

@@ -107,7 +107,7 @@ ADMIN_NAV_GROUPS = [
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
             {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
             {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_questionnaires"},
-            {"key": "radar_links", "label": "雷达外链", "endpoint": "api.admin_radar_links"},
+            {"key": "radar_links", "label": "内容雷达", "endpoint": "api.admin_radar_links"},
             {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
         ],
     },

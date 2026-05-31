@@ -1106,40 +1106,83 @@ CREATE TABLE IF NOT EXISTS radar_links (
     id BIGSERIAL PRIMARY KEY,
     code VARCHAR(64) NOT NULL UNIQUE,
     title TEXT NOT NULL,
+    target_type TEXT NOT NULL DEFAULT 'link' CHECK (target_type IN ('link', 'image', 'pdf')),
     original_url TEXT NOT NULL,
+    media_item_id TEXT NOT NULL DEFAULT '',
+    preview_mode TEXT NOT NULL DEFAULT '',
+    file_name_snapshot TEXT NOT NULL DEFAULT '',
+    mime_type_snapshot TEXT NOT NULL DEFAULT '',
+    file_size_snapshot BIGINT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    auth_required BOOLEAN NOT NULL DEFAULT FALSE,
+    auth_required BOOLEAN NOT NULL DEFAULT TRUE,
     source_channel TEXT NOT NULL DEFAULT '',
     campaign_id TEXT NOT NULL DEFAULT '',
     staff_id TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
 );
+
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS target_type TEXT NOT NULL DEFAULT 'link';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS media_item_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS preview_mode TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS file_name_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS mime_type_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS file_size_snapshot BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+UPDATE radar_links SET target_type = 'link' WHERE target_type IS NULL OR target_type = '';
 
 CREATE INDEX IF NOT EXISTS idx_radar_links_enabled
 ON radar_links (enabled, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_radar_links_target_type
+ON radar_links (target_type, enabled, id DESC);
 
 CREATE TABLE IF NOT EXISTS radar_click_events (
     id BIGSERIAL PRIMARY KEY,
     link_id BIGINT NOT NULL REFERENCES radar_links(id) ON DELETE CASCADE,
     code VARCHAR(64) NOT NULL DEFAULT '',
+    target_type_snapshot TEXT NOT NULL DEFAULT '',
     stage VARCHAR(64) NOT NULL,
     openid TEXT NOT NULL DEFAULT '',
     unionid TEXT NOT NULL DEFAULT '',
     external_userid TEXT NOT NULL DEFAULT '',
+    person_id TEXT NOT NULL DEFAULT '',
+    ip_hash TEXT NOT NULL DEFAULT '',
     source_channel TEXT NOT NULL DEFAULT '',
     campaign_id TEXT NOT NULL DEFAULT '',
     staff_id TEXT NOT NULL DEFAULT '',
+    source_channel_snapshot TEXT NOT NULL DEFAULT '',
+    campaign_id_snapshot TEXT NOT NULL DEFAULT '',
+    staff_id_snapshot TEXT NOT NULL DEFAULT '',
     user_agent TEXT NOT NULL DEFAULT '',
+    referer TEXT NOT NULL DEFAULT '',
+    query_params_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_code TEXT NOT NULL DEFAULT '',
     ip TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS target_type_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS person_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS ip_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS source_channel_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS campaign_id_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS staff_id_snapshot TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS referer TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS query_params_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE radar_click_events ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_radar_click_events_link_created
 ON radar_click_events (link_id, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_radar_click_events_stage
 ON radar_click_events (link_id, stage, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_radar_click_events_identity
+ON radar_click_events (link_id, unionid, openid, external_userid);
 
 CREATE TABLE IF NOT EXISTS questionnaires (
     id BIGSERIAL PRIMARY KEY,

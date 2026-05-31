@@ -22,7 +22,7 @@ def client(monkeypatch):
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
     monkeypatch.setenv("SECRET_KEY", "radar-links-test-secret")
     monkeypatch.setenv("AICRM_NEXT_WECHAT_OAUTH_MODE", "fake")
-    return TestClient(create_app(), raise_server_exceptions=False)
+    return TestClient(create_app(), raise_server_exceptions=False, base_url="https://testserver")
 
 
 def _create_link(client: TestClient, **overrides):
@@ -66,7 +66,7 @@ def test_admin_radar_links_page_is_in_operations_nav(client):
     response = client.get("/admin/radar-links")
 
     assert response.status_code == 200
-    assert "雷达外链" in response.text
+    assert "内容雷达" in response.text
     assert "/api/admin/radar-links" in response.text
 
 
@@ -110,7 +110,9 @@ def test_public_radar_redirect_records_landing(client):
     assert response.status_code == 302
     assert response.headers["location"] == "https://example.com/landing"
     events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
-    assert [event["stage"] for event in events] == ["landing"]
+    assert [event["stage"] for event in events] == ["redirect", "landing"]
+    assert events[1]["ip_hash"]
+    assert "ip" not in events[1]
 
 
 def test_fake_oauth_callback_with_unionid_records_authorized_click_and_redirects(client):
@@ -132,8 +134,8 @@ def test_fake_oauth_callback_with_unionid_records_authorized_click_and_redirects
     assert callback_response.headers["location"] == "https://example.com/landing"
     events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
     stages = [event["stage"] for event in events]
-    assert stages == ["authorized_click", "oauth_callback", "landing"]
-    assert events[0]["unionid"] == "unionid_from_fake_callback"
+    assert stages == ["redirect", "authorized", "oauth_callback", "oauth_start", "landing"]
+    assert events[1]["unionid"] == "unionid_from_fake_callback"
 
 
 def test_real_radar_oauth_start_builds_wechat_authorize_url_under_explicit_flag(client, monkeypatch):
@@ -197,9 +199,9 @@ def test_real_radar_oauth_callback_exchanges_code_and_records_unionid(client, mo
     assert callback_response.headers["location"] == "https://example.com/landing"
     events = client.get(f"/api/admin/radar-links/{link['id']}/events").json()["events"]
     stages = [event["stage"] for event in events]
-    assert stages == ["authorized_click", "oauth_callback", "landing"]
-    assert events[0]["openid"] == "openid_real"
-    assert events[0]["unionid"] == "unionid_real"
+    assert stages == ["redirect", "authorized", "oauth_callback", "oauth_start", "landing"]
+    assert events[1]["openid"] == "openid_real"
+    assert events[1]["unionid"] == "unionid_real"
 
 
 def test_real_radar_oauth_requires_explicit_flag(client, monkeypatch):
@@ -225,7 +227,18 @@ def test_stats_returns_required_click_fields(client):
 
     assert response.status_code == 200
     stats = response.json()["stats"]
-    assert set(stats) == {"total_clicks", "authorized_clicks", "unique_users", "today_clicks", "last_clicked_at"}
+    assert {
+        "total_clicks",
+        "authorized_clicks",
+        "unique_users",
+        "today_clicks",
+        "last_clicked_at",
+        "total_landings",
+        "authorized_users",
+        "viewer_opens",
+        "view_opens",
+        "last_viewed_at",
+    } <= set(stats)
     assert stats["total_clicks"] == 1
     assert stats["authorized_clicks"] == 1
     assert stats["unique_users"] == 1
@@ -240,6 +253,87 @@ def test_public_redirect_query_cannot_override_original_url(client):
 
     assert response.status_code == 302
     assert response.headers["location"] == "https://example.com/fixed"
+
+
+def test_create_image_radar_link_and_authorized_view_records_content_events(client):
+    link = _create_link(
+        client,
+        target_type="image",
+        media_item_id="image_masked_001",
+        original_url="",
+        auth_required=True,
+    )
+    assert link["target_type"] == "image"
+    assert link["original_url"] == ""
+    assert link["media_item_id"] == "image_masked_001"
+    assert link["file_name_snapshot"] == "image_masked_001.png"
+
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    callback_response = client.get(
+        "/api/h5/radar/oauth/callback",
+        params={"state": state, "unionid": "unionid_image_viewer"},
+        follow_redirects=False,
+    )
+
+    assert callback_response.status_code == 302
+    assert callback_response.headers["location"] == f"/radar/view/{link['code']}"
+    assert "aicrm_radar_viewer" in callback_response.headers.get("set-cookie", "")
+
+    viewer_response = client.get(callback_response.headers["location"])
+    assert viewer_response.status_code == 200
+    assert "/api/h5/radar-contents/" in viewer_response.text
+    assert "下载" not in viewer_response.text
+
+    event_response = client.post(f"/api/h5/radar-contents/{link['code']}/events", json={"stage": "viewer_open", "page": 1})
+    assert event_response.status_code == 200
+
+    image_response = client.get(f"/api/h5/radar-contents/{link['code']}/image")
+    assert image_response.status_code == 200
+    assert image_response.headers["content-type"].startswith("image/png")
+
+    stats = client.get(f"/api/admin/radar-links/{link['id']}/stats").json()["stats"]
+    assert stats["total_landings"] == 1
+    assert stats["authorized_users"] == 1
+    assert stats["viewer_opens"] == 2
+    assert stats["image_loaded"] == 1
+
+
+def test_pdf_radar_content_requires_viewer_session_and_streams_inline_pdf(client):
+    upload_response = client.post(
+        "/api/admin/radar-links/upload-pdf",
+        files={"pdf": ("brief.pdf", b"%PDF-1.4\n% radar test\n", "application/pdf")},
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    media_id = upload_response.json()["item"]["id"]
+    link = _create_link(
+        client,
+        target_type="pdf",
+        media_item_id=media_id,
+        original_url="",
+        auth_required=True,
+    )
+
+    no_session_response = client.get(f"/radar/view/{link['code']}")
+    assert no_session_response.status_code == 400
+    assert "viewer session" in no_session_response.text
+
+    landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
+    state = _state_from_oauth_start_location(landing_response.headers["location"])
+    callback_response = client.get(
+        "/api/h5/radar/oauth/callback",
+        params={"state": state, "unionid": "unionid_pdf_viewer"},
+        follow_redirects=False,
+    )
+    assert callback_response.headers["location"] == f"/radar/view/{link['code']}"
+
+    pdf_response = client.get(f"/api/h5/radar-contents/{link['code']}/pdf")
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert pdf_response.headers["content-disposition"].startswith('inline; filename="brief.pdf"')
+
+    stats = client.get(f"/api/admin/radar-links/{link['id']}/stats").json()["stats"]
+    assert stats["pdf_opened"] == 1
 
 
 def test_radar_links_uses_postgres_repo_when_production_data_ready(monkeypatch):
@@ -271,4 +365,7 @@ def test_postgres_schema_includes_radar_tables():
 
     assert "CREATE TABLE IF NOT EXISTS radar_links" in schema
     assert "CREATE TABLE IF NOT EXISTS radar_click_events" in schema
+    assert "target_type TEXT NOT NULL DEFAULT 'link'" in schema
+    assert "media_item_id TEXT NOT NULL DEFAULT ''" in schema
+    assert "ip_hash TEXT NOT NULL DEFAULT ''" in schema
     assert "idx_radar_click_events_link_created" in schema

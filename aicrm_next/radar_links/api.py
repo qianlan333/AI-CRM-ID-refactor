@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import html
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError
@@ -11,18 +12,23 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError
 from .application import (
     CompleteRadarOAuthCallbackCommand,
     CreateRadarLinkCommand,
+    GetRadarContentResourceQuery,
     GetRadarLinkQuery,
     GetRadarLinkStatsQuery,
+    GetRadarViewerPageQuery,
     ListRadarLinkEventsQuery,
     ListRadarLinksQuery,
+    RecordRadarContentEventCommand,
     ResolveRadarLandingQuery,
     SetRadarLinkEnabledCommand,
     StartRadarOAuthQuery,
     UpdateRadarLinkCommand,
 )
+from aicrm_next.media_library.application import UploadAttachmentCommand, UploadImageCommand
 from .dto import RadarLinkCreateRequest, RadarLinkUpdateRequest
 
 router = APIRouter()
+RADAR_VIEWER_COOKIE = "aicrm_radar_viewer"
 
 
 def _raise_http(exc: Exception) -> None:
@@ -60,7 +66,24 @@ def _request_meta(request: Request) -> dict[str, str]:
     return {
         "user_agent": str(request.headers.get("user-agent") or ""),
         "ip": request.client.host if request.client else "",
+        "referer": str(request.headers.get("referer") or ""),
+        "query_params_json": dict(request.query_params),
     }
+
+
+def _redirect_with_viewer_cookie(url: str, token: str = "") -> RedirectResponse:
+    response = RedirectResponse(url=url, status_code=302)
+    if token:
+        response.set_cookie(
+            RADAR_VIEWER_COOKIE,
+            token,
+            max_age=2 * 60 * 60,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            path="/",
+        )
+    return response
 
 
 @router.get("/api/admin/radar-links")
@@ -130,12 +153,17 @@ def list_radar_link_events(link_id: int, limit: int = 100, offset: int = 0) -> d
 @router.get("/r/{code}")
 def radar_public_redirect(request: Request, code: str):
     try:
-        result = ResolveRadarLandingQuery()(code, identity=_identity_from_request(request), request_meta=_request_meta(request))
+        result = ResolveRadarLandingQuery()(
+            code,
+            identity=_identity_from_request(request),
+            request_meta=_request_meta(request),
+            viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE),
+        )
     except Exception as exc:
         _raise_http(exc)
     if result["action"] == "oauth_start":
         return RedirectResponse(url=result["oauth_start_url"], status_code=302)
-    return RedirectResponse(url=result["redirect_url"], status_code=302)
+    return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))
 
 
 @router.get("/api/h5/radar/oauth/start")
@@ -150,7 +178,124 @@ def radar_oauth_start(
         result = StartRadarOAuthQuery()(state=state, code=code, openid=openid, unionid=unionid, external_userid=external_userid)
     except Exception as exc:
         _raise_http(exc)
-    return RedirectResponse(url=result["redirect_url"], status_code=302)
+    return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))
+
+
+@router.get("/radar/view/{code}")
+def radar_content_view(request: Request, code: str):
+    try:
+        result = GetRadarViewerPageQuery()(code, viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+    except Exception as exc:
+        _raise_http(exc)
+    radar_link = result["radar_link"]
+    title = html.escape(str(radar_link.get("title") or "内容预览"), quote=True)
+    target_type = str(result.get("target_type") or "")
+    resource_url = f"/api/h5/radar-contents/{code}/{'image' if target_type == 'image' else 'pdf'}"
+    if target_type == "image":
+        body = f"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{title}</title>
+  <style>
+    body {{ margin: 0; background: #0f1115; color: #f7f7f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    header {{ padding: 14px 16px; font-size: 16px; font-weight: 600; background: #171a21; }}
+    main {{ min-height: calc(100vh - 50px); display: flex; align-items: flex-start; justify-content: center; }}
+    img {{ display: block; width: 100%; max-width: 960px; height: auto; }}
+  </style>
+</head>
+<body><header>{title}</header><main><img src="{resource_url}" alt="{title}"></main></body>
+</html>
+"""
+    else:
+        body = f"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{title}</title>
+  <style>
+    body {{ margin: 0; background: #f6f7f9; color: #20242a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    header {{ padding: 12px 16px; font-size: 16px; font-weight: 600; background: #fff; border-bottom: 1px solid #e6e8ee; }}
+    iframe {{ display: block; width: 100%; height: calc(100vh - 48px); border: 0; background: #fff; }}
+  </style>
+</head>
+<body><header>{title}</header><iframe src="{resource_url}" title="{title}"></iframe></body>
+</html>
+"""
+    return HTMLResponse(content=body)
+
+
+@router.get("/api/h5/radar-contents/{code}/image")
+def radar_content_image(request: Request, code: str):
+    try:
+        result = GetRadarContentResourceQuery()(code, target_type="image", viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+    except Exception as exc:
+        _raise_http(exc)
+    return Response(
+        content=result["content"],
+        media_type=str(result.get("mime_type") or "image/png"),
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.get("/api/h5/radar-contents/{code}/pdf")
+def radar_content_pdf(request: Request, code: str):
+    try:
+        result = GetRadarContentResourceQuery()(code, target_type="pdf", viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE), request_meta=_request_meta(request))
+    except Exception as exc:
+        _raise_http(exc)
+    file_name = str(result.get("file_name") or "content.pdf").replace('"', "")
+    return Response(
+        content=result["content"],
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{file_name}"', "Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.post("/api/h5/radar-contents/{code}/events")
+def radar_content_event(request: Request, code: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return RecordRadarContentEventCommand()(
+            code,
+            payload=payload,
+            viewer_session=request.cookies.get(RADAR_VIEWER_COOKIE),
+            request_meta=_request_meta(request),
+        )
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/radar-links/upload-image")
+async def upload_radar_image(image: UploadFile = File(...), name: str = Form(""), tags: str = Form("")) -> dict[str, Any]:
+    try:
+        return UploadImageCommand()(
+            file_bytes=await image.read(),
+            file_name=image.filename or "image.png",
+            content_type=image.content_type or "application/octet-stream",
+            name=name,
+            tags=tags,
+            category="radar_content",
+        )
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.post("/api/admin/radar-links/upload-pdf")
+async def upload_radar_pdf(pdf: UploadFile = File(...), name: str = Form(""), tags: str = Form("")) -> dict[str, Any]:
+    try:
+        return UploadAttachmentCommand()(
+            file_bytes=await pdf.read(),
+            file_name=pdf.filename or "content.pdf",
+            content_type=pdf.content_type or "application/octet-stream",
+            name=name,
+            tags=tags,
+        )
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/h5/radar/oauth/callback")
@@ -173,4 +318,4 @@ def radar_oauth_callback(
         )
     except Exception as exc:
         _raise_http(exc)
-    return RedirectResponse(url=result["redirect_url"], status_code=302)
+    return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))
