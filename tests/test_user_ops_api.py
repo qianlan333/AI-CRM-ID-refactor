@@ -3295,18 +3295,18 @@ def test_external_contact_event_for_other_owner_also_creates_deferred_job(app, m
         assert row["owner_userid"] == "sales_01"
 
 
-def test_external_contact_event_passes_follow_user_to_qrcode_automation(app, monkeypatch):
+def test_external_contact_event_does_not_call_retired_qrcode_automation(app, monkeypatch):
     detail = _build_external_contact_detail(
         external_userid="wm_auto_assign_qrcode_owner_001",
         owner_userid="sales_01",
     )
-    captured: dict[str, object] = {}
+    calls: list[dict[str, object]] = []
 
     monkeypatch.setattr("wecom_ability_service.routes._contact_client", lambda: _FakeCallbackContactClient(detail))
     monkeypatch.setattr("wecom_ability_service.routes._dispatch_background_task", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "wecom_ability_service.http.background_jobs.handle_qrcode_enter_from_callback",
-        lambda *args, **kwargs: captured.update(kwargs) or {"handled": False, "reason": "test"},
+        lambda *args, **kwargs: calls.append(dict(kwargs)) or {"handled": False, "reason": "test"},
     )
 
     with app.app_context():
@@ -3324,12 +3324,10 @@ def test_external_contact_event_passes_follow_user_to_qrcode_automation(app, mon
         result = _process_external_contact_event(int(logged["id"]))
 
         assert result["ok"] is True
-        assert captured["external_contact_id"] == "wm_auto_assign_qrcode_owner_001"
-        assert captured["operator_id"] == "sales_01"
-        assert captured["follow_user_userid"] == "sales_01"
+        assert calls == []
 
 
-def test_external_contact_event_marks_failed_when_qrcode_automation_raises(app, monkeypatch):
+def test_external_contact_event_ignores_retired_qrcode_automation_failure(app, monkeypatch):
     detail = _build_external_contact_detail(
         external_userid="wm_auto_assign_qrcode_fail_001",
         owner_userid="sales_01",
@@ -3355,9 +3353,7 @@ def test_external_contact_event_marks_failed_when_qrcode_automation_raises(app, 
         )
         result = _process_external_contact_event(int(logged["id"]))
 
-        assert result["ok"] is False
-        assert result["status"] == "failed"
-        assert "qrcode automation exploded" in result["error"]
+        assert result["ok"] is True
         event_log = get_db().execute(
             """
             SELECT process_status, retry_count, error_message
@@ -3367,9 +3363,9 @@ def test_external_contact_event_marks_failed_when_qrcode_automation_raises(app, 
             (int(logged["id"]),),
         ).fetchone()
         assert dict(event_log) == {
-            "process_status": "failed",
-            "retry_count": _contact_sync_retry_limit(),
-            "error_message": "qrcode automation exploded",
+            "process_status": "success",
+            "retry_count": 0,
+            "error_message": "",
         }
 
 

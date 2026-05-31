@@ -7,7 +7,6 @@ from wecom_ability_service.db import migrations as db_migrations_module
 from wecom_ability_service.domains.automation_conversion import __all__ as automation_public_names
 from wecom_ability_service.domains.automation_conversion import service as automation_service
 from wecom_ability_service.domains.questionnaire import service as questionnaire_service
-from wecom_ability_service.http import background_jobs
 
 
 def test_automation_conversion_service_public_reexports_stable():
@@ -19,7 +18,6 @@ def test_automation_conversion_service_public_reexports_stable():
         "get_overview_payload",
         "get_settings_payload",
         "get_stage_detail_payload",
-        "handle_qrcode_enter_from_callback",
         "push_openclaw",
         "run_due_focus_send_batches",
         "run_due_reply_monitor",
@@ -60,11 +58,6 @@ def test_init_db_bootstrap_keeps_sop_and_prompt_seed_paths(monkeypatch):
     db_migrations_module._ensure_automation_sop_v1_seed_data()
     db_migrations_module._ensure_automation_agent_prompt_defaults()
     assert called == ["sop", "prompt"]
-
-
-def test_http_entrypoints_keep_binding_to_automation_conversion_service_symbols():
-    assert callable(background_jobs.handle_qrcode_enter_from_callback)
-    assert callable(automation_service.handle_qrcode_enter_from_callback)
 
 
 def test_questionnaire_service_lazy_import_path_keeps_sync_member_entrypoint():
