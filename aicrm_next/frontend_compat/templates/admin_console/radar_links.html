@@ -2,9 +2,164 @@
 
 {% block head_extra %}
 <style>
-  .radar-layout {
+  .radar-page {
     display: grid;
     gap: 18px;
+  }
+
+  .radar-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 22px;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .radar-hero h2,
+  .radar-card-title,
+  .radar-detail-title {
+    margin: 0;
+    color: #1f2937;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .radar-hero h2 {
+    font-size: 26px;
+  }
+
+  .radar-hero p,
+  .radar-muted {
+    color: #6b7280;
+    line-height: 1.6;
+  }
+
+  .radar-hero p {
+    margin: 8px 0 0;
+    font-size: 14px;
+  }
+
+  .radar-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: #fff;
+    background: #2563eb;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .radar-button.secondary {
+    color: #374151;
+    border-color: #d1d5db;
+    background: #fff;
+  }
+
+  .radar-button.ghost {
+    min-height: 32px;
+    padding: 6px 8px;
+    color: #2563eb;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .radar-button.danger {
+    color: #dc2626;
+  }
+
+  .radar-button[disabled] {
+    opacity: 0.62;
+    cursor: progress;
+  }
+
+  .radar-stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .radar-stat {
+    min-height: 92px;
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .radar-stat-num {
+    margin-bottom: 4px;
+    color: #111827;
+    font-size: 24px;
+    font-weight: 850;
+  }
+
+  .radar-stat-label {
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  .radar-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    gap: 18px;
+  }
+
+  .radar-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .radar-card-body {
+    padding: 18px;
+  }
+
+  .radar-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 18px 0;
+  }
+
+  .radar-card-title {
+    font-size: 16px;
+  }
+
+  .radar-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+  }
+
+  .radar-tab {
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .radar-tab.active {
+    border-color: #93c5fd;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-weight: 800;
   }
 
   .radar-form-grid {
@@ -13,167 +168,554 @@
     gap: 14px;
   }
 
-  .radar-form-grid .admin-field--wide {
+  .radar-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .radar-field.wide {
     grid-column: 1 / -1;
   }
 
-  .radar-toggle-row,
-  .radar-actions,
-  .radar-link-line {
+  .radar-field span {
+    color: #374151;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .radar-field input,
+  .radar-field select,
+  .radar-field textarea {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #fff;
+    color: #1f2937;
+  }
+
+  .radar-field small {
+    color: #6b7280;
+    line-height: 1.5;
+  }
+
+  .radar-upload-box {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    border: 1px dashed #93c5fd;
+    border-radius: 14px;
+    background: #eff6ff;
+  }
+
+  .radar-upload-main {
+    color: #1d4ed8;
+    font-weight: 800;
+  }
+
+  .radar-upload-help {
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .radar-upload-preview {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.84);
+  }
+
+  .radar-upload-preview img {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 10px;
+    object-fit: contain;
+    background: #fff;
+  }
+
+  .radar-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 64px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #f9fafb;
+  }
+
+  .radar-switch-title {
+    color: #1f2937;
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  .radar-switch-help {
+    margin-top: 4px;
+    color: #6b7280;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .radar-switch {
+    position: relative;
+    width: 44px;
+    height: 26px;
+    flex: 0 0 auto;
+  }
+
+  .radar-switch input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+
+  .radar-switch span {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #d1d5db;
+    transition: background 0.18s ease;
+  }
+
+  .radar-switch span::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.16);
+    transition: transform 0.18s ease;
+  }
+
+  .radar-switch input:checked + span {
+    background: #2563eb;
+  }
+
+  .radar-switch input:checked + span::after {
+    transform: translateX(18px);
+  }
+
+  .radar-form-actions,
+  .radar-row-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
     align-items: center;
+    gap: 8px;
   }
 
-  .radar-actions {
+  .radar-form-actions {
     justify-content: flex-end;
+    grid-column: 1 / -1;
   }
 
-  .radar-table td {
-    vertical-align: top;
+  .radar-preview-shell {
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    background: #f9fafb;
   }
 
-  .radar-table td:last-child,
-  .radar-table th:last-child {
-    text-align: right;
-  }
-
-  .radar-title {
-    font-size: 15px;
-    font-weight: 850;
-  }
-
-  .radar-url,
-  .radar-muted {
-    color: var(--muted);
-    overflow-wrap: anywhere;
-  }
-
-  .radar-code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  .radar-phone-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    background: #111827;
+    color: #fff;
     font-size: 12px;
   }
 
-  .radar-stat-grid {
+  .radar-viewer {
+    min-height: 360px;
+    padding: 16px;
+    background: #fff;
+  }
+
+  .radar-viewer-title {
+    margin-bottom: 12px;
+    color: #111827;
+    font-size: 18px;
+    font-weight: 850;
+  }
+
+  .radar-viewer-link {
+    margin-bottom: 14px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .radar-image-preview {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    place-items: center;
+    min-height: 220px;
+    margin-top: 12px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #dbeafe, #fef3c7);
+    color: #374151;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .radar-image-preview img {
+    display: block;
+    width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+    border-radius: 14px;
+  }
+
+  .radar-pdf-preview {
+    min-height: 240px;
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #f3f4f6;
+  }
+
+  .radar-pdf-page {
+    height: 210px;
+    padding: 20px;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  .radar-pdf-line {
+    height: 10px;
+    margin-bottom: 10px;
+    border-radius: 999px;
+    background: #e5e7eb;
+  }
+
+  .radar-table {
+    min-width: 1120px;
+    font-size: 13px;
+  }
+
+  .radar-name {
+    color: #111827;
+    font-weight: 850;
+  }
+
+  .radar-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .radar-badge.link {
+    background: #eef2ff;
+    color: #4338ca;
+  }
+
+  .radar-badge.image {
+    background: #ecfdf5;
+    color: #047857;
+  }
+
+  .radar-badge.pdf {
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+
+  .radar-status {
+    font-weight: 850;
+  }
+
+  .radar-status.on {
+    color: #059669;
+  }
+
+  .radar-status.off {
+    color: #dc2626;
+  }
+
+  .radar-code {
+    color: #4b5563;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .radar-empty {
+    min-height: 160px;
+    padding: 34px 18px;
+    border: 1px dashed #d1d5db;
+    border-radius: 14px;
+    color: #6b7280;
+    text-align: center;
+  }
+
+  .radar-detail-panel {
+    display: grid;
+    gap: 16px;
+  }
+
+  .radar-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
   }
 
-  .radar-stat {
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 10px;
-    background: #fbfcff;
+  .radar-detail-item {
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #f9fafb;
   }
 
-  .radar-stat-value {
-    font-size: 20px;
-    font-weight: 900;
+  .radar-detail-label {
+    margin-bottom: 4px;
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  .radar-detail-value {
+    color: #111827;
+    font-weight: 750;
+    overflow-wrap: anywhere;
   }
 
   .radar-toast {
     position: fixed;
     top: 24px;
     right: 24px;
-    z-index: 60;
-    max-width: 320px;
+    z-index: 90;
+    max-width: 340px;
     padding: 12px 14px;
-    border-radius: 8px;
-    background: rgba(29, 38, 56, 0.94);
+    border-radius: 10px;
+    background: rgba(17, 24, 39, 0.94);
     color: #fff;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   }
 
-  .radar-toast.is-error {
-    background: rgba(174, 68, 54, 0.96);
+  .radar-toast.error {
+    background: rgba(185, 28, 28, 0.96);
   }
 
-  @media (max-width: 960px) {
+  .radar-loading {
+    color: #6b7280;
+  }
+
+  @media (max-width: 1120px) {
+    .radar-grid,
     .radar-form-grid,
-    .radar-stat-grid {
+    .radar-detail-grid {
       grid-template-columns: 1fr;
     }
+  }
 
-    .radar-actions,
-    .radar-table td:last-child,
-    .radar-table th:last-child {
-      text-align: left;
-      justify-content: flex-start;
+  @media (max-width: 760px) {
+    .radar-hero {
+      display: grid;
+    }
+
+    .radar-stat-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="radar-layout">
-  <section class="admin-card">
-    <form id="radar-create-form" class="radar-form-grid">
-      <label class="admin-field">
-        <span>标题</span>
-        <input name="title" type="text" required placeholder="例如：5 月直播报名页">
-      </label>
-      <label class="admin-field">
-        <span>来源渠道</span>
-        <input name="source_channel" type="text" placeholder="wechat_group">
-      </label>
-      <label class="admin-field">
-        <span>类型</span>
-        <select name="target_type" id="radar-target-type">
-          <option value="link">外部链接</option>
-          <option value="image">图片</option>
-          <option value="pdf">PDF</option>
-        </select>
-      </label>
-      <label class="admin-field admin-field--wide">
-        <span>目标 URL</span>
-        <input name="original_url" type="url" placeholder="https://example.com/landing">
-      </label>
-      <label class="admin-field admin-field--wide">
-        <span>图片/PDF 文件</span>
-        <input name="content_file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf">
-        <input name="media_item_id" type="hidden">
-        <span class="radar-muted" id="radar-upload-status">外部链接可不上传文件。</span>
-      </label>
-      <label class="admin-field">
-        <span>Campaign ID</span>
-        <input name="campaign_id" type="text">
-      </label>
-      <label class="admin-field">
-        <span>Staff ID</span>
-        <input name="staff_id" type="text">
-      </label>
-      <div class="radar-toggle-row admin-field--wide">
-        <label><input name="enabled" type="checkbox" checked> 启用</label>
-        <label><input name="auth_required" type="checkbox" checked> 需要授权</label>
-      </div>
-      <div class="radar-actions admin-field--wide">
-        <button class="admin-button admin-button--ghost" type="button" id="radar-refresh">刷新</button>
-        <button class="admin-button admin-button--primary" type="submit">创建内容雷达</button>
-      </div>
-    </form>
+<div class="radar-page">
+  <section class="radar-hero">
+    <div>
+      <h2>内容雷达</h2>
+      <p>创建可追踪的链接、图片、PDF。用户授权后查看内容，系统记录访问、授权、预览和最近查看。</p>
+    </div>
+    <button class="radar-button" type="button" data-scroll-create>新建内容雷达</button>
   </section>
 
-  <section class="admin-card">
-    <div class="radar-stat-grid" id="radar-stat-grid" hidden></div>
+  <section class="radar-stat-row" aria-label="内容雷达数据概览">
+    <div class="radar-stat">
+      <div class="radar-stat-num" data-summary="count">-</div>
+      <div class="radar-stat-label">内容总数</div>
+    </div>
+    <div class="radar-stat">
+      <div class="radar-stat-num" data-summary="landings">-</div>
+      <div class="radar-stat-label">总访问次数</div>
+    </div>
+    <div class="radar-stat">
+      <div class="radar-stat-num" data-summary="authorized">-</div>
+      <div class="radar-stat-label">授权用户数</div>
+    </div>
+    <div class="radar-stat">
+      <div class="radar-stat-num" data-summary="open_rate">-</div>
+      <div class="radar-stat-label">内容打开率</div>
+    </div>
   </section>
 
-  <section class="admin-card">
-    <div class="admin-table-wrap">
-      <table class="admin-table radar-table">
-        <thead>
-          <tr>
-            <th>内容</th>
-            <th>归因</th>
-            <th>状态</th>
-            <th>统计</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="radar-link-rows">
-          <tr><td colspan="5">加载中...</td></tr>
-        </tbody>
-      </table>
+  <section class="radar-grid">
+    <div class="radar-card" id="radar-create-card">
+      <div class="radar-card-head">
+        <h2 class="radar-card-title" data-form-title>新建内容雷达</h2>
+        <span class="radar-muted" data-save-state></span>
+      </div>
+      <div class="radar-card-body">
+        <div class="radar-tabs" role="tablist" aria-label="内容类型">
+          <button class="radar-tab active" type="button" data-type-tab="link">外部链接</button>
+          <button class="radar-tab" type="button" data-type-tab="image">图片预览</button>
+          <button class="radar-tab" type="button" data-type-tab="pdf">PDF 预览</button>
+        </div>
+
+        <form id="radar-form" class="radar-form-grid">
+          <input name="link_id" type="hidden">
+          <input name="media_item_id" type="hidden">
+          <label class="radar-field">
+            <span>内容名称</span>
+            <input name="title" type="text" required placeholder="例如：试听课资料 - 5月版">
+          </label>
+          <label class="radar-field">
+            <span>内容类型</span>
+            <select name="target_type">
+              <option value="link">外部链接 link</option>
+              <option value="image">图片 image</option>
+              <option value="pdf">PDF pdf</option>
+            </select>
+          </label>
+          <label class="radar-field wide" data-url-field>
+            <span>外部链接 URL</span>
+            <input name="original_url" type="url" placeholder="https://example.com/landing-page">
+            <small>仅 link 类型展示。图片/PDF 类型不需要填外部 URL。</small>
+          </label>
+          <label class="radar-field wide" data-upload-field hidden>
+            <span data-upload-label>上传图片 / PDF</span>
+            <div class="radar-upload-box">
+              <div class="radar-upload-main">选择文件上传到云端素材库</div>
+              <div class="radar-upload-help" data-upload-help>
+                图片支持 JPG / PNG / WEBP，最大 10MB。PDF 最大 50MB。用户授权后会在 CRM 页面内在线预览，不会直接下载。
+              </div>
+              <input name="content_file" type="file">
+              <div class="radar-upload-preview" data-upload-preview hidden></div>
+            </div>
+          </label>
+          <div class="radar-switch-row">
+            <div>
+              <div class="radar-switch-title">启用内容雷达</div>
+              <div class="radar-switch-help">关闭后，用户访问雷达链接会返回不可访问状态。</div>
+            </div>
+            <label class="radar-switch">
+              <input name="enabled" type="checkbox" checked>
+              <span></span>
+            </label>
+          </div>
+          <div class="radar-switch-row">
+            <div>
+              <div class="radar-switch-title">需要微信授权</div>
+              <div class="radar-switch-help">开启后，用户授权后才能跳转或预览，并记录 unionid/openid。</div>
+            </div>
+            <label class="radar-switch">
+              <input name="auth_required" type="checkbox" checked>
+              <span></span>
+            </label>
+          </div>
+          <label class="radar-field">
+            <span>来源渠道</span>
+            <input name="source_channel" type="text" placeholder="manual">
+          </label>
+          <label class="radar-field">
+            <span>员工归属</span>
+            <input name="staff_id" type="text" placeholder="HuangYouCan">
+          </label>
+          <label class="radar-field wide">
+            <span>活动 campaign_id（可选）</span>
+            <input name="campaign_id" type="text" placeholder="campaign_001">
+          </label>
+          <div class="radar-form-actions">
+            <button class="radar-button secondary" type="button" data-form-reset>取消</button>
+            <button class="radar-button" type="submit" data-submit-button>保存并生成雷达链接</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="radar-card">
+      <div class="radar-card-head">
+        <h2 class="radar-card-title">用户端预览效果</h2>
+      </div>
+      <div class="radar-card-body">
+        <div class="radar-preview-shell">
+          <div class="radar-phone-bar">微信内置浏览器 · 内容雷达</div>
+          <div class="radar-viewer">
+            <div class="radar-viewer-title" data-preview-title>试听课资料 - 5月版</div>
+            <div class="radar-viewer-link" data-preview-link>https://www.youcangogogo.com/r/a8K21p</div>
+            <div class="radar-muted" data-preview-copy>外部链接型：授权后直接跳转目标页面。</div>
+            <div class="radar-image-preview" data-preview-image>图片型：授权后在线预览图片</div>
+            <div class="radar-pdf-preview" data-preview-pdf>
+              <div class="radar-pdf-page">
+                <div class="radar-pdf-line" style="width:70%"></div>
+                <div class="radar-pdf-line" style="width:92%"></div>
+                <div class="radar-pdf-line" style="width:84%"></div>
+                <div class="radar-pdf-line" style="width:60%"></div>
+                <div class="radar-muted" style="margin-top:24px">PDF 型：内嵌预览，不展示下载按钮</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="radar-card">
+    <div class="radar-card-head">
+      <h2 class="radar-card-title">内容雷达列表</h2>
+      <button class="radar-button secondary" type="button" data-refresh>刷新</button>
+    </div>
+    <div class="radar-card-body">
+      <div class="admin-table-wrap">
+        <table class="admin-table radar-table">
+          <thead>
+            <tr>
+              <th>内容名称</th>
+              <th>类型</th>
+              <th>状态</th>
+              <th>雷达链接</th>
+              <th>访问</th>
+              <th>授权用户</th>
+              <th>查看</th>
+              <th>最近查看</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody data-rows>
+            <tr><td colspan="9" class="radar-loading">列表加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="radar-card" data-detail-card hidden>
+    <div class="radar-card-head">
+      <div>
+        <h2 class="radar-card-title">详情页信息结构</h2>
+        <p class="radar-muted" style="margin:6px 0 0">内容基础信息、统计卡片和最近事件。</p>
+      </div>
+      <button class="radar-button secondary" type="button" data-close-detail>收起详情</button>
+    </div>
+    <div class="radar-card-body">
+      <div class="radar-detail-panel" data-detail-body>
+        <div class="radar-loading">详情加载中...</div>
+      </div>
     </div>
   </section>
 </div>
@@ -182,31 +724,40 @@
 {% block scripts_extra %}
 <script>
 (() => {
-  const rowsEl = document.querySelector("#radar-link-rows");
-  const formEl = document.querySelector("#radar-create-form");
-  const refreshEl = document.querySelector("#radar-refresh");
-  const statsEl = document.querySelector("#radar-stat-grid");
-  const targetTypeEl = document.querySelector("#radar-target-type");
-  const uploadStatusEl = document.querySelector("#radar-upload-status");
-
-  const toast = (message, isError = false) => {
-    const el = document.createElement("div");
-    el.className = `radar-toast${isError ? " is-error" : ""}`;
-    el.textContent = message;
-    document.body.appendChild(el);
-    window.setTimeout(() => el.remove(), 2200);
+  const state = {items: [], editing: null, uploading: false, saving: false};
+  const els = {
+    form: document.querySelector("#radar-form"),
+    rows: document.querySelector("[data-rows]"),
+    refresh: document.querySelector("[data-refresh]"),
+    typeSelect: document.querySelector("[name='target_type']"),
+    urlField: document.querySelector("[data-url-field]"),
+    uploadField: document.querySelector("[data-upload-field]"),
+    uploadLabel: document.querySelector("[data-upload-label]"),
+    uploadHelp: document.querySelector("[data-upload-help]"),
+    uploadPreview: document.querySelector("[data-upload-preview]"),
+    formTitle: document.querySelector("[data-form-title]"),
+    saveState: document.querySelector("[data-save-state]"),
+    submit: document.querySelector("[data-submit-button]"),
+    detailCard: document.querySelector("[data-detail-card]"),
+    detailBody: document.querySelector("[data-detail-body]"),
+    previewTitle: document.querySelector("[data-preview-title]"),
+    previewLink: document.querySelector("[data-preview-link]"),
+    previewCopy: document.querySelector("[data-preview-copy]"),
+    previewImage: document.querySelector("[data-preview-image]"),
+    previewPdf: document.querySelector("[data-preview-pdf]"),
   };
 
-  const fetchJson = async (url, options = {}) => {
-    const response = await fetch(url, {
-      headers: {"Content-Type": "application/json", ...(options.headers || {})},
-      ...options,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
-      throw new Error(payload.detail || payload.page_error || "请求失败");
-    }
-    return payload;
+  const typeLabels = {link: "链接", image: "图片", pdf: "PDF"};
+  const stageLabels = {
+    landing: "访问入口",
+    oauth_start: "发起授权",
+    oauth_callback: "授权回调",
+    authorized: "授权成功",
+    redirect: "跳转链接",
+    viewer_open: "打开预览",
+    image_loaded: "图片加载",
+    pdf_opened: "PDF 打开",
+    error: "错误",
   };
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -217,26 +768,272 @@
     "'": "&#39;",
   }[char]));
 
-  const renderStats = (stats) => {
-    const items = [
-      ["访问", stats.total_landings ?? stats.total_clicks],
-      ["授权", stats.authorized_clicks],
-      ["唯一用户", stats.unique_users],
-      ["预览打开", stats.viewer_opens ?? stats.view_opens ?? 0],
-      ["最近预览", stats.last_viewed_at || "-"],
-    ];
-    statsEl.innerHTML = items.map(([label, value]) => `
-      <div class="radar-stat">
-        <div class="radar-muted">${label}</div>
-        <div class="radar-stat-value">${value}</div>
-      </div>
-    `).join("");
-    statsEl.hidden = false;
+  const formatNumber = (value) => Number(value || 0).toLocaleString("zh-CN");
+  const formatStatValue = (value) => {
+    if (typeof value === "number") return formatNumber(value);
+    if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) return formatNumber(value);
+    return String(value || "-");
+  };
+  const shortUrl = (url) => String(url || "").replace(/^https?:\/\/[^/]+/, "") || "-";
+  const bytes = (value) => {
+    const size = Number(value || 0);
+    if (!size) return "-";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
   };
 
-  const loadStats = async (id) => {
-    const payload = await fetchJson(`/api/admin/radar-links/${id}/stats`);
-    renderStats(payload.stats || {});
+  const maskedIdentity = (event) => {
+    const value = String(event.unionid || event.openid || event.external_userid || "").trim();
+    if (!value) return "-";
+    if (value.length <= 12) return value;
+    return `${value.slice(0, 8)}...${value.slice(-4)}`;
+  };
+
+  const toast = (message, isError = false) => {
+    const el = document.createElement("div");
+    el.className = `radar-toast${isError ? " error" : ""}`;
+    el.textContent = message;
+    document.body.appendChild(el);
+    window.setTimeout(() => el.remove(), 2400);
+  };
+
+  const messageFromPayload = (payload, fallback = "请求失败") => {
+    if (!payload) return fallback;
+    if (Array.isArray(payload.detail)) return payload.detail.map((item) => item.msg || item.detail).filter(Boolean).join("；") || fallback;
+    return payload.message || payload.error || payload.detail || payload.page_error || fallback;
+  };
+
+  const fetchJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      headers: {"Content-Type": "application/json", ...(options.headers || {})},
+      ...options,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(messageFromPayload(payload));
+    }
+    return payload;
+  };
+
+  const updateMode = () => {
+    const type = els.typeSelect.value;
+    document.querySelectorAll("[data-type-tab]").forEach((tab) => tab.classList.toggle("active", tab.dataset.typeTab === type));
+    els.urlField.hidden = type !== "link";
+    els.uploadField.hidden = type === "link";
+    els.form.elements.original_url.required = type === "link";
+    els.form.elements.content_file.required = type !== "link" && !els.form.elements.media_item_id.value;
+    els.form.elements.content_file.accept = type === "image" ? "image/jpeg,image/png,image/webp" : "application/pdf";
+    els.uploadLabel.textContent = type === "image" ? "上传图片" : "上传 PDF";
+    els.uploadHelp.textContent = type === "image"
+      ? "图片支持 JPG / PNG / WEBP，最大 10MB。用户授权后会在 CRM 页面内在线预览图片。"
+      : "PDF 最大 50MB。用户授权后会在 CRM 页面内 inline 预览，不展示下载按钮。";
+    updatePreview();
+  };
+
+  const updatePreview = () => {
+    const data = new FormData(els.form);
+    const type = String(data.get("target_type") || "link");
+    const title = String(data.get("title") || "试听课资料 - 5月版");
+    const wrapper = state.editing?.wrapper_url || "https://www.youcangogogo.com/r/a8K21p";
+    els.previewTitle.textContent = title;
+    els.previewLink.textContent = wrapper;
+    els.previewImage.hidden = type === "pdf";
+    els.previewPdf.hidden = type === "image";
+    els.previewCopy.textContent = type === "link"
+      ? "外部链接型：授权后直接跳转目标页面。"
+      : "内容型：授权后进入 CRM H5 页面在线预览，不暴露素材原始地址。";
+  };
+
+  const setUploadingPreview = (file) => {
+    els.uploadPreview.hidden = !file;
+    if (!file) {
+      els.uploadPreview.innerHTML = "";
+      return;
+    }
+    const type = els.typeSelect.value;
+    if (type === "image") {
+      const url = URL.createObjectURL(file);
+      els.uploadPreview.innerHTML = `<img src="${url}" alt="图片预览"><div class="radar-muted">${escapeHtml(file.name)} · ${bytes(file.size)}</div>`;
+      return;
+    }
+    els.uploadPreview.innerHTML = `<div class="radar-upload-main">${escapeHtml(file.name)}</div><div class="radar-muted">${bytes(file.size)} · ${escapeHtml(file.type || "application/pdf")}</div>`;
+  };
+
+  const resetForm = () => {
+    state.editing = null;
+    els.form.reset();
+    els.form.elements.enabled.checked = true;
+    els.form.elements.auth_required.checked = true;
+    els.form.elements.media_item_id.value = "";
+    els.formTitle.textContent = "新建内容雷达";
+    els.submit.textContent = "保存并生成雷达链接";
+    els.saveState.textContent = "";
+    setUploadingPreview(null);
+    updateMode();
+  };
+
+  const fillForm = (item) => {
+    state.editing = item;
+    els.form.elements.link_id.value = item.id || "";
+    els.form.elements.title.value = item.title || "";
+    els.form.elements.target_type.value = item.target_type || "link";
+    els.form.elements.original_url.value = item.original_url || "";
+    els.form.elements.media_item_id.value = item.media_item_id || "";
+    els.form.elements.enabled.checked = Boolean(item.enabled);
+    els.form.elements.auth_required.checked = Boolean(item.auth_required);
+    els.form.elements.source_channel.value = item.source_channel || "";
+    els.form.elements.staff_id.value = item.staff_id || "";
+    els.form.elements.campaign_id.value = item.campaign_id || "";
+    els.formTitle.textContent = "编辑内容雷达";
+    els.submit.textContent = "保存修改";
+    setUploadingPreview(null);
+    if (item.file_name_snapshot) {
+      els.uploadPreview.hidden = false;
+      els.uploadPreview.innerHTML = `<div class="radar-upload-main">${escapeHtml(item.file_name_snapshot)}</div><div class="radar-muted">${escapeHtml(item.mime_type_snapshot || "-")} · ${bytes(item.file_size_snapshot)}</div>`;
+    }
+    updateMode();
+    document.querySelector("#radar-create-card").scrollIntoView({behavior: "smooth", block: "start"});
+  };
+
+  const statsOf = (item) => item.stats_summary || {};
+
+  const renderSummary = (items) => {
+    const totals = items.reduce((acc, item) => {
+      const stats = statsOf(item);
+      acc.landings += Number(stats.total_landings || stats.total_clicks || 0);
+      acc.authorized += Number(stats.authorized_users || stats.unique_users || 0);
+      acc.opens += Number(stats.view_opens || stats.viewer_opens || 0);
+      return acc;
+    }, {landings: 0, authorized: 0, opens: 0});
+    const rate = totals.landings ? Math.round((totals.opens / totals.landings) * 100) : 0;
+    document.querySelector("[data-summary='count']").textContent = formatNumber(items.length);
+    document.querySelector("[data-summary='landings']").textContent = formatNumber(totals.landings);
+    document.querySelector("[data-summary='authorized']").textContent = formatNumber(totals.authorized);
+    document.querySelector("[data-summary='open_rate']").textContent = `${rate}%`;
+  };
+
+  const renderRows = (items) => {
+    if (!items.length) {
+      els.rows.innerHTML = `<tr><td colspan="9"><div class="radar-empty">还没有内容雷达，点击新建开始创建</div></td></tr>`;
+      return;
+    }
+    els.rows.innerHTML = items.map((item) => {
+      const stats = statsOf(item);
+      const type = item.target_type || "link";
+      const viewCount = Number(stats.view_opens || stats.viewer_opens || 0);
+      return `
+        <tr>
+          <td>
+            <div class="radar-name">${escapeHtml(item.title)}</div>
+            <div class="radar-muted">${escapeHtml(item.original_url || item.file_name_snapshot || item.media_item_id || "-")}</div>
+          </td>
+          <td><span class="radar-badge ${escapeHtml(type)}">${escapeHtml(typeLabels[type] || type)}</span></td>
+          <td><span class="radar-status ${item.enabled ? "on" : "off"}">${item.enabled ? "启用" : "停用"}</span></td>
+          <td>
+            <div class="radar-code">${escapeHtml(shortUrl(item.wrapper_url))}</div>
+            <button class="radar-button ghost" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制</button>
+          </td>
+          <td>${formatNumber(stats.total_landings || stats.total_clicks || 0)}</td>
+          <td>${formatNumber(stats.authorized_users || stats.unique_users || 0)}</td>
+          <td>${formatNumber(viewCount)}</td>
+          <td class="radar-muted">${escapeHtml(stats.last_viewed_at || "-")}</td>
+          <td>
+            <div class="radar-row-actions">
+              <button class="radar-button ghost" type="button" data-detail="${item.id}">详情</button>
+              <button class="radar-button ghost" type="button" data-edit="${item.id}">编辑</button>
+              <button class="radar-button ghost ${item.enabled ? "danger" : ""}" type="button" data-toggle="${item.id}" data-enabled="${item.enabled ? "0" : "1"}">${item.enabled ? "停用" : "启用"}</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  };
+
+  const loadLinks = async () => {
+    els.rows.innerHTML = `<tr><td colspan="9" class="radar-loading">列表加载中...</td></tr>`;
+    const payload = await fetchJson("/api/admin/radar-links");
+    state.items = payload.items || payload.radar_links || [];
+    renderSummary(state.items);
+    renderRows(state.items);
+  };
+
+  const validateFile = (type, file) => {
+    if (!file) return;
+    if (type === "image") {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("图片格式不支持");
+      if (file.size > 10 * 1024 * 1024) throw new Error("文件过大");
+      return;
+    }
+    if (file.type !== "application/pdf") throw new Error("PDF 格式不支持");
+    if (file.size > 50 * 1024 * 1024) throw new Error("文件过大");
+  };
+
+  const uploadMedia = async (type, file, title) => {
+    validateFile(type, file);
+    if (!file) return els.form.elements.media_item_id.value || "";
+    state.uploading = true;
+    els.saveState.textContent = "上传中...";
+    const body = new FormData();
+    if (type === "image") {
+      body.append("image", file);
+      body.append("name", title || file.name);
+      const response = await fetch("/api/admin/image-library/upload", {method: "POST", body});
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(messageFromPayload(payload, "上传失败"));
+      return String(payload.item?.id || "");
+    }
+    body.append("attachment", file);
+    body.append("name", title || file.name);
+    const response = await fetch("/api/admin/attachment-library/upload", {method: "POST", body});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) throw new Error(messageFromPayload(payload, "上传失败"));
+    return String(payload.item?.id || "");
+  };
+
+  const saveRadar = async (event) => {
+    event.preventDefault();
+    const data = new FormData(els.form);
+    const type = String(data.get("target_type") || "link");
+    try {
+      state.saving = true;
+      els.submit.disabled = true;
+      els.saveState.textContent = "保存中...";
+      const title = String(data.get("title") || "").trim();
+      const mediaId = type === "link" ? "" : await uploadMedia(type, els.form.elements.content_file.files[0], title);
+      const payload = {
+        title,
+        target_type: type,
+        original_url: type === "link" ? String(data.get("original_url") || "").trim() : "",
+        media_item_id: mediaId,
+        enabled: data.has("enabled"),
+        auth_required: data.has("auth_required"),
+        source_channel: String(data.get("source_channel") || "").trim(),
+        staff_id: String(data.get("staff_id") || "").trim(),
+        campaign_id: String(data.get("campaign_id") || "").trim(),
+      };
+      if (type === "link" && !/^https?:\/\//i.test(payload.original_url)) {
+        throw new Error("请输入合法 http/https 外部链接");
+      }
+      const id = String(data.get("link_id") || "").trim();
+      await fetchJson(id ? `/api/admin/radar-links/${id}` : "/api/admin/radar-links", {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      });
+      toast(id ? "已保存修改" : "已创建内容雷达");
+      resetForm();
+      await loadLinks();
+    } catch (error) {
+      toast(error.message || "创建失败", true);
+      els.saveState.textContent = error.message || "创建失败";
+    } finally {
+      state.uploading = false;
+      state.saving = false;
+      els.submit.disabled = false;
+      if (!els.saveState.textContent.includes("失败") && !els.saveState.textContent.includes("不支持") && !els.saveState.textContent.includes("过大")) {
+        els.saveState.textContent = "";
+      }
+    }
   };
 
   const setEnabled = async (id, enabled) => {
@@ -245,126 +1042,128 @@
     await loadLinks();
   };
 
-  const copyLink = async (url) => {
-    await navigator.clipboard.writeText(url);
-    toast("链接已复制");
+  const copyText = async (value) => {
+    await navigator.clipboard.writeText(value);
+    toast("复制成功");
   };
 
-  const renderRows = (items) => {
-    if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="5">暂无内容雷达</td></tr>`;
-      return;
-    }
-    rowsEl.innerHTML = items.map((item) => `
-      <tr>
-        <td>
-          <div class="radar-title">${escapeHtml(item.title)}</div>
-          <div class="radar-muted">${escapeHtml(item.target_type || "link")}</div>
-          <div class="radar-link-line">
-            <span class="radar-code">${escapeHtml(item.wrapper_url)}</span>
-          </div>
-          <div class="radar-url">${escapeHtml(item.original_url || item.file_name_snapshot || item.media_item_id || "-")}</div>
-        </td>
-        <td>
-          <div>${escapeHtml(item.source_channel || "-")}</div>
-          <div class="radar-muted">${escapeHtml(item.campaign_id || "-")} · ${escapeHtml(item.staff_id || "-")}</div>
-        </td>
-        <td>${item.enabled ? "启用中" : "已停用"} · ${item.auth_required ? "授权" : "直达"}</td>
-        <td>
-          <button class="admin-button admin-button--ghost" type="button" data-stats="${item.id}">查看</button>
-        </td>
-        <td>
-          <div class="radar-actions">
-            <button class="admin-button admin-button--secondary" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制链接</button>
-            <button class="admin-button admin-button--ghost" type="button" data-toggle="${item.id}" data-enabled="${item.enabled ? "0" : "1"}">
-              ${item.enabled ? "停用" : "启用"}
-            </button>
-          </div>
-        </td>
-      </tr>
-    `).join("");
+  const renderDetail = (link, stats, events) => {
+    const type = link.target_type || "link";
+    const opened = Number(stats.viewer_opens || stats.view_opens || 0);
+    els.detailBody.innerHTML = `
+      <div class="radar-detail-grid">
+        ${detailItem("内容名称", link.title)}
+        ${detailItem("wrapper_url", link.wrapper_url)}
+        ${detailItem("target_type", typeLabels[type] || type)}
+        ${detailItem(type === "link" ? "original_url" : "media_item_id", type === "link" ? link.original_url : link.media_item_id)}
+        ${detailItem("文件名 / MIME / 大小", link.file_name_snapshot ? `${link.file_name_snapshot} / ${link.mime_type_snapshot || "-"} / ${bytes(link.file_size_snapshot)}` : "-")}
+        ${detailItem("创建 / 更新", `${link.created_at || "-"} / ${link.updated_at || "-"}`)}
+      </div>
+      <div class="radar-stat-row">
+        ${statBox("总访问次数", stats.total_landings || stats.total_clicks || 0)}
+        ${statBox("授权成功次数", stats.authorized_clicks || 0)}
+        ${statBox("独立用户数", stats.unique_users || 0)}
+        ${statBox("内容打开次数", opened)}
+      </div>
+      <div class="radar-stat-row">
+        ${statBox("图片加载次数", stats.image_loaded || 0)}
+        ${statBox("PDF 打开次数", stats.pdf_opened || 0)}
+        ${statBox("最近查看时间", stats.last_viewed_at || "-")}
+        ${statBox("最近事件时间", stats.last_event_at || stats.last_clicked_at || "-")}
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>时间</th><th>用户</th><th>事件</th><th>内容类型</th><th>来源</th><th>设备</th></tr></thead>
+          <tbody>
+            ${events.length ? events.map((event) => `
+              <tr>
+                <td>${escapeHtml(event.created_at || "-")}</td>
+                <td>${escapeHtml(maskedIdentity(event))}</td>
+                <td>${escapeHtml(stageLabels[event.stage] || event.stage || "-")}</td>
+                <td>${escapeHtml(typeLabels[event.target_type_snapshot] || event.target_type_snapshot || "-")}</td>
+                <td>${escapeHtml(event.source_channel_snapshot || "-")}</td>
+                <td class="radar-muted">${escapeHtml(event.user_agent || "-")}</td>
+              </tr>
+            `).join("") : `<tr><td colspan="6" class="radar-muted">暂无事件</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
   };
 
-  async function loadLinks() {
-    const payload = await fetchJson("/api/admin/radar-links");
-    renderRows(payload.items || []);
-  }
+  const detailItem = (label, value) => `
+    <div class="radar-detail-item">
+      <div class="radar-detail-label">${escapeHtml(label)}</div>
+      <div class="radar-detail-value">${escapeHtml(value || "-")}</div>
+    </div>
+  `;
 
-  const uploadMediaIfNeeded = async (data) => {
-    const targetType = String(data.get("target_type") || "link");
-    if (targetType === "link") return "";
-    const file = formEl.elements.content_file.files[0];
-    if (!file) throw new Error("请先上传图片或 PDF 文件");
-    const fd = new FormData();
-    if (targetType === "image") {
-      fd.append("image", file);
-      fd.append("name", data.get("title") || file.name);
-      const response = await fetch("/api/admin/radar-links/upload-image", {method: "POST", body: fd});
-      const payload = await response.json();
-      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "图片上传失败");
-      return String(payload.item && payload.item.id || "");
-    }
-    fd.append("pdf", file);
-    fd.append("name", data.get("title") || file.name);
-    const response = await fetch("/api/admin/radar-links/upload-pdf", {method: "POST", body: fd});
-    const payload = await response.json();
-    if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "PDF 上传失败");
-    return String(payload.item && payload.item.id || "");
+  const statBox = (label, value) => `
+    <div class="radar-stat">
+      <div class="radar-stat-num">${escapeHtml(formatStatValue(value))}</div>
+      <div class="radar-stat-label">${escapeHtml(label)}</div>
+    </div>
+  `;
+
+  const showDetail = async (id) => {
+    els.detailCard.hidden = false;
+    els.detailBody.innerHTML = `<div class="radar-loading">详情加载中...</div>`;
+    els.detailCard.scrollIntoView({behavior: "smooth", block: "start"});
+    const [linkPayload, statsPayload, eventsPayload] = await Promise.all([
+      fetchJson(`/api/admin/radar-links/${id}`),
+      fetchJson(`/api/admin/radar-links/${id}/stats`),
+      fetchJson(`/api/admin/radar-links/${id}/events?limit=100&offset=0`),
+    ]);
+    renderDetail(linkPayload.radar_link || {}, statsPayload.stats || statsPayload || {}, eventsPayload.events || eventsPayload.items || []);
   };
 
-  const syncFormMode = () => {
-    const targetType = String(targetTypeEl.value || "link");
-    formEl.elements.original_url.required = targetType === "link";
-    formEl.elements.content_file.required = targetType !== "link";
-    uploadStatusEl.textContent = targetType === "link" ? "外部链接可不上传文件。" : "保存时会先上传文件并绑定到内容雷达。";
-  };
-
-  formEl.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(formEl);
-    const targetType = String(data.get("target_type") || "link");
-    const payload = {
-      title: data.get("title") || "",
-      target_type: targetType,
-      original_url: data.get("original_url") || "",
-      media_item_id: "",
-      enabled: data.has("enabled"),
-      auth_required: data.has("auth_required"),
-      source_channel: data.get("source_channel") || "",
-      campaign_id: data.get("campaign_id") || "",
-      staff_id: data.get("staff_id") || "",
-    };
+  document.querySelectorAll("[data-type-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      els.typeSelect.value = tab.dataset.typeTab;
+      updateMode();
+    });
+  });
+  document.querySelector("[data-scroll-create]").addEventListener("click", () => {
+    resetForm();
+    document.querySelector("#radar-create-card").scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  document.querySelector("[data-form-reset]").addEventListener("click", resetForm);
+  document.querySelector("[data-close-detail]").addEventListener("click", () => { els.detailCard.hidden = true; });
+  els.refresh.addEventListener("click", () => loadLinks().catch((error) => toast(error.message, true)));
+  els.typeSelect.addEventListener("change", updateMode);
+  els.form.addEventListener("input", updatePreview);
+  els.form.elements.content_file.addEventListener("change", () => {
     try {
-      payload.media_item_id = await uploadMediaIfNeeded(data);
-      await fetchJson("/api/admin/radar-links", {method: "POST", body: JSON.stringify(payload)});
-      formEl.reset();
-      formEl.elements.enabled.checked = true;
-      formEl.elements.auth_required.checked = true;
-      syncFormMode();
-      toast("已创建");
-      await loadLinks();
+      const file = els.form.elements.content_file.files[0];
+      validateFile(els.typeSelect.value, file);
+      setUploadingPreview(file);
+    } catch (error) {
+      els.form.elements.content_file.value = "";
+      setUploadingPreview(null);
+      toast(error.message, true);
+    }
+  });
+  els.form.addEventListener("submit", saveRadar);
+  els.rows.addEventListener("click", async (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    try {
+      if (button.dataset.copy) await copyText(button.dataset.copy);
+      if (button.dataset.toggle) await setEnabled(button.dataset.toggle, button.dataset.enabled === "1");
+      if (button.dataset.detail) await showDetail(button.dataset.detail);
+      if (button.dataset.edit) {
+        const item = state.items.find((entry) => String(entry.id) === String(button.dataset.edit));
+        if (item) fillForm(item);
+      }
     } catch (error) {
       toast(error.message, true);
     }
   });
 
-  rowsEl.addEventListener("click", async (event) => {
-    const target = event.target.closest("button");
-    if (!target) return;
-    try {
-      if (target.dataset.copy) await copyLink(target.dataset.copy);
-      if (target.dataset.toggle) await setEnabled(target.dataset.toggle, target.dataset.enabled === "1");
-      if (target.dataset.stats) await loadStats(target.dataset.stats);
-    } catch (error) {
-      toast(error.message, true);
-    }
-  });
-
-  refreshEl.addEventListener("click", () => loadLinks().catch((error) => toast(error.message, true)));
-  targetTypeEl.addEventListener("change", syncFormMode);
-  syncFormMode();
+  updateMode();
   loadLinks().catch((error) => {
-    rowsEl.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+    els.rows.innerHTML = `<tr><td colspan="9"><div class="radar-empty">${escapeHtml(error.message)}</div></td></tr>`;
+    toast(error.message, true);
   });
 })();
 </script>
