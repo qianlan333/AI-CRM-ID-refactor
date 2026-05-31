@@ -177,12 +177,9 @@
         <div>
           <div class="cloud-plan-name">${escapeHtml(plan.display_name || plan.plan_id)}</div>
         </div>
-        <div class="cloud-plan-code">${escapeHtml(plan.plan_id)}</div>
         <div>${escapeHtml(plan.owner_userid || "--")}</div>
         <div class="cloud-plan-cell-muted">${escapeHtml(formatDate(plan.updated_at))}</div>
         <div>${Number(plan.target_count || 0)}</div>
-        <div>${Number(plan.approved_count || 0)}</div>
-        <div>${Number(plan.pending_count || 0)}</div>
         <div>${badge(status)}</div>
         <div><a class="cloud-plan-button" href="${planHref}">查看详情</a></div>
       </article>

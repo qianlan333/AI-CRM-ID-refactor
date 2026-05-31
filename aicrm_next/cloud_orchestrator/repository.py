@@ -272,11 +272,11 @@ class PostgresCloudPlanRepository:
                 + cloud_where
                 + f"""
                     UNION ALL
-                    SELECT MAX(id) AS id,
+                    SELECT MAX(c.id) AS id,
                            {_LEGACY_GROUP_KEY_SQL} AS plan_id,
-                           MAX(intent) AS intent,
+                           MAX(c.intent) AS intent,
                            {_LEGACY_GROUP_LABEL_SQL} AS display_name,
-                           STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
+                           STRING_AGG(DISTINCT NULLIF(c.owner_userid, ''), ' / ') AS owner_userid,
                            COUNT(cm.id) AS candidate_count,
                            jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
                            CASE
@@ -350,11 +350,11 @@ class PostgresCloudPlanRepository:
     def _legacy_group_plan_row(self, conn, plan_id: str):
         return conn.execute(
             f"""
-            SELECT MAX(id) AS id,
+            SELECT MAX(c.id) AS id,
                    {_LEGACY_GROUP_KEY_SQL} AS plan_id,
-                   MAX(intent) AS intent,
+                   MAX(c.intent) AS intent,
                    {_LEGACY_GROUP_LABEL_SQL} AS display_name,
-                   STRING_AGG(DISTINCT NULLIF(owner_userid, ''), ' / ') AS owner_userid,
+                   STRING_AGG(DISTINCT NULLIF(c.owner_userid, ''), ' / ') AS owner_userid,
                    COUNT(cm.id) AS candidate_count,
                    jsonb_build_object('group_code', {_LEGACY_GROUP_KEY_SQL}, 'legacy_campaign_count', COUNT(DISTINCT c.id)) AS selection_json,
                    CASE
