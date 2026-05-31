@@ -638,7 +638,7 @@ def admin_radar_links(request: Request):
     context = _shell_context(
         request=request,
         page_title="内容雷达",
-        page_summary="创建可追踪链接、图片和 PDF 内容，查看点击、授权和预览统计。",
+        page_summary="创建可追踪的链接、图片、PDF。用户授权后查看内容，系统记录访问、授权、预览和最近查看。",
         active_endpoint="api.admin_radar_links",
     )
     context["breadcrumbs"] = [
