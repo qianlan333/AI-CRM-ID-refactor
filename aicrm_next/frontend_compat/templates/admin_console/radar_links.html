@@ -117,9 +117,23 @@
         <span>来源渠道</span>
         <input name="source_channel" type="text" placeholder="wechat_group">
       </label>
+      <label class="admin-field">
+        <span>类型</span>
+        <select name="target_type" id="radar-target-type">
+          <option value="link">外部链接</option>
+          <option value="image">图片</option>
+          <option value="pdf">PDF</option>
+        </select>
+      </label>
       <label class="admin-field admin-field--wide">
         <span>目标 URL</span>
-        <input name="original_url" type="url" required placeholder="https://example.com/landing">
+        <input name="original_url" type="url" placeholder="https://example.com/landing">
+      </label>
+      <label class="admin-field admin-field--wide">
+        <span>图片/PDF 文件</span>
+        <input name="content_file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf">
+        <input name="media_item_id" type="hidden">
+        <span class="radar-muted" id="radar-upload-status">外部链接可不上传文件。</span>
       </label>
       <label class="admin-field">
         <span>Campaign ID</span>
@@ -131,11 +145,11 @@
       </label>
       <div class="radar-toggle-row admin-field--wide">
         <label><input name="enabled" type="checkbox" checked> 启用</label>
-        <label><input name="auth_required" type="checkbox"> 需要授权</label>
+        <label><input name="auth_required" type="checkbox" checked> 需要授权</label>
       </div>
       <div class="radar-actions admin-field--wide">
         <button class="admin-button admin-button--ghost" type="button" id="radar-refresh">刷新</button>
-        <button class="admin-button admin-button--primary" type="submit">创建外链</button>
+        <button class="admin-button admin-button--primary" type="submit">创建内容雷达</button>
       </div>
     </form>
   </section>
@@ -149,7 +163,7 @@
       <table class="admin-table radar-table">
         <thead>
           <tr>
-            <th>外链</th>
+            <th>内容</th>
             <th>归因</th>
             <th>状态</th>
             <th>统计</th>
@@ -172,6 +186,8 @@
   const formEl = document.querySelector("#radar-create-form");
   const refreshEl = document.querySelector("#radar-refresh");
   const statsEl = document.querySelector("#radar-stat-grid");
+  const targetTypeEl = document.querySelector("#radar-target-type");
+  const uploadStatusEl = document.querySelector("#radar-upload-status");
 
   const toast = (message, isError = false) => {
     const el = document.createElement("div");
@@ -203,11 +219,11 @@
 
   const renderStats = (stats) => {
     const items = [
-      ["总点击", stats.total_clicks],
-      ["授权点击", stats.authorized_clicks],
+      ["访问", stats.total_landings ?? stats.total_clicks],
+      ["授权", stats.authorized_clicks],
       ["唯一用户", stats.unique_users],
-      ["今日点击", stats.today_clicks],
-      ["最近点击", stats.last_clicked_at || "-"],
+      ["预览打开", stats.viewer_opens ?? stats.view_opens ?? 0],
+      ["最近预览", stats.last_viewed_at || "-"],
     ];
     statsEl.innerHTML = items.map(([label, value]) => `
       <div class="radar-stat">
@@ -236,17 +252,18 @@
 
   const renderRows = (items) => {
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="5">暂无雷达外链</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="5">暂无内容雷达</td></tr>`;
       return;
     }
     rowsEl.innerHTML = items.map((item) => `
       <tr>
         <td>
           <div class="radar-title">${escapeHtml(item.title)}</div>
+          <div class="radar-muted">${escapeHtml(item.target_type || "link")}</div>
           <div class="radar-link-line">
             <span class="radar-code">${escapeHtml(item.wrapper_url)}</span>
           </div>
-          <div class="radar-url">${escapeHtml(item.original_url)}</div>
+          <div class="radar-url">${escapeHtml(item.original_url || item.file_name_snapshot || item.media_item_id || "-")}</div>
         </td>
         <td>
           <div>${escapeHtml(item.source_channel || "-")}</div>
@@ -273,12 +290,44 @@
     renderRows(payload.items || []);
   }
 
+  const uploadMediaIfNeeded = async (data) => {
+    const targetType = String(data.get("target_type") || "link");
+    if (targetType === "link") return "";
+    const file = formEl.elements.content_file.files[0];
+    if (!file) throw new Error("请先上传图片或 PDF 文件");
+    const fd = new FormData();
+    if (targetType === "image") {
+      fd.append("image", file);
+      fd.append("name", data.get("title") || file.name);
+      const response = await fetch("/api/admin/radar-links/upload-image", {method: "POST", body: fd});
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "图片上传失败");
+      return String(payload.item && payload.item.id || "");
+    }
+    fd.append("pdf", file);
+    fd.append("name", data.get("title") || file.name);
+    const response = await fetch("/api/admin/radar-links/upload-pdf", {method: "POST", body: fd});
+    const payload = await response.json();
+    if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "PDF 上传失败");
+    return String(payload.item && payload.item.id || "");
+  };
+
+  const syncFormMode = () => {
+    const targetType = String(targetTypeEl.value || "link");
+    formEl.elements.original_url.required = targetType === "link";
+    formEl.elements.content_file.required = targetType !== "link";
+    uploadStatusEl.textContent = targetType === "link" ? "外部链接可不上传文件。" : "保存时会先上传文件并绑定到内容雷达。";
+  };
+
   formEl.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(formEl);
+    const targetType = String(data.get("target_type") || "link");
     const payload = {
       title: data.get("title") || "",
+      target_type: targetType,
       original_url: data.get("original_url") || "",
+      media_item_id: "",
       enabled: data.has("enabled"),
       auth_required: data.has("auth_required"),
       source_channel: data.get("source_channel") || "",
@@ -286,9 +335,12 @@
       staff_id: data.get("staff_id") || "",
     };
     try {
+      payload.media_item_id = await uploadMediaIfNeeded(data);
       await fetchJson("/api/admin/radar-links", {method: "POST", body: JSON.stringify(payload)});
       formEl.reset();
       formEl.elements.enabled.checked = true;
+      formEl.elements.auth_required.checked = true;
+      syncFormMode();
       toast("已创建");
       await loadLinks();
     } catch (error) {
@@ -309,6 +361,8 @@
   });
 
   refreshEl.addEventListener("click", () => loadLinks().catch((error) => toast(error.message, true)));
+  targetTypeEl.addEventListener("change", syncFormMode);
+  syncFormMode();
   loadLinks().catch((error) => {
     rowsEl.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
   });

@@ -15,6 +15,10 @@ from aicrm_next.shared.errors import ContractError
 
 RADAR_LINK_OWNER = "radar_links"
 RADAR_STATE_TTL_SECONDS = 10 * 60
+RADAR_VIEWER_SESSION_TTL_SECONDS = 2 * 60 * 60
+TARGET_TYPES = {"link", "image", "pdf"}
+IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+PDF_MIME_TYPE = "application/pdf"
 
 
 def _urlsafe_b64encode(payload: bytes) -> str:
@@ -69,6 +73,55 @@ def verify_radar_state(state: str | None, *, secret_key: str | None, now: int | 
     return payload
 
 
+def _digest(value: str, *, secret_key: str | None) -> str:
+    secret = _state_secret(secret_key)
+    return hmac.new(secret, str(value or "").encode("utf-8"), sha256).hexdigest()
+
+
+def sign_viewer_session(
+    *,
+    code: str,
+    openid: str = "",
+    unionid: str = "",
+    external_userid: str = "",
+    secret_key: str | None,
+    now: int | None = None,
+) -> str:
+    issued_at = int(now if now is not None else time.time())
+    identity = str(unionid or openid or external_userid or "anonymous").strip()
+    payload = {
+        "code": str(code or "").strip(),
+        "identity_hash": _digest(identity, secret_key=secret_key)[:24],
+        "exp": issued_at + RADAR_VIEWER_SESSION_TTL_SECONDS,
+    }
+    if not payload["code"]:
+        raise ContractError("code is required")
+    body = _urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    signature = hmac.new(_state_secret(secret_key), body.encode("ascii"), sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def verify_viewer_session(token: str | None, *, code: str, secret_key: str | None, now: int | None = None) -> dict[str, Any]:
+    value = str(token or "").strip()
+    if "." not in value:
+        raise ContractError("radar viewer session required")
+    body, signature = value.rsplit(".", 1)
+    expected = hmac.new(_state_secret(secret_key), body.encode("ascii"), sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise ContractError("invalid radar viewer session")
+    try:
+        payload = json.loads(_urlsafe_b64decode(body).decode("utf-8"))
+    except Exception as exc:
+        raise ContractError("invalid radar viewer session") from exc
+    if set(payload) != {"code", "identity_hash", "exp"}:
+        raise ContractError("invalid radar viewer session")
+    if str(payload.get("code") or "") != str(code or "").strip():
+        raise ContractError("invalid radar viewer session")
+    if int(payload.get("exp") or 0) < int(now if now is not None else time.time()):
+        raise ContractError("radar viewer session expired")
+    return payload
+
+
 def _is_forbidden_host(hostname: str) -> bool:
     host = hostname.strip().lower().rstrip(".")
     if not host:
@@ -99,19 +152,78 @@ def validate_original_url(original_url: str) -> str:
     return value
 
 
+def normalize_target_type(value: str | None) -> str:
+    normalized = str(value or "link").strip().lower()
+    if normalized not in TARGET_TYPES:
+        raise ContractError("target_type must be link, image, or pdf")
+    return normalized
+
+
+def validate_media_for_target(target_type: str, media_item: dict[str, Any] | None) -> dict[str, Any]:
+    if target_type == "link":
+        return {}
+    if not media_item:
+        raise ContractError("media_item_id is required")
+    mime_type = str(media_item.get("mime_type") or media_item.get("content_type") or "").split(";")[0].strip().lower()
+    file_name = str(media_item.get("file_name") or "").strip()
+    file_size = int(media_item.get("file_size") or 0)
+    if file_size <= 0:
+        raise ContractError("media file is empty")
+    if target_type == "image":
+        if mime_type not in IMAGE_MIME_TYPES:
+            raise ContractError("image radar content must be JPEG, PNG, or WEBP")
+        if file_size > 10 * 1024 * 1024:
+            raise ContractError("image file too large; max 10MB")
+    if target_type == "pdf":
+        if mime_type != PDF_MIME_TYPE:
+            raise ContractError("pdf radar content must be application/pdf")
+        if file_size > 50 * 1024 * 1024:
+            raise ContractError("pdf file too large; max 50MB")
+    return {
+        "file_name_snapshot": file_name,
+        "mime_type_snapshot": mime_type,
+        "file_size_snapshot": file_size,
+    }
+
+
+def hash_ip(ip: str, *, secret_key: str | None) -> str:
+    value = str(ip or "").strip()
+    if not value:
+        return ""
+    return _digest(value, secret_key=secret_key)[:32]
+
+
 def normalize_radar_link_payload(payload: dict[str, Any], *, partial: bool = False) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
+    target_type = normalize_target_type(str(payload.get("target_type") or "link")) if not partial or "target_type" in payload else ""
+    if target_type:
+        normalized["target_type"] = target_type
     if not partial or "title" in payload:
         title = str(payload.get("title") or "").strip()
         if not title:
             raise ContractError("title is required")
         normalized["title"] = title
     if not partial or "original_url" in payload:
-        normalized["original_url"] = validate_original_url(str(payload.get("original_url") or ""))
+        original_url = str(payload.get("original_url") or "").strip()
+        if target_type in {"", "link"}:
+            normalized["original_url"] = validate_original_url(original_url)
+        elif original_url:
+            normalized["original_url"] = validate_original_url(original_url)
+        else:
+            normalized["original_url"] = ""
+    if not partial or "media_item_id" in payload:
+        normalized["media_item_id"] = str(payload.get("media_item_id") or "").strip()
+    if not partial or "preview_mode" in payload:
+        normalized["preview_mode"] = str(payload.get("preview_mode") or "").strip()
+    for key in ("file_name_snapshot", "mime_type_snapshot"):
+        if not partial or key in payload:
+            normalized[key] = str(payload.get(key) or "").strip()
+    if not partial or "file_size_snapshot" in payload:
+        normalized["file_size_snapshot"] = int(payload.get("file_size_snapshot") or 0)
     for key in ("enabled", "auth_required"):
         if not partial or key in payload:
             normalized[key] = bool(payload.get(key))
-    for key in ("source_channel", "campaign_id", "staff_id"):
+    for key in ("source_channel", "campaign_id", "staff_id", "created_by"):
         if not partial or key in payload:
             normalized[key] = str(payload.get(key) or "").strip()
     return normalized
@@ -126,14 +238,21 @@ def radar_link_projection(item: dict[str, Any], *, base_url: str = "") -> dict[s
         "link_id": int(item.get("id") or 0),
         "code": code,
         "title": str(item.get("title") or ""),
+        "target_type": normalize_target_type(str(item.get("target_type") or "link")),
         "original_url": str(item.get("original_url") or ""),
+        "media_item_id": str(item.get("media_item_id") or ""),
+        "preview_mode": str(item.get("preview_mode") or ""),
+        "file_name_snapshot": str(item.get("file_name_snapshot") or ""),
+        "mime_type_snapshot": str(item.get("mime_type_snapshot") or ""),
+        "file_size_snapshot": int(item.get("file_size_snapshot") or 0),
         "wrapper_url": wrapper_url,
         "enabled": bool(item.get("enabled", True)),
-        "auth_required": bool(item.get("auth_required", False)),
+        "auth_required": bool(item.get("auth_required", True)),
         "source_channel": str(item.get("source_channel") or ""),
         "campaign_id": str(item.get("campaign_id") or ""),
         "staff_id": str(item.get("staff_id") or ""),
+        "created_by": str(item.get("created_by") or ""),
         "created_at": str(item.get("created_at") or ""),
         "updated_at": str(item.get("updated_at") or ""),
+        "stats_summary": item.get("stats_summary") if isinstance(item.get("stats_summary"), dict) else {},
     }
-
