@@ -219,6 +219,47 @@ class ListRadarLinkEventsQuery:
     __call__ = execute
 
 
+class ExportRadarLinkEventsQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(
+        self,
+        link_id: int,
+        *,
+        start_at: str = "",
+        end_at: str = "",
+    ) -> dict[str, Any]:
+        link = self._repo.get_link(link_id)
+        if not link:
+            raise NotFoundError("radar link not found")
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        page_size = 500
+        while True:
+            batch, total = self._repo.list_click_events(
+                link_id,
+                limit=page_size,
+                offset=offset,
+                start_at=start_at,
+                end_at=end_at,
+            )
+            rows.extend(
+                {
+                    "unionid": str(item.get("unionid") or ""),
+                    "external_userid": str(item.get("external_userid") or ""),
+                    "created_at": str(item.get("created_at") or ""),
+                }
+                for item in batch
+            )
+            offset += page_size
+            if offset >= int(total or 0) or not batch:
+                break
+        return {"ok": True, "link_id": link_id, "items": rows, "total": len(rows)}
+
+    __call__ = execute
+
+
 class ResolveRadarLandingQuery:
     def __init__(self, repo: RadarLinksRepository | None = None) -> None:
         self._repo = repo or build_radar_links_repository()

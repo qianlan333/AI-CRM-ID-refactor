@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import html
+import io
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -12,6 +14,7 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError
 from .application import (
     CompleteRadarOAuthCallbackCommand,
     CreateRadarLinkCommand,
+    ExportRadarLinkEventsQuery,
     GetRadarContentResourceQuery,
     GetRadarLinkQuery,
     GetRadarLinkNewOptionsQuery,
@@ -182,6 +185,27 @@ def list_radar_link_events(
         )
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/radar-links/{link_id}/events/export")
+def export_radar_link_events(
+    link_id: int,
+    start_at: str = "",
+    end_at: str = "",
+) -> Response:
+    try:
+        payload = ExportRadarLinkEventsQuery()(link_id, start_at=start_at, end_at=end_at)
+    except Exception as exc:
+        _raise_http(exc)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["unionid", "external_userid", "created_at"])
+    writer.writeheader()
+    writer.writerows(payload["items"])
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="radar_link_{link_id}_click_events.csv"'},
+    )
 
 
 @router.get("/r/{code}")
