@@ -99,5 +99,6 @@ def test_next_runtime_route_map_and_callback_facade_are_explicit():
     assert route_map.status_code == 200
     payload = route_map.json()
     assert payload["route_owner"] == "ai_crm_next"
-    assert payload["wecom_callback_routes"]["/wecom/external-contact/callback"] == "handle_wecom_callback_via_legacy"
-    assert payload["next_live_callback_gateway_enabled"] is False
+    assert payload["wecom_callback_routes"]["/wecom/external-contact/callback"] == "aicrm_next.channel_entry.api"
+    assert payload["next_live_callback_gateway_enabled"] is True
+    assert payload["legacy_callback_fallback_enabled"] is False

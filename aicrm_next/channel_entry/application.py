@@ -131,8 +131,29 @@ def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]],
             except ValueError:
                 raw = []
         for item in raw if isinstance(raw, list) else []:
-            if int(item or 0) > 0:
-                attachments.append({"msgtype": msgtype, "material_id": int(item)})
+            if isinstance(item, dict):
+                if item.get("missing") or item.get("exists") is False:
+                    return attachments, "material_resolve_failed"
+                attachment = {"msgtype": msgtype}
+                if msgtype == "miniprogram":
+                    required = ("appid", "page", "title", "pic_media_id")
+                    if any(not text(item.get(field)) for field in required):
+                        return attachments, "material_resolve_failed"
+                    attachment.update({field: text(item.get(field)) for field in required})
+                else:
+                    media_id = text(item.get("media_id") or item.get("material_id") or item.get("pic_media_id"))
+                    if not media_id:
+                        return attachments, "material_resolve_failed"
+                    attachment["media_id"] = media_id
+                attachments.append(attachment)
+                continue
+            try:
+                material_id = int(item or 0)
+            except (TypeError, ValueError):
+                return attachments, "material_resolve_failed"
+            if material_id <= 0:
+                return attachments, "material_resolve_failed"
+            attachments.append({"msgtype": msgtype, "material_id": material_id})
     if len(attachments) > 9:
         return attachments, "attachment_limit_exceeded"
     return attachments, ""
@@ -142,16 +163,8 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
     channel_id = int(channel.get("id") or 0)
     welcome_code = extract_welcome_code(command.payload_json)
     key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{welcome_code}:welcome"
-    if not command.send_welcome_message:
-        result = {"attempted": False, "sent": False, "reason": "send_welcome_message_disabled"}
-        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
-        return result
     if effect_status_for_duplicate(repo.get_channel_entry_effect_log("welcome_message", key)):
         return {"attempted": False, "sent": False, "reason": "idempotent_success_exists", "welcome_code": welcome_code}
-    if not welcome_code:
-        result = {"attempted": True, "sent": False, "reason": "missing_welcome_code"}
-        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
-        return result
     attachments, attachment_error = _welcome_attachments(channel)
     if attachment_error:
         result = {"attempted": True, "sent": False, "reason": attachment_error, "attachments": attachments}
@@ -159,7 +172,15 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         return result
     text_content = text(channel.get("welcome_message"))
     if not text_content and not attachments:
-        result = {"attempted": False, "sent": False, "reason": "not_configured"}
+        result = {"attempted": False, "sent": False, "reason": "no_welcome_message_configured"}
+        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
+        return result
+    if not welcome_code:
+        result = {"attempted": True, "sent": False, "reason": "welcome_code_missing"}
+        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
+        return result
+    if not command.send_welcome_message:
+        result = {"attempted": False, "sent": False, "reason": "send_welcome_message_disabled"}
         _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
         return result
     payload: dict[str, Any] = {"welcome_code": welcome_code}
@@ -175,6 +196,16 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
         result = {"attempted": True, "sent": False, "reason": str(exc), "welcome_code": welcome_code}
         _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=str(exc), request_json=payload, response_json=result)
         return result
+    if int((wecom_result or {}).get("errcode") or 0) != 0:
+        result = {
+            "attempted": True,
+            "sent": False,
+            "reason": "wecom_api_error",
+            "welcome_code": welcome_code,
+            "wecom_result": dict(wecom_result or {}),
+        }
+        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="wecom_api_error", request_json=payload, response_json=result)
+        return result
     result = {"attempted": True, "sent": True, "welcome_code": welcome_code, "wecom_result": dict(wecom_result or {}), "attachments": attachments}
     _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="success", channel_id=channel_id, scene_value=scene, reason="sent", request_json=payload, response_json=result)
     return result
@@ -185,7 +216,7 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     tag_id = text(channel.get("entry_tag_id"))
     key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{tag_id}:{channel_id}:tag"
     if not tag_id:
-        result = {"attempted": False, "applied": False, "reason": "not_configured"}
+        result = {"attempted": False, "applied": False, "reason": "no_entry_tag_configured"}
         _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
         return result
     if effect_status_for_duplicate(repo.get_channel_entry_effect_log("entry_tag", key)):
@@ -195,11 +226,15 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
         return {"attempted": False, "applied": False, "reason": "dry_run", "request_payload": payload}
     try:
         wecom_result = get_wecom_adapter().mark_external_contact_tags(**payload)
-        repo.save_tag_snapshot(command.follow_user_userid, command.external_contact_id, [tag_id], {tag_id: text(channel.get("entry_tag_name"))})
     except Exception as exc:
         result = {"attempted": True, "applied": False, "reason": str(exc), "entry_tag_id": tag_id}
         _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=str(exc), request_json=payload, response_json=result)
         return result
+    if int((wecom_result or {}).get("errcode") or 0) != 0:
+        result = {"attempted": True, "applied": False, "reason": "wecom_api_error", "entry_tag_id": tag_id, "wecom_result": dict(wecom_result or {})}
+        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason="wecom_api_error", request_json=payload, response_json=result)
+        return result
+    repo.save_tag_snapshot(command.follow_user_userid, command.external_contact_id, [tag_id], {tag_id: text(channel.get("entry_tag_name"))})
     result = {"attempted": True, "applied": True, "entry_tag_id": tag_id, "wecom_result": dict(wecom_result or {})}
     _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="success", channel_id=channel_id, scene_value=scene, reason="applied", request_json=payload, response_json=result)
     return result
@@ -268,6 +303,21 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     command.follow_user_userid = text(command.follow_user_userid) or text(channel.get("owner_staff_id")) or "HuangYouCan"
     channel_id = int(channel["id"])
     if not channel_enabled(channel):
+        for effect_type, response in {
+            "channel_contact": {"attempted": False, "reason": "channel_disabled"},
+            "welcome_message": {"attempted": False, "sent": False, "reason": "channel_disabled"},
+            "entry_tag": {"attempted": False, "applied": False, "reason": "channel_disabled"},
+        }.items():
+            _log_effect(
+                command,
+                effect_type=effect_type,
+                idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{effect_type}:channel_disabled",
+                status="skipped",
+                channel_id=channel_id,
+                scene_value=scene,
+                reason="channel_disabled",
+                response_json=response,
+            )
         return {
             "handled": False,
             "mode": "channel_disabled",
@@ -293,7 +343,8 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
     admission_results, member_written, admission_reason = _admit(command, channel=channel, scene=scene)
-    _log_effect(command, effect_type="program_admission", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{command.event_log_id or scene}:admission", status="success" if member_written else "attempted", channel_id=channel_id, scene_value=scene, reason=admission_reason, response_json={"admission_results": admission_results})
+    admission_effect_status = "success" if member_written else ("skipped" if admission_reason == "no_active_binding" else "attempted")
+    _log_effect(command, effect_type="program_admission", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{command.event_log_id or scene}:admission", status=admission_effect_status, channel_id=channel_id, scene_value=scene, reason=admission_reason, response_json={"admission_results": admission_results})
     mode = "program_admission" if member_written else ("standalone_channel" if admission_reason == "no_active_binding" else "channel_baseline_only")
     return {
         "handled": True,
@@ -386,6 +437,10 @@ def dry_run_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     result = process_channel_entry(command)
     result["dry_run"] = True
     result["would_actions"] = result.get("baseline_effects", {})
+    baseline = result.get("baseline_effects") or {}
+    result["would_send_welcome"] = bool((baseline.get("welcome_message") or {}).get("request_payload"))
+    result["would_apply_tag"] = bool((baseline.get("entry_tag") or {}).get("request_payload"))
+    result["would_write_member"] = any(item.get("admission_status") == "planned" for item in result.get("admission_results") or [])
     return result
 
 
