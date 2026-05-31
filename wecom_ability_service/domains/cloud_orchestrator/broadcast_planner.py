@@ -215,6 +215,67 @@ def _update_plan(plan_id: str, fields: dict[str, Any]) -> bool:
     return (cur.rowcount or 0) > 0
 
 
+def _materialize_plan_recipients(
+    *,
+    plan_id: str,
+    owner_userid: str,
+    candidates: list[dict[str, Any]],
+    content_template: str,
+    variants: list[dict[str, Any]],
+    attachments: list[dict[str, Any]],
+) -> None:
+    """Persist per-recipient review rows without queueing any send job."""
+    db = get_db()
+    cur = db.cursor()
+    primary_variant = next((item for item in variants if item.get("content_text")), {})
+    message_text = str(content_template or primary_variant.get("content_text") or "")
+    seen: set[str] = set()
+    for item in candidates:
+        external_userid = str(item.get("external_contact_id") or item.get("external_userid") or "").strip()
+        if not external_userid or external_userid in seen:
+            continue
+        seen.add(external_userid)
+        display_name = (
+            str(item.get("customer_name") or item.get("display_name") or item.get("remark") or "").strip()
+            or external_userid
+        )
+        row = cur.execute(
+            """
+            INSERT INTO cloud_broadcast_plan_recipients (
+                plan_id, external_userid, owner_userid, display_name, planned_message_count,
+                approval_status, send_status
+            ) VALUES (?, ?, ?, ?, ?, 'pending', 'pending')
+            ON CONFLICT (plan_id, external_userid) DO UPDATE SET
+                owner_userid = EXCLUDED.owner_userid,
+                display_name = EXCLUDED.display_name,
+                planned_message_count = EXCLUDED.planned_message_count,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+            """,
+            (plan_id, external_userid, owner_userid, display_name, 1 if message_text or attachments else 0),
+        ).fetchone()
+        recipient_id = int(row["id"]) if row else 0
+        if recipient_id and (message_text or attachments):
+            cur.execute(
+                """
+                INSERT INTO cloud_broadcast_plan_recipient_messages (
+                    plan_id, recipient_id, external_userid, sequence_index, day_offset, send_time,
+                    content_text, content_payload_json, attachments_json, status
+                ) VALUES (?, ?, ?, 1, 0, '10:00', ?, ?, ?, 'pending')
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    plan_id,
+                    recipient_id,
+                    external_userid,
+                    message_text,
+                    json.dumps(primary_variant.get("content_payload") or {}, ensure_ascii=False),
+                    json.dumps(attachments or [], ensure_ascii=False),
+                ),
+            )
+    db.commit()
+
+
 def _normalize_draft_attachments(
     attachments: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
@@ -368,28 +429,23 @@ def draft_broadcast_plan(
         expires_at=expires_at,
         status="draft",
     )
-
-    from ..broadcast_jobs import service as queue_service
-
-    target_userids = [
-        str(c.get("external_contact_id") or "")
-        for c in allowed if c.get("external_contact_id")
-    ]
-    if target_userids:
-        queue_service.enqueue_job(
-            source_type="cloud_plan",
-            source_id=plan_id,
-            source_table="cloud_broadcast_plans",
-            scheduled_for=expires_at,
-            target_external_userids=target_userids,
-            target_summary=f"{intent[:30]} — {len(target_userids)} 人",
-            content_type="cloud_plan",
-            content_payload={"plan_id": plan_id},
-            content_summary=intent[:200],
-            requires_approval=True,
-            trace_id=effective_trace,
-            created_by=operator,
-        )
+    _update_plan(
+        plan_id,
+        {
+            "display_name": intent[:200] or plan_id,
+            "owner_userid": str(selection.get("owner_userid") or ""),
+            "review_status": "pending_review",
+            "run_status": "draft",
+        },
+    )
+    _materialize_plan_recipients(
+        plan_id=plan_id,
+        owner_userid=str(selection.get("owner_userid") or ""),
+        candidates=allowed,
+        content_template=content_template,
+        variants=variants,
+        attachments=normalized_attachments,
+    )
 
     return {
         "plan_id": plan_id,
@@ -596,6 +652,107 @@ def execute_committed_plan(*, plan_id: str) -> dict[str, Any]:
         "failed_count": int(send_result.get("skipped_count") or 0),
         "outbound_task_id": None,
     }
+
+
+def execute_recipient_messages(*, plan_id: str, recipient_id: int, broadcast_job_id: int | None = None) -> dict[str, Any]:
+    """Worker entry for approved single-recipient cloud plan jobs."""
+    db = get_db()
+    cur = db.cursor()
+    recipient = cur.execute(
+        """
+        SELECT *
+        FROM cloud_broadcast_plan_recipients
+        WHERE plan_id = ? AND id = ?
+        LIMIT 1
+        """,
+        (str(plan_id), int(recipient_id)),
+    ).fetchone()
+    if not recipient:
+        return {"ok": False, "error": "recipient not found"}
+    recipient = dict(recipient)
+    if str(recipient.get("approval_status") or "") != "approved":
+        return {"ok": False, "error": "recipient is not approved"}
+    external_userid = str(recipient.get("external_userid") or "").strip()
+    owner_userid = str(recipient.get("owner_userid") or "").strip()
+    if not external_userid:
+        return {"ok": False, "error": "recipient missing external_userid"}
+    messages = [
+        dict(row)
+        for row in cur.execute(
+            """
+            SELECT *
+            FROM cloud_broadcast_plan_recipient_messages
+            WHERE recipient_id = ? AND status IN ('pending', 'queued', 'failed')
+            ORDER BY sequence_index ASC, id ASC
+            """,
+            (int(recipient_id),),
+        ).fetchall()
+    ]
+    if not messages:
+        return {"ok": True, "sent_count": 0, "failed_count": 0, "status": "no_pending_messages"}
+
+    from ..campaigns.scheduler import _dispatch_private_message_payload
+
+    sent_count = 0
+    failed_count = 0
+    last_error = ""
+    cur.execute(
+        """
+        UPDATE cloud_broadcast_plan_recipients
+        SET send_status = 'sending', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (int(recipient_id),),
+    )
+    db.commit()
+    for message in messages:
+        payload = json.loads(message.get("content_payload_json") or "{}")
+        attachments = json.loads(message.get("attachments_json") or "[]")
+        request_payload = {
+            "sender": owner_userid,
+            "text": {"content": str(message.get("content_text") or "")},
+            "image_media_ids": list(payload.get("image_media_ids") or []),
+            "attachments": attachments if isinstance(attachments, list) else [],
+            "external_userid": [external_userid],
+        }
+        send_res = _dispatch_private_message_payload(
+            request_payload=request_payload,
+            recipient_count=1,
+            broadcast_job_id=broadcast_job_id,
+            trace_id=str(_load_plan(plan_id).get("trace_id") if _load_plan(plan_id) else ""),
+        )
+        if send_res.get("ok"):
+            sent_count += 1
+            cur.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages
+                SET status = 'sent', sent_at = CURRENT_TIMESTAMP, last_error = '', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (int(message["id"]),),
+            )
+        else:
+            failed_count += 1
+            last_error = str(send_res.get("error") or send_res.get("reason") or "send failed")[:500]
+            cur.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages
+                SET status = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (last_error, int(message["id"])),
+            )
+    next_status = "failed" if failed_count and not sent_count else "sent"
+    cur.execute(
+        """
+        UPDATE cloud_broadcast_plan_recipients
+        SET send_status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (next_status, last_error, int(recipient_id)),
+    )
+    db.commit()
+    return {"ok": failed_count == 0, "sent_count": sent_count, "failed_count": failed_count, "last_error": last_error}
 
 
 def reject_broadcast_plan(*, plan_id: str, reason: str = "") -> bool:
