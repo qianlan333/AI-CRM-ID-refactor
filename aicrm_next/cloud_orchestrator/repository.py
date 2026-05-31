@@ -84,6 +84,7 @@ def _plan_view(row: dict[str, Any], stats: dict[str, int] | None = None) -> dict
         "review_status": _text(row.get("review_status")) or ("rejected" if _text(row.get("status")) == "rejected" else "pending_review"),
         "run_status": _text(row.get("run_status")) or _text(row.get("status")) or "draft",
         "updated_at": row.get("updated_at") or "",
+        "source_type": _text(row.get("source_type")) or "cloud_plan",
     }
 
 
@@ -104,6 +105,8 @@ def _recipient_view(row: dict[str, Any]) -> dict[str, Any]:
         "reject_reason": _text(row.get("reject_reason")),
         "broadcast_job_id": row.get("broadcast_job_id"),
         "last_error": _text(row.get("last_error")),
+        "source_type": _text(row.get("source_type")) or "cloud_plan",
+        "supports_recipient_approval": bool(row.get("supports_recipient_approval", True)),
     }
 
 
@@ -119,7 +122,21 @@ def _message_view(row: dict[str, Any]) -> dict[str, Any]:
         "status": _text(row.get("status")) or "pending",
         "sent_at": row.get("sent_at"),
         "last_error": _text(row.get("last_error")),
+        "source_type": _text(row.get("source_type")) or "cloud_plan",
     }
+
+
+def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
+    status = _text(member_status)
+    if status in {"completed", "sent"}:
+        return "approved", "sent"
+    if status in {"failed"}:
+        return "approved", "failed"
+    if status in {"cancelled", "stopped"}:
+        return "rejected", "cancelled"
+    if status in {"running", "queued"}:
+        return "approved", "queued"
+    return "pending", "pending"
 
 
 class PostgresCloudPlanRepository:
@@ -166,32 +183,106 @@ class PostgresCloudPlanRepository:
         ).fetchall()
         return {str(row["plan_id"]): {key: int(row.get(key) or 0) for key in row.keys() if key != "plan_id"} for row in rows}
 
+    def _legacy_stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
+        if not plan_ids:
+            return {}
+        rows = conn.execute(
+            """
+            SELECT c.campaign_code AS plan_id,
+                   COUNT(cm.id) AS target_count,
+                   COALESCE(SUM(CASE WHEN cm.status IN ('running', 'queued', 'completed', 'sent', 'failed') THEN 1 ELSE 0 END), 0) AS approved_count,
+                   COALESCE(SUM(CASE WHEN cm.status IN ('pending', 'paused') THEN 1 ELSE 0 END), 0) AS pending_count,
+                   COALESCE(SUM(CASE WHEN cm.status IN ('cancelled', 'stopped') THEN 1 ELSE 0 END), 0) AS rejected_count,
+                   COALESCE(SUM(CASE WHEN cm.status IN ('completed', 'sent') THEN 1 ELSE 0 END), 0) AS sent_count,
+                   COALESCE(SUM(CASE WHEN cm.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+            FROM campaigns c
+            LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
+            WHERE c.campaign_code = ANY(%s)
+            GROUP BY c.campaign_code
+            """,
+            (plan_ids,),
+        ).fetchall()
+        return {str(row["plan_id"]): {key: int(row.get(key) or 0) for key in row.keys() if key != "plan_id"} for row in rows}
+
     def list_plans(self, *, status: str = "", keyword: str = "", limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         clauses: list[str] = []
         params: list[Any] = []
         if status:
-            clauses.append("(COALESCE(review_status, '') = %s OR status = %s)")
-            params.extend([status, status])
+            clauses.append("(COALESCE(review_status, '') = %s OR COALESCE(run_status, '') = %s OR status = %s)")
+            params.extend([status, status, status])
         if keyword:
             like = f"%{keyword.lower()}%"
-            clauses.append("(LOWER(plan_id) LIKE %s OR LOWER(COALESCE(display_name, intent, '')) LIKE %s)")
-            params.extend([like, like])
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            clauses.append("(LOWER(plan_id) LIKE %s OR LOWER(COALESCE(display_name, intent, '')) LIKE %s OR LOWER(COALESCE(owner_userid, '')) LIKE %s)")
+            params.extend([like, like, like])
+        cloud_where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        legacy_clauses = [
+            clause.replace("plan_id", "campaign_code").replace("status = %s", "run_status = %s")
+            for clause in clauses
+        ]
+        legacy_where = " AND " + " AND ".join(legacy_clauses) if legacy_clauses else ""
         limit = _limit(limit, default=20, maximum=100)
         offset = _offset(offset)
         with self._connect() as conn:
-            total = int((conn.execute("SELECT COUNT(*) AS total FROM cloud_broadcast_plans" + where, tuple(params)).fetchone() or {}).get("total") or 0)
             rows = conn.execute(
                 """
-                SELECT id, plan_id, intent, display_name, owner_userid, candidate_count, selection_json,
-                       review_status, run_status, status, updated_at
-                FROM cloud_broadcast_plans
+                WITH merged AS (
+                    SELECT id, plan_id, intent, display_name, owner_userid, candidate_count,
+                           selection_json, review_status, run_status, status, updated_at,
+                           'cloud_plan' AS source_type
+                    FROM cloud_broadcast_plans
+                    """
+                + cloud_where
+                + """
+                    UNION ALL
+                    SELECT id, campaign_code AS plan_id, intent, display_name, owner_userid,
+                           0 AS candidate_count, metadata_json AS selection_json,
+                           review_status, run_status, run_status AS status, updated_at,
+                           'legacy_campaign' AS source_type
+                    FROM campaigns
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = campaigns.campaign_code
+                    )
+                    """
+                + legacy_where
+                + """
+                )
+                SELECT *
+                FROM merged
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s OFFSET %s
                 """
-                + where
-                + " ORDER BY updated_at DESC, id DESC LIMIT %s OFFSET %s",
-                tuple([*params, limit, offset]),
+                ,
+                tuple([*params, *params, limit, offset]),
             ).fetchall()
-            stats = self._stats_for_plan_ids(conn, [str(row["plan_id"]) for row in rows])
+            total = int(
+                (
+                    conn.execute(
+                        """
+                        WITH merged AS (
+                            SELECT plan_id FROM cloud_broadcast_plans
+                            """
+                        + cloud_where
+                        + """
+                            UNION ALL
+                            SELECT campaign_code AS plan_id FROM campaigns
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM cloud_broadcast_plans p WHERE p.plan_id = campaigns.campaign_code
+                            )
+                            """
+                        + legacy_where
+                        + """
+                        )
+                        SELECT COUNT(*) AS total FROM merged
+                        """,
+                        tuple([*params, *params]),
+                    ).fetchone()
+                    or {}
+                ).get("total")
+                or 0
+            )
+            cloud_ids = [str(row["plan_id"]) for row in rows if _text(row.get("source_type")) == "cloud_plan"]
+            legacy_ids = [str(row["plan_id"]) for row in rows if _text(row.get("source_type")) == "legacy_campaign"]
+            stats = {**self._stats_for_plan_ids(conn, cloud_ids), **self._legacy_stats_for_plan_ids(conn, legacy_ids)}
         return [_plan_view(dict(row), stats.get(str(row["plan_id"]), {})) for row in rows], total
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
@@ -206,13 +297,31 @@ class PostgresCloudPlanRepository:
                 (_text(plan_id),),
             ).fetchone()
             if not row:
-                return None
-            stats = self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
+                row = conn.execute(
+                    """
+                    SELECT id, campaign_code AS plan_id, intent, display_name, owner_userid,
+                           0 AS candidate_count, metadata_json AS selection_json,
+                           review_status, run_status, run_status AS status, updated_at,
+                           'legacy_campaign' AS source_type
+                    FROM campaigns
+                    WHERE campaign_code = %s
+                    """,
+                    (_text(plan_id),),
+                ).fetchone()
+                if not row:
+                    return None
+            if _text(row.get("source_type")) == "legacy_campaign":
+                stats = self._legacy_stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
+            else:
+                stats = self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
         return _plan_view(dict(row), stats)
 
     def plan_stats(self, plan_id: str) -> dict[str, int]:
         with self._connect() as conn:
-            return self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
+            stats = self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
+            if stats:
+                return stats
+            return self._legacy_stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
 
     def list_recipients(self, plan_id: str, *, status: str = "", limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         clauses = ["plan_id = %s"]
@@ -225,34 +334,159 @@ class PostgresCloudPlanRepository:
         offset = _offset(offset)
         with self._connect() as conn:
             total = int((conn.execute("SELECT COUNT(*) AS total FROM cloud_broadcast_plan_recipients" + where, tuple(params)).fetchone() or {}).get("total") or 0)
-            rows = conn.execute(
-                """
-                SELECT *
-                FROM cloud_broadcast_plan_recipients
-                """
-                + where
-                + " ORDER BY id ASC LIMIT %s OFFSET %s",
-                tuple([*params, limit, offset]),
-            ).fetchall()
-        return [_recipient_view(dict(row)) for row in rows], total
+            if total:
+                rows = conn.execute(
+                    """
+                    SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval
+                    FROM cloud_broadcast_plan_recipients
+                    """
+                    + where
+                    + " ORDER BY id ASC LIMIT %s OFFSET %s",
+                    tuple([*params, limit, offset]),
+                ).fetchall()
+                return [_recipient_view(dict(row)) for row in rows], total
+            return self._legacy_recipients(conn, _text(plan_id), status=status, limit=limit, offset=offset)
+
+    def _legacy_recipients(self, conn, plan_id: str, *, status: str = "", limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        status_clause = ""
+        params: list[Any] = [plan_id]
+        if status == "approved":
+            status_clause = " AND cm.status IN ('running', 'queued', 'completed', 'sent', 'failed')"
+        elif status == "sent":
+            status_clause = " AND cm.status IN ('completed', 'sent')"
+        elif status == "rejected":
+            status_clause = " AND cm.status IN ('cancelled', 'stopped')"
+        elif status == "pending":
+            status_clause = " AND cm.status IN ('pending', 'paused')"
+        elif status:
+            status_clause = " AND cm.status = %s"
+            params.append(status)
+        total = int(
+            (
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS total
+                    FROM campaign_members cm
+                    JOIN campaigns c ON c.id = cm.campaign_id
+                    WHERE c.campaign_code = %s
+                    """
+                    + status_clause,
+                    tuple(params),
+                ).fetchone()
+                or {}
+            ).get("total")
+            or 0
+        )
+        rows = conn.execute(
+            """
+            SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+                   c.owner_userid,
+                   COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
+                   (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
+            FROM campaign_members cm
+            JOIN campaigns c ON c.id = cm.campaign_id
+            LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
+            WHERE c.campaign_code = %s
+            """
+            + status_clause
+            + " ORDER BY cm.id ASC LIMIT %s OFFSET %s",
+            tuple([*params, limit, offset]),
+        ).fetchall()
+        recipients = []
+        for row in rows:
+            approval_status, send_status = _legacy_recipient_status(row.get("status"))
+            recipients.append(
+                _recipient_view(
+                    {
+                        "id": -int(row["id"]),
+                        "external_userid": row.get("external_contact_id"),
+                        "display_name": row.get("display_name"),
+                        "owner_userid": row.get("owner_userid"),
+                        "updated_at": row.get("updated_at"),
+                        "planned_message_count": row.get("planned_message_count"),
+                        "approval_status": approval_status,
+                        "send_status": send_status,
+                        "source_type": "legacy_campaign",
+                        "supports_recipient_approval": False,
+                    }
+                )
+            )
+        return recipients, total
 
     def get_recipient(self, plan_id: str, recipient_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT *
+                SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval
                 FROM cloud_broadcast_plan_recipients
                 WHERE plan_id = %s AND id = %s
                 """,
                 (_text(plan_id), int(recipient_id)),
             ).fetchone()
+            if not row and int(recipient_id) < 0:
+                legacy_rows, _total = self._legacy_recipients(conn, _text(plan_id), limit=1, offset=0)
+                row = None
+                legacy_id = abs(int(recipient_id))
+                for item in legacy_rows:
+                    if abs(int(item["recipient_id"])) == legacy_id:
+                        return item
+                row = conn.execute(
+                    """
+                    SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+                           c.owner_userid,
+                           COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
+                           (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
+                    FROM campaign_members cm
+                    JOIN campaigns c ON c.id = cm.campaign_id
+                    LEFT JOIN contacts ON contacts.external_userid = cm.external_contact_id
+                    WHERE c.campaign_code = %s AND cm.id = %s
+                    """,
+                    (_text(plan_id), legacy_id),
+                ).fetchone()
+                if row:
+                    approval_status, send_status = _legacy_recipient_status(row.get("status"))
+                    return _recipient_view(
+                        {
+                            "id": -int(row["id"]),
+                            "external_userid": row.get("external_contact_id"),
+                            "display_name": row.get("display_name"),
+                            "owner_userid": row.get("owner_userid"),
+                            "updated_at": row.get("updated_at"),
+                            "planned_message_count": row.get("planned_message_count"),
+                            "approval_status": approval_status,
+                            "send_status": send_status,
+                            "source_type": "legacy_campaign",
+                            "supports_recipient_approval": False,
+                        }
+                    )
         return _recipient_view(dict(row)) if row else None
 
     def list_recipient_messages(self, recipient_id: int) -> list[dict[str, Any]]:
         with self._connect() as conn:
+            if int(recipient_id) < 0:
+                rows = conn.execute(
+                    """
+                    SELECT cs.id, cs.step_index AS sequence_index, cs.day_offset, cs.send_time,
+                           cs.content_text, cs.content_payload_json, '[]'::jsonb AS attachments_json,
+                           CASE
+                               WHEN cm.status IN ('completed', 'sent') OR cm.current_step_index >= cs.step_index THEN 'sent'
+                               WHEN cm.status = 'failed' THEN 'failed'
+                               ELSE 'pending'
+                           END AS status,
+                           NULL AS sent_at,
+                           cm.last_error_text AS last_error,
+                           'legacy_campaign' AS source_type
+                    FROM campaign_members cm
+                    JOIN campaign_steps cs ON cs.campaign_segment_id = cm.campaign_segment_id
+                    WHERE cm.id = %s
+                    ORDER BY cs.step_index ASC, cs.id ASC
+                    """,
+                    (abs(int(recipient_id)),),
+                ).fetchall()
+                return [_message_view(dict(row)) for row in rows]
             rows = conn.execute(
                 """
-                SELECT *
+                SELECT *, 'cloud_plan' AS source_type
                 FROM cloud_broadcast_plan_recipient_messages
                 WHERE recipient_id = %s
                 ORDER BY sequence_index ASC, id ASC
@@ -265,7 +499,23 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                return None
+                legacy_before = conn.execute("SELECT * FROM campaigns WHERE campaign_code = %s FOR UPDATE", (_text(plan_id),)).fetchone()
+                if not legacy_before:
+                    return None
+                if _text(legacy_before.get("review_status")) == "rejected":
+                    raise ValueError("plan is rejected")
+                row = conn.execute(
+                    """
+                    UPDATE campaigns
+                    SET review_status = 'approved', updated_at = CURRENT_TIMESTAMP
+                    WHERE campaign_code = %s
+                    RETURNING *
+                    """,
+                    (_text(plan_id),),
+                ).fetchone()
+                self._audit(conn, operator=operator, action_type="cloud_plan_approve", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
+                conn.commit()
+                return self.get_plan(plan_id)
             if _text(before.get("review_status") or before.get("status")) == "rejected":
                 raise ValueError("plan is rejected")
             row = conn.execute(
@@ -286,7 +536,22 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                return None
+                legacy_before = conn.execute("SELECT * FROM campaigns WHERE campaign_code = %s FOR UPDATE", (_text(plan_id),)).fetchone()
+                if not legacy_before:
+                    return None
+                row = conn.execute(
+                    """
+                    UPDATE campaigns
+                    SET review_status = 'rejected', run_status = CASE WHEN run_status = 'active' THEN run_status ELSE 'cancelled' END,
+                        paused_reason = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE campaign_code = %s
+                    RETURNING *
+                    """,
+                    (_text(reason)[:200], _text(plan_id)),
+                ).fetchone()
+                self._audit(conn, operator=operator, action_type="cloud_plan_reject", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
+                conn.commit()
+                return self.get_plan(plan_id)
             row = conn.execute(
                 """
                 UPDATE cloud_broadcast_plans
@@ -449,11 +714,34 @@ class InMemoryCloudPlanRepository:
             {"id": 1, "plan_id": "plan_probe", "recipient_id": 1, "external_userid": "wm_a", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
             {"id": 2, "plan_id": "plan_probe", "recipient_id": 2, "external_userid": "wm_b", "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "你好", "content_payload_json": {}, "attachments_json": [], "status": "pending"},
         ]
+        self.legacy_plans = [
+            {
+                "id": 10,
+                "plan_id": "camp_legacy",
+                "display_name": "老 Campaign 计划",
+                "intent": "老 Campaign 计划",
+                "owner_userid": "LegacyOwner",
+                "candidate_count": 0,
+                "review_status": "pending_review",
+                "run_status": "draft",
+                "status": "draft",
+                "selection_json": {},
+                "updated_at": now,
+                "source_type": "legacy_campaign",
+            }
+        ]
+        self.legacy_recipients = [
+            {"id": -11, "plan_id": "camp_legacy", "external_userid": "wm_legacy", "owner_userid": "LegacyOwner", "display_name": "老客户", "planned_message_count": 2, "approval_status": "pending", "send_status": "pending", "updated_at": now, "source_type": "legacy_campaign", "supports_recipient_approval": False}
+        ]
+        self.legacy_messages = [
+            {"id": -101, "recipient_id": -11, "sequence_index": 1, "day_offset": 0, "send_time": "10:00", "content_text": "老话术 1", "content_payload_json": {}, "attachments_json": [], "status": "pending", "source_type": "legacy_campaign"},
+            {"id": -102, "recipient_id": -11, "sequence_index": 2, "day_offset": 1, "send_time": "10:00", "content_text": "老话术 2", "content_payload_json": {}, "attachments_json": [], "status": "pending", "source_type": "legacy_campaign"},
+        ]
         self.broadcast_jobs: list[dict[str, Any]] = []
         self.audits: list[dict[str, Any]] = []
 
     def _stats(self, plan_id: str) -> dict[str, int]:
-        rows = [item for item in self.recipients if item["plan_id"] == plan_id]
+        rows = [item for item in [*self.recipients, *self.legacy_recipients] if item["plan_id"] == plan_id]
         return {
             "target_count": len(rows),
             "approved_count": sum(1 for item in rows if item.get("approval_status") == "approved"),
@@ -464,7 +752,7 @@ class InMemoryCloudPlanRepository:
         }
 
     def list_plans(self, *, status: str = "", keyword: str = "", limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
-        rows = [item for item in self.plans if (not status or item.get("review_status") == status or item.get("status") == status)]
+        rows = [item for item in [*self.plans, *self.legacy_plans] if (not status or item.get("review_status") == status or item.get("status") == status or item.get("run_status") == status)]
         if keyword:
             rows = [item for item in rows if keyword.lower() in (item.get("display_name", "") + item.get("plan_id", "")).lower()]
         total = len(rows)
@@ -472,7 +760,7 @@ class InMemoryCloudPlanRepository:
         return [_plan_view(copy.deepcopy(item), self._stats(item["plan_id"])) for item in rows], total
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
-        for item in self.plans:
+        for item in [*self.plans, *self.legacy_plans]:
             if item["plan_id"] == plan_id:
                 return _plan_view(copy.deepcopy(item), self._stats(plan_id))
         return None
@@ -481,19 +769,19 @@ class InMemoryCloudPlanRepository:
         return self._stats(plan_id)
 
     def list_recipients(self, plan_id: str, *, status: str = "", limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
-        rows = [item for item in self.recipients if item["plan_id"] == plan_id and (not status or item.get("approval_status") == status or item.get("send_status") == status)]
+        rows = [item for item in [*self.recipients, *self.legacy_recipients] if item["plan_id"] == plan_id and (not status or item.get("approval_status") == status or item.get("send_status") == status)]
         total = len(rows)
         rows = rows[_offset(offset) : _offset(offset) + _limit(limit, default=50, maximum=200)]
         return [_recipient_view(copy.deepcopy(item)) for item in rows], total
 
     def get_recipient(self, plan_id: str, recipient_id: int) -> dict[str, Any] | None:
-        for item in self.recipients:
+        for item in [*self.recipients, *self.legacy_recipients]:
             if item["plan_id"] == plan_id and int(item["id"]) == int(recipient_id):
                 return _recipient_view(copy.deepcopy(item))
         return None
 
     def list_recipient_messages(self, recipient_id: int) -> list[dict[str, Any]]:
-        return [_message_view(copy.deepcopy(item)) for item in self.messages if int(item["recipient_id"]) == int(recipient_id)]
+        return [_message_view(copy.deepcopy(item)) for item in [*self.messages, *self.legacy_messages] if int(item["recipient_id"]) == int(recipient_id)]
 
     def approve_plan(self, plan_id: str, *, operator: str) -> dict[str, Any] | None:
         for item in self.plans:

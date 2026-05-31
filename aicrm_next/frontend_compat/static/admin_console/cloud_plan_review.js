@@ -95,6 +95,7 @@
   }
 
   function canApproveRecipient(row) {
+    if (row && row.supports_recipient_approval === false) return false;
     const approval = String((row && row.approval_status) || "");
     const send = String((row && row.send_status) || "");
     return approval !== "approved" && approval !== "rejected" && send !== "sent" && send !== "queued" && send !== "sending";
@@ -105,6 +106,7 @@
     const send = String((row && row.send_status) || "");
     if (approval === "rejected") return "已拒绝";
     if (approval === "approved" || send === "sent" || send === "queued" || send === "sending") return "已批准";
+    if (row && row.supports_recipient_approval === false) return "批准";
     return "批准";
   }
 
