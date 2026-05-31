@@ -104,11 +104,14 @@ class ListMaterialPickerItemsQuery:
             limit=limit,
             offset=offset,
         )
+        items = [_picker_item_with_flat_metadata(item) for item in result.get("items") or []]
+        if request.type == "attachment":
+            items = [item for item in items if str(item.get("mime_type") or "").split(";")[0].strip().lower() == "application/pdf"]
         return {
             "ok": True,
             "type": request.type,
-            "items": result.get("items") or [],
-            "total": int(result.get("total") or 0),
+            "items": items,
+            "total": len(items) if request.type == "attachment" else int(result.get("total") or 0),
             "limit": limit,
             "offset": offset,
         }
@@ -119,6 +122,15 @@ class ListMaterialPickerItemsQuery:
         return self._repo
 
     __call__ = execute
+
+
+def _picker_item_with_flat_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    metadata = normalized.get("metadata") if isinstance(normalized.get("metadata"), dict) else {}
+    for key in ("file_name", "mime_type", "file_size"):
+        if key not in normalized and key in metadata:
+            normalized[key] = metadata[key]
+    return normalized
 
 
 def send_content_production_unavailable_payload(detail: str | None = None) -> dict[str, Any]:
@@ -169,4 +181,3 @@ def _preview_materials(repo: SendContentRepository, content_package: dict[str, A
             for item in rows
         )
     return materials
-

@@ -7,6 +7,7 @@ from typing import Any
 from aicrm_next.integration_gateway.questionnaire_adapters import WeChatOAuthAdapter, build_wechat_oauth_adapter
 from aicrm_next.media_library.application import GetMediaItemQuery
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.share_qr import safe_qr_download_filename, svg_qr_data_url
 
 from .domain import (
     hash_ip,
@@ -37,12 +38,9 @@ class ListRadarLinksQuery:
         for item in rows:
             projection = radar_link_projection(item, base_url=base_url)
             stats = self._repo.stats(int(item.get("id") or 0)) or {}
-            projection["stats_summary"] = {
-                "total_landings": int(stats.get("total_landings") or stats.get("total_clicks") or 0),
-                "authorized_users": int(stats.get("authorized_users") or stats.get("unique_users") or 0),
-                "view_opens": int(stats.get("view_opens") or stats.get("viewer_opens") or 0),
-                "last_viewed_at": str(stats.get("last_viewed_at") or ""),
-            }
+            summary = _list_stats_summary(stats)
+            projection.update(summary)
+            projection["stats_summary"] = summary
             items.append(projection)
         return {"ok": True, "items": items, "radar_links": items, "total": total, "limit": limit, "offset": offset}
 
@@ -68,7 +66,9 @@ class GetRadarLinkQuery:
         item = self._repo.get_link(link_id)
         if not item:
             raise NotFoundError("radar link not found")
-        return {"ok": True, "radar_link": radar_link_projection(item, base_url=base_url)}
+        projection = radar_link_projection(item, base_url=base_url)
+        projection["media_item_snapshot"] = _media_item_snapshot(projection)
+        return {"ok": True, "radar_link": projection}
 
     __call__ = execute
 
@@ -108,6 +108,53 @@ class SetRadarLinkEnabledCommand:
     __call__ = execute
 
 
+class GetRadarLinkNewOptionsQuery:
+    def execute(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "target_types": [
+                {"value": "link", "label": "外部链接"},
+                {"value": "image", "label": "图片预览"},
+                {"value": "pdf", "label": "PDF 预览"},
+            ],
+            "defaults": {
+                "enabled": True,
+                "auth_required": True,
+                "source_channel": "manual",
+                "staff_id": "HuangYouCan",
+            },
+        }
+
+    __call__ = execute
+
+
+class GetRadarLinkShareQuery:
+    def __init__(self, repo: RadarLinksRepository | None = None) -> None:
+        self._repo = repo or build_radar_links_repository()
+
+    def execute(self, link_id: int, *, base_url: str = "") -> dict[str, Any]:
+        item = self._repo.get_link(link_id)
+        if not item:
+            raise NotFoundError("radar link not found")
+        projection = radar_link_projection(item, base_url=base_url)
+        url = str(projection.get("wrapper_url") or "")
+        if not url.startswith(("http://", "https://")):
+            raise ContractError("radar share url is required")
+        title = str(projection.get("title") or "内容雷达")
+        return {
+            "ok": True,
+            "share": {
+                "title": title,
+                "url": url,
+                "path": f"/r/{projection['code']}",
+                "qr_data_url": svg_qr_data_url(url),
+                "download_filename": safe_qr_download_filename(title, fallback="内容雷达"),
+            },
+        }
+
+    __call__ = execute
+
+
 class GetRadarLinkStatsQuery:
     def __init__(self, repo: RadarLinksRepository | None = None) -> None:
         self._repo = repo or build_radar_links_repository()
@@ -126,11 +173,48 @@ class ListRadarLinkEventsQuery:
     def __init__(self, repo: RadarLinksRepository | None = None) -> None:
         self._repo = repo or build_radar_links_repository()
 
-    def execute(self, link_id: int, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
-        if not self._repo.get_link(link_id):
+    def execute(
+        self,
+        link_id: int,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        stage: str = "",
+        start_at: str = "",
+        end_at: str = "",
+        base_url: str = "",
+    ) -> dict[str, Any]:
+        link = self._repo.get_link(link_id)
+        if not link:
             raise NotFoundError("radar link not found")
-        events, total = self._repo.list_click_events(link_id, limit=limit, offset=offset)
-        return {"ok": True, "items": events, "events": events, "total": total, "limit": limit, "offset": offset}
+        limit = max(1, min(int(limit or 100), 500))
+        offset = max(0, int(offset or 0))
+        events, total = self._repo.list_click_events(
+            link_id,
+            limit=limit,
+            offset=offset,
+            stage=stage,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        masked = [_event_projection(item) for item in events]
+        link_projection = radar_link_projection(link, base_url=base_url)
+        brief_link = {
+            "id": link_projection["id"],
+            "title": link_projection["title"],
+            "target_type": link_projection["target_type"],
+            "wrapper_url": link_projection["wrapper_url"],
+        }
+        return {
+            "ok": True,
+            "link": brief_link,
+            "items": masked,
+            "events": masked,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "pagination": {"limit": limit, "offset": offset, "has_more": offset + limit < int(total or 0)},
+        }
 
     __call__ = execute
 
@@ -374,6 +458,45 @@ class RecordRadarContentEventCommand:
         return {"ok": True, "event_id": event.get("event_id") or event.get("id")}
 
     __call__ = execute
+
+
+def _list_stats_summary(stats: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_landings": int(stats.get("total_landings") or stats.get("total_clicks") or 0),
+        "authorized_users": int(stats.get("authorized_users") or stats.get("unique_users") or 0),
+        "view_count": int(stats.get("view_opens") or stats.get("viewer_opens") or 0),
+        "last_viewed_at": str(stats.get("last_viewed_at") or ""),
+    }
+
+
+def _media_item_snapshot(link: dict[str, Any]) -> dict[str, Any]:
+    if str(link.get("target_type") or "link") == "link":
+        return {}
+    return {
+        "media_item_id": str(link.get("media_item_id") or ""),
+        "file_name": str(link.get("file_name_snapshot") or ""),
+        "mime_type": str(link.get("mime_type_snapshot") or ""),
+        "file_size": int(link.get("file_size_snapshot") or 0),
+    }
+
+
+def _mask_identity(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 10:
+        return text[:2] + "***"
+    return f"{text[:6]}...{text[-4:]}"
+
+
+def _event_projection(item: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(item)
+    projected["unionid_masked"] = _mask_identity(projected.get("unionid"))
+    projected["openid_masked"] = _mask_identity(projected.get("openid"))
+    projected.pop("unionid", None)
+    projected.pop("openid", None)
+    projected.pop("ip", None)
+    return projected
 
 
 def _normalize_with_media(payload: dict[str, Any]) -> dict[str, Any]:

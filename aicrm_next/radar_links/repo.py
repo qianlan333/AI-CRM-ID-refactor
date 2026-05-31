@@ -23,7 +23,16 @@ class RadarLinksRepository(Protocol):
     def save_link(self, payload: dict[str, Any], link_id: int | None = None) -> dict[str, Any]: ...
     def set_enabled(self, link_id: int, enabled: bool) -> dict[str, Any] | None: ...
     def record_click_event(self, payload: dict[str, Any]) -> dict[str, Any]: ...
-    def list_click_events(self, link_id: int, *, limit: int = 100, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
+    def list_click_events(
+        self,
+        link_id: int,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        stage: str = "",
+        start_at: str = "",
+        end_at: str = "",
+    ) -> tuple[list[dict[str, Any]], int]: ...
     def stats(self, link_id: int) -> dict[str, Any] | None: ...
 
 
@@ -129,12 +138,30 @@ class InMemoryRadarLinksRepository:
         self._events.append(event)
         return deepcopy(event)
 
-    def list_click_events(self, link_id: int, *, limit: int = 100, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    def list_click_events(
+        self,
+        link_id: int,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        stage: str = "",
+        start_at: str = "",
+        end_at: str = "",
+    ) -> tuple[list[dict[str, Any]], int]:
         rows = [
             deepcopy(item)
             for item in reversed(self._events)
             if int(item.get("link_id") or 0) == int(link_id)
         ]
+        stage_filter = str(stage or "").strip()
+        if stage_filter:
+            rows = [item for item in rows if str(item.get("stage") or "") == stage_filter]
+        start_filter = str(start_at or "").strip()
+        if start_filter:
+            rows = [item for item in rows if str(item.get("created_at") or "") >= start_filter]
+        end_filter = str(end_at or "").strip()
+        if end_filter:
+            rows = [item for item in rows if str(item.get("created_at") or "") <= end_filter]
         return rows[offset : offset + limit], len(rows)
 
     def stats(self, link_id: int) -> dict[str, Any] | None:
@@ -380,24 +407,48 @@ class PostgresRadarLinksRepository:
             ).fetchone()
         return dict(row or {})
 
-    def list_click_events(self, link_id: int, *, limit: int = 100, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    def list_click_events(
+        self,
+        link_id: int,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        stage: str = "",
+        start_at: str = "",
+        end_at: str = "",
+    ) -> tuple[list[dict[str, Any]], int]:
         limit = max(1, min(int(limit or 100), 500))
         offset = max(0, int(offset or 0))
+        conditions = ["link_id = %s"]
+        params: list[Any] = [int(link_id)]
+        stage_filter = str(stage or "").strip()
+        if stage_filter:
+            conditions.append("stage = %s")
+            params.append(stage_filter)
+        start_filter = str(start_at or "").strip()
+        if start_filter:
+            conditions.append("created_at >= %s")
+            params.append(start_filter)
+        end_filter = str(end_at or "").strip()
+        if end_filter:
+            conditions.append("created_at <= %s")
+            params.append(end_filter)
+        where_sql = " AND ".join(conditions)
         with self._connect() as conn:
             total = int(
-                (conn.execute("SELECT COUNT(*) AS total FROM radar_click_events WHERE link_id = %s", (int(link_id),)).fetchone() or {}).get("total") or 0
+                (conn.execute(f"SELECT COUNT(*) AS total FROM radar_click_events WHERE {where_sql}", tuple(params)).fetchone() or {}).get("total") or 0
             )
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, id AS event_id, link_id, code, stage, openid, unionid, external_userid,
                     target_type_snapshot, person_id, ip_hash, user_agent, referer, query_params_json,
                     source_channel, campaign_id, staff_id, source_channel_snapshot, campaign_id_snapshot, staff_id_snapshot, error_code, created_at
                 FROM radar_click_events
-                WHERE link_id = %s
+                WHERE {where_sql}
                 ORDER BY id DESC
                 LIMIT %s OFFSET %s
                 """,
-                (int(link_id), limit, offset),
+                tuple(params + [limit, offset]),
             ).fetchall()
         return [dict(row) for row in rows], total
 
