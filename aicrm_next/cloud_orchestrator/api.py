@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 
-from aicrm_next.admin_jobs.routes import _action_token_error, _operator_from_request, _request_payload
+from aicrm_next.admin_jobs.routes import (
+    _action_token_error,
+    _operator_from_request,
+    _request_payload,
+    ensure_admin_action_token,
+)
+from aicrm_next.frontend_compat.admin_shell import shell_context
 
 from .application import (
     ApproveCloudPlanCommand,
@@ -20,6 +28,8 @@ from .application import (
 )
 
 router = APIRouter()
+_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
+templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
 
 def _raise(exc: Exception) -> None:
@@ -38,14 +48,59 @@ async def _write_context(request: Request) -> tuple[dict[str, Any], str | None]:
     return payload, None
 
 
-@router.get("/admin/cloud-orchestrator/plans", response_class=HTMLResponse)
-def admin_cloud_plans() -> str:
-    return "<!doctype html><html><head><title>AI 助手计划</title></head><body><main id=\"cloud-plans-root\" data-api=\"/api/admin/cloud-orchestrator/plans\"></main></body></html>"
+@router.get(
+    "/admin/cloud-orchestrator/plans",
+    response_class=HTMLResponse,
+    name="api.admin_cloud_orchestrator_plans_workspace",
+)
+def admin_cloud_plans(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="AI 助手 · 运营计划审阅",
+        page_summary="计划列表、目标人员明细与逐人审批。",
+        active_endpoint="api.admin_cloud_orchestrator_workspace",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
+                {"label": "运营计划审阅"},
+            ],
+            "page_mode": "list",
+            "plan_id": "",
+            "admin_action_token": ensure_admin_action_token(),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/cloud_plan_review.html", context)
 
 
-@router.get("/admin/cloud-orchestrator/plans/{plan_id}", response_class=HTMLResponse)
-def admin_cloud_plan_detail(plan_id: str) -> str:
-    return f"<!doctype html><html><head><title>AI 助手计划</title></head><body><main id=\"cloud-plan-detail-root\" data-plan-id=\"{plan_id}\" data-api=\"/api/admin/cloud-orchestrator/plans/{plan_id}\"></main></body></html>"
+@router.get(
+    "/admin/cloud-orchestrator/plans/{plan_id}",
+    response_class=HTMLResponse,
+    name="api.admin_cloud_orchestrator_plan_detail",
+)
+def admin_cloud_plan_detail(request: Request, plan_id: str):
+    context = shell_context(
+        request=request,
+        page_title="AI 助手 · 计划二级明细",
+        page_summary="目标人员列表与单人话术任务审批。",
+        active_endpoint="api.admin_cloud_orchestrator_workspace",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
+                {"label": "运营计划审阅", "href": "/admin/cloud-orchestrator/plans"},
+                {"label": "计划二级明细"},
+            ],
+            "page_mode": "detail",
+            "plan_id": plan_id,
+            "admin_action_token": ensure_admin_action_token(),
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/cloud_plan_review.html", context)
 
 
 @router.get("/api/admin/cloud-orchestrator/plans")
@@ -97,7 +152,11 @@ async def api_reject_cloud_plan(plan_id: str, request: Request):
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
     try:
-        return RejectCloudPlanCommand()(plan_id, operator=_operator_from_request(request, payload), reason=str(payload.get("reason") or ""))
+        return RejectCloudPlanCommand()(
+            plan_id,
+            operator=_operator_from_request(request, payload),
+            reason=str(payload.get("reason") or ""),
+        )
     except Exception as exc:
         _raise(exc)
 
@@ -108,7 +167,11 @@ async def api_approve_cloud_plan_recipient(plan_id: str, recipient_id: int, requ
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
     try:
-        return ApproveCloudPlanRecipientCommand()(plan_id, recipient_id, operator=_operator_from_request(request, payload))
+        return ApproveCloudPlanRecipientCommand()(
+            plan_id,
+            recipient_id,
+            operator=_operator_from_request(request, payload),
+        )
     except Exception as exc:
         _raise(exc)
 
@@ -119,7 +182,11 @@ async def api_reject_cloud_plan_recipient(plan_id: str, recipient_id: int, reque
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
     try:
-        return RejectCloudPlanRecipientCommand()(plan_id, recipient_id, operator=_operator_from_request(request, payload), reason=str(payload.get("reason") or ""))
+        return RejectCloudPlanRecipientCommand()(
+            plan_id,
+            recipient_id,
+            operator=_operator_from_request(request, payload),
+            reason=str(payload.get("reason") or ""),
+        )
     except Exception as exc:
         _raise(exc)
-
