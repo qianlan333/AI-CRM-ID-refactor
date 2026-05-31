@@ -110,6 +110,33 @@
     return fetch(url, { credentials: "same-origin" }).then((response) => response.json().then((data) => ({ response, data })));
   }
 
+  function postJson(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    }).then((response) => response.json().then((data) => ({ response, data })));
+  }
+
+  function qrcodeReady(channel) {
+    return Boolean(channel.qrcode_asset_id) && ["active", "generated"].includes(String(channel.qrcode_status || ""));
+  }
+
+  function qrcodeStatusLabel(channel) {
+    const value = String(channel.qrcode_status || "");
+    return {
+      active: "二维码可用",
+      generated: "二维码可用",
+      not_generated: "未生成二维码",
+      legacy_untracked: "需重新生成",
+      stale: "需重新生成",
+      quarantined: "已隔离",
+      revoked: "已失效",
+      retired: "已退休",
+    }[value] || "需检查二维码";
+  }
+
   function bootstrapUrls() {
     const node = root.querySelector("[data-channel-bootstrap]");
     if (!node) return {};
@@ -132,7 +159,9 @@
     const action = link
       ? `<button class="admin-button admin-button--secondary" type="button" data-copy-channel-link data-copy-text="${escapeHtml(copyText)}">复制链接</button>
          <button class="admin-button admin-button--secondary" type="button" data-share-channel-link data-copy-text="${escapeHtml(copyText)}">分享链接</button>`
-      : `<a class="admin-button admin-button--secondary" href="${escapeHtml(downloadUrl)}">下载二维码</a>`;
+      : qrcodeReady(channel)
+        ? `<a class="admin-button admin-button--secondary" href="${escapeHtml(downloadUrl)}">下载二维码</a>`
+        : `<button class="admin-button admin-button--secondary" type="button" data-generate-channel-qrcode>生成二维码</button>`;
     return `
       <tr data-channel-row data-channel-id="${escapeHtml(channel.id)}" data-search-text="${escapeHtml(searchText)}">
         <td>
@@ -144,6 +173,7 @@
           <span class="channel-pill ${channel.welcome_message_configured ? "is-ok" : ""}">${channel.welcome_message_configured ? "欢迎语" : "无欢迎语"}</span>
           <span class="channel-pill">${escapeHtml(channel.welcome_attachment_count || 0)} 素材</span>
           <span class="channel-pill ${channel.entry_tag_configured ? "is-ok" : ""}">${channel.entry_tag_configured ? "标签" : "无标签"}</span>
+          ${link ? "" : `<span class="channel-pill ${qrcodeReady(channel) ? "is-ok" : ""}">${escapeHtml(qrcodeStatusLabel(channel))}</span>`}
         </td>
         <td>${escapeHtml(channel.channel_contact_count || 0)}</td>
         <td>${bound}</td>
@@ -189,6 +219,26 @@
     const shareButton = event.target.closest("[data-share-channel-link]");
     if (shareButton) {
       shareText(shareButton.dataset.copyText);
+      return;
+    }
+    const generateButton = event.target.closest("[data-generate-channel-qrcode]");
+    if (generateButton) {
+      const row = generateButton.closest("[data-channel-row]");
+      const channelId = row ? row.dataset.channelId : "";
+      if (!channelId) return;
+      generateButton.disabled = true;
+      generateButton.textContent = "生成中";
+      postJson(`/api/admin/channels/${encodeURIComponent(channelId)}/qrcode/generate`, {}).then(({ response, data }) => {
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.reason || data.detail?.reason || data.detail || "qrcode_generate_failed");
+        }
+        toast("二维码已生成");
+        window.location.reload();
+      }).catch((error) => {
+        generateButton.disabled = false;
+        generateButton.textContent = "生成二维码";
+        toast(error.message || "二维码生成失败");
+      });
       return;
     }
     const detailButton = event.target.closest("[data-open-channel-drawer]");

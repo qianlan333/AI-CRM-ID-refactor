@@ -31,14 +31,24 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
         json={
             "channel_name": "Next 普通二维码",
             "channel_code": "aqr_next_runtime",
-            "scene_value": "aqr_next_runtime",
-            "qr_url": "https://wework.qpic.cn/next-runtime-qr",
             "status": "active",
         },
     )
     assert created.status_code == 201
     channel = created.json()["channel"]
     channel_id = int(channel["id"])
+    assert channel["scene_value"] == ""
+    assert channel["qr_url"] == ""
+    assert channel["qrcode_status"] == "not_generated"
+    channels_api._FIXTURE_CHANNELS[channel_id]["scene_value"] = "aqr_next_runtime"
+    channels_api._FIXTURE_CHANNELS[channel_id]["qr_url"] = "https://wework.qpic.cn/next-runtime-qr"
+    channels_api._FIXTURE_CHANNELS[channel_id]["_active_qrcode_asset"] = {
+        "id": 77,
+        "channel_id": channel_id,
+        "scene_value": "aqr_next_runtime",
+        "qr_url": "https://wework.qpic.cn/next-runtime-qr",
+        "status": "active",
+    }
     channels_api._FIXTURE_CHANNELS[channel_id]["historical_scene_values"] = ["aqr_legacy_runtime"]
 
     listed = client.get("/api/admin/channels")
@@ -68,6 +78,7 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
     qrcode = client.get(f"/api/admin/channels/{channel_id}/qrcode/download", follow_redirects=False)
     assert qrcode.status_code == 302
     assert qrcode.headers["location"] == "https://wework.qpic.cn/next-runtime-qr"
+    assert qrcode.headers["x-aicrm-qr-scene"] == "aqr_next_runtime"
 
     link_created = client.post(
         "/api/admin/channels",
@@ -105,8 +116,6 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
         json={
             "channel_name": "方案二维码入口",
             "channel_code": "aqr_program_runtime",
-            "scene_value": "aqr_program_runtime",
-            "qr_url": "https://wework.qpic.cn/program-runtime-qr",
         },
     ).json()["channel"]
     link = client.post(
@@ -125,8 +134,6 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
         json={
             "channel_name": "候选二维码入口",
             "channel_code": "aqr_program_candidate",
-            "scene_value": "aqr_program_candidate",
-            "qr_url": "https://wework.qpic.cn/program-candidate",
         },
     ).json()["channel"]
 
@@ -156,8 +163,6 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
         json={
             "channel_name": "其他方案占用渠道",
             "channel_code": "aqr_other_program_bound",
-            "scene_value": "aqr_other_program_bound",
-            "qr_url": "https://wework.qpic.cn/other-program-bound",
         },
     ).json()["channel"]
     other_bound = client.post(

@@ -76,29 +76,40 @@ def resolve_channel_for_scene(*, scene_value: str, corp_id: str = "", persist_al
     scene = text(scene_value)
     if not scene:
         return None, scene_match("missing_scene", "")
-    channel = repo.find_channel_by_scene_value(scene)
-    if channel:
-        if persist_alias:
-            repo.upsert_channel_scene_alias(
-                channel_id=int(channel["id"]),
-                scene_value=scene,
-                corp_id=text(corp_id),
-                qr_url=text(channel.get("qr_url")),
-                carrier_type=text(channel.get("carrier_type")) or "qrcode",
-                status="active",
-                source="current_scene",
-            )
-        return channel, scene_match("current_scene", scene, channel)
-    channel = repo.find_channel_by_scene_alias(text(corp_id), scene)
+    asset = repo.find_qrcode_asset_by_scene(text(corp_id), scene)
+    if asset:
+        asset_status = text(asset.get("status"))
+        match = scene_match(f"qrcode_asset_{asset_status or 'unknown'}", scene, {"id": asset.get("channel_id"), "scene_alias_id": asset.get("id"), "status": asset_status, "source": asset.get("generation_source")})
+        match["qrcode_asset_id"] = int(asset.get("id") or 0) or None
+        if asset_status in {"stale", "quarantined", "revoked"}:
+            match["reason"] = "qrcode_asset_not_acceptable"
+            return None, match
+        if int(asset.get("id") or 0) > 0 and persist_alias:
+            repo.touch_qrcode_asset_callback(int(asset["id"]))
+        channel = {
+            **asset,
+            "id": int(asset.get("channel_id") or asset.get("channel_row_id") or 0),
+            "scene_value": text(asset.get("channel_scene_value") or asset.get("scene_value")),
+            "qr_url": text(asset.get("channel_qr_url") or asset.get("qr_url")),
+            "status": text(asset.get("channel_status") or asset.get("status")),
+        }
+        if asset_status == "retired":
+            match["reason"] = "retired_qrcode_asset_used"
+        return channel, match
+    channel = repo.find_confirmed_channel_by_scene_alias(text(corp_id), scene)
     if channel:
         if persist_alias:
             repo.update_alias_last_seen_at(text(corp_id), scene)
         return channel, scene_match("scene_alias", scene, channel)
-    channel = repo.find_channel_by_historical_scene_value(scene)
-    if channel:
-        alias = repo.backfill_scene_alias_from_historical_vote(scene, int(channel["id"])) if persist_alias else {}
-        return channel, scene_match("historical_vote", scene, alias or channel)
-    return None, scene_match("not_found", scene)
+    suggestion = repo.find_channel_by_historical_scene_value(scene)
+    match = scene_match("not_found", scene)
+    match["reason"] = "qrcode_scene_unrecognized"
+    if suggestion:
+        match["historical_vote"] = {
+            "suggested_channel_id": int(suggestion.get("id") or 0) or None,
+            "requires_admin_confirmation": True,
+        }
+    return None, match
 
 
 def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempotency_key: str, status: str, channel_id: int | None, scene_value: str, reason: str, request_json: dict[str, Any] | None = None, response_json: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -315,8 +326,9 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     if not scene:
         return {"handled": False, "mode": "channel_not_found", "reason": "missing_channel_scene", "scene_match": match}
     if not channel:
-        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{scene}:not_found", status="failed", channel_id=None, scene_value=scene, reason="channel_not_found")
-        return {"handled": False, "mode": "channel_not_found", "reason": "channel_not_found", "scene_match": match}
+        reason = text(match.get("reason")) or "channel_not_found"
+        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{scene}:not_found", status="failed", channel_id=None, scene_value=scene, reason=reason, response_json={"scene_match": match})
+        return {"handled": False, "mode": "channel_not_found", "reason": reason, "scene_match": match}
 
     command.follow_user_userid = text(command.follow_user_userid) or text(channel.get("owner_staff_id")) or "HuangYouCan"
     channel_id = int(channel["id"])
@@ -566,6 +578,38 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
             "source": "aicrm_next.channel_entry",
             "route_owner": "ai_crm_next",
         }
+    asset = repo.insert_qrcode_asset(
+        channel_id=int(command.channel_id),
+        scene_value=scene_value,
+        config_id=config_id,
+        qr_url=qr_url,
+        corp_id=corp_id,
+        provider_payload_json=dict(wecom_result or {}),
+        status="active",
+        generation_source="next_create_contact_way",
+        created_by=owner_staff_id,
+    )
+    if asset.get("conflict"):
+        repo.upsert_channel_entry_effect_log(
+            effect_type="qrcode_generate",
+            idempotency_key=f"{corp_id}:{command.channel_id}:{scene_value}:qrcode_generate_conflict",
+            status="failed",
+            channel_id=int(command.channel_id),
+            scene_value=scene_value,
+            external_contact_id="",
+            owner_staff_id=owner_staff_id,
+            reason=text(asset.get("reason")) or "qrcode_asset_scene_channel_conflict",
+            request_json=payload,
+            response_json=asset,
+        )
+        return {
+            "ok": False,
+            "reason": text(asset.get("reason")) or "qrcode_asset_scene_channel_conflict",
+            "channel_id": int(command.channel_id),
+            "scene_value": scene_value,
+            "source": "aicrm_next.channel_entry",
+            "route_owner": "ai_crm_next",
+        }
     if previous_scene and previous_scene != scene_value:
         repo.upsert_channel_scene_alias(
             channel_id=int(command.channel_id),
@@ -576,6 +620,7 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
             status="retired",
             source="next_create_contact_way_previous_scene",
         )
+    repo.retire_active_qrcode_assets(int(command.channel_id), except_asset_id=int(asset.get("id") or 0) or None)
     updated = repo.update_channel_qrcode(channel_id=int(command.channel_id), scene_value=scene_value, qr_url=qr_url, config_id=config_id)
     alias = repo.upsert_channel_scene_alias(
         channel_id=int(command.channel_id),
@@ -606,6 +651,7 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
         "config_id": config_id,
         "qr_url": qr_url,
         "alias_id": int(alias.get("id") or 0),
+        "qrcode_asset_id": int(asset.get("id") or 0),
         "channel": channel_payload(updated or {**channel, "scene_value": scene_value, "qr_url": qr_url, "qr_ticket": config_id}),
         "source": "aicrm_next.channel_entry",
         "route_owner": "ai_crm_next",
@@ -620,6 +666,8 @@ def runtime_route_map_payload() -> dict[str, Any]:
             "/wecom/external-contact/callback": "aicrm_next.channel_entry.api",
             "/api/wecom/events": "aicrm_next.channel_entry.api",
             "/api/admin/channels/{channel_id}/qrcode/generate": "aicrm_next.channel_entry.api",
+            "/api/admin/channels/{channel_id}/qrcode/status": "aicrm_next.automation_engine.channels_api",
+            "/api/admin/channels/{channel_id}/qrcode/download": "aicrm_next.automation_engine.channels_api",
         },
         "next_live_callback_gateway_enabled": True,
         "callback_async_enabled": "next_task_queue",

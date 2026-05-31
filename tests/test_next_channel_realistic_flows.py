@@ -39,6 +39,18 @@ class RuntimeHarness:
             "carrier_type": "qrcode",
         }
         self.current_scenes = {"scene-current": self.channel}
+        self.assets = {
+            "scene-current": {
+                "id": 901,
+                "channel_id": 101,
+                "channel_row_id": 101,
+                "scene_value": "scene-current",
+                "channel_scene_value": "scene-current",
+                "channel_qr_url": self.channel["qr_url"],
+                "status": "active",
+                "generation_source": "next_create_contact_way",
+            }
+        }
         self.aliases: dict[str, dict] = {}
         self.historical = {}
         self.bindings = {101: [{"id": 201, "program_id": 301, "program_status": "active"}]}
@@ -66,8 +78,11 @@ class RuntimeHarness:
         self.validate_effect_json = False
 
     def install(self, monkeypatch):
+        monkeypatch.setattr("aicrm_next.channel_entry.repo.find_qrcode_asset_by_scene", self.find_asset)
+        monkeypatch.setattr("aicrm_next.channel_entry.repo.touch_qrcode_asset_callback", lambda asset_id: None)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_value", lambda scene: self.current_scenes.get(scene))
         monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_alias", self.find_alias)
+        monkeypatch.setattr("aicrm_next.channel_entry.repo.find_confirmed_channel_by_scene_alias", self.find_confirmed_alias)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_historical_scene_value", lambda scene: self.historical.get(scene))
         monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_scene_alias", self.upsert_alias)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.backfill_scene_alias_from_historical_vote", self.backfill_alias)
@@ -104,6 +119,20 @@ class RuntimeHarness:
         if not alias or alias.get("status") == "revoked":
             return None
         return {**self.channel, "scene_alias_id": alias["id"], "scene_alias_status": alias["status"], "scene_alias_source": alias["source"]}
+
+    def find_confirmed_alias(self, corp_id: str, scene: str):
+        alias = self.aliases.get(scene)
+        if not alias or alias.get("status") == "revoked":
+            return None
+        if alias.get("source") not in {"next_create_contact_way", "legacy_import_confirmed", "admin_repair_confirmed"}:
+            return None
+        return {**self.channel, "scene_alias_id": alias["id"], "scene_alias_status": alias["status"], "scene_alias_source": alias["source"]}
+
+    def find_asset(self, corp_id: str, scene: str):
+        asset = self.assets.get(scene)
+        if not asset:
+            return None
+        return {**self.channel, **asset, "channel_status": self.channel.get("status")}
 
     def upsert_alias(self, **kwargs):
         scene = kwargs["scene_value"]
@@ -176,12 +205,12 @@ def _command(external="wm-real", state="scene-current", owner="owner-a", welcome
 
 
 def test_realistic_active_program_flow_has_qr_alias_effects_and_member(runtime):
-    runtime.upsert_alias(channel_id=101, scene_value="scene-current", config_id="config-101", qr_url=runtime.channel["qr_url"], status="active", source="generated")
+    runtime.upsert_alias(channel_id=101, scene_value="scene-current", config_id="config-101", qr_url=runtime.channel["qr_url"], status="active", source="next_create_contact_way")
 
     result = process_channel_entry(_command())
 
     assert result["mode"] == "program_admission"
-    assert result["scene_match"]["match_type"] == "current_scene"
+    assert result["scene_match"]["match_type"] == "qrcode_asset_active"
     assert result["program_member_written"] is True
     assert runtime.aliases["scene-current"]["config_id"] == "config-101"
     assert runtime.contacts[0]["owner_staff_id"] == "owner-a"
@@ -235,7 +264,8 @@ def test_no_binding_runs_standalone_baseline(runtime):
 
 def test_scene_alias_is_primary_and_updates_last_seen(runtime):
     runtime.current_scenes = {}
-    runtime.aliases["scene-old"] = {"id": 7, "channel_id": 101, "scene_value": "scene-old", "status": "active", "source": "generated"}
+    runtime.assets = {}
+    runtime.aliases["scene-old"] = {"id": 7, "channel_id": 101, "scene_value": "scene-old", "status": "active", "source": "legacy_import_confirmed"}
 
     result = process_channel_entry(_command(state="scene-old", external="wm-old"))
 
@@ -244,18 +274,17 @@ def test_scene_alias_is_primary_and_updates_last_seen(runtime):
     assert runtime.contacts[0]["external_contact_id"] == "wm-old"
 
 
-def test_historical_fallback_backfills_alias_and_next_scan_uses_alias(runtime):
+def test_historical_fallback_is_diagnostic_only(runtime):
     runtime.current_scenes = {}
+    runtime.assets = {}
     runtime.historical["scene-vote"] = runtime.channel
 
     first_channel, first_match = resolve_channel_for_scene(scene_value="scene-vote", corp_id="ww-test", persist_alias=True)
-    second_channel, second_match = resolve_channel_for_scene(scene_value="scene-vote", corp_id="ww-test", persist_alias=True)
 
-    assert first_channel["id"] == 101
-    assert first_match["match_type"] == "historical_vote"
-    assert runtime.aliases["scene-vote"]["source"] == "historical_backfill"
-    assert second_channel["id"] == 101
-    assert second_match["match_type"] == "scene_alias"
+    assert first_channel is None
+    assert first_match["reason"] == "qrcode_scene_unrecognized"
+    assert first_match["historical_vote"]["suggested_channel_id"] == 101
+    assert "scene-vote" not in runtime.aliases
 
 
 def test_archived_program_keeps_baseline_and_blocks_member(runtime):
@@ -362,7 +391,7 @@ def test_scene_not_found_and_no_welcome_or_no_tag_configs(runtime):
     runtime.current_scenes = {}
     not_found = process_channel_entry(_command(external="wm-not-found", state="missing-scene"))
     assert not_found["handled"] is False
-    assert not_found["reason"] == "channel_not_found"
+    assert not_found["reason"] == "qrcode_scene_unrecognized"
     assert runtime.welcome_calls == []
     assert runtime.tag_calls == []
 
@@ -384,7 +413,7 @@ def test_diagnosis_dry_run_and_repair(runtime):
 
     diagnosis = diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(scene_value="scene-current"))
     assert diagnosis["callback_route_owner"] == "aicrm_next.channel_entry"
-    assert diagnosis["scene_resolve"]["match_type"] == "current_scene"
+    assert diagnosis["scene_resolve"]["match_type"] == "qrcode_asset_active"
     assert diagnosis["welcome_configured"] is True
     assert diagnosis["entry_tag_configured"] is True
     assert diagnosis["recent_automation_channel_entry_effect_log"]
