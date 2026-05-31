@@ -142,13 +142,6 @@ def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
 _LEGACY_GROUP_KEY_SQL = "COALESCE(NULLIF(c.metadata_json->>'group_code', ''), c.campaign_code)"
 _LEGACY_GROUP_KEY_UPDATE_SQL = _LEGACY_GROUP_KEY_SQL.replace("c.", "")
 _LEGACY_GROUP_LABEL_SQL = "COALESCE(MAX(NULLIF(c.metadata_json->>'group_label', '')), MAX(NULLIF(c.display_name, '')), " + _LEGACY_GROUP_KEY_SQL + ")"
-_CLOUD_HAS_RECIPIENTS_SQL = """
-EXISTS (
-    SELECT 1
-    FROM cloud_broadcast_plan_recipients cpr
-    WHERE cpr.plan_id = cloud_broadcast_plans.plan_id
-)
-"""
 _CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL = f"""
 EXISTS (
     SELECT 1
@@ -156,11 +149,13 @@ EXISTS (
     WHERE {_LEGACY_GROUP_KEY_SQL} = cloud_broadcast_plans.plan_id
 )
 """
-_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL = f"""
+_CLOUD_PLAN_HAS_TARGETS_SQL = "COALESCE(candidate_count, 0) > 0"
+_LEGACY_HAS_TARGETED_CLOUD_PLAN_SQL = f"""
 EXISTS (
     SELECT 1
-    FROM cloud_broadcast_plan_recipients cpr
-    WHERE cpr.plan_id = {_LEGACY_GROUP_KEY_SQL}
+    FROM cloud_broadcast_plans p
+    WHERE p.plan_id = {_LEGACY_GROUP_KEY_SQL}
+      AND COALESCE(p.candidate_count, 0) > 0
 )
 """
 
@@ -192,21 +187,27 @@ class PostgresCloudPlanRepository:
     def _stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
         if not plan_ids:
             return {}
-        rows = conn.execute(
-            """
-            SELECT plan_id,
-                   COUNT(*) AS target_count,
-                   COALESCE(SUM(CASE WHEN approval_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
-                   COALESCE(SUM(CASE WHEN approval_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
-                   COALESCE(SUM(CASE WHEN approval_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
-                   COALESCE(SUM(CASE WHEN send_status = 'sent' THEN 1 ELSE 0 END), 0) AS sent_count,
-                   COALESCE(SUM(CASE WHEN send_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
-            FROM cloud_broadcast_plan_recipients
-            WHERE plan_id = ANY(%s)
-            GROUP BY plan_id
-            """,
-            (plan_ids,),
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                """
+                SELECT plan_id,
+                       COUNT(*) AS target_count,
+                       COALESCE(SUM(CASE WHEN approval_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
+                       COALESCE(SUM(CASE WHEN approval_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                       COALESCE(SUM(CASE WHEN approval_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
+                       COALESCE(SUM(CASE WHEN send_status = 'sent' THEN 1 ELSE 0 END), 0) AS sent_count,
+                       COALESCE(SUM(CASE WHEN send_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+                FROM cloud_broadcast_plan_recipients
+                WHERE plan_id = ANY(%s)
+                GROUP BY plan_id
+                """,
+                (plan_ids,),
+            ).fetchall()
+        except Exception as exc:
+            if "cloud_broadcast_plan_recipients" in str(exc) and "permission denied" in str(exc).lower():
+                conn.rollback()
+                return {}
+            raise
         return {str(row["plan_id"]): {key: int(row.get(key) or 0) for key in row.keys() if key != "plan_id"} for row in rows}
 
     def _legacy_stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
@@ -242,7 +243,7 @@ class PostgresCloudPlanRepository:
             params.extend([like, like, like])
         cloud_clauses = [
             *clauses,
-            f"({_CLOUD_HAS_RECIPIENTS_SQL} OR NOT {_CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL})",
+            f"({_CLOUD_PLAN_HAS_TARGETS_SQL} OR NOT {_CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL})",
         ]
         cloud_where = " WHERE " + " AND ".join(cloud_clauses)
         legacy_clauses: list[str] = []
@@ -297,7 +298,7 @@ class PostgresCloudPlanRepository:
                            'legacy_campaign' AS source_type
                     FROM campaigns c
                     LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-                    WHERE NOT {_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL}
+                    WHERE NOT {_LEGACY_HAS_TARGETED_CLOUD_PLAN_SQL}
                     """
                 + legacy_where
                 + f"""
@@ -325,7 +326,7 @@ class PostgresCloudPlanRepository:
                             UNION ALL
                             SELECT {_LEGACY_GROUP_KEY_SQL} AS plan_id FROM campaigns c
                             LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
-                            WHERE NOT {_LEGACY_HAS_MATERIALIZED_CLOUD_RECIPIENTS_SQL}
+                            WHERE NOT {_LEGACY_HAS_TARGETED_CLOUD_PLAN_SQL}
                             """
                         + legacy_where
                         + f"""
@@ -390,11 +391,7 @@ class PostgresCloudPlanRepository:
                 (_text(plan_id),),
             ).fetchone()
             if row:
-                materialized = conn.execute(
-                    "SELECT 1 FROM cloud_broadcast_plan_recipients WHERE plan_id = %s LIMIT 1",
-                    (_text(plan_id),),
-                ).fetchone()
-                if not materialized:
+                if int(row.get("candidate_count") or 0) <= 0:
                     row = self._legacy_group_plan_row(conn, plan_id) or row
             else:
                 row = self._legacy_group_plan_row(conn, plan_id)
@@ -408,9 +405,14 @@ class PostgresCloudPlanRepository:
 
     def plan_stats(self, plan_id: str) -> dict[str, int]:
         with self._connect() as conn:
-            stats = self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
-            if stats:
-                return stats
+            cloud = conn.execute(
+                "SELECT candidate_count FROM cloud_broadcast_plans WHERE plan_id = %s",
+                (_text(plan_id),),
+            ).fetchone()
+            if cloud and int(cloud.get("candidate_count") or 0) > 0:
+                stats = self._stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
+                if stats:
+                    return stats
             return self._legacy_stats_for_plan_ids(conn, [_text(plan_id)]).get(_text(plan_id), {})
 
     def list_recipients(self, plan_id: str, *, status: str = "", limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
@@ -423,6 +425,12 @@ class PostgresCloudPlanRepository:
         limit = _limit(limit, default=50, maximum=200)
         offset = _offset(offset)
         with self._connect() as conn:
+            cloud = conn.execute(
+                "SELECT candidate_count FROM cloud_broadcast_plans WHERE plan_id = %s",
+                (_text(plan_id),),
+            ).fetchone()
+            if not cloud or int(cloud.get("candidate_count") or 0) <= 0:
+                return self._legacy_recipients(conn, _text(plan_id), status=status, limit=limit, offset=offset)
             total = int((conn.execute("SELECT COUNT(*) AS total FROM cloud_broadcast_plan_recipients" + where, tuple(params)).fetchone() or {}).get("total") or 0)
             if total:
                 rows = conn.execute(
@@ -505,15 +513,7 @@ class PostgresCloudPlanRepository:
 
     def get_recipient(self, plan_id: str, recipient_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval
-                FROM cloud_broadcast_plan_recipients
-                WHERE plan_id = %s AND id = %s
-                """,
-                (_text(plan_id), int(recipient_id)),
-            ).fetchone()
-            if not row and int(recipient_id) < 0:
+            if int(recipient_id) < 0:
                 legacy_rows, _total = self._legacy_recipients(conn, _text(plan_id), limit=1, offset=0)
                 row = None
                 legacy_id = abs(int(recipient_id))
@@ -549,6 +549,14 @@ class PostgresCloudPlanRepository:
                             "supports_recipient_approval": False,
                         }
                     )
+            row = conn.execute(
+                """
+                SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval
+                FROM cloud_broadcast_plan_recipients
+                WHERE plan_id = %s AND id = %s
+                """,
+                (_text(plan_id), int(recipient_id)),
+            ).fetchone()
         return _recipient_view(dict(row)) if row else None
 
     def list_recipient_messages(self, recipient_id: int) -> list[dict[str, Any]]:
