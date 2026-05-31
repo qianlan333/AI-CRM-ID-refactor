@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from aicrm_next.main import create_app
+
+ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "cloud_plan_review.html"
+SCRIPT = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "cloud_plan_review.js"
+
+
+def _client(monkeypatch) -> TestClient:
+    monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "cloud-plan-review-frontend-test")
+    return TestClient(create_app())
+
+
+def test_plan_list_page_contract(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/cloud-orchestrator/plans")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "AI 助手 · 运营计划审阅" in html
+    assert "待审批计划" in html
+    assert "今日预计触达" in html
+    assert "执行中计划" in html
+    assert "一级页加载人员" in html
+    assert "0 人" in html
+    assert "计划列表加载中" in html
+    assert "查看详情" in html
+    assert "data-page-mode=\"list\"" in html
+    assert "cloud_plan_review.js" in html
+    for forbidden in ["进入审批", "全部启动", "批量审批", "展开子计划", "加载子计划", "cloud-camp-group-child"]:
+        assert forbidden not in html
+
+
+def test_plan_detail_page_contract(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.get("/admin/cloud-orchestrator/plans/plan_probe")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "AI 助手 · 计划二级明细" in html
+    assert "批准当前计划" in html
+    assert "拒绝计划" in html
+    assert "返回一级页" in html
+    assert "目标人员" in html
+    assert "话术次数" in html
+    assert "批准这个人发送" in html
+    assert "拒绝这个人" in html
+    assert "继续加载 50 人" in html
+    assert "已加载 0 / 0 人" in html
+    assert "data-page-mode=\"detail\"" in html
+    for forbidden in ["进入审批", "全部启动", "批量审批", "展开子计划", "加载子计划", "话术节奏", "cloud-camp-group-child"]:
+        assert forbidden not in html
+
+
+def test_plan_review_static_contract():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8")
+    combined = template + "\n" + script
+
+    assert "params.set(\"limit\", \"20\")" in script
+    assert "limit: String(PAGE_SIZE)" in script
+    assert "PAGE_SIZE = 50" in script
+    assert "recipients?${params.toString()}" in script
+    assert "updateRecipientInState(payload.recipient)" in script
+    for forbidden in [
+        "limit', '5000",
+        "limit\", \"5000",
+        "进入审批",
+        "全部启动",
+        "批量审批",
+        "cloud-camp-group-child",
+        "pool key",
+        "profile key",
+        "behavior tier",
+    ]:
+        assert forbidden not in combined

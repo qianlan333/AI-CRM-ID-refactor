@@ -502,7 +502,7 @@ def admin_hxc_send_config(request: Request):
 @router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
 def admin_cloud_orchestrator(request: Request):
     return RedirectResponse(
-        url=_legacy_url_for("api.admin_cloud_orchestrator_campaigns_workspace"),
+        url=_legacy_url_for("api.admin_cloud_orchestrator_plans_workspace"),
         status_code=302,
     )
 
