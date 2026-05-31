@@ -123,7 +123,7 @@ class PostgresMediaLibraryRepository:
         return self._serialize(kind, dict(row), include_data=include_data)
 
     def get_image_variant(self, image_id: str, variant_key: str) -> dict[str, Any] | None:
-        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720"}:
+        if variant_key not in {"original", "thumb_160", "thumb_320", "preview_720", "mobile_1080", "large_1440"}:
             return None
         image_id_int = int(image_id)
         with self._connect() as conn:

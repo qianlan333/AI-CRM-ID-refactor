@@ -10,7 +10,7 @@ from typing import Any
 from aicrm_next.shared.errors import ContractError
 
 
-VARIANT_KEYS = {"original", "thumb_160", "thumb_320", "preview_720"}
+VARIANT_KEYS = {"original", "thumb_160", "thumb_320", "preview_720", "mobile_1080", "large_1440"}
 THUMBNAIL_SIZE_TO_VARIANT = {160: "thumb_160", 320: "thumb_320", 720: "preview_720"}
 ALLOWED_THUMBNAIL_SIZES = set(THUMBNAIL_SIZE_TO_VARIANT)
 
@@ -69,7 +69,9 @@ def add_image_variant_urls(item: dict[str, Any], image_id: int | str | None = No
         item["thumb_160_url"] = variant_url(target_id, "thumb_160")
         item["thumb_320_url"] = variant_url(target_id, "thumb_320")
         item["thumb_url"] = item["thumb_320_url"]
-        item["preview_url"] = variant_url(target_id, "preview_720")
+        item["preview_url"] = variant_url(target_id, "mobile_1080")
+        item["mobile_1080_url"] = variant_url(target_id, "mobile_1080")
+        item["large_1440_url"] = variant_url(target_id, "large_1440")
         item["original_url"] = variant_url(target_id, "original")
     item.setdefault("width", 0)
     item.setdefault("height", 0)
@@ -194,6 +196,12 @@ def generate_image_variants(*, image_id: int | str, data_base64: str, mime_type:
     preview = source.copy()
     preview.thumbnail((720, 720), Image.Resampling.LANCZOS)
     add_variant("preview_720", preview)
+    mobile = source.copy()
+    mobile.thumbnail((1080, 1080), Image.Resampling.LANCZOS)
+    add_variant("mobile_1080", mobile)
+    large = source.copy()
+    large.thumbnail((1440, 1440), Image.Resampling.LANCZOS)
+    add_variant("large_1440", large)
     return variants
 
 

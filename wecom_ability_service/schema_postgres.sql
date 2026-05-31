@@ -1113,6 +1113,10 @@ CREATE TABLE IF NOT EXISTS radar_links (
     file_name_snapshot TEXT NOT NULL DEFAULT '',
     mime_type_snapshot TEXT NOT NULL DEFAULT '',
     file_size_snapshot BIGINT NOT NULL DEFAULT 0,
+    pdf_processing_status TEXT NOT NULL DEFAULT '',
+    pdf_page_count INTEGER NOT NULL DEFAULT 0,
+    pdf_preview_error_code TEXT NOT NULL DEFAULT '',
+    pdf_preview_error_message TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     auth_required BOOLEAN NOT NULL DEFAULT TRUE,
     source_channel TEXT NOT NULL DEFAULT '',
@@ -1130,6 +1134,10 @@ ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS preview_mode TEXT NOT NULL DEFA
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS file_name_snapshot TEXT NOT NULL DEFAULT '';
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS mime_type_snapshot TEXT NOT NULL DEFAULT '';
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS file_size_snapshot BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS pdf_processing_status TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS pdf_page_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS pdf_preview_error_code TEXT NOT NULL DEFAULT '';
+ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS pdf_preview_error_message TEXT NOT NULL DEFAULT '';
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
 ALTER TABLE radar_links ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 UPDATE radar_links SET target_type = 'link' WHERE target_type IS NULL OR target_type = '';
@@ -1183,6 +1191,34 @@ ON radar_click_events (link_id, stage, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_radar_click_events_identity
 ON radar_click_events (link_id, unionid, openid, external_userid);
+
+CREATE TABLE IF NOT EXISTS radar_pdf_preview_assets (
+    id BIGSERIAL PRIMARY KEY,
+    media_item_id TEXT NOT NULL,
+    radar_link_id BIGINT REFERENCES radar_links(id) ON DELETE CASCADE,
+    link_id BIGINT NOT NULL REFERENCES radar_links(id) ON DELETE CASCADE,
+    source_file_hash TEXT NOT NULL DEFAULT '',
+    page_no INTEGER NOT NULL,
+    page_count INTEGER NOT NULL DEFAULT 0,
+    preview_mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    preview_storage_key TEXT NOT NULL DEFAULT '',
+    preview_data_base64 TEXT NOT NULL DEFAULT '',
+    preview_public_url TEXT NOT NULL DEFAULT '',
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    file_size BIGINT NOT NULL DEFAULT 0,
+    render_dpi INTEGER NOT NULL DEFAULT 144,
+    render_quality INTEGER NOT NULL DEFAULT 82,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'failed')),
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (link_id, media_item_id, page_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_pdf_preview_assets_link
+ON radar_pdf_preview_assets (link_id, media_item_id, page_no);
 
 CREATE TABLE IF NOT EXISTS questionnaires (
     id BIGSERIAL PRIMARY KEY,
