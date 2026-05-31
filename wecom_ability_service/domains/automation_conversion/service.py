@@ -1731,6 +1731,8 @@ def handle_qrcode_enter_from_callback(
     operator_id: str = "",
     follow_user_userid: str = "",
     send_welcome_message: bool = False,
+    event_log_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     from . import member_state_service
 
@@ -1741,6 +1743,8 @@ def handle_qrcode_enter_from_callback(
         operator_id=operator_id,
         follow_user_userid=follow_user_userid,
         send_welcome_message=send_welcome_message,
+        event_log_id=event_log_id,
+        dry_run=dry_run,
     )
 
 

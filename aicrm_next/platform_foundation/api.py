@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from .application import GetSystemHealthQuery
+from aicrm_next.shared.runtime import runtime_route_map_state
 
 router = APIRouter()
 
@@ -15,3 +16,8 @@ def health() -> dict:
 @router.get("/api/system/health")
 def system_health() -> dict:
     return GetSystemHealthQuery()()
+
+
+@router.get("/api/system/runtime-route-map")
+def runtime_route_map() -> dict:
+    return runtime_route_map_state()
