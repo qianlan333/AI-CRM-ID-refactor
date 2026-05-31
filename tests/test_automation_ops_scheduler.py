@@ -37,6 +37,11 @@ def test_automation_ops_scheduler_calls_operation_task_and_group_ops(monkeypatch
     monkeypatch.setattr(scheduler, "_operation_task_summary", fake_operation_task_summary)
     monkeypatch.setattr(scheduler, "_group_ops_summary", fake_group_ops_summary)
     monkeypatch.setattr(scheduler, "_hxc_dashboard_summary", fake_hxc_dashboard_summary)
+    monkeypatch.setattr(
+        scheduler,
+        "_broadcast_feishu_hourly_summary",
+        lambda *, now: {"attempted": False, "skipped_reason": "not_hourly_report_minute"},
+    )
 
     now = datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc)
     summary = scheduler.run(now=now, operator="pytest")
@@ -55,8 +60,77 @@ def test_automation_ops_scheduler_calls_operation_task_and_group_ops(monkeypatch
         "group_ops_skipped_duplicate": 6,
         "operation_task_enqueued_jobs": 2,
         "hxc_dashboard_refresh": {"attempted": False, "skipped_reason": "fresh_snapshot"},
+        "broadcast_feishu_hourly_report": {"attempted": False, "skipped_reason": "not_hourly_report_minute"},
         "errors": [],
     }
+
+
+def test_automation_ops_scheduler_runs_broadcast_feishu_hourly_report_at_minute_five(monkeypatch):
+    calls: list[str] = []
+
+    monkeypatch.setattr(scheduler, "_operation_task_summary", lambda *, now, operator: {"enqueued_count": 0})
+    monkeypatch.setattr(
+        scheduler,
+        "_group_ops_summary",
+        lambda *, now, operator: {
+            "group_ops_scanned_plans": 0,
+            "group_ops_due_nodes": 0,
+            "group_ops_enqueued_jobs": 0,
+            "group_ops_skipped_future": 0,
+            "group_ops_skipped_duplicate": 0,
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr(scheduler, "_hxc_dashboard_summary", lambda *, now, operator: {"attempted": False})
+
+    def fake_broadcast_feishu_summary(*, now):
+        calls.append(now.isoformat())
+        return {"attempted": True, "status": "sent", "summary": {"totalJobs": 827, "successJobs": 827, "failedJobs": 0}}
+
+    monkeypatch.setattr(scheduler, "_broadcast_feishu_hourly_summary", fake_broadcast_feishu_summary)
+
+    summary = scheduler.run(now=datetime(2026, 5, 30, 3, 5, tzinfo=timezone.utc), operator="pytest")
+
+    assert calls == ["2026-05-30T03:05:00+00:00"]
+    assert summary["broadcast_feishu_hourly_report"] == {
+        "attempted": True,
+        "status": "sent",
+        "summary": {"totalJobs": 827, "successJobs": 827, "failedJobs": 0},
+    }
+    assert summary["errors"] == []
+
+
+def test_automation_ops_scheduler_reports_broadcast_feishu_hourly_failure(monkeypatch):
+    monkeypatch.setattr(scheduler, "_operation_task_summary", lambda *, now, operator: {"enqueued_count": 0})
+    monkeypatch.setattr(
+        scheduler,
+        "_group_ops_summary",
+        lambda *, now, operator: {
+            "group_ops_scanned_plans": 0,
+            "group_ops_due_nodes": 0,
+            "group_ops_enqueued_jobs": 0,
+            "group_ops_skipped_future": 0,
+            "group_ops_skipped_duplicate": 0,
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr(scheduler, "_hxc_dashboard_summary", lambda *, now, operator: {"attempted": False})
+    monkeypatch.setattr(
+        scheduler,
+        "_broadcast_feishu_hourly_summary",
+        lambda *, now: {"attempted": True, "status": "failed", "message": "飞书小时报发送失败"},
+    )
+
+    summary = scheduler.run(now=datetime(2026, 5, 30, 3, 5, tzinfo=timezone.utc), operator="pytest")
+
+    assert summary["broadcast_feishu_hourly_report"] == {
+        "attempted": True,
+        "status": "failed",
+        "message": "飞书小时报发送失败",
+    }
+    assert summary["errors"] == [
+        {"scope": "broadcast_feishu_hourly_report", "error": "飞书小时报发送失败"}
+    ]
 
 
 def test_hxc_dashboard_scheduler_skips_fresh_snapshot(monkeypatch):

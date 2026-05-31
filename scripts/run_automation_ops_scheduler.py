@@ -20,6 +20,7 @@ ensure_repo_root_on_path()
 logger = logging.getLogger("automation_ops_scheduler")
 DEFAULT_OPERATOR = "automation_ops_scheduler"
 HXC_DASHBOARD_REFRESH_INTERVAL = timedelta(minutes=30)
+FEISHU_HOURLY_REPORT_MINUTE = 5
 
 
 def _operation_task_summary(*, now: datetime, operator: str) -> dict[str, Any]:
@@ -83,6 +84,18 @@ def _hxc_dashboard_summary(*, now: datetime, operator: str) -> dict[str, Any]:
     }
 
 
+def _broadcast_feishu_hourly_summary(*, now: datetime) -> dict[str, Any]:
+    if now.minute != FEISHU_HOURLY_REPORT_MINUTE:
+        return {"attempted": False, "skipped_reason": "not_hourly_report_minute"}
+
+    from aicrm_next.admin_jobs.notification_settings import (
+        send_broadcast_job_hourly_feishu_report,
+    )
+
+    result = send_broadcast_job_hourly_feishu_report(now=now)
+    return {"attempted": True, **result}
+
+
 def run(*, now: datetime | None = None, operator: str | None = None) -> dict[str, Any]:
     scanned_at = now or datetime.now(timezone.utc)
     if scanned_at.tzinfo is None:
@@ -92,6 +105,7 @@ def run(*, now: datetime | None = None, operator: str | None = None) -> dict[str
     operation_result: dict[str, Any] = {}
     group_result: dict[str, Any] = {}
     hxc_dashboard_result: dict[str, Any] = {}
+    broadcast_feishu_result: dict[str, Any] = {}
 
     try:
         operation_result = _operation_task_summary(now=scanned_at, operator=actor)
@@ -114,6 +128,19 @@ def run(*, now: datetime | None = None, operator: str | None = None) -> dict[str
         logger.exception("hxc_dashboard scheduler failed")
         errors.append({"scope": "hxc_dashboard", "error": str(exc)})
 
+    try:
+        broadcast_feishu_result = _broadcast_feishu_hourly_summary(now=scanned_at)
+        if broadcast_feishu_result.get("status") == "failed":
+            errors.append(
+                {
+                    "scope": "broadcast_feishu_hourly_report",
+                    "error": broadcast_feishu_result.get("message") or "send_failed",
+                }
+            )
+    except Exception as exc:
+        logger.exception("broadcast Feishu hourly report failed")
+        errors.append({"scope": "broadcast_feishu_hourly_report", "error": str(exc)})
+
     return {
         "scanned_at": scanned_at.isoformat(),
         "group_ops_scanned_plans": int(group_result.get("group_ops_scanned_plans") or 0),
@@ -123,6 +150,7 @@ def run(*, now: datetime | None = None, operator: str | None = None) -> dict[str
         "group_ops_skipped_duplicate": int(group_result.get("group_ops_skipped_duplicate") or 0),
         "operation_task_enqueued_jobs": int(operation_result.get("enqueued_count") or 0),
         "hxc_dashboard_refresh": hxc_dashboard_result,
+        "broadcast_feishu_hourly_report": broadcast_feishu_result,
         "errors": errors,
     }
 
