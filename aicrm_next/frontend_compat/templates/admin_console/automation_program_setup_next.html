@@ -5,13 +5,9 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
 <style>
   .setup-shell { display: grid; gap: 14px; max-width: 1800px; min-width: 0; margin: 0 auto; }
-  .setup-titlebar { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; padding-bottom: 12px; border-bottom: 1px solid rgba(15,23,42,.08); }
-  .setup-titlebar h1 { margin: 0; color: #111827; font-size: 28px; line-height: 1.2; }
-  .setup-titlebar .setup-muted { margin-top: 4px; }
-  .setup-title-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; box-shadow: 0 8px 18px rgba(15,23,42,.04); }
-  .setup-title-tabs .ac-workspace-tab { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; box-shadow: none; transform: none; }
-  .setup-title-tabs .ac-workspace-tab.is-active { background: #eff6ff; color: #1456f0; box-shadow: inset 0 0 0 1px #bfdbfe; }
-  .setup-title-tabs .ac-workspace-tab__title { font-size: 14px; }
+  .setup-topbar-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; box-shadow: 0 8px 18px rgba(15,23,42,.04); }
+  .setup-topbar-tab { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border-radius: 9px; color: #111827; font-weight: 800; text-decoration: none; }
+  .setup-topbar-tab.is-active { background: #eff6ff; color: #1456f0; box-shadow: inset 0 0 0 1px #bfdbfe; }
   .setup-panel h2, .setup-panel h3 { margin: 0; color: #111827; }
   .setup-muted { margin: 0; color: #64748b; line-height: 1.62; }
   .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
@@ -20,6 +16,7 @@
   .setup-step span { font-size: 12px; font-weight: 800; }
   .setup-step strong { font-size: 16px; line-height: 1.35; }
   .setup-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: #fff; box-shadow: 0 14px 34px rgba(15,23,42,.05); }
+  .setup-panel--operations { padding: 0; border: 0; background: transparent; box-shadow: none; }
   .setup-panel-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
   .setup-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .setup-field { display: grid; gap: 7px; }
@@ -103,7 +100,7 @@
   .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 1080px) {
     .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid, .setup-category-grid, .setup-category-list, .setup-audience-row, .setup-seg-toolbar { grid-template-columns: 1fr; }
-    .setup-panel-head, .setup-titlebar { align-items: stretch; flex-direction: column; }
+    .setup-panel-head { align-items: stretch; flex-direction: column; }
     .setup-footer { align-items: stretch; flex-direction: column; }
   }
 </style>
@@ -118,22 +115,6 @@
 {% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "停用" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
 
 <section class="setup-shell" data-setup-root data-urls='{{ urls|tojson|forceescape }}' data-program-id="{{ program.id or '' }}">
-  <header class="setup-titlebar">
-    <div>
-      <h1>自动化运营方案</h1>
-      <p class="setup-muted">按方案配置基础信息、入口渠道、分层规则、入池规则、运营编排和发布检查。</p>
-    </div>
-    {% if workspace_tabs %}
-    <nav class="setup-title-tabs" aria-label="自动化运营方案导航">
-      {% for item in workspace_tabs %}
-      <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
-        <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
-      </a>
-      {% endfor %}
-    </nav>
-    {% endif %}
-  </header>
-
   <nav class="setup-steps" aria-label="配置步骤">
     {% for item in workspace.steps or [] %}
     <a class="setup-step{% if item.key == current_step %} is-active{% endif %}" href="{{ urls['base'] }}?step={{ item.key }}">
@@ -538,12 +519,6 @@
   </div>
   {% elif current_step == "operations" %}
   <section class="setup-panel setup-panel--operations">
-    <div class="setup-panel-head">
-      <div>
-        <h2>运营编排</h2>
-        <p class="setup-muted">直接编辑运营任务、分组、触发条件和内容模式；所有操作走当前 Next 任务 API。</p>
-      </div>
-    </div>
     {% set operations_workspace = workspace.operations_workspace or {} %}
     {% include "admin_console/_automation_operation_orchestration_panel.html" %}
   </section>
