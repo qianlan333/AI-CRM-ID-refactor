@@ -22,7 +22,8 @@
   .radar-button[disabled] { opacity: .62; cursor: progress; }
   .radar-media-box { display: grid; gap: 10px; padding: 14px; border: 1px dashed #93c5fd; border-radius: 10px; background: #eff6ff; }
   .radar-media-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .radar-selected { padding: 10px 12px; border-radius: 8px; background: #fff; color: #1f2937; }
+  .radar-selected { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #fff; color: #1f2937; }
+  .radar-selected strong { color: #111827; }
   .radar-toast { position: fixed; right: 24px; bottom: 24px; z-index: 40; padding: 10px 14px; border-radius: 10px; background: #111827; color: #fff; }
   .radar-toast.is-error { background: #b91c1c; }
   @media (max-width: 760px) {
@@ -90,7 +91,7 @@
           <div class="radar-media-actions">
             <button class="radar-button" type="button" data-pick-media>从素材库选择</button>
             <label class="radar-button">
-              上传文件
+              上传新素材
               <input name="content_file" type="file" hidden>
             </label>
           </div>
@@ -128,6 +129,13 @@
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const messageFrom = (payload, fallback) => String(payload?.error || payload?.detail || payload?.message || fallback);
+  function formatBytes(value) {
+    const size = Number(value || 0);
+    if (!size) return "-";
+    if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+    if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${size} B`;
+  }
   function toast(message, isError = false) {
     toastEl.textContent = message;
     toastEl.className = `radar-toast${isError ? " is-error" : ""}`;
@@ -141,9 +149,20 @@
     if (!response.ok || payload.ok === false) throw new Error(messageFrom(payload, "请求失败"));
     return payload;
   }
-  function setSelectedMedia(id, label) {
+  function setSelectedMedia(id, detail = {}) {
     form.elements.media_item_id.value = String(id || "");
-    selectedMedia.innerHTML = id ? `<strong>${escapeHtml(label || id)}</strong><div class="radar-muted">${escapeHtml(String(id))}</div>` : "尚未选择素材";
+    if (!id) {
+      selectedMedia.textContent = "尚未选择素材";
+      return;
+    }
+    const title = detail.title || detail.file_name || detail.name || id;
+    const mime = detail.mime_type || detail.content_type || detail.metadata?.mime_type || "-";
+    const size = detail.file_size || detail.size || detail.metadata?.file_size || 0;
+    selectedMedia.innerHTML = `
+      <strong>${escapeHtml(title)}</strong>
+      <div class="radar-muted">${escapeHtml(mime)} · ${escapeHtml(formatBytes(size))}</div>
+      <div class="radar-muted">media_item_id: ${escapeHtml(String(id))}</div>
+    `;
   }
   function updateTypeView() {
     const type = typeEl.value;
@@ -205,7 +224,11 @@
     form.elements.source_channel.value = currentLink.source_channel || "";
     form.elements.staff_id.value = currentLink.staff_id || "";
     form.elements.campaign_id.value = currentLink.campaign_id || "";
-    setSelectedMedia(currentLink.media_item_id, currentLink.file_name_snapshot || currentLink.media_item_id);
+    setSelectedMedia(currentLink.media_item_id, {
+      title: currentLink.file_name_snapshot || currentLink.media_item_id,
+      mime_type: currentLink.mime_type_snapshot,
+      file_size: currentLink.file_size_snapshot,
+    });
     updateTypeView();
   }
   async function init() {
@@ -229,13 +252,14 @@
       limit: 1,
       selectedIds: [form.elements.media_item_id.value],
       title: type === "image" ? "选择图片素材" : "选择 PDF 素材",
+      allowedMimeTypes: type === "pdf" ? ["application/pdf"] : [],
       onConfirm: (item) => {
         const mime = String(item.mime_type || item.metadata?.mime_type || "");
         if (type === "pdf" && mime !== "application/pdf") {
           toast("PDF 雷达只能选择 PDF 附件", true);
           return;
         }
-        setSelectedMedia(item.library_id, item.title || item.metadata?.file_name || item.library_id);
+        setSelectedMedia(item.library_id, item);
         fileEl.value = "";
       },
     });
@@ -245,8 +269,11 @@
     if (!file) return;
     try {
       validateFile(typeEl.value, file);
-      setSelectedMedia(form.elements.media_item_id.value, file.name);
-      selectedMedia.innerHTML = `<strong>${escapeHtml(file.name)}</strong><div class="radar-muted">保存时上传</div>`;
+      selectedMedia.innerHTML = `
+        <strong>${escapeHtml(file.name)}</strong>
+        <div class="radar-muted">${escapeHtml(file.type || "-")} · ${escapeHtml(formatBytes(file.size))}</div>
+        <div class="radar-muted">保存时上传</div>
+      `;
     } catch (error) {
       fileEl.value = "";
       toast(error.message, true);
@@ -274,9 +301,8 @@
       if (type !== "link" && !payload.media_item_id) throw new Error("请选择或上传素材");
       const url = mode === "edit" ? `/api/admin/radar-links/${linkId}` : "/api/admin/radar-links";
       const result = await fetchJson(url, {method: mode === "edit" ? "PATCH" : "POST", body: JSON.stringify(payload)});
-      const saved = result.radar_link || {};
       toast("已保存内容雷达");
-      window.setTimeout(() => { window.location.href = `/admin/radar-links/${saved.id || linkId}/detail`; }, 500);
+      window.setTimeout(() => { window.location.href = "/admin/radar-links"; }, 500);
     } catch (error) {
       toast(error.message || "保存失败", true);
     } finally {

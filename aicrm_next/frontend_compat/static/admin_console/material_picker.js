@@ -16,6 +16,7 @@
   }
 
   function normalizeItem(raw) {
+    const metadata = raw.metadata && typeof raw.metadata === "object" ? raw.metadata : {};
     return {
       type: String(raw.type || ""),
       library_id: Number(raw.library_id || 0),
@@ -23,7 +24,10 @@
       subtitle: String(raw.subtitle || ""),
       thumbnail_url: String(raw.thumbnail_url || ""),
       enabled: raw.enabled !== false,
-      metadata: raw.metadata && typeof raw.metadata === "object" ? raw.metadata : {},
+      mime_type: String(raw.mime_type || metadata.mime_type || ""),
+      file_name: String(raw.file_name || metadata.file_name || raw.title || ""),
+      file_size: Number(raw.file_size || metadata.file_size || 0),
+      metadata,
     };
   }
 
@@ -45,6 +49,7 @@
     if (!TYPE_LABELS[type]) throw new Error("未知素材类型");
     const selectedIds = new Set((options.selectedIds || []).map((id) => Number(id)));
     const limit = Number(options.limit || 1);
+    const allowedMimeTypes = new Set((options.allowedMimeTypes || []).map((value) => String(value || "").trim()).filter(Boolean));
     const onConfirm = typeof options.onConfirm === "function" ? options.onConfirm : function () {};
     const onCancel = typeof options.onCancel === "function" ? options.onCancel : function () {};
 
@@ -113,6 +118,9 @@
       grid.innerHTML = "";
       try {
         items = await fetchItems(type, query);
+        if (allowedMimeTypes.size) {
+          items = items.filter((item) => allowedMimeTypes.has(String(item.mime_type || item.metadata?.mime_type || "")));
+        }
         render();
       } catch (error) {
         items = [];
