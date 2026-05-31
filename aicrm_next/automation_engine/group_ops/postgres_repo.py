@@ -68,11 +68,13 @@ class PostgresGroupOpsRepository:
     def list_plans(self, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
         keyword = clean_text(filters.get("keyword")).lower()
         plan_type = clean_text(filters.get("plan_type")).lower()
+        operator_member_id = clean_text(filters.get("operator_member_id") or filters.get("operatorMemberId"))
         status = clean_text(filters.get("status")).lower()
         clauses = ["(archived_at IS NULL)"]
         params: dict[str, Any] = {
             "keyword": f"%{keyword}%",
             "plan_type": plan_type,
+            "operator_member_id": operator_member_id,
             "status": status,
             "limit": max(1, _int(filters.get("limit")) or 50),
             "offset": max(0, _int(filters.get("offset"))),
@@ -81,6 +83,8 @@ class PostgresGroupOpsRepository:
             clauses.append("(LOWER(plan_name) LIKE :keyword OR LOWER(plan_code) LIKE :keyword OR LOWER(owner_userid) LIKE :keyword)")
         if plan_type:
             clauses.append("plan_type = :plan_type")
+        if operator_member_id:
+            clauses.append("owner_userid = :operator_member_id")
         if status:
             clauses.append("status = :status")
         where = f"WHERE {' AND '.join(clauses)}"
@@ -136,9 +140,11 @@ class PostgresGroupOpsRepository:
         normalized = normalize_plan_payload(payload)
         webhook_key = ""
         webhook_token_hash = ""
+        plaintext_token = ""
         if normalized["plan_type"] == "webhook":
             webhook_key = generate_webhook_key(normalized["plan_name"])
-            webhook_token_hash = hash_webhook_token(generate_webhook_token())
+            plaintext_token = generate_webhook_token()
+            webhook_token_hash = hash_webhook_token(plaintext_token)
         try:
             with self._engine.begin() as conn:
                 row = conn.execute(
@@ -167,7 +173,11 @@ class PostgresGroupOpsRepository:
                         text("UPDATE automation_group_ops_plans SET plan_code = :plan_code WHERE id = :plan_id"),
                         {"plan_code": f"group_plan_{plan_id:03d}", "plan_id": plan_id},
                     )
-                return self._get_plan_sql(conn, plan_id) or {}
+                self._update_plan_extra_fields(conn, plan_id, normalized)
+                result = self._get_plan_sql(conn, plan_id) or {}
+                if plaintext_token:
+                    result["plaintext_token"] = plaintext_token
+                return result
         except IntegrityError as exc:
             raise ContractError("group ops plan code or webhook key already exists") from exc
         except SQLAlchemyError as exc:
@@ -196,6 +206,7 @@ class PostgresGroupOpsRepository:
                     ),
                     {**normalized, "plan_code": normalized["plan_code"] or current["plan_code"], "plan_id": int(plan_id)},
                 )
+                self._update_plan_extra_fields(conn, int(plan_id), normalized)
                 return self._get_plan_sql(conn, int(plan_id)) or {}
         except NotFoundError:
             raise
@@ -674,6 +685,542 @@ class PostgresGroupOpsRepository:
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 
+    def archive_plan(self, plan_id: int, *, operator: str = "system") -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                result = conn.execute(
+                    text(
+                        """
+                        UPDATE automation_group_ops_plans
+                        SET status = 'disabled',
+                            updated_by = :operator,
+                            updated_at = CURRENT_TIMESTAMP,
+                            archived_at = CURRENT_TIMESTAMP
+                        WHERE id = :plan_id AND archived_at IS NULL
+                        """
+                    ),
+                    {"plan_id": int(plan_id), "operator": clean_text(operator)},
+                )
+                if not result.rowcount:
+                    raise NotFoundError("group ops plan not found")
+                return self._get_plan_sql(conn, int(plan_id)) or {}
+        except NotFoundError:
+            raise
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def replace_plan_scopes(self, plan_id: int, *, scope_type: str, scope_ref_ids: list[str]) -> list[dict[str, Any]]:
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text("DELETE FROM automation_group_ops_plan_scope WHERE plan_id = :plan_id AND scope_type = :scope_type"),
+                    {"plan_id": int(plan_id), "scope_type": clean_text(scope_type)},
+                )
+                for ref_id in scope_ref_ids:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO automation_group_ops_plan_scope (plan_id, scope_type, scope_ref_id)
+                            VALUES (:plan_id, :scope_type, :scope_ref_id)
+                            """
+                        ),
+                        {"plan_id": int(plan_id), "scope_type": clean_text(scope_type), "scope_ref_id": clean_text(ref_id)},
+                    )
+            return self.list_plan_scopes(int(plan_id), scope_type=scope_type)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_plan_scopes(self, plan_id: int, scope_type: str = "") -> list[dict[str, Any]]:
+        clauses = ["plan_id = :plan_id"]
+        params = {"plan_id": int(plan_id), "scope_type": clean_text(scope_type)}
+        if clean_text(scope_type):
+            clauses.append("scope_type = :scope_type")
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT id, plan_id, scope_type, scope_ref_id, created_at
+                        FROM automation_group_ops_plan_scope
+                        WHERE {' AND '.join(clauses)}
+                        ORDER BY id ASC
+                        """
+                    ),
+                    params,
+                ).fetchall()
+                return [
+                    {
+                        "id": _int((_as_mapping(row) or {}).get("id")),
+                        "plan_id": _int((_as_mapping(row) or {}).get("plan_id")),
+                        "scope_type": clean_text((_as_mapping(row) or {}).get("scope_type")),
+                        "scope_ref_id": clean_text((_as_mapping(row) or {}).get("scope_ref_id")),
+                        "created_at": _iso((_as_mapping(row) or {}).get("created_at")),
+                    }
+                    for row in rows
+                ]
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_plan_members(self, plan_id: int, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+        clauses = ["plan_id = :plan_id", "status <> 'removed'"]
+        params = {
+            "plan_id": int(plan_id),
+            "layer_key": clean_text(filters.get("layer_key")),
+            "source_type": clean_text(filters.get("source_type")),
+            "keyword": f"%{clean_text(filters.get('keyword')).lower()}%",
+            "limit": max(1, _int(filters.get("limit")) or 50),
+            "offset": max(0, _int(filters.get("offset"))),
+        }
+        if params["layer_key"]:
+            clauses.append("layer_key = :layer_key")
+        if params["source_type"]:
+            clauses.append("source_type = :source_type")
+        if clean_text(filters.get("keyword")):
+            clauses.append("(LOWER(user_id) LIKE :keyword OR LOWER(external_user_id) LIKE :keyword OR LOWER(group_id) LIKE :keyword)")
+        where = " AND ".join(clauses)
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text(f"SELECT * FROM automation_group_ops_plan_member WHERE {where} ORDER BY id ASC LIMIT :limit OFFSET :offset"), params).fetchall()
+                total = conn.execute(text(f"SELECT COUNT(*) FROM automation_group_ops_plan_member WHERE {where}"), {k: v for k, v in params.items() if k not in {"limit", "offset"}}).scalar_one()
+                return [self._row_to_plan_member(_as_mapping(row) or {}) for row in rows], int(total or 0)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def upsert_plan_members(self, plan_id: int, members: list[dict[str, Any]], *, source_type: str, source_ref_id: str = "") -> int:
+        count = 0
+        try:
+            with self._engine.begin() as conn:
+                for member in members:
+                    external_user_id = clean_text(member.get("external_user_id") or member.get("external_userid") or member.get("externalUserId"))
+                    user_id = clean_text(member.get("user_id") or member.get("userId"))
+                    group_id = clean_text(member.get("group_id") or member.get("groupId") or member.get("chat_id"))
+                    if not (external_user_id or user_id or group_id):
+                        continue
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO automation_group_ops_plan_member (
+                                plan_id, member_key, user_id, external_user_id, group_id, layer_key,
+                                source_type, source_ref_id, status, joined_at, updated_at
+                            )
+                            VALUES (
+                                :plan_id, :member_key, :user_id, :external_user_id, :group_id, :layer_key,
+                                :source_type, :source_ref_id, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            )
+                            ON CONFLICT (plan_id, member_key)
+                            DO UPDATE SET
+                                layer_key = excluded.layer_key,
+                                source_type = excluded.source_type,
+                                source_ref_id = excluded.source_ref_id,
+                                status = 'active',
+                                updated_at = CURRENT_TIMESTAMP
+                            """
+                        ),
+                        {
+                            "plan_id": int(plan_id),
+                            "member_key": external_user_id or user_id or group_id,
+                            "user_id": user_id,
+                            "external_user_id": external_user_id,
+                            "group_id": group_id,
+                            "layer_key": clean_text(member.get("layer_key") or member.get("layerKey")),
+                            "source_type": clean_text(source_type),
+                            "source_ref_id": clean_text(source_ref_id or member.get("source_ref_id") or member.get("sourceRefId")),
+                        },
+                    )
+                    count += 1
+            return count
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def get_segmentation(self, plan_id: int) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(text("SELECT * FROM automation_group_ops_plan_segmentation WHERE plan_id = :plan_id LIMIT 1"), {"plan_id": int(plan_id)}).fetchone()
+                return self._row_to_segmentation(_as_mapping(row)) if row else None
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def save_segmentation(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        params = {
+            "plan_id": int(plan_id),
+            "segmentation_type": clean_text(payload.get("segmentation_type") or payload.get("segmentationType") or "preset_rule"),
+            "rule_key": clean_text(payload.get("rule_key") or payload.get("ruleKey")),
+            "rule_version": _int(payload.get("rule_version") or payload.get("ruleVersion")),
+            "params_json": _json_dumps(payload.get("params") or {}),
+            "layer_actions_json": _json_dumps(payload.get("layer_actions") or payload.get("layerActions") or {}),
+        }
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO automation_group_ops_plan_segmentation (
+                            plan_id, segmentation_type, rule_key, rule_version, params_json, layer_actions_json, updated_at
+                        )
+                        VALUES (:plan_id, :segmentation_type, :rule_key, :rule_version, :params_json, :layer_actions_json, CURRENT_TIMESTAMP)
+                        ON CONFLICT (plan_id) DO UPDATE SET
+                            segmentation_type = excluded.segmentation_type,
+                            rule_key = excluded.rule_key,
+                            rule_version = excluded.rule_version,
+                            params_json = excluded.params_json,
+                            layer_actions_json = excluded.layer_actions_json,
+                            updated_at = CURRENT_TIMESTAMP
+                        """
+                    ),
+                    params,
+                )
+            return self.get_segmentation(int(plan_id)) or {}
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_audience_rules(self, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("SELECT * FROM audience_rule ORDER BY rule_key ASC")).fetchall()
+                return [self._row_to_audience_rule(_as_mapping(row) or {}) for row in rows], len(rows)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def create_audience_rule(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rule_key = clean_text(payload.get("rule_key") or payload.get("ruleKey"))
+        try:
+            with self._engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO audience_rule (rule_key, display_name, description, rule_type, owner, status, updated_at)
+                        VALUES (:rule_key, :display_name, :description, :rule_type, :owner, :status, CURRENT_TIMESTAMP)
+                        ON CONFLICT (rule_key) DO UPDATE SET
+                            display_name = excluded.display_name,
+                            description = excluded.description,
+                            rule_type = excluded.rule_type,
+                            owner = excluded.owner,
+                            status = excluded.status,
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "rule_key": rule_key,
+                        "display_name": clean_text(payload.get("display_name") or payload.get("displayName") or rule_key),
+                        "description": clean_text(payload.get("description")),
+                        "rule_type": clean_text(payload.get("rule_type") or payload.get("ruleType") or "module"),
+                        "owner": clean_text(payload.get("owner") or "growth_platform"),
+                        "status": clean_text(payload.get("status") or "active"),
+                    },
+                ).fetchone()
+                return self._row_to_audience_rule(_as_mapping(row) or {})
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def get_audience_rule(self, rule_key: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(text("SELECT * FROM audience_rule WHERE rule_key = :rule_key LIMIT 1"), {"rule_key": clean_text(rule_key)}).fetchone()
+                return self._row_to_audience_rule(_as_mapping(row)) if row else None
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def create_audience_rule_version(self, rule_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        rule = self.get_audience_rule(rule_key)
+        if not rule:
+            raise NotFoundError("audience rule not found")
+        try:
+            with self._engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO audience_rule_version (
+                            rule_id, version, executor_type, code_or_sql,
+                            params_schema, output_schema, refresh_policy, status, published_at
+                        )
+                        VALUES (
+                            :rule_id, :version, :executor_type, :code_or_sql,
+                            :params_schema, :output_schema, :refresh_policy, :status, CURRENT_TIMESTAMP
+                        )
+                        ON CONFLICT (rule_id, version) DO UPDATE SET
+                            executor_type = excluded.executor_type,
+                            code_or_sql = excluded.code_or_sql,
+                            params_schema = excluded.params_schema,
+                            output_schema = excluded.output_schema,
+                            refresh_policy = excluded.refresh_policy,
+                            status = excluded.status
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "rule_id": int(rule["id"]),
+                        "version": int(payload.get("version") or 0),
+                        "executor_type": clean_text(payload.get("executor_type") or payload.get("executorType") or "module"),
+                        "code_or_sql": clean_text(payload.get("code_or_sql") or payload.get("codeOrSql")),
+                        "params_schema": _json_dumps(payload.get("params_schema") or payload.get("paramsSchema") or {}),
+                        "output_schema": _json_dumps(payload.get("output_schema") or payload.get("outputSchema") or {}),
+                        "refresh_policy": _json_dumps(payload.get("refresh_policy") or payload.get("refreshPolicy") or {}),
+                        "status": clean_text(payload.get("status") or "active"),
+                    },
+                ).fetchone()
+                item = self._row_to_audience_rule_version(_as_mapping(row) or {})
+                item["rule_key"] = clean_text(rule_key)
+                return item
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def get_audience_rule_version(self, rule_key: str, version: int) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT v.*, r.rule_key
+                        FROM audience_rule_version v
+                        JOIN audience_rule r ON r.id = v.rule_id
+                        WHERE r.rule_key = :rule_key AND v.version = :version
+                        LIMIT 1
+                        """
+                    ),
+                    {"rule_key": clean_text(rule_key), "version": int(version)},
+                ).fetchone()
+                return self._row_to_audience_rule_version(_as_mapping(row)) if row else None
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def replace_audience_rule_results(self, rule_key: str, version: int, plan_id: int, results: list[dict[str, Any]]) -> int:
+        rule = self.get_audience_rule(rule_key)
+        if not rule:
+            raise NotFoundError("audience rule not found")
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text("DELETE FROM audience_rule_result WHERE rule_id = :rule_id AND rule_version = :version AND plan_id = :plan_id"),
+                    {"rule_id": int(rule["id"]), "version": int(version), "plan_id": int(plan_id)},
+                )
+                for item in results:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO audience_rule_result (
+                                rule_id, rule_version, plan_id, user_id, external_user_id,
+                                layer_key, score, reason, evidence_json, computed_at
+                            )
+                            VALUES (
+                                :rule_id, :rule_version, :plan_id, :user_id, :external_user_id,
+                                :layer_key, :score, :reason, :evidence_json, CURRENT_TIMESTAMP
+                            )
+                            """
+                        ),
+                        {
+                            "rule_id": int(rule["id"]),
+                            "rule_version": int(version),
+                            "plan_id": int(plan_id),
+                            "user_id": clean_text(item.get("user_id") or item.get("userId")),
+                            "external_user_id": clean_text(item.get("external_user_id") or item.get("external_userid") or item.get("externalUserId")),
+                            "layer_key": clean_text(item.get("layer_key") or item.get("layerKey")),
+                            "score": float(item.get("score") or 0),
+                            "reason": clean_text(item.get("reason")),
+                            "evidence_json": _json_dumps(item.get("evidence_json") or item.get("evidence") or {}),
+                        },
+                    )
+                return len(results)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_audience_rule_results(self, rule_key: str, version: int, plan_id: int, filters: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], int]:
+        filters = filters or {}
+        layers = [clean_text(item) for item in list(filters.get("layers") or []) if clean_text(item)]
+        params: dict[str, Any] = {
+            "rule_key": clean_text(rule_key),
+            "version": int(version),
+            "plan_id": int(plan_id),
+            "limit": max(1, _int(filters.get("limit")) or 50),
+            "offset": max(0, _int(filters.get("offset"))),
+        }
+        layer_clause = "AND rr.layer_key = ANY(:layers)" if layers else ""
+        if layers:
+            params["layers"] = layers
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT rr.*, r.rule_key
+                        FROM audience_rule_result rr
+                        JOIN audience_rule r ON r.id = rr.rule_id
+                        WHERE r.rule_key = :rule_key
+                          AND rr.rule_version = :version
+                          AND rr.plan_id = :plan_id
+                          {layer_clause}
+                        ORDER BY rr.id ASC
+                        LIMIT :limit OFFSET :offset
+                        """
+                    ),
+                    params,
+                ).fetchall()
+                total = conn.execute(
+                    text(
+                        f"""
+                        SELECT COUNT(*)
+                        FROM audience_rule_result rr
+                        JOIN audience_rule r ON r.id = rr.rule_id
+                        WHERE r.rule_key = :rule_key
+                          AND rr.rule_version = :version
+                          AND rr.plan_id = :plan_id
+                          {layer_clause}
+                        """
+                    ),
+                    {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+                ).scalar_one()
+                return [self._row_to_rule_result(_as_mapping(row) or {}) for row in rows], int(total or 0)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def create_trigger_event(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO automation_group_ops_trigger_event (
+                            plan_id, endpoint_key, event_name, source, idempotency_key,
+                            payload_json, status, received_at
+                        )
+                        VALUES (
+                            :plan_id, :endpoint_key, :event_name, :source, :idempotency_key,
+                            :payload_json, :status, CURRENT_TIMESTAMP
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "plan_id": int(plan_id),
+                        "endpoint_key": clean_text(payload.get("endpoint_key")),
+                        "event_name": clean_text(payload.get("event_name") or payload.get("event")),
+                        "source": clean_text(payload.get("source")),
+                        "idempotency_key": clean_text(payload.get("idempotency_key")),
+                        "payload_json": _json_dumps(payload.get("payload_json") or payload.get("payload") or {}),
+                        "status": clean_text(payload.get("status") or "accepted"),
+                    },
+                ).fetchone()
+                return self._row_to_trigger_event(_as_mapping(row) or {})
+        except IntegrityError:
+            existing = self.find_trigger_event(int(plan_id), clean_text(payload.get("idempotency_key")))
+            if existing:
+                return existing
+            raise
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def find_trigger_event(self, plan_id: int, idempotency_key: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM automation_group_ops_trigger_event
+                        WHERE plan_id = :plan_id AND idempotency_key = :idempotency_key
+                        LIMIT 1
+                        """
+                    ),
+                    {"plan_id": int(plan_id), "idempotency_key": clean_text(idempotency_key)},
+                ).fetchone()
+                return self._row_to_trigger_event(_as_mapping(row)) if row else None
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def update_trigger_event(self, event_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        updates = {
+            "status": clean_text(payload.get("status") or "accepted"),
+            "error_message": clean_text(payload.get("error_message")),
+            "event_id": clean_text(event_id),
+        }
+        try:
+            with self._engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        UPDATE automation_group_ops_trigger_event
+                        SET status = :status,
+                            error_message = :error_message,
+                            processed_at = CURRENT_TIMESTAMP
+                        WHERE id = :event_id
+                        RETURNING *
+                        """
+                    ),
+                    updates,
+                ).fetchone()
+                if not row:
+                    raise NotFoundError("group ops trigger event not found")
+                return self._row_to_trigger_event(_as_mapping(row) or {})
+        except NotFoundError:
+            raise
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def create_execution_log(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with self._engine.begin() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO automation_group_ops_execution_log (
+                            trigger_event_id, plan_id, user_id, external_user_id, sender,
+                            recipient, layer_key, action_type, action_ref_id, status,
+                            error_message, idempotency_key, received_at, processed_at
+                        )
+                        VALUES (
+                            :trigger_event_id, :plan_id, :user_id, :external_user_id, :sender,
+                            :recipient, :layer_key, :action_type, :action_ref_id, :status,
+                            :error_message, :idempotency_key, :received_at, CURRENT_TIMESTAMP
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "trigger_event_id": clean_text(payload.get("trigger_event_id")),
+                        "plan_id": int(payload.get("plan_id") or 0),
+                        "user_id": clean_text(payload.get("user_id")),
+                        "external_user_id": clean_text(payload.get("external_user_id")),
+                        "sender": _json_dumps(payload.get("sender") or {}),
+                        "recipient": _json_dumps(payload.get("recipient") or {}),
+                        "layer_key": clean_text(payload.get("layer_key")),
+                        "action_type": clean_text(payload.get("action_type")),
+                        "action_ref_id": clean_text(payload.get("action_ref_id")),
+                        "status": clean_text(payload.get("status") or "success"),
+                        "error_message": clean_text(payload.get("error_message")),
+                        "idempotency_key": clean_text(payload.get("idempotency_key")),
+                        "received_at": clean_text(payload.get("received_at")) or None,
+                    },
+                ).fetchone()
+                return self._row_to_execution_log(_as_mapping(row) or {})
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_execution_logs(self, plan_id: int, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+        clauses = ["plan_id = :plan_id"]
+        params = {
+            "plan_id": int(plan_id),
+            "trigger_event_id": clean_text(filters.get("trigger_event_id")),
+            "status": clean_text(filters.get("status")),
+            "action_type": clean_text(filters.get("action_type")),
+            "layer_key": clean_text(filters.get("layer_key")),
+            "recipient": f"%{clean_text(filters.get('recipient')).lower()}%",
+            "limit": max(1, _int(filters.get("limit")) or 50),
+            "offset": max(0, _int(filters.get("offset"))),
+        }
+        for key in ("trigger_event_id", "status", "action_type", "layer_key"):
+            if params[key]:
+                clauses.append(f"{key} = :{key}")
+        if clean_text(filters.get("recipient")):
+            clauses.append("(LOWER(external_user_id) LIKE :recipient OR LOWER(user_id) LIKE :recipient)")
+        where = " AND ".join(clauses)
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text(f"SELECT * FROM automation_group_ops_execution_log WHERE {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"), params).fetchall()
+                total = conn.execute(text(f"SELECT COUNT(*) FROM automation_group_ops_execution_log WHERE {where}"), {k: v for k, v in params.items() if k not in {"limit", "offset"}}).scalar_one()
+                return [self._row_to_execution_log(_as_mapping(row) or {}) for row in rows], int(total or 0)
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
     def _get_plan_sql(self, conn: Any, plan_id: int) -> dict[str, Any] | None:
         row = conn.execute(
             text(
@@ -732,6 +1279,58 @@ class PostgresGroupOpsRepository:
         ).fetchone()
         return clean_text((_as_mapping(row) or {}).get("owner_name")) if row else ""
 
+    def _table_has_column(self, conn: Any, table_name: str, column_name: str) -> bool:
+        if conn.dialect.name == "sqlite":
+            rows = conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            return any(clean_text((_as_mapping(row) or {}).get("name")) == column_name for row in rows)
+        row = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = :table_name
+                  AND column_name = :column_name
+                LIMIT 1
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        ).fetchone()
+        return bool(row)
+
+    def _update_plan_extra_fields(self, conn: Any, plan_id: int, normalized: dict[str, Any]) -> None:
+        extra_columns = [
+            "default_action_type",
+            "allow_no_sop",
+            "allow_external_recipients",
+            "description",
+            "last_rotated_at",
+        ]
+        if not all(self._table_has_column(conn, "automation_group_ops_plans", column) for column in extra_columns):
+            return
+        conn.execute(
+            text(
+                """
+                UPDATE automation_group_ops_plans
+                SET default_action_type = :default_action_type,
+                    allow_no_sop = :allow_no_sop,
+                    allow_external_recipients = :allow_external_recipients,
+                    description = :description,
+                    last_rotated_at = CASE
+                        WHEN webhook_token_hash <> '' THEN COALESCE(last_rotated_at, CURRENT_TIMESTAMP)
+                        ELSE last_rotated_at
+                    END
+                WHERE id = :plan_id
+                """
+            ),
+            {
+                "plan_id": int(plan_id),
+                "default_action_type": clean_text(normalized.get("default_action_type") or "record_only"),
+                "allow_no_sop": bool(normalized.get("allow_no_sop", True)),
+                "allow_external_recipients": bool(normalized.get("allow_external_recipients", True)),
+                "description": clean_text(normalized.get("description")),
+            },
+        )
+
     def _row_to_plan(self, conn: Any, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if not row:
             return None
@@ -744,6 +1343,12 @@ class PostgresGroupOpsRepository:
             "owner_userid": owner_userid,
             "owner_name": self._owner_name_for_userid(conn, owner_userid),
             "status": clean_text(row.get("status")),
+            "default_action_type": clean_text(row.get("default_action_type") or ("enqueue" if clean_text(row.get("plan_type")) == "webhook" else "record_only")),
+            "allow_no_sop": bool(row.get("allow_no_sop", True)),
+            "allow_external_recipients": bool(row.get("allow_external_recipients", True)),
+            "description": clean_text(row.get("description")),
+            "last_rotated_at": _iso(row.get("last_rotated_at") or row.get("updated_at")),
+            "signature_secret_hash": clean_text(row.get("signature_secret_hash")),
             "webhook_key": clean_text(row.get("webhook_key")),
             "webhook_token_hash": clean_text(row.get("webhook_token_hash")),
             "created_by": clean_text(row.get("created_by")),
@@ -828,6 +1433,126 @@ class PostgresGroupOpsRepository:
             "status": clean_text(row.get("status")),
             "broadcast_job_ids": _json_loads(row.get("broadcast_job_ids_json"), []),
             "error_message": clean_text(row.get("error_message")),
+            "created_at": _iso(row.get("created_at")),
+        }
+
+    def _row_to_plan_member(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": _int(row.get("id")),
+            "plan_id": _int(row.get("plan_id")),
+            "user_id": clean_text(row.get("user_id")),
+            "external_user_id": clean_text(row.get("external_user_id")),
+            "group_id": clean_text(row.get("group_id")),
+            "layer_key": clean_text(row.get("layer_key")),
+            "source_type": clean_text(row.get("source_type")),
+            "source_ref_id": clean_text(row.get("source_ref_id")),
+            "status": clean_text(row.get("status")),
+            "joined_at": _iso(row.get("joined_at")),
+            "updated_at": _iso(row.get("updated_at")),
+        }
+
+    def _row_to_segmentation(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "plan_id": _int(row.get("plan_id")),
+            "segmentation_type": clean_text(row.get("segmentation_type")),
+            "rule_key": clean_text(row.get("rule_key")),
+            "rule_version": _int(row.get("rule_version")),
+            "params": _json_loads(row.get("params_json"), {}),
+            "layer_actions": _json_loads(row.get("layer_actions_json"), {}),
+            "updated_at": _iso(row.get("updated_at")),
+        }
+
+    def _row_to_audience_rule(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": _int(row.get("id")),
+            "rule_key": clean_text(row.get("rule_key")),
+            "display_name": clean_text(row.get("display_name")),
+            "description": clean_text(row.get("description")),
+            "rule_type": clean_text(row.get("rule_type")),
+            "owner": clean_text(row.get("owner")),
+            "status": clean_text(row.get("status")),
+            "created_at": _iso(row.get("created_at")),
+            "updated_at": _iso(row.get("updated_at")),
+        }
+
+    def _row_to_audience_rule_version(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": _int(row.get("id")),
+            "rule_id": _int(row.get("rule_id")),
+            "rule_key": clean_text(row.get("rule_key")),
+            "version": _int(row.get("version")),
+            "executor_type": clean_text(row.get("executor_type")),
+            "code_or_sql": clean_text(row.get("code_or_sql")),
+            "params_schema": _json_loads(row.get("params_schema"), {}),
+            "output_schema": _json_loads(row.get("output_schema"), {}),
+            "refresh_policy": _json_loads(row.get("refresh_policy"), {}),
+            "status": clean_text(row.get("status")),
+            "published_at": _iso(row.get("published_at")),
+            "created_at": _iso(row.get("created_at")),
+        }
+
+    def _row_to_rule_result(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": _int(row.get("id")),
+            "rule_key": clean_text(row.get("rule_key")),
+            "rule_version": _int(row.get("rule_version")),
+            "plan_id": _int(row.get("plan_id")),
+            "user_id": clean_text(row.get("user_id")),
+            "external_user_id": clean_text(row.get("external_user_id")),
+            "layer_key": clean_text(row.get("layer_key")),
+            "score": float(row.get("score") or 0),
+            "reason": clean_text(row.get("reason")),
+            "evidence_json": _json_loads(row.get("evidence_json"), {}),
+            "computed_at": _iso(row.get("computed_at")),
+        }
+
+    def _row_to_trigger_event(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": clean_text(row.get("id")),
+            "plan_id": _int(row.get("plan_id")),
+            "endpoint_key": clean_text(row.get("endpoint_key")),
+            "event_name": clean_text(row.get("event_name")),
+            "source": clean_text(row.get("source")),
+            "idempotency_key": clean_text(row.get("idempotency_key")),
+            "payload_json": _json_loads(row.get("payload_json"), {}),
+            "status": clean_text(row.get("status")),
+            "received_at": _iso(row.get("received_at")),
+            "processed_at": _iso(row.get("processed_at")),
+            "error_message": clean_text(row.get("error_message")),
+        }
+
+    def _row_to_execution_log(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "id": _int(row.get("id")),
+            "trigger_event_id": clean_text(row.get("trigger_event_id")),
+            "plan_id": _int(row.get("plan_id")),
+            "event_name": clean_text(row.get("event_name")),
+            "user_id": clean_text(row.get("user_id")),
+            "external_user_id": clean_text(row.get("external_user_id")),
+            "sender": _json_loads(row.get("sender"), {}),
+            "recipient": _json_loads(row.get("recipient"), {}),
+            "layer_key": clean_text(row.get("layer_key")),
+            "action_type": clean_text(row.get("action_type")),
+            "action_ref_id": clean_text(row.get("action_ref_id")),
+            "status": clean_text(row.get("status")),
+            "error_message": clean_text(row.get("error_message")),
+            "idempotency_key": clean_text(row.get("idempotency_key")),
+            "received_at": _iso(row.get("received_at")),
+            "processed_at": _iso(row.get("processed_at")),
             "created_at": _iso(row.get("created_at")),
         }
 
