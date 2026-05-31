@@ -386,8 +386,8 @@ def test_qrcode_callback_falls_back_to_channel_welcome_when_historical_scene_pro
         )
 
         assert result["handled"] is True
-        assert result["mode"] == "standalone_channel_archived_program_fallback"
-        assert result["reason"] == "program_archived_fallback_to_channel"
+        assert result["mode"] == "channel_baseline_only"
+        assert result["reason"] == "program_archived"
         assert result["program_member_written"] is False
         assert result["welcome_message"]["sent"] is True
         assert result["entry_tag"]["applied"] is True

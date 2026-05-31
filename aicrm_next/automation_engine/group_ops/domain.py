@@ -12,11 +12,17 @@ from aicrm_next.send_content.application import NormalizeSendContentPackageComma
 from aicrm_next.shared.errors import ContractError
 
 PLAN_TYPES = {"standard", "webhook"}
+PLAN_TYPE_ALIASES = {
+    "webhook_receiver": "webhook",
+    "trigger_audience_plan": "webhook",
+}
 PLAN_STATUSES = {"draft", "active", "disabled"}
+PLAN_STATUS_ALIASES = {"enabled": "active", "archived": "disabled"}
 NODE_STATUSES = {"draft", "active", "disabled"}
 GROUP_BINDING_STATUSES = {"active", "removed"}
 WEBHOOK_EVENT_STATUSES = {"accepted", "queued", "duplicate", "rejected", "failed"}
 WEBHOOK_SEND_MODES = {"queued"}
+ACTION_TYPES = {"enqueue", "add_to_audience", "publish_task", "send_message", "record_only"}
 SCHEDULED_TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -38,16 +44,25 @@ def clamp_limit(value: int, *, default: int = 50, maximum: int = 200) -> int:
 
 def normalize_plan_type(value: Any) -> str:
     plan_type = clean_text(value).lower()
+    plan_type = PLAN_TYPE_ALIASES.get(plan_type, plan_type)
     if plan_type not in PLAN_TYPES:
-        raise ContractError("plan_type must be standard or webhook")
+        raise ContractError("plan_type must be standard, webhook, webhook_receiver, or trigger_audience_plan")
     return plan_type
 
 
 def normalize_status(value: Any, *, allowed: set[str], default: str) -> str:
     status = clean_text(value).lower() or default
+    status = PLAN_STATUS_ALIASES.get(status, status)
     if status not in allowed:
         raise ContractError(f"invalid status: {status}")
     return status
+
+
+def normalize_action_type(value: Any, *, default: str = "record_only") -> str:
+    action_type = clean_text(value).lower() or default
+    if action_type not in ACTION_TYPES:
+        raise ContractError(f"invalid action_type: {action_type}")
+    return action_type
 
 
 def scheduled_time_options() -> list[str]:
@@ -86,10 +101,15 @@ def normalize_plan_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
     plan_name = clean_text(payload.get("plan_name") or payload.get("name") or existing.get("plan_name"))
     if not plan_name:
         raise ContractError("plan_name is required")
-    owner_userid = clean_text(payload.get("owner_userid") or existing.get("owner_userid"))
+    owner_userid = clean_text(
+        payload.get("owner_userid")
+        or payload.get("operator_member_id")
+        or payload.get("operatorMemberId")
+        or existing.get("owner_userid")
+    )
     if not owner_userid:
         raise ContractError("owner_userid is required")
-    plan_type = normalize_plan_type(payload.get("plan_type") or existing.get("plan_type") or "standard")
+    plan_type = normalize_plan_type(payload.get("plan_type") or payload.get("type") or existing.get("plan_type") or "standard")
     status = normalize_status(payload.get("status") or existing.get("status") or "draft", allowed=PLAN_STATUSES, default="draft")
     plan_code = clean_text(payload.get("plan_code") or payload.get("code") or existing.get("plan_code"))
     return {
@@ -98,9 +118,121 @@ def normalize_plan_payload(payload: dict[str, Any], *, existing: dict[str, Any] 
         "plan_type": plan_type,
         "owner_userid": owner_userid,
         "status": status,
+        "default_action_type": normalize_action_type(
+            payload.get("default_action_type")
+            or payload.get("defaultActionType")
+            or existing.get("default_action_type")
+            or ("enqueue" if plan_type == "webhook" else "record_only"),
+            default="record_only",
+        ),
+        "allow_no_sop": bool(
+            payload.get("allow_no_sop")
+            if "allow_no_sop" in payload
+            else payload.get("allowNoSop")
+            if "allowNoSop" in payload
+            else existing.get("allow_no_sop", True)
+        ),
+        "allow_external_recipients": bool(
+            payload.get("allow_external_recipients")
+            if "allow_external_recipients" in payload
+            else payload.get("allowExternalRecipients")
+            if "allowExternalRecipients" in payload
+            else existing.get("allow_external_recipients", True)
+        ),
+        "description": clean_text(payload.get("description") if "description" in payload else existing.get("description")),
         "created_by": clean_text(payload.get("created_by") or existing.get("created_by") or payload.get("operator") or "system"),
         "updated_by": clean_text(payload.get("updated_by") or payload.get("operator") or "system"),
     }
+
+
+def normalize_scope_ids(payload: dict[str, Any], *names: str) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        value = payload.get(name)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            text = clean_text(item)
+            if text and text not in seen:
+                seen.add(text)
+                result.append(text)
+    return result
+
+
+def normalize_recipient(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ContractError("recipient entries must be objects")
+    user_id = clean_text(value.get("userId") or value.get("user_id") or value.get("userId"))
+    external_user_id = clean_text(
+        value.get("external_user_id")
+        or value.get("externalUserId")
+        or value.get("external_userid")
+        or value.get("externalUserId")
+    )
+    wechat_user_id = clean_text(value.get("wechatUserId") or value.get("wechat_user_id") or value.get("openid"))
+    group_id = clean_text(value.get("groupId") or value.get("group_id") or value.get("chat_id"))
+    if not any((user_id, external_user_id, wechat_user_id, group_id)):
+        raise ContractError("recipient must include userId, external_user_id, wechatUserId, or groupId")
+    return {
+        "user_id": user_id,
+        "external_user_id": external_user_id,
+        "wechat_user_id": wechat_user_id,
+        "group_id": group_id,
+    }
+
+
+def normalize_recipients(values: Any) -> list[dict[str, str]]:
+    if not values:
+        return []
+    if not isinstance(values, list):
+        raise ContractError("recipients must be a list")
+    seen: set[tuple[str, str, str, str]] = set()
+    result: list[dict[str, str]] = []
+    for value in values:
+        recipient = normalize_recipient(value)
+        key = (
+            recipient["user_id"],
+            recipient["external_user_id"],
+            recipient["wechat_user_id"],
+            recipient["group_id"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(recipient)
+    return result
+
+
+def normalize_action_payload(value: Any, *, default_action_type: str = "record_only") -> dict[str, Any]:
+    action = dict(value or {}) if isinstance(value, dict) else {}
+    action_type = normalize_action_type(action.get("action_type") or action.get("actionType") or action.get("actionType"), default=default_action_type)
+    return {
+        "action_type": action_type,
+        "content": clean_text(action.get("content") or action.get("messageTemplate") or action.get("message_template")),
+        "task_template_id": clean_text(action.get("taskTemplateId") or action.get("task_template_id")),
+        "queue_key": clean_text(action.get("queueKey") or action.get("queue_key")),
+        "audience_id": clean_text(action.get("audienceId") or action.get("audience_id")),
+        "raw": action,
+    }
+
+
+def mask_sensitive_payload(value: Any) -> Any:
+    if isinstance(value, list):
+        return [mask_sensitive_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    masked: dict[str, Any] = {}
+    for key, item in value.items():
+        lower = clean_text(key).lower()
+        if any(marker in lower for marker in ("token", "secret", "authorization", "signature")):
+            masked[key] = "[redacted]"
+        elif lower in {"external_user_id", "external_userid", "externaluserid"}:
+            text = clean_text(item)
+            masked[key] = f"{text[:6]}...[redacted]" if text else ""
+        else:
+            masked[key] = mask_sensitive_payload(item)
+    return masked
 
 
 def normalize_attachments_for_builder(attachments: list[Any]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -310,6 +442,22 @@ def verify_webhook_token(*, provided_token: str, token_hash: str) -> bool:
     if not provided_token or not token_hash:
         return False
     return hmac.compare_digest(hash_webhook_token(provided_token), token_hash)
+
+
+def verify_webhook_signature(*, body: bytes, signature: str, secret_hash: str, token: str = "") -> bool:
+    if not secret_hash:
+        return True
+    provided = clean_text(signature)
+    if not provided:
+        return False
+    # The current schema stores a hash rather than the raw signing secret. Use
+    # the bearer token as the HMAC key when no encrypted secret is available.
+    key = clean_text(token)
+    if not key:
+        return False
+    expected = hmac.new(key.encode("utf-8"), body or b"", hashlib.sha256).hexdigest()
+    normalized = provided.removeprefix("sha256=").strip()
+    return hmac.compare_digest(expected, normalized)
 
 
 def extract_bearer_token(authorization: str | None) -> str:

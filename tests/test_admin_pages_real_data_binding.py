@@ -45,19 +45,19 @@ def test_key_admin_pages_render_server_side_rows_or_stats(monkeypatch):
         assert has_real_data, (route, row_count)
 
 
-def test_ai_assistant_entry_uses_campaign_review_workspace(monkeypatch):
+def test_ai_assistant_entry_uses_plan_review_workspace(monkeypatch):
     client = _client(monkeypatch)
 
     redirect = client.get("/admin/cloud-orchestrator", follow_redirects=False)
     assert redirect.status_code == 302
-    assert redirect.headers["location"] == "/admin/cloud-orchestrator/campaigns"
+    assert redirect.headers["location"] == "/admin/cloud-orchestrator/plans"
 
-    response = client.get("/admin/cloud-orchestrator/campaigns")
+    response = client.get("/admin/cloud-orchestrator/plans")
 
     assert response.status_code == 200
     assert "AI 助手 · 运营计划审阅" in response.text
-    assert "Agent 上架的多分层多步骤运营计划在这里审阅启动。" in response.text
-    assert "/api/admin/cloud-orchestrator/campaigns?" in response.text
+    assert "计划列表、目标人员明细与逐人审批。" in response.text
+    assert "cloud_plan_review.js" in response.text
     assert "只读展示 automation_agent_config" not in response.text
     assert "production_unavailable" not in response.text
 

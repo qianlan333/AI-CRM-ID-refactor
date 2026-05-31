@@ -36,6 +36,36 @@ def test_cloud_plan_list_does_not_embed_recipients_or_messages(monkeypatch):
     assert "messages" not in payload["plans"][0]
 
 
+def test_plan_list_groups_legacy_campaign_rows(monkeypatch):
+    client = _client(monkeypatch)
+
+    payload = client.get("/api/admin/cloud-orchestrator/plans?limit=20&offset=0").json()
+
+    legacy = next(plan for plan in payload["plans"] if plan["plan_id"] == "standard_subscription_20260530_1000_zhaoyanfang_v1")
+    assert legacy["display_name"] == "Standard 订阅 v1.6.3 触达 · ZhaoYanFang · 2026-05-30 10:00"
+    assert legacy["source_type"] == "legacy_campaign"
+    assert legacy["target_count"] == 3
+    assert legacy["approved_count"] == 3
+    assert "recipients" not in legacy
+
+
+def test_legacy_campaign_group_detail_recipients_and_messages(monkeypatch):
+    client = _client(monkeypatch)
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+
+    plan = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}").json()
+    recipients = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients?limit=50&offset=0").json()
+    detail = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11").json()
+
+    assert plan["plan"]["source_type"] == "legacy_campaign"
+    assert plan["plan"]["target_count"] == 3
+    assert recipients["total"] == 3
+    assert recipients["rows"][0]["source_type"] == "legacy_campaign"
+    assert recipients["rows"][0]["supports_recipient_approval"] is False
+    assert recipients["rows"][0]["recipient_id"] == -11
+    assert [message["content_text"] for message in detail["messages"]] == ["老话术 1", "老话术 2"]
+
+
 def test_plan_approve_only_changes_plan_review_state(monkeypatch):
     client = _client(monkeypatch)
     repo = build_cloud_plan_repository()

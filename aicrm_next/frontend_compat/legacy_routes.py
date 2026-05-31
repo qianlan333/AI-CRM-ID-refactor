@@ -928,6 +928,7 @@ def admin_automation_program_setup(request: Request, program_id: int) -> Respons
                 },
             ],
             "setup_workspace": _setup_workspace(request, program, summary, step=str(request.query_params.get("step") or "basic")),
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "program_context": _automation_program_context(request, program, active_key="setup"),
             "admin_action_token": "",
