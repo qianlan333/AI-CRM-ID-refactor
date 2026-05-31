@@ -25,6 +25,7 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 
 ## 建议先读
 
+- [docs/skills/frontend-development-skill.md](docs/skills/frontend-development-skill.md)（任何前端 / 页面 / 组件 / UI / 管理后台任务开始前必须先读）
 - [docs/development/ai_crm_next_architecture_skill.md](docs/development/ai_crm_next_architecture_skill.md)
 - [docs/user_ops_v2.md](docs/user_ops_v2.md)
 - [docs/deploy_runbook.md](docs/deploy_runbook.md)
