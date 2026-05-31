@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
 from aicrm_next.channel_entry import repo as channel_entry_repo
+from aicrm_next.channel_entry.wecom_adapter import get_wecom_adapter, normalize_wecom_exception_reason
 from aicrm_next.shared.runtime import raw_database_url
 
 router = APIRouter()
@@ -88,6 +91,10 @@ def _json_text_list(value: Any, *, max_count: int = 12) -> list[str]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _new_scene_value() -> str:
+    return f"aqr_{datetime.now(UTC).strftime('%y%m%d')}_{secrets.token_hex(2)}"
 
 
 def _channel_type(payload: dict[str, Any]) -> tuple[str, str]:
@@ -640,6 +647,82 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
     return get_channel_resource(saved_id) or {"id": saved_id, **data}
 
 
+def _update_channel_qrcode_resource(
+    *,
+    channel_id: int,
+    scene_value: str,
+    qr_url: str,
+    config_id: str,
+    corp_id: str,
+) -> dict[str, Any]:
+    conn = _connect()
+    if conn is None:
+        channel = _FIXTURE_CHANNELS.get(int(channel_id))
+        if not channel:
+            raise LookupError("channel_not_found")
+        channel.update({"scene_value": scene_value, "qr_url": qr_url, "updated_at": datetime.now(UTC).isoformat()})
+        aliases = list(channel.get("_scene_aliases") or [])
+        if scene_value not in aliases:
+            aliases.append(scene_value)
+        channel["_scene_aliases"] = aliases
+        return {"channel": _serialize_channel(channel), "alias": {"id": len(aliases), "scene_value": scene_value, "config_id": config_id, "qr_url": qr_url, "status": "active", "source": "next_create_contact_way"}}
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE automation_channel
+                SET scene_value = %s,
+                    qr_url = %s,
+                    qr_ticket = %s,
+                    carrier_type = 'qrcode',
+                    channel_type = 'qrcode',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id
+                """,
+                (scene_value, qr_url, config_id, int(channel_id)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise LookupError("channel_not_found")
+    alias = channel_entry_repo.upsert_channel_scene_alias(
+        channel_id=int(channel_id),
+        scene_value=scene_value,
+        corp_id=corp_id,
+        config_id=config_id,
+        qr_url=qr_url,
+        carrier_type="qrcode",
+        status="active",
+        source="next_create_contact_way",
+    )
+    return {"channel": get_channel_resource(int(channel_id)) or {}, "alias": alias}
+
+
+def _log_qrcode_generate_effect(
+    *,
+    channel_id: int,
+    scene_value: str,
+    status: str,
+    reason: str,
+    request_json: dict[str, Any],
+    response_json: dict[str, Any],
+) -> None:
+    try:
+        channel_entry_repo.upsert_channel_entry_effect_log(
+            effect_type="create_contact_way",
+            idempotency_key=f"{channel_id}:{scene_value}:create_contact_way",
+            status=status,
+            channel_id=int(channel_id),
+            scene_value=scene_value,
+            reason=reason,
+            request_json=request_json,
+            response_json=response_json,
+        )
+    except Exception:
+        return
+
+
 def list_channel_owner_candidates() -> list[dict[str, Any]]:
     # Compatibility wrapper for older channel-code callers. The page-level picker
     # now calls /api/admin/common/operation-members directly.
@@ -789,6 +872,67 @@ def get_channel_share_link(channel_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="channel_is_not_link_carrier")
     share_url = _text(channel.get("share_url") or channel.get("copy_text") or channel.get("final_url") or channel.get("link_url"))
     return {"ok": True, "share_url": share_url, "copy_text": share_url, "reason": "share_link_loaded", "source": "ai_crm_next"}
+
+
+@router.post("/api/admin/channels/{channel_id:int}/qrcode/generate")
+def generate_channel_qrcode(channel_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
+    payload = payload or {}
+    channel = get_channel_resource(int(channel_id))
+    if not channel:
+        raise HTTPException(status_code=404, detail="channel_not_found")
+    if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "reason": "link_channel_does_not_support_qrcode_generate", "source": "ai_crm_next"},
+        )
+    scene_value = _text(payload.get("scene_value")) or (_new_scene_value() if payload.get("force_new_scene") else _text(channel.get("scene_value"))) or _new_scene_value()
+    owner_staff_id = _text(payload.get("owner_staff_id") or channel.get("owner_staff_id"))
+    request_payload: dict[str, Any] = {
+        "type": int(payload.get("type") or 2),
+        "scene": int(payload.get("scene") or 2),
+        "state": scene_value,
+    }
+    if owner_staff_id:
+        request_payload["user"] = [owner_staff_id]
+    try:
+        wecom_result = get_wecom_adapter().create_contact_way(request_payload)
+    except Exception as exc:
+        reason = normalize_wecom_exception_reason(exc, fallback="wecom_api_error")
+        response = {"ok": False, "reason": reason, "source": "aicrm_next.channel_entry"}
+        _log_qrcode_generate_effect(channel_id=int(channel_id), scene_value=scene_value, status="failed", reason=reason, request_json=request_payload, response_json=response)
+        return JSONResponse(status_code=503 if reason in {"wecom_real_calls_disabled", "missing_wecom_config"} else 502, content=response)
+    if int((wecom_result or {}).get("errcode") or 0) != 0:
+        response = {"ok": False, "reason": "wecom_api_error", "wecom_result": dict(wecom_result or {}), "source": "aicrm_next.channel_entry"}
+        _log_qrcode_generate_effect(channel_id=int(channel_id), scene_value=scene_value, status="failed", reason="wecom_api_error", request_json=request_payload, response_json=response)
+        return JSONResponse(status_code=502, content=response)
+    config_id = _text((wecom_result or {}).get("config_id"))
+    qr_url = _text((wecom_result or {}).get("qr_code") or (wecom_result or {}).get("qr_url"))
+    if not config_id or not qr_url:
+        response = {"ok": False, "reason": "wecom_api_error", "wecom_result": dict(wecom_result or {}), "source": "aicrm_next.channel_entry"}
+        _log_qrcode_generate_effect(channel_id=int(channel_id), scene_value=scene_value, status="failed", reason="wecom_api_error", request_json=request_payload, response_json=response)
+        return JSONResponse(status_code=502, content=response)
+    saved = _update_channel_qrcode_resource(
+        channel_id=int(channel_id),
+        scene_value=scene_value,
+        qr_url=qr_url,
+        config_id=config_id,
+        corp_id=_text(os.getenv("WECOM_CORP_ID")),
+    )
+    alias = dict(saved.get("alias") or {})
+    response = {
+        "ok": True,
+        "channel_id": int(channel_id),
+        "scene_value": scene_value,
+        "config_id": config_id,
+        "qr_url": qr_url,
+        "alias_id": int(alias.get("id") or 0),
+        "source": "aicrm_next.channel_entry",
+        "route_owner": "ai_crm_next",
+        "wecom_result": dict(wecom_result or {}),
+        "channel": saved.get("channel") or {},
+    }
+    _log_qrcode_generate_effect(channel_id=int(channel_id), scene_value=scene_value, status="success", reason="created", request_json=request_payload, response_json=response)
+    return JSONResponse(response)
 
 
 @router.get("/api/admin/channels/{channel_id:int}/qrcode/download")

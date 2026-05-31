@@ -22,7 +22,7 @@ from .schemas import (
     ProcessWeComExternalContactEventCommand,
     RepairChannelEntryCommand,
 )
-from .wecom_adapter import get_wecom_adapter
+from .wecom_adapter import describe_wecom_adapter, get_wecom_adapter, normalize_wecom_exception_reason
 from .wecom_crypto import build_encrypted_reply, decrypt_message, parse_callback_xml, verify_signature
 
 
@@ -193,8 +193,9 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
     try:
         wecom_result = get_wecom_adapter().send_welcome_msg(payload)
     except Exception as exc:
-        result = {"attempted": True, "sent": False, "reason": str(exc), "welcome_code": welcome_code}
-        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=str(exc), request_json=payload, response_json=result)
+        reason = normalize_wecom_exception_reason(exc, fallback="wecom_api_error")
+        result = {"attempted": True, "sent": False, "reason": reason, "welcome_code": welcome_code}
+        _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
         return result
     if int((wecom_result or {}).get("errcode") or 0) != 0:
         result = {
@@ -227,8 +228,9 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     try:
         wecom_result = get_wecom_adapter().mark_external_contact_tags(**payload)
     except Exception as exc:
-        result = {"attempted": True, "applied": False, "reason": str(exc), "entry_tag_id": tag_id}
-        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=str(exc), request_json=payload, response_json=result)
+        reason = normalize_wecom_exception_reason(exc, fallback="wecom_api_error")
+        result = {"attempted": True, "applied": False, "reason": reason, "entry_tag_id": tag_id}
+        _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
         return result
     if int((wecom_result or {}).get("errcode") or 0) != 0:
         result = {"attempted": True, "applied": False, "reason": "wecom_api_error", "entry_tag_id": tag_id, "wecom_result": dict(wecom_result or {})}
@@ -409,6 +411,7 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
     aliases = repo.list_channel_scene_aliases(channel_id) if channel_id else []
     bindings = repo.list_active_bindings_for_channel(channel_id) if channel_id else []
     effects = repo.list_channel_entry_effect_logs(channel_id=channel_id or None, scene_value=text(query.scene_value), limit=20)
+    adapter = describe_wecom_adapter()
     return {
         "ok": True,
         "scene_resolve_path": match,
@@ -421,12 +424,24 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
         "entry_tag_configured": bool(text((channel or {}).get("entry_tag_id"))),
         "recent_wecom_external_contact_event_logs": repo.list_recent_events(text(query.scene_value), limit=20) if text(query.scene_value) else [],
         "recent_automation_channel_entry_effect_log": effects,
+        "recent_effect_logs": effects,
         "active_bindings": bindings,
         "bound_program_status": [text(item.get("program_status")) for item in bindings],
         "expected_baseline_effects": {"channel_contact": bool(channel and channel_enabled(channel)), "welcome_message": bool(text((channel or {}).get("welcome_message"))), "entry_tag": bool(text((channel or {}).get("entry_tag_id")))},
         "expected_program_admission_result": "program_archived" if any(text(item.get("program_status")) == "archived" for item in bindings) else ("active_binding" if bindings else "standalone_channel"),
         "runtime_route_map": runtime_route_map_payload(),
         "callback_route_owner": "aicrm_next.channel_entry",
+        "real_wecom_adapter_enabled": adapter["real_wecom_adapter_enabled"],
+        "real_wecom_adapter_reason": adapter["real_wecom_adapter_reason"],
+        "can_send_welcome": adapter["can_send_welcome"],
+        "can_mark_tag": adapter["can_mark_tag"],
+        "can_create_contact_way": adapter["can_create_contact_way"],
+        "missing_config": adapter["missing_config"],
+        "adapter_warnings": {
+            "welcome_message": "当前不会真实发欢迎语" if not adapter["can_send_welcome"] else "",
+            "entry_tag": "当前不会真实打标签" if not adapter["can_mark_tag"] else "",
+            "qrcode_generate": "当前不会真实生成二维码" if not adapter["can_create_contact_way"] else "",
+        },
         "web_release_sha": text(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA")) or "unknown",
         "worker_release_sha": text(os.getenv("WORKER_RELEASE_SHA")) or "unknown",
     }
