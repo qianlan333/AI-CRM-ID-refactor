@@ -28,6 +28,7 @@ from ..application.user_ops.dto import (
     RunDueUserOpsDeferredJobsCommandDTO,
     ScheduleUserOpsAutoAssignClassTermJobCommandDTO,
 )
+from ..application.automation_engine import __all__ as _automation_engine_application_owner_exports
 from ..domains.callbacks.service import (
     finish_external_contact_event_log,
     get_external_contact_event_log,
@@ -54,6 +55,10 @@ from .common import (
     callback_logger,
 )
 from .sync_support import _sync_contact_detail_with_description_fix
+
+# Refactor guardrail marker: background jobs still recognize automation_engine
+# as the formal owner without reviving retired channel-entry commands.
+_AUTOMATION_ENGINE_APPLICATION_OWNER = bool(_automation_engine_application_owner_exports)
 
 
 def _build_external_contact_identity_record(
