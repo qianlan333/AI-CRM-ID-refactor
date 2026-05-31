@@ -77,8 +77,8 @@ def system_health():
     pending = _pending_event_stats()
     archive = _get_archive_sync_info()
     try:
-        from ..domains.automation_conversion.channel_entry_orchestrator import runtime_route_map_payload
-        runtime = runtime_route_map_payload()
+        from aicrm_next.shared.runtime import runtime_route_map_state
+        runtime = runtime_route_map_state()
     except Exception:
         runtime = {}
     return jsonify({
@@ -100,9 +100,9 @@ def system_health():
 
 
 def runtime_route_map():
-    from ..domains.automation_conversion.channel_entry_orchestrator import runtime_route_map_payload
+    from aicrm_next.shared.runtime import runtime_route_map_state
 
-    return jsonify(runtime_route_map_payload())
+    return jsonify(runtime_route_map_state())
 
 
 def run_compensating_scan():

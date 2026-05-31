@@ -10,6 +10,13 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def _read_optional(path: str) -> str:
+    file_path = ROOT / path
+    if not file_path.exists():
+        return ""
+    return file_path.read_text(encoding="utf-8")
+
+
 def main() -> int:
     blockers: list[str] = []
     production_compat = _read("aicrm_next/production_compat/api.py")
@@ -62,7 +69,7 @@ def main() -> int:
         "wecom_ability_service/domains/automation_conversion/channel_entry_orchestrator.py",
     ]
     for file_name in legacy_files:
-        if "aicrm_next.channel_entry" in _read(file_name):
+        if "aicrm_next.channel_entry" in _read_optional(file_name):
             blockers.append(f"new channel_entry capability leaked into legacy side: {file_name}")
 
     if blockers:
@@ -76,4 +83,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

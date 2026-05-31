@@ -223,6 +223,6 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-086` `/api/sidebar/v2*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.customer_read_model`
 - `LRB-087` `/api/sidebar/v2/profile`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
 - `LRB-088` `/api/sidebar/v2/materials/send`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
-- `LRB-089` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-090` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-089` `/wecom/external-contact/callback`: `P2` / `retired` / `channel_entry` / owner `aicrm_next.channel_entry`
+- `LRB-090` `/api/wecom/events`: `P2` / `retired` / `channel_entry` / owner `aicrm_next.channel_entry`
 - `LRB-091` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`

@@ -983,7 +983,7 @@ routes:
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
-    notes: WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback requires explicit AICRM_ALLOW_LEGACY_WECOM_CALLBACK_FALLBACK=true and is not the default path.
+    notes: WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback is a release rollback, not a legacy runtime fallback.
   - route_pattern: /api/wecom/events
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.channel_entry

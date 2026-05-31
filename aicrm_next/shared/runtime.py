@@ -72,7 +72,6 @@ def runtime_health_state() -> dict:
 
 
 def runtime_route_map_state() -> dict:
-    legacy_callback_fallback_enabled = _env_flag("AICRM_ALLOW_LEGACY_WECOM_CALLBACK_FALLBACK")
     return {
         "web_release_sha": str(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA") or "unknown").strip() or "unknown",
         "worker_release_sha": str(os.getenv("WORKER_RELEASE_SHA") or "unknown").strip() or "unknown",
@@ -87,5 +86,5 @@ def runtime_route_map_state() -> dict:
             "/api/wecom/events": "aicrm_next.channel_entry.api",
         },
         "next_live_callback_gateway_enabled": True,
-        "legacy_callback_fallback_enabled": legacy_callback_fallback_enabled,
+        "legacy_callback_fallback_enabled": False,
     }

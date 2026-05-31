@@ -74,8 +74,10 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     result = checker.run_check()
     samples = result["resolution_samples"]
 
-    assert _owner_for(samples, "POST", "/wecom/external-contact/callback") == "production_compat"
-    assert _endpoint_for(samples, "POST", "/wecom/external-contact/callback") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/wecom/external-contact/callback") == "next"
+    assert _endpoint_for(samples, "POST", "/wecom/external-contact/callback") == "aicrm_next.channel_entry.api"
+    assert _owner_for(samples, "POST", "/api/wecom/events") == "next"
+    assert _endpoint_for(samples, "POST", "/api/wecom/events") == "aicrm_next.channel_entry.api"
     assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/admin/wechat-pay/products") == "production_compat"
