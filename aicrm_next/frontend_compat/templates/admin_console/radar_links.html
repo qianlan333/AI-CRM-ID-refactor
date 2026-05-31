@@ -3,8 +3,10 @@
 {% block head_extra %}
 <style>
   .radar-page { display: grid; gap: 16px; }
-  .radar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
-  .radar-filters { display: flex; gap: 10px; flex-wrap: wrap; }
+  .radar-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+  .radar-filters { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+  .radar-filter-field { display: grid; gap: 6px; }
+  .radar-filter-field span { color: #374151; font-size: 13px; font-weight: 800; }
   .radar-input, .radar-select { min-height: 38px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #1f2937; }
   .radar-button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #2563eb; font-weight: 700; text-decoration: none; cursor: pointer; }
   .radar-button.primary { min-height: 40px; padding: 9px 14px; border-color: #2563eb; background: #2563eb; color: #fff; }
@@ -16,23 +18,31 @@
   .radar-title { color: #111827; font-weight: 800; }
   .radar-muted { color: #6b7280; }
   .radar-code { max-width: 220px; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .radar-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; border: 1px solid #d1d5db; color: #374151; background: #fff; font-size: 12px; font-weight: 700; }
+  .radar-badge { display: inline-flex; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+  .radar-badge.link { background: #eef2ff; color: #4338ca; }
+  .radar-badge.image { background: #ecfdf5; color: #047857; }
+  .radar-badge.pdf { background: #fef2f2; color: #b91c1c; }
   .radar-status-on { color: #15803d; font-weight: 800; }
   .radar-status-off { color: #dc2626; font-weight: 800; }
+  .radar-row-disabled { background: rgba(148, 163, 184, .08); }
   .radar-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .radar-empty { padding: 36px 18px; text-align: center; color: #6b7280; }
   .radar-toast { position: fixed; right: 24px; bottom: 24px; z-index: 40; padding: 10px 14px; border-radius: 10px; background: #111827; color: #fff; box-shadow: 0 12px 28px rgba(15, 23, 42, .24); }
   .radar-toast.is-error { background: #b91c1c; }
-  .radar-share-modal[hidden] { display: none; }
-  .radar-share-modal { position: fixed; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, .35); }
-  .radar-share-panel { width: min(520px, 100%); border-radius: 14px; background: #fff; box-shadow: 0 24px 80px rgba(15, 23, 42, .24); overflow: hidden; }
-  .radar-share-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid #e5e7eb; font-weight: 850; }
-  .radar-share-body { display: grid; gap: 16px; padding: 18px; }
-  .radar-share-row { display: flex; gap: 8px; }
-  .radar-share-row input { flex: 1; }
-  .radar-qr { width: 190px; height: 190px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+  .questionnaire-share-modal[hidden] { display: none !important; }
+  .questionnaire-share-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, 0.34); }
+  .questionnaire-share-panel { width: min(520px, 100%); overflow: hidden; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; box-shadow: 0 24px 72px rgba(15, 23, 42, 0.22); }
+  .questionnaire-share-head { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 0 18px; border-bottom: 1px solid #e5e7eb; font-size: 18px; font-weight: 900; }
+  .questionnaire-share-close { width: 34px; height: 34px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; color: #111827; cursor: pointer; font-size: 22px; line-height: 1; }
+  .questionnaire-share-body { display: grid; gap: 18px; padding: 18px; }
+  .questionnaire-share-label { margin-bottom: 8px; color: #6b7280; font-size: 13px; font-weight: 850; }
+  .questionnaire-share-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .questionnaire-share-input { min-width: 0; height: 42px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fbfcff; color: #111827; padding: 0 12px; }
+  .questionnaire-share-qr-wrap { display: grid; justify-items: center; gap: 10px; }
+  .questionnaire-share-qr { width: 220px; height: 220px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 16px; background: #fff; padding: 12px; }
   @media (max-width: 820px) {
-    .radar-toolbar, .radar-share-row { align-items: stretch; flex-direction: column; }
+    .radar-toolbar { align-items: stretch; flex-direction: column; }
+    .questionnaire-share-row { grid-template-columns: 1fr; }
     .radar-table-card { overflow-x: auto; }
     .radar-table { min-width: 980px; }
   }
@@ -43,20 +53,29 @@
 <section class="radar-page">
   <div class="radar-toolbar">
     <div class="radar-filters">
-      <input class="radar-input" data-search placeholder="搜索内容名称或链接">
-      <select class="radar-select" data-type-filter>
-        <option value="all">全部类型</option>
-        <option value="link">外部链接</option>
-        <option value="image">图片预览</option>
-        <option value="pdf">PDF 预览</option>
-      </select>
-      <select class="radar-select" data-status-filter>
-        <option value="all">全部状态</option>
-        <option value="enabled">启用</option>
-        <option value="disabled">停用</option>
-      </select>
+      <label class="radar-filter-field">
+        <span>搜索内容</span>
+        <input class="radar-input" data-search placeholder="按名称、链接、文件名搜索">
+      </label>
+      <label class="radar-filter-field">
+        <span>类型</span>
+        <select class="radar-select" data-type-filter>
+          <option value="all">全部</option>
+          <option value="link">链接</option>
+          <option value="image">图片</option>
+          <option value="pdf">PDF</option>
+        </select>
+      </label>
+      <label class="radar-filter-field">
+        <span>状态</span>
+        <select class="radar-select" data-status-filter>
+          <option value="all">全部</option>
+          <option value="enabled">启用</option>
+          <option value="disabled">停用</option>
+        </select>
+      </label>
     </div>
-    <a class="radar-button primary" href="/admin/radar-links/new">新建内容雷达</a>
+    <button class="radar-button" type="button" data-refresh>刷新</button>
   </div>
 
   <div class="radar-table-card">
@@ -81,24 +100,26 @@
   </div>
 </section>
 
-<div class="radar-share-modal" data-share-modal hidden>
-  <div class="radar-share-panel" role="dialog" aria-modal="true" aria-labelledby="radar-share-title">
-    <div class="radar-share-head">
+<div class="questionnaire-share-modal" data-share-modal aria-hidden="true" hidden>
+  <div class="questionnaire-share-panel" role="dialog" aria-modal="true" aria-labelledby="radar-share-title">
+    <div class="questionnaire-share-head">
       <span id="radar-share-title">分享内容雷达</span>
-      <button class="radar-button" type="button" data-share-close>关闭</button>
+      <button class="questionnaire-share-close" type="button" aria-label="关闭" data-share-close>×</button>
     </div>
-    <div class="radar-share-body">
+    <div class="questionnaire-share-body">
       <div>
-        <div class="radar-muted">雷达链接</div>
-        <div class="radar-share-row">
-          <input class="radar-input" data-share-url readonly>
+        <div class="questionnaire-share-label">雷达链接</div>
+        <div class="questionnaire-share-row">
+          <input class="questionnaire-share-input" data-share-url readonly>
           <button class="radar-button" type="button" data-share-copy>复制链接</button>
         </div>
       </div>
       <div>
-        <div class="radar-muted">二维码</div>
-        <p><img class="radar-qr" data-share-qr alt="内容雷达二维码"></p>
-        <a class="radar-button" data-share-download href="#" download="内容雷达二维码.svg">保存二维码</a>
+        <div class="questionnaire-share-label">二维码</div>
+        <div class="questionnaire-share-qr-wrap">
+          <img class="questionnaire-share-qr" data-share-qr alt="内容雷达二维码">
+          <a class="radar-button" data-share-download href="#" download="内容雷达二维码.svg">保存二维码</a>
+        </div>
       </div>
     </div>
   </div>
@@ -122,7 +143,7 @@
   let toastTimer = null;
   let activeShareUrl = "";
 
-  const labels = {link: "外部链接", image: "图片预览", pdf: "PDF 预览"};
+  const labels = {link: "链接", image: "图片", pdf: "PDF"};
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const shortUrl = (value) => String(value || "").replace(window.location.origin, "");
   const formatDate = (value) => {
@@ -185,18 +206,17 @@
       return;
     }
     rowsEl.innerHTML = list.map((item) => `
-      <tr>
+      <tr class="${item.enabled ? "" : "radar-row-disabled"}">
         <td><div class="radar-title">${escapeHtml(item.title || "未命名内容")}</div><div class="radar-muted">${escapeHtml(item.file_name_snapshot || item.original_url || item.media_item_id || "-")}</div></td>
-        <td><span class="radar-badge">${escapeHtml(labels[item.target_type] || item.target_type)}</span></td>
+        <td><span class="radar-badge ${escapeHtml(item.target_type || "")}">${escapeHtml(labels[item.target_type] || item.target_type)}</span></td>
         <td><span class="${item.enabled ? "radar-status-on" : "radar-status-off"}">${item.enabled ? "启用" : "停用"}</span></td>
-        <td><div class="radar-code">${escapeHtml(shortUrl(item.wrapper_url))}</div></td>
+        <td><div class="radar-code">${escapeHtml(shortUrl(item.wrapper_url))}</div><button class="radar-button" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制</button></td>
         <td>${Number(item.total_landings || 0)}</td>
         <td>${Number(item.authorized_users || 0)}</td>
         <td>${Number(item.view_count || 0)}</td>
         <td>${escapeHtml(formatDate(item.last_viewed_at))}</td>
         <td>
           <div class="radar-actions">
-            <button class="radar-button" type="button" data-copy="${escapeHtml(item.wrapper_url)}">复制</button>
             <button class="radar-button" type="button" data-share="${item.id}">分享</button>
             <a class="radar-button" href="/admin/radar-links/${item.id}/detail">详情</a>
             <a class="radar-button" href="/admin/radar-links/${item.id}/edit">编辑</a>
@@ -222,11 +242,16 @@
     const payload = await fetchJson(`/api/admin/radar-links/${id}/share`);
     const share = payload.share || {};
     activeShareUrl = String(share.url || "");
+    if (!activeShareUrl) {
+      toast("当前内容雷达还没有可分享链接", true);
+      return;
+    }
     shareUrlEl.value = activeShareUrl;
     shareQrEl.src = String(share.qr_data_url || "");
     shareDownloadEl.href = String(share.qr_data_url || "#");
     shareDownloadEl.download = String(share.download_filename || "内容雷达二维码.svg");
     shareModalEl.hidden = false;
+    shareModalEl.setAttribute("aria-hidden", "false");
   }
 
   document.addEventListener("click", async (event) => {
@@ -246,9 +271,16 @@
       toast(error.message || "操作失败", true);
     }
   });
-  document.querySelector("[data-share-close]").addEventListener("click", () => { shareModalEl.hidden = true; });
+  document.querySelector("[data-refresh]").addEventListener("click", load);
   document.querySelector("[data-share-copy]").addEventListener("click", () => copyText(activeShareUrl));
-  shareModalEl.addEventListener("click", (event) => { if (event.target === shareModalEl) shareModalEl.hidden = true; });
+  function closeShare() {
+    shareModalEl.hidden = true;
+    shareModalEl.setAttribute("aria-hidden", "true");
+    activeShareUrl = "";
+  }
+  document.querySelector("[data-share-close]").addEventListener("click", closeShare);
+  shareModalEl.addEventListener("click", (event) => { if (event.target === shareModalEl) closeShare(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !shareModalEl.hidden) closeShare(); });
   [searchEl, typeFilterEl, statusFilterEl].forEach((el) => el.addEventListener("input", render));
   load();
 })();
