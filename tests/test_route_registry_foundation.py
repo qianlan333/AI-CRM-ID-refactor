@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
-from aicrm_next.platform_foundation.route_registry.checker import build_route_check_report
+from aicrm_next.platform_foundation.route_registry.checker import RuntimeRouteChecker, build_route_check_report
 from aicrm_next.platform_foundation.route_registry.manifest_loader import load_route_registry
 from aicrm_next.platform_foundation.route_registry.models import RouteRegistry, RouteRegistryEntry
 from aicrm_next.platform_foundation.route_registry.service import RouteRegistryService
@@ -18,7 +18,10 @@ def test_route_registry_loader_merges_ownership_and_legacy_exit_manifest() -> No
     assert "/api/admin/system/routes" in patterns
     assert any(item.sample for item in registry.lifecycle_items)
     service = RouteRegistryService(registry)
-    assert service.lifecycle_for_route("/api/h5/questionnaires/{slug}/submit")[0].sample is True
+    lifecycle = service.lifecycle_for_route("/api/h5/questionnaires/{slug}/submit")[0]
+    assert lifecycle.sample is True
+    assert lifecycle.production_decision == "excluded"
+    assert "not used for deletion decision" in lifecycle.notes
 
 
 def test_registered_route_passes_strict_when_registered() -> None:
@@ -129,3 +132,25 @@ def test_admin_system_routes_api_reads_registry_service() -> None:
     assert payload["routes"]
     assert all(route["runtime_owner"] == "next_native" for route in payload["routes"])
     assert "registered_routes_count" in payload["checker"]
+
+
+def test_runtime_route_checker_object_interface_matches_report() -> None:
+    app = FastAPI()
+    app.add_api_route("/api/registered", lambda: {"ok": True}, methods=["GET"])
+    registry = RouteRegistry(
+        routes=(
+            RouteRegistryEntry(
+                route_id="registered",
+                path_pattern="/api/registered",
+                methods=("GET",),
+                capability_owner="tests",
+                runtime_owner="next_native",
+            ),
+        )
+    )
+
+    result = RuntimeRouteChecker(RouteRegistryService(registry), app=app).check(strict=True)
+
+    assert result.ok is True
+    assert result.registered_routes_count == 1
+    assert result.undocumented_routes == []

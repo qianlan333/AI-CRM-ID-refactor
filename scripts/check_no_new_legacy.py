@@ -80,6 +80,7 @@ class Violation:
     code: str
     path: str
     detail: str
+    remediation: str = "Register the route in the route registry and update the deletion lifecycle; do not add new legacy fallback or direct side-effect paths."
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -155,7 +156,14 @@ def run_checks(*, strict: bool) -> dict:
     violations = scan_source_tree(ROOT) + check_production_compat_routes(ROOT)
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
-        violations.append(Violation("route_registry_strict", "runtime", str(item)))
+        violations.append(
+            Violation(
+                "route_registry_strict",
+                "runtime",
+                str(item),
+                "Resolve the route diff through route registry ownership and lifecycle updates instead of adding undocumented fallback.",
+            )
+        )
     return {
         "ok": not violations,
         "strict": strict,

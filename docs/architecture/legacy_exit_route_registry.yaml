@@ -1,8 +1,9 @@
 version: 1
-status: legacy_exit_foundation
+status: legacy_exit_foundation_validated_locked
 notes:
   - Supplements docs/route_ownership/production_route_ownership_manifest.yaml with Legacy Exit specific fields.
   - Sample lifecycle items are marked sample=true and are excluded from production deletion decisions.
+  - Foundation group 1 is validated and locked by docs/architecture/legacy_exit_foundation_closeout.md; do not roll back these guards without a replacement closeout.
 routes:
   - route_id: platform_foundation_runtime_route_map
     path_pattern: /api/system/runtime-route-map
@@ -649,7 +650,8 @@ lifecycle_items:
     delete_checker: sample_only
     rollback_plan: sample item; no production decision
     status: planned
-    notes: sample/test lifecycle record only
+    production_decision: excluded
+    notes: test-only lifecycle sample, not used for deletion decision
     sample: true
   - legacy_item_id: sample_questionnaire_public_submit
     capability_owner: aicrm_next.questionnaire
@@ -665,7 +667,8 @@ lifecycle_items:
     delete_checker: sample_only
     rollback_plan: sample item; no production decision
     status: validating
-    notes: sample/test lifecycle record only
+    production_decision: excluded
+    notes: test-only lifecycle sample, not used for deletion decision
     sample: true
   - legacy_item_id: sample_payment_admin_products
     capability_owner: aicrm_next.commerce
@@ -681,5 +684,6 @@ lifecycle_items:
     delete_checker: sample_only
     rollback_plan: sample item; no production decision
     status: blocked
-    notes: sample/test lifecycle record only
+    production_decision: excluded
+    notes: test-only lifecycle sample, not used for deletion decision
     sample: true

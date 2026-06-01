@@ -25,6 +25,53 @@ class RegisteredRoute:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class RouteCheckResult:
+    ok: bool
+    mode: str
+    blockers: list[str]
+    warnings: list[str]
+    registered_routes_count: int
+    manifest_routes_count: int
+    undocumented_routes: list[dict[str, Any]]
+    missing_runtime_routes: list[dict[str, Any]]
+    legacy_fallback_routes: list[dict[str, Any]]
+    wildcard_routes: list[dict[str, Any]]
+    unknown_owner_routes: list[dict[str, Any]]
+    delete_ready_routes: list[dict[str, Any]]
+    deleted_but_still_registered_routes: list[dict[str, Any]]
+
+    @classmethod
+    def from_report(cls, report: dict[str, Any]) -> "RouteCheckResult":
+        return cls(
+            ok=bool(report["ok"]),
+            mode=str(report["mode"]),
+            blockers=list(report["blockers"]),
+            warnings=list(report["warnings"]),
+            registered_routes_count=int(report["registered_routes_count"]),
+            manifest_routes_count=int(report["manifest_routes_count"]),
+            undocumented_routes=list(report["undocumented_routes"]),
+            missing_runtime_routes=list(report["missing_runtime_routes"]),
+            legacy_fallback_routes=list(report["legacy_fallback_routes"]),
+            wildcard_routes=list(report["wildcard_routes"]),
+            unknown_owner_routes=list(report["unknown_owner_routes"]),
+            delete_ready_routes=list(report["delete_ready_routes"]),
+            deleted_but_still_registered_routes=list(report["deleted_but_still_registered_routes"]),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class RuntimeRouteChecker:
+    def __init__(self, service: RouteRegistryService | None = None, app: FastAPI | None = None):
+        self._service = service
+        self._app = app
+
+    def check(self, *, strict: bool = False) -> RouteCheckResult:
+        return RouteCheckResult.from_report(build_route_check_report(app=self._app, service=self._service, strict=strict))
+
+
 @contextmanager
 def production_route_check_env():
     keys = {
