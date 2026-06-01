@@ -242,7 +242,7 @@ routes:
     replacement_status: locked
     checker: tests/test_customer_read_model_next_primary.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable. Broader /api/messages* production_compat fallback remains separate and is not deleted in this PR.
+    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable. /api/messages* broad wildcard has been removed from production_compat and must not be used as fallback.
   - route_id: message_archive_list_api
     path_pattern: /api/messages/{external_userid}
     methods: [GET]
@@ -358,17 +358,17 @@ routes:
   - route_id: message_broad_wildcard_family
     path_pattern: /api/messages*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
-    capability_owner: aicrm_next.integration_gateway
-    runtime_owner: production_compat
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    capability_owner: aicrm_next.message_archive
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: next_shadow
-    replacement_status: validating
+    delete_status: legacy_deleted
+    replacement_status: deleted
     checker: tests/test_messages_registry_lifecycle.py
-    rollback_owner: aicrm_next.integration_gateway
-    notes: Inventory completed and exact replacement routes added; wildcard retained for one validation cycle. Deletion requires next专项测试通过.
+    rollback_owner: aicrm_next.message_archive
+    notes: Broad wildcard removed from production_compat after exact route validation. Exact Next routes own known message surfaces; send/broadcast/sync remain blocked; no real external calls enabled.
   - route_id: customer_admin_pages_family
     path_pattern: /admin/customers*
     methods: [GET]

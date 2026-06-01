@@ -235,7 +235,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Customer read legacy facade removed for recent messages; Next read model is the only production read path. Missing production read model data returns production_unavailable. Broader /api/messages* production_compat fallback remains separate and is not deleted in this PR.
+    notes: Customer read legacy facade removed for recent messages; Next read model is the only production read path. Missing production read model data returns production_unavailable. /api/messages* broad wildcard has been removed from production_compat and must not be used as fallback.
   - route_pattern: /api/messages/{external_userid}
     methods: [GET]
     capability_owner: aicrm_next.message_archive
@@ -326,15 +326,15 @@ routes:
     notes: Explicit blocked response for historical archive sync route; sync jobs are outside this replacement pass.
   - route_pattern: /api/messages*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
-    capability_owner: aicrm_next.integration_gateway
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Inventory completed and exact replacement routes added; wildcard retained for one validation cycle. Deletion requires next专项测试通过.
+    delete_ready: true
+    checker: tests/test_messages_registry_lifecycle.py
+    notes: Broad wildcard removed from production_compat after exact route validation. Exact Next routes own known message surfaces; send/broadcast/sync remain blocked; no real external calls enabled.
   - route_pattern: /api/admin/questionnaires*
     methods: [GET, POST, PUT, DELETE]
     capability_owner: aicrm_next.questionnaire

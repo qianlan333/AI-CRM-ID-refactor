@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.check_no_new_legacy import check_customer_read_model_legacy_deletion, scan_source_tree
+from scripts.check_no_new_legacy import (
+    check_customer_read_model_legacy_deletion,
+    check_messages_broad_wildcard_deletion,
+    scan_source_tree,
+)
 
 
 def test_no_new_legacy_checker_flags_disallowed_legacy_import(tmp_path: Path) -> None:
@@ -50,3 +54,86 @@ def test_customer_read_model_legacy_deletion_guard_flags_deleted_patterns(tmp_pa
     assert "customer_read_legacy_shadow_source" in codes
     assert "customer_read_backfill_execute_uses_default_database" in codes
     assert "customer_read_backfill_legacy_source" in codes
+
+
+def test_messages_broad_wildcard_deletion_guard_flags_legacy_forward_and_bad_lifecycle(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n"
+        '@wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)\n'
+        "async def legacy_production_compat_routes(request):\n"
+        "    return await forward_to_legacy_flask(request)\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/messages*\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_status: active\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/messages*\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n",
+        encoding="utf-8",
+    )
+
+    violations = check_messages_broad_wildcard_deletion(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "messages_broad_wildcard_decorator" in codes
+    assert "messages_broad_wildcard_legacy_forward" in codes
+    assert "messages_broad_wildcard_registry_legacy_allowed" in codes
+    assert "messages_broad_wildcard_registry_delete_status" in codes
+    assert "messages_broad_wildcard_registry_replacement_status" in codes
+    assert "messages_broad_wildcard_manifest_legacy_forward" in codes
+
+
+def test_messages_broad_wildcard_deletion_guard_allows_exact_routes(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        '@router.get("/api/messages/{external_userid}")\n'
+        '@router.get("/api/messages/{external_userid}/recent")\n'
+        '@router.get("/api/messages/search")\n'
+        "def exact_messages_routes():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/messages*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: legacy_deleted\n"
+        "    replacement_status: deleted\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/messages*\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n",
+        encoding="utf-8",
+    )
+
+    assert check_messages_broad_wildcard_deletion(tmp_path) == []

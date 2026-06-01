@@ -468,25 +468,25 @@ entries:
   - id: "LRB-022"
     route_pattern: "/api/messages*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-    capability_owner: "aicrm_next.channel_entry"
+    capability_owner: "aicrm_next.message_archive"
     current_runtime_owner: "next"
     production_behavior: "next_exact"
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: "guarded"
-    checker: "tools/check_next_production_runtime_gaps.py"
+    checker: "tests/test_messages_registry_lifecycle.py"
     replacement_phase: "phase_4_internal_write"
     replacement_category: "internal_write"
     priority: "P1"
     daily_business_critical: false
     business_continuity_requirement: "Planning only; preserve current behavior and do not promote fixture/local_contract data into production success paths."
-    replacement_owner: "aicrm_next.integration_gateway"
-    replacement_strategy: "Move command validation and persistence into Next behind idempotent contracts while preserving legacy fallback."
-    fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    recommended_verification: ["tools/check_next_production_runtime_gaps.py", "contract test for write validation", "idempotency and rollback smoke", "legacy fallback rollback check"]
-    notes: "production_compat catch-all for legacy message/archive surfaces until exact Next replacement exists."
+    replacement_owner: "aicrm_next.message_archive"
+    replacement_strategy: "Exact Next message routes own known read/deprecated/blocked surfaces; broad production_compat wildcard is removed."
+    fallback_required_until: "Complete; /api/messages* broad fallback is deleted and locked."
+    rollback_path: "Revert the deletion PR only if exact message route smoke or guard tests fail; do not add a new broad fallback directly."
+    delete_condition: "Met by PR #962 exact-route validation and the follow-up deletion guard."
+    recommended_verification: ["tests/test_messages_registry_lifecycle.py", "tests/test_messages_exact_routes.py", "scripts/check_no_new_legacy.py --strict"]
+    notes: "Deleted locked record: broad wildcard removed from production_compat; exact Next routes own known message surfaces; send/broadcast/sync remain blocked; no real external calls enabled."
   - id: "LRB-023"
     route_pattern: "/api/admin/questionnaires*"
     methods: ["GET", "POST", "PUT", "DELETE"]

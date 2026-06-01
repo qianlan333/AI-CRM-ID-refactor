@@ -3,7 +3,7 @@ from __future__ import annotations
 from aicrm_next.platform_foundation.route_registry.service import get_route_registry_service
 
 
-def test_messages_routes_have_exact_registry_entries_and_wildcard_is_retained() -> None:
+def test_messages_routes_have_exact_registry_entries_and_wildcard_is_deleted() -> None:
     service = get_route_registry_service()
 
     recent = service.find_route("/api/messages/wx_ext_001/recent", {"GET"})
@@ -29,8 +29,9 @@ def test_messages_routes_have_exact_registry_entries_and_wildcard_is_retained() 
     assert send_route.adapter_mode == "real_blocked"
     assert send_route.legacy_fallback_allowed is False
 
-    assert wildcard.runtime_owner == "production_compat"
-    assert wildcard.legacy_fallback_allowed is True
-    assert wildcard.delete_status == "next_shadow"
-    assert "wildcard retained" in wildcard.notes
-    assert wildcard.delete_status != "legacy_deleted"
+    assert wildcard.runtime_owner == "next_native"
+    assert wildcard.legacy_fallback_allowed is False
+    assert wildcard.delete_status == "legacy_deleted"
+    assert wildcard.replacement_status == "deleted"
+    assert "Broad wildcard removed from production_compat" in wildcard.notes
+    assert "no real external calls enabled" in wildcard.notes

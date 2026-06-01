@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -73,6 +75,8 @@ SIDE_EFFECT_MARKERS = {
     "httpx.delete(",
 }
 CUSTOMER_READ_ROLLBACK_FLAG = "CUSTOMER_READ_MODEL" + "_LEGACY_ROLLBACK_ENABLED"
+MESSAGES_BROAD_WILDCARD = "/api/messages*"
+MESSAGES_BROAD_WILDCARD_RUNTIME = "/api/messages/{path:path}"
 
 
 @dataclass(frozen=True)
@@ -187,8 +191,95 @@ def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def _load_yaml_records(path: Path, key: str) -> list[dict]:
+    if not path.exists():
+        return []
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    records = payload.get(key) or []
+    return [record for record in records if isinstance(record, dict)]
+
+
+def check_messages_broad_wildcard_deletion(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        text = compat_path.read_text(encoding="utf-8")
+        forbidden_decorators = (
+            '@wildcard_router.api_route("/api/messages/{path:path}"',
+            "@wildcard_router.api_route('/api/messages/{path:path}'",
+        )
+        for marker in forbidden_decorators:
+            if marker in text:
+                violations.append(
+                    Violation(
+                        "messages_broad_wildcard_decorator",
+                        str(compat_path.relative_to(root)),
+                        marker,
+                        "Remove the /api/messages/{path:path} production_compat wildcard; exact Next routes own messages surfaces.",
+                    )
+                )
+        if MESSAGES_BROAD_WILDCARD_RUNTIME in text and "forward_to_legacy_flask" in text:
+            violations.append(
+                Violation(
+                    "messages_broad_wildcard_legacy_forward",
+                    str(compat_path.relative_to(root)),
+                    MESSAGES_BROAD_WILDCARD_RUNTIME,
+                    "Do not reintroduce /api/messages/{path:path} forwarding to the legacy Flask facade.",
+                )
+            )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_record = next((record for record in registry_records if record.get("path_pattern") == MESSAGES_BROAD_WILDCARD), None)
+    if registry_record is None:
+        violations.append(
+            Violation(
+                "messages_broad_wildcard_registry_record_missing",
+                "docs/architecture/legacy_exit_route_registry.yaml",
+                MESSAGES_BROAD_WILDCARD,
+                "Keep a deletion record for /api/messages* and mark it legacy_deleted or deletion_locked.",
+            )
+        )
+    else:
+        if registry_record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("messages_broad_wildcard_registry_legacy_allowed", MESSAGES_BROAD_WILDCARD, "legacy_fallback_allowed=true"))
+        if registry_record.get("runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("messages_broad_wildcard_registry_owner", MESSAGES_BROAD_WILDCARD, f"runtime_owner={registry_record.get('runtime_owner')}"))
+        if registry_record.get("delete_status") not in {"legacy_deleted", "deletion_locked"}:
+            violations.append(Violation("messages_broad_wildcard_registry_delete_status", MESSAGES_BROAD_WILDCARD, f"delete_status={registry_record.get('delete_status')}"))
+        if registry_record.get("replacement_status") not in {"deleted", "locked"}:
+            violations.append(Violation("messages_broad_wildcard_registry_replacement_status", MESSAGES_BROAD_WILDCARD, f"replacement_status={registry_record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_record = next((record for record in manifest_records if record.get("route_pattern") == MESSAGES_BROAD_WILDCARD), None)
+    if manifest_record is None:
+        violations.append(
+            Violation(
+                "messages_broad_wildcard_manifest_record_missing",
+                "docs/route_ownership/production_route_ownership_manifest.yaml",
+                MESSAGES_BROAD_WILDCARD,
+                "Keep a production manifest deletion record for /api/messages*.",
+            )
+        )
+    else:
+        if manifest_record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("messages_broad_wildcard_manifest_legacy_allowed", MESSAGES_BROAD_WILDCARD, "legacy_fallback_allowed=true"))
+        if manifest_record.get("production_behavior") == "legacy_forward":
+            violations.append(Violation("messages_broad_wildcard_manifest_legacy_forward", MESSAGES_BROAD_WILDCARD, "production_behavior=legacy_forward"))
+        if manifest_record.get("current_runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("messages_broad_wildcard_manifest_owner", MESSAGES_BROAD_WILDCARD, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+        if manifest_record.get("delete_ready") is not True:
+            violations.append(Violation("messages_broad_wildcard_manifest_not_delete_ready", MESSAGES_BROAD_WILDCARD, f"delete_ready={manifest_record.get('delete_ready')}"))
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
-    violations = scan_source_tree(ROOT) + check_customer_read_model_legacy_deletion(ROOT) + check_production_compat_routes(ROOT)
+    violations = (
+        scan_source_tree(ROOT)
+        + check_customer_read_model_legacy_deletion(ROOT)
+        + check_production_compat_routes(ROOT)
+        + check_messages_broad_wildcard_deletion(ROOT)
+    )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
         violations.append(
