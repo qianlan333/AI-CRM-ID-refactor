@@ -33,20 +33,17 @@ def _customer_read_model_next_primary_enabled() -> bool:
     return _env_flag("CUSTOMER_READ_MODEL_NEXT_PRIMARY", default=True)
 
 
-def _customer_read_model_legacy_rollback_enabled() -> bool:
-    from aicrm_next.shared.runtime import legacy_production_facade_enabled, production_data_ready
-
-    return (
-        production_data_ready()
-        and legacy_production_facade_enabled()
-        and _env_flag("CUSTOMER_READ_MODEL_LEGACY_ROLLBACK_ENABLED", default=False)
-    )
-
-
 def _production_customer_data_required() -> bool:
     from aicrm_next.shared.runtime import production_data_ready
 
     return production_data_ready()
+
+
+def _production_error_message(exc: Exception) -> str:
+    return str(exc).replace(
+        "production/postgres/legacy facade data",
+        "production/postgres read model data",
+    )
 
 
 def _diagnostics(
@@ -92,7 +89,7 @@ def _list_customers_unavailable_payload(query: ListCustomersRequest, exc: Except
         "source_status": "production_unavailable",
         "read_model_status": "unavailable",
         "error_code": "customer_list_read_unavailable",
-        "page_error": str(exc),
+        "page_error": _production_error_message(exc),
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "status_code": 503,
@@ -107,7 +104,7 @@ def _customer_detail_unavailable_payload(external_userid: str, exc: Exception) -
         "source_status": "production_unavailable",
         "read_model_status": "unavailable",
         "error_code": "customer_detail_read_unavailable",
-        "page_error": str(exc),
+        "page_error": _production_error_message(exc),
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "status_code": 503,
@@ -135,7 +132,7 @@ def _customer_timeline_unavailable_payload(query: CustomerTimelineRequest, exc: 
         "source_status": "production_unavailable",
         "read_model_status": "unavailable",
         "error_code": "customer_timeline_read_unavailable",
-        "page_error": str(exc),
+        "page_error": _production_error_message(exc),
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "status_code": 503,
@@ -154,7 +151,7 @@ def _recent_messages_unavailable_payload(query: RecentMessagesRequest, exc: Exce
         "source_status": "production_unavailable",
         "read_model_status": "unavailable",
         "error_code": "recent_messages_read_unavailable",
-        "page_error": str(exc),
+        "page_error": _production_error_message(exc),
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "status_code": 503,
@@ -172,78 +169,6 @@ def _list_filters(query: ListCustomersRequest) -> JsonDict:
         "limit": str(query.limit),
         "offset": str(query.offset),
     }
-
-
-def _legacy_list_customers(query: ListCustomersRequest, *, fallback_reason: str) -> JsonDict:
-    from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
-
-    payload = dict(list_customers_via_legacy(query) or {})
-    payload.setdefault("ok", True)
-    payload.setdefault("status_code", 200)
-    payload.update(
-        _diagnostics(
-            source_status="legacy_production_facade",
-            read_model_status="fallback",
-            fallback_used=True,
-            fallback_reason=fallback_reason,
-        )
-    )
-    return payload
-
-
-def _legacy_customer_detail(query: CustomerDetailRequest, *, fallback_reason: str) -> JsonDict:
-    from aicrm_next.integration_gateway.legacy_customer_read_facade import get_customer_via_legacy
-
-    customer = get_customer_via_legacy(query)
-    if not customer:
-        raise NotFoundError("customer not found")
-    return {
-        "ok": True,
-        "customer": customer,
-        "status_code": 200,
-        **_diagnostics(
-            source_status="legacy_production_facade",
-            read_model_status="fallback",
-            fallback_used=True,
-            fallback_reason=fallback_reason,
-        ),
-    }
-
-
-def _legacy_customer_timeline(query: CustomerTimelineRequest, *, fallback_reason: str) -> JsonDict:
-    from aicrm_next.integration_gateway.legacy_customer_read_facade import get_timeline_via_legacy
-
-    timeline = get_timeline_via_legacy(query)
-    if not timeline:
-        raise NotFoundError("customer timeline not found")
-    return {
-        "ok": True,
-        "timeline": timeline,
-        "status_code": 200,
-        **_diagnostics(
-            source_status="legacy_production_facade",
-            read_model_status="fallback",
-            fallback_used=True,
-            fallback_reason=fallback_reason,
-        ),
-    }
-
-
-def _legacy_recent_messages(query: RecentMessagesRequest, *, fallback_reason: str) -> JsonDict:
-    from aicrm_next.integration_gateway.legacy_customer_read_facade import recent_messages_via_legacy
-
-    payload = dict(recent_messages_via_legacy(query) or {})
-    payload.setdefault("ok", True)
-    payload.setdefault("status_code", 200)
-    payload.update(
-        _diagnostics(
-            source_status="legacy_production_facade",
-            read_model_status="fallback",
-            fallback_used=True,
-            fallback_reason=fallback_reason,
-        )
-    )
-    return payload
 
 
 def _normalize_bool_filter(value: str | None) -> bool | None:
@@ -286,11 +211,6 @@ class ListCustomersQuery:
                     **_diagnostics(source_status="next_read_model", read_model_status="primary"),
                 }
             except Exception as exc:
-                if _customer_read_model_legacy_rollback_enabled():
-                    try:
-                        return _legacy_list_customers(query, fallback_reason=str(exc))
-                    except Exception as fallback_exc:
-                        return _list_customers_unavailable_payload(query, fallback_exc)
                 return _list_customers_unavailable_payload(query, exc)
 
         repo = self._repo or build_customer_read_model_repository()
@@ -377,13 +297,6 @@ class GetCustomerDetailQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                if _customer_read_model_legacy_rollback_enabled():
-                    try:
-                        return _legacy_customer_detail(query, fallback_reason=str(exc))
-                    except NotFoundError:
-                        raise
-                    except Exception as fallback_exc:
-                        return _customer_detail_unavailable_payload(query.external_userid, fallback_exc)
                 return _customer_detail_unavailable_payload(query.external_userid, exc)
             return {
                 "ok": True,
@@ -433,13 +346,6 @@ class GetCustomerTimelineQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                if _customer_read_model_legacy_rollback_enabled():
-                    try:
-                        return _legacy_customer_timeline(query, fallback_reason=str(exc))
-                    except NotFoundError:
-                        raise
-                    except Exception as fallback_exc:
-                        return _customer_timeline_unavailable_payload(query, fallback_exc)
                 return _customer_timeline_unavailable_payload(query, exc)
             return {
                 "ok": True,
@@ -507,13 +413,6 @@ class ListRecentMessagesQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                if _customer_read_model_legacy_rollback_enabled():
-                    try:
-                        return _legacy_recent_messages(query, fallback_reason=str(exc))
-                    except NotFoundError:
-                        raise
-                    except Exception as fallback_exc:
-                        return _recent_messages_unavailable_payload(query, fallback_exc)
                 return _recent_messages_unavailable_payload(query, exc)
             return {
                 "ok": True,

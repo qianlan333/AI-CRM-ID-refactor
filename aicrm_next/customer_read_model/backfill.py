@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from aicrm_next.shared.typing import JsonDict
 
-from .dto import CustomerDetailRequest, CustomerTimelineRequest, ListCustomersRequest, RecentMessagesRequest
 from .repo import CustomerReadRepository, FixtureCustomerReadRepository, build_customer_read_model_repository
 from .reconciliation import CustomerReadModelReconciliationRun, reconcile_customer_read_model
 
@@ -45,34 +46,39 @@ class FixtureCustomerReadModelSource:
         return self._repo.list_recent_messages(external_userid, limit=limit)
 
 
-class LegacyShadowCustomerReadModelSource:
-    source_name = "legacy_shadow"
+class JsonFileCustomerReadModelSource:
+    source_name = "file_json"
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            payload = {"customers": payload}
+        self._customers = list(payload.get("customers") or [])
+        self._details = {
+            str(item.get("external_userid") or ""): item
+            for item in list(payload.get("customer_details") or []) + self._customers
+            if str(item.get("external_userid") or "").strip()
+        }
+        self._timeline = dict(payload.get("timeline_by_external_userid") or {})
+        self._messages = dict(payload.get("messages_by_external_userid") or {})
 
     def list_customers(self, *, limit: int | None = None, external_userids: set[str] | None = None) -> list[JsonDict]:
-        from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
-
-        payload = list_customers_via_legacy(ListCustomersRequest(limit=limit or 200, offset=0))
-        rows = list(payload.get("customers") or payload.get("items") or [])
+        rows = list(self._customers)
         if external_userids:
             rows = [item for item in rows if str(item.get("external_userid") or "") in external_userids]
-        return rows
+        return rows[:limit] if limit is not None else rows
 
     def get_customer_detail(self, external_userid: str) -> JsonDict | None:
-        from aicrm_next.integration_gateway.legacy_customer_read_facade import get_customer_via_legacy
-
-        return get_customer_via_legacy(CustomerDetailRequest(external_userid=external_userid))
+        return self._details.get(external_userid)
 
     def list_timeline(self, external_userid: str, *, limit: int | None = None) -> list[JsonDict]:
-        from aicrm_next.integration_gateway.legacy_customer_read_facade import get_timeline_via_legacy
-
-        payload = get_timeline_via_legacy(CustomerTimelineRequest(external_userid=external_userid, limit=limit or 50))
-        return list((payload or {}).get("items") or [])
+        rows = list(self._timeline.get(external_userid) or [])
+        return rows[:limit] if limit is not None else rows
 
     def list_recent_messages(self, external_userid: str, *, limit: int | None = None) -> list[JsonDict]:
-        from aicrm_next.integration_gateway.legacy_customer_read_facade import recent_messages_via_legacy
-
-        payload = recent_messages_via_legacy(RecentMessagesRequest(external_userid=external_userid, limit=limit or 20))
-        return list(payload.get("messages") or payload.get("items") or [])
+        rows = list(self._messages.get(external_userid) or [])
+        return rows[:limit] if limit is not None else rows
 
 
 @dataclass(frozen=True)
@@ -114,7 +120,7 @@ class CustomerReadModelBackfillService:
         source: CustomerReadModelSource | None = None,
         target_repo: CustomerReadRepository | None = None,
     ) -> None:
-        self._source = source or LegacyShadowCustomerReadModelSource()
+        self._source = source or FixtureCustomerReadModelSource()
         self._target_repo = target_repo or build_customer_read_model_repository()
 
     def run(
