@@ -187,6 +187,62 @@ routes:
     checker: tests/test_admin_customer_profile_console.py
     rollback_owner: aicrm_next.customer_read_model
     notes: Admin customer profile APIs including messages and questionnaire answers.
+  - route_id: customer_list_api
+    path_pattern: /api/customers
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: legacy_customer_read_facade
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: next_primary_with_legacy_rollback
+    checker: tests/test_customer_read_model_next_primary.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Next read model is primary candidate; legacy facade retained for rollback only; deletion requires next test group approval.
+  - route_id: customer_detail_api
+    path_pattern: /api/customers/{external_userid}
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: legacy_customer_read_facade
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: next_primary_with_legacy_rollback
+    checker: tests/test_customer_read_model_next_primary.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Next read model is primary candidate; legacy facade retained for rollback only; deletion requires next test group approval.
+  - route_id: customer_timeline_api
+    path_pattern: /api/customers/{external_userid}/timeline
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: legacy_customer_read_facade
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: next_primary_with_legacy_rollback
+    checker: tests/test_customer_read_model_next_primary.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Next read model is primary candidate; legacy facade retained for rollback only; deletion requires next test group approval.
+  - route_id: customer_recent_messages_api
+    path_pattern: /api/messages/{external_userid}/recent
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: legacy_customer_read_facade
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: next_primary_with_legacy_rollback
+    checker: tests/test_customer_read_model_next_primary.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Next read model is primary candidate; legacy facade retained for rollback only; broader message fallback deletion requires next test group approval.
   - route_id: customer_admin_pages_family
     path_pattern: /admin/customers*
     methods: [GET]
@@ -196,11 +252,11 @@ routes:
     legacy_source: frontend_compat
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_customer_profile_console.py
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: next_primary_with_legacy_rollback
+    checker: tests/test_customer_read_model_next_primary.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Admin customer pages rendered by frontend compatibility templates.
+    notes: Admin customer pages render through frontend compatibility templates over the Next read model primary candidate; legacy facade retained for rollback only and deletion requires next test group approval.
   - route_id: user_ops_admin_api_family
     path_pattern: /api/admin/user-ops*
     methods: [GET, POST]
