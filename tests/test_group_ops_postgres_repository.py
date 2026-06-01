@@ -160,6 +160,20 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
             "status": "active",
         },
     )
+    legacy_node = repo.create_node(
+        plan["id"],
+        {
+            "day_index": 2,
+            "scheduled_time": "21:00",
+            "trigger_time_label": "21:00",
+            "action_title": "老节点空内容包",
+            "text_content": "仓库老话术",
+            "attachments": [],
+            "content_package_json": {},
+            "sort_order": 20,
+            "status": "active",
+        },
+    )
 
     plans, total = repo.list_plans({"limit": 50, "offset": 0})
     groups = repo.list_bound_groups(plan["id"])
@@ -184,7 +198,10 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert plans[0]["owner_name"] == "王小明"
     assert binding["group_name_snapshot"] == "体验课 01 群"
     assert node["content_package_json"]["image_library_ids"] == [12]
-    assert repo.list_nodes(plan["id"])[0]["content_package_json"]["attachment_library_ids"] == [34]
+    listed_nodes = repo.list_nodes(plan["id"])
+    assert listed_nodes[0]["content_package_json"]["attachment_library_ids"] == [34]
+    assert legacy_node["content_package_json"]["content_text"] == "仓库老话术"
+    assert listed_nodes[1]["content_package_json"]["content_text"] == "仓库老话术"
     assert groups[0]["external_member_count_snapshot"] == 150
     assert group_total == 1
     assert group_assets[0]["plan_name"] == "体验课 7 日群运营"

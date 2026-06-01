@@ -1396,6 +1396,30 @@ class PostgresGroupOpsRepository:
         if not row:
             return None
         scheduled_time = derive_node_scheduled_time(row) or "20:00"
+        text_content = clean_text(row.get("text_content"))
+        content_package = _json_loads(
+            row.get("content_package_json"),
+            {
+                "content_text": text_content,
+                "image_library_ids": [],
+                "miniprogram_library_ids": [],
+                "attachment_library_ids": [],
+            },
+        )
+        if isinstance(content_package, dict):
+            has_material_ids = any(
+                content_package.get(key)
+                for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids")
+            )
+            if text_content and not clean_text(content_package.get("content_text")) and not has_material_ids:
+                content_package = {**content_package, "content_text": text_content}
+        else:
+            content_package = {
+                "content_text": text_content,
+                "image_library_ids": [],
+                "miniprogram_library_ids": [],
+                "attachment_library_ids": [],
+            }
         return {
             "id": _int(row.get("id")),
             "plan_id": _int(row.get("plan_id")),
@@ -1403,17 +1427,9 @@ class PostgresGroupOpsRepository:
             "scheduled_time": scheduled_time,
             "trigger_time_label": clean_text(row.get("trigger_time_label")),
             "action_title": clean_text(row.get("action_title")),
-            "text_content": clean_text(row.get("text_content")),
+            "text_content": text_content,
             "attachments": _json_loads(row.get("attachments_json"), []),
-            "content_package_json": _json_loads(
-                row.get("content_package_json"),
-                {
-                    "content_text": clean_text(row.get("text_content")),
-                    "image_library_ids": [],
-                    "miniprogram_library_ids": [],
-                    "attachment_library_ids": [],
-                },
-            ),
+            "content_package_json": content_package,
             "sort_order": _int(row.get("sort_order")),
             "status": clean_text(row.get("status")),
             "created_at": _iso(row.get("created_at")),
