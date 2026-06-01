@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,24 @@ def _create_group_ops_sqlite_db(path: Path) -> str:
         conn.execute(
             text(
                 """
+                CREATE TABLE group_chats (
+                    chat_id TEXT PRIMARY KEY,
+                    group_name TEXT,
+                    owner_userid TEXT,
+                    notice TEXT,
+                    member_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    create_time TEXT,
+                    dismissed_at TEXT,
+                    raw_payload TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 INSERT INTO wecom_group_chat_snapshots (
                     chat_id, group_name, owner_userid, owner_name, admin_userids,
                     internal_member_count, external_member_count, status
@@ -120,6 +139,39 @@ def _create_group_ops_sqlite_db(path: Path) -> str:
                     ('wrOgBBB001', '成交陪跑 01 群', 'owner_002', '李小红', '["admin_001"]', 8, 88, 'active')
                 """
             )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO group_chats (
+                    chat_id, group_name, owner_userid, member_count, status, raw_payload
+                )
+                VALUES (:chat_id, :group_name, :owner_userid, :member_count, :status, :raw_payload)
+                """
+            ),
+            {
+                "chat_id": "wrOgDDD001",
+                "group_name": "管理员可管群",
+                "owner_userid": "owner_004",
+                "member_count": 2,
+                "status": "active",
+                "raw_payload": json.dumps(
+                    {
+                        "errcode": 0,
+                        "group_chat": {
+                            "chat_id": "wrOgDDD001",
+                            "name": "管理员可管群",
+                            "owner": "owner_004",
+                            "admin_list": [{"userid": "admin_002"}],
+                            "member_list": [
+                                {"userid": "owner_004", "type": 1},
+                                {"external_userid": "wm_admin_002", "type": 2},
+                            ],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+            },
         )
     return url
 
@@ -215,6 +267,32 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert owners["owner_001"]["group_count"] >= 2
     assert owners["owner_003"]["name"] == "赵小蓝"
     assert owners["admin_001"]["group_count"] == 0
+
+
+def test_group_ops_sync_imports_admin_groups_from_local_group_chat_cache(tmp_path: Path) -> None:
+    from aicrm_next.automation_engine.group_ops.application import SyncGroupOpsOwnerGroupsCommand
+    from aicrm_next.automation_engine.group_ops.dto import GroupOpsGroupSyncRequest
+    from aicrm_next.automation_engine.group_ops.postgres_repo import PostgresGroupOpsRepository
+
+    class EmptyOwnerSyncAdapter:
+        def list_group_chats(self, *, owner_userid: str, limit: int = 100, cursor: str = "") -> dict:
+            return {"ok": True, "mode": "production", "groups": [], "next_cursor": "", "warnings": []}
+
+    db_url = _create_group_ops_sqlite_db(tmp_path / "group_ops_admin_sync.db")
+    repo = PostgresGroupOpsRepository(create_engine(db_url, future=True))
+
+    result = SyncGroupOpsOwnerGroupsCommand(repo=repo, sync_adapter=EmptyOwnerSyncAdapter())(
+        GroupOpsGroupSyncRequest(owner_userid="admin_002", limit=10, operator="pytest")
+    )
+    groups, total = repo.list_group_assets({"owner_userid": "admin_002", "limit": 50, "offset": 0})
+
+    assert result["ok"] is True
+    assert result["synced_count"] == 1
+    assert result["items"][0]["chat_id"] == "wrOgDDD001"
+    assert result["items"][0]["admin_userids"] == ["admin_002"]
+    assert result["warnings"] == ["included_admin_groups_from_local_cache=1"]
+    assert total == 1
+    assert groups[0]["chat_id"] == "wrOgDDD001"
 
 
 def test_group_ops_api_uses_sql_repository_in_production_data_mode(monkeypatch, tmp_path: Path) -> None:

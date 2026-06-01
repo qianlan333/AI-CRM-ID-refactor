@@ -545,6 +545,16 @@ def _group_sync_blocked_response(
     }
 
 
+def _merge_group_sync_items(groups: list[dict[str, Any]], extra_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_chat_id: dict[str, dict[str, Any]] = {}
+    for group in [*groups, *extra_groups]:
+        chat_id = clean_text(group.get("chat_id"))
+        if not chat_id:
+            continue
+        by_chat_id[chat_id] = group
+    return list(by_chat_id.values())
+
+
 class PreviewGroupOpsOwnerGroupsSyncCommand:
     def __init__(self, repo: GroupOpsRepository | None = None, sync_adapter: WeComGroupAssetAdapterContract | None = None) -> None:
         self._repo = repo
@@ -562,6 +572,11 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
         if not result.get("ok"):
             return _group_sync_blocked_response(owner_userid=owner, result=result, repo=repo)
         groups = normalize_group_snapshots(list(result.get("groups") or []))
+        extra_groups = normalize_group_snapshots(repo.list_admin_group_assets(owner))
+        groups = _merge_group_sync_items(groups, extra_groups)
+        warnings = [clean_text(item) for item in list(result.get("warnings") or []) if clean_text(item)]
+        if extra_groups:
+            warnings.append(f"included_admin_groups_from_local_cache={len(extra_groups)}")
         return _response(
             {
                 "owner_userid": owner,
@@ -575,7 +590,7 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
                 "updated_count": 0,
                 "skipped_count": int(result.get("skipped_count") or 0),
                 "next_cursor": clean_text(result.get("next_cursor")),
-                "warnings": [clean_text(item) for item in list(result.get("warnings") or []) if clean_text(item)],
+                "warnings": warnings,
                 "side_effect_safety": group_ops_side_effect_safety(),
             },
             repo=repo,

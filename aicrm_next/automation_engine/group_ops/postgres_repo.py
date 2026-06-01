@@ -42,6 +42,40 @@ def _json_list(value: Any) -> str:
     return json.dumps(normalize_group_admin_userids(value), ensure_ascii=False, sort_keys=True)
 
 
+def _legacy_group_chat_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    raw_payload = _json_loads(row.get("raw_payload"), {})
+    group_chat = raw_payload.get("group_chat") if isinstance(raw_payload, dict) and isinstance(raw_payload.get("group_chat"), dict) else raw_payload
+    if not isinstance(group_chat, dict):
+        group_chat = {}
+    members = group_chat.get("member_list") if isinstance(group_chat.get("member_list"), list) else []
+    internal_count = 0
+    external_count = 0
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        try:
+            member_type = int(member.get("type") or 0)
+        except (TypeError, ValueError):
+            member_type = 0
+        if member_type == 1 or (member.get("userid") and not member.get("unionid")):
+            internal_count += 1
+        else:
+            external_count += 1
+    if not members:
+        external_count = _int(row.get("member_count"))
+    owner_userid = clean_text(group_chat.get("owner") or group_chat.get("owner_userid") or row.get("owner_userid"))
+    return {
+        "chat_id": clean_text(group_chat.get("chat_id") or row.get("chat_id")),
+        "group_name": clean_text(group_chat.get("name") or group_chat.get("group_name") or row.get("group_name")),
+        "owner_userid": owner_userid,
+        "owner_name": clean_text(group_chat.get("owner_name") or owner_userid),
+        "admin_userids": normalize_group_admin_userids(group_chat.get("admin_list") or group_chat.get("admin_userids")),
+        "internal_member_count": internal_count,
+        "external_member_count": external_count,
+        "status": clean_text(row.get("status") or "active"),
+    }
+
+
 def _as_mapping(row: Any) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -455,6 +489,34 @@ class PostgresGroupOpsRepository:
                 return self._row_to_group_asset(_as_mapping(saved) or {}), "updated" if existing else "created"
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT chat_id, group_name, owner_userid, member_count, status, raw_payload
+                        FROM group_chats
+                        WHERE status = 'active'
+                          AND COALESCE(raw_payload, '') <> ''
+                        ORDER BY group_name ASC, chat_id ASC
+                        """
+                    )
+                ).fetchall()
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+        groups: list[dict[str, Any]] = []
+        for row in rows:
+            group = _legacy_group_chat_snapshot(_as_mapping(row) or {})
+            if not group.get("chat_id") or group.get("owner_userid") == owner:
+                continue
+            if owner in normalize_group_admin_userids(group.get("admin_userids")):
+                groups.append(group)
+        return groups
 
     def list_owners(self) -> list[dict[str, Any]]:
         try:

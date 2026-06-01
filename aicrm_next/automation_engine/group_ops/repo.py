@@ -46,6 +46,7 @@ class GroupOpsRepository(Protocol):
     def get_group_asset(self, chat_id: str) -> dict[str, Any] | None: ...
     def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]: ...
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]: ...
     def list_owners(self) -> list[dict[str, Any]]: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -513,6 +514,16 @@ class InMemoryGroupOpsRepository:
             "status": clean_text(snapshot.get("status") or "active"),
         }
         return deepcopy(self._groups[chat_id]), action
+
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        return [
+            deepcopy(group)
+            for group in self._groups.values()
+            if group_manageable_by_userid(group, owner) and clean_text(group.get("owner_userid")) != owner
+        ]
 
     def list_owners(self) -> list[dict[str, Any]]:
         owners: dict[str, dict[str, Any]] = {}
