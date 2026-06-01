@@ -25,6 +25,7 @@ from .application import (
     ListCloudPlansQuery,
     RejectCloudPlanCommand,
     RejectCloudPlanRecipientCommand,
+    UpdateCloudPlanRecipientMessageCommand,
 )
 
 router = APIRouter()
@@ -187,6 +188,23 @@ async def api_reject_cloud_plan_recipient(plan_id: str, recipient_id: int, reque
             recipient_id,
             operator=_operator_from_request(request, payload),
             reason=str(payload.get("reason") or ""),
+        )
+    except Exception as exc:
+        _raise(exc)
+
+
+@router.patch("/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/{recipient_id}/messages/{message_id}")
+async def api_update_cloud_plan_recipient_message(plan_id: str, recipient_id: int, message_id: int, request: Request):
+    payload, token_error = await _write_context(request)
+    if token_error:
+        return JSONResponse({"ok": False, "error": token_error}, status_code=401)
+    try:
+        return UpdateCloudPlanRecipientMessageCommand()(
+            plan_id,
+            recipient_id,
+            message_id,
+            payload=payload,
+            operator=_operator_from_request(request, payload),
         )
     except Exception as exc:
         _raise(exc)

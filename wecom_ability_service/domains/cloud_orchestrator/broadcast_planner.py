@@ -654,6 +654,101 @@ def execute_committed_plan(*, plan_id: str) -> dict[str, Any]:
     }
 
 
+def _normalize_payload_int_ids(value: Any, *, limit: int | None = None) -> list[int]:
+    raw = value if isinstance(value, list) else []
+    ids: list[int] = []
+    for item in raw:
+        try:
+            normalized = int(item)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0 and normalized not in ids:
+            ids.append(normalized)
+    return ids[:limit] if limit is not None else ids
+
+
+def _normalize_payload_str_ids(value: Any, *, limit: int | None = None) -> list[str]:
+    raw = value if isinstance(value, list) else []
+    ids: list[str] = []
+    for item in raw:
+        normalized = str(item or "").strip()
+        if normalized:
+            ids.append(normalized)
+    return ids[:limit] if limit is not None else ids
+
+
+def _payload_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _payload_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return list(value)
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _recipient_message_request_payload(
+    *,
+    message: dict[str, Any],
+    owner_userid: str,
+    external_userid: str,
+) -> dict[str, Any]:
+    payload = _payload_object(message.get("content_payload_json"))
+    content_package = payload.get("content_package") if isinstance(payload.get("content_package"), dict) else {}
+
+    image_media_ids = _normalize_payload_str_ids(payload.get("image_media_ids"), limit=9)
+    image_library_ids = _normalize_payload_int_ids(
+        content_package.get("image_library_ids") or payload.get("image_library_ids"),
+        limit=9,
+    )
+    if image_library_ids:
+        from .. import image_library as _image_library
+
+        for image_id in image_library_ids:
+            resolved = _image_library.resolve_image_media_id(image_id)
+            if resolved:
+                image_media_ids.append(resolved)
+    image_media_ids = image_media_ids[:9]
+
+    attachments = _payload_list(message.get("attachments_json"))
+
+    miniprogram_library_ids = _normalize_payload_int_ids(
+        content_package.get("miniprogram_library_ids") or payload.get("miniprogram_library_ids"),
+        limit=1,
+    )
+    for library_id in miniprogram_library_ids:
+        attachments.append(miniprogram_library.materialize_miniprogram_attachment(library_id))
+
+    attachment_library_ids = _normalize_payload_int_ids(
+        content_package.get("attachment_library_ids") or payload.get("attachment_library_ids"),
+        limit=MAX_PRIVATE_MESSAGE_ATTACHMENTS,
+    )
+    if attachment_library_ids:
+        from .. import attachment_library as _attachment_library
+
+        for library_id in attachment_library_ids:
+            attachments.append(_attachment_library.materialize_file_attachment(library_id))
+
+    content_text = str(message.get("content_text") or content_package.get("content_text") or payload.get("content_text") or "")
+    return {
+        "sender": owner_userid,
+        "text": {"content": content_text},
+        "image_media_ids": image_media_ids,
+        "attachments": attachments[:MAX_PRIVATE_MESSAGE_ATTACHMENTS],
+        "external_userid": [external_userid],
+    }
+
+
 def execute_recipient_messages(*, plan_id: str, recipient_id: int, broadcast_job_id: int | None = None) -> dict[str, Any]:
     """Worker entry for approved single-recipient cloud plan jobs."""
     db = get_db()
@@ -706,15 +801,11 @@ def execute_recipient_messages(*, plan_id: str, recipient_id: int, broadcast_job
     )
     db.commit()
     for message in messages:
-        payload = json.loads(message.get("content_payload_json") or "{}")
-        attachments = json.loads(message.get("attachments_json") or "[]")
-        request_payload = {
-            "sender": owner_userid,
-            "text": {"content": str(message.get("content_text") or "")},
-            "image_media_ids": list(payload.get("image_media_ids") or []),
-            "attachments": attachments if isinstance(attachments, list) else [],
-            "external_userid": [external_userid],
-        }
+        request_payload = _recipient_message_request_payload(
+            message=message,
+            owner_userid=owner_userid,
+            external_userid=external_userid,
+        )
         send_res = _dispatch_private_message_payload(
             request_payload=request_payload,
             recipient_count=1,

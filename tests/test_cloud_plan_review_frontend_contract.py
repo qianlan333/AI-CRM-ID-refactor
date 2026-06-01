@@ -62,6 +62,10 @@ def test_plan_detail_page_contract(monkeypatch):
     assert "继续加载 50 人" in html
     assert "已加载 0 / 0 人" in html
     assert "data-page-mode=\"detail\"" in html
+    assert "material_picker.css" in html
+    assert "send_content_composer.css" in html
+    assert "material_picker.js" in html
+    assert "send_content_composer.js" in html
     for forbidden in ["进入审批", "全部启动", "批量审批", "展开子计划", "加载子计划", "话术节奏", "cloud-camp-group-child"]:
         assert forbidden not in html
 
@@ -79,6 +83,15 @@ def test_plan_review_static_contract():
     assert "PAGE_SIZE = 50" in script
     assert "recipients?${params.toString()}" in script
     assert "updateRecipientInState(payload.recipient)" in script
+    assert "AICRMSendContentComposer.open" in script
+    assert ".cloud-plan-button--primary:hover:not([disabled])" in template
+    assert ".cloud-plan-button[disabled]:hover" in template
+    assert "contentPackageToTaskPayload" in script
+    assert "localRequestJson" in script
+    assert "JSON.stringify(finalOptions.body)" in script
+    assert "data-task-material-detail" in script
+    assert "/api/admin/send-content/preview" in script
+    assert "小程序：" in script
     for forbidden in [
         "limit', '5000",
         "limit\", \"5000",
