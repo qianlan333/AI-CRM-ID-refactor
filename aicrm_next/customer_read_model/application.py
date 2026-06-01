@@ -588,7 +588,10 @@ def _admin_profile_tags_payload(customer: JsonDict, *, source_status: str) -> Js
         "count": len(tags),
         "external_userid": str(customer.get("external_userid") or ""),
         "source_status": source_status,
+        "read_model_status": "fixture" if source_status == "local_contract_probe" else source_status,
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "degraded": False,
         "status_code": 200,
     }
 

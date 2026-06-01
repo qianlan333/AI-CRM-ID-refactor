@@ -48,7 +48,10 @@ def _empty_binding_status_payload(
         "third_party_user_id": None,
         "detail_url": f"/admin/customers/{external_userid}",
         "source_status": source_status,
+        "read_model_status": source_status,
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "degraded": False,
         "status_code": 200,
     }
 
@@ -68,9 +71,11 @@ def _production_unavailable_payload(external_userid: str, exc: Exception) -> Jso
         "third_party_user_id": None,
         "detail_url": f"/admin/customers/{external_userid}" if external_userid else "",
         "source_status": "production_unavailable",
+        "read_model_status": "unavailable",
         "error_code": "contact_binding_status_unavailable",
         "page_error": str(exc),
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
         "status_code": 503,
     }
 
@@ -102,7 +107,10 @@ def _customer_read_model_binding_status_payload(
         "detail_url": customer.get("sidebar_context", {}).get("customer_profile_url")
         or f"/admin/customers/{external_userid}",
         "source_status": source_status,
+        "read_model_status": source_status,
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "degraded": False,
         "status_code": 200,
     }
 
@@ -126,7 +134,10 @@ def _identity_binding_status_payload(
         "third_party_user_id": None,
         "detail_url": f"/admin/customers/{external_userid}",
         "source_status": "identity_contact",
+        "read_model_status": "identity_contact",
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "degraded": False,
         "status_code": 200,
     }
 
@@ -148,7 +159,10 @@ class GetSidebarContactBindingStatusQuery:
                 "ok": False,
                 "error": "external_userid is required",
                 "source_status": "input_error",
+                "read_model_status": "input_error",
                 "route_owner": "ai_crm_next",
+                "fallback_used": False,
+                "degraded": False,
                 "status_code": 400,
             }
 
