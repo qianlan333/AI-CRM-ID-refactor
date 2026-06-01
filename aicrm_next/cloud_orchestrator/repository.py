@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
@@ -26,7 +26,12 @@ def _json(value: Any, *, default: Any) -> Any:
 
 
 def _json_dump(value: Any) -> str:
-    return json.dumps(value if value is not None else {}, ensure_ascii=False)
+    def _default(item: Any) -> str:
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
+
+    return json.dumps(value if value is not None else {}, ensure_ascii=False, default=_default)
 
 
 def _limit(value: int, *, default: int, maximum: int) -> int:
@@ -830,7 +835,15 @@ class PostgresCloudPlanRepository:
         normalized_recipient_id = int(recipient_id)
         normalized_message_id = int(message_id)
         if normalized_recipient_id < 0:
-            raise ValueError("legacy recipient message is read-only")
+            return self._update_legacy_recipient_message(
+                normalized_plan_id,
+                normalized_recipient_id,
+                normalized_message_id,
+                content_package=content_package,
+                day_offset=day_offset,
+                send_time=send_time,
+                operator=operator,
+            )
         content_payload = _content_payload_for_package(content_package)
         with self._connect() as conn:
             plan = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (normalized_plan_id,)).fetchone()
@@ -902,6 +915,96 @@ class PostgresCloudPlanRepository:
             "status": "updated",
             "recipient": _recipient_view(dict(recipient_row or {})),
             "message": _message_view({**dict(row or {}), "source_type": "cloud_plan"}),
+        }
+
+    def _update_legacy_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        legacy_member_id = abs(int(recipient_id))
+        content_payload = _content_payload_for_package(content_package)
+        with self._connect() as conn:
+            member = conn.execute(
+                """
+                SELECT cm.*, c.owner_userid, c.review_status AS campaign_review_status,
+                       c.run_status AS campaign_run_status, c.status AS campaign_status
+                FROM campaign_members cm
+                JOIN campaigns c ON c.id = cm.campaign_id
+                WHERE """
+                + _LEGACY_GROUP_KEY_SQL
+                + """
+                  = %s
+                  AND cm.id = %s
+                FOR UPDATE OF cm, c
+                """,
+                (plan_id, legacy_member_id),
+            ).fetchone()
+            if not member:
+                raise LookupError("recipient not found")
+            if _text(member.get("campaign_review_status")) == "rejected":
+                raise ValueError("plan is rejected")
+            approval_status, send_status = _legacy_recipient_status(_text(member.get("status")))
+            if approval_status != "pending" or send_status != "pending":
+                raise ValueError("recipient is not editable")
+            step = conn.execute(
+                """
+                SELECT *, 'legacy_campaign' AS source_type
+                FROM campaign_steps
+                WHERE campaign_segment_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (int(member.get("campaign_segment_id") or 0), int(message_id)),
+            ).fetchone()
+            if not step:
+                raise LookupError("message not found")
+            if int(member.get("current_step_index") or -1) >= int(step.get("step_index") or 0):
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else step.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(step.get("day_offset") or 0)
+            normalized_send_time = (_text(send_time) or _text(step.get("send_time")))[:16]
+            row = conn.execute(
+                """
+                UPDATE campaign_steps
+                SET content_text = %s,
+                    content_payload_json = %s::jsonb,
+                    day_offset = %s,
+                    send_time = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *, 'legacy_campaign' AS source_type
+                """,
+                (
+                    _text(content_package.get("content_text")),
+                    _json_dump(content_payload),
+                    normalized_day_offset,
+                    normalized_send_time,
+                    int(message_id),
+                ),
+            ).fetchone()
+            self._audit(
+                conn,
+                operator=operator,
+                action_type="legacy_campaign_step_update_from_cloud_plan",
+                target_type="campaign_step",
+                target_id=f"{plan_id}:{legacy_member_id}:{int(message_id)}",
+                before=dict(step),
+                after=dict(row or {}),
+            )
+            conn.commit()
+        recipient = self.get_recipient(plan_id, recipient_id)
+        return {
+            "status": "updated",
+            "recipient": recipient or {},
+            "message": _message_view(dict(row or {})),
         }
 
 
@@ -1109,7 +1212,43 @@ class InMemoryCloudPlanRepository:
         operator: str,
     ) -> dict[str, Any]:
         if int(recipient_id) < 0:
-            raise ValueError("legacy recipient message is read-only")
+            plan = self.get_plan(plan_id)
+            if not plan:
+                raise LookupError("plan not found")
+            if plan["review_status"] == "rejected":
+                raise ValueError("plan is rejected")
+            recipient = next((item for item in self.legacy_recipients if item["plan_id"] == plan_id and int(item["id"]) == int(recipient_id)), None)
+            if not recipient:
+                raise LookupError("recipient not found")
+            if recipient.get("approval_status") != "pending" or recipient.get("send_status") != "pending":
+                raise ValueError("recipient is not editable")
+            message = next((item for item in self.legacy_messages if int(item["recipient_id"]) == int(recipient_id) and int(item["id"]) == int(message_id)), None)
+            if not message:
+                raise LookupError("message not found")
+            if message.get("status") != "pending":
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(message.get("day_offset") or 0)
+            content_payload = _content_payload_for_package(content_package)
+            message.update(
+                {
+                    "content_text": _text(content_package.get("content_text")),
+                    "content_payload_json": content_payload,
+                    "attachments_json": [],
+                    "day_offset": normalized_day_offset,
+                    "send_time": _text(send_time) or _text(message.get("send_time")),
+                    "updated_at": _now(),
+                }
+            )
+            recipient["updated_at"] = _now()
+            self.audits.append({"action_type": "legacy_campaign_step_update_from_cloud_plan", "target_id": f"{plan_id}:{int(recipient_id)}:{int(message_id)}", "operator": operator})
+            return {
+                "status": "updated",
+                "recipient": _recipient_view(copy.deepcopy(recipient)),
+                "message": _message_view(copy.deepcopy(message)),
+            }
         plan = self.get_plan(plan_id)
         if not plan:
             raise LookupError("plan not found")

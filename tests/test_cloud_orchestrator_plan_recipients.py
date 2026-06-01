@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
-from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
+from aicrm_next.cloud_orchestrator.repository import _json_dump, build_cloud_plan_repository
 from aicrm_next.main import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +125,12 @@ def test_plan_approve_only_changes_plan_review_state(monkeypatch):
     assert repo.broadcast_jobs == []
     recipients = client.get("/api/admin/cloud-orchestrator/plans/plan_probe/recipients").json()["rows"]
     assert [row["approval_status"] for row in recipients] == ["pending", "pending"]
+
+
+def test_audit_json_dump_serializes_datetime_values():
+    payload = json.loads(_json_dump({"updated_at": datetime(2026, 6, 1, 9, 42, 58, tzinfo=timezone.utc)}))
+
+    assert payload["updated_at"] == "2026-06-01T09:42:58+00:00"
 
 
 def test_recipient_approve_enqueues_single_idempotent_cloud_plan_job(monkeypatch):
@@ -350,15 +357,45 @@ def test_patch_recipient_message_requires_admin_action_token(monkeypatch):
     assert response.status_code == 401
 
 
-def test_patch_legacy_recipient_message_is_read_only(monkeypatch):
+def test_patch_pending_legacy_recipient_message_updates_campaign_step(monkeypatch):
+    client = _client(monkeypatch)
+    repo = build_cloud_plan_repository()
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+    repo.legacy_recipients[0]["approval_status"] = "pending"
+    repo.legacy_recipients[0]["send_status"] = "pending"
+
+    response = client.patch(
+        f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11/messages/-101",
+        headers=_token_headers(),
+        json={
+            "content_package": {
+                "content_text": "旧 Campaign 也能改 pending step",
+                "miniprogram_library_ids": [34],
+            },
+            "day_offset": 3,
+            "send_time": "15:30",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"]["content_text"] == "旧 Campaign 也能改 pending step"
+    assert payload["message"]["day_offset"] == 3
+    assert payload["message"]["send_time"] == "15:30"
+    assert payload["message"]["content_payload"]["content_package"]["miniprogram_library_ids"] == [34]
+    detail = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11").json()
+    assert detail["messages"][0]["content_text"] == "旧 Campaign 也能改 pending step"
+
+
+def test_patch_non_pending_legacy_recipient_message_is_not_editable(monkeypatch):
     client = _client(monkeypatch)
     plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
 
     response = client.patch(
         f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11/messages/-101",
         headers=_token_headers(),
-        json={"content_package": {"content_text": "旧 Campaign 不在这里改"}},
+        json={"content_package": {"content_text": "已排队不能改"}},
     )
 
     assert response.status_code == 409
-    assert "legacy recipient message is read-only" in response.json()["detail"]
+    assert "recipient is not editable" in response.json()["detail"]

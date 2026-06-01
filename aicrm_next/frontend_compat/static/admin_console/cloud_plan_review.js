@@ -6,7 +6,7 @@
 
   const api = window.AdminApi || {};
   const escapeHtml = api.escapeHtml || ((value) => String(value || ""));
-  const requestJson = api.requestJson || ((url, options) => fetch(url, options).then((response) => response.json()));
+  const requestJson = api.requestJson || localRequestJson;
   const PAGE_SIZE = 50;
   const mode = root.dataset.pageMode || "list";
   const planId = root.dataset.planId || "";
@@ -19,7 +19,28 @@
     recipientOffset: 0,
     currentRecipient: null,
     currentMessages: [],
+    materialPreviewCache: new Map(),
   };
+
+  function localRequestJson(url, options) {
+    const finalOptions = { ...(options || {}) };
+    const headers = { ...(finalOptions.headers || {}) };
+    if (!headers.Accept) headers.Accept = "application/json";
+    if (finalOptions.body && typeof finalOptions.body === "object" && !(finalOptions.body instanceof FormData)) {
+      if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      finalOptions.body = JSON.stringify(finalOptions.body);
+    }
+    finalOptions.headers = headers;
+    finalOptions.credentials = finalOptions.credentials || "same-origin";
+    return fetch(url, finalOptions).then((response) => response.text().then((text) => {
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch (_error) { payload = {}; }
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || payload.detail || response.statusText || "请求失败");
+      }
+      return payload;
+    }));
+  }
 
   function qs(selector) {
     return root.querySelector(selector);
@@ -199,6 +220,7 @@
       <div class="cloud-plan-task-content-summary" data-task-content-summary>
         <strong>话术摘要：</strong><span>${escapeHtml(summary.text)}</span>
         <strong>素材数量：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>
+        <strong>素材明细：</strong><span data-task-material-detail>${summary.imageCount + summary.miniprogramCount + summary.attachmentCount ? "素材信息加载中" : "无素材"}</span>
       </div>
     `;
   }
@@ -206,9 +228,6 @@
   function taskEditState(task) {
     const recipient = state.currentRecipient || {};
     const plan = state.plan || {};
-    if (Number(recipient.recipient_id || 0) < 0 || String(recipient.source_type || task.source_type || "") === "legacy_campaign") {
-      return { canEdit: false, reason: "旧 Campaign 节奏请到运营计划审阅编辑" };
-    }
     if (String(plan.review_status || "") === "rejected") {
       return { canEdit: false, reason: "计划已拒绝，不能再编辑" };
     }
@@ -498,6 +517,7 @@
     qsa("[data-edit-task]").forEach((button) => {
       button.addEventListener("click", () => openTaskComposer(Number(button.dataset.messageId || 0), button));
     });
+    hydrateTaskMaterialPreviews();
   }
 
   function renderTask(task) {
@@ -514,7 +534,7 @@
       ? ""
       : `<div class="cloud-plan-task-edit-note cloud-plan-cell-muted">${escapeHtml(editState.reason)}</div>`;
     return `
-      <article class="cloud-plan-task">
+      <article class="cloud-plan-task" data-task-card data-message-id="${Number(task.message_id || 0)}">
         <div class="cloud-plan-task-head">
           <div class="cloud-plan-task-meta">第 ${Number(task.sequence_index || 0)} 次 · D+${Number(task.day_offset || 0)} · ${escapeHtml(task.send_time || "--")} · ${escapeHtml(task.status || "pending")}</div>
           ${editButton}
@@ -524,6 +544,65 @@
         ${editNote}
       </article>
     `;
+  }
+
+  function contentPackageCacheKey(contentPackage) {
+    return JSON.stringify(normalizeContentPackage(contentPackage));
+  }
+
+  function materialDetailText(materials, contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    if (!materials.length) {
+      const fallback = [];
+      normalized.image_library_ids.forEach((id) => fallback.push(`图片 #${id}`));
+      normalized.miniprogram_library_ids.forEach((id) => fallback.push(`小程序 #${id}`));
+      normalized.attachment_library_ids.forEach((id) => fallback.push(`附件 #${id}`));
+      return fallback.join(" / ") || "无素材";
+    }
+    return materials.map((item) => {
+      const type = String(item.type || "");
+      const title = String(item.title || "").trim() || `${type || "素材"} #${item.library_id || ""}`;
+      const subtitle = String(item.subtitle || "").trim();
+      if (type === "miniprogram") return `小程序：${title}${subtitle ? `（${subtitle}）` : ""}`;
+      if (type === "image") return `图片：${title}${subtitle ? `（${subtitle}）` : ""}`;
+      return `附件：${title}${subtitle ? `（${subtitle}）` : ""}`;
+    }).join(" / ");
+  }
+
+  async function hydrateTaskMaterialPreviews() {
+    const cards = qsa("[data-task-card]");
+    cards.forEach(async (card) => {
+      const messageId = Number(card.dataset.messageId || 0);
+      const task = state.currentMessages.find((item) => Number(item.message_id || 0) === messageId);
+      const detailNode = card.querySelector("[data-task-material-detail]");
+      if (!task || !detailNode) return;
+      const contentPackage = taskToContentPackage(task);
+      const summary = taskContentSummary(contentPackage);
+      if (summary.imageCount + summary.miniprogramCount + summary.attachmentCount <= 0) {
+        detailNode.textContent = "无素材";
+        return;
+      }
+      const cacheKey = contentPackageCacheKey(contentPackage);
+      if (state.materialPreviewCache.has(cacheKey)) {
+        detailNode.textContent = state.materialPreviewCache.get(cacheKey);
+        return;
+      }
+      try {
+        const payload = await requestJson("/api/admin/send-content/preview", {
+          method: "POST",
+          body: {
+            content_package: contentPackage,
+            text_enabled: true,
+            require_body: false,
+          },
+        });
+        const detail = materialDetailText(((payload.preview || {}).materials || []), contentPackage);
+        state.materialPreviewCache.set(cacheKey, detail);
+        detailNode.textContent = detail;
+      } catch (_error) {
+        detailNode.textContent = materialDetailText([], contentPackage);
+      }
+    });
   }
 
   async function openTaskComposer(messageId, button) {

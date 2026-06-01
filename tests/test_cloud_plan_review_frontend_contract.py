@@ -87,6 +87,11 @@ def test_plan_review_static_contract():
     assert ".cloud-plan-button--primary:hover:not([disabled])" in template
     assert ".cloud-plan-button[disabled]:hover" in template
     assert "contentPackageToTaskPayload" in script
+    assert "localRequestJson" in script
+    assert "JSON.stringify(finalOptions.body)" in script
+    assert "data-task-material-detail" in script
+    assert "/api/admin/send-content/preview" in script
+    assert "小程序：" in script
     for forbidden in [
         "limit', '5000",
         "limit\", \"5000",
