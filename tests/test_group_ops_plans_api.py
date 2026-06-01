@@ -1,11 +1,43 @@
 from __future__ import annotations
 
+from aicrm_next.shared.repository_provider import RepositoryProviderError
 from tests.group_ops_test_helpers import error_code, group_ops_api_client
 
 
 class FixedQueueStatsGateway:
     def count_group_ops_queue(self) -> int:
         return 7
+
+
+class DetailRepoWithMissingOptionalTables:
+    source_status = "postgres_group_ops_repository"
+
+    def get_plan(self, plan_id: int) -> dict:
+        return {
+            "id": int(plan_id),
+            "plan_name": "生产详情兼容计划",
+            "plan_type": "standard",
+            "owner_userid": "owner_001",
+            "owner_name": "Owner",
+            "status": "draft",
+            "created_at": "2026-06-01T00:00:00",
+            "updated_at": "2026-06-01T00:00:00",
+        }
+
+    def list_bound_groups(self, plan_id: int) -> list[dict]:
+        return []
+
+    def list_nodes(self, plan_id: int) -> list[dict]:
+        return []
+
+    def list_plan_scopes(self, plan_id: int) -> list[dict]:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_plan_scope does not exist")
+
+    def get_segmentation(self, plan_id: int) -> dict | None:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_plan_segmentation does not exist")
+
+    def list_execution_logs(self, plan_id: int, filters: dict) -> tuple[list[dict], int]:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_execution_log does not exist")
 
 
 def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client):
@@ -28,6 +60,20 @@ def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client)
     for item in body["items"]:
         assert required <= set(item)
         assert "next_action" not in item
+
+
+def test_plan_detail_tolerates_missing_optional_webhook_rule_tables():
+    from aicrm_next.automation_engine.group_ops.application import GetGroupOpsPlanQuery
+
+    payload = GetGroupOpsPlanQuery(repo=DetailRepoWithMissingOptionalTables())(7)
+
+    assert payload["ok"] is True
+    assert payload["item"]["id"] == 7
+    assert payload["plan"]["boundGroupIds"] == []
+    assert payload["plan"]["boundAudienceIds"] == []
+    assert payload["plan"]["segmentation"] == {}
+    assert payload["plan"]["segmentationStats"] == {"total": 0, "layers": []}
+    assert payload["plan"]["executionStats"] == {"total": 0, "lastStatus": ""}
 
 
 def test_plan_list_returns_group_ops_queue_count(group_ops_api_client, monkeypatch):
