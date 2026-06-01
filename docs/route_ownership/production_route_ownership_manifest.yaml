@@ -42,13 +42,13 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    production_behavior: next_read_model_primary
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Production mode reads PostgreSQL through the customer legacy production facade; fixture/local_contract is not allowed in production.
+    notes: Next read model is primary candidate; legacy customer facade is retained for explicit rollback only and deletion requires the next customer read model test group approval.
   - route_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
@@ -196,46 +196,46 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
+    production_behavior: next_read_model_primary
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact router; production reads through legacy customer facade when production_data_ready().
+    notes: Next read model is primary candidate; legacy customer facade is retained for explicit rollback only and deletion requires the next customer read model test group approval.
   - route_pattern: /api/customers/{external_userid}
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
+    production_behavior: next_read_model_primary
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact customer detail route with production facade.
+    notes: Next read model is primary candidate; legacy customer facade is retained for explicit rollback only and deletion requires the next customer read model test group approval.
   - route_pattern: /api/customers/{external_userid}/timeline
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
+    production_behavior: next_read_model_primary
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact customer timeline route with production facade.
+    notes: Next read model is primary candidate; legacy customer facade is retained for explicit rollback only and deletion requires the next customer read model test group approval.
   - route_pattern: /api/messages/{external_userid}/recent
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
+    production_behavior: next_read_model_primary
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact recent-message read route; broader /api/messages/* production_compat fallback remains documented below.
+    notes: Next read model is primary candidate; legacy customer facade is retained for explicit rollback only. Broader /api/messages/* production_compat fallback remains documented; deletion requires the next customer read model test group approval.
   - route_pattern: /api/messages*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.integration_gateway
