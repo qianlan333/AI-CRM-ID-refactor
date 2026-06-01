@@ -262,6 +262,54 @@ def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_cl
     assert item["attachments"][0]["msgtype"] == "miniprogram"
 
 
+def test_standard_plan_node_update_preserves_legacy_attachments_when_saving_new_content(group_ops_api_client):
+    created = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+        json={
+            "day_index": 4,
+            "scheduled_time": "10:00",
+            "action_title": "历史附件动作",
+            "text_content": "老话术",
+            "attachments": [
+                {
+                    "msgtype": "file",
+                    "file": {"media_id": "legacy-file-media", "name": "历史附件.pdf"},
+                }
+            ],
+            "sort_order": 70,
+            "status": "active",
+        },
+    )
+    assert created.status_code == 201
+    node_id = created.json()["item"]["id"]
+
+    updated = group_ops_api_client.put(
+        f"/api/admin/automation-conversion/group-ops/plans/1/nodes/{node_id}",
+        json={
+            "day_index": 4,
+            "scheduled_time": "10:00",
+            "action_title": "历史附件动作",
+            "content_package_json": {
+                "content_text": "新话术",
+                "image_library_ids": [12],
+            },
+            "sort_order": 70,
+            "status": "active",
+        },
+    )
+
+    assert updated.status_code == 200
+    item = updated.json()["item"]
+    assert item["content_package_json"]["content_text"] == "新话术"
+    assert item["content_package_json"]["image_library_ids"] == [12]
+    assert item["attachments"] == [
+        {
+            "msgtype": "file",
+            "file": {"media_id": "legacy-file-media", "name": "历史附件.pdf"},
+        }
+    ]
+
+
 def test_standard_plan_nodes_reject_invalid_scheduled_time(group_ops_api_client):
     for scheduled_time in ["20:15", "07:30", "24:00"]:
         response = group_ops_api_client.post(
