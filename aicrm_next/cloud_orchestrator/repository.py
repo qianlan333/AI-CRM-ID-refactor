@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
@@ -26,7 +26,12 @@ def _json(value: Any, *, default: Any) -> Any:
 
 
 def _json_dump(value: Any) -> str:
-    return json.dumps(value if value is not None else {}, ensure_ascii=False)
+    def _default(item: Any) -> str:
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
+
+    return json.dumps(value if value is not None else {}, ensure_ascii=False, default=_default)
 
 
 def _limit(value: int, *, default: int, maximum: int) -> int:
