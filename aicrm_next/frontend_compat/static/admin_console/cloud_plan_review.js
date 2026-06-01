@@ -122,6 +122,108 @@
     };
   }
 
+  function parsePayloadObject(raw) {
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw;
+    if (typeof raw === "string" && raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch (_error) {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  function normalizeIdList(value) {
+    const raw = Array.isArray(value) ? value : String(value || "").split(",");
+    const ids = [];
+    raw.forEach((item) => {
+      const id = parseInt(String(item).trim(), 10);
+      if (id > 0 && ids.indexOf(id) === -1) ids.push(id);
+    });
+    return ids;
+  }
+
+  function normalizeContentPackage(value) {
+    const data = value && typeof value === "object" ? value : {};
+    return {
+      content_text: String(data.content_text || "").trim(),
+      image_library_ids: normalizeIdList(data.image_library_ids),
+      miniprogram_library_ids: normalizeIdList(data.miniprogram_library_ids),
+      attachment_library_ids: normalizeIdList(data.attachment_library_ids),
+    };
+  }
+
+  function taskToContentPackage(task) {
+    const current = task || {};
+    const payload = parsePayloadObject(current.content_payload || current.content_payload_json);
+    const contentPackage = parsePayloadObject(payload.content_package || current.content_package);
+    return normalizeContentPackage({
+      content_text: current.content_text || contentPackage.content_text || payload.content_text || "",
+      image_library_ids: contentPackage.image_library_ids || payload.image_library_ids || [],
+      miniprogram_library_ids: contentPackage.miniprogram_library_ids || payload.miniprogram_library_ids || [],
+      attachment_library_ids: contentPackage.attachment_library_ids || payload.attachment_library_ids || [],
+    });
+  }
+
+  function contentPackageToTaskPayload(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    return {
+      content_text: normalized.content_text,
+      content_payload: {
+        content_package: normalized,
+        image_library_ids: normalized.image_library_ids,
+        image_media_ids: [],
+        miniprogram_library_ids: normalized.miniprogram_library_ids,
+        attachment_library_ids: normalized.attachment_library_ids,
+      },
+      attachments: [],
+    };
+  }
+
+  function taskContentSummary(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    const body = normalized.content_text || "";
+    return {
+      text: body ? (body.length > 80 ? `${body.slice(0, 80)}...` : body) : "未配置话术",
+      imageCount: normalized.image_library_ids.length,
+      miniprogramCount: normalized.miniprogram_library_ids.length,
+      attachmentCount: normalized.attachment_library_ids.length,
+    };
+  }
+
+  function renderTaskContentSummary(contentPackage) {
+    const summary = taskContentSummary(contentPackage);
+    return `
+      <div class="cloud-plan-task-content-summary" data-task-content-summary>
+        <strong>话术摘要：</strong><span>${escapeHtml(summary.text)}</span>
+        <strong>素材数量：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>
+      </div>
+    `;
+  }
+
+  function taskEditState(task) {
+    const recipient = state.currentRecipient || {};
+    const plan = state.plan || {};
+    if (Number(recipient.recipient_id || 0) < 0 || String(recipient.source_type || task.source_type || "") === "legacy_campaign") {
+      return { canEdit: false, reason: "旧 Campaign 节奏请到运营计划审阅编辑" };
+    }
+    if (String(plan.review_status || "") === "rejected") {
+      return { canEdit: false, reason: "计划已拒绝，不能再编辑" };
+    }
+    if (String(recipient.approval_status || "") !== "pending") {
+      return { canEdit: false, reason: "目标人员已完成审批，不能再编辑" };
+    }
+    if (String(recipient.send_status || "") !== "pending") {
+      return { canEdit: false, reason: "目标人员已进入发送流程，不能再编辑" };
+    }
+    if (String(task.status || "pending") !== "pending") {
+      return { canEdit: false, reason: "任务已排队、发送或取消，不能再编辑" };
+    }
+    return { canEdit: true, reason: "" };
+  }
+
   function initListPage() {
     const refreshButton = qs("[data-plan-refresh]");
     const keywordInput = qs("[data-plan-keyword]");
@@ -239,7 +341,7 @@
       toast(errorMessage(error));
     } finally {
       restore();
-      if (state.currentRecipient && Number(state.currentRecipient.recipient_id) === Number(recipientId)) renderDrawer();
+      if (state.currentRecipient) renderDrawer();
     }
   }
 
@@ -257,7 +359,7 @@
       toast(errorMessage(error));
     } finally {
       restore();
-      if (state.currentRecipient && Number(state.currentRecipient.recipient_id) === Number(recipientId)) renderDrawer();
+      if (state.currentRecipient) renderDrawer();
     }
   }
 
@@ -393,20 +495,78 @@
       return;
     }
     tasks.innerHTML = state.currentMessages.map(renderTask).join("");
+    qsa("[data-edit-task]").forEach((button) => {
+      button.addEventListener("click", () => openTaskComposer(Number(button.dataset.messageId || 0), button));
+    });
   }
 
   function renderTask(task) {
+    const contentPackage = taskToContentPackage(task);
+    const editState = taskEditState(task);
     const attachments = Array.isArray(task.attachments) ? task.attachments : [];
     const attachmentHtml = attachments.length
       ? attachments.map((item) => `<div class="cloud-plan-cell-muted">${escapeHtml(item.msgtype || item.type || "附件")} ${escapeHtml(item.title || item.name || "")}</div>`).join("")
       : "";
+    const editButton = editState.canEdit
+      ? `<button class="cloud-plan-button" type="button" data-edit-task data-message-id="${Number(task.message_id || 0)}">编辑</button>`
+      : "";
+    const editNote = editState.canEdit
+      ? ""
+      : `<div class="cloud-plan-task-edit-note cloud-plan-cell-muted">${escapeHtml(editState.reason)}</div>`;
     return `
       <article class="cloud-plan-task">
-        <div class="cloud-plan-task-meta">第 ${Number(task.sequence_index || 0)} 次 · D+${Number(task.day_offset || 0)} · ${escapeHtml(task.send_time || "--")} · ${escapeHtml(task.status || "pending")}</div>
-        <div class="cloud-plan-task-text">${escapeHtml(task.content_text || "")}</div>
+        <div class="cloud-plan-task-head">
+          <div class="cloud-plan-task-meta">第 ${Number(task.sequence_index || 0)} 次 · D+${Number(task.day_offset || 0)} · ${escapeHtml(task.send_time || "--")} · ${escapeHtml(task.status || "pending")}</div>
+          ${editButton}
+        </div>
+        ${renderTaskContentSummary(contentPackage)}
         ${attachmentHtml}
+        ${editNote}
       </article>
     `;
+  }
+
+  async function openTaskComposer(messageId, button) {
+    const task = state.currentMessages.find((item) => Number(item.message_id || 0) === Number(messageId || 0));
+    if (!task || !state.currentRecipient) return;
+    const editState = taskEditState(task);
+    if (!editState.canEdit) {
+      toast(editState.reason);
+      return;
+    }
+    if (!window.AICRMSendContentComposer || typeof window.AICRMSendContentComposer.open !== "function") {
+      toast("标准发送内容组件加载失败，请刷新页面后重试");
+      return;
+    }
+    window.AICRMSendContentComposer.open({
+      title: "配置单人话术内容",
+      textEnabled: true,
+      value: taskToContentPackage(task),
+      limits: { image: 3, miniprogram: 1, attachment: 9 },
+      async onConfirm(contentPackage) {
+        const restore = setButtonLoading(button, "保存中");
+        try {
+          const payload = await requestJson(`/api/admin/cloud-orchestrator/plans/${encodeURIComponent(planId)}/recipients/${encodeURIComponent(state.currentRecipient.recipient_id)}/messages/${encodeURIComponent(messageId)}`, {
+            method: "PATCH",
+            headers: jsonHeaders(),
+            body: writePayload({
+              ...contentPackageToTaskPayload(contentPackage),
+              day_offset: Number(task.day_offset || 0),
+              send_time: task.send_time || "",
+            }),
+          });
+          state.currentRecipient = payload.recipient || state.currentRecipient;
+          state.currentMessages = state.currentMessages.map((item) => Number(item.message_id || 0) === Number(messageId) ? payload.message : item);
+          updateRecipientInState(state.currentRecipient);
+          renderDrawer();
+          toast("话术内容已保存");
+        } catch (error) {
+          toast(errorMessage(error));
+        } finally {
+          restore();
+        }
+      },
+    });
   }
 
   function updateRecipientInState(recipient) {
@@ -460,4 +620,14 @@
   } else {
     initListPage();
   }
+
+  window.AICRMCloudPlanTaskContentAdapter = {
+    parsePayloadObject,
+    normalizeIdList,
+    normalizeContentPackage,
+    taskToContentPackage,
+    contentPackageToTaskPayload,
+    taskContentSummary,
+    renderTaskContentSummary,
+  };
 })();

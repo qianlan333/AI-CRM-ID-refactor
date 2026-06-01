@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from aicrm_next.send_content.application import normalize_send_content_package
+
 from .repository import CloudPlanRepository, build_cloud_plan_repository
 
 
@@ -127,3 +129,34 @@ class RejectCloudPlanRecipientCommand:
 
     __call__ = execute
 
+
+class UpdateCloudPlanRecipientMessageCommand:
+    def __init__(self, repo: CloudPlanRepository | None = None) -> None:
+        self._repo = repo or build_cloud_plan_repository()
+
+    def execute(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        payload: dict[str, Any],
+        operator: str,
+    ) -> dict[str, Any]:
+        content_payload = payload.get("content_payload") if isinstance(payload.get("content_payload"), dict) else {}
+        content_package = payload.get("content_package")
+        if not isinstance(content_package, dict):
+            content_package = content_payload.get("content_package") if isinstance(content_payload.get("content_package"), dict) else content_payload
+        normalized = normalize_send_content_package(content_package, text_enabled=True, require_body=False)
+        result = self._repo.update_recipient_message(
+            plan_id,
+            recipient_id,
+            message_id,
+            content_package=normalized,
+            day_offset=payload.get("day_offset"),
+            send_time=payload.get("send_time"),
+            operator=operator,
+        )
+        return {"ok": True, **result, "stats": self._repo.plan_stats(plan_id)}
+
+    __call__ = execute

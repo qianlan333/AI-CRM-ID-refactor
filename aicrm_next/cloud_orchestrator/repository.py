@@ -65,6 +65,17 @@ class CloudPlanRepository(Protocol):
     def reject_plan(self, plan_id: str, *, operator: str, reason: str = "") -> dict[str, Any] | None: ...
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]: ...
     def reject_recipient(self, plan_id: str, recipient_id: int, *, operator: str, reason: str = "") -> dict[str, Any]: ...
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]: ...
 
 
 def _plan_view(row: dict[str, Any], stats: dict[str, int] | None = None) -> dict[str, Any]:
@@ -123,6 +134,22 @@ def _message_view(row: dict[str, Any]) -> dict[str, Any]:
         "sent_at": row.get("sent_at"),
         "last_error": _text(row.get("last_error")),
         "source_type": _text(row.get("source_type")) or "cloud_plan",
+    }
+
+
+def _content_payload_for_package(content_package: dict[str, Any]) -> dict[str, Any]:
+    package = {
+        "content_text": _text(content_package.get("content_text")),
+        "image_library_ids": list(content_package.get("image_library_ids") or []),
+        "miniprogram_library_ids": list(content_package.get("miniprogram_library_ids") or []),
+        "attachment_library_ids": list(content_package.get("attachment_library_ids") or []),
+    }
+    return {
+        "content_package": package,
+        "image_library_ids": package["image_library_ids"],
+        "image_media_ids": [],
+        "miniprogram_library_ids": package["miniprogram_library_ids"],
+        "attachment_library_ids": package["attachment_library_ids"],
     }
 
 
@@ -788,6 +815,95 @@ class PostgresCloudPlanRepository:
             conn.commit()
         return {"status": "rejected", "recipient": _recipient_view(dict(row or {}))}
 
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        normalized_plan_id = _text(plan_id)
+        normalized_recipient_id = int(recipient_id)
+        normalized_message_id = int(message_id)
+        if normalized_recipient_id < 0:
+            raise ValueError("legacy recipient message is read-only")
+        content_payload = _content_payload_for_package(content_package)
+        with self._connect() as conn:
+            plan = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (normalized_plan_id,)).fetchone()
+            if not plan:
+                raise LookupError("plan not found")
+            if _text(plan.get("review_status") or plan.get("status")) == "rejected":
+                raise ValueError("plan is rejected")
+            recipient = conn.execute(
+                "SELECT * FROM cloud_broadcast_plan_recipients WHERE plan_id = %s AND id = %s FOR UPDATE",
+                (normalized_plan_id, normalized_recipient_id),
+            ).fetchone()
+            if not recipient:
+                raise LookupError("recipient not found")
+            if _text(recipient.get("approval_status")) != "pending" or _text(recipient.get("send_status")) != "pending":
+                raise ValueError("recipient is not editable")
+            message = conn.execute(
+                """
+                SELECT *
+                FROM cloud_broadcast_plan_recipient_messages
+                WHERE recipient_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (normalized_recipient_id, normalized_message_id),
+            ).fetchone()
+            if not message:
+                raise LookupError("message not found")
+            if _text(message.get("status")) != "pending":
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(message.get("day_offset") or 0)
+            normalized_send_time = (_text(send_time) or _text(message.get("send_time")))[:16]
+            row = conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages
+                SET content_text = %s,
+                    content_payload_json = %s::jsonb,
+                    attachments_json = '[]'::jsonb,
+                    day_offset = %s,
+                    send_time = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    _text(content_package.get("content_text")),
+                    _json_dump(content_payload),
+                    normalized_day_offset,
+                    normalized_send_time,
+                    normalized_message_id,
+                ),
+            ).fetchone()
+            recipient_row = conn.execute(
+                "SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval FROM cloud_broadcast_plan_recipients WHERE id = %s",
+                (normalized_recipient_id,),
+            ).fetchone()
+            self._audit(
+                conn,
+                operator=operator,
+                action_type="cloud_plan_recipient_message_update",
+                target_type="cloud_broadcast_plan_recipient_message",
+                target_id=f"{normalized_plan_id}:{normalized_recipient_id}:{normalized_message_id}",
+                before=dict(message),
+                after=dict(row or {}),
+            )
+            conn.commit()
+        return {
+            "status": "updated",
+            "recipient": _recipient_view(dict(recipient_row or {})),
+            "message": _message_view({**dict(row or {}), "source_type": "cloud_plan"}),
+        }
+
 
 class InMemoryCloudPlanRepository:
     def __init__(self) -> None:
@@ -980,6 +1096,57 @@ class InMemoryCloudPlanRepository:
         recipient.update({"approval_status": "rejected", "send_status": "cancelled", "rejected_by": operator, "rejected_at": _now(), "reject_reason": reason, "updated_at": _now()})
         self.audits.append({"action_type": "cloud_plan_recipient_reject", "target_id": f"{plan_id}:{int(recipient_id)}", "operator": operator})
         return {"status": "rejected", "recipient": _recipient_view(copy.deepcopy(recipient))}
+
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        if int(recipient_id) < 0:
+            raise ValueError("legacy recipient message is read-only")
+        plan = self.get_plan(plan_id)
+        if not plan:
+            raise LookupError("plan not found")
+        if plan["review_status"] == "rejected":
+            raise ValueError("plan is rejected")
+        recipient = next((item for item in self.recipients if item["plan_id"] == plan_id and int(item["id"]) == int(recipient_id)), None)
+        if not recipient:
+            raise LookupError("recipient not found")
+        if recipient.get("approval_status") != "pending" or recipient.get("send_status") != "pending":
+            raise ValueError("recipient is not editable")
+        message = next((item for item in self.messages if int(item["recipient_id"]) == int(recipient_id) and int(item["id"]) == int(message_id)), None)
+        if not message:
+            raise LookupError("message not found")
+        if message.get("status") != "pending":
+            raise ValueError("message is not editable")
+        try:
+            normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+        except (TypeError, ValueError):
+            normalized_day_offset = int(message.get("day_offset") or 0)
+        content_payload = _content_payload_for_package(content_package)
+        message.update(
+            {
+                "content_text": _text(content_package.get("content_text")),
+                "content_payload_json": content_payload,
+                "attachments_json": [],
+                "day_offset": normalized_day_offset,
+                "send_time": _text(send_time) or _text(message.get("send_time")),
+                "updated_at": _now(),
+            }
+        )
+        recipient["updated_at"] = _now()
+        self.audits.append({"action_type": "cloud_plan_recipient_message_update", "target_id": f"{plan_id}:{int(recipient_id)}:{int(message_id)}", "operator": operator})
+        return {
+            "status": "updated",
+            "recipient": _recipient_view(copy.deepcopy(recipient)),
+            "message": _message_view(copy.deepcopy(message)),
+        }
 
 
 _FIXTURE_REPO = InMemoryCloudPlanRepository()
