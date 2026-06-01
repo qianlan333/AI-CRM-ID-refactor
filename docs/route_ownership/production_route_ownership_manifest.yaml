@@ -905,8 +905,19 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly binding status owner; production data failures return degraded/error.
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 sealed this exact Next binding status route; production data failures return controlled production_unavailable; no legacy fallback.
+  - route_pattern: /api/sidebar/binding-status
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.identity_contact
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 exact Next alias for contact binding status; no legacy fallback and no real external call.
   - route_pattern: /api/sidebar/customer-context
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -915,9 +926,31 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly customer context owner; production data failures return degraded/error.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 sealed this exact Next customer context route on the customer read model; production data failures return controlled production_unavailable; no legacy fallback.
+  - route_pattern: /api/sidebar/profile
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 exact Next profile route backed by customer read model; no legacy fallback.
+  - route_pattern: /api/sidebar/tags
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 exact Next tags route backed by customer tag/read projection; no legacy fallback.
   - route_pattern: /api/admin/customers/profile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -950,7 +983,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy mobile binding write only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for legacy mobile binding write only.
   - route_pattern: /api/sidebar/jssdk-config
     methods: [GET, HEAD, OPTIONS]
     capability_owner: aicrm_next.frontend_compat
@@ -961,7 +994,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for the real WeCom JSSDK signature read needed by the customer sidebar to resolve external_userid.
+    notes: Out of scope for sidebar readonly group 4 because JSSDK needs external signing semantics; narrow production_compat fallback retained.
   - route_pattern: /api/sidebar/lead-pool/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -970,9 +1003,9 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns the sidebar lead-pool status read; upsert writes remain a narrow production_compat fallback.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 sealed this exact Next lead-pool status route on customer read model projections; upsert writes remain out of scope.
   - route_pattern: /api/sidebar/lead-pool/upsert-class-term
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -983,7 +1016,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy lead-pool class-term writes only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for legacy lead-pool class-term writes only.
   - route_pattern: /api/sidebar/signup-tags/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -992,9 +1025,9 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns the sidebar signup-tag status read; mark writes remain a narrow production_compat fallback.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 sealed this exact Next signup-tag status route on customer read model projections; mark writes remain out of scope.
   - route_pattern: /api/sidebar/signup-tags/mark
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_read_model
@@ -1005,18 +1038,18 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy signup-tag mark writes only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for legacy signup-tag mark writes only.
   - route_pattern: /api/sidebar/marketing-status
     methods: [GET, HEAD]
-    capability_owner: aicrm_next.automation_engine
+    capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
     production_behavior: readonly_facade
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns sidebar marketing status reads; marketing state writes remain narrow production_compat fallbacks.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 sealed this exact Next marketing status route on customer read model marketing projections; marketing state writes remain out of scope.
   - route_pattern: /api/sidebar/marketing-status*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -1027,7 +1060,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy marketing status write routes only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for legacy marketing status write routes only.
   - route_pattern: /api/sidebar/v2*
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -1049,7 +1082,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for sidebar v2 profile writes only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for sidebar v2 profile writes only.
   - route_pattern: /api/sidebar/v2/materials/send
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_read_model
@@ -1060,7 +1093,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for sidebar v2 material send writes only.
+    notes: Out of scope for sidebar readonly group 4; narrow production_compat fallback retained for sidebar v2 material send writes only.
   - route_pattern: /wecom/external-contact/callback
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.channel_entry

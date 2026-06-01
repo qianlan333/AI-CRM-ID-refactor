@@ -817,6 +817,118 @@ routes:
     checker: tests/test_questionnaire_external_push_contract.py
     rollback_owner: aicrm_next.questionnaire
     notes: Questionnaire external push log pages and retry actions.
+  - route_id: sidebar_customer_context_api
+    path_pattern: /api/sidebar/customer-context
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 sealed this exact Next route on customer read model; production data failures return controlled production_unavailable; no legacy fallback.
+  - route_id: sidebar_profile_api
+    path_pattern: /api/sidebar/profile
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 exact Next profile route backed by customer read model; no legacy fallback.
+  - route_id: sidebar_tags_api
+    path_pattern: /api/sidebar/tags
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 exact Next tags route backed by customer tag/read projection; no legacy fallback.
+  - route_id: sidebar_binding_status_api
+    path_pattern: /api/sidebar/binding-status
+    methods: [GET]
+    capability_owner: aicrm_next.identity_contact
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.identity_contact
+    notes: Sidebar readonly group 4 exact Next binding status alias; no legacy fallback and no real external call.
+  - route_id: sidebar_contact_binding_status_api
+    path_pattern: /api/sidebar/contact-binding-status
+    methods: [GET]
+    capability_owner: aicrm_next.identity_contact
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.identity_contact
+    notes: Sidebar readonly group 4 sealed existing contact binding status exact Next route; no legacy fallback.
+  - route_id: sidebar_lead_pool_status_api
+    path_pattern: /api/sidebar/lead-pool/status
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model class status/sidebar projection; write upsert remains out of scope.
+  - route_id: sidebar_signup_tags_status_api
+    path_pattern: /api/sidebar/signup-tags/status
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model signup tag/status projection; mark write remains out of scope.
+  - route_id: sidebar_marketing_status_api
+    path_pattern: /api/sidebar/marketing-status
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: validated
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model marketing projection; marketing writes remain out of scope.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

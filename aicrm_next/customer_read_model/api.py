@@ -5,7 +5,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from aicrm_next.shared.errors import NotFoundError
-from aicrm_next.integration_gateway import legacy_sidebar_read_facade
 
 from .application import (
     GetAdminCustomerProfileQuery,
@@ -46,14 +45,30 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
 
 def _sidebar_input_error(message: str) -> JSONResponse:
     return JSONResponse(
-        {"ok": False, "error": message, "source_status": "input_error", "route_owner": "ai_crm_next"},
+        {
+            "ok": False,
+            "error": message,
+            "source_status": "input_error",
+            "read_model_status": "input_error",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "degraded": False,
+        },
         status_code=400,
     )
 
 
 def _sidebar_lookup_error(message: str) -> JSONResponse:
     return JSONResponse(
-        {"ok": False, "error": message, "source_status": "not_found", "route_owner": "ai_crm_next"},
+        {
+            "ok": False,
+            "error": message,
+            "source_status": "not_found",
+            "read_model_status": "not_found",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "degraded": False,
+        },
         status_code=404,
     )
 
@@ -64,9 +79,11 @@ def _sidebar_read_unavailable(exc: Exception) -> JSONResponse:
             "ok": False,
             "degraded": True,
             "source_status": "production_unavailable",
+            "read_model_status": "unavailable",
             "error_code": "sidebar_read_unavailable",
             "page_error": str(exc),
             "route_owner": "ai_crm_next",
+            "fallback_used": False,
         },
         status_code=503,
     )
@@ -137,6 +154,81 @@ def _context_for_external_userid(
             timeline_limit=timeline_limit,
         )
     )
+
+
+def _legacy_sidebar_read_facade():
+    from aicrm_next.integration_gateway import legacy_sidebar_read_facade
+
+    return legacy_sidebar_read_facade
+
+
+def _status_code(payload: dict, default: int = 200) -> int:
+    return int(payload.pop("status_code", default) or default)
+
+
+def _sidebar_diagnostics_from_context(context: dict) -> dict:
+    return {
+        "source_status": context.get("source_status") or "",
+        "read_model_status": context.get("read_model_status") or "",
+        "route_owner": "ai_crm_next",
+        "fallback_used": bool(context.get("fallback_used")),
+        "degraded": bool(context.get("degraded")),
+    }
+
+
+def _sidebar_context_or_response(external_userid: str) -> tuple[dict | None, JSONResponse | None]:
+    try:
+        context = _context_for_external_userid(external_userid)
+    except NotFoundError:
+        return None, _sidebar_lookup_error("customer not found")
+    except Exception as exc:
+        return None, _sidebar_read_unavailable(exc)
+    if not context.get("ok"):
+        status_code = 503 if context.get("degraded") else 404 if context.get("source_status") == "not_found" else 400
+        payload = dict(context)
+        payload.setdefault("route_owner", "ai_crm_next")
+        payload.setdefault("fallback_used", False)
+        payload.setdefault("read_model_status", "unavailable" if payload.get("degraded") else payload.get("source_status") or "")
+        return None, JSONResponse(jsonable_encoder(payload), status_code=status_code)
+    return context, None
+
+
+def _class_term_payload(class_user_status: dict, sidebar_context: dict) -> tuple[int | None, str]:
+    raw_no = (
+        sidebar_context.get("current_class_term_no")
+        or sidebar_context.get("class_term_no")
+        or class_user_status.get("class_term_no")
+    )
+    class_term_no: int | None = None
+    if raw_no not in {None, ""}:
+        try:
+            class_term_no = int(raw_no)
+        except (TypeError, ValueError):
+            class_term_no = None
+    label = str(
+        sidebar_context.get("current_class_term_label")
+        or sidebar_context.get("class_term_label")
+        or class_user_status.get("class_term_label")
+        or (f"{class_term_no}期" if class_term_no else "")
+    )
+    return class_term_no, label
+
+
+def _display_status(value: str) -> str:
+    mapping = {
+        "activated": "已激活",
+        "not_activated": "未激活",
+        "pending_input": "待补录",
+        "high_intent": "高意向",
+        "medium": "中意向",
+        "unknown": "未知",
+        "trial": "试用",
+        "new_user": "新用户",
+        "followup": "复访",
+        "lead": "线索",
+        "converted": "已转化",
+    }
+    return mapping.get(value, value or "")
 
 
 @router.get("/api/customers")
@@ -232,14 +324,34 @@ def get_sidebar_customer_context(external_userid: str | None = None, user_id: st
                 "sidebar_context": context.get("customer", {}).get("sidebar_context") or {},
             },
             "source_status": context.get("source_status"),
+            "read_model_status": context.get("read_model_status"),
             "degraded": bool(context.get("degraded")),
+            "fallback_used": bool(context.get("fallback_used")),
             "page_error": context.get("page_error") or "",
             "route_owner": "ai_crm_next",
         }
     except NotFoundError:
-        return _input_error("customer not found")
+        return _sidebar_lookup_error("customer not found")
     except Exception as exc:
         return _production_unavailable(exc)
+
+
+@router.get("/api/sidebar/profile")
+def get_sidebar_profile(external_userid: str | None = None, user_id: str | None = None):
+    result = GetAdminCustomerProfileQuery()(
+        external_userid=external_userid,
+        user_id=user_id,
+    )
+    return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
+
+
+@router.get("/api/sidebar/tags")
+def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = None):
+    result = GetAdminCustomerProfileTagsQuery()(
+        external_userid=external_userid,
+        user_id=user_id,
+    )
+    return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
 
 @router.get("/api/sidebar/jssdk-config")
@@ -259,48 +371,116 @@ def get_sidebar_jssdk_config(url: str | None = None):
 
 @router.get("/api/sidebar/lead-pool/status")
 def get_sidebar_lead_pool_status(external_userid: str | None = None, owner_userid: str | None = None):
-    if not str(external_userid or "").strip():
+    resolved_external_userid = str(external_userid or "").strip()
+    resolved_owner_userid = str(owner_userid or "").strip()
+    if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    try:
-        payload = legacy_sidebar_read_facade.sidebar_lead_pool_status(
-            external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
-        )
-    except ValueError as exc:
-        return _sidebar_input_error(str(exc))
-    except Exception as exc:
-        return _sidebar_read_unavailable(exc)
-    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+    context, response = _sidebar_context_or_response(resolved_external_userid)
+    if response is not None:
+        return response
+    customer = dict((context or {}).get("customer") or {})
+    binding = dict(customer.get("binding") or {})
+    class_user_status = dict(customer.get("class_user_status") or {})
+    sidebar_context = dict(customer.get("sidebar_context") or {})
+    owner = resolved_owner_userid or str(customer.get("owner_userid") or "")
+    class_term_no, class_term_label = _class_term_payload(class_user_status, sidebar_context)
+    member = {
+        "external_userid": resolved_external_userid,
+        "customer_name": customer.get("customer_name") or "",
+        "owner_userid": owner,
+        "mobile": customer.get("mobile") or "",
+        "class_term_no": class_term_no,
+        "class_term_label": class_term_label,
+    } if customer else {}
+    payload = {
+        "ok": True,
+        "external_userid": resolved_external_userid,
+        "owner_userid": owner,
+        "member": member,
+        "current_class_term_no": class_term_no,
+        "current_class_term_label": class_term_label,
+        "class_term_options": sidebar_context.get("class_term_options") or [],
+        "is_wecom_added": bool(customer.get("external_userid")),
+        "is_mobile_bound": bool(binding.get("is_bound") or customer.get("mobile")),
+        **_sidebar_diagnostics_from_context(context or {}),
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=200)
 
 
 @router.get("/api/sidebar/signup-tags/status")
 def get_sidebar_signup_tag_status(external_userid: str | None = None):
-    if not str(external_userid or "").strip():
+    resolved_external_userid = str(external_userid or "").strip()
+    if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    try:
-        payload = legacy_sidebar_read_facade.sidebar_signup_tag_status(
-            external_userid=str(external_userid or "").strip(),
-        )
-    except Exception as exc:
-        return _sidebar_read_unavailable(exc)
-    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+    context, response = _sidebar_context_or_response(resolved_external_userid)
+    if response is not None:
+        return response
+    customer = dict((context or {}).get("customer") or {})
+    class_user_status = dict(customer.get("class_user_status") or {})
+    payload = {
+        "ok": True,
+        "external_userid": resolved_external_userid,
+        "definitions": [],
+        "initialized": False,
+        "missing_statuses": [],
+        "current_signup_status": str(class_user_status.get("signup_status") or class_user_status.get("current_status") or ""),
+        "current_tag": str(class_user_status.get("signup_label_name") or ""),
+        "wecom_tag_sync_status": str(class_user_status.get("wecom_tag_sync_status") or ""),
+        "wecom_tag_sync_error": str(class_user_status.get("wecom_tag_sync_error") or ""),
+        "marketing_profile": dict(customer.get("marketing_profile") or {}),
+        **_sidebar_diagnostics_from_context(context or {}),
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=200)
 
 
 @router.get("/api/sidebar/marketing-status")
 def get_sidebar_marketing_status(external_userid: str | None = None):
-    if not str(external_userid or "").strip():
+    resolved_external_userid = str(external_userid or "").strip()
+    if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    try:
-        payload = legacy_sidebar_read_facade.sidebar_marketing_status(
-            external_userid=str(external_userid or "").strip(),
-        )
-    except LookupError as exc:
-        return _sidebar_lookup_error(str(exc) or "customer not found")
-    except ValueError as exc:
-        return _sidebar_input_error(str(exc))
-    except Exception as exc:
-        return _sidebar_read_unavailable(exc)
-    return {"ok": True, **payload, "route_owner": "ai_crm_next"}
+    context, response = _sidebar_context_or_response(resolved_external_userid)
+    if response is not None:
+        return response
+    customer = dict((context or {}).get("customer") or {})
+    marketing_summary = dict(customer.get("marketing_summary") or {})
+    marketing_profile = dict(customer.get("marketing_profile") or {})
+    class_user_status = dict(customer.get("class_user_status") or {})
+    main_stage = str(marketing_summary.get("main_stage") or class_user_status.get("current_status") or "")
+    sub_stage = str(marketing_summary.get("sub_stage") or class_user_status.get("activation_bucket") or "")
+    segment = str(marketing_summary.get("value_segment") or marketing_profile.get("value_segment") or "")
+    activated = str(class_user_status.get("activation_bucket") or "") == "activated"
+    eligible = main_stage not in {"converted"} and bool(customer)
+    marketing_status = {
+        "external_userid": resolved_external_userid,
+        "main_stage": main_stage,
+        "sub_stage": sub_stage,
+        "segment": segment,
+        "stage_display": _display_status(sub_stage or main_stage),
+        "segment_display": _display_status(segment),
+        "pool_display": _display_status(sub_stage or main_stage),
+        "activated": activated,
+        "current_followup_type": segment,
+        "current_followup_type_display": _display_status(segment),
+        "questionnaire_segment_display": _display_status(segment),
+        "followup_segment_source": "next_read_model",
+        "followup_segment_source_display": "Next read model",
+        "manual_override_active": False,
+        "eligibility_display": "会" if eligible else "不会",
+        "hit_count": len(marketing_profile.get("matched_question_ids") or []),
+        "matched_question_ids": list(marketing_profile.get("matched_question_ids") or []),
+        "eligible_for_conversion": eligible,
+        "last_activation_at": class_user_status.get("updated_at") if activated else "",
+        "last_conversion_marked_at": "",
+        "recommended_action": marketing_profile.get("recommended_action") or "",
+        "signals": list(marketing_profile.get("signals") or []),
+    }
+    payload = {
+        "ok": True,
+        "external_userid": resolved_external_userid,
+        "marketing_status": marketing_status,
+        **_sidebar_diagnostics_from_context(context or {}),
+    }
+    return JSONResponse(jsonable_encoder(payload), status_code=200)
 
 
 @router.get("/api/sidebar/v2/workbench")
@@ -308,7 +488,7 @@ def get_sidebar_v2_workbench(external_userid: str | None = None, owner_userid: s
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_workbench_readonly(
+        payload = _legacy_sidebar_read_facade().sidebar_v2_workbench_readonly(
             external_userid=str(external_userid or "").strip(),
             owner_userid=str(owner_userid or "").strip(),
         )
@@ -324,7 +504,7 @@ def get_sidebar_v2_questionnaires(external_userid: str | None = None):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_questionnaires(
+        payload = _legacy_sidebar_read_facade().sidebar_v2_questionnaires(
             external_userid=str(external_userid or "").strip(),
         )
     except ValueError as exc:
@@ -337,7 +517,7 @@ def get_sidebar_v2_questionnaires(external_userid: str | None = None):
 @router.get("/api/sidebar/v2/materials")
 def get_sidebar_v2_materials(type: str = "", limit: int = 50):
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_materials(material_type=type, limit=limit)
+        payload = _legacy_sidebar_read_facade().sidebar_v2_materials(material_type=type, limit=limit)
     except ValueError as exc:
         return _sidebar_input_error(str(exc))
     except Exception as exc:
@@ -348,7 +528,7 @@ def get_sidebar_v2_materials(type: str = "", limit: int = 50):
 @router.get("/api/sidebar/v2/materials/image/{image_id}/thumbnail")
 def get_sidebar_v2_image_thumbnail(image_id: int):
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_image_thumbnail(image_id)
+        payload = _legacy_sidebar_read_facade().sidebar_v2_image_thumbnail(image_id)
     except LookupError as exc:
         return _sidebar_lookup_error(str(exc) or "image not found")
     except ValueError as exc:
@@ -373,7 +553,7 @@ def get_sidebar_v2_other_staff_messages(
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_other_staff_messages(
+        payload = _legacy_sidebar_read_facade().sidebar_v2_other_staff_messages(
             external_userid=str(external_userid or "").strip(),
             current_userid=str(current_userid or owner_userid or "").strip(),
             limit=limit,
@@ -390,7 +570,7 @@ def get_sidebar_v2_products(external_userid: str | None = None):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_products(
+        payload = _legacy_sidebar_read_facade().sidebar_v2_products(
             external_userid=str(external_userid or "").strip(),
         )
     except ValueError as exc:
@@ -405,7 +585,7 @@ def get_sidebar_v2_orders(external_userid: str | None = None):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     try:
-        payload = legacy_sidebar_read_facade.sidebar_v2_orders_readonly(
+        payload = _legacy_sidebar_read_facade().sidebar_v2_orders_readonly(
             external_userid=str(external_userid or "").strip(),
         )
     except ValueError as exc:
