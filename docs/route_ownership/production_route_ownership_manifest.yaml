@@ -107,8 +107,8 @@ routes:
   - route_pattern: /admin/jobs
     methods: [GET]
     capability_owner: aicrm_next.admin_jobs
-    current_runtime_owner: ai_crm_next
-    production_behavior: native_sync_jobs_console
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -118,8 +118,8 @@ routes:
   - route_pattern: /admin/broadcast-jobs
     methods: [GET]
     capability_owner: aicrm_next.admin_jobs
-    current_runtime_owner: ai_crm_next
-    production_behavior: native_broadcast_queue_console
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -470,8 +470,8 @@ routes:
   - route_pattern: /api/admin/automation-conversion/task-groups*
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: aicrm_next.automation_engine
-    production_behavior: next_native_exact_route
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -504,7 +504,7 @@ routes:
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
     current_runtime_owner: next
-    production_behavior: next_native_verified
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -870,7 +870,7 @@ routes:
     production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: external_read
+    external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     notes: Narrow production_compat fallback retained for the real WeCom JSSDK signature read needed by the customer sidebar to resolve external_userid.
@@ -1024,7 +1024,7 @@ routes:
     production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded_by_env_flag
+    external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
     notes: Next-native WeCom contact_way QR generation; no fake QR is written when real calls are disabled or config is missing.
@@ -1039,6 +1039,17 @@ routes:
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
     notes: Next-native channel entry repair; welcome resend is not faked when WelcomeCode is unavailable.
+  - route_pattern: /api/admin/hxc-dashboard*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: HXC dashboard API production_compat fallback remains documented while Next-native reads continue to be migrated.
   - route_pattern: /mcp
     methods: [GET, POST]
     capability_owner: aicrm_next.integration_gateway
