@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Engine, create_engine, text
@@ -1114,7 +1114,7 @@ class PostgresAutomationProgramRepository:
         if not bool(group.get("passed")):
             raise ValueError("完整自动化发布检查未通过" if group_key == "full" else "入口发布检查未通过")
         with self._engine.begin() as conn:
-            state = {"entry_published": True, "full_published": group_key == "full", "published_by": _clean_text(operator_id), "published_at": datetime.now(UTC).isoformat()}
+            state = {"entry_published": True, "full_published": group_key == "full", "published_by": _clean_text(operator_id), "published_at": datetime.now(timezone.utc).isoformat()}
             block = self._upsert_config_block(conn, int(program_id), BLOCK_PUBLISH_STATE, state, status="published")
             conn.execute(
                 text(
@@ -1148,7 +1148,7 @@ class PostgresAutomationProgramRepository:
             if not source:
                 raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
             source_dict = dict(source)
-            timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             program_name = _clean_text(payload.get("program_name")) or f"{source_dict.get('program_name') or '自动化运营方案'} 副本"
             program_code = _clean_text(payload.get("program_code")) or f"{source_dict.get('program_code') or 'program'}_copy_{timestamp}"
             inserted = conn.execute(
@@ -2368,7 +2368,7 @@ def copy_automation_program(program_id: int, *, operator_id: str, payload: dict[
     copied_program["program_name"] = _clean_text((payload or {}).get("program_name")) or f"{copied_program['program_name']} 副本"
     copied_program["program_code"] = _clean_text((payload or {}).get("program_code")) or f"{copied_program['program_code']}_copy"
     copied_program["status"] = "draft"
-    copied_program["updated_at"] = datetime.now(UTC).isoformat()
+    copied_program["updated_at"] = datetime.now(timezone.utc).isoformat()
     return {"program": copied_program, "summary": _fixture_summary()}
 
 
@@ -2404,7 +2404,7 @@ def save_automation_program_segmentation(program_id: int, payload: dict[str, Any
             "payload": normalized,
             "status": "saved",
             "version": 1,
-            "updated_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         },
         "profile_segment_template": None,
     }
@@ -2427,7 +2427,7 @@ def save_automation_program_audience_entry_rule(program_id: int, payload: dict[s
             "payload": normalized,
             "status": "saved",
             "version": 1,
-            "updated_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         },
         "next_steps": _audience_next_steps(normalized),
     }
@@ -2458,8 +2458,8 @@ def create_automation_program_operation_task_group(program_id: int, payload: dic
         "program_id": int(program_id),
         "group_name": group_name,
         "sort_order": int(payload.get("sort_order") or len(_FIXTURE_OPERATION_GROUPS) + 1),
-        "created_at": datetime.now(UTC).isoformat(),
-        "updated_at": datetime.now(UTC).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "archived_at": "",
     }
     _FIXTURE_OPERATION_GROUPS.append(group)
@@ -2474,8 +2474,8 @@ def delete_automation_program_operation_task_group(program_id: int, group_id: in
             raise AutomationProgramDataUnavailable(str(exc)) from exc
     for group in _FIXTURE_OPERATION_GROUPS:
         if int(group.get("program_id") or 0) == int(program_id) and int(group.get("id") or 0) == int(group_id):
-            group["archived_at"] = datetime.now(UTC).isoformat()
-            group["updated_at"] = datetime.now(UTC).isoformat()
+            group["archived_at"] = datetime.now(timezone.utc).isoformat()
+            group["updated_at"] = datetime.now(timezone.utc).isoformat()
             for task in _FIXTURE_OPERATION_TASKS:
                 if int(task.get("program_id") or 0) == int(program_id) and int(task.get("group_id") or 0) == int(group_id):
                     task["group_id"] = None
@@ -2492,7 +2492,7 @@ def create_automation_program_operation_task(program_id: int, payload: dict[str,
     global _FIXTURE_OPERATION_TASK_ID
     _FIXTURE_OPERATION_TASK_ID += 1
     normalized = _normalize_operation_task_payload(payload, program_id=int(program_id))
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     task = {**normalized, "id": _FIXTURE_OPERATION_TASK_ID, "created_at": now, "updated_at": now, "published_at": now if normalized["status"] == "active" else ""}
     _FIXTURE_OPERATION_TASKS.append(task)
     projected = _project_operation_task(task)
@@ -2515,7 +2515,7 @@ def update_automation_program_operation_task(program_id: int, task_id: int, payl
     for index, task in enumerate(_FIXTURE_OPERATION_TASKS):
         if int(task.get("program_id") or 0) == int(program_id) and int(task.get("id") or 0) == int(task_id):
             normalized = _normalize_operation_task_payload(payload, program_id=int(program_id), existing=_project_operation_task(task))
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             _FIXTURE_OPERATION_TASKS[index] = {**task, **normalized, "updated_at": now, "published_at": task.get("published_at") or (now if normalized["status"] == "active" else "")}
             return {"ok": True, "route_owner": "ai_crm_next", "source_status": "next_fixture", "task": _project_operation_task(_FIXTURE_OPERATION_TASKS[index])}
     raise AutomationProgramDataUnavailable(f"operation task {task_id} not found")

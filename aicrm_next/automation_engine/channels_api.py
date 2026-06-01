@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -412,7 +412,7 @@ def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], p
     priority = int(payload.get("priority") or 0)
     conn = _connect()
     if conn is None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for channel_id in normalized_ids:
             if channel_id not in _FIXTURE_CHANNELS:
                 raise LookupError("channel_not_found")
@@ -522,7 +522,7 @@ def archive_program_channel_binding_resource(program_id: int, binding_id: int) -
         if not binding or int(binding.get("program_id") or 0) != int(program_id):
             raise LookupError("binding_not_found")
         binding["binding_status"] = "archived"
-        binding["unbound_at"] = datetime.now(UTC).isoformat()
+        binding["unbound_at"] = datetime.now(timezone.utc).isoformat()
         binding["updated_at"] = binding["unbound_at"]
         return {"binding": _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding}), "reason": "program_channel_unbound"}
     with conn:
@@ -591,7 +591,7 @@ def _save_fixture_channel(payload: dict[str, Any], channel_id: int | None = None
     if channel_id is None:
         channel_id = _NEXT_ID
         _NEXT_ID += 1
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     channel = {**existing, **data, "id": int(channel_id), "updated_at": now, "created_at": existing.get("created_at") or now}
     _FIXTURE_CHANNELS[int(channel_id)] = channel
     return _serialize_channel(channel)
