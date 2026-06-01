@@ -164,11 +164,46 @@ def test_legacy_approve_postgres_contract_starts_and_prequeues_campaigns():
     assert "campaign_member_step:" in source
 
 
-def test_legacy_reject_postgres_contract_uses_unaliased_group_key():
+def test_reject_legacy_group_cancels_execution_chain(monkeypatch):
+    client = _client(monkeypatch)
+    repo = build_cloud_plan_repository()
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+    repo.legacy_plans[0]["review_status"] = "pending_review"
+    repo.legacy_plans[0]["run_status"] = "draft"
+    repo.legacy_plans[0]["status"] = "draft"
+    for recipient in repo.legacy_recipients:
+        recipient["approval_status"] = "pending"
+        recipient["send_status"] = "pending"
+
+    approved = client.post(f"/api/admin/cloud-orchestrator/plans/{plan_id}/approve", headers=_token_headers())
+    rejected = client.post(
+        f"/api/admin/cloud-orchestrator/plans/{plan_id}/reject",
+        headers=_token_headers(),
+        json={"reason": "重新布置"},
+    )
+
+    assert approved.status_code == 200
+    assert rejected.status_code == 200
+    assert rejected.json()["plan"]["review_status"] == "rejected"
+    assert rejected.json()["plan"]["run_status"] == "cancelled"
+    recipients = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients").json()["rows"]
+    assert {row["approval_status"] for row in recipients} == {"rejected"}
+    assert {row["send_status"] for row in recipients} == {"cancelled"}
+    assert repo.broadcast_jobs[-1]["status"] == "cancelled"
+    assert repo.broadcast_jobs[-1]["cancel_reason"] == "重新布置"
+
+
+def test_legacy_reject_postgres_contract_cancels_execution_chain():
     source = (ROOT / "aicrm_next" / "cloud_orchestrator" / "repository.py").read_text(encoding="utf-8")
 
-    assert "UPDATE campaigns\n                    SET review_status = 'rejected'" in source
-    assert "WHERE \"\"\" + _LEGACY_GROUP_KEY_UPDATE_SQL + \"\"\" = %s" in source
+    assert "legacy_campaign_group_reject_from_cloud_plan" in source
+    assert "run_status = CASE" in source
+    assert "ELSE 'cancelled'" in source
+    assert "UPDATE campaign_members" in source
+    assert "next_due_at = NULL" in source
+    assert "UPDATE broadcast_jobs bj" in source
+    assert "bj.source_id LIKE (campaign_id::text || ':%')" in source
+    assert "status = ANY(%s)" in source
     assert "WHERE \"\"\" + _LEGACY_GROUP_KEY_SQL + \"\"\" = %s\n                    RETURNING *" not in source
 
 
