@@ -23,6 +23,7 @@
     refreshingOwnerGroups: false,
     notice: "",
     showCreate: false,
+    createNotice: "",
     showGroupPicker: false,
     groupPickerSearch: "",
     groupPickerNotice: "",
@@ -155,12 +156,45 @@
     };
   }
 
+  function contentPackageIsEmpty(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    return !normalized.content_text
+      && !normalized.image_library_ids.length
+      && !normalized.miniprogram_library_ids.length
+      && !normalized.attachment_library_ids.length;
+  }
+
+  function addUniqueId(target, value) {
+    const id = parseInt(String(value || "").trim(), 10);
+    if (id > 0 && target.indexOf(id) === -1) target.push(id);
+  }
+
+  function mergeRecognizedLegacyAttachmentIds(contentPackage, attachments) {
+    const merged = normalizeContentPackage(contentPackage);
+    legacyAttachmentsForNode(attachments).forEach((item) => {
+      const msgtype = String((item && item.msgtype) || "").toLowerCase();
+      const image = item && item.image && typeof item.image === "object" ? item.image : {};
+      const mini = item && item.miniprogram && typeof item.miniprogram === "object" ? item.miniprogram : {};
+      const file = item && item.file && typeof item.file === "object" ? item.file : {};
+      if (msgtype === "image") addUniqueId(merged.image_library_ids, image.library_id || item.library_id);
+      if (msgtype === "miniprogram") addUniqueId(merged.miniprogram_library_ids, mini.library_id || item.library_id);
+      if (msgtype && !["image", "miniprogram"].includes(msgtype)) {
+        addUniqueId(merged.attachment_library_ids, file.library_id || item.library_id);
+      }
+    });
+    return merged;
+  }
+
   function nodeToContentPackage(node) {
     const current = node || {};
     if (current.content_package_json && typeof current.content_package_json === "object") {
-      return normalizeContentPackage(current.content_package_json);
+      const normalized = normalizeContentPackage(current.content_package_json);
+      if (contentPackageIsEmpty(normalized) && current.text_content) {
+        normalized.content_text = String(current.text_content || "").trim();
+      }
+      return mergeRecognizedLegacyAttachmentIds(normalized, current.attachments);
     }
-    return normalizeContentPackage({ content_text: current.text_content || "" });
+    return mergeRecognizedLegacyAttachmentIds({ content_text: current.text_content || "" }, current.attachments);
   }
 
   function contentPackageToNodePayload(contentPackage) {
@@ -334,6 +368,8 @@
     window.OperationMemberPicker.open({
       value,
       title: title || "选择运营人员",
+      scope: "group_ops",
+      page_size: 100,
       onSelect: (member) => {
         setMemberField(fieldName, member);
         if (typeof onPicked === "function") onPicked(member);
@@ -404,32 +440,44 @@
 
   function showCreatePlan() {
     state.showCreate = true;
+    state.createNotice = "";
     renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
   }
 
   function cancelCreatePlan() {
     state.showCreate = false;
+    state.createNotice = "";
     renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
   }
 
   async function createPlan() {
     const owner = currentFormValue("create_owner_userid");
     if (!owner) {
-      state.notice = "请选择运营成员";
+      state.showCreate = true;
+      state.createNotice = "请选择运营成员";
+      state.notice = "";
       renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
       return;
     }
-    const created = await requestJson(routes.apiPlans, {
-      method: "POST",
-      body: {
-        plan_name: currentFormValue("create_plan_name") || "新建群运营计划",
-        plan_type: currentFormValue("create_plan_type") || "standard",
-        owner_userid: owner,
-        status: "draft",
-      },
-    });
-    const item = created.item || created;
-    if (item.id) window.location.assign(routes.plan(item.id));
+    try {
+      const created = await requestJson(routes.apiPlans, {
+        method: "POST",
+        body: {
+          plan_name: currentFormValue("create_plan_name") || "新建群运营计划",
+          plan_type: currentFormValue("create_plan_type") || "standard",
+          owner_userid: owner,
+          status: "draft",
+        },
+      });
+      const item = created.item || created;
+      if (item.id) window.location.assign(routes.plan(item.id));
+    } catch (error) {
+      const message = requestErrorMessage(error, "创建失败");
+      state.showCreate = true;
+      state.createNotice = message.includes("创建失败") ? message : `创建失败：${message}`;
+      state.notice = "";
+      renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+    }
   }
 
   async function disablePlan(planId) {
@@ -658,6 +706,7 @@
           <label class="group-ops__field group-ops__field--wide"><span>计划名称</span><input name="create_plan_name" value="新建群运营计划"></label>
           <label class="group-ops__field"><span>计划类型</span><select name="create_plan_type"><option value="standard">标准编排计划</option><option value="webhook">Webhook 接收计划</option></select></label>
           <label class="group-ops__field"><span>运营成员</span>${ownerField}</label>
+          <div class="group-ops__modal-notice" ${state.createNotice ? "" : "hidden"}>${escapeHtml(state.createNotice)}</div>
           <div class="group-ops__row-actions">${actionButton("保存计划", "create-plan", "group-ops__button--primary")}${actionButton("取消", "cancel-create-plan")}</div>
         </div>
       </section>
@@ -711,6 +760,7 @@
       </section>
     `);
     state.notice = "";
+    state.createNotice = "";
   }
 
   async function loadDetailPage(planId) {
@@ -834,6 +884,15 @@
       `<strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>`;
   }
 
+  function renderLegacyAttachmentNotice(node) {
+    if (!legacyAttachmentsForNode((node || {}).attachments).length) return "";
+    return `
+      <div class="group-ops__modal-notice">
+        历史素材已保留，保存新素材不会自动删除历史素材
+      </div>
+    `;
+  }
+
   function openNodeContentComposer() {
     const hidden = app.querySelector('[name="node_content_package_json"]');
     if (!hidden) return;
@@ -918,6 +977,7 @@
                   <strong>素材数量</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount}</span>
                 </div>
                 <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
+                ${renderLegacyAttachmentNotice(current)}
                 <input type="hidden" name="node_content_package_json" value="${escapeHtml(JSON.stringify(currentContentPackage))}">
               </aside>
             </div>

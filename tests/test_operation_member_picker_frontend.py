@@ -101,7 +101,8 @@ def test_operation_member_picker_error_empty_debounce_clear_cancel_confirm_contr
     assert "confirmButton.disabled = !state.selected" in source
     assert 'event.key === "Escape"' in source
     assert "url.searchParams.set(\"q\", q)" in source
-    assert "url.searchParams.set(\"scope\"" not in source
+    assert 'url.searchParams.set("scope", state.scope)' in source
+    assert 'url.searchParams.set("page_size", state.pageSize)' in source
 
 
 def test_business_pages_use_operation_member_picker_instead_of_visible_userid_inputs():
@@ -130,6 +131,9 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
         assert "onSelect:" in source
         assert "selectedUserId:" not in source
         assert "onConfirm:" not in source
+    assert 'scope: "group_ops"' in group_ops
+    assert "page_size: 100" in group_ops
+    for source in [channel_js, operations, jobs, admin_jobs]:
         assert "scope:" not in source
     assert "data-channel-owner-modal" not in channel_form + channel_js
     assert "data-channel-owner-pick " not in channel_form + channel_js
