@@ -38,7 +38,6 @@ LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/automation_engine/group_ops/domain.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
-    Path("aicrm_next/integration_gateway/legacy_customer_read_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_sidebar_read_facade.py"),
@@ -73,6 +72,7 @@ SIDE_EFFECT_MARKERS = {
     "httpx.patch(",
     "httpx.delete(",
 }
+CUSTOMER_READ_ROLLBACK_FLAG = "CUSTOMER_READ_MODEL" + "_LEGACY_ROLLBACK_ENABLED"
 
 
 @dataclass(frozen=True)
@@ -116,6 +116,41 @@ def scan_source_tree(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_customer_read_model_legacy_deletion(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    customer_read_root = root / "aicrm_next/customer_read_model"
+    for path in customer_read_root.rglob("*.py"):
+        rel = path.relative_to(root)
+        text = path.read_text(encoding="utf-8")
+        if "legacy_customer_read_facade" in text:
+            violations.append(Violation("customer_read_legacy_facade_import", str(rel), "customer_read_model must not import legacy_customer_read_facade"))
+        if CUSTOMER_READ_ROLLBACK_FLAG in text:
+            violations.append(Violation("customer_read_legacy_rollback_flag", str(rel), "customer read legacy rollback flag has been deleted"))
+        if "LegacyShadowCustomerReadModelSource" in text:
+            violations.append(Violation("customer_read_legacy_shadow_source", str(rel), "legacy shadow backfill source has been deleted"))
+
+    backfill_script = root / "scripts/backfill_customer_read_model.py"
+    if backfill_script.exists():
+        text = backfill_script.read_text(encoding="utf-8")
+        if "settings.database_url" in text or "get_settings().database_url" in text:
+            violations.append(Violation("customer_read_backfill_execute_uses_default_database", str(backfill_script.relative_to(root)), "--execute must use explicit --database-url only"))
+        if "legacy-shadow" in text or "LegacyShadowCustomerReadModelSource" in text:
+            violations.append(Violation("customer_read_backfill_legacy_source", str(backfill_script.relative_to(root)), "backfill CLI must not expose legacy-shadow source"))
+
+    service = RouteRegistryService()
+    protected_paths = {
+        "/api/customers",
+        "/api/customers/{external_userid}",
+        "/api/customers/{external_userid}/timeline",
+        "/api/messages/{external_userid}/recent",
+        "/admin/customers*",
+    }
+    for entry in service.list_routes():
+        if entry.path_pattern in protected_paths and entry.legacy_fallback_allowed:
+            violations.append(Violation("customer_read_route_legacy_fallback_allowed", entry.path_pattern, "customer read routes must not allow legacy fallback after deletion"))
+    return violations
+
+
 def _decorator_route_paths(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     route_paths: list[str] = []
@@ -153,7 +188,7 @@ def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
 
 
 def run_checks(*, strict: bool) -> dict:
-    violations = scan_source_tree(ROOT) + check_production_compat_routes(ROOT)
+    violations = scan_source_tree(ROOT) + check_customer_read_model_legacy_deletion(ROOT) + check_production_compat_routes(ROOT)
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
         violations.append(

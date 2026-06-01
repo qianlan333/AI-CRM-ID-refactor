@@ -93,7 +93,6 @@ def _production_env(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.delenv("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", raising=False)
-    monkeypatch.delenv("CUSTOMER_READ_MODEL_LEGACY_ROLLBACK_ENABLED", raising=False)
     monkeypatch.delenv("CUSTOMER_READ_MODEL_NEXT_PRIMARY", raising=False)
 
 
@@ -110,15 +109,10 @@ def test_next_primary_list_detail_timeline_and_recent_messages_do_not_call_legac
         ListCustomersQuery,
         ListRecentMessagesQuery,
     )
-    from aicrm_next.integration_gateway import legacy_customer_read_facade
 
     _production_env(monkeypatch)
     repo = FakeNextCustomerReadRepository()
     _patch_next_repo(monkeypatch, repo)
-    monkeypatch.setattr(legacy_customer_read_facade, "list_customers_via_legacy", lambda request: (_ for _ in ()).throw(AssertionError("legacy called")))
-    monkeypatch.setattr(legacy_customer_read_facade, "get_customer_via_legacy", lambda request: (_ for _ in ()).throw(AssertionError("legacy called")))
-    monkeypatch.setattr(legacy_customer_read_facade, "get_timeline_via_legacy", lambda request: (_ for _ in ()).throw(AssertionError("legacy called")))
-    monkeypatch.setattr(legacy_customer_read_facade, "recent_messages_via_legacy", lambda request: (_ for _ in ()).throw(AssertionError("legacy called")))
 
     customers = ListCustomersQuery()(ListCustomersRequest(limit=10))
     detail = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid="wx_ext_001"))
@@ -137,30 +131,20 @@ def test_next_primary_list_detail_timeline_and_recent_messages_do_not_call_legac
     assert messages["messages"][0]["msgid"] == "msg-1"
 
 
-def test_next_repository_unavailable_uses_legacy_only_when_rollback_enabled(monkeypatch):
+def test_next_repository_unavailable_does_not_fallback_to_legacy(monkeypatch):
     from aicrm_next.customer_read_model import application
     from aicrm_next.customer_read_model.application import ListCustomersQuery
-    from aicrm_next.integration_gateway import legacy_customer_read_facade
 
     _production_env(monkeypatch)
-    monkeypatch.setenv("CUSTOMER_READ_MODEL_LEGACY_ROLLBACK_ENABLED", "true")
     monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: (_ for _ in ()).throw(RuntimeError("next repo offline")))
-    calls = {"legacy": 0}
-
-    def legacy_list(request):
-        calls["legacy"] += 1
-        return {"customers": [{"external_userid": "wx_ext_legacy"}], "items": [{"external_userid": "wx_ext_legacy"}], "count": 1, "total": 1}
-
-    monkeypatch.setattr(legacy_customer_read_facade, "list_customers_via_legacy", legacy_list)
 
     payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
 
-    assert payload["ok"] is True
-    assert payload["source_status"] == "legacy_production_facade"
-    assert payload["read_model_status"] == "fallback"
-    assert payload["fallback_used"] is True
-    assert payload["fallback_reason"] == "next repo offline"
-    assert calls["legacy"] == 1
+    assert payload["ok"] is False
+    assert payload["source_status"] == "production_unavailable"
+    assert payload["read_model_status"] == "unavailable"
+    assert payload["fallback_used"] is False
+    assert "legacy_production_facade" not in str(payload)
 
 
 def test_next_repository_unavailable_without_rollback_returns_production_unavailable(monkeypatch):

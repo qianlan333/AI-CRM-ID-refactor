@@ -9,7 +9,6 @@ def test_production_mode_does_not_return_fixture_customer_success(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.delenv("CUSTOMER_READ_MODEL_REPO_BACKEND", raising=False)
-    monkeypatch.delenv("CUSTOMER_READ_MODEL_LEGACY_ROLLBACK_ENABLED", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
 
     payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
