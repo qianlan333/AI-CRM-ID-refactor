@@ -827,10 +827,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 sealed this exact Next route on customer read model; production data failures return controlled production_unavailable; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next route on customer read model; readonly legacy fallback is removed and not allowed; sidebar write routes are a separate group.
   - route_id: sidebar_profile_api
     path_pattern: /api/sidebar/profile
     methods: [GET]
@@ -841,10 +841,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 exact Next profile route backed by customer read model; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next profile route backed by customer read model; readonly legacy fallback is removed and not allowed; sidebar write routes are a separate group.
   - route_id: sidebar_tags_api
     path_pattern: /api/sidebar/tags
     methods: [GET]
@@ -855,10 +855,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 exact Next tags route backed by customer tag/read projection; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next tags route backed by customer tag/read projection; readonly legacy fallback is removed and not allowed; sidebar write routes are a separate group.
   - route_id: sidebar_binding_status_api
     path_pattern: /api/sidebar/binding-status
     methods: [GET]
@@ -869,10 +869,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.identity_contact
-    notes: Sidebar readonly group 4 exact Next binding status alias; no legacy fallback and no real external call.
+    notes: Sidebar readonly group 4 closeout locked this exact Next binding status alias; readonly legacy fallback is removed and not allowed; no real external call; sidebar write routes are a separate group.
   - route_id: sidebar_contact_binding_status_api
     path_pattern: /api/sidebar/contact-binding-status
     methods: [GET]
@@ -883,10 +883,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.identity_contact
-    notes: Sidebar readonly group 4 sealed existing contact binding status exact Next route; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked existing contact binding status exact Next route; readonly legacy fallback is removed and not allowed; sidebar write routes are a separate group.
   - route_id: sidebar_lead_pool_status_api
     path_pattern: /api/sidebar/lead-pool/status
     methods: [GET]
@@ -897,10 +897,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model class status/sidebar projection; write upsert remains out of scope.
+    notes: Sidebar readonly group 4 closeout locked this route after replacing legacy sidebar read facade with customer read model class status/sidebar projection; readonly legacy fallback is removed and not allowed; write upsert remains a separate group.
   - route_id: sidebar_signup_tags_status_api
     path_pattern: /api/sidebar/signup-tags/status
     methods: [GET]
@@ -911,10 +911,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model signup tag/status projection; mark write remains out of scope.
+    notes: Sidebar readonly group 4 closeout locked this route after replacing legacy sidebar read facade with customer read model signup tag/status projection; readonly legacy fallback is removed and not allowed; mark write remains a separate group.
   - route_id: sidebar_marketing_status_api
     path_pattern: /api/sidebar/marketing-status
     methods: [GET]
@@ -925,10 +925,10 @@ routes:
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
-    replacement_status: validated
+    replacement_status: locked
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: Sidebar readonly group 4 replaced legacy sidebar read facade with customer read model marketing projection; marketing writes remain out of scope.
+    notes: Sidebar readonly group 4 closeout locked this route after replacing legacy sidebar read facade with customer read model marketing projection; readonly legacy fallback is removed and not allowed; marketing writes remain a separate group.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

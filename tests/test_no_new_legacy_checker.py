@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_messages_broad_wildcard_deletion,
+    check_sidebar_readonly_closeout_lock,
     scan_source_tree,
 )
 
@@ -137,3 +138,122 @@ def test_messages_broad_wildcard_deletion_guard_allows_exact_routes(tmp_path: Pa
     )
 
     assert check_messages_broad_wildcard_deletion(tmp_path) == []
+
+
+def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    customer_api = tmp_path / "aicrm_next/customer_read_model/api.py"
+    identity_api = tmp_path / "aicrm_next/identity_contact/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    customer_api.parent.mkdir(parents=True)
+    identity_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text('@router.api_route("/api/sidebar/profile", methods=["GET"])\ndef legacy_profile():\n    return {}\n', encoding="utf-8")
+    customer_api.write_text(
+        '@router.get("/api/sidebar/profile")\n'
+        "def sidebar_profile():\n"
+        "    from aicrm_next.integration_gateway import legacy_sidebar_read_facade\n"
+        "    return {\"fallback_used\": True}\n",
+        encoding="utf-8",
+    )
+    identity_api.write_text("", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/sidebar/profile\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_status: active\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/sidebar/profile\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - route_pattern: /api/sidebar/bind-mobile\n"
+        "    production_behavior: readonly_facade\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n",
+        encoding="utf-8",
+    )
+
+    violations = check_sidebar_readonly_closeout_lock(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "sidebar_readonly_production_compat_route" in codes
+    assert "sidebar_readonly_legacy_facade" in codes
+    assert "sidebar_readonly_fallback_used_true" in codes
+    assert "sidebar_readonly_registry_legacy_allowed" in codes
+    assert "sidebar_readonly_registry_delete_status" in codes
+    assert "sidebar_readonly_manifest_legacy_forward" in codes
+    assert "sidebar_write_route_mislocked_by_readonly_closeout" in codes
+
+
+def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope_write_routes(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    customer_api = tmp_path / "aicrm_next/customer_read_model/api.py"
+    identity_api = tmp_path / "aicrm_next/identity_contact/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    customer_api.parent.mkdir(parents=True)
+    identity_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text('@router.api_route("/api/sidebar/bind-mobile", methods=["POST"])\ndef write_route():\n    return {}\n', encoding="utf-8")
+    customer_api.write_text(
+        '@router.get("/api/sidebar/profile")\n'
+        "def sidebar_profile():\n"
+        "    return {\"route_owner\": \"ai_crm_next\", \"fallback_used\": False}\n",
+        encoding="utf-8",
+    )
+    identity_api.write_text(
+        '@router.get("/api/sidebar/binding-status")\n'
+        "def sidebar_binding_status():\n"
+        "    return {\"route_owner\": \"ai_crm_next\", \"fallback_used\": False}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/sidebar/profile\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - path_pattern: /api/sidebar/binding-status\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/sidebar/profile\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: readonly_facade\n"
+        "    legacy_fallback_allowed: false\n"
+        "  - route_pattern: /api/sidebar/binding-status\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: readonly_facade\n"
+        "    legacy_fallback_allowed: false\n"
+        "  - route_pattern: /api/sidebar/bind-mobile\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n",
+        encoding="utf-8",
+    )
+
+    violations = check_sidebar_readonly_closeout_lock(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "sidebar_readonly_production_compat_route" not in codes
+    assert "sidebar_readonly_legacy_facade" not in codes
+    assert "sidebar_write_route_mislocked_by_readonly_closeout" not in codes
