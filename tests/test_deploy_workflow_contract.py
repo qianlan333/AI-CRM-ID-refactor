@@ -54,6 +54,35 @@ def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
     assert "sleep 3" not in workflow
 
 
+def test_production_deploy_installs_and_runs_external_push_worker_timer():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    copy_service_index = workflow.index("sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/")
+    copy_timer_index = workflow.index("sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_index = workflow.index("sudo systemctl enable openclaw-external-push-worker.timer")
+    restart_timer_index = workflow.index("sudo systemctl restart openclaw-external-push-worker.timer")
+    start_service_index = workflow.index("sudo systemctl start openclaw-external-push-worker.service")
+
+    assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
+
+
+def test_external_push_worker_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "openclaw-external-push-worker.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "openclaw-external-push-worker.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_external_push_worker.py" in service
+    assert "OnCalendar=*-*-* *:*:20" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=openclaw-external-push-worker.service" in timer
+
+
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert not (ROOT / "scripts" / "backup_sqlite.sh").exists()
 
@@ -116,13 +145,16 @@ def test_due_runner_scripts_share_int_env_reader():
         encoding="utf-8"
     )
     sop_runner = (ROOT / "scripts" / "run_automation_sop.py").read_text(encoding="utf-8")
+    external_push_worker = (ROOT / "scripts" / "run_external_push_worker.py").read_text(encoding="utf-8")
 
     assert 'read_int_env("AUTOMATION_CONVERSION_DUE_RETRY_COUNT"' in due_runner
     assert "AUTOMATION_CONVERSION_DUE_RETRY_INTERVAL_SECONDS" in due_runner
     assert 'read_int_env("AUTOMATION_SOP_RETRY_COUNT"' in sop_runner
     assert "AUTOMATION_SOP_RETRY_INTERVAL_SECONDS" in sop_runner
+    assert 'read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)' in external_push_worker
     assert "int((os.getenv" not in due_runner
     assert "int((os.getenv" not in sop_runner
+    assert "int(os.environ.get" not in external_push_worker
 
 
 def _calls_utcnow(path: Path) -> bool:
