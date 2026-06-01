@@ -81,6 +81,24 @@ CREATE TABLE IF NOT EXISTS group_chats (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS wecom_group_chat_snapshots (
+    chat_id TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    owner_name TEXT NOT NULL DEFAULT '',
+    admin_userids TEXT NOT NULL DEFAULT '[]',
+    internal_member_count INTEGER NOT NULL DEFAULT 0,
+    external_member_count INTEGER NOT NULL DEFAULT 0,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS idx_wecom_group_chat_snapshots_owner
+ON wecom_group_chat_snapshots (owner_userid, status, synced_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_wecom_group_chat_snapshots_name
+ON wecom_group_chat_snapshots (group_name);
+
 CREATE INDEX IF NOT EXISTS idx_group_chats_owner_userid
 ON group_chats (owner_userid);
 

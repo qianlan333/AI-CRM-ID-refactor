@@ -60,6 +60,7 @@ def test_group_sync_writes_snapshots_and_reports_create_update(group_ops_api_cli
         json={"owner_userid": "owner_001", "limit": 10, "operator": "pytest"},
     )
     owner_001 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=owner_001")
+    admin_001 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=admin_001")
 
     assert synced.status_code == 200
     assert synced.json()["synced_count"] >= 2
@@ -67,6 +68,8 @@ def test_group_sync_writes_snapshots_and_reports_create_update(group_ops_api_cli
     assert synced_again.status_code == 200
     assert synced_again.json()["updated_count"] >= 2
     assert {item["owner_userid"] for item in owner_001.json()["items"]} == {"owner_001"}
+    assert admin_001.status_code == 200
+    assert admin_001.json()["items"] == []
 
 
 def test_group_sync_owner_filter_keeps_owners_separate(group_ops_api_client, monkeypatch):
@@ -85,11 +88,14 @@ def test_group_sync_owner_filter_keeps_owners_separate(group_ops_api_client, mon
     )
     owner_001 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=owner_001")
     owner_002 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=owner_002")
+    admin_001 = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=admin_001")
 
     assert {item["owner_userid"] for item in owner_001.json()["items"]} == {"owner_001"}
     assert {item["owner_userid"] for item in owner_002.json()["items"]} == {"owner_002"}
     assert len(owner_001.json()["items"]) >= 2
     assert len(owner_002.json()["items"]) >= 1
+    assert [item["chat_id"] for item in admin_001.json()["items"]] == ["wrOgBBB001"]
+    assert admin_001.json()["items"][0]["admin_userids"] == ["admin_001"]
 
 
 def test_group_sync_binding_owner_mismatch_is_rejected(group_ops_api_client, monkeypatch):

@@ -98,6 +98,7 @@ def _create_group_ops_sqlite_db(path: Path) -> str:
                     group_name TEXT NOT NULL DEFAULT '',
                     owner_userid TEXT NOT NULL DEFAULT '',
                     owner_name TEXT NOT NULL DEFAULT '',
+                    admin_userids TEXT NOT NULL DEFAULT '[]',
                     internal_member_count INTEGER NOT NULL DEFAULT 0,
                     external_member_count INTEGER NOT NULL DEFAULT 0,
                     synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -110,13 +111,13 @@ def _create_group_ops_sqlite_db(path: Path) -> str:
             text(
                 """
                 INSERT INTO wecom_group_chat_snapshots (
-                    chat_id, group_name, owner_userid, owner_name,
+                    chat_id, group_name, owner_userid, owner_name, admin_userids,
                     internal_member_count, external_member_count, status
                 )
                 VALUES
-                    ('wrOgAAA001', '体验课 01 群', 'owner_001', '王小明', 12, 150, 'active'),
-                    ('wrOgAAA002', '体验课 02 群', 'owner_001', '王小明', 10, 160, 'active'),
-                    ('wrOgBBB001', '成交陪跑 01 群', 'owner_002', '李小红', 8, 88, 'active')
+                    ('wrOgAAA001', '体验课 01 群', 'owner_001', '王小明', '[]', 12, 150, 'active'),
+                    ('wrOgAAA002', '体验课 02 群', 'owner_001', '王小明', '[]', 10, 160, 'active'),
+                    ('wrOgBBB001', '成交陪跑 01 群', 'owner_002', '李小红', '["admin_001"]', 8, 88, 'active')
                 """
             )
         )
@@ -178,6 +179,7 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     plans, total = repo.list_plans({"limit": 50, "offset": 0})
     groups = repo.list_bound_groups(plan["id"])
     group_assets, group_total = repo.list_group_assets({"bind_status": "bound", "limit": 50, "offset": 0})
+    admin_groups, admin_group_total = repo.list_group_assets({"owner_userid": "admin_001", "limit": 50, "offset": 0})
     synced_count = repo.upsert_group_snapshots(
         [
             {
@@ -205,10 +207,14 @@ def test_postgres_group_ops_repository_lists_and_binds_with_sql_backend(tmp_path
     assert groups[0]["external_member_count_snapshot"] == 150
     assert group_total == 1
     assert group_assets[0]["plan_name"] == "体验课 7 日群运营"
+    assert admin_group_total == 1
+    assert admin_groups[0]["chat_id"] == "wrOgBBB001"
+    assert admin_groups[0]["admin_userids"] == ["admin_001"]
     assert synced_count == 1
     assert synced_group["owner_userid"] == "owner_003"
     assert owners["owner_001"]["group_count"] >= 2
     assert owners["owner_003"]["name"] == "赵小蓝"
+    assert owners["admin_001"]["group_count"] == 0
 
 
 def test_group_ops_api_uses_sql_repository_in_production_data_mode(monkeypatch, tmp_path: Path) -> None:

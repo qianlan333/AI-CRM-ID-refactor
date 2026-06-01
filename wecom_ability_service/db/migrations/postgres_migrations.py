@@ -2447,11 +2447,18 @@ def _ensure_postgres_group_ops_tables(db) -> None:
             group_name TEXT NOT NULL DEFAULT '',
             owner_userid TEXT NOT NULL DEFAULT '',
             owner_name TEXT NOT NULL DEFAULT '',
+            admin_userids TEXT NOT NULL DEFAULT '[]',
             internal_member_count INTEGER NOT NULL DEFAULT 0,
             external_member_count INTEGER NOT NULL DEFAULT 0,
             synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL DEFAULT 'active'
         )
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE wecom_group_chat_snapshots
+        ADD COLUMN IF NOT EXISTS admin_userids TEXT NOT NULL DEFAULT '[]'
         """
     )
     db.execute(

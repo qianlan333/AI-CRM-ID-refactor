@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .domain import binding_stats, clean_text
+from .domain import binding_stats, clean_text, normalize_group_admin_userids
 
 
 def plan_list_item(plan: dict[str, Any], *, groups: list[dict[str, Any]], owner_name: str = "") -> dict[str, Any]:
@@ -26,6 +26,7 @@ def group_asset_item(group: dict[str, Any], *, plan_name: str = "", bind_status:
         "group_name": clean_text(group.get("group_name")),
         "owner_userid": clean_text(group.get("owner_userid")),
         "owner_name": clean_text(group.get("owner_name")),
+        "admin_userids": normalize_group_admin_userids(group.get("admin_userids")),
         "plan_name": plan_name,
         "bind_status": bind_status,
     }

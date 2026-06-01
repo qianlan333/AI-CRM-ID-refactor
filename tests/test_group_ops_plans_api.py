@@ -93,9 +93,10 @@ def test_owners_api_returns_multiple_fixture_owners(group_ops_api_client):
     assert response.status_code == 200
     items = response.json()["items"]
     by_userid = {item["userid"]: item for item in items}
-    assert {"owner_001", "owner_002"} <= set(by_userid)
+    assert {"owner_001", "owner_002", "admin_001"} <= set(by_userid)
     assert by_userid["owner_001"]["name"] == "王小明"
     assert by_userid["owner_002"]["group_count"] >= 1
+    assert by_userid["admin_001"]["group_count"] == 0
 
 
 def test_create_standard_plan_uses_requested_owner_and_type(group_ops_api_client):
@@ -129,13 +130,28 @@ def test_create_webhook_plan_returns_webhook_and_config(group_ops_api_client):
     assert "webhook_url" in config.json()
 
 
-def test_plan_group_binding_allows_only_owner_groups(group_ops_api_client):
+def test_plan_group_binding_allows_owner_or_group_admin_groups(group_ops_api_client):
     ok_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/groups",
         json={"chat_id": "wrOgAAA003", "operator": "pytest"},
     )
     assert ok_response.status_code == 201
     assert ok_response.json()["summary"]["bound_group_count"] == 3
+
+    admin_plan = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={"plan_name": "群管理员计划", "plan_type": "standard", "owner_userid": "admin_001", "status": "draft"},
+    )
+    admin_groups = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=admin_001")
+    admin_response = group_ops_api_client.post(
+        f"/api/admin/automation-conversion/group-ops/plans/{admin_plan.json()['item']['id']}/groups",
+        json={"chat_id": "wrOgBBB001", "operator": "pytest"},
+    )
+    assert admin_plan.status_code == 201
+    assert admin_groups.status_code == 200
+    assert [item["chat_id"] for item in admin_groups.json()["items"]] == ["wrOgBBB001"]
+    assert admin_groups.json()["items"][0]["admin_userids"] == ["admin_001"]
+    assert admin_response.status_code == 201
 
     bad_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/groups",
