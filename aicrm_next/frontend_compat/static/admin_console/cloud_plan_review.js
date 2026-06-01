@@ -94,9 +94,9 @@
   function planStatus(plan) {
     const review = String((plan && plan.review_status) || "");
     const run = String((plan && plan.run_status) || "");
+    if (run === "active" || run === "running") return { label: "执行中", tone: "ok" };
     if (review === "approved") return { label: "已批准", tone: "ok" };
     if (review === "rejected") return { label: "已拒绝", tone: "bad" };
-    if (run === "active" || run === "running") return { label: "执行中", tone: "ok" };
     return { label: "待审批", tone: "warn" };
   }
 
@@ -344,10 +344,17 @@
     text("[data-plan-target-count]", Number(plan.target_count || 0));
     const statusNode = qs("[data-plan-status-label]");
     if (statusNode) statusNode.innerHTML = badge(status);
+    const approveButton = qs("[data-plan-approve]");
+    if (approveButton) {
+      const running = ["active", "running"].includes(String(plan.run_status || ""));
+      const decided = ["approved", "rejected"].includes(String(plan.review_status || ""));
+      approveButton.disabled = running || decided;
+      approveButton.textContent = running ? "已开始执行" : "批准并开始执行";
+    }
   }
 
   async function approvePlan(event) {
-    const restore = setButtonLoading(event.currentTarget, "批准中");
+    const restore = setButtonLoading(event.currentTarget, "启动中");
     try {
       const payload = await requestJson(`/api/admin/cloud-orchestrator/plans/${encodeURIComponent(planId)}/approve`, {
         method: "POST",
@@ -355,7 +362,7 @@
         body: writePayload(),
       });
       updatePlan(payload.plan);
-      toast("计划已批准");
+      toast("计划已批准并开始执行");
     } catch (error) {
       toast(errorMessage(error));
     } finally {
