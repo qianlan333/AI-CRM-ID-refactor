@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -204,14 +205,24 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     get_db().execute("UPDATE domain_event_outbox SET status = 'pending' WHERE id = ?", (outbox_row["id"],))
     get_db().commit()
 
-    monkeypatch.setattr(external_push_service.requests, "post", lambda *args, **kwargs: _response(200, '{"ok":true}'))
+    sent_payloads = []
+
+    def capture_success_post(*args, **kwargs):
+        sent_payloads.append(json.loads(kwargs["data"].decode("utf-8")))
+        return _response(200, '{"ok":true}')
+
+    monkeypatch.setattr(external_push_service.requests, "post", capture_success_post)
     result = external_push_service.process_transaction_paid_outbox(dict(outbox_row))
     assert result["ok"] is True
     delivery = get_db().execute("SELECT * FROM external_push_delivery WHERE order_id = ?", (order["id"],)).fetchone()
     assert delivery["status"] == "success"
     assert delivery["attempt_count"] == 1
+    assert sent_payloads[0]["event"] == "transaction.paid"
+    assert sent_payloads[0]["buyer"]["phone_number"] == "13800000000"
+    assert "phone" not in sent_payloads[0]["buyer"]
     assert delivery["request_body"]["event"] == "transaction.paid"
-    assert delivery["request_body"]["buyer"]["phone"] == "138****0000"
+    assert delivery["request_body"]["buyer"]["phone_number"] == "138****0000"
+    assert "phone" not in delivery["request_body"]["buyer"]
     assert delivery["request_headers"]["X-AICRM-Signature"].startswith("sha256=")
 
     deduped = external_push_service.process_transaction_paid_outbox(dict(outbox_row))
