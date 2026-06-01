@@ -93,8 +93,10 @@ def test_plan_review_static_contract():
     assert "/api/admin/send-content/preview" in script
     assert "小程序：" in script
     assert "已开始执行" in script
+    assert "开始执行" in script
     assert "计划已批准并开始执行" in script
     assert "run === \"active\"" in script
+    assert "approved ? \"开始执行\" : \"批准并开始执行\"" in script
     for forbidden in [
         "limit', '5000",
         "limit\", \"5000",

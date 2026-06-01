@@ -347,9 +347,10 @@
     const approveButton = qs("[data-plan-approve]");
     if (approveButton) {
       const running = ["active", "running"].includes(String(plan.run_status || ""));
-      const decided = ["approved", "rejected"].includes(String(plan.review_status || ""));
-      approveButton.disabled = running || decided;
-      approveButton.textContent = running ? "已开始执行" : "批准并开始执行";
+      const rejected = String(plan.review_status || "") === "rejected";
+      const approved = String(plan.review_status || "") === "approved";
+      approveButton.disabled = running || rejected;
+      approveButton.textContent = running ? "已开始执行" : (approved ? "开始执行" : "批准并开始执行");
     }
   }
 
