@@ -6,7 +6,7 @@ from typing import Any
 
 from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract, WeComGroupAssetAdapterContract
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
-from aicrm_next.shared.repository_provider import blocked_production_payload
+from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 
 from . import CAPABILITY_OWNER
 from .domain import (
@@ -143,32 +143,42 @@ def _coerce_plan_id(value: Any) -> int:
 
 def _plan_public_payload(repo: GroupOpsRepository, plan: dict[str, Any]) -> dict[str, Any]:
     plan_id = int(plan["id"])
-    scopes = repo.list_plan_scopes(plan_id) if hasattr(repo, "list_plan_scopes") else []
+    scopes = _optional_group_ops_detail([], lambda: repo.list_plan_scopes(plan_id)) if hasattr(repo, "list_plan_scopes") else []
     groups = repo.list_bound_groups(plan_id)
-    segmentation = repo.get_segmentation(plan_id) if hasattr(repo, "get_segmentation") else None
+    segmentation = _optional_group_ops_detail(None, lambda: repo.get_segmentation(plan_id)) if hasattr(repo, "get_segmentation") else None
     rule_stats = {"total": 0, "layers": []}
     if segmentation and segmentation.get("rule_key") and segmentation.get("rule_version"):
         rows, total = ([], 0)
         if hasattr(repo, "list_audience_rule_results"):
-            rows, total = repo.list_audience_rule_results(
-                clean_text(segmentation["rule_key"]),
-                int(segmentation["rule_version"]),
-                plan_id,
-                {"limit": 10000, "offset": 0},
+            rows, total = _optional_group_ops_detail(
+                ([], 0),
+                lambda: repo.list_audience_rule_results(
+                    clean_text(segmentation["rule_key"]),
+                    int(segmentation["rule_version"]),
+                    plan_id,
+                    {"limit": 10000, "offset": 0},
+                ),
             )
         counts: dict[str, int] = {}
         for row in rows:
             layer = clean_text(row.get("layer_key"))
             counts[layer] = counts.get(layer, 0) + 1
         rule_stats = {"total": total, "layers": [{"layerKey": key, "count": value} for key, value in sorted(counts.items())]}
-    execution_rows, execution_total = repo.list_execution_logs(plan_id, {"limit": 1, "offset": 0}) if hasattr(repo, "list_execution_logs") else ([], 0)
+    execution_rows, execution_total = (
+        _optional_group_ops_detail(([], 0), lambda: repo.list_execution_logs(plan_id, {"limit": 1, "offset": 0}))
+        if hasattr(repo, "list_execution_logs")
+        else ([], 0)
+    )
     result_rows = []
     if segmentation and hasattr(repo, "list_audience_rule_results"):
-        result_rows = repo.list_audience_rule_results(
-            clean_text(segmentation.get("rule_key")),
-            int(segmentation.get("rule_version") or 0),
-            plan_id,
-            {"limit": 10000},
+        result_rows = _optional_group_ops_detail(
+            ([], 0),
+            lambda: repo.list_audience_rule_results(
+                clean_text(segmentation.get("rule_key")),
+                int(segmentation.get("rule_version") or 0),
+                plan_id,
+                {"limit": 10000},
+            ),
         )[0]
     webhook_key = clean_text(plan.get("webhook_key"))
     payload = {
@@ -213,6 +223,13 @@ def _plan_public_payload(repo: GroupOpsRepository, plan: dict[str, Any]) -> dict
         payload["webhook"]["token"] = clean_text(plan.get("plaintext_token"))
         payload["webhook"]["tokenStatus"] = "generated"
     return payload
+
+
+def _optional_group_ops_detail(default: Any, getter: Any) -> Any:
+    try:
+        return getter()
+    except RepositoryProviderError:
+        return default
 
 
 def _queue_count() -> int:
