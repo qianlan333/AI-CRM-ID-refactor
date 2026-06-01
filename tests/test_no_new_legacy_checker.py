@@ -13,6 +13,9 @@ def test_no_new_legacy_checker_flags_disallowed_legacy_import(tmp_path: Path) ->
     violations = scan_source_tree(tmp_path)
 
     assert [violation.code for violation in violations] == ["legacy_flask_facade_import"]
+    payload = violations[0].to_dict()
+    assert payload["path"] == "aicrm_next/new_api.py"
+    assert "route registry" in payload["remediation"]
 
 
 def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:

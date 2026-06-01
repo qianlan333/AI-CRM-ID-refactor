@@ -69,6 +69,7 @@ class LegacyDeletionLifecycleItem:
     status: LifecycleStatus = "planned"
     notes: str = ""
     sample: bool = False
+    production_decision: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
