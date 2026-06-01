@@ -12,6 +12,7 @@ from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .domain import (
     binding_stats,
+    clamp_limit,
     clean_text,
     derive_node_scheduled_time,
     generate_webhook_key,
@@ -47,6 +48,7 @@ class GroupOpsRepository(Protocol):
     def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]: ...
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
     def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]: ...
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]: ...
     def list_owners(self) -> list[dict[str, Any]]: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -524,6 +526,18 @@ class InMemoryGroupOpsRepository:
             for group in self._groups.values()
             if group_manageable_by_userid(group, owner) and clean_text(group.get("owner_userid")) != owner
         ]
+
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        max_items = clamp_limit(limit, default=100)
+        candidates = [
+            deepcopy(group)
+            for group in self._groups.values()
+            if clean_text(group.get("owner_userid")) != owner
+        ]
+        return candidates[:max_items]
 
     def list_owners(self) -> list[dict[str, Any]]:
         owners: dict[str, dict[str, Any]] = {}

@@ -518,6 +518,48 @@ class PostgresGroupOpsRepository:
                 groups.append(group)
         return groups
 
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        max_items = max(1, min(_int(limit) or 100, 200))
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT chat_id, group_name, owner_userid, member_count, status, raw_payload, updated_at
+                        FROM group_chats
+                        WHERE status = 'active'
+                          AND COALESCE(owner_userid, '') <> :owner_userid
+                          AND COALESCE(raw_payload, '') <> ''
+                        ORDER BY
+                          CASE
+                            WHEN raw_payload LIKE :admin_userid_pattern THEN 0
+                            WHEN raw_payload LIKE :member_userid_pattern THEN 1
+                            ELSE 2
+                          END,
+                          updated_at ASC NULLS FIRST,
+                          group_name ASC,
+                          chat_id ASC
+                        LIMIT :limit
+                        """
+                    ),
+                    {
+                        "owner_userid": owner,
+                        "admin_userid_pattern": f'%"userid": "{owner}"%',
+                        "member_userid_pattern": f'%"userid": "{owner}"%',
+                        "limit": max_items,
+                    },
+                ).fetchall()
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+        return [
+            group
+            for row in rows
+            if (group := _legacy_group_chat_snapshot(_as_mapping(row) or {})).get("chat_id")
+        ]
+
     def list_owners(self) -> list[dict[str, Any]]:
         try:
             with self._engine.connect() as conn:
