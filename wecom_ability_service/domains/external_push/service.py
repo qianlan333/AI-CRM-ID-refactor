@@ -252,7 +252,7 @@ def build_external_push_payload(
         "buyer": {
             "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
             "openid": _mask_openid(order.get("payer_openid")),
-            "phone": _mask_phone(order.get("mobile_snapshot")),
+            "phone_number": _normalized_text(order.get("mobile_snapshot")),
         },
         "config": {
             "type": _normalized_text(config.get("push_type")),
