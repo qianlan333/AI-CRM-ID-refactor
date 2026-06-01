@@ -164,6 +164,14 @@ def test_legacy_approve_postgres_contract_starts_and_prequeues_campaigns():
     assert "campaign_member_step:" in source
 
 
+def test_legacy_reject_postgres_contract_uses_unaliased_group_key():
+    source = (ROOT / "aicrm_next" / "cloud_orchestrator" / "repository.py").read_text(encoding="utf-8")
+
+    assert "UPDATE campaigns\n                    SET review_status = 'rejected'" in source
+    assert "WHERE \"\"\" + _LEGACY_GROUP_KEY_UPDATE_SQL + \"\"\" = %s" in source
+    assert "WHERE \"\"\" + _LEGACY_GROUP_KEY_SQL + \"\"\" = %s\n                    RETURNING *" not in source
+
+
 def test_audit_json_dump_serializes_datetime_values():
     payload = json.loads(_json_dump({"updated_at": datetime(2026, 6, 1, 9, 42, 58, tzinfo=timezone.utc)}))
 

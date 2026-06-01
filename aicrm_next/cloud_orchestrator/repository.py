@@ -959,7 +959,7 @@ class PostgresCloudPlanRepository:
                     UPDATE campaigns
                     SET review_status = 'rejected', run_status = CASE WHEN run_status = 'active' THEN run_status ELSE 'cancelled' END,
                         paused_reason = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s
+                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
                     RETURNING *
                     """,
                     (_text(reason)[:200], _text(plan_id)),
