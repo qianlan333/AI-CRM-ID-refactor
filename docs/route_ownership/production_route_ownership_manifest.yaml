@@ -236,6 +236,94 @@ routes:
     delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
     notes: Customer read legacy facade removed for recent messages; Next read model is the only production read path. Missing production read model data returns production_unavailable. Broader /api/messages* production_compat fallback remains separate and is not deleted in this PR.
+  - route_pattern: /api/messages/{external_userid}
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Exact Next archive message list route added for /api/messages* fallback narrowing; missing production message archive data returns production_unavailable.
+  - route_pattern: /api/messages/search
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Exact Next archive message search route added for /api/messages* fallback narrowing; missing production message archive data returns production_unavailable.
+  - route_pattern: /api/messages/archive
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response for historical archive list path; no legacy forwarding and no external side effect.
+  - route_pattern: /api/messages/{external_userid}/archive
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response; replacement is /api/messages/{external_userid}.
+  - route_pattern: /api/messages/{external_userid}/history
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response; replacement is /api/messages/{external_userid}.
+  - route_pattern: /api/messages/send
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical message send route; no real WeCom send is executed.
+  - route_pattern: /api/messages/broadcast
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical broadcast route; no real WeCom send is executed.
+  - route_pattern: /api/messages/archive/sync
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical archive sync route; sync jobs are outside this replacement pass.
   - route_pattern: /api/messages*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.integration_gateway
@@ -246,7 +334,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_next_production_runtime_gaps.py
-    notes: production_compat catch-all for legacy message/archive surfaces until exact Next replacement exists.
+    notes: Inventory completed and exact replacement routes added; wildcard retained for one validation cycle. Deletion requires next专项测试通过.
   - route_pattern: /api/admin/questionnaires*
     methods: [GET, POST, PUT, DELETE]
     capability_owner: aicrm_next.questionnaire
