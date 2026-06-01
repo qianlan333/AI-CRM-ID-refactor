@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
-from aicrm_next.cloud_orchestrator.repository import build_cloud_plan_repository
+from aicrm_next.cloud_orchestrator.repository import _json_dump, build_cloud_plan_repository
 from aicrm_next.main import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +125,12 @@ def test_plan_approve_only_changes_plan_review_state(monkeypatch):
     assert repo.broadcast_jobs == []
     recipients = client.get("/api/admin/cloud-orchestrator/plans/plan_probe/recipients").json()["rows"]
     assert [row["approval_status"] for row in recipients] == ["pending", "pending"]
+
+
+def test_audit_json_dump_serializes_datetime_values():
+    payload = json.loads(_json_dump({"updated_at": datetime(2026, 6, 1, 9, 42, 58, tzinfo=timezone.utc)}))
+
+    assert payload["updated_at"] == "2026-06-01T09:42:58+00:00"
 
 
 def test_recipient_approve_enqueues_single_idempotent_cloud_plan_job(monkeypatch):
