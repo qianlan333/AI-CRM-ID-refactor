@@ -34,7 +34,7 @@ def test_sidebar_readonly_routes_are_locked_next_native_in_registry() -> None:
         assert entry.legacy_fallback_allowed is False
         assert entry.external_side_effect_risk == "none"
         assert entry.delete_status == "deletion_locked"
-        assert entry.replacement_status == "validated"
+        assert entry.replacement_status == "locked"
 
 
 def test_sidebar_write_routes_remain_out_of_scope_and_not_deleted() -> None:
@@ -46,4 +46,3 @@ def test_sidebar_write_routes_remain_out_of_scope_and_not_deleted() -> None:
         assert entry.legacy_fallback_allowed is True
         assert entry.delete_status != "legacy_deleted"
         assert "out of scope" in entry.notes.lower()
-

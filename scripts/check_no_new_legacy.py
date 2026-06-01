@@ -77,6 +77,25 @@ SIDE_EFFECT_MARKERS = {
 CUSTOMER_READ_ROLLBACK_FLAG = "CUSTOMER_READ_MODEL" + "_LEGACY_ROLLBACK_ENABLED"
 MESSAGES_BROAD_WILDCARD = "/api/messages*"
 MESSAGES_BROAD_WILDCARD_RUNTIME = "/api/messages/{path:path}"
+SIDEBAR_READONLY_ROUTES = (
+    "/api/sidebar/customer-context",
+    "/api/sidebar/profile",
+    "/api/sidebar/tags",
+    "/api/sidebar/binding-status",
+    "/api/sidebar/contact-binding-status",
+    "/api/sidebar/lead-pool/status",
+    "/api/sidebar/signup-tags/status",
+    "/api/sidebar/marketing-status",
+)
+SIDEBAR_OUT_OF_SCOPE_WRITE_ROUTES = (
+    "/api/sidebar/bind-mobile",
+    "/api/sidebar/jssdk-config",
+    "/api/sidebar/lead-pool/upsert-class-term",
+    "/api/sidebar/signup-tags/mark",
+    "/api/sidebar/marketing-status*",
+    "/api/sidebar/v2/profile",
+    "/api/sidebar/v2/materials/send",
+)
 
 
 @dataclass(frozen=True)
@@ -173,6 +192,33 @@ def _decorator_route_paths(path: Path) -> list[str]:
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
                 route_paths.append(first.value)
     return route_paths
+
+
+def _decorated_route_function_sources(path: Path) -> dict[str, list[str]]:
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    route_sources: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        route_paths: list[str] = []
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            attr = decorator.func
+            if not isinstance(attr, ast.Attribute) or attr.attr not in {"get", "api_route"}:
+                continue
+            if not decorator.args:
+                continue
+            first = decorator.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                route_paths.append(first.value)
+        if not route_paths:
+            continue
+        source = ast.get_source_segment(text, node) or ""
+        for route_path in route_paths:
+            route_sources.setdefault(route_path, []).append(source)
+    return route_sources
 
 
 def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
@@ -273,12 +319,118 @@ def check_messages_broad_wildcard_deletion(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path in _decorator_route_paths(compat_path):
+            if route_path in SIDEBAR_READONLY_ROUTES:
+                violations.append(
+                    Violation(
+                        "sidebar_readonly_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Sidebar readonly exact routes are locked to Next-native owners and must not reappear in production_compat.",
+                    )
+                )
+
+    for api_path in [
+        root / "aicrm_next/customer_read_model/api.py",
+        root / "aicrm_next/identity_contact/api.py",
+    ]:
+        if not api_path.exists():
+            continue
+        for route_path, function_sources in _decorated_route_function_sources(api_path).items():
+            if route_path not in SIDEBAR_READONLY_ROUTES:
+                continue
+            for source in function_sources:
+                forbidden_markers = {
+                    "legacy_sidebar_read_facade": "sidebar_readonly_legacy_facade",
+                    "forward_to_legacy_flask": "sidebar_readonly_legacy_forward",
+                    "production_compat": "sidebar_readonly_production_compat_reference",
+                    "X-AICRM-Compatibility-Facade": "sidebar_readonly_compatibility_facade_header",
+                    '"fallback_used": True': "sidebar_readonly_fallback_used_true",
+                    "'fallback_used': True": "sidebar_readonly_fallback_used_true",
+                }
+                for marker, code in forbidden_markers.items():
+                    if marker in source:
+                        violations.append(
+                            Violation(
+                                code,
+                                str(api_path.relative_to(root)),
+                                f"{route_path}: {marker}",
+                                "Sidebar readonly route handlers must stay Next-native, must not forward to legacy, and must not expose compatibility facade behavior.",
+                            )
+                        )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    for route_path in SIDEBAR_READONLY_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(
+                Violation(
+                    "sidebar_readonly_registry_record_missing",
+                    "docs/architecture/legacy_exit_route_registry.yaml",
+                    route_path,
+                    "Keep sidebar readonly routes registered and locked as Next-native deletion_locked routes.",
+                )
+            )
+            continue
+        if record.get("runtime_owner") != "next_native":
+            violations.append(Violation("sidebar_readonly_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_readonly_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked":
+            violations.append(Violation("sidebar_readonly_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") not in {"locked", "validated"}:
+            violations.append(Violation("sidebar_readonly_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in SIDEBAR_READONLY_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(
+                Violation(
+                    "sidebar_readonly_manifest_record_missing",
+                    "docs/route_ownership/production_route_ownership_manifest.yaml",
+                    route_path,
+                    "Keep sidebar readonly routes in the production manifest as Next-owned readonly routes.",
+                )
+            )
+            continue
+        if record.get("current_runtime_owner") not in {"next", "next_native"}:
+            violations.append(Violation("sidebar_readonly_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") == "legacy_forward":
+            violations.append(Violation("sidebar_readonly_manifest_legacy_forward", route_path, "production_behavior=legacy_forward"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_readonly_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+
+    for route_path in SIDEBAR_OUT_OF_SCOPE_WRITE_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            continue
+        if record.get("delete_ready") is True or record.get("production_behavior") != "legacy_forward":
+            violations.append(
+                Violation(
+                    "sidebar_write_route_mislocked_by_readonly_closeout",
+                    route_path,
+                    f"production_behavior={record.get('production_behavior')} delete_ready={record.get('delete_ready')}",
+                    "Sidebar write, JSSDK, and material send paths are out of scope for readonly closeout and must not be marked deleted or locked here.",
+                )
+            )
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
+        + check_sidebar_readonly_closeout_lock(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

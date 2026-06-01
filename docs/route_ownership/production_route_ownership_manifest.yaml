@@ -906,7 +906,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: false
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 sealed this exact Next binding status route; production data failures return controlled production_unavailable; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next binding status route; production data failures return controlled production_unavailable; readonly legacy fallback is not allowed.
   - route_pattern: /api/sidebar/binding-status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.identity_contact
@@ -917,7 +917,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 exact Next alias for contact binding status; no legacy fallback and no real external call.
+    notes: Sidebar readonly group 4 closeout locked this exact Next alias for contact binding status; readonly legacy fallback is not allowed and no real external call is enabled.
   - route_pattern: /api/sidebar/customer-context
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -928,7 +928,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 sealed this exact Next customer context route on the customer read model; production data failures return controlled production_unavailable; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next customer context route on the customer read model; production data failures return controlled production_unavailable; readonly legacy fallback is not allowed.
   - route_pattern: /api/sidebar/profile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -939,7 +939,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 exact Next profile route backed by customer read model; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next profile route backed by customer read model; readonly legacy fallback is not allowed.
   - route_pattern: /api/sidebar/tags
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -950,7 +950,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 exact Next tags route backed by customer tag/read projection; no legacy fallback.
+    notes: Sidebar readonly group 4 closeout locked this exact Next tags route backed by customer tag/read projection; readonly legacy fallback is not allowed.
   - route_pattern: /api/admin/customers/profile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -1005,7 +1005,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 sealed this exact Next lead-pool status route on customer read model projections; upsert writes remain out of scope.
+    notes: Sidebar readonly group 4 closeout locked this exact Next lead-pool status route on customer read model projections; readonly legacy fallback is not allowed; upsert writes remain out of scope.
   - route_pattern: /api/sidebar/lead-pool/upsert-class-term
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -1027,7 +1027,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 sealed this exact Next signup-tag status route on customer read model projections; mark writes remain out of scope.
+    notes: Sidebar readonly group 4 closeout locked this exact Next signup-tag status route on customer read model projections; readonly legacy fallback is not allowed; mark writes remain out of scope.
   - route_pattern: /api/sidebar/signup-tags/mark
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_read_model
@@ -1049,7 +1049,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: true
     checker: tests/test_sidebar_readonly_registry_lifecycle.py
-    notes: Sidebar readonly group 4 sealed this exact Next marketing status route on customer read model marketing projections; marketing state writes remain out of scope.
+    notes: Sidebar readonly group 4 closeout locked this exact Next marketing status route on customer read model marketing projections; readonly legacy fallback is not allowed; marketing state writes remain out of scope.
   - route_pattern: /api/sidebar/marketing-status*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
