@@ -48,8 +48,22 @@ def test_runtime_diagnosis_reports_real_adapter_readiness(monkeypatch):
     monkeypatch.delenv("WECOM_CONTACT_SECRET", raising=False)
     monkeypatch.delenv("WECOM_SECRET", raising=False)
     set_wecom_adapter(None)
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_value", lambda scene: channel)
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_scene_alias", lambda **kwargs: {"id": 1, **kwargs})
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.repo.find_qrcode_asset_by_scene",
+        lambda corp_id, scene: {
+            **channel,
+            "id": 88,
+            "channel_id": 10,
+            "channel_row_id": 10,
+            "channel_scene_value": "scene-a",
+            "channel_status": "active",
+            "status": "active",
+            "scene_value": scene,
+        },
+    )
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.touch_qrcode_asset_callback", lambda asset_id: None)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_confirmed_channel_by_scene_alias", lambda corp_id, scene: None)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_historical_scene_value", lambda scene: None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_scene_aliases", lambda channel_id: [{"id": 1, "scene_value": "scene-a", "source": "current_scene"}])
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: [{"id": 20, "program_id": 30, "program_status": "archived"}])
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_entry_effect_logs", lambda **kwargs: [{"effect_type": "welcome_message", "reason": "missing_wecom_config"}])

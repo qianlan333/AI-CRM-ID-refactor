@@ -23,6 +23,8 @@ def test_generate_channel_qrcode_calls_wecom_and_writes_scene_alias(monkeypatch)
     aliases: list[dict] = []
     effects: list[dict] = []
     updated: dict = {}
+    assets: list[dict] = []
+    retired: list[int] = []
     payloads: list[dict] = []
 
     class Adapter:
@@ -33,6 +35,8 @@ def test_generate_channel_qrcode_calls_wecom_and_writes_scene_alias(monkeypatch)
     monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
     monkeypatch.setattr("aicrm_next.channel_entry.repo.get_channel_by_id", lambda channel_id: channel if channel_id == 101 else None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_scene_alias", lambda **kwargs: aliases.append(kwargs) or {"id": len(aliases)})
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.retire_active_qrcode_assets", lambda channel_id, **kwargs: retired.append((channel_id, kwargs)) or 1)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.insert_qrcode_asset", lambda **kwargs: assets.append(kwargs) or {"id": 55, **kwargs})
 
     def update_qrcode(**kwargs):
         updated.update(kwargs)
@@ -54,6 +58,11 @@ def test_generate_channel_qrcode_calls_wecom_and_writes_scene_alias(monkeypatch)
     assert result["config_id"] == "cfg-next"
     assert payloads == [{"type": 1, "scene": 2, "style": 1, "skip_verify": False, "state": "aqr_260531_abcd", "user": ["HuangYouCan"]}]
     assert updated == {"channel_id": 101, "scene_value": "aqr_260531_abcd", "qr_url": "https://wework.qpic.cn/next", "config_id": "cfg-next"}
+    assert retired == [(101, {"except_asset_id": 55})]
+    assert assets[0]["channel_id"] == 101
+    assert assets[0]["scene_value"] == "aqr_260531_abcd"
+    assert assets[0]["status"] == "active"
+    assert result["qrcode_asset_id"] == 55
     assert aliases[0]["scene_value"] == "old-scene"
     assert aliases[0]["status"] == "retired"
     assert aliases[1]["scene_value"] == "aqr_260531_abcd"

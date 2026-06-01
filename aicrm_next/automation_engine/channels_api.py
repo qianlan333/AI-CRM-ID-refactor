@@ -136,6 +136,8 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["latest_channel_entered_at"] = _iso(channel.get("latest_channel_entered_at"))
     channel["bound_program_name"] = _text(channel.get("bound_program_name"))
     channel["qr_download_url"] = f"/api/admin/channels/{channel['id']}/qrcode/download" if carrier_type != "link" and channel["id"] else ""
+    channel["qrcode_status"] = _text(channel.get("qrcode_status")) or ("legacy_untracked" if channel["qr_url"] and channel["scene_value"] else "not_generated")
+    channel["qrcode_asset_id"] = int(channel.get("qrcode_asset_id") or channel.get("active_qrcode_asset_id") or 0)
     channel["created_at"] = _iso(channel.get("created_at"))
     channel["updated_at"] = _iso(channel.get("updated_at"))
     return channel
@@ -199,6 +201,8 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
             cur.execute(
                 """
                 SELECT c.*,
+                       active_asset.id AS active_qrcode_asset_id,
+                       active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
                        binding.program_name AS bound_program_name,
@@ -207,6 +211,14 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                        wca.final_url AS wca_final_url,
                        COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
+                LEFT JOIN LATERAL (
+                    SELECT id, status
+                    FROM automation_channel_qrcode_asset qa
+                    WHERE qa.channel_id = c.id
+                      AND qa.status = 'active'
+                    ORDER BY qa.generated_at DESC, qa.id DESC
+                    LIMIT 1
+                ) active_asset ON TRUE
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
                     FROM automation_channel_contact
@@ -273,6 +285,8 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
             cur.execute(
                 f"""
                 SELECT c.*,
+                       active_asset.id AS active_qrcode_asset_id,
+                       active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
                        binding.program_name AS bound_program_name,
@@ -281,6 +295,14 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                        wca.final_url AS wca_final_url,
                        COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
+                LEFT JOIN LATERAL (
+                    SELECT id, status
+                    FROM automation_channel_qrcode_asset qa
+                    WHERE qa.channel_id = c.id
+                      AND qa.status = 'active'
+                    ORDER BY qa.generated_at DESC, qa.id DESC
+                    LIMIT 1
+                ) active_asset ON TRUE
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
                     FROM automation_channel_contact
@@ -529,7 +551,12 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
     existing = existing or {}
     customer_channel = _text(payload.get("customer_channel") or payload.get("scene_value"))
     channel_code = _text(payload.get("channel_code")) or _text(existing.get("channel_code"))
-    scene_value = customer_channel if carrier_type == "link" else _text(existing.get("scene_value") or payload.get("scene_value") or channel_code)
+    if carrier_type != "link" and _text(payload.get("scene_value")) and _text(payload.get("scene_value")) != _text(existing.get("scene_value")):
+        raise ValueError("scene_value_is_system_managed")
+    if carrier_type != "link" and _text(payload.get("qr_url")) and _text(payload.get("qr_url")) != _text(existing.get("qr_url")):
+        raise ValueError("qr_url_is_system_managed")
+    scene_value = customer_channel if carrier_type == "link" else _text(existing.get("scene_value"))
+    qr_url = _text(existing.get("qr_url")) if carrier_type != "link" else _text(payload.get("qr_url") or existing.get("qr_url"))
     final_url = _text(payload.get("final_url"))
     link_url = _text(payload.get("link_url"))
     if carrier_type == "link" and link_url and customer_channel and not final_url:
@@ -541,7 +568,7 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         "channel_name": _text(payload.get("channel_name")) or _text(existing.get("channel_name")) or channel_code or "未命名渠道",
         "channel_code": channel_code,
         "scene_value": scene_value,
-        "qr_url": _text(existing.get("qr_url") or payload.get("qr_url")),
+        "qr_url": qr_url,
         "status": _text(payload.get("status")) or _text(existing.get("status")) or "active",
         "owner_staff_id": _text(payload.get("owner_staff_id") or existing.get("owner_staff_id")),
         "customer_channel": customer_channel if carrier_type == "link" else "",
@@ -566,13 +593,7 @@ def _save_fixture_channel(payload: dict[str, Any], channel_id: int | None = None
         _NEXT_ID += 1
     now = datetime.now(UTC).isoformat()
     channel = {**existing, **data, "id": int(channel_id), "updated_at": now, "created_at": existing.get("created_at") or now}
-    old_scene = _text(existing.get("scene_value"))
     _FIXTURE_CHANNELS[int(channel_id)] = channel
-    aliases = list(channel.get("_scene_aliases") or [])
-    for scene in [old_scene, _text(channel.get("scene_value"))]:
-        if scene and scene not in aliases:
-            aliases.append(scene)
-    channel["_scene_aliases"] = aliases
     return _serialize_channel(channel)
 
 
@@ -607,6 +628,7 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
         "entry_tag_group_name",
     ]
     values = [Jsonb(data[key]) if key.endswith("_ids") else data[key] for key in columns]
+    owner_changed = bool(channel_id and _text((existing or {}).get("owner_staff_id")) and _text(data.get("owner_staff_id")) and _text((existing or {}).get("owner_staff_id")) != _text(data.get("owner_staff_id")))
     with conn:
         with conn.cursor() as cur:
             if channel_id:
@@ -624,20 +646,59 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
                 )
                 saved_id = int((cur.fetchone() or {}).get("id") or 0)
         conn.commit()
-    old_scene = _text((existing or {}).get("scene_value"))
-    new_scene = _text(data.get("scene_value"))
-    if old_scene and old_scene != new_scene:
-        channel_entry_repo.upsert_channel_scene_alias(channel_id=saved_id, scene_value=old_scene, status="retired", source="channel_save_previous_scene")
-    if new_scene:
-        channel_entry_repo.upsert_channel_scene_alias(
-            channel_id=saved_id,
-            scene_value=new_scene,
-            qr_url=_text(data.get("qr_url")),
-            carrier_type=_text(data.get("carrier_type")) or "qrcode",
-            status="active",
-            source="channel_save_current_scene",
-        )
+    if owner_changed:
+        channel_entry_repo.mark_qrcode_asset_stale(saved_id, reason="owner_staff_id_changed")
     return get_channel_resource(saved_id) or {"id": saved_id, **data}
+
+
+def get_channel_qrcode_status_resource(channel_id: int) -> dict[str, Any]:
+    channel = get_channel_resource(int(channel_id))
+    if not channel:
+        raise LookupError("channel_not_found")
+    if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
+        return {"channel_id": int(channel_id), "downloadable": False, "reason": "link_channel_does_not_support_qrcode_download", "channel": channel}
+    conn = _connect()
+    if conn is None:
+        raw_channel = _FIXTURE_CHANNELS.get(int(channel_id), {})
+        asset = dict(raw_channel.get("_active_qrcode_asset") or {})
+        aliases: list[dict[str, Any]] = list(raw_channel.get("_scene_aliases") or [])
+        effects: list[dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
+    else:
+        asset = channel_entry_repo.get_active_qrcode_asset(int(channel_id)) or {}
+        aliases = channel_entry_repo.list_channel_scene_aliases(int(channel_id))
+        effects = channel_entry_repo.list_channel_entry_effect_logs(channel_id=int(channel_id), limit=10)
+        events = channel_entry_repo.list_recent_events(_text(channel.get("scene_value")), limit=10) if _text(channel.get("scene_value")) else []
+    reason = "downloadable"
+    downloadable = True
+    if not asset:
+        downloadable = False
+        reason = "qrcode_not_generated"
+    elif int(asset.get("channel_id") or 0) != int(channel_id):
+        downloadable = False
+        reason = "qrcode_asset_channel_mismatch"
+    elif _text(asset.get("status")) != "active":
+        downloadable = False
+        reason = "qrcode_asset_not_downloadable"
+    elif _text(asset.get("scene_value")) != _text(channel.get("scene_value")) or _text(asset.get("qr_url")) != _text(channel.get("qr_url")):
+        downloadable = False
+        reason = "qrcode_asset_mismatch"
+    elif not _text(asset.get("qr_url")).startswith(("http://", "https://")):
+        downloadable = False
+        reason = "qrcode_asset_missing_url"
+    return {
+        "channel_id": int(channel_id),
+        "channel_name": _text(channel.get("channel_name")),
+        "active_qrcode_asset": asset,
+        "channel_cached_scene": _text(channel.get("scene_value")),
+        "channel_cached_qr_url": _text(channel.get("qr_url")),
+        "consistency_status": "ok" if downloadable else reason,
+        "downloadable": downloadable,
+        "reason": reason,
+        "aliases": aliases,
+        "recent_callback_states": events,
+        "recent_effect_logs": effects,
+    }
 
 
 def list_channel_owner_candidates() -> list[dict[str, Any]]:
@@ -793,18 +854,43 @@ def get_channel_share_link(channel_id: int) -> dict[str, Any]:
 
 @router.get("/api/admin/channels/{channel_id:int}/qrcode/download")
 def download_channel_qrcode(channel_id: int):
-    channel = get_channel_resource(int(channel_id))
-    if not channel:
+    try:
+        status = get_channel_qrcode_status_resource(int(channel_id))
+    except LookupError:
         raise HTTPException(status_code=404, detail="channel_not_found")
-    if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
+    if status.get("reason") == "link_channel_does_not_support_qrcode_download":
         return JSONResponse(
             status_code=400,
             content={"ok": False, "error": "link channel does not support qrcode download", "reason": "link_channel_does_not_support_qrcode_download"},
         )
-    qr_url = _text(channel.get("qr_url"))
+    if not status.get("downloadable"):
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "reason": status.get("reason"), "qrcode_status": status},
+            headers={"Cache-Control": "no-store"},
+        )
+    asset = status.get("active_qrcode_asset") or {}
+    qr_url = _text(asset.get("qr_url"))
     if qr_url.startswith(("http://", "https://")):
-        return RedirectResponse(qr_url, status_code=302)
+        return RedirectResponse(
+            qr_url,
+            status_code=302,
+            headers={
+                "Cache-Control": "no-store",
+                "X-AICRM-Channel-ID": str(int(channel_id)),
+                "X-AICRM-QR-Scene": _text(asset.get("scene_value")),
+                "X-AICRM-QR-Asset-ID": str(int(asset.get("id") or 0)),
+            },
+        )
     raise HTTPException(status_code=404, detail="qrcode_not_ready")
+
+
+@router.get("/api/admin/channels/{channel_id:int}/qrcode/status")
+def get_channel_qrcode_status(channel_id: int) -> dict[str, Any]:
+    try:
+        return {"ok": True, **get_channel_qrcode_status_resource(int(channel_id)), "source": "ai_crm_next"}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/admin/channel-welcome-materials")
