@@ -350,15 +350,45 @@ def test_patch_recipient_message_requires_admin_action_token(monkeypatch):
     assert response.status_code == 401
 
 
-def test_patch_legacy_recipient_message_is_read_only(monkeypatch):
+def test_patch_pending_legacy_recipient_message_updates_campaign_step(monkeypatch):
+    client = _client(monkeypatch)
+    repo = build_cloud_plan_repository()
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+    repo.legacy_recipients[0]["approval_status"] = "pending"
+    repo.legacy_recipients[0]["send_status"] = "pending"
+
+    response = client.patch(
+        f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11/messages/-101",
+        headers=_token_headers(),
+        json={
+            "content_package": {
+                "content_text": "旧 Campaign 也能改 pending step",
+                "miniprogram_library_ids": [34],
+            },
+            "day_offset": 3,
+            "send_time": "15:30",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"]["content_text"] == "旧 Campaign 也能改 pending step"
+    assert payload["message"]["day_offset"] == 3
+    assert payload["message"]["send_time"] == "15:30"
+    assert payload["message"]["content_payload"]["content_package"]["miniprogram_library_ids"] == [34]
+    detail = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11").json()
+    assert detail["messages"][0]["content_text"] == "旧 Campaign 也能改 pending step"
+
+
+def test_patch_non_pending_legacy_recipient_message_is_not_editable(monkeypatch):
     client = _client(monkeypatch)
     plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
 
     response = client.patch(
         f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients/-11/messages/-101",
         headers=_token_headers(),
-        json={"content_package": {"content_text": "旧 Campaign 不在这里改"}},
+        json={"content_package": {"content_text": "已排队不能改"}},
     )
 
     assert response.status_code == 409
-    assert "legacy recipient message is read-only" in response.json()["detail"]
+    assert "recipient is not editable" in response.json()["detail"]
