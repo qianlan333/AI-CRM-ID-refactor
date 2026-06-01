@@ -500,6 +500,95 @@ class PostgresCloudPlanRepository:
         )
         return self._legacy_group_plan_row(conn, normalized_plan_id)
 
+    def _reject_legacy_group(self, conn, plan_id: str, *, operator: str, reason: str = "") -> dict[str, Any] | None:
+        normalized_plan_id = _text(plan_id)
+        campaigns = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            FOR UPDATE
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        if not campaigns:
+            return None
+        campaign_ids = [int(row["id"]) for row in campaigns]
+        before = [dict(row) for row in campaigns]
+        reason_text = _text(reason)[:200] or "cloud plan rejected"
+        updated_campaigns = conn.execute(
+            """
+            UPDATE campaigns
+            SET review_status = 'rejected',
+                run_status = CASE
+                    WHEN run_status IN ('finished', 'completed') THEN run_status
+                    ELSE 'cancelled'
+                END,
+                paused_reason = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(%s)
+            RETURNING *
+            """,
+            (reason_text, campaign_ids),
+        ).fetchall()
+        cancelled_members = conn.execute(
+            """
+            UPDATE campaign_members
+            SET status = 'cancelled',
+                next_due_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE campaign_id = ANY(%s)
+              AND status IN ('pending', 'running', 'queued', 'paused')
+            RETURNING id
+            """,
+            (campaign_ids,),
+        ).fetchall()
+        cancelled_jobs = conn.execute(
+            """
+            UPDATE broadcast_jobs bj
+            SET status = 'cancelled',
+                cancelled_by = %s,
+                cancelled_at = CURRENT_TIMESTAMP,
+                cancel_reason = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE bj.source_type = %s
+              AND COALESCE(bj.source_table, %s) = %s
+              AND bj.status = ANY(%s)
+              AND EXISTS (
+                  SELECT 1
+                  FROM unnest(%s::int[]) AS campaign_id
+                  WHERE bj.source_id LIKE (campaign_id::text || ':%')
+              )
+            RETURNING bj.id
+            """,
+            (
+                _text(operator) or "crm_console",
+                reason_text,
+                _CAMPAIGN_QUEUE_SOURCE_TYPE,
+                _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                _CAMPAIGN_OPEN_JOB_STATUSES,
+                campaign_ids,
+            ),
+        ).fetchall()
+        self._audit(
+            conn,
+            operator=operator,
+            action_type="legacy_campaign_group_reject_from_cloud_plan",
+            target_type="legacy_campaign_group",
+            target_id=normalized_plan_id,
+            before={"campaigns": before},
+            after={
+                "campaigns": [dict(row) for row in updated_campaigns],
+                "cancelled_members": len(cancelled_members),
+                "cancelled_jobs": len(cancelled_jobs),
+            },
+        )
+        return self._legacy_group_plan_row(conn, normalized_plan_id)
+
     def _stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
         if not plan_ids:
             return {}
@@ -604,10 +693,12 @@ class PostgresCloudPlanRepository:
                                WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
                                WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
                                WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                               WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                                ELSE 'draft'
                            END AS run_status,
                            CASE
                                WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                               WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                                ELSE 'draft'
                            END AS status,
                            MAX(c.updated_at) AS updated_at,
@@ -682,9 +773,14 @@ class PostgresCloudPlanRepository:
                        WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
                        WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
                        WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                       WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                        ELSE 'draft'
                    END AS run_status,
-                   CASE WHEN BOOL_OR(c.run_status = 'active') THEN 'active' ELSE 'draft' END AS status,
+                   CASE
+                       WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                       WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
+                       ELSE 'draft'
+                   END AS status,
                    MAX(c.updated_at) AS updated_at,
                    'legacy_campaign' AS source_type
             FROM campaigns c
@@ -948,25 +1044,11 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute(
-                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
-                    (_text(plan_id),),
-                ).fetchone()
-                if not legacy_before:
+                row = self._reject_legacy_group(conn, _text(plan_id), operator=operator, reason=reason)
+                if not row:
                     return None
-                row = conn.execute(
-                    """
-                    UPDATE campaigns
-                    SET review_status = 'rejected', run_status = CASE WHEN run_status = 'active' THEN run_status ELSE 'cancelled' END,
-                        paused_reason = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
-                    RETURNING *
-                    """,
-                    (_text(reason)[:200], _text(plan_id)),
-                ).fetchone()
-                self._audit(conn, operator=operator, action_type="cloud_plan_reject", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
                 conn.commit()
-                return self.get_plan(plan_id)
+                return _plan_view(dict(row), self.plan_stats(plan_id))
             row = conn.execute(
                 """
                 UPDATE cloud_broadcast_plans
@@ -1450,6 +1532,38 @@ class InMemoryCloudPlanRepository:
                 item["status"] = "rejected"
                 item["updated_at"] = _now()
                 self.audits.append({"action_type": "cloud_plan_reject", "target_id": plan_id, "operator": operator, "reason": reason})
+                return self.get_plan(plan_id)
+        for item in self.legacy_plans:
+            if item["plan_id"] == plan_id:
+                item["review_status"] = "rejected"
+                item["run_status"] = "cancelled"
+                item["status"] = "cancelled"
+                item["updated_at"] = _now()
+                cancelled_members = 0
+                for recipient in self.legacy_recipients:
+                    if recipient["plan_id"] == plan_id and recipient.get("send_status") != "sent":
+                        recipient["approval_status"] = "rejected"
+                        recipient["send_status"] = "cancelled"
+                        recipient["updated_at"] = _now()
+                        cancelled_members += 1
+                cancelled_jobs = 0
+                for job in self.broadcast_jobs:
+                    if job.get("source_type") == "campaign" and job.get("source_id") == f"{plan_id}:legacy" and job.get("status") in _CAMPAIGN_OPEN_JOB_STATUSES:
+                        job["status"] = "cancelled"
+                        job["cancelled_by"] = operator
+                        job["cancel_reason"] = reason or "cloud plan rejected"
+                        job["cancelled_at"] = _now()
+                        cancelled_jobs += 1
+                self.audits.append(
+                    {
+                        "action_type": "legacy_campaign_group_reject_from_cloud_plan",
+                        "target_id": plan_id,
+                        "operator": operator,
+                        "reason": reason,
+                        "cancelled_members": cancelled_members,
+                        "cancelled_jobs": cancelled_jobs,
+                    }
+                )
                 return self.get_plan(plan_id)
         return None
 
