@@ -29,6 +29,7 @@ from .identity_contact.api import router as identity_router
 from .integration_gateway.api import router as mcp_router
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
+from .message_archive.api import router as message_archive_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .platform_foundation.api import router as platform_router
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(user_ops_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
+    app.include_router(message_archive_router)
     app.include_router(questionnaire_router)
     app.include_router(radar_links_router)
     app.include_router(automation_router)

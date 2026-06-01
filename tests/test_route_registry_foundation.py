@@ -99,6 +99,41 @@ def test_wildcard_fallback_is_recognized_when_registered() -> None:
     assert report["legacy_fallback_routes"][0]["path"] == "/api/known/{path:path}"
 
 
+def test_path_wildcard_runtime_route_does_not_match_single_segment_placeholder() -> None:
+    app = FastAPI()
+
+    async def fallback():
+        return {"ok": True}
+
+    fallback.__module__ = "aicrm_next.production_compat.api"
+    app.add_api_route("/api/messages/{path:path}", fallback, methods=["GET"])
+    registry = RouteRegistry(
+        routes=(
+            RouteRegistryEntry(
+                route_id="message_exact",
+                path_pattern="/api/messages/{external_userid}",
+                methods=("GET",),
+                capability_owner="tests",
+                runtime_owner="next_native",
+                legacy_fallback_allowed=False,
+            ),
+            RouteRegistryEntry(
+                route_id="message_wildcard",
+                path_pattern="/api/messages*",
+                methods=("GET",),
+                capability_owner="tests",
+                runtime_owner="production_compat",
+                legacy_fallback_allowed=True,
+            ),
+        )
+    )
+
+    report = build_route_check_report(app=app, service=RouteRegistryService(registry), strict=True)
+
+    assert report["ok"] is True
+    assert report["legacy_fallback_routes"][0]["registry"]["route_id"] == "message_wildcard"
+
+
 def test_deleted_route_still_registered_fails_strict_mode() -> None:
     app = FastAPI()
     app.add_api_route("/api/deleted", lambda: {"ok": True}, methods=["GET"])

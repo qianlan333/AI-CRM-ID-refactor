@@ -49,7 +49,7 @@ class RouteRegistryService:
         matches = [entry for entry in self._registry.routes if route_matches(entry, path, methods)]
         if not matches:
             return None
-        return sorted(matches, key=lambda item: len(item.path_pattern.replace("*", "")), reverse=True)[0]
+        return sorted(matches, key=lambda item: _match_specificity(item, path), reverse=True)[0]
 
     def filtered_routes(self, filters: dict[str, str]) -> list[RouteRegistryEntry]:
         routes = self.list_routes()
@@ -67,3 +67,10 @@ class RouteRegistryService:
 @lru_cache(maxsize=1)
 def get_route_registry_service() -> RouteRegistryService:
     return RouteRegistryService()
+
+
+def _match_specificity(entry: RouteRegistryEntry, path: str) -> tuple[int, int]:
+    wildcard_runtime_bonus = 0
+    if "{path:path}" in path and ("*" in entry.path_pattern or "{path:path}" in entry.path_pattern):
+        wildcard_runtime_bonus = 1
+    return (wildcard_runtime_bonus, len(entry.path_pattern.replace("*", "")))
