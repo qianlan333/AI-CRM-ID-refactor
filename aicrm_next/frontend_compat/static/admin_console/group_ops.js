@@ -423,7 +423,7 @@
     });
     if (action === "pick-group-filter-owner") return openMemberPicker({
       fieldName: "owner_userid",
-      title: "选择群主",
+      title: "选择群主/管理员",
       value: currentFormValue("owner_userid"),
       onPicked: (member) => {
         state.groupFilterOwner = member;
@@ -798,6 +798,22 @@
     return row.owner_name || row.owner_userid || row.owner_userid_snapshot || "-";
   }
 
+  function groupAdminUserids(row) {
+    if (Array.isArray(row.admin_userids)) return row.admin_userids.map((item) => String(item || "").trim()).filter(Boolean);
+    try {
+      const parsed = JSON.parse(row.admin_userids || "[]");
+      return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function groupManageableBy(group, userid) {
+    const member = String(userid || "").trim();
+    if (!member) return false;
+    return group.owner_userid === member || groupAdminUserids(group).includes(member);
+  }
+
   function renderBoundGroups() {
     if (!state.planGroups.length) return '<div class="group-ops__empty">暂无绑定群</div>';
     return state.planGroups
@@ -817,7 +833,7 @@
   function availableGroupsForCurrentOwner() {
     const selectedOwner = currentFormValue("owner_userid") || (state.plan && state.plan.owner_userid) || "";
     const bound = new Set(state.planGroups.map((group) => group.chat_id));
-    return state.groups.filter((group) => group.owner_userid === selectedOwner && !bound.has(group.chat_id));
+    return state.groups.filter((group) => groupManageableBy(group, selectedOwner) && !bound.has(group.chat_id));
   }
 
   function renderGroupPickerOptions() {
@@ -1162,8 +1178,8 @@
       <section class="group-ops__card">
         <div class="group-ops__filters">
           <label class="group-ops__field group-ops__field--wide"><span>群名 / 群 ID</span><input name="keyword" data-filter></label>
-          <label class="group-ops__field"><span>群主</span>${renderMemberField("owner_userid", (state.groupFilterOwner || {}).user_id, "pick-group-filter-owner", state.groupFilterOwner ? "更换群主" : "选择群主")}</label>
-          <div class="group-ops__row-actions">${actionButton("清除群主", "clear-group-filter-owner")}</div>
+          <label class="group-ops__field"><span>群主/管理员</span>${renderMemberField("owner_userid", (state.groupFilterOwner || {}).user_id, "pick-group-filter-owner", state.groupFilterOwner ? "更换成员" : "选择成员")}</label>
+          <div class="group-ops__row-actions">${actionButton("清除成员", "clear-group-filter-owner")}</div>
           <label class="group-ops__field"><span>所属计划</span><select name="plan_id" data-filter><option value="">全部</option>${renderPlanFilter()}</select></label>
           <label class="group-ops__field"><span>已绑定 / 未绑定</span><select name="bind_status" data-filter><option value="">全部</option><option value="bound">已绑定</option><option value="unbound">未绑定</option></select></label>
         </div>

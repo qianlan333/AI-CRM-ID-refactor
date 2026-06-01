@@ -78,7 +78,7 @@ def _plan_id(value: int | str) -> int:
 
 def _error_code_for(exc: Exception) -> str:
     message = str(exc)
-    if "owner_userid must match" in message:
+    if "owner_userid must match" in message or "owner_userid/admin_userids must match" in message:
         return "group_owner_mismatch"
     if "content, images, or attachments is required" in message or "content.text or content.attachments" in message:
         return "content_required"

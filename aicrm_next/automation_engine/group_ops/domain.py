@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import re
 from datetime import datetime, timezone
@@ -32,6 +33,33 @@ def utc_now_iso() -> str:
 
 def clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def normalize_group_admin_userids(value: Any) -> list[str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            value = [value]
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        value = [value] if clean_text(value) else []
+    result: list[str] = []
+    for item in list(value or []):
+        userid = clean_text(item.get("userid") if isinstance(item, dict) else item)
+        if userid and userid not in result:
+            result.append(userid)
+    return result
+
+
+def group_manageable_by_userid(group: dict[str, Any], userid: str) -> bool:
+    member_userid = clean_text(userid)
+    if not member_userid:
+        return False
+    if clean_text(group.get("owner_userid")) == member_userid:
+        return True
+    return member_userid in normalize_group_admin_userids(group.get("admin_userids"))
 
 
 def clamp_limit(value: int, *, default: int = 50, maximum: int = 200) -> int:
@@ -356,6 +384,7 @@ def normalize_group_snapshots(groups: list[dict[str, Any]]) -> list[dict[str, An
                 "group_name": clean_text(group.get("group_name") or chat_id),
                 "owner_userid": clean_text(group.get("owner_userid")),
                 "owner_name": clean_text(group.get("owner_name") or group.get("owner_userid")),
+                "admin_userids": normalize_group_admin_userids(group.get("admin_userids") or group.get("admin_list")),
                 "internal_member_count": int(group.get("internal_member_count") or 0),
                 "external_member_count": int(group.get("external_member_count") or 0),
                 "status": normalize_status(group.get("status") or "active", allowed={"active", "disabled"}, default="active"),
@@ -403,10 +432,9 @@ def assert_run_due_guard(
 
 
 def assert_group_owned_by_plan(*, group: dict[str, Any], plan: dict[str, Any]) -> None:
-    group_owner = clean_text(group.get("owner_userid"))
     plan_owner = clean_text(plan.get("owner_userid"))
-    if group_owner != plan_owner:
-        raise ContractError("group owner_userid must match plan owner_userid")
+    if not group_manageable_by_userid(group, plan_owner):
+        raise ContractError("group owner_userid/admin_userids must match plan owner_userid")
 
 
 def binding_stats(groups: list[dict[str, Any]]) -> dict[str, int]:

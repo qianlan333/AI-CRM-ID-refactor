@@ -242,6 +242,7 @@ def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
                     "chat_id": "live_chat_001",
                     "name": "真实客户群",
                     "owner": "owner_live",
+                    "admin_list": [{"userid": "admin_live"}],
                     "member_list": [{"userid": "owner_live", "type": 1}, {"external_userid": "wm_live", "type": 2}],
                 }
             }
@@ -262,6 +263,7 @@ def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
             "group_name": "真实客户群",
             "owner_userid": "owner_live",
             "owner_name": "owner_live",
+            "admin_userids": ["admin_live"],
             "internal_member_count": 1,
             "external_member_count": 1,
             "status": "active",
