@@ -190,7 +190,16 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
 
     config = external_push_service.save_product_external_push_config(
         product["id"],
-        {"enabled": True, "webhook_url": "https://example.com/hook", "push_type": "paid_notify", "custom_params": {"source": "ai-crm"}, "secret": "secret"},
+        {
+            "enabled": True,
+            "webhook_url": "https://example.com/hook",
+            "push_type": "premium",
+            "day": 31,
+            "frequency": 3,
+            "remark": "69元1个月续费",
+            "custom_params": {"source": "ai-crm"},
+            "secret": "secret",
+        },
         operator="pytest",
     )
     outbox = external_push_repo.insert_outbox_event(
@@ -202,6 +211,14 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     )
     assert outbox is None
     outbox_row = get_db().execute("SELECT * FROM domain_event_outbox WHERE aggregate_id = ?", (str(order["id"]),)).fetchone()
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET status = 'paid', trade_state = 'SUCCESS', paid_at = ?
+        WHERE id = ?
+        """,
+        ("2026-06-01T07:30:10+00:00", order["id"]),
+    )
     get_db().execute("UPDATE domain_event_outbox SET status = 'pending' WHERE id = ?", (outbox_row["id"],))
     get_db().commit()
 
@@ -217,12 +234,38 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     delivery = get_db().execute("SELECT * FROM external_push_delivery WHERE order_id = ?", (order["id"],)).fetchone()
     assert delivery["status"] == "success"
     assert delivery["attempt_count"] == 1
-    assert sent_payloads[0]["event"] == "transaction.paid"
-    assert sent_payloads[0]["buyer"]["phone_number"] == "13800000000"
-    assert "phone" not in sent_payloads[0]["buyer"]
+    assert sent_payloads[0] == {
+        "phone_number": "13800000000",
+        "type": "premium",
+        "day": 31,
+        "frequency": 3,
+        "remark": "69元1个月续费",
+        "submitted_at": "2026-06-01T15:30:10+08:00",
+        "questionnaire_title": "微信支付开通黄小璨会员",
+        "delivery_id": delivery["delivery_id"],
+        "event": "transaction.paid",
+        "order": {
+            "id": str(order["id"]),
+            "status": "paid",
+            "paid_at": "2026-06-01T07:30:10Z",
+            "order_no": "WXP_PUSH_TEST",
+            "paid_amount": 9900,
+            "pay_channel": "wechat",
+            "out_trade_no": "WXP_PUSH_TEST",
+        },
+        "product": {
+            "id": str(product["id"]),
+            "code": product["product_code"],
+            "name": "外推测试商品",
+            "price": 9900,
+        },
+    }
     assert delivery["request_body"]["event"] == "transaction.paid"
-    assert delivery["request_body"]["buyer"]["phone_number"] == "138****0000"
-    assert "phone" not in delivery["request_body"]["buyer"]
+    assert delivery["request_body"]["phone_number"] == "138****0000"
+    assert delivery["request_body"]["submitted_at"] == "2026-06-01T15:30:10+08:00"
+    assert "buyer" not in delivery["request_body"]
+    assert "config" not in delivery["request_body"]
+    assert "tenant" not in delivery["request_body"]
     assert delivery["request_headers"]["X-AICRM-Signature"].startswith("sha256=")
 
     deduped = external_push_service.process_transaction_paid_outbox(dict(outbox_row))

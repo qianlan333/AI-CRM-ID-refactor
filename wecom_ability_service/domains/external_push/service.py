@@ -23,6 +23,8 @@ TARGET_PRODUCT = "product"
 DEFAULT_TENANT_ID = repo.DEFAULT_TENANT_ID
 MAX_ATTEMPTS = 5
 MAX_BODY_BYTES = 8192
+QUESTIONNAIRE_TITLE_PAYMENT_OPEN_MEMBER = "微信支付开通黄小璨会员"
+WEBHOOK_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 
 
 class ExternalPushError(ValueError):
@@ -48,6 +50,15 @@ def _iso(value: Any = None) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _iso_local(value: Any = None) -> str:
+    text = _iso(value)
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    return dt.astimezone(WEBHOOK_LOCAL_TIMEZONE).isoformat()
 
 
 def _int_or_none(value: Any, field_name: str) -> int | None:
@@ -229,39 +240,33 @@ def build_external_push_payload(
             },
             "custom_params": config.get("custom_params") if isinstance(config.get("custom_params"), dict) else {},
         }
+    order_payload = {
+        "id": str(order.get("id") or ""),
+        "order_no": _normalized_text(order.get("out_trade_no")),
+        "out_trade_no": _normalized_text(order.get("out_trade_no")),
+        "status": "paid",
+        "paid_amount": int(order.get("payer_total") or order.get("amount_total") or 0),
+        "paid_at": _iso(order.get("paid_at")),
+        "pay_channel": "wechat",
+    }
+    product_payload = {
+        "id": str(product.get("id") or ""),
+        "code": _normalized_text(product.get("product_code")),
+        "name": _normalized_text(product.get("name") or order.get("product_name")),
+        "price": int(product.get("amount_total") or order.get("amount_total") or 0),
+    }
     return {
-        "event": EVENT_TRANSACTION_PAID,
+        "phone_number": _normalized_text(order.get("mobile_snapshot")),
+        "type": _normalized_text(config.get("push_type")),
+        "day": config.get("day"),
+        "frequency": config.get("frequency"),
+        "remark": _normalized_text(config.get("remark")),
+        "submitted_at": _iso_local(order.get("paid_at")),
+        "questionnaire_title": QUESTIONNAIRE_TITLE_PAYMENT_OPEN_MEMBER,
         "delivery_id": delivery_id,
-        "occurred_at": _iso(order.get("paid_at")),
-        "tenant": {"id": _normalized_text(config.get("tenant_id")) or DEFAULT_TENANT_ID},
-        "product": {
-            "id": str(product.get("id") or ""),
-            "code": _normalized_text(product.get("product_code")),
-            "name": _normalized_text(product.get("name") or order.get("product_name")),
-            "price": int(product.get("amount_total") or order.get("amount_total") or 0),
-        },
-        "order": {
-            "id": str(order.get("id") or ""),
-            "order_no": _normalized_text(order.get("out_trade_no")),
-            "out_trade_no": _normalized_text(order.get("out_trade_no")),
-            "status": "paid",
-            "paid_amount": int(order.get("payer_total") or order.get("amount_total") or 0),
-            "paid_at": _iso(order.get("paid_at")),
-            "pay_channel": "wechat",
-        },
-        "buyer": {
-            "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
-            "openid": _mask_openid(order.get("payer_openid")),
-            "phone_number": _normalized_text(order.get("mobile_snapshot")),
-        },
-        "config": {
-            "type": _normalized_text(config.get("push_type")),
-            "expires_at_ts": config.get("expires_at_ts"),
-            "day": config.get("day"),
-            "frequency": config.get("frequency"),
-            "remark": _normalized_text(config.get("remark")),
-        },
-        "custom_params": config.get("custom_params") if isinstance(config.get("custom_params"), dict) else {},
+        "event": EVENT_TRANSACTION_PAID,
+        "order": order_payload,
+        "product": product_payload,
     }
 
 

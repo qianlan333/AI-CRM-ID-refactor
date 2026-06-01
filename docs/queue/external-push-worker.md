@@ -6,9 +6,9 @@
 
 - Payment notification path: marks the order paid and enqueues one idempotent `transaction.paid` outbox row.
 - External push worker: scans due `domain_event_outbox` rows and due `external_push_delivery` retries.
-- Webhook payload: `transaction.paid` sends the buyer mobile as `buyer.phone_number` with the full phone number so external systems can resolve the customer.
+- Webhook payload: `transaction.paid` sends a questionnaire-compatible JSON body with top-level `phone_number`, `type`, `day`, `frequency`, `remark`, `submitted_at`, `questionnaire_title`, `delivery_id`, `event`, `order`, and `product`.
 - Delivery log: every attempted webhook POST is recorded in `external_push_delivery`.
-- Delivery privacy: stored delivery request bodies keep sensitive fields redacted even when the outbound webhook payload contains the full `buyer.phone_number`.
+- Delivery privacy: stored delivery request bodies keep sensitive fields redacted even when the outbound webhook payload contains the full `phone_number`.
 - Idempotency: one order/config/event combination creates at most one delivery row.
 
 The payment request must not synchronously block on the external receiver. The worker is the only production path that sends product-payment external webhooks.
