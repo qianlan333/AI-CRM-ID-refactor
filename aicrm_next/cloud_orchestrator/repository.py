@@ -8,6 +8,13 @@ from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from wecom_ability_service.domains.campaigns.time_helpers import (
+    DEFAULT_SEND_TIME as _DEFAULT_CAMPAIGN_SEND_TIME,
+)
+from wecom_ability_service.domains.campaigns.time_helpers import (
+    DEFAULT_TIMEZONE as _DEFAULT_CAMPAIGN_TIMEZONE,
+)
+from wecom_ability_service.domains.campaigns.time_helpers import campaign_step_due_iso
 
 
 def _text(value: Any) -> str:
@@ -174,6 +181,10 @@ def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
 _LEGACY_GROUP_KEY_SQL = "COALESCE(NULLIF(c.metadata_json->>'group_code', ''), c.campaign_code)"
 _LEGACY_GROUP_KEY_UPDATE_SQL = _LEGACY_GROUP_KEY_SQL.replace("c.", "")
 _LEGACY_GROUP_LABEL_SQL = "COALESCE(MAX(NULLIF(c.metadata_json->>'group_label', '')), MAX(NULLIF(c.display_name, '')), " + _LEGACY_GROUP_KEY_SQL + ")"
+_CAMPAIGN_QUEUE_SOURCE_TYPE = "campaign"
+_CAMPAIGN_QUEUE_SOURCE_TABLE = "campaign_members"
+_CAMPAIGN_QUEUE_CONTENT_TYPE = "private_message"
+_CAMPAIGN_OPEN_JOB_STATUSES = ["waiting_approval", "queued", "claimed"]
 _CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL = f"""
 EXISTS (
     SELECT 1
@@ -190,6 +201,14 @@ EXISTS (
       AND COALESCE(p.candidate_count, 0) > 0
 )
 """
+
+
+def _campaign_job_source_id(*, campaign_id: int, campaign_segment_id: int, step_index: int) -> str:
+    return f"{int(campaign_id)}:{int(campaign_segment_id)}:{int(step_index)}"
+
+
+def _legacy_campaign_job_source_id(*, campaign_id: int, step_index: int) -> str:
+    return f"{int(campaign_id)}:{int(step_index)}"
 
 
 class PostgresCloudPlanRepository:
@@ -215,6 +234,271 @@ class PostgresCloudPlanRepository:
             """,
             (_text(operator) or "crm_console", action_type, target_type, target_id, _json_dump(before), _json_dump(after)),
         )
+
+    def _approve_and_start_legacy_group(self, conn, plan_id: str, *, operator: str) -> dict[str, Any] | None:
+        normalized_plan_id = _text(plan_id)
+        campaigns = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            FOR UPDATE
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        if not campaigns:
+            return None
+        before = [dict(row) for row in campaigns]
+        if any(_text(row.get("review_status")) == "rejected" for row in campaigns):
+            raise ValueError("plan is rejected")
+        campaign_ids = [int(row["id"]) for row in campaigns]
+        conflict = conn.execute(
+            """
+            SELECT COUNT(*) AS conflict_count,
+                   STRING_AGG(DISTINCT cm.external_contact_id || '->' || other_c.campaign_code, ', ') AS examples
+            FROM campaign_members cm
+            JOIN campaign_members other_cm
+              ON other_cm.external_contact_id = cm.external_contact_id
+             AND other_cm.campaign_id <> cm.campaign_id
+             AND other_cm.status IN ('pending', 'running')
+            JOIN campaigns other_c
+              ON other_c.id = other_cm.campaign_id
+             AND other_c.run_status = 'active'
+            WHERE cm.campaign_id = ANY(%s)
+              AND other_cm.campaign_id <> ALL(%s)
+              AND cm.status = 'pending'
+              AND COALESCE(cm.external_contact_id, '') <> ''
+            """,
+            (campaign_ids, campaign_ids),
+        ).fetchone()
+        if int((conflict or {}).get("conflict_count") or 0):
+            raise ValueError(f"campaign has active member conflicts: {_text((conflict or {}).get('examples'))[:300]}")
+        conn.execute(
+            """
+            UPDATE campaigns
+            SET review_status = 'approved',
+                run_status = CASE
+                    WHEN run_status IN ('finished', 'completed', 'cancelled') THEN run_status
+                    ELSE 'active'
+                END,
+                approved_by = %s,
+                approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+                started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(%s)
+            """,
+            (_text(operator) or "crm_console", campaign_ids),
+        )
+        conn.execute(
+            """
+            UPDATE campaign_members cm
+            SET anchor_date = COALESCE(NULLIF(c.anchor_date, ''), TO_CHAR(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD')),
+                joined_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            FROM campaigns c
+            WHERE cm.campaign_id = c.id
+              AND c.id = ANY(%s)
+              AND COALESCE(c.anchor_mode, 'campaign_start_date') = 'campaign_start_date'
+              AND cm.status = 'pending'
+            """,
+            (campaign_ids,),
+        )
+        conn.execute(
+            """
+            UPDATE campaign_members cm
+            SET anchor_date = TO_CHAR(COALESCE(cm.joined_at, CURRENT_TIMESTAMP) AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
+                updated_at = CURRENT_TIMESTAMP
+            FROM campaigns c
+            WHERE cm.campaign_id = c.id
+              AND c.id = ANY(%s)
+              AND COALESCE(c.anchor_mode, 'campaign_start_date') <> 'campaign_start_date'
+              AND cm.status = 'pending'
+            """,
+            (campaign_ids,),
+        )
+        due_rows = conn.execute(
+            """
+            SELECT cm.id AS cm_id,
+                   cm.member_id,
+                   cm.external_contact_id,
+                   cm.campaign_id,
+                   cm.campaign_segment_id,
+                   cm.anchor_date,
+                   cm.trace_id AS member_trace_id,
+                   c.campaign_code,
+                   c.owner_userid,
+                   c.trace_id AS campaign_trace_id,
+                   cs.id AS step_id,
+                   cs.step_index,
+                   cs.day_offset,
+                   cs.send_time,
+                   cs.timezone,
+                   cs.content_text,
+                   cs.content_payload_json,
+                   cs.stop_on_reply,
+                   cs.skip_if_recently_touched_days
+            FROM campaign_members cm
+            JOIN campaigns c ON c.id = cm.campaign_id
+            JOIN LATERAL (
+                SELECT *
+                FROM campaign_steps cs
+                WHERE cs.campaign_segment_id = cm.campaign_segment_id
+                ORDER BY cs.step_index ASC, cs.id ASC
+                LIMIT 1
+            ) cs ON TRUE
+            WHERE cm.campaign_id = ANY(%s)
+              AND c.run_status = 'active'
+              AND cm.status = 'pending'
+            ORDER BY cm.id ASC
+            """,
+            (campaign_ids,),
+        ).fetchall()
+        groups: dict[str, dict[str, Any]] = {}
+        for row in due_rows:
+            due_iso = campaign_step_due_iso(
+                anchor_date=_text(row.get("anchor_date")),
+                day_offset=int(row.get("day_offset") or 0),
+                send_time=_text(row.get("send_time")) or _DEFAULT_CAMPAIGN_SEND_TIME,
+                step_timezone=_text(row.get("timezone")) or _DEFAULT_CAMPAIGN_TIMEZONE,
+            )
+            conn.execute(
+                """
+                UPDATE campaign_members
+                SET next_due_at = %s::timestamptz,
+                    current_step_index = -1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (due_iso, int(row["cm_id"])),
+            )
+            source_id = _campaign_job_source_id(
+                campaign_id=int(row["campaign_id"]),
+                campaign_segment_id=int(row["campaign_segment_id"]),
+                step_index=int(row.get("step_index") or 0),
+            )
+            if source_id not in groups:
+                groups[source_id] = {
+                    "source_ids": (
+                        source_id,
+                        _legacy_campaign_job_source_id(
+                            campaign_id=int(row["campaign_id"]),
+                            step_index=int(row.get("step_index") or 0),
+                        ),
+                    ),
+                    "scheduled_for": due_iso,
+                    "campaign": {
+                        "id": int(row["campaign_id"]),
+                        "campaign_code": _text(row.get("campaign_code")),
+                        "owner_userid": _text(row.get("owner_userid")),
+                        "trace_id": _text(row.get("campaign_trace_id") or row.get("member_trace_id")),
+                    },
+                    "step": {
+                        "id": int(row.get("step_id") or 0),
+                        "step_index": int(row.get("step_index") or 0),
+                        "day_offset": int(row.get("day_offset") or 0),
+                        "send_time": _text(row.get("send_time")),
+                        "content_text": _text(row.get("content_text")),
+                        "timezone": _text(row.get("timezone")),
+                        "content_payload_json": _json(row.get("content_payload_json"), default={}),
+                        "stop_on_reply": bool(row.get("stop_on_reply")),
+                        "skip_if_recently_touched_days": int(row.get("skip_if_recently_touched_days") or 0),
+                    },
+                    "members": [],
+                }
+            external_userid = _text(row.get("external_contact_id"))
+            if external_userid:
+                groups[source_id]["members"].append(
+                    {
+                        "cm_id": int(row["cm_id"]),
+                        "member_id": int(row.get("member_id") or 0),
+                        "external_contact_id": external_userid,
+                        "trace_id": _text(row.get("member_trace_id")),
+                        "campaign_segment_id": int(row["campaign_segment_id"]),
+                    }
+                )
+        enqueued = 0
+        for source_id, group in groups.items():
+            members = group["members"]
+            if not members:
+                continue
+            existing = conn.execute(
+                """
+                SELECT id
+                FROM broadcast_jobs
+                WHERE source_type = %s
+                  AND source_table = %s
+                  AND source_id = ANY(%s)
+                  AND status = ANY(%s)
+                LIMIT 1
+                """,
+                (_CAMPAIGN_QUEUE_SOURCE_TYPE, _CAMPAIGN_QUEUE_SOURCE_TABLE, list(group["source_ids"]), _CAMPAIGN_OPEN_JOB_STATUSES),
+            ).fetchone()
+            if existing:
+                continue
+            campaign = group["campaign"]
+            step = group["step"]
+            target_external_userids = [member["external_contact_id"] for member in members]
+            inserted = conn.execute(
+                """
+                INSERT INTO broadcast_jobs (
+                    source_type, source_id, source_table, scheduled_for, priority, batch_key,
+                    idempotency_key, status, requires_approval,
+                    target_external_userids, target_count, target_summary,
+                    content_type, content_payload, content_summary, trace_id, created_by
+                ) VALUES (
+                    %s, %s, %s, %s::timestamptz, 100, %s,
+                    %s, 'queued', FALSE,
+                    %s::jsonb, %s, %s,
+                    %s, %s::jsonb, %s, %s, %s
+                )
+                ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+                DO NOTHING
+                RETURNING id
+                """,
+                (
+                    _CAMPAIGN_QUEUE_SOURCE_TYPE,
+                    source_id,
+                    _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                    group["scheduled_for"],
+                    normalized_plan_id,
+                    f"campaign_member_step:{source_id}",
+                    _json_dump(target_external_userids),
+                    len(target_external_userids),
+                    f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
+                    _CAMPAIGN_QUEUE_CONTENT_TYPE,
+                    _json_dump({"campaign": campaign, "step": step, "members": members}),
+                    _text(step.get("content_text"))[:200],
+                    _text(campaign.get("trace_id")),
+                    _text(operator) or "crm_console",
+                ),
+            ).fetchone()
+            if inserted:
+                enqueued += 1
+        after = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            ORDER BY c.id ASC
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        self._audit(
+            conn,
+            operator=operator,
+            action_type="legacy_campaign_group_approve_and_start_from_cloud_plan",
+            target_type="legacy_campaign_group",
+            target_id=normalized_plan_id,
+            before={"campaigns": before},
+            after={"campaigns": [dict(row) for row in after], "queued_jobs": enqueued},
+        )
+        return self._legacy_group_plan_row(conn, normalized_plan_id)
 
     def _stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
         if not plan_ids:
@@ -509,7 +793,12 @@ class PostgresCloudPlanRepository:
         )
         rows = conn.execute(
             """
-            SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+            SELECT cm.id, cm.external_contact_id,
+                   CASE
+                       WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
+                       ELSE cm.status
+                   END AS status,
+                   cm.updated_at,
                    c.owner_userid,
                    COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
                    (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
@@ -554,7 +843,12 @@ class PostgresCloudPlanRepository:
                         return item
                 row = conn.execute(
                     """
-                    SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+                    SELECT cm.id, cm.external_contact_id,
+                           CASE
+                               WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
+                               ELSE cm.status
+                           END AS status,
+                           cm.updated_at,
                            c.owner_userid,
                            COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
                            (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
@@ -629,26 +923,11 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute(
-                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
-                    (_text(plan_id),),
-                ).fetchone()
-                if not legacy_before:
+                row = self._approve_and_start_legacy_group(conn, _text(plan_id), operator=operator)
+                if not row:
                     return None
-                if _text(legacy_before.get("review_status")) == "rejected":
-                    raise ValueError("plan is rejected")
-                row = conn.execute(
-                    """
-                    UPDATE campaigns
-                    SET review_status = 'approved', updated_at = CURRENT_TIMESTAMP
-                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
-                    RETURNING *
-                    """,
-                    (_text(plan_id),),
-                ).fetchone()
-                self._audit(conn, operator=operator, action_type="cloud_plan_approve", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
                 conn.commit()
-                return self.get_plan(plan_id)
+                return _plan_view(dict(row), self.plan_stats(plan_id))
             if _text(before.get("review_status") or before.get("status")) == "rejected":
                 raise ValueError("plan is rejected")
             row = conn.execute(
@@ -1132,6 +1411,35 @@ class InMemoryCloudPlanRepository:
                 item["review_status"] = "approved"
                 item["updated_at"] = _now()
                 self.audits.append({"action_type": "cloud_plan_approve", "target_id": plan_id, "operator": operator})
+                return self.get_plan(plan_id)
+        for item in self.legacy_plans:
+            if item["plan_id"] == plan_id:
+                if item.get("review_status") == "rejected":
+                    raise ValueError("plan is rejected")
+                item["review_status"] = "approved"
+                item["run_status"] = "active"
+                item["status"] = "active"
+                item["updated_at"] = _now()
+                queued = 0
+                for recipient in self.legacy_recipients:
+                    if recipient["plan_id"] == plan_id and recipient.get("send_status") == "pending":
+                        recipient["approval_status"] = "approved"
+                        recipient["send_status"] = "queued"
+                        recipient["updated_at"] = _now()
+                        queued += 1
+                if queued:
+                    self.broadcast_jobs.append(
+                        {
+                            "id": len(self.broadcast_jobs) + 1,
+                            "source_type": "campaign",
+                            "source_table": "campaign_members",
+                            "source_id": f"{plan_id}:legacy",
+                            "status": "queued",
+                            "scheduled_for": _now(),
+                            "target_count": queued,
+                        }
+                    )
+                self.audits.append({"action_type": "legacy_campaign_group_approve_and_start_from_cloud_plan", "target_id": plan_id, "operator": operator})
                 return self.get_plan(plan_id)
         return None
 

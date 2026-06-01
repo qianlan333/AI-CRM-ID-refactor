@@ -127,6 +127,43 @@ def test_plan_approve_only_changes_plan_review_state(monkeypatch):
     assert [row["approval_status"] for row in recipients] == ["pending", "pending"]
 
 
+def test_approve_legacy_group_starts_campaign_execution(monkeypatch):
+    client = _client(monkeypatch)
+    repo = build_cloud_plan_repository()
+    plan_id = "standard_subscription_20260530_1000_zhaoyanfang_v1"
+    repo.legacy_plans[0]["review_status"] = "pending_review"
+    repo.legacy_plans[0]["run_status"] = "draft"
+    repo.legacy_plans[0]["status"] = "draft"
+    for recipient in repo.legacy_recipients:
+        recipient["approval_status"] = "pending"
+        recipient["send_status"] = "pending"
+
+    response = client.post(f"/api/admin/cloud-orchestrator/plans/{plan_id}/approve", headers=_token_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan"]["review_status"] == "approved"
+    assert payload["plan"]["run_status"] == "active"
+    recipients = client.get(f"/api/admin/cloud-orchestrator/plans/{plan_id}/recipients").json()["rows"]
+    assert {row["approval_status"] for row in recipients} == {"approved"}
+    assert {row["send_status"] for row in recipients} == {"queued"}
+    assert repo.broadcast_jobs[-1]["source_type"] == "campaign"
+    assert repo.broadcast_jobs[-1]["status"] == "queued"
+    assert repo.broadcast_jobs[-1]["target_count"] == 3
+
+
+def test_legacy_approve_postgres_contract_starts_and_prequeues_campaigns():
+    source = (ROOT / "aicrm_next" / "cloud_orchestrator" / "repository.py").read_text(encoding="utf-8")
+
+    assert "legacy_campaign_group_approve_and_start_from_cloud_plan" in source
+    assert "run_status = CASE" in source
+    assert "ELSE 'active'" in source
+    assert "campaign_members" in source
+    assert "next_due_at = %s::timestamptz" in source
+    assert "INSERT INTO broadcast_jobs" in source
+    assert "campaign_member_step:" in source
+
+
 def test_audit_json_dump_serializes_datetime_values():
     payload = json.loads(_json_dump({"updated_at": datetime(2026, 6, 1, 9, 42, 58, tzinfo=timezone.utc)}))
 

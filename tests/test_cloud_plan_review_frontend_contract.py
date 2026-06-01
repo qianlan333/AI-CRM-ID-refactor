@@ -52,7 +52,7 @@ def test_plan_detail_page_contract(monkeypatch):
     assert response.status_code == 200
     html = response.text
     assert "AI 助手 · 计划二级明细" in html
-    assert "批准当前计划" in html
+    assert "批准并开始执行" in html
     assert "拒绝计划" in html
     assert "返回一级页" in html
     assert "目标人员" in html
@@ -92,6 +92,9 @@ def test_plan_review_static_contract():
     assert "data-task-material-detail" in script
     assert "/api/admin/send-content/preview" in script
     assert "小程序：" in script
+    assert "已开始执行" in script
+    assert "计划已批准并开始执行" in script
+    assert "run === \"active\"" in script
     for forbidden in [
         "limit', '5000",
         "limit\", \"5000",
