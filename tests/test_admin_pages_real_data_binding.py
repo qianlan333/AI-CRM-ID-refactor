@@ -965,6 +965,39 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
         assert response.json()["forwarded"] == f"{method}:{path.split('?', 1)[0]}:{path.split('?', 1)[1] if '?' in path else ''}"
 
 
+def test_admin_cloud_orchestrator_media_upload_route_forwards_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "forwarded": f"{request.method}:{request.url.path}:{request.url.query}",
+                "media_id": "media-live-probe",
+            },
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+
+    response = TestClient(create_app(), raise_server_exceptions=False).post(
+        "/api/admin/cloud-orchestrator/media/upload",
+        files={"image": ("probe.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert response.json()["forwarded"] == "POST:/api/admin/cloud-orchestrator/media/upload:"
+    assert response.json()["media_id"] == "media-live-probe"
+
+
 def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 

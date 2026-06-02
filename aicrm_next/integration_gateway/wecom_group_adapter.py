@@ -123,6 +123,11 @@ class WeComGroupMessageAdapter:
         result = legacy_wecom_client_from_app().create_group_message_task(normalized)
         errcode = int(result.get("errcode") or 0) if isinstance(result, dict) else -1
         msgid = str((result or {}).get("msgid") or "").strip() if isinstance(result, dict) else ""
+        failed_chat_ids = [
+            str(item or "").strip()
+            for item in list((result or {}).get("fail_list") or [])
+            if str(item or "").strip()
+        ] if isinstance(result, dict) else []
         if errcode != 0:
             return {
                 "ok": False,
@@ -156,6 +161,27 @@ class WeComGroupMessageAdapter:
                 "requested_chat_ids": requested_chat_ids,
                 "error_code": "wecom_group_exact_target_not_verified",
                 "error_message": "WeCom did not return msgid for exact target verification",
+            }
+        if failed_chat_ids:
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "create_group_message_task",
+                "idempotency_key": idempotency_key,
+                "target": target,
+                "result": result,
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": True,
+                "exact_target_required": True,
+                "exact_target_verified": False,
+                "requested_chat_ids": requested_chat_ids,
+                "requested_chat_count": len(requested_chat_ids),
+                "failed_chat_ids": failed_chat_ids,
+                "failed_chat_count": len(failed_chat_ids),
+                "wecom_msgid": msgid,
+                "error_code": "wecom_group_message_partial_failure",
+                "error_message": f"WeCom rejected {len(failed_chat_ids)} requested customer-group targets",
             }
         return {
             "ok": True,
