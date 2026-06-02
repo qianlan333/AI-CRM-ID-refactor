@@ -44,4 +44,8 @@ def test_next_fixture_wecom_tags_api_returns_legacy_shape(monkeypatch):
     assert payload["total_tags"] == len(payload["items"])
     assert payload["tag_limit"] == 1000
     assert payload["synced_at"]
-    assert payload["source_status"] == "next_fixture"
+    assert payload["source_status"] == "local_contract_probe"
+    assert payload["read_model_status"] == "fixture"
+    assert payload["route_owner"] == "ai_crm_next"
+    assert payload["fallback_used"] is False
+    assert payload["real_external_call_executed"] is False

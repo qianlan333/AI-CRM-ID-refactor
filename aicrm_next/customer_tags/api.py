@@ -4,13 +4,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from .application import build_wecom_tag_application_service
 from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
+from .read_model import TagCatalogUnavailable, build_tag_catalog_repository
 from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_enabled, production_environment
 
 
 router = APIRouter()
+read_router = APIRouter()
 
 
 def _timestamp() -> str:
@@ -77,10 +81,52 @@ def _fixture_catalog() -> dict[str, Any]:
     }
 
 
-@router.get("/api/admin/wecom/tags")
-def list_admin_wecom_tags_fixture() -> dict:
-    _ensure_local_fixture_allowed()
-    return _fixture_catalog()
+def _production_unavailable(exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        jsonable_encoder(
+            {
+                "ok": False,
+                "degraded": True,
+                "error": "WeCom tag catalog read model is unavailable.",
+                "error_code": "production_unavailable",
+                "source_status": "production_unavailable",
+                "read_model_status": "unavailable",
+                "route_owner": "ai_crm_next",
+                "fallback_used": False,
+                "real_external_call_executed": False,
+                "page_error": str(exc),
+                "groups": [],
+                "tags": [],
+                "items": [],
+                "count": 0,
+                "total_tags": 0,
+                "tag_limit": 1000,
+            }
+        ),
+        status_code=503,
+    )
+
+
+def _read_catalog_payload() -> dict:
+    catalog = build_tag_catalog_repository().list_catalog()
+    return catalog.to_payload()
+
+
+@read_router.get("/api/admin/wecom/tags")
+def list_admin_wecom_tags_read_model():
+    try:
+        return _read_catalog_payload()
+    except TagCatalogUnavailable as exc:
+        return _production_unavailable(exc)
+
+
+@read_router.get("/api/admin/wecom/tag-groups")
+def list_admin_wecom_tag_groups_read_model():
+    try:
+        payload = _read_catalog_payload()
+    except TagCatalogUnavailable as exc:
+        return _production_unavailable(exc)
+    return {**payload, "items": payload["groups"], "count": len(payload["groups"])}
 
 
 @router.post("/api/admin/wecom/tags/sync")

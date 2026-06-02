@@ -831,6 +831,34 @@ routes:
     checker: tests/test_auth_wecom_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
     notes: Explicit deprecated Next response for historical H5 OAuth unknown route; no real OAuth call, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
+  - route_id: wecom_tags_read_next_native
+    path_pattern: /api/admin/wecom/tags
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Next-native WeCom tag catalog read model for admin, questionnaire editor, and selector surfaces; returns route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false; write and sync routes remain production_compat out of scope.
+  - route_id: wecom_tag_groups_read_next_native
+    path_pattern: /api/admin/wecom/tag-groups
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Next-native WeCom tag group read model for admin and selector surfaces; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
   - route_id: auth_wecom_start_blocked_next
     path_pattern: /auth/wecom/start
     methods: [GET, OPTIONS]

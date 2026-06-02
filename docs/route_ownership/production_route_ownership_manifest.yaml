@@ -763,6 +763,34 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     notes: Explicit deprecated Next response for historical H5 OAuth unknown route; no real OAuth call, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
+  - route_pattern: /api/admin/wecom/tags
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Next-native WeCom tag catalog read model for admin, questionnaire editor, and selector surfaces; returns route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false; write and sync routes remain production_compat out of scope.
+  - route_pattern: /api/admin/wecom/tag-groups
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Next-native WeCom tag group read model for admin and selector surfaces; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
   - route_pattern: /api/admin/wecom/tags*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.customer_tags
@@ -773,7 +801,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Questionnaire editor and WeCom tag management load the real enterprise tag catalog from the legacy production facade until Next owns tag sync and CRUD directly.
+    notes: Write, sync, mutation, and subpath fallback remain production_compat out of scope while exact GET /api/admin/wecom/tags is Next-native read primary; no real WeCom sync is enabled by this group.
   - route_pattern: /api/admin/wecom/tag-groups*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.customer_tags
@@ -784,7 +812,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: WeCom tag group CRUD remains legacy-forwarded with the same guarded admin tag-management contract.
+    notes: Tag group write and subpath fallback remain production_compat out of scope while exact GET /api/admin/wecom/tag-groups is Next-native read primary; no real WeCom sync is enabled by this group.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

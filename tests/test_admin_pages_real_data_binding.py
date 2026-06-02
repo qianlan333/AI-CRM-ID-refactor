@@ -888,7 +888,7 @@ def test_automation_program_summary_derives_publish_state_from_next_readiness():
     assert full["publish_status_label"] == "完整自动化已发布"
 
 
-def test_admin_wecom_tag_routes_forward_to_legacy(monkeypatch):
+def test_admin_wecom_tag_read_routes_stay_next_native(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -910,12 +910,18 @@ def test_admin_wecom_tag_routes_forward_to_legacy(monkeypatch):
 
     monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
 
-    response = TestClient(create_app(), raise_server_exceptions=False).get("/api/admin/wecom/tags")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    tags_response = client.get("/api/admin/wecom/tags")
+    groups_response = client.get("/api/admin/wecom/tag-groups")
 
-    assert response.status_code == 200
-    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert response.json()["forwarded"] == "GET:/api/admin/wecom/tags"
-    assert response.json()["items"][0]["tag_id"] == "et-tag-001"
+    for response in [tags_response, groups_response]:
+        payload = response.json()
+        assert response.status_code == 503
+        assert "X-AICRM-Compatibility-Facade" not in response.headers
+        assert payload["source_status"] == "production_unavailable"
+        assert payload["route_owner"] == "ai_crm_next"
+        assert payload["fallback_used"] is False
+        assert payload["real_external_call_executed"] is False
 
 
 def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch):
