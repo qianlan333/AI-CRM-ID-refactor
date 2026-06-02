@@ -52,6 +52,7 @@ class MiniprogramUpsertRequest(BaseModel):
     appid: str | None = None
     page_path: str | None = Field(default=None, alias="pagepath")
     thumb_image_id: str | int | None = None
+    resolve_thumb_media: bool = True
     description: str = ""
     tags: list[str] = Field(default_factory=list)
     enabled: bool | None = None

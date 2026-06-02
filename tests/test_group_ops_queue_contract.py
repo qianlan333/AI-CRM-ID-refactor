@@ -166,6 +166,40 @@ def test_wecom_group_adapter_fails_when_exact_target_cannot_be_verified(monkeypa
     assert result["error_code"] == "wecom_group_exact_target_not_verified"
 
 
+def test_wecom_group_adapter_fails_when_wecom_rejects_some_chat_ids(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
+
+    class FakeClient:
+        def create_group_message_task(self, payload):
+            return {
+                "errcode": 0,
+                "errmsg": "ok",
+                "msgid": "msg_partial_001",
+                "fail_list": ["chat_002"],
+            }
+
+    monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FakeClient(),
+    )
+
+    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+        {"sender": "owner_001", "chat_ids": ["chat_001", "chat_002"], "text": {"content": "hello"}},
+        idempotency_key="pytest-partial-fail-list",
+    )
+
+    assert result["ok"] is False
+    assert result["side_effect_executed"] is True
+    assert result["exact_target_required"] is True
+    assert result["exact_target_verified"] is False
+    assert result["requested_chat_ids"] == ["chat_001", "chat_002"]
+    assert result["failed_chat_ids"] == ["chat_002"]
+    assert result["failed_chat_count"] == 1
+    assert result["wecom_msgid"] == "msg_partial_001"
+    assert result["error_code"] == "wecom_group_message_partial_failure"
+
+
 def test_wecom_group_adapter_production_without_guard_is_blocked(monkeypatch):
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
