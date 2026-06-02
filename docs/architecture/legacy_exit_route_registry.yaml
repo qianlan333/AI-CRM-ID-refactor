@@ -735,18 +735,46 @@ routes:
     notes: Admin latest submit debug route is inventoried only; not part of group 8 questionnaire admin write CommandBus replacement.
   - route_id: questionnaire_public_h5_out_of_scope
     path_pattern: /api/h5/questionnaires*
-    methods: [GET, POST, OPTIONS]
+    methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: production_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: true
     legacy_source: production_compat
     external_side_effect_risk: medium
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
+    replacement_status: validating
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Public H5 read/submit/diagnostics routes are inventoried only; submit and diagnostics remain out of scope for group 7.
+    notes: Public H5 read family remains active with legacy rollback allowed; exact submit and diagnostics POST routes are tracked separately as group 9 Next CommandBus primary; OAuth/auth remains out of scope.
+  - route_id: questionnaire_h5_submit_next_commandbus
+    path_pattern: /api/h5/questionnaires/{slug}/submit
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_questionnaire_h5_submit_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: H5 submit is Next CommandBus primary with legacy rollback retained for later deletion; writes Next submission projection in local/test, returns controlled production_unavailable when production write model is unavailable, and plans WeCom/external push/automation as SideEffectPlan only with real_external_call_executed=false.
+  - route_id: questionnaire_h5_client_diagnostics_next_commandbus
+    path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_questionnaire_h5_submit_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: H5 client diagnostics is Next CommandBus/AuditLedger primary with legacy rollback retained; unresolved slug diagnostics are recorded without external calls; real_external_call_executed=false.
   - route_id: questionnaire_oauth_out_of_scope
     path_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
