@@ -39,6 +39,8 @@ from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
 from .radar_links.api import router as radar_links_router
 from .radar_links.repo import reset_radar_links_fixture_state
+from .sidebar_write.api import router as sidebar_write_router
+from .sidebar_write import reset_sidebar_write_fixture_state
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
@@ -61,6 +63,7 @@ def create_app() -> FastAPI:
         reset_hxc_dashboard_fixture_state()
         reset_radar_links_fixture_state()
         reset_cloud_plan_fixture_state()
+        reset_sidebar_write_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -93,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
+    app.include_router(sidebar_write_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)

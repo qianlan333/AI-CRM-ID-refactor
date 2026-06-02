@@ -247,6 +247,14 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
         "  - route_pattern: /api/sidebar/bind-mobile\n"
         "    production_behavior: legacy_forward\n"
         "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n"
+        "  - route_pattern: /api/sidebar/signup-tags/mark\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n"
+        "  - route_pattern: /api/sidebar/jssdk-config\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
         "    delete_ready: false\n",
         encoding="utf-8",
     )

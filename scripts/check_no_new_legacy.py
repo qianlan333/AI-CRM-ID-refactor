@@ -92,6 +92,9 @@ SIDEBAR_OUT_OF_SCOPE_WRITE_ROUTES = (
     "/api/sidebar/jssdk-config",
     "/api/sidebar/lead-pool/upsert-class-term",
     "/api/sidebar/signup-tags/mark",
+    "/api/sidebar/marketing-status/set-followup-segment",
+    "/api/sidebar/marketing-status/mark-enrolled",
+    "/api/sidebar/marketing-status/unmark-enrolled",
     "/api/sidebar/marketing-status*",
     "/api/sidebar/v2/profile",
     "/api/sidebar/v2/materials/send",
@@ -411,13 +414,15 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
         record = manifest_by_path.get(route_path)
         if record is None:
             continue
-        if record.get("delete_ready") is True or record.get("production_behavior") != "legacy_forward":
+        behavior = record.get("production_behavior")
+        allowed_behaviors = {"legacy_forward"} if route_path == "/api/sidebar/jssdk-config" else {"legacy_forward", "next_command"}
+        if record.get("delete_ready") is True or behavior not in allowed_behaviors or record.get("legacy_fallback_allowed") is not True:
             violations.append(
                 Violation(
                     "sidebar_write_route_mislocked_by_readonly_closeout",
                     route_path,
-                    f"production_behavior={record.get('production_behavior')} delete_ready={record.get('delete_ready')}",
-                    "Sidebar write, JSSDK, and material send paths are out of scope for readonly closeout and must not be marked deleted or locked here.",
+                    f"production_behavior={behavior} delete_ready={record.get('delete_ready')} legacy_fallback_allowed={record.get('legacy_fallback_allowed')}",
+                    "Sidebar write, JSSDK, and material send paths are out of scope for readonly closeout and must not be marked deleted or locked here; sidebar write group 5 may use next_command with rollback retained.",
                 )
             )
 
