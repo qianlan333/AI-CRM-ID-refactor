@@ -268,10 +268,10 @@ def _admin_customer_payload_from_list_result(
     limit: int,
     offset: int,
 ) -> tuple[dict, str]:
-    degraded = bool(result.get("degraded")) or result.get("source_status") == "production_unavailable"
-    page_error = str(result.get("page_error") or "") if degraded or not result.get("ok", True) else ""
-    customers = [] if degraded else list(result.get("customers") or result.get("items") or [])
-    total = 0 if degraded else int(result.get("total") or result.get("count") or len(customers))
+    unavailable = not result.get("ok", True) or result.get("source_status") == "production_unavailable"
+    page_error = str(result.get("page_error") or "") if unavailable else ""
+    customers = [] if unavailable else list(result.get("customers") or result.get("items") or [])
+    total = 0 if unavailable else int(result.get("total") or result.get("count") or len(customers))
     return (
         {
             "filters": {"keyword": keyword, "owner": owner, "mobile": mobile, "tag": tag},
