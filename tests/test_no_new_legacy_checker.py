@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_messages_broad_wildcard_deletion,
+    check_questionnaire_admin_read_next_native,
     check_sidebar_readonly_closeout_lock,
     check_user_ops_next_native_preview,
     scan_source_tree,
@@ -241,6 +242,164 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
     )
 
     assert check_user_ops_next_native_preview(tmp_path) == []
+
+
+def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    questionnaire_api.parent.mkdir(parents=True)
+    frontend_routes.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        '@router.get("/api/admin/questionnaires")\n'
+        "def compat_questionnaires():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    questionnaire_api.write_text(
+        "def list_questionnaires():\n"
+        "    return {'fallback_used': True}\n",
+        encoding="utf-8",
+    )
+    frontend_routes.write_text(
+        "def admin_questionnaires():\n"
+        "    return {'fallback_used': True}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/questionnaires\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/questionnaires\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+
+    violations = check_questionnaire_admin_read_next_native(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "questionnaire_admin_read_production_compat_route" in codes
+    assert "questionnaire_admin_read_fallback_used_true" in codes
+    assert "questionnaire_admin_read_page_fallback_used_true" in codes
+    assert "questionnaire_admin_read_registry_owner" in codes
+    assert "questionnaire_admin_read_registry_legacy_allowed" in codes
+    assert "questionnaire_admin_read_registry_legacy_source" in codes
+    assert "questionnaire_admin_read_registry_delete_status" in codes
+    assert "questionnaire_admin_read_manifest_legacy_behavior" in codes
+    assert "questionnaire_admin_read_manifest_legacy_allowed" in codes
+
+
+def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_routes(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    questionnaire_api.parent.mkdir(parents=True)
+    frontend_routes.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    read_routes = [
+        ("/admin/questionnaires", "frontend_compat", "frontend_compat"),
+        ("/admin/questionnaires/new", "frontend_compat", "frontend_compat"),
+        ("/admin/questionnaires/{questionnaire_id}", "frontend_compat", "frontend_compat"),
+        ("/api/admin/questionnaires", "next_native", "next"),
+        ("/api/admin/questionnaires/{questionnaire_id}", "next_native", "next"),
+        ("/api/admin/questionnaires/{questionnaire_id}/questions", "next_native", "next"),
+        ("/api/admin/questionnaires/{questionnaire_id}/results", "next_native", "next"),
+        ("/api/admin/questionnaires/{questionnaire_id}/submissions", "next_native", "next"),
+    ]
+
+    compat.write_text(
+        '@router.api_route("/api/h5/wechat/oauth/{path:path}", methods=["GET"])\n'
+        "def oauth_out_of_scope():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    questionnaire_api.write_text(
+        "def list_questionnaires():\n"
+        "    return {'fallback_used': False}\n"
+        "def get_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def get_questionnaire_questions():\n"
+        "    return {'fallback_used': False}\n"
+        "def get_questionnaire_results():\n"
+        "    return {'fallback_used': False}\n"
+        "def get_questionnaire_submissions():\n"
+        "    return {'fallback_used': False}\n",
+        encoding="utf-8",
+    )
+    frontend_routes.write_text(
+        "def admin_questionnaires():\n"
+        "    return {'fallback_used': False}\n"
+        "def admin_questionnaire_new():\n"
+        "    return {'fallback_used': False}\n"
+        "def admin_questionnaire_detail():\n"
+        "    return {'fallback_used': False}\n"
+        "def _questionnaire_editor_response():\n"
+        "    return {'fallback_used': False}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        + "".join(
+            f"  - path_pattern: {route}\n"
+            f"    runtime_owner: {registry_owner}\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: ''\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+            for route, registry_owner, _manifest_owner in read_routes
+        )
+        + "  - path_pattern: /api/admin/questionnaires*\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - path_pattern: /api/h5/questionnaires*\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - path_pattern: /api/h5/wechat/oauth*\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    legacy_fallback_allowed: true\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        + "".join(
+            f"  - route_pattern: {route}\n"
+            f"    current_runtime_owner: {manifest_owner}\n"
+            "    production_behavior: next_read_model_only\n"
+            "    legacy_fallback_allowed: false\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+            for route, _registry_owner, manifest_owner in read_routes
+        ),
+        encoding="utf-8",
+    )
+
+    assert check_questionnaire_admin_read_next_native(tmp_path) == []
 
 
 def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle(tmp_path: Path) -> None:

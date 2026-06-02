@@ -458,113 +458,113 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: frontend_compat
-    legacy_fallback_allowed: true
-    legacy_source: frontend_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin list page reads Next-native questionnaire queries; no compatibility facade in response; rollback remains allowed for group 7 only.
+    notes: Questionnaire admin list page reads Next-native questionnaire queries; admin read legacy rollback removed; Next read model only.
   - route_id: questionnaire_admin_new_page
     path_pattern: /admin/questionnaires/new
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: frontend_compat
-    legacy_fallback_allowed: true
-    legacy_source: frontend_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire new editor shell is read-only for group 7 and does not execute create/update writes.
+    notes: Questionnaire new editor shell is read-only; admin read legacy rollback removed; no create/update writes execute here.
   - route_id: questionnaire_admin_detail_page
     path_pattern: /admin/questionnaires/{questionnaire_id}
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: frontend_compat
-    legacy_fallback_allowed: true
-    legacy_source: frontend_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire detail/editor page reads Next-native questionnaire queries and returns controlled production_unavailable when production read model is unavailable.
+    notes: Questionnaire detail/editor page reads Next-native questionnaire queries; admin read legacy rollback removed; controlled production_unavailable when production read model is unavailable.
   - route_id: questionnaire_admin_list_api
     path_pattern: /api/admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin list API uses Next-native read model primary; responses include route_owner ai_crm_next, fallback_used=false, source_status, read_model_status, degraded, and page_error.
+    notes: Questionnaire admin list API uses Next-native read model only; admin read legacy rollback removed; responses include route_owner ai_crm_next, fallback_used=false, source_status, read_model_status, degraded, and page_error.
   - route_id: questionnaire_admin_detail_api
     path_pattern: /api/admin/questionnaires/{questionnaire_id}
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin detail API uses Next-native read model primary; no compatibility facade; production read failures return controlled production_unavailable.
+    notes: Questionnaire admin detail API uses Next-native read model only; admin read legacy rollback removed; no compatibility facade; production read failures return controlled production_unavailable.
   - route_id: questionnaire_admin_questions_api
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/questions
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin questions/options API uses Next-native read model primary.
+    notes: Questionnaire admin questions/options API uses Next-native read model only; admin read legacy rollback removed.
   - route_id: questionnaire_admin_results_api
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/results
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin results summary API uses Next-native read model primary.
+    notes: Questionnaire admin results summary API uses Next-native read model only; admin read legacy rollback removed.
   - route_id: questionnaire_admin_submissions_api
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/submissions
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin submissions API uses Next-native read model primary and remains read-only.
+    notes: Questionnaire admin submissions API uses Next-native read model only; admin read legacy rollback removed and remains read-only.
   - route_id: questionnaire_admin_write_family_out_of_scope
     path_pattern: /api/admin/questionnaires*
     methods: [POST, PUT, PATCH, DELETE]

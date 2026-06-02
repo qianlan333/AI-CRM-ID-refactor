@@ -654,6 +654,9 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
             "forward_to_legacy_flask": "questionnaire_admin_read_legacy_forward",
             "list_questionnaires_from_legacy": "questionnaire_admin_read_legacy_facade",
             "get_questionnaire_detail_from_legacy": "questionnaire_admin_read_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "questionnaire_admin_read_compatibility_facade",
+            '"fallback_used": True': "questionnaire_admin_read_fallback_used_true",
+            "'fallback_used': True": "questionnaire_admin_read_fallback_used_true",
             "create_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
             "update_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
             "delete_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
@@ -672,6 +675,37 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                         )
                     )
 
+    frontend_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_path.exists():
+        sources = _function_sources(
+            frontend_path,
+            {
+                "admin_questionnaires",
+                "admin_questionnaire_new",
+                "admin_questionnaire_detail",
+                "_questionnaire_editor_response",
+            },
+        )
+        forbidden_markers = {
+            "forward_to_legacy_flask": "questionnaire_admin_read_page_legacy_forward",
+            "list_questionnaires_from_legacy": "questionnaire_admin_read_page_legacy_facade",
+            "get_questionnaire_detail_from_legacy": "questionnaire_admin_read_page_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "questionnaire_admin_read_page_compatibility_facade",
+            '"fallback_used": True': "questionnaire_admin_read_page_fallback_used_true",
+            "'fallback_used': True": "questionnaire_admin_read_page_fallback_used_true",
+        }
+        for function_name, source in sources.items():
+            for marker, code in forbidden_markers.items():
+                if marker in source:
+                    violations.append(
+                        Violation(
+                            code,
+                            str(frontend_path.relative_to(root)),
+                            f"{function_name}:{marker}",
+                            "Questionnaire admin read pages must stay Next-query/read-model only with no legacy forward, compatibility facade, or fallback_used=true.",
+                        )
+                    )
+
     registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
     registry_by_path = {record.get("path_pattern"): record for record in registry_records}
     for route_path in QUESTIONNAIRE_ADMIN_READ_ROUTES:
@@ -682,11 +716,13 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
         expected_owner = "frontend_compat" if route_path.startswith("/admin/") else "next_native"
         if record.get("runtime_owner") != expected_owner:
             violations.append(Violation("questionnaire_admin_read_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("questionnaire_admin_read_registry_rollback_state", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback":
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("questionnaire_admin_read_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source"):
+            violations.append(Violation("questionnaire_admin_read_registry_legacy_source", route_path, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked":
             violations.append(Violation("questionnaire_admin_read_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
-        if record.get("replacement_status") != "validating":
+        if record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_admin_read_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
 
     for route_path in QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES:
@@ -703,13 +739,15 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
         if record is None:
             violations.append(Violation("questionnaire_admin_read_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
             continue
-        if record.get("current_runtime_owner") not in {"next", "frontend_compat"}:
+        if record.get("current_runtime_owner") not in {"next", "next_native", "frontend_compat"}:
             violations.append(Violation("questionnaire_admin_read_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
-        if record.get("production_behavior") != "next_read_model_primary":
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("questionnaire_admin_read_manifest_legacy_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("production_behavior") != "next_read_model_only":
             violations.append(Violation("questionnaire_admin_read_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("questionnaire_admin_read_manifest_rollback_state", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("questionnaire_admin_read_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_admin_read_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
     return violations
 

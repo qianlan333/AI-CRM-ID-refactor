@@ -26,7 +26,7 @@ OUT_OF_SCOPE_PATTERNS = {
 }
 
 
-def test_questionnaire_admin_read_routes_are_next_primary_with_rollback() -> None:
+def test_questionnaire_admin_read_routes_are_deletion_locked_after_rollback_removal() -> None:
     service = get_route_registry_service()
 
     for route, owner in ADMIN_PAGE_ROUTES.items():
@@ -34,19 +34,19 @@ def test_questionnaire_admin_read_routes_are_next_primary_with_rollback() -> Non
         assert entry is not None, route
         assert entry.capability_owner == "aicrm_next.questionnaire"
         assert entry.runtime_owner == owner
-        assert entry.legacy_fallback_allowed is True
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
 
     for route in ADMIN_READ_API_ROUTES:
         entry = service.find_route(route, {"GET"})
         assert entry is not None, route
         assert entry.capability_owner == "aicrm_next.questionnaire"
         assert entry.runtime_owner == "next_native"
-        assert entry.legacy_fallback_allowed is True
+        assert entry.legacy_fallback_allowed is False
         assert entry.external_side_effect_risk == "none"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
 
 
 def test_questionnaire_write_h5_and_oauth_routes_remain_out_of_scope() -> None:
@@ -67,10 +67,10 @@ def test_questionnaire_manifest_documents_read_primary_and_out_of_scope_families
 
     for route in ADMIN_PAGE_ROUTES | {route: "next" for route in ADMIN_READ_API_ROUTES}:
         record = by_route[route]
-        assert record["legacy_fallback_allowed"] is True
-        assert record["production_behavior"] == "next_read_model_primary"
-        assert record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert record["replacement_status"] == "validating"
+        assert record["legacy_fallback_allowed"] is False
+        assert record["production_behavior"] == "next_read_model_only"
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
 
     assert by_route["/api/admin/questionnaires*"]["delete_ready"] is False
     assert "out of scope" in by_route["/api/admin/questionnaires*"]["notes"]
