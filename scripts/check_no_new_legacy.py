@@ -111,6 +111,21 @@ USER_OPS_PREVIEW_ROUTES = (
     "/api/admin/user-ops/broadcast/preview",
     "/api/admin/user-ops/export/preview",
 )
+QUESTIONNAIRE_ADMIN_READ_ROUTES = (
+    "/admin/questionnaires",
+    "/admin/questionnaires/new",
+    "/admin/questionnaires/{questionnaire_id}",
+    "/api/admin/questionnaires",
+    "/api/admin/questionnaires/{questionnaire_id}",
+    "/api/admin/questionnaires/{questionnaire_id}/questions",
+    "/api/admin/questionnaires/{questionnaire_id}/results",
+    "/api/admin/questionnaires/{questionnaire_id}/submissions",
+)
+QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES = (
+    "/api/admin/questionnaires*",
+    "/api/h5/questionnaires*",
+    "/api/h5/wechat/oauth*",
+)
 
 
 @dataclass(frozen=True)
@@ -234,6 +249,16 @@ def _decorated_route_function_sources(path: Path) -> dict[str, list[str]]:
         for route_path in route_paths:
             route_sources.setdefault(route_path, []).append(source)
     return route_sources
+
+
+def _function_sources(path: Path, names: set[str]) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    sources: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:
+            sources[node.name] = ast.get_source_segment(text, node) or ""
+    return sources
 
 
 def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
@@ -596,6 +621,99 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths):
+            if route_path in QUESTIONNAIRE_ADMIN_READ_ROUTES:
+                violations.append(
+                    Violation(
+                        "questionnaire_admin_read_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Questionnaire admin read routes must stay in frontend_compat/questionnaire Next read model code, not production_compat.",
+                    )
+                )
+
+    api_path = root / "aicrm_next/questionnaire/api.py"
+    if api_path.exists():
+        sources = _function_sources(
+            api_path,
+            {
+                "list_questionnaires",
+                "get_questionnaire",
+                "get_questionnaire_questions",
+                "get_questionnaire_results",
+                "get_questionnaire_submissions",
+            },
+        )
+        forbidden_markers = {
+            "forward_to_legacy_flask": "questionnaire_admin_read_legacy_forward",
+            "list_questionnaires_from_legacy": "questionnaire_admin_read_legacy_facade",
+            "get_questionnaire_detail_from_legacy": "questionnaire_admin_read_legacy_facade",
+            "create_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
+            "update_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
+            "delete_questionnaire_in_legacy": "questionnaire_admin_read_write_facade",
+            "requests.post(": "questionnaire_admin_read_direct_external_call",
+            "httpx.post(": "questionnaire_admin_read_direct_external_call",
+        }
+        for function_name, source in sources.items():
+            for marker, code in forbidden_markers.items():
+                if marker in source:
+                    violations.append(
+                        Violation(
+                            code,
+                            str(api_path.relative_to(root)),
+                            f"{function_name}:{marker}",
+                            "Questionnaire admin read handlers must stay Next-query/read-model only with no legacy forward or direct side effects.",
+                        )
+                    )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    for route_path in QUESTIONNAIRE_ADMIN_READ_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("questionnaire_admin_read_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+            continue
+        expected_owner = "frontend_compat" if route_path.startswith("/admin/") else "next_native"
+        if record.get("runtime_owner") != expected_owner:
+            violations.append(Violation("questionnaire_admin_read_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_admin_read_registry_rollback_state", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_admin_read_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_admin_read_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+
+    for route_path in QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            continue
+        if record.get("delete_status") == "deletion_locked" or record.get("replacement_status") == "locked":
+            violations.append(Violation("questionnaire_out_of_scope_route_locked", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in QUESTIONNAIRE_ADMIN_READ_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("questionnaire_admin_read_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") not in {"next", "frontend_compat"}:
+            violations.append(Violation("questionnaire_admin_read_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_read_model_primary":
+            violations.append(Violation("questionnaire_admin_read_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_admin_read_manifest_rollback_state", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_admin_read_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -604,6 +722,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)
         + check_user_ops_next_native_preview(ROOT)
+        + check_questionnaire_admin_read_next_native(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

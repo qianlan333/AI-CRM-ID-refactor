@@ -73,4 +73,5 @@ def _match_specificity(entry: RouteRegistryEntry, path: str) -> tuple[int, int]:
     wildcard_runtime_bonus = 0
     if "{path:path}" in path and ("*" in entry.path_pattern or "{path:path}" in entry.path_pattern):
         wildcard_runtime_bonus = 1
-    return (wildcard_runtime_bonus, len(entry.path_pattern.replace("*", "")))
+    exact_pattern_bonus = 1 if "*" not in entry.path_pattern and "{path:path}" not in entry.path_pattern else 0
+    return (wildcard_runtime_bonus, exact_pattern_bonus, len(entry.path_pattern.replace("*", "")))

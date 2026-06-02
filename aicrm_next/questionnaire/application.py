@@ -10,6 +10,8 @@ from aicrm_next.integration_gateway.questionnaire_adapters import (
     WeChatOAuthAdapter,
     build_wechat_oauth_adapter,
 )
+from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
+from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import admin_detail_projection, public_projection, score_and_tags, summary_projection, validate_required_answers
@@ -17,27 +19,144 @@ from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitReq
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
+def _read_meta(repo: QuestionnaireRepository) -> dict[str, Any]:
+    return {
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "source_status": getattr(repo, "source_status", "local_contract_probe"),
+        "read_model_status": getattr(repo, "read_model_status", "fixture"),
+        "degraded": False,
+        "page_error": "",
+    }
+
+
+def _production_unavailable(exc: Exception) -> dict[str, Any]:
+    payload = blocked_production_payload(capability_owner="questionnaire", detail=str(exc))
+    payload.update({"route_owner": "ai_crm_next", "fallback_used": False, "read_model_status": "unavailable"})
+    return payload
+
+
+def _repo_or_payload(repo: QuestionnaireRepository | None) -> tuple[QuestionnaireRepository | None, dict[str, Any] | None]:
+    try:
+        return repo or build_questionnaire_repository(), None
+    except RepositoryProviderError as exc:
+        return None, _production_unavailable(exc)
+    except Exception as exc:
+        if production_data_ready():
+            return None, _production_unavailable(exc)
+        raise
+
+
 class ListQuestionnairesQuery:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
-        self._repo = repo or build_questionnaire_repository()
+        self._repo = repo
 
     def execute(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
-        rows, total = self._repo.list_questionnaires(limit=limit, offset=offset)
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return {**unavailable, "items": [], "questionnaires": [], "total": 0, "limit": limit, "offset": offset}
+        assert repo is not None
+        try:
+            rows, total = repo.list_questionnaires(limit=limit, offset=offset)
+        except Exception as exc:
+            if production_data_ready():
+                return {**_production_unavailable(exc), "items": [], "questionnaires": [], "total": 0, "limit": limit, "offset": offset}
+            raise
         items = [summary_projection(item) for item in rows]
-        return {"ok": True, "items": items, "questionnaires": items, "total": total, "limit": limit, "offset": offset}
+        return {"ok": True, **_read_meta(repo), "items": items, "questionnaires": items, "total": total, "limit": limit, "offset": offset}
 
     __call__ = execute
 
 
 class GetQuestionnaireDetailQuery:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
-        self._repo = repo or build_questionnaire_repository()
+        self._repo = repo
 
     def execute(self, questionnaire_id: int) -> dict[str, Any]:
-        item = self._repo.get_questionnaire(questionnaire_id)
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return unavailable
+        assert repo is not None
+        try:
+            item = repo.get_questionnaire(questionnaire_id)
+        except Exception as exc:
+            if production_data_ready():
+                return _production_unavailable(exc)
+            raise
         if not item:
             raise NotFoundError("questionnaire not found")
-        return {"ok": True, **admin_detail_projection(item)}
+        return {"ok": True, **_read_meta(repo), **admin_detail_projection(item)}
+
+    __call__ = execute
+
+
+class GetQuestionnaireEditorQuery(GetQuestionnaireDetailQuery):
+    pass
+
+
+class ListQuestionnaireQuestionsQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(self, questionnaire_id: int) -> dict[str, Any]:
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return {**unavailable, "questions": []}
+        assert repo is not None
+        try:
+            questions = repo.list_questions(questionnaire_id)
+        except Exception as exc:
+            if production_data_ready():
+                return {**_production_unavailable(exc), "questions": []}
+            raise
+        if questions is None:
+            raise NotFoundError("questionnaire not found")
+        return {"ok": True, **_read_meta(repo), "questionnaire_id": int(questionnaire_id), "questions": questions}
+
+    __call__ = execute
+
+
+class GetQuestionnaireResultsSummaryQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(self, questionnaire_id: int) -> dict[str, Any]:
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return {**unavailable, "results": {}}
+        assert repo is not None
+        try:
+            results = repo.get_results_summary(questionnaire_id)
+        except Exception as exc:
+            if production_data_ready():
+                return {**_production_unavailable(exc), "results": {}}
+            raise
+        if results is None:
+            raise NotFoundError("questionnaire not found")
+        return {"ok": True, **_read_meta(repo), "questionnaire_id": int(questionnaire_id), "results": results}
+
+    __call__ = execute
+
+
+class ListQuestionnaireSubmissionsQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(self, questionnaire_id: int, *, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return {**unavailable, "items": [], "submissions": [], "total": 0, "limit": limit, "offset": offset}
+        assert repo is not None
+        try:
+            result = repo.list_submissions(questionnaire_id, limit=limit, offset=offset)
+        except Exception as exc:
+            if production_data_ready():
+                return {**_production_unavailable(exc), "items": [], "submissions": [], "total": 0, "limit": limit, "offset": offset}
+            raise
+        if result is None:
+            raise NotFoundError("questionnaire not found")
+        rows, total = result
+        return {"ok": True, **_read_meta(repo), "questionnaire_id": int(questionnaire_id), "items": rows, "submissions": rows, "total": total, "limit": limit, "offset": offset}
 
     __call__ = execute
 

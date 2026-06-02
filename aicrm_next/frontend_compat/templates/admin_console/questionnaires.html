@@ -205,6 +205,15 @@
 
 {% block content %}
 <section class="admin-card">
+  <div
+    id="questionnaire-read-model-status"
+    data-route-owner="{{ questionnaire_payload.route_owner }}"
+    data-source-status="{{ questionnaire_payload.source_status }}"
+    data-read-model-status="{{ questionnaire_payload.read_model_status }}"
+    data-fallback-used="{{ 'true' if questionnaire_payload.fallback_used else 'false' }}"
+    data-degraded="{{ 'true' if questionnaire_payload.degraded else 'false' }}"
+    hidden
+  ></div>
   <div class="questionnaire-filter-row">
     <label class="admin-field">
       <span>搜索问卷</span>

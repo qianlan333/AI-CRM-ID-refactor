@@ -38,11 +38,10 @@ from aicrm_next.automation_engine.programs import (
 )
 from aicrm_next.customer_read_model.application import GetAdminCustomerProfileQuery, ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
-from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
-from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
-    LegacyQuestionnaireDataUnavailable,
-    get_questionnaire_detail_from_legacy,
-    list_questionnaires_from_legacy,
+from aicrm_next.questionnaire.application import (
+    GetQuestionnaireEditorQuery,
+    GetQuestionnairePreflightQuery,
+    ListQuestionnairesQuery,
 )
 from .admin_shell import (
     legacy_url_for as _legacy_url_for,
@@ -151,11 +150,7 @@ def _questionnaire_editor_response(
     page_error = ""
     if questionnaire_id is not None:
         try:
-            payload = (
-                get_questionnaire_detail_from_legacy(questionnaire_id)
-                if production_data_ready()
-                else GetQuestionnaireDetailQuery()(questionnaire_id)
-            )
+            payload = GetQuestionnaireEditorQuery()(questionnaire_id)
         except Exception as exc:
             context = _shell_context(
                 request=request,
@@ -173,6 +168,23 @@ def _questionnaire_editor_response(
                 }
             )
             return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
+        if payload.get("source_status") == "production_unavailable":
+            context = _shell_context(
+                request=request,
+                page_title="问卷数据不可用",
+                page_summary="当前生产问卷读模型不可用。",
+                active_endpoint="api.admin_questionnaires",
+            )
+            context.update(
+                {
+                    "state_title": "生产问卷数据不可用",
+                    "state_body": str(payload.get("page_error") or "请确认生产问卷读模型已经完成同步。"),
+                    "state_items": ["source_status=production_unavailable", "fallback_used=false", "route_owner=ai_crm_next"],
+                    "actions": [{"label": "返回问卷管理", "href": "/admin/questionnaires", "variant": "secondary"}],
+                    "page_error": str(payload.get("page_error") or ""),
+                }
+            )
+            return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=503)
 
     questionnaire = jsonable_encoder((payload or {}).get("questionnaire")) if payload else None
     if questionnaire is not None and isinstance(payload, dict):
@@ -581,35 +593,8 @@ def admin_wecom_tags(request: Request):
 @router.get("/admin/questionnaires", name="api.admin_questionnaires")
 @router.get("/admin/questionnaires/ui", name="api.admin_console_questionnaires")
 def admin_questionnaires(request: Request):
-    if production_data_ready():
-        try:
-            list_payload = list_questionnaires_from_legacy(limit=100, offset=0)
-        except LegacyQuestionnaireDataUnavailable as exc:
-            list_payload = {"questionnaires": [], "items": [], "total": 0}
-            preflight_error = f"生产问卷数据读取失败：{exc}"
-        else:
-            preflight_error = ""
-    else:
-        list_payload = {
-            "questionnaires": [
-                {
-                    "id": 1,
-                    "slug": "hxc-activation-v1",
-                    "title": "黄小璨激活问卷",
-                    "name": "黄小璨激活问卷",
-                    "enabled": True,
-                    "is_disabled": False,
-                    "created_at": "2026-05-20T00:00:00Z",
-                    "updated_at": "2026-05-20T00:00:00Z",
-                    "submission_count": 0,
-                    "assessment_enabled": False,
-                    "public_path": "/s/hxc-activation-v1",
-                }
-            ],
-            "total": 1,
-            "source_status": "local_contract_probe",
-        }
-        preflight_error = ""
+    list_payload = ListQuestionnairesQuery()(limit=100, offset=0)
+    preflight_error = str(list_payload.get("page_error") or "") if list_payload.get("degraded") else ""
     preflight_payload = GetQuestionnairePreflightQuery()()
     context = _shell_context(
         request=request,
@@ -629,7 +614,13 @@ def admin_questionnaires(request: Request):
         "preflight_error": preflight_error,
         "total": list_payload.get("total", len(questionnaires)),
         "source_status": list_payload.get("source_status", "local_contract_probe"),
+        "read_model_status": list_payload.get("read_model_status", ""),
+        "route_owner": list_payload.get("route_owner", "ai_crm_next"),
+        "fallback_used": bool(list_payload.get("fallback_used", False)),
+        "degraded": bool(list_payload.get("degraded", False)),
     }
+    if preflight_error:
+        context["page_error"] = preflight_error
     return templates.TemplateResponse(request, "admin_console/questionnaires.html", context)
 
 
