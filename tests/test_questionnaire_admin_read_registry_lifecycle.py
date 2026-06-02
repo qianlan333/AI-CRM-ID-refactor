@@ -70,7 +70,9 @@ def test_questionnaire_manifest_documents_read_primary_and_out_of_scope_families
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
 
-    assert by_route["/api/h5/questionnaires/{slug}/submit"]["delete_ready"] is False
+    assert by_route["/api/h5/questionnaires/{slug}/submit"]["delete_ready"] is True
     assert by_route["/api/h5/questionnaires/{slug}/submit"]["production_behavior"] == "next_command"
-    assert by_route["/api/h5/questionnaires/{slug}/submit"]["replacement_status"] == "validating"
+    assert by_route["/api/h5/questionnaires/{slug}/submit"]["replacement_status"] == "locked"
+    assert by_route["/api/h5/questionnaires/{slug}/client-diagnostics"]["delete_ready"] is True
+    assert by_route["/api/h5/questionnaires/{slug}/client-diagnostics"]["replacement_status"] == "locked"
     assert by_route["/api/h5/wechat/oauth*"]["delete_ready"] is False

@@ -17,8 +17,9 @@ def test_questionnaire_h5_submit_inventory_documents_group_9_scope() -> None:
 
     assert "questionnaire.h5.submit" in text
     assert "questionnaire.h5.client_diagnostics" in text
-    assert "Next CommandBus primary" in text
-    assert "legacy rollback retained" in text
+    assert "Next CommandBus only" in text
+    assert "legacy rollback removed" in text
+    assert "deletion_locked" in text
     assert "adapter_mode=real_blocked" in text
     assert "real_external_call_executed=false" in text
     assert "production_unavailable" in text

@@ -72,15 +72,17 @@ def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tm
         "  - path_pattern: /api/h5/questionnaires/{slug}/submit\n"
         "    runtime_owner: production_compat\n"
         "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
         "    adapter_mode: real_enabled\n"
-        "    delete_status: active\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
         "    replacement_status: not_started\n"
         "    notes: legacy forward\n"
         "  - path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
         "    runtime_owner: production_compat\n"
         "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
         "    adapter_mode: real_enabled\n"
-        "    delete_status: active\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
         "    replacement_status: not_started\n"
         "    notes: legacy forward\n",
         encoding="utf-8",
@@ -92,14 +94,16 @@ def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tm
         "    production_behavior: legacy_forward\n"
         "    legacy_fallback_allowed: true\n"
         "    adapter_mode: real_enabled\n"
-        "    delete_status: active\n"
+        "    delete_ready: false\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
         "    replacement_status: not_started\n"
         "  - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
         "    current_runtime_owner: production_compat\n"
         "    production_behavior: legacy_forward\n"
         "    legacy_fallback_allowed: true\n"
         "    adapter_mode: real_enabled\n"
-        "    delete_status: active\n"
+        "    delete_ready: false\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
         "    replacement_status: not_started\n",
         encoding="utf-8",
     )
@@ -111,13 +115,19 @@ def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tm
     assert "questionnaire_h5_submit_fallback_used_true" in codes
     assert "questionnaire_h5_submit_real_external_call_true" in codes
     assert "questionnaire_h5_submit_registry_owner" in codes
+    assert "questionnaire_h5_submit_registry_legacy_allowed" in codes
+    assert "questionnaire_h5_submit_registry_legacy_source" in codes
     assert "questionnaire_h5_submit_registry_adapter_mode" in codes
+    assert "questionnaire_h5_submit_registry_rollback_lifecycle" in codes
     assert "questionnaire_h5_submit_registry_delete_status" in codes
     assert "questionnaire_h5_submit_manifest_behavior" in codes
+    assert "questionnaire_h5_submit_manifest_legacy_allowed" in codes
+    assert "questionnaire_h5_submit_manifest_not_delete_ready" in codes
+    assert "questionnaire_h5_submit_manifest_rollback_lifecycle" in codes
     assert "questionnaire_h5_submit_manifest_lifecycle" in codes
 
 
-def test_questionnaire_h5_submit_guard_allows_next_commandbus_validating_with_rollback(tmp_path: Path) -> None:
+def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     api = tmp_path / "aicrm_next/questionnaire/api.py"
     h5_write = tmp_path / "aicrm_next/questionnaire/h5_write.py"
@@ -141,20 +151,20 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_validating_with_ro
         "routes:\n"
         "  - path_pattern: /api/h5/questionnaires/{slug}/submit\n"
         "    runtime_owner: next_command\n"
-        "    legacy_fallback_allowed: true\n"
-        "    legacy_source: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: none\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
-        "    notes: Next CommandBus primary; real_external_call_executed=false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    notes: Next CommandBus only; legacy rollback removed; real_external_call_executed=false\n"
         "  - path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
         "    runtime_owner: next_command\n"
-        "    legacy_fallback_allowed: true\n"
-        "    legacy_source: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: none\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
-        "    notes: Next CommandBus primary; real_external_call_executed=false\n",
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    notes: Next CommandBus only; legacy rollback removed; real_external_call_executed=false\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -162,17 +172,19 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_validating_with_ro
         "  - route_pattern: /api/h5/questionnaires/{slug}/submit\n"
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    delete_ready: true\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n",
+        "    delete_ready: true\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
         encoding="utf-8",
     )
 

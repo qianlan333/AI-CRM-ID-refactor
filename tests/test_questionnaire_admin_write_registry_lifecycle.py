@@ -55,9 +55,12 @@ def test_questionnaire_admin_write_manifest_is_locked_next_command_without_rollb
         assert "real_external_call_executed=false" in record["notes"]
 
 
-def test_questionnaire_h5_and_oauth_are_not_locked_by_admin_write_group() -> None:
+def test_questionnaire_h5_group9_locked_and_oauth_remains_out_of_scope() -> None:
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
     by_route = {record["route_pattern"]: record for record in manifest["routes"]}
 
-    assert by_route["/api/h5/questionnaires/{slug}/submit"]["delete_ready"] is False
+    assert by_route["/api/h5/questionnaires/{slug}/submit"]["delete_ready"] is True
+    assert by_route["/api/h5/questionnaires/{slug}/submit"]["replacement_status"] == "locked"
+    assert by_route["/api/h5/questionnaires/{slug}/client-diagnostics"]["delete_ready"] is True
+    assert by_route["/api/h5/questionnaires/{slug}/client-diagnostics"]["replacement_status"] == "locked"
     assert by_route["/api/h5/wechat/oauth*"]["delete_ready"] is False

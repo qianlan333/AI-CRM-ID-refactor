@@ -11,7 +11,7 @@ H5_COMMAND_ROUTES = {
 }
 
 
-def test_questionnaire_h5_submit_routes_are_next_command_with_legacy_rollback() -> None:
+def test_questionnaire_h5_submit_routes_are_next_command_deletion_locked() -> None:
     service = get_route_registry_service()
 
     for route, method in H5_COMMAND_ROUTES:
@@ -19,17 +19,18 @@ def test_questionnaire_h5_submit_routes_are_next_command_with_legacy_rollback() 
         assert entry is not None, route
         assert entry.capability_owner == "aicrm_next.questionnaire"
         assert entry.runtime_owner == "next_command"
-        assert entry.legacy_fallback_allowed is True
-        assert entry.legacy_source == "production_compat"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.legacy_source == "none"
         assert entry.external_side_effect_risk == "medium"
         assert entry.adapter_mode == "real_blocked"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
         assert "CommandBus" in entry.notes
+        assert "legacy rollback removed" in entry.notes
         assert "real_external_call_executed=false" in entry.notes
 
 
-def test_questionnaire_h5_submit_manifest_is_next_command_validating_with_rollback() -> None:
+def test_questionnaire_h5_submit_manifest_is_next_command_deletion_locked() -> None:
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
     by_route = {record["route_pattern"]: record for record in manifest["routes"]}
 
@@ -37,13 +38,13 @@ def test_questionnaire_h5_submit_manifest_is_next_command_validating_with_rollba
         record = by_route[route]
         assert record["current_runtime_owner"] == "next_command"
         assert record["production_behavior"] == "next_command"
-        assert record["legacy_fallback_allowed"] is True
+        assert record["legacy_fallback_allowed"] is False
         assert record["fixture_allowed_in_production"] is False
-        assert record["delete_ready"] is False
-        assert record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert record["replacement_status"] == "validating"
+        assert record["delete_ready"] is True
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
         assert record["adapter_mode"] == "real_blocked"
-        assert "legacy rollback remains allowed" in record["notes"]
+        assert "legacy rollback removed" in record["notes"]
         assert "real_external_call_executed=false" in record["notes"]
 
 

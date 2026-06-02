@@ -988,7 +988,7 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
                         "questionnaire_h5_submit_production_compat_route",
                         str(compat_path.relative_to(root)),
                         route_path,
-                        "Questionnaire H5 submit/diagnostics are Next CommandBus primary; do not re-add production_compat exact handlers.",
+                        "Questionnaire H5 submit/diagnostics are deletion_locked to Next CommandBus; do not re-add production_compat exact handlers.",
                     )
                 )
 
@@ -1034,6 +1034,11 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             '"real_external_call_executed": True': "questionnaire_h5_submit_real_external_call_true",
             "'real_external_call_executed': True": "questionnaire_h5_submit_real_external_call_true",
             "real_enabled": "questionnaire_h5_submit_real_enabled_marker",
+            "send_private_message(": "questionnaire_h5_submit_direct_wecom_mutation",
+            "dispatch_wecom_task(": "questionnaire_h5_submit_direct_wecom_mutation",
+            "mark_contact_tags(": "questionnaire_h5_submit_direct_wecom_mutation",
+            "external_push_delivery": "questionnaire_h5_submit_external_push_execution",
+            "execute_external_push": "questionnaire_h5_submit_external_push_execution",
             "requests.post(": "questionnaire_h5_submit_direct_external_call",
             "httpx.post(": "questionnaire_h5_submit_direct_external_call",
             "X-AICRM-Compatibility-Facade": "questionnaire_h5_submit_compatibility_facade",
@@ -1058,16 +1063,20 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             continue
         if record.get("runtime_owner") != "next_command":
             violations.append(Violation("questionnaire_h5_submit_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-        if record.get("legacy_fallback_allowed") is not True:
+        if record.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("questionnaire_h5_submit_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") in {"production_compat", "legacy_questionnaire_facade"}:
+            violations.append(Violation("questionnaire_h5_submit_registry_legacy_source", route_path, f"legacy_source={record.get('legacy_source')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_h5_submit_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback":
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_h5_submit_registry_rollback_lifecycle", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("delete_status") != "deletion_locked":
             violations.append(Violation("questionnaire_h5_submit_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
-        if record.get("replacement_status") != "validating":
+        if record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_h5_submit_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
         notes = str(record.get("notes") or "")
-        if "CommandBus" not in notes or "real_external_call_executed=false" not in notes:
+        if "CommandBus" not in notes or "legacy rollback removed" not in notes or "real_external_call_executed=false" not in notes:
             violations.append(Violation("questionnaire_h5_submit_registry_notes", route_path, notes))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
@@ -1081,11 +1090,15 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             violations.append(Violation("questionnaire_h5_submit_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
         if record.get("production_behavior") != "next_command":
             violations.append(Violation("questionnaire_h5_submit_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
-        if record.get("legacy_fallback_allowed") is not True:
+        if record.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("questionnaire_h5_submit_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True:
+            violations.append(Violation("questionnaire_h5_submit_manifest_not_delete_ready", route_path, f"delete_ready={record.get('delete_ready')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_h5_submit_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_h5_submit_manifest_rollback_lifecycle", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_h5_submit_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
     return violations
 
