@@ -34,7 +34,7 @@ REQUIRED_FIELDS = {
     "notes",
 }
 
-RUNTIME_OWNERS = {"next", "legacy_facade", "production_compat", "frontend_compat", "blocked"}
+RUNTIME_OWNERS = {"next", "next_command", "legacy_facade", "production_compat", "frontend_compat", "blocked"}
 PRODUCTION_BEHAVIORS = {
     "next_exact",
     "legacy_forward",
@@ -43,6 +43,9 @@ PRODUCTION_BEHAVIORS = {
     "fake_adapter",
     "readonly_facade",
     "local_contract_only",
+    "next_command",
+    "next_read_model_only",
+    "guarded_debug",
 }
 SIDE_EFFECT_RISKS = {"none", "guarded", "real_blocked"}
 
@@ -221,7 +224,7 @@ def build_report() -> dict[str, Any]:
         record = _manifest_record_for_route(records, route["path"])
         if not record:
             missing_production_compat.append(route["path"])
-        elif record["current_runtime_owner"] not in {"production_compat", "next"}:
+        elif record["current_runtime_owner"] not in {"production_compat", "next", "next_command"}:
             blockers.append(
                 f"production_compat route {route['path']} matched non-compatible owner {record['current_runtime_owner']}"
             )
@@ -244,8 +247,8 @@ def build_report() -> dict[str, Any]:
             continue
         behavior = str(record["production_behavior"])
         notes = str(record.get("notes") or "").lower()
-        if behavior != "readonly_facade" and "production_postgres" not in notes:
-            blockers.append(f"{route_pattern} must be readonly_facade or explicitly production_postgres")
+        if behavior not in {"readonly_facade", "next_read_model_only"} and "production_postgres" not in notes:
+            blockers.append(f"{route_pattern} must be readonly_facade, next_read_model_only, or explicitly production_postgres")
         if record["fixture_allowed_in_production"] is not False:
             blockers.append(f"{route_pattern} must not allow fixture data in production")
 

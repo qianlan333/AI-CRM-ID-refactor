@@ -21,6 +21,9 @@ def test_questionnaire_admin_write_inventory_covers_existing_and_added_write_rou
     assert "Next CommandBus" in text
     assert "Idempotency-Key" in text
     assert "production_unavailable" in text
+    assert "legacy rollback has been removed" in text
+    assert "runtime_owner=next_command" in text
+    assert "delete_status=deletion_locked" in text
     assert "real_external_call_executed=false" in text
     assert "/api/h5/questionnaires*" in text
     assert "/api/h5/wechat/oauth*" in text

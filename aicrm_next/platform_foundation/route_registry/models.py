@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 RuntimeOwner = Literal[
     "next_native",
+    "next_command",
     "frontend_compat",
     "production_compat",
     "legacy_forward",

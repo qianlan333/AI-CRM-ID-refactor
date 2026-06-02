@@ -40,7 +40,13 @@ Responses include:
 
 When production data is ready but the questionnaire admin write model is not production-ready, routes return controlled `production_unavailable`. Fixture data is not used as production data.
 
-Legacy rollback is retained in the route registry and production ownership manifest for this validation group. The active Next handler does not use `X-AICRM-Compatibility-Facade` and does not forward these admin write requests to the legacy Flask facade.
+The admin write legacy rollback has been removed and locked in the route registry and production ownership manifest. The active Next handler does not use `X-AICRM-Compatibility-Facade` and does not forward these admin write requests to the legacy Flask facade.
+
+## Deletion Closeout
+
+Admin write routes are locked to `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`.
+
+No production_compat admin write fallback is registered. H5 submit/diagnostics and OAuth/auth remain out of scope and are not deletion locked by this closeout.
 
 ## Out Of Scope
 

@@ -681,30 +681,30 @@ routes:
     path_pattern: /api/admin/questionnaires*
     methods: [POST, PUT, PATCH, DELETE]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: legacy_questionnaire_admin_write_rollback_retained
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Next CommandBus primary, legacy rollback retained until validation; covers create/update/delete/duplicate/publish/enable/disable/export preview commands with AuditLedger and SideEffectPlan only; real_external_call_executed=false.
+    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; covers create/update/delete/duplicate/publish/enable/disable/export preview commands with AuditLedger and SideEffectPlan only; no real external calls; real_external_call_executed=false.
   - route_id: questionnaire_admin_export_audit_next_commandbus
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/export
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: legacy_questionnaire_admin_write_rollback_retained
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Next CommandBus primary, legacy rollback retained until validation; existing export route now returns an audited export preview/plan instead of generating a real file; real_external_call_executed=false.
+    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; existing export route returns an audited export preview/plan instead of generating a real file; SideEffectPlan only; no real external calls; real_external_call_executed=false.
   - route_id: questionnaire_admin_share_out_of_scope
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/share
     methods: [GET]
