@@ -57,12 +57,6 @@ async def legacy_hxc_dashboard_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/h5/wechat/oauth/start", methods=["GET", "OPTIONS", "HEAD"])
-@router.api_route("/api/h5/wechat/oauth/callback", methods=["GET", "OPTIONS", "HEAD"])
-async def legacy_questionnaire_oauth_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/api/admin/wecom/tags", methods=_ALL_METHODS)
 @router.api_route("/api/admin/wecom/tags/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/wecom/tag-groups", methods=_ALL_METHODS)

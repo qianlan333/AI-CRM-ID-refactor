@@ -50,6 +50,7 @@ from .application import (
     build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest
+from .oauth import COOKIE_NAME
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
@@ -302,6 +303,19 @@ def _h5_options_response() -> JSONResponse:
     )
 
 
+def _oauth_options_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": True,
+            "source_status": "next_oauth_adapter",
+            "adapter_mode": "real_blocked" if production_data_ready() else "fake",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
+    )
+
+
 def _questionnaire_payload_with_nested_questions(payload: dict[str, Any]) -> dict[str, Any]:
     questionnaire = payload.get("questionnaire")
     questions = payload.get("questions")
@@ -541,6 +555,7 @@ def wechat_oauth_start(
     slug: str | None = None,
     state: str | None = None,
     redirect: str | None = None,
+    scene: str | None = None,
     openid: str | None = None,
     unionid: str | None = None,
     external_userid: str | None = None,
@@ -550,30 +565,61 @@ def wechat_oauth_start(
             slug=slug,
             state=state,
             redirect=redirect,
+            scene=scene,
             openid=openid,
             unionid=unionid,
             external_userid=external_userid,
         )
     )
+
+
+@router.options("/api/h5/wechat/oauth/start")
+def wechat_oauth_start_options() -> Response:
+    return _oauth_options_response()
 
 
 @router.get("/api/h5/wechat/oauth/callback")
 def wechat_oauth_callback(
+    code: str | None = None,
     state: str | None = None,
     redirect: str | None = None,
+    error: str | None = None,
+    errcode: str | None = None,
     openid: str | None = None,
     unionid: str | None = None,
     external_userid: str | None = None,
-) -> dict:
-    return CompleteWechatOAuthCallbackCommand()(
+) -> Response:
+    payload = CompleteWechatOAuthCallbackCommand()(
         OAuthCallbackRequest(
+            code=code,
             state=state,
             redirect=redirect,
+            error=error,
+            errcode=errcode,
             openid=openid,
             unionid=unionid,
             external_userid=external_userid,
         )
     )
+    signed_cookie = str(payload.pop("session_cookie", "") or "")
+    status_code = int(payload.pop("status_code", 200 if payload.get("ok") else 400) or 400)
+    json_response = JSONResponse(jsonable_encoder(payload), status_code=status_code)
+    if payload.get("ok") and signed_cookie:
+        json_response.set_cookie(
+            COOKIE_NAME,
+            signed_cookie,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=3600,
+            path="/",
+        )
+    return json_response
+
+
+@router.options("/api/h5/wechat/oauth/callback")
+def wechat_oauth_callback_options() -> Response:
+    return _oauth_options_response()
 
 
 @router.get("/s/{slug}", response_class=HTMLResponse)

@@ -10,6 +10,7 @@ from scripts.check_no_new_legacy import (
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
     check_questionnaire_h5_submit_next_commandbus,
+    check_questionnaire_oauth_next_adapter,
     check_sidebar_readonly_closeout_lock,
     check_user_ops_next_native_preview,
     scan_source_tree,
@@ -189,6 +190,142 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tm
     )
 
     assert check_questionnaire_h5_submit_next_commandbus(tmp_path) == []
+
+
+def test_questionnaire_oauth_guard_flags_exact_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/questionnaire/api.py"
+    oauth = tmp_path / "aicrm_next/questionnaire/oauth.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/h5/wechat/oauth/start', methods=['GET'])\n"
+        "def legacy_oauth_start():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "def wechat_oauth_start():\n"
+        "    return forward_to_legacy_flask()\n"
+        "def wechat_oauth_callback():\n"
+        "    return {'fallback_used': True}\n",
+        encoding="utf-8",
+    )
+    oauth.write_text("payload = {'real_external_call_executed': False}\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/h5/wechat/oauth/start\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: fake\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "  - path_pattern: /api/h5/wechat/oauth/callback\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: fake\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/h5/wechat/oauth/start\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: fake\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "  - route_pattern: /api/h5/wechat/oauth/callback\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: fake\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_questionnaire_oauth_next_adapter(tmp_path)}
+
+    assert "questionnaire_oauth_production_compat_exact_route" in codes
+    assert "questionnaire_oauth_legacy_forward" in codes
+    assert "questionnaire_oauth_fallback_used_true" in codes
+    assert "questionnaire_oauth_registry_owner" in codes
+    assert "questionnaire_oauth_manifest_legacy_forward" in codes
+
+
+def test_questionnaire_oauth_guard_allows_next_adapter_with_retained_wildcard_rollback(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/questionnaire/api.py"
+    oauth = tmp_path / "aicrm_next/questionnaire/oauth.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/h5/wechat/oauth/{path:path}', methods=['GET'])\n"
+        "def oauth_wildcard():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "def wechat_oauth_start():\n"
+        "    return StartWechatOAuthQuery()\n"
+        "def wechat_oauth_callback():\n"
+        "    return CompleteWechatOAuthCallbackCommand()\n",
+        encoding="utf-8",
+    )
+    oauth.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/h5/wechat/oauth/start\n"
+        "    runtime_owner: next_adapter\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - path_pattern: /api/h5/wechat/oauth/callback\n"
+        "    runtime_owner: next_adapter\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/h5/wechat/oauth/start\n"
+        "    current_runtime_owner: next_adapter\n"
+        "    production_behavior: next_oauth_adapter\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - route_pattern: /api/h5/wechat/oauth/callback\n"
+        "    current_runtime_owner: next_adapter\n"
+        "    production_behavior: next_oauth_adapter\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+
+    assert check_questionnaire_oauth_next_adapter(tmp_path) == []
 
 
 def test_customer_read_model_legacy_deletion_guard_flags_deleted_patterns(tmp_path: Path) -> None:

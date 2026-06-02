@@ -26,9 +26,9 @@ Scope: Legacy Exit group 9 locks public H5 submit and client diagnostics writes 
 
 | surface | decision |
 | --- | --- |
-| `/api/h5/wechat/oauth/start` | Out of scope; stays legacy/OAuth group and is not deletion_locked by this group. |
-| `/api/h5/wechat/oauth/callback` | Out of scope; stays legacy/OAuth group and is not deletion_locked by this group. |
-| `/auth/wecom/*` | Out of scope. |
+| `/api/h5/wechat/oauth/start` | Out of scope for group 9; handled by group 10 OAuth/auth Next adapter validation and not deletion_locked here. |
+| `/api/h5/wechat/oauth/callback` | Out of scope for group 9; handled by group 10 OAuth/auth Next adapter validation and not deletion_locked here. |
+| `/auth/wecom/*` | Out of scope; not deletion_locked by group 9 or group 10. |
 | real WeCom tag mutation | SideEffectPlan only; no real tag mutation executes. |
 | external push real execution | SideEffectPlan only; no real external push executes. |
 | payment / storage / OpenClaw / automation runtime | Out of scope; no real runtime execution added. |

@@ -34,7 +34,7 @@ REQUIRED_FIELDS = {
     "notes",
 }
 
-RUNTIME_OWNERS = {"next", "next_command", "legacy_facade", "production_compat", "frontend_compat", "blocked"}
+RUNTIME_OWNERS = {"next", "next_command", "next_adapter", "legacy_facade", "production_compat", "frontend_compat", "blocked"}
 PRODUCTION_BEHAVIORS = {
     "next_exact",
     "legacy_forward",
@@ -44,6 +44,7 @@ PRODUCTION_BEHAVIORS = {
     "readonly_facade",
     "local_contract_only",
     "next_command",
+    "next_oauth_adapter",
     "next_read_model_only",
     "guarded_debug",
 }
@@ -176,6 +177,10 @@ def _manifest_record_for_route(records: list[dict[str, Any]], route_path: str) -
     matches = [record for record in records if _route_matches_manifest(route_path, record)]
     if not matches:
         return None
+    if "{path:path}" in route_path:
+        wildcard_matches = [record for record in matches if "*" in str(record["route_pattern"]) or "{path:path}" in str(record["route_pattern"])]
+        if wildcard_matches:
+            matches = wildcard_matches
     return sorted(matches, key=lambda item: len(str(item["route_pattern"]).replace("*", "")), reverse=True)[0]
 
 

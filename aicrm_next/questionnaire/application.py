@@ -7,8 +7,6 @@ from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
 from aicrm_next.integration_gateway.questionnaire_adapters import (
     QuestionnaireSubmitSideEffectGateway,
-    WeChatOAuthAdapter,
-    build_wechat_oauth_adapter,
 )
 from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 from aicrm_next.shared.runtime import production_data_ready
@@ -16,6 +14,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import admin_detail_projection, public_projection, score_and_tags, summary_projection, validate_required_answers
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
+from .oauth import QuestionnaireOAuthAdapter, build_questionnaire_oauth_adapter
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -437,51 +436,20 @@ class GetSubmissionResultQuery:
 
 
 class StartWechatOAuthQuery:
-    def __init__(self, adapter: WeChatOAuthAdapter | None = None) -> None:
-        self._adapter = adapter or build_wechat_oauth_adapter()
+    def __init__(self, adapter: QuestionnaireOAuthAdapter | None = None) -> None:
+        self._adapter = adapter or build_questionnaire_oauth_adapter()
 
     def execute(self, request: OAuthStartRequest) -> dict[str, Any]:
-        adapter_result = self._adapter.build_authorize_url(
-            slug=request.slug,
-            state=request.state,
-            redirect=request.redirect,
-            openid=request.openid,
-            unionid=request.unionid,
-            external_userid=request.external_userid,
-        )
-        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
-        return {
-            "ok": bool(adapter_result.get("ok")),
-            "redirect_url": result.get("redirect_url", ""),
-            "state": result.get("state", request.state or request.slug or ""),
-            "source_status": result.get("source_status", "fake" if adapter_result.get("ok") else "adapter_error"),
-            "oauth_provider": result.get("oauth_provider", "wechat_mp"),
-        }
+        return self._adapter.build_authorize_url(request)
 
     __call__ = execute
 
 
 class CompleteWechatOAuthCallbackCommand:
-    def __init__(self, adapter: WeChatOAuthAdapter | None = None) -> None:
-        self._adapter = adapter or build_wechat_oauth_adapter()
+    def __init__(self, adapter: QuestionnaireOAuthAdapter | None = None) -> None:
+        self._adapter = adapter or build_questionnaire_oauth_adapter()
 
     def execute(self, request: OAuthCallbackRequest) -> dict[str, Any]:
-        adapter_result = self._adapter.resolve_oauth_identity(
-            state=request.state,
-            redirect=request.redirect,
-            openid=request.openid,
-            unionid=request.unionid,
-            external_userid=request.external_userid,
-        )
-        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
-        return {
-            "ok": bool(adapter_result.get("ok")),
-            "openid": result.get("openid", request.openid or "openid_fake_001"),
-            "unionid": result.get("unionid", request.unionid or "unionid_fake_001"),
-            "external_userid": result.get("external_userid", request.external_userid or ""),
-            "redirect_url": result.get("redirect_url", request.redirect or (f"/s/{request.state}" if request.state else "/")),
-            "state": result.get("state", request.state or ""),
-            "source_status": result.get("source_status", "fake" if request.state else "missing_config"),
-        }
+        return self._adapter.callback(request)
 
     __call__ = execute

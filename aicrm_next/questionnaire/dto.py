@@ -42,14 +42,18 @@ class OAuthStartRequest(BaseModel):
     slug: str | None = None
     state: str | None = None
     redirect: str | None = None
+    scene: str | None = None
     openid: str | None = None
     unionid: str | None = None
     external_userid: str | None = None
 
 
 class OAuthCallbackRequest(BaseModel):
+    code: str | None = None
     state: str | None = None
     redirect: str | None = None
+    error: str | None = None
+    errcode: str | None = None
     openid: str | None = None
     unionid: str | None = None
     external_userid: str | None = None

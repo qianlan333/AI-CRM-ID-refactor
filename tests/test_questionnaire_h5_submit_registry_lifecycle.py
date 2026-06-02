@@ -52,8 +52,11 @@ def test_questionnaire_oauth_and_admin_read_write_lifecycle_boundaries_remain_in
     registry = yaml.safe_load(open("docs/architecture/legacy_exit_route_registry.yaml", encoding="utf-8"))
     by_path = {record["path_pattern"]: record for record in registry["routes"]}
 
+    assert by_path["/api/h5/wechat/oauth/start"]["delete_status"] == "next_primary_with_legacy_rollback"
+    assert by_path["/api/h5/wechat/oauth/start"]["replacement_status"] == "validating"
+    assert by_path["/api/h5/wechat/oauth/start"]["legacy_fallback_allowed"] is True
+    assert by_path["/api/h5/wechat/oauth/callback"]["delete_status"] == "next_primary_with_legacy_rollback"
     assert by_path["/api/h5/wechat/oauth*"]["delete_status"] == "active"
-    assert by_path["/api/h5/wechat/oauth*"]["replacement_status"] == "not_started"
     assert by_path["/api/h5/wechat/oauth*"]["legacy_fallback_allowed"] is True
 
     for route in ["/api/admin/questionnaires", "/api/admin/questionnaires*"]:
