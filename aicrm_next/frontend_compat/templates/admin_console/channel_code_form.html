@@ -77,6 +77,14 @@
         </div>
         <input type="hidden" name="owner_staff_id" value="{{ channel.owner_staff_id or '' }}" data-channel-owner-staff-id>
       </div>
+      <div class="admin-field channel-form-wide" data-qrcode-field {% if is_link %}hidden{% endif %}>
+        <span>自动通过</span>
+        <label class="admin-check-line">
+          <input type="checkbox" name="auto_accept_friend" value="1" {% if channel.auto_accept_friend %}checked{% endif %}>
+          <span>扫码添加负责人时自动通过好友申请</span>
+        </label>
+        <small>仅对普通二维码生效；保存后重新生成二维码时会透传为企微 skip_verify。</small>
+      </div>
       <label class="admin-field" data-link-field {% if not is_link %}hidden{% endif %}>
         <span>企微渠道参数</span>
         <input name="customer_channel" value="{{ channel.customer_channel or channel.scene_value or '' }}" placeholder="wca_p1001_xxx">

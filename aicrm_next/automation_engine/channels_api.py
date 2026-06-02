@@ -90,6 +90,21 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = _text(value).lower()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
 def _channel_type(payload: dict[str, Any]) -> tuple[str, str]:
     channel_type = _text(payload.get("channel_type")) or "qrcode"
     carrier_type = _text(payload.get("carrier_type")) or ("link" if channel_type == "wecom_customer_acquisition" else "qrcode")
@@ -126,6 +141,7 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["welcome_attachment_library_ids"] = _json_list(channel.get("welcome_attachment_library_ids"))
     channel["welcome_attachment_count"] = len(channel["welcome_image_library_ids"]) + len(channel["welcome_miniprogram_library_ids"]) + len(channel["welcome_attachment_library_ids"])
     channel["welcome_message_configured"] = bool(channel["welcome_message"])
+    channel["auto_accept_friend"] = bool(channel.get("auto_accept_friend", False))
     channel["entry_tag_id"] = _text(channel.get("entry_tag_id"))
     channel["entry_tag_name"] = _text(channel.get("entry_tag_name"))
     channel["entry_tag_group_name"] = _text(channel.get("entry_tag_group_name"))
@@ -170,6 +186,7 @@ def _serialize_program_binding(row: dict[str, Any]) -> dict[str, Any]:
         "final_url": row.get("final_url") or row.get("wca_final_url"),
         "status": row.get("channel_status") or row.get("status"),
         "owner_staff_id": row.get("owner_staff_id"),
+        "auto_accept_friend": row.get("auto_accept_friend"),
         "entry_tag_id": row.get("entry_tag_id"),
         "entry_tag_name": row.get("entry_tag_name"),
         "entry_tag_group_name": row.get("entry_tag_group_name"),
@@ -188,6 +205,7 @@ def _default_channel() -> dict[str, Any]:
         "welcome_image_library_ids": [],
         "welcome_miniprogram_library_ids": [],
         "welcome_attachment_library_ids": [],
+        "auto_accept_friend": False,
     }
 
 
@@ -371,6 +389,7 @@ def list_program_channel_bindings_resource(program_id: int) -> list[dict[str, An
                     c.final_url,
                     c.status AS channel_status,
                     c.owner_staff_id,
+                    c.auto_accept_friend,
                     c.entry_tag_id,
                     c.entry_tag_name,
                     c.entry_tag_group_name,
@@ -578,6 +597,7 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         "welcome_image_library_ids": _json_list(payload.get("welcome_image_library_ids")),
         "welcome_miniprogram_library_ids": _json_list(payload.get("welcome_miniprogram_library_ids")),
         "welcome_attachment_library_ids": _json_list(payload.get("welcome_attachment_library_ids")),
+        "auto_accept_friend": _bool(payload.get("auto_accept_friend"), default=_bool(existing.get("auto_accept_friend"))),
         "entry_tag_id": _text(payload.get("entry_tag_id")),
         "entry_tag_name": _text(payload.get("entry_tag_name")),
         "entry_tag_group_name": _text(payload.get("entry_tag_group_name")),
@@ -623,6 +643,7 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
         "welcome_image_library_ids",
         "welcome_miniprogram_library_ids",
         "welcome_attachment_library_ids",
+        "auto_accept_friend",
         "entry_tag_id",
         "entry_tag_name",
         "entry_tag_group_name",

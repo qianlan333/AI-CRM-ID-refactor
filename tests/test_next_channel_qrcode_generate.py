@@ -18,6 +18,7 @@ def test_generate_channel_qrcode_calls_wecom_and_writes_scene_alias(monkeypatch)
         "scene_value": "old-scene",
         "qr_url": "https://old-qr",
         "owner_staff_id": "HuangYouCan",
+        "auto_accept_friend": True,
         "status": "active",
     }
     aliases: list[dict] = []
@@ -56,7 +57,7 @@ def test_generate_channel_qrcode_calls_wecom_and_writes_scene_alias(monkeypatch)
     assert result["route_owner"] == "ai_crm_next"
     assert result["scene_value"] == "aqr_260531_abcd"
     assert result["config_id"] == "cfg-next"
-    assert payloads == [{"type": 1, "scene": 2, "style": 1, "skip_verify": False, "state": "aqr_260531_abcd", "user": ["HuangYouCan"]}]
+    assert payloads == [{"type": 1, "scene": 2, "style": 1, "skip_verify": True, "state": "aqr_260531_abcd", "user": ["HuangYouCan"]}]
     assert updated == {"channel_id": 101, "scene_value": "aqr_260531_abcd", "qr_url": "https://wework.qpic.cn/next", "config_id": "cfg-next"}
     assert retired == [(101, {"except_asset_id": 55})]
     assert assets[0]["channel_id"] == 101

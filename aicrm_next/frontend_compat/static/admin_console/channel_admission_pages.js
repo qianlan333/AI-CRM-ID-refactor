@@ -338,6 +338,7 @@
       welcome_image_library_ids: imageIds,
       welcome_miniprogram_library_ids: miniprogramIds,
       welcome_attachment_library_ids: attachmentIds,
+      auto_accept_friend: !isLink && !!form.querySelector('[name="auto_accept_friend"]')?.checked,
       entry_tag_id: entryTagId,
       entry_tag_name: entryTagName,
       entry_tag_group_name: entryTagGroupName,
