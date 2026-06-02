@@ -148,6 +148,10 @@ def _create_preview_plan(
     return _plan_response(plan)
 
 
+def _filters_are_empty(filters: JsonDict) -> bool:
+    return not any(str(value or "").strip() for value in filters.values())
+
+
 def _register_preview_handlers() -> None:
     _command_bus.register("user_ops.broadcast.preview", _handle_broadcast_preview)
     _command_bus.register("user_ops.export.preview", _handle_export_preview)
@@ -468,6 +472,8 @@ def _handle_broadcast_preview(command: Command) -> JsonDict:
     request = BroadcastPreviewRequest(**dict(command.payload.get("request") or {}))
     repo = _default_repo()
     filters = normalize_filters(request.filters)
+    filter_payload = filters.model_dump()
+    is_controlled_default = not request.model_fields_set or (_filters_are_empty(filter_payload) and not request.message.text.strip())
     rows = apply_filters(repo.list_rows(), filters)
     batch_request = BatchSendRequest(
         selection_mode=request.selection_mode,
@@ -497,6 +503,7 @@ def _handle_broadcast_preview(command: Command) -> JsonDict:
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "source_status": "next_command",
+        "preview_status": "controlled_default_preview" if is_controlled_default else "controlled_preview",
         "candidate_count": preview["selected_count"],
         "eligible_count": preview["eligible_count"],
         "excluded_count": preview["skipped_count"],
@@ -510,7 +517,7 @@ def _handle_broadcast_preview(command: Command) -> JsonDict:
         "real_external_call_executed": False,
         "audit_recorded": True,
         "adapter_mode": "real_blocked",
-        "filters": filters.model_dump(),
+        "filters": filter_payload,
     }
 
 
@@ -518,8 +525,10 @@ def _handle_export_preview(command: Command) -> JsonDict:
     request = ExportPreviewRequest(**dict(command.payload.get("request") or {}))
     repo = _default_repo()
     filters = normalize_filters(request.filters)
+    filter_payload = filters.model_dump()
     rows = apply_filters(repo.list_rows(), filters)
     requested_fields = [field.strip() for field in request.fields if field.strip()]
+    is_controlled_default = _filters_are_empty(filter_payload) and not requested_fields
     allowed_fields = ["external_userid", "customer_name", "mobile", "owner_userid", "class_term_no", "activation_bucket"]
     fields = [field for field in requested_fields if field in allowed_fields] or allowed_fields[:4]
     masked_sample = [
@@ -543,6 +552,7 @@ def _handle_export_preview(command: Command) -> JsonDict:
         "route_owner": "ai_crm_next",
         "fallback_used": False,
         "source_status": "next_command",
+        "preview_status": "controlled_default_preview" if is_controlled_default else "controlled_preview",
         "estimated_count": len(rows),
         "fields": fields,
         "masked_sample": masked_sample,
@@ -551,7 +561,7 @@ def _handle_export_preview(command: Command) -> JsonDict:
         "real_external_call_executed": False,
         "audit_recorded": True,
         "adapter_mode": "real_blocked",
-        "filters": filters.model_dump(),
+        "filters": filter_payload,
     }
 
 

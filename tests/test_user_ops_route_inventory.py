@@ -24,5 +24,7 @@ def test_user_ops_route_inventory_documents_group_6_routes() -> None:
     assert "AuditLedger" in text
     assert "SideEffectPlan" in text
     assert "real_external_call_executed: false" in text
+    assert "deletion_locked / locked" in text
+    assert "controlled default preview" in text
     assert "Real WeCom send" in text
     assert "not handled in group 6" in text
