@@ -37,12 +37,14 @@ class GuardedWeComAdapter:
         tag_reason: str = "wecom_tag_external_call_blocked",
         contact_way_reason: str = "wecom_contact_way_external_call_blocked",
         detail_reason: str = "wecom_contact_detail_external_call_blocked",
+        transfer_reason: str = "wecom_transfer_external_call_blocked",
         missing_config: list[str] | None = None,
     ) -> None:
         self.welcome_reason = welcome_reason
         self.tag_reason = tag_reason
         self.contact_way_reason = contact_way_reason
         self.detail_reason = detail_reason
+        self.transfer_reason = transfer_reason
         self.missing_config = list(missing_config or [])
 
     def send_welcome_msg(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +65,12 @@ class GuardedWeComAdapter:
 
     def get_external_contact_detail(self, external_userid: str) -> dict[str, Any]:
         raise WeComAdapterBlocked(self.detail_reason, missing_config=self.missing_config)
+
+    def transfer_customer(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise WeComAdapterBlocked(self.transfer_reason, missing_config=self.missing_config)
+
+    def transfer_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise WeComAdapterBlocked(self.transfer_reason, missing_config=self.missing_config)
 
 
 class ProductionWeComAdapter:
@@ -164,6 +172,12 @@ class ProductionWeComAdapter:
     def get_external_contact_detail(self, external_userid: str) -> dict[str, Any]:
         return self._request("GET", "/cgi-bin/externalcontact/get", params={"external_userid": text(external_userid)})
 
+    def transfer_customer(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/cgi-bin/externalcontact/transfer_customer", json_payload=payload)
+
+    def transfer_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/cgi-bin/externalcontact/transfer_result", json_payload=payload)
+
 
 _adapter: Any | None = None
 
@@ -197,6 +211,7 @@ def wecom_adapter_diagnostics() -> dict[str, Any]:
         "can_send_welcome": enabled,
         "can_mark_tag": enabled,
         "can_create_contact_way": enabled,
+        "can_transfer_customer": enabled,
     }
 
 
@@ -211,6 +226,7 @@ def _build_default_adapter() -> Any:
             tag_reason="missing_wecom_config",
             contact_way_reason="missing_wecom_config",
             detail_reason="missing_wecom_config",
+            transfer_reason="missing_wecom_config",
             missing_config=list(diagnostics["missing_config"]),
         )
     return GuardedWeComAdapter(
@@ -218,6 +234,7 @@ def _build_default_adapter() -> Any:
         tag_reason="wecom_real_calls_disabled",
         contact_way_reason="wecom_real_calls_disabled",
         detail_reason="wecom_real_calls_disabled",
+        transfer_reason="wecom_real_calls_disabled",
     )
 
 

@@ -32,6 +32,7 @@ from .media_library.repo import reset_media_library_fixture_state
 from .message_archive.api import router as message_archive_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
+from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
 from .production_compat.api import router as production_compat_router
 from .production_compat.api import wildcard_router as production_compat_wildcard_router
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(cloud_orchestrator_router)
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)
+    app.include_router(owner_migration_router)
     app.include_router(frontend_compat_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_wildcard_router)
