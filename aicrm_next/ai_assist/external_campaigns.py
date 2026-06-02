@@ -236,22 +236,56 @@ def _normalize_recipients(payload: JsonDict) -> list[JsonDict]:
     return cleaned
 
 
-def _lookup_target(*, external_userid: str, owner_userid: str, strict_owner_match: bool) -> JsonDict:
+def _lookup_target(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    strict_owner_match: bool,
+    auto_backfill_automation_member: bool = False,
+    dry_run: bool = False,
+) -> JsonDict:
     from wecom_ability_service.db import get_db
 
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
-        SELECT id, external_contact_id
-        FROM automation_member
-        WHERE external_contact_id = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (external_userid,),
-    )
-    member = cur.fetchone()
+
+    backfill_result: JsonDict = {}
+
+    def _query_member() -> JsonDict | None:
+        cur.execute(
+            """
+            SELECT id, external_contact_id
+            FROM automation_member
+            WHERE external_contact_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (external_userid,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    member = _query_member()
+    if not member and auto_backfill_automation_member:
+        from wecom_ability_service.domains.automation_conversion import automation_member_backfill_service
+
+        backfill_result = automation_member_backfill_service.ensure_campaign_member_from_sidebar_binding(
+            external_userid,
+            dry_run=bool(dry_run),
+            commit=not dry_run,
+        )
+        if not backfill_result.get("ok"):
+            raise ExternalCampaignError(
+                f"automation_member_backfill_failed:{external_userid}:{backfill_result.get('error')}",
+                status_code=404,
+            )
+        if dry_run:
+            member = {
+                "id": int(backfill_result.get("member_id") or 0),
+                "external_contact_id": external_userid,
+            }
+        else:
+            member = _query_member()
     if not member:
         raise ExternalCampaignError(f"automation_member_not_found:{external_userid}", status_code=404)
 
@@ -279,7 +313,7 @@ def _lookup_target(*, external_userid: str, owner_userid: str, strict_owner_matc
             f"owner_mismatch:contact_owner={contact_owner}:requested_owner={owner_userid}",
             status_code=409,
         )
-    return {"member": dict(member), "contact": contact}
+    return {"member": dict(member), "contact": contact, "automation_member_backfill": backfill_result}
 
 
 def _existing_campaign_response(campaign_code: str) -> JsonDict | None:
@@ -366,6 +400,7 @@ def _create_single_recipient_campaign(
         external_userid=external_userid,
         owner_userid=owner_userid,
         strict_owner_match=strict_owner_match,
+        auto_backfill_automation_member=_truthy(payload.get("auto_backfill_automation_member")),
     )
     segment_code = f"seg_ext_{fingerprint}"
     segment = segment_service.get_segment(segment_code=segment_code)
@@ -505,6 +540,8 @@ def _preview_single_recipient_campaign(
         external_userid=external_userid,
         owner_userid=owner_userid,
         strict_owner_match=strict_owner_match,
+        auto_backfill_automation_member=_truthy(payload.get("auto_backfill_automation_member")),
+        dry_run=True,
     )
     return {
         "campaign_code": campaign_code,
@@ -523,6 +560,7 @@ def _preview_single_recipient_campaign(
             for step in steps
         ],
         "contact": target.get("contact") or {},
+        "automation_member_backfill": target.get("automation_member_backfill") or {},
         "would_create": _existing_campaign_response(campaign_code) is None,
     }
 
