@@ -88,6 +88,10 @@ class FakeNextCustomerReadRepository:
         return external_userid == "wx_ext_001"
 
 
+class FakeLiveSourceCustomerReadRepository(FakeNextCustomerReadRepository):
+    pass
+
+
 def _production_env(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
@@ -100,6 +104,12 @@ def _patch_next_repo(monkeypatch, repo):
     from aicrm_next.customer_read_model import application
 
     monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: repo)
+
+
+def _patch_live_source_repo(monkeypatch, repo):
+    from aicrm_next.customer_read_model import application
+
+    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda: repo)
 
 
 def test_next_primary_list_detail_timeline_and_recent_messages_do_not_call_legacy(monkeypatch):
@@ -137,6 +147,7 @@ def test_next_repository_unavailable_does_not_fallback_to_legacy(monkeypatch):
 
     _production_env(monkeypatch)
     monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: (_ for _ in ()).throw(RuntimeError("next repo offline")))
+    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda: (_ for _ in ()).throw(RuntimeError("live source offline")))
 
     payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
 
@@ -152,6 +163,7 @@ def test_next_repository_unavailable_without_rollback_returns_production_unavail
     from aicrm_next.customer_read_model.application import ListCustomersQuery
 
     _production_env(monkeypatch)
+    monkeypatch.setenv("CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED", "0")
     monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: (_ for _ in ()).throw(RuntimeError("next repo offline")))
 
     payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
@@ -161,6 +173,40 @@ def test_next_repository_unavailable_without_rollback_returns_production_unavail
     assert payload["read_model_status"] == "unavailable"
     assert payload["fallback_used"] is False
     assert "local_contract" not in str(payload)
+
+
+def test_next_repository_unavailable_uses_live_source_fallback(monkeypatch):
+    from aicrm_next.customer_read_model import application
+    from aicrm_next.customer_read_model.application import (
+        GetCustomerDetailQuery,
+        GetCustomerTimelineQuery,
+        ListCustomersQuery,
+        ListRecentMessagesQuery,
+    )
+
+    _production_env(monkeypatch)
+    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: (_ for _ in ()).throw(RuntimeError("relation customer_list_index_next does not exist")))
+    _patch_live_source_repo(monkeypatch, FakeLiveSourceCustomerReadRepository())
+
+    customers = ListCustomersQuery()(ListCustomersRequest(limit=10))
+    detail = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid="wx_ext_001"))
+    timeline = GetCustomerTimelineQuery()(CustomerTimelineRequest(external_userid="wx_ext_001", limit=10))
+    messages = ListRecentMessagesQuery()(RecentMessagesRequest(external_userid="wx_ext_001", limit=10))
+
+    for payload in [customers, detail, timeline, messages]:
+        assert payload["ok"] is True
+        assert payload["source_status"] == "live_source_fallback"
+        assert payload["read_model_status"] == "fallback"
+        assert payload["fallback_used"] is True
+        assert payload["degraded"] is True
+        assert payload["route_owner"] == "ai_crm_next"
+        assert "relation customer_list_index_next does not exist" in payload["fallback_reason"]
+        assert "legacy_production_facade" not in str(payload)
+        assert "local_contract" not in str(payload)
+    assert customers["customers"][0]["external_userid"] == "wx_ext_001"
+    assert detail["customer"]["external_userid"] == "wx_ext_001"
+    assert timeline["timeline"]["items"][0]["event_id"] == "evt-1"
+    assert messages["messages"][0]["msgid"] == "msg-1"
 
 
 def test_customer_api_and_admin_page_smoke_next_primary(monkeypatch):

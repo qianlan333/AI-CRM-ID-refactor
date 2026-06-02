@@ -19,7 +19,7 @@ from .dto import (
     RecentMessagesRequest,
 )
 from .projections import detail_projection, list_item_projection
-from .repo import CustomerReadRepository, build_customer_read_model_repository
+from .repo import CustomerReadRepository, build_customer_live_source_repository, build_customer_read_model_repository
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -31,6 +31,10 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
 
 def _customer_read_model_next_primary_enabled() -> bool:
     return _env_flag("CUSTOMER_READ_MODEL_NEXT_PRIMARY", default=True)
+
+
+def _customer_read_model_live_source_fallback_enabled() -> bool:
+    return _env_flag("CUSTOMER_READ_MODEL_LIVE_SOURCE_FALLBACK_ENABLED", default=True)
 
 
 def _production_customer_data_required() -> bool:
@@ -171,6 +175,111 @@ def _list_filters(query: ListCustomersRequest) -> JsonDict:
     }
 
 
+def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Exception) -> JsonDict:
+    if not _customer_read_model_live_source_fallback_enabled():
+        raise exc
+    repo = build_customer_live_source_repository()
+    filters = _list_filters(query)
+    rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
+    total = len(rows)
+    page = rows[query.offset : query.offset + query.limit]
+    return {
+        "ok": True,
+        "customers": page,
+        "items": page,
+        "count": len(page),
+        "total": total,
+        "limit": query.limit,
+        "offset": query.offset,
+        "filters": filters,
+        "status_code": 200,
+        **_diagnostics(
+            source_status="live_source_fallback",
+            read_model_status="fallback",
+            degraded=True,
+            fallback_used=True,
+            fallback_reason=_production_error_message(exc),
+        ),
+    }
+
+
+def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exception) -> JsonDict:
+    if not _customer_read_model_live_source_fallback_enabled():
+        raise exc
+    repo = build_customer_live_source_repository()
+    customer = repo.get_customer(query.external_userid)
+    if not customer:
+        raise NotFoundError("customer not found")
+    return {
+        "ok": True,
+        "customer": detail_projection(customer),
+        "status_code": 200,
+        **_diagnostics(
+            source_status="live_source_fallback",
+            read_model_status="fallback",
+            degraded=True,
+            fallback_used=True,
+            fallback_reason=_production_error_message(exc),
+        ),
+    }
+
+
+def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: Exception) -> JsonDict:
+    if not _customer_read_model_live_source_fallback_enabled():
+        raise exc
+    repo = build_customer_live_source_repository()
+    if not repo.customer_exists(query.external_userid):
+        raise NotFoundError("customer not found")
+    items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+    total = len(items)
+    page = items[query.offset : query.offset + query.limit]
+    return {
+        "ok": True,
+        "timeline": {
+            "external_userid": query.external_userid,
+            "items": page,
+            "count": len(page),
+            "limit": query.limit,
+            "offset": query.offset,
+            "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
+            "total": total,
+        },
+        "status_code": 200,
+        **_diagnostics(
+            source_status="live_source_fallback",
+            read_model_status="fallback",
+            degraded=True,
+            fallback_used=True,
+            fallback_reason=_production_error_message(exc),
+        ),
+    }
+
+
+def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exception) -> JsonDict:
+    if not _customer_read_model_live_source_fallback_enabled():
+        raise exc
+    repo = build_customer_live_source_repository()
+    if not repo.customer_exists(query.external_userid):
+        raise NotFoundError("customer not found")
+    messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+    return {
+        "ok": True,
+        "messages": messages,
+        "items": messages,
+        "count": len(messages),
+        "external_userid": query.external_userid,
+        "limit": query.limit,
+        "status_code": 200,
+        **_diagnostics(
+            source_status="live_source_fallback",
+            read_model_status="fallback",
+            degraded=True,
+            fallback_used=True,
+            fallback_reason=_production_error_message(exc),
+        ),
+    }
+
+
 def _normalize_bool_filter(value: str | None) -> bool | None:
     normalized = str(value or "").strip().lower()
     if normalized in {"", "all"}:
@@ -211,7 +320,12 @@ class ListCustomersQuery:
                     **_diagnostics(source_status="next_read_model", read_model_status="primary"),
                 }
             except Exception as exc:
-                return _list_customers_unavailable_payload(query, exc)
+                try:
+                    return _list_customers_live_source_payload(query, exc)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    return _list_customers_unavailable_payload(query, exc)
 
         repo = self._repo or build_customer_read_model_repository()
         contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
@@ -297,7 +411,12 @@ class GetCustomerDetailQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                return _customer_detail_unavailable_payload(query.external_userid, exc)
+                try:
+                    return _customer_detail_live_source_payload(query, exc)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    return _customer_detail_unavailable_payload(query.external_userid, exc)
             return {
                 "ok": True,
                 "customer": detail_projection(customer),
@@ -346,7 +465,12 @@ class GetCustomerTimelineQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                return _customer_timeline_unavailable_payload(query, exc)
+                try:
+                    return _customer_timeline_live_source_payload(query, exc)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    return _customer_timeline_unavailable_payload(query, exc)
             return {
                 "ok": True,
                 "timeline": {
@@ -413,7 +537,12 @@ class ListRecentMessagesQuery:
             except NotFoundError:
                 raise
             except Exception as exc:
-                return _recent_messages_unavailable_payload(query, exc)
+                try:
+                    return _recent_messages_live_source_payload(query, exc)
+                except NotFoundError:
+                    raise
+                except Exception:
+                    return _recent_messages_unavailable_payload(query, exc)
             return {
                 "ok": True,
                 "messages": messages,
