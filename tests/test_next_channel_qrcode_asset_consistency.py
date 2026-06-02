@@ -46,6 +46,28 @@ def test_edit_welcome_and_tag_does_not_change_scene_or_url(monkeypatch):
     assert channels_api._FIXTURE_CHANNELS[channel_id].get("_scene_aliases") is None
 
 
+def test_channel_auto_accept_friend_saves_and_reads_back(monkeypatch):
+    client = _client(monkeypatch)
+
+    created = client.post(
+        "/api/admin/channels",
+        json={"channel_name": "自动通过渠道", "channel_code": "auto-pass", "auto_accept_friend": True},
+    )
+
+    assert created.status_code == 201
+    channel = created.json()["channel"]
+    assert channel["auto_accept_friend"] is True
+
+    channel_id = int(channel["id"])
+    loaded = client.get(f"/api/admin/channels/{channel_id}")
+    assert loaded.status_code == 200
+    assert loaded.json()["channel"]["auto_accept_friend"] is True
+
+    disabled = client.patch(f"/api/admin/channels/{channel_id}", json={"auto_accept_friend": "0"})
+    assert disabled.status_code == 200
+    assert disabled.json()["channel"]["auto_accept_friend"] is False
+
+
 def test_user_payload_cannot_mutate_system_managed_scene_or_qr_url(monkeypatch):
     client = _client(monkeypatch)
     channel = client.post("/api/admin/channels", json={"channel_name": "新渠道", "channel_code": "signup"}).json()["channel"]
