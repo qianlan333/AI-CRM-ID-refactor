@@ -142,6 +142,20 @@ QUESTIONNAIRE_OAUTH_EXACT_ROUTES = (
 QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES = (
     "/api/h5/wechat/oauth*",
 )
+AUTH_WECOM_EXACT_ROUTES = (
+    "/auth/wecom/start",
+    "/auth/wecom/callback",
+    "/auth/wecom/unknown",
+    "/api/h5/wechat/oauth/unknown",
+)
+AUTH_WECOM_WILDCARD_ROUTES = (
+    "/api/h5/wechat/oauth/{path:path}",
+    "/auth/wecom/{path:path}",
+)
+AUTH_WECOM_WILDCARD_REGISTRY_ROUTES = (
+    "/api/h5/wechat/oauth*",
+    "/auth/wecom*",
+)
 
 
 @dataclass(frozen=True)
@@ -1204,6 +1218,136 @@ def check_questionnaire_oauth_next_adapter(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_auth_wecom_wildcard_inventory(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    inventory_path = root / "docs/architecture/auth_wecom_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(
+            Violation(
+                "auth_wecom_inventory_missing",
+                "docs/architecture/auth_wecom_route_inventory.md",
+                "missing inventory document",
+                "Add docs/architecture/auth_wecom_route_inventory.md before retaining or replacing auth/wecom wildcard routes.",
+            )
+        )
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for route_path in AUTH_WECOM_EXACT_ROUTES + AUTH_WECOM_WILDCARD_ROUTES + QUESTIONNAIRE_OAUTH_EXACT_ROUTES:
+            if route_path not in inventory_text:
+                violations.append(Violation("auth_wecom_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths):
+            if route_path in AUTH_WECOM_EXACT_ROUTES:
+                violations.append(
+                    Violation(
+                        "auth_wecom_production_compat_exact_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Known auth/wecom and OAuth probe exact routes must stay Next-owned; keep only documented wildcard rollback for validation.",
+                    )
+                )
+            if (
+                (route_path.startswith("/auth/wecom") or route_path.startswith("/api/h5/wechat/oauth"))
+                and "{path:path}" in route_path
+                and route_path not in AUTH_WECOM_WILDCARD_ROUTES
+            ):
+                violations.append(
+                    Violation(
+                        "auth_wecom_unregistered_wildcard",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Do not add new auth/wecom or OAuth wildcard routes; inventory exact paths and register them explicitly.",
+                    )
+                )
+
+    auth_api_path = root / "aicrm_next/auth_wecom/api.py"
+    if auth_api_path.exists():
+        text = auth_api_path.read_text(encoding="utf-8")
+        forbidden_markers = {
+            "forward_to_legacy_flask": "auth_wecom_legacy_forward",
+            "legacy_flask_facade": "auth_wecom_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "auth_wecom_compatibility_facade",
+            '"fallback_used": True': "auth_wecom_fallback_used_true",
+            "'fallback_used': True": "auth_wecom_fallback_used_true",
+            '"real_external_call_executed": True': "auth_wecom_real_external_call_true",
+            "'real_external_call_executed': True": "auth_wecom_real_external_call_true",
+            "requests.post(": "auth_wecom_direct_external_call",
+            "httpx.post(": "auth_wecom_direct_external_call",
+            "exchange_code_for_wecom_user": "auth_wecom_direct_wecom_exchange",
+            "build_wecom_qr_login_url": "auth_wecom_direct_wecom_authorize",
+            "build_wecom_oauth_login_url": "auth_wecom_direct_wecom_authorize",
+            "access_token\":": "auth_wecom_token_leak_marker",
+            "app_secret\":": "auth_wecom_token_leak_marker",
+            "real_enabled default": "auth_wecom_real_enabled_default",
+            "default real_enabled": "auth_wecom_real_enabled_default",
+        }
+        for marker, code in forbidden_markers.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(auth_api_path.relative_to(root)),
+                        marker,
+                        "Auth/wecom Next exact responses must not forward to legacy, leak tokens, or execute real OAuth/WeCom calls.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+
+    for route_path in AUTH_WECOM_EXACT_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("auth_wecom_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+        else:
+            if record.get("runtime_owner") != "next_native":
+                violations.append(Violation("auth_wecom_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+            if record.get("legacy_fallback_allowed") is not True:
+                violations.append(Violation("auth_wecom_registry_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("adapter_mode") not in {"real_blocked", "none"}:
+                violations.append(Violation("auth_wecom_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+            if record.get("delete_status") not in {"next_shadow", "next_primary_with_legacy_rollback"} or record.get("replacement_status") != "validating":
+                violations.append(Violation("auth_wecom_registry_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+        manifest_record = manifest_by_path.get(route_path)
+        if manifest_record is None:
+            violations.append(Violation("auth_wecom_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+        else:
+            if manifest_record.get("current_runtime_owner") != "next":
+                violations.append(Violation("auth_wecom_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+            if manifest_record.get("production_behavior") != "next_exact":
+                violations.append(Violation("auth_wecom_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not True:
+                violations.append(Violation("auth_wecom_manifest_legacy_not_retained", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("delete_status") not in {"next_shadow", "next_primary_with_legacy_rollback"} or manifest_record.get("replacement_status") != "validating":
+                violations.append(Violation("auth_wecom_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
+
+    for route_path in AUTH_WECOM_WILDCARD_REGISTRY_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("auth_wecom_wildcard_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+        else:
+            if record.get("delete_status") == "deletion_locked":
+                violations.append(Violation("auth_wecom_wildcard_registry_mislocked", route_path, "delete_status=deletion_locked"))
+            if record.get("legacy_fallback_allowed") is not True:
+                violations.append(Violation("auth_wecom_wildcard_registry_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        manifest_record = manifest_by_path.get(route_path)
+        if manifest_record is None:
+            violations.append(Violation("auth_wecom_wildcard_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+        else:
+            if manifest_record.get("delete_status") == "deletion_locked":
+                violations.append(Violation("auth_wecom_wildcard_manifest_mislocked", route_path, "delete_status=deletion_locked"))
+            if manifest_record.get("legacy_fallback_allowed") is not True:
+                violations.append(Violation("auth_wecom_wildcard_manifest_legacy_not_retained", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -1216,6 +1360,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_questionnaire_admin_write_next_commandbus(ROOT)
         + check_questionnaire_h5_submit_next_commandbus(ROOT)
         + check_questionnaire_oauth_next_adapter(ROOT)
+        + check_auth_wecom_wildcard_inventory(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

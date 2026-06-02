@@ -813,10 +813,80 @@ routes:
     external_side_effect_risk: medium
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
+    replacement_status: validating
     checker: tests/test_questionnaire_oauth_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: OAuth family wildcard is retained as inventory-only rollback for unknown subpaths and remains out of scope for deletion; exact start/callback are deletion_locked to Next OAuth adapter only; auth/wecom remains separate out of scope and is not deletion_locked.
+    notes: OAuth family wildcard inventory completed in group 11; exact start/callback are deletion_locked to Next OAuth adapter only, /api/h5/wechat/oauth/unknown has an exact deprecated Next response, and wildcard deletion waits for the next closeout.
+  - route_id: h5_wechat_oauth_unknown_deprecated_next
+    path_pattern: /api/h5/wechat/oauth/unknown
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: next_shadow
+    replacement_status: validating
+    checker: tests/test_auth_wecom_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Explicit deprecated Next response for historical H5 OAuth unknown route; no real OAuth call, fallback_used=false, real_external_call_executed=false; wildcard retained for one validation cycle.
+  - route_id: auth_wecom_start_blocked_next
+    path_pattern: /auth/wecom/start
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_auth_wecom_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Exact Next blocked response for admin WeCom SSO start; no real authorize URL call, fallback_used=false, real_external_call_executed=false; legacy rollback retained for one validation cycle.
+  - route_id: auth_wecom_callback_blocked_next
+    path_pattern: /auth/wecom/callback
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_auth_wecom_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Exact Next blocked response for admin WeCom SSO callback; no code exchange, fallback_used=false, real_external_call_executed=false; legacy rollback retained for one validation cycle.
+  - route_id: auth_wecom_unknown_deprecated_next
+    path_pattern: /auth/wecom/unknown
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_shadow
+    replacement_status: validating
+    checker: tests/test_auth_wecom_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Explicit deprecated Next response for historical auth/wecom unknown route; no real WeCom call, fallback_used=false, real_external_call_executed=false; wildcard retained for one validation cycle.
+  - route_id: auth_wecom_family_inventory
+    path_pattern: /auth/wecom*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: production_compat
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: validating
+    checker: tests/test_auth_wecom_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Auth/wecom wildcard inventory completed in group 11; start/callback/unknown have exact Next responses, and wildcard deletion waits for the next closeout.
   - route_id: questionnaire_submitted_page
     path_pattern: /s/{slug}/submitted
     methods: [GET]

@@ -15,6 +15,7 @@ from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
+from .auth_wecom.api import router as auth_wecom_router
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
 from .common_operation_members import router as common_operation_members_router
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(message_archive_router)
     app.include_router(questionnaire_router)
     app.include_router(radar_links_router)
+    app.include_router(auth_wecom_router)
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)

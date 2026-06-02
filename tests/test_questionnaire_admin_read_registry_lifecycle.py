@@ -54,9 +54,10 @@ def test_questionnaire_oauth_routes_remain_out_of_scope() -> None:
     for route in OUT_OF_SCOPE_PATTERNS:
         record = by_path[route]
         assert record["delete_status"] == "active"
-        assert record["replacement_status"] == "not_started"
+        assert record["replacement_status"] == "validating"
         assert record["legacy_fallback_allowed"] is True
-        assert "out of scope" in record["notes"]
+        assert "inventory completed" in record["notes"]
+        assert "wildcard deletion waits" in record["notes"]
 
 
 def test_questionnaire_manifest_documents_read_primary_and_out_of_scope_families() -> None:
