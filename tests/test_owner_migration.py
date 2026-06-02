@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.owner_migration.application import OwnerMigrationCommand, OwnerMigrationService
+from aicrm_next.owner_migration.repo import PostgresOwnerMigrationRepository
 
 
 class FakeOwnerMigrationRepository:
@@ -165,3 +166,51 @@ def test_owner_migration_service_executes_wecom_transfer_before_local_update(mon
     assert captured["external_userids"] == ["wm_ext_1"]
     assert result["wecom_transfer"]["success_count"] == 1
     assert result["wecom_transfer"]["failed_customers"] == [{"external_userid": "wm_ext_2", "errcode": 40096}]
+
+
+def test_pending_review_counts_skip_existing_tables_with_missing_owner_columns():
+    class FakeCursor:
+        def __init__(self, conn):
+            self.conn = conn
+            self.query = ""
+            self.params = ()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=()):
+            self.query = str(query)
+            self.params = tuple(params)
+            self.conn.executed_queries.append(self.query)
+
+        def fetchone(self):
+            if "to_regclass" in self.query:
+                return {"exists": self.params[0] in self.conn.tables}
+            if "information_schema.columns" in self.query:
+                table_name, column_name = self.params
+                return {"exists": column_name in self.conn.tables.get(table_name, set())}
+            if "FROM outbound_tasks" in self.query:
+                return {"count": 3}
+            return {"count": 0}
+
+    class FakeConn:
+        tables = {
+            "broadcast_jobs": {"status"},
+            "outbound_tasks": {"request_payload", "status"},
+        }
+
+        def __init__(self):
+            self.executed_queries = []
+
+        def cursor(self):
+            return FakeCursor(self)
+
+    conn = FakeConn()
+
+    counts = PostgresOwnerMigrationRepository()._pending_review_counts(conn, "MengYu")
+
+    assert counts == {"pending_outbound_tasks": 3}
+    assert not any("FROM broadcast_jobs WHERE owner_userid" in query for query in conn.executed_queries)
