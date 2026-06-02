@@ -64,6 +64,22 @@
     node.classList.toggle("is-error", tone === "error");
   }
 
+  function responseMessage(data, fallback) {
+    const payload = data || {};
+    const detail = payload.detail;
+    if (typeof detail === "string" && detail.trim()) return detail.trim();
+    if (detail && typeof detail === "object") {
+      if (typeof detail.reason === "string" && detail.reason.trim()) return detail.reason.trim();
+      if (typeof detail.detail === "string" && detail.detail.trim()) return detail.detail.trim();
+      try {
+        return JSON.stringify(detail);
+      } catch (error) {
+        return fallback;
+      }
+    }
+    return payload.error || payload.reason || fallback;
+  }
+
   function safeInit(name, fn) {
     try {
       fn();
@@ -386,8 +402,9 @@
       setSaveFeedback("正在保存渠道配置...");
       apiJson(url, { method, body: JSON.stringify(payload) }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {
-          toast(data.error || data.reason || "保存失败");
-          setSaveFeedback(data.error || data.reason || "保存失败", "error");
+          const message = responseMessage(data, "保存失败");
+          toast(message);
+          setSaveFeedback(message, "error");
           return;
         }
         const savedAt = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
