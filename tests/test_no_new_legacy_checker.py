@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.check_no_new_legacy import (
+    USER_OPS_PREVIEW_ROUTES,
+    USER_OPS_READONLY_ROUTES,
     check_customer_read_model_legacy_deletion,
     check_messages_broad_wildcard_deletion,
     check_questionnaire_admin_read_next_native,
@@ -167,7 +169,7 @@ def test_user_ops_next_native_preview_guard_flags_legacy_forward_and_real_extern
         "    legacy_fallback_allowed: true\n"
         "  - path_pattern: /api/admin/user-ops/broadcast/preview\n"
         "    runtime_owner: production_compat\n"
-        "    legacy_fallback_allowed: false\n"
+        "    legacy_fallback_allowed: true\n"
         "    adapter_mode: real_enabled\n"
         "    replacement_status: not_started\n",
         encoding="utf-8",
@@ -179,7 +181,7 @@ def test_user_ops_next_native_preview_guard_flags_legacy_forward_and_real_extern
         "    legacy_fallback_allowed: true\n"
         "  - route_pattern: /api/admin/user-ops/broadcast/preview\n"
         "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: false\n",
+        "    legacy_fallback_allowed: true\n",
         encoding="utf-8",
     )
 
@@ -191,11 +193,12 @@ def test_user_ops_next_native_preview_guard_flags_legacy_forward_and_real_extern
     assert "user_ops_fallback_used_true" in codes
     assert "user_ops_real_external_call_true" in codes
     assert "user_ops_real_enabled_marker" in codes
-    assert "user_ops_registry_readonly_legacy_allowed" in codes
+    assert "user_ops_registry_readonly_record_missing" in codes
     assert "user_ops_preview_registry_owner" in codes
-    assert "user_ops_preview_registry_rollback_missing" in codes
+    assert "user_ops_registry_legacy_rollback_reintroduced" in codes
     assert "user_ops_preview_registry_adapter_mode" in codes
-    assert "user_ops_manifest_readonly_legacy_forward" in codes
+    assert "user_ops_preview_registry_rollback_allowed" in codes
+    assert "user_ops_manifest_legacy_rollback_reintroduced" in codes
     assert "user_ops_preview_manifest_behavior" in codes
 
 
@@ -211,34 +214,69 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
 
     compat.write_text("", encoding="utf-8")
     ops_api.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    readonly_registry = "".join(
+        "  - path_pattern: " + route + "\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        for route in USER_OPS_READONLY_ROUTES
+    )
+    preview_registry = "".join(
+        "  - path_pattern: " + route + "\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        for route in USER_OPS_PREVIEW_ROUTES
+    )
     registry.write_text(
         "routes:\n"
         "  - path_pattern: /api/admin/user-ops*\n"
         "    runtime_owner: next_native\n"
         "    legacy_fallback_allowed: false\n"
-        "  - path_pattern: /api/admin/user-ops/broadcast/preview\n"
-        "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
-        "    adapter_mode: real_blocked\n"
-        "    replacement_status: validating\n"
-        "  - path_pattern: /api/admin/user-ops/export/preview\n"
-        "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
-        "    adapter_mode: real_blocked\n"
-        "    replacement_status: validating\n",
+        "  - path_pattern: /admin/user-ops\n"
+        "    runtime_owner: frontend_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        + readonly_registry
+        + preview_registry,
         encoding="utf-8",
+    )
+    readonly_manifest = "".join(
+        "  - route_pattern: " + route + "\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_read_model_only\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        for route in USER_OPS_READONLY_ROUTES
+    )
+    preview_manifest = "".join(
+        "  - route_pattern: " + route + "\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        for route in USER_OPS_PREVIEW_ROUTES
     )
     manifest.write_text(
         "routes:\n"
         "  - route_pattern: /api/admin/user-ops*\n"
         "    production_behavior: next_read_model_only\n"
         "    legacy_fallback_allowed: false\n"
-        "  - route_pattern: /api/admin/user-ops/broadcast/preview\n"
-        "    production_behavior: next_command\n"
-        "    legacy_fallback_allowed: true\n"
-        "  - route_pattern: /api/admin/user-ops/export/preview\n"
-        "    production_behavior: next_command\n"
-        "    legacy_fallback_allowed: true\n",
+        "  - route_pattern: /admin/user-ops\n"
+        "    current_runtime_owner: frontend_compat\n"
+        "    production_behavior: next_read_model_only\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        + readonly_manifest
+        + preview_manifest,
         encoding="utf-8",
     )
 

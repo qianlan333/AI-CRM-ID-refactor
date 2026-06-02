@@ -555,7 +555,9 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     compat_path = root / "aicrm_next/production_compat/api.py"
     if compat_path.exists():
-        for route_path in _decorator_route_paths(compat_path):
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths):
             if route_path.startswith("/api/admin/user-ops") or route_path.startswith("/admin/user-ops"):
                 violations.append(
                     Violation(
@@ -589,14 +591,62 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
                         "User Ops read/preview routes must not use legacy forward, fallback_used=true, or real external-call enablement.",
                     )
                 )
+    application_path = ops_root / "application.py"
+    if application_path.exists():
+        preview_sources = _function_sources(application_path, {"_handle_broadcast_preview", "_handle_export_preview"})
+        forbidden_preview_markers = {
+            "real_external_call_executed=true": "user_ops_preview_real_external_call_true",
+            "real_external_call_executed': true": "user_ops_preview_real_external_call_true",
+            'real_external_call_executed": true': "user_ops_preview_real_external_call_true",
+            "real_enabled default": "user_ops_preview_real_enabled_default",
+            "default real_enabled": "user_ops_preview_real_enabled_default",
+            "send_private_message(": "user_ops_preview_direct_wecom_send",
+            "dispatch_wecom_task(": "user_ops_preview_direct_wecom_send",
+            "requests.post(": "user_ops_preview_direct_wecom_send",
+            "httpx.post(": "user_ops_preview_direct_wecom_send",
+            "open(": "user_ops_preview_direct_storage_write",
+            "write_text(": "user_ops_preview_direct_storage_write",
+            "write_bytes(": "user_ops_preview_direct_storage_write",
+            "upload_file(": "user_ops_preview_direct_storage_write",
+        }
+        for function_name, source in preview_sources.items():
+            normalized = " ".join(source.lower().split())
+            for marker, code in forbidden_preview_markers.items():
+                if marker in normalized:
+                    violations.append(
+                        Violation(
+                            code,
+                            str(application_path.relative_to(root)),
+                            f"{function_name}:{marker}",
+                            "User Ops preview handlers must stay SideEffectPlan-only with real external calls and storage writes blocked.",
+                        )
+                    )
 
     registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
     registry_by_path = {record.get("path_pattern"): record for record in registry_records}
-    readonly_record = registry_by_path.get("/api/admin/user-ops*")
-    if readonly_record is None:
-        violations.append(Violation("user_ops_registry_family_missing", "docs/architecture/legacy_exit_route_registry.yaml", "/api/admin/user-ops*"))
-    elif readonly_record.get("legacy_fallback_allowed") is not False:
-        violations.append(Violation("user_ops_registry_readonly_legacy_allowed", "/api/admin/user-ops*", f"legacy_fallback_allowed={readonly_record.get('legacy_fallback_allowed')}"))
+    readonly_records = {"/admin/user-ops": "frontend_compat", **{route: "next_native" for route in USER_OPS_READONLY_ROUTES}}
+    for route_path, expected_owner in readonly_records.items():
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("user_ops_registry_readonly_record_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+            continue
+        if record.get("runtime_owner") != expected_owner:
+            violations.append(Violation("user_ops_registry_readonly_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("user_ops_registry_readonly_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked":
+            violations.append(Violation("user_ops_registry_readonly_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") != "locked":
+            violations.append(Violation("user_ops_registry_readonly_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+
+    for record in registry_records:
+        route_path = str(record.get("path_pattern") or "")
+        if not (route_path.startswith("/api/admin/user-ops") or route_path.startswith("/admin/user-ops")):
+            continue
+        if route_path in {"/api/admin/user-ops*", "/admin/user-ops*"}:
+            continue
+        if record.get("runtime_owner") == "production_compat" or record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("user_ops_registry_legacy_rollback_reintroduced", route_path, f"runtime_owner={record.get('runtime_owner')} legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
     for route_path in USER_OPS_PREVIEW_ROUTES:
         record = registry_by_path.get(route_path)
         if record is None:
@@ -604,20 +654,35 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
             continue
         if record.get("runtime_owner") != "next_native":
             violations.append(Violation("user_ops_preview_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("user_ops_preview_registry_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("user_ops_preview_registry_rollback_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("user_ops_preview_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("replacement_status") != "validating":
+        if record.get("delete_status") != "deletion_locked":
+            violations.append(Violation("user_ops_preview_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") != "locked":
             violations.append(Violation("user_ops_preview_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
-    readonly_manifest = manifest_by_path.get("/api/admin/user-ops*")
-    if readonly_manifest is None:
-        violations.append(Violation("user_ops_manifest_family_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", "/api/admin/user-ops*"))
-    elif readonly_manifest.get("production_behavior") == "legacy_forward" or readonly_manifest.get("legacy_fallback_allowed") is not False:
-        violations.append(Violation("user_ops_manifest_readonly_legacy_forward", "/api/admin/user-ops*", f"production_behavior={readonly_manifest.get('production_behavior')} legacy_fallback_allowed={readonly_manifest.get('legacy_fallback_allowed')}"))
+    for route_path in readonly_records:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("user_ops_manifest_readonly_record_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") == "production_compat" or record.get("production_behavior") == "legacy_forward" or record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("user_ops_manifest_readonly_legacy_forward", route_path, f"current_runtime_owner={record.get('current_runtime_owner')} production_behavior={record.get('production_behavior')} legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("user_ops_manifest_readonly_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    for record in manifest_records:
+        route_path = str(record.get("route_pattern") or "")
+        if not (route_path.startswith("/api/admin/user-ops") or route_path.startswith("/admin/user-ops")):
+            continue
+        if route_path in {"/api/admin/user-ops*", "/admin/user-ops*"}:
+            continue
+        if record.get("current_runtime_owner") == "production_compat" or record.get("production_behavior") == "legacy_forward" or record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("user_ops_manifest_legacy_rollback_reintroduced", route_path, f"current_runtime_owner={record.get('current_runtime_owner')} production_behavior={record.get('production_behavior')} legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
     for route_path in USER_OPS_PREVIEW_ROUTES:
         record = manifest_by_path.get(route_path)
         if record is None:
@@ -625,8 +690,12 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
             continue
         if record.get("production_behavior") != "next_command":
             violations.append(Violation("user_ops_preview_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("user_ops_preview_manifest_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("user_ops_preview_manifest_rollback_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("user_ops_preview_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("user_ops_preview_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
     return violations
 
 
