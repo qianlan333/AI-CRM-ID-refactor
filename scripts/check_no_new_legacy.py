@@ -98,6 +98,19 @@ SIDEBAR_WRITE_ROUTES = (
     "/api/sidebar/v2/materials/send",
 )
 SIDEBAR_JSSDK_ROUTE = "/api/sidebar/jssdk-config"
+USER_OPS_READONLY_ROUTES = (
+    "/api/admin/user-ops/overview",
+    "/api/admin/user-ops/cards",
+    "/api/admin/user-ops/customers",
+    "/api/admin/user-ops/customers/{external_userid}",
+    "/api/admin/user-ops/customers/{external_userid}/timeline",
+    "/api/admin/user-ops/filters",
+    "/api/admin/user-ops/send-records",
+)
+USER_OPS_PREVIEW_ROUTES = (
+    "/api/admin/user-ops/broadcast/preview",
+    "/api/admin/user-ops/export/preview",
+)
 
 
 @dataclass(frozen=True)
@@ -504,6 +517,85 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path in _decorator_route_paths(compat_path):
+            if route_path.startswith("/api/admin/user-ops") or route_path.startswith("/admin/user-ops"):
+                violations.append(
+                    Violation(
+                        "user_ops_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "User Ops group 6 routes must stay in Next ops_enrollment/frontend_compat and must not be added to production_compat.",
+                    )
+                )
+
+    ops_root = root / "aicrm_next/ops_enrollment"
+    for path in ops_root.rglob("*.py") if ops_root.exists() else []:
+        rel = path.relative_to(root)
+        text = path.read_text(encoding="utf-8")
+        forbidden_markers = {
+            "forward_to_legacy_flask": "user_ops_legacy_forward",
+            "legacy_flask_facade": "user_ops_legacy_facade",
+            '"fallback_used": True': "user_ops_fallback_used_true",
+            "'fallback_used': True": "user_ops_fallback_used_true",
+            '"real_external_call_executed": True': "user_ops_real_external_call_true",
+            "'real_external_call_executed': True": "user_ops_real_external_call_true",
+            "real_enabled": "user_ops_real_enabled_marker",
+        }
+        for marker, code in forbidden_markers.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(rel),
+                        marker,
+                        "User Ops read/preview routes must not use legacy forward, fallback_used=true, or real external-call enablement.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    readonly_record = registry_by_path.get("/api/admin/user-ops*")
+    if readonly_record is None:
+        violations.append(Violation("user_ops_registry_family_missing", "docs/architecture/legacy_exit_route_registry.yaml", "/api/admin/user-ops*"))
+    elif readonly_record.get("legacy_fallback_allowed") is not False:
+        violations.append(Violation("user_ops_registry_readonly_legacy_allowed", "/api/admin/user-ops*", f"legacy_fallback_allowed={readonly_record.get('legacy_fallback_allowed')}"))
+    for route_path in USER_OPS_PREVIEW_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("user_ops_preview_registry_record_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+            continue
+        if record.get("runtime_owner") != "next_native":
+            violations.append(Violation("user_ops_preview_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("user_ops_preview_registry_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("user_ops_preview_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("replacement_status") != "validating":
+            violations.append(Violation("user_ops_preview_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    readonly_manifest = manifest_by_path.get("/api/admin/user-ops*")
+    if readonly_manifest is None:
+        violations.append(Violation("user_ops_manifest_family_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", "/api/admin/user-ops*"))
+    elif readonly_manifest.get("production_behavior") == "legacy_forward" or readonly_manifest.get("legacy_fallback_allowed") is not False:
+        violations.append(Violation("user_ops_manifest_readonly_legacy_forward", "/api/admin/user-ops*", f"production_behavior={readonly_manifest.get('production_behavior')} legacy_fallback_allowed={readonly_manifest.get('legacy_fallback_allowed')}"))
+    for route_path in USER_OPS_PREVIEW_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("user_ops_preview_manifest_record_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("user_ops_preview_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("user_ops_preview_manifest_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -511,6 +603,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)
+        + check_user_ops_next_native_preview(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

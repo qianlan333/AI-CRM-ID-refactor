@@ -12,15 +12,20 @@ from aicrm_next.integration_gateway.user_ops_adapters import (
     build_user_ops_dnd_gateway,
     build_wecom_message_dispatch_adapter,
 )
+from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
+from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
+from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import fixture_mode
 from aicrm_next.shared.typing import JsonDict
 
-from .dto import BatchSendRequest, DoNotDisturbRequest, UserOpsListRequest
+from .dto import BatchSendRequest, BroadcastPreviewRequest, DoNotDisturbRequest, ExportPreviewRequest, UserOpsListRequest
 from .repo import UserOpsRepository, build_user_ops_repository
 from .user_ops import apply_filters, build_overview_cards, normalize_filters, resolve_batch_targets
 
 _REPO: UserOpsRepository | None = None
+_audit_ledger = InMemoryAuditLedger()
+_side_effect_plans = InMemorySideEffectPlanRepository()
 
 
 def _now_iso() -> str:
@@ -31,6 +36,7 @@ def _filter_options(rows: list[JsonDict]) -> JsonDict:
     return {
         "class_term_no": sorted({row["class_term_no"] for row in rows if row.get("class_term_no")}),
         "owner_userid": sorted({row["owner_userid"] for row in rows if row.get("owner_userid")}),
+        "tag": sorted({str(tag) for row in rows for tag in (row.get("tags") or []) if tag}),
         "wecom_status": ["all", "added", "not_added"],
         "mobile_binding_status": ["all", "bound", "unbound"],
         "activation_bucket": ["all", "activated", "not_activated", "pending_input"],
@@ -38,12 +44,16 @@ def _filter_options(rows: list[JsonDict]) -> JsonDict:
 
 
 def reset_user_ops_fixture_state() -> None:
-    global _REPO
+    global _REPO, _audit_ledger, _side_effect_plans, _command_bus
     if not fixture_mode():
         return
     if _REPO is None:
         _REPO = build_user_ops_repository()
     _REPO.reset()
+    _audit_ledger = InMemoryAuditLedger()
+    _side_effect_plans = InMemorySideEffectPlanRepository()
+    _command_bus = CommandBus(audit_hook=_audit_hook)
+    _register_preview_handlers()
 
 
 def _default_repo() -> UserOpsRepository:
@@ -51,6 +61,15 @@ def _default_repo() -> UserOpsRepository:
     if _REPO is None:
         _REPO = build_user_ops_repository()
     return _REPO
+
+
+def _readonly_meta() -> JsonDict:
+    return {
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "runtime_owner": "next_native",
+        "real_external_call_executed": False,
+    }
 
 
 def _media_refs_from_batch_request(request: BatchSendRequest) -> list[JsonDict]:
@@ -75,6 +94,148 @@ def _user_ops_side_effect_safety() -> JsonDict:
     }
 
 
+def _audit_hook(command: Command, result: CommandResult) -> None:
+    _audit_ledger.record_event(
+        event_type=f"{command.command_name}.{result.status}",
+        actor_id=result.actor_id,
+        actor_type=result.actor_type,
+        target_type="user_ops",
+        target_id=str(command.payload.get("target_id") or ""),
+        source_route=result.source_route,
+        command_id=result.command_id,
+        trace_id=result.trace_id,
+        payload={
+            "status": result.status,
+            "preview_only": True,
+            "real_external_call_executed": False,
+        },
+    )
+
+
+_command_bus = CommandBus(audit_hook=_audit_hook)
+
+
+def _plan_response(plan: SideEffectPlan) -> JsonDict:
+    payload = plan.to_dict()
+    summary = dict(payload.pop("payload") or {})
+    payload["payload_summary"] = summary.get("payload_summary") or {}
+    payload["next_step"] = summary.get("next_step") or "requires_approval"
+    payload["real_external_call_executed"] = False
+    return payload
+
+
+def _create_preview_plan(
+    *,
+    command: Command,
+    effect_type: str,
+    adapter_name: str,
+    target_id: str,
+    payload_summary: JsonDict,
+    risk_level: str = "medium",
+) -> JsonDict:
+    plan = _side_effect_plans.create_plan(
+        command_id=command.command_id,
+        effect_type=effect_type,
+        adapter_name=adapter_name,
+        adapter_mode="real_blocked",
+        target_type="user_ops_preview",
+        target_id=target_id,
+        payload={"payload_summary": payload_summary, "next_step": "requires_approval", "real_external_call_executed": False},
+        status="planned",
+        risk_level=risk_level,
+        requires_approval=True,
+    )
+    return _plan_response(plan)
+
+
+def _register_preview_handlers() -> None:
+    _command_bus.register("user_ops.broadcast.preview", _handle_broadcast_preview)
+    _command_bus.register("user_ops.export.preview", _handle_export_preview)
+
+
+def get_user_ops_audit_events() -> list[JsonDict]:
+    return [event.to_dict() for event in _audit_ledger.list_events()]
+
+
+def get_user_ops_side_effect_plans() -> list[JsonDict]:
+    return [_plan_response(plan) for plan in _side_effect_plans.list_plans()]
+
+
+def _message_preview(text: str, limit: int = 120) -> str:
+    text = str(text or "").strip()
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _mask_value(field: str, value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    if field == "mobile":
+        return f"{text[:3]}****{text[-4:]}" if len(text) >= 7 else "***"
+    if field == "external_userid":
+        return f"{text[:4]}***{text[-3:]}" if len(text) >= 8 else "***"
+    if field in {"customer_name", "name"}:
+        return text[0] + "*" if text else ""
+    return "***" if text else ""
+
+
+def _customer_summary(row: JsonDict) -> JsonDict:
+    return {
+        "id": row["id"],
+        "external_userid": row["external_userid"],
+        "customer_name": row["customer_name"],
+        "mobile_masked": _mask_value("mobile", row.get("mobile")),
+        "owner_userid": row["owner_userid"],
+        "owner_display_name": row.get("owner_display_name") or "",
+        "class_term_no": row.get("class_term_no") or "",
+        "class_term_label": row.get("class_term_label") or "",
+        "activation_bucket": row.get("activation_bucket") or "",
+        "activation_bucket_label": row.get("activation_bucket_label") or "",
+        "is_added_wecom": bool(row.get("is_added_wecom")),
+        "is_mobile_bound": bool(row.get("is_mobile_bound")),
+        "do_not_disturb": bool(row.get("do_not_disturb")),
+        "tags": list(row.get("tags") or []),
+        "updated_at": row.get("updated_at") or "",
+    }
+
+
+def _timeline_for_customer(row: JsonDict) -> list[JsonDict]:
+    events = [
+        {
+            "event_id": f"user_ops_created_{row['id']}",
+            "event_type": "lead_pool.created",
+            "title": "进入 User Ops 池",
+            "occurred_at": row.get("created_at") or "",
+            "source": row.get("source_type") or "lead_pool",
+        },
+        {
+            "event_id": f"user_ops_activation_{row['id']}",
+            "event_type": "activation.status",
+            "title": row.get("activation_bucket_label") or row.get("activation_bucket") or "激活状态",
+            "occurred_at": row.get("updated_at") or "",
+            "source": "ops_projection",
+        },
+    ]
+    if row.get("do_not_disturb"):
+        events.append(
+            {
+                "event_id": f"user_ops_dnd_{row['id']}",
+                "event_type": "do_not_disturb.active",
+                "title": "免打扰规则生效",
+                "occurred_at": row.get("updated_at") or "",
+                "source": "ops_projection",
+            }
+        )
+    return events
+
+
+def _find_projected_row(repo: UserOpsRepository, *, external_userid: str) -> JsonDict | None:
+    for row in repo.list_rows():
+        if str(row.get("external_userid") or "") == external_userid:
+            return row
+    return None
+
+
 class GetUserOpsOverviewQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
         self._repo = repo or _default_repo()
@@ -85,11 +246,46 @@ class GetUserOpsOverviewQuery:
         rows = apply_filters(base_rows, normalized_filters)
         return {
             "ok": True,
+            **_readonly_meta(),
             "filters": normalized_filters.model_dump(),
             "cards": build_overview_cards(rows),
             "metrics": {"lead_pool_total_count": len(base_rows), "filtered_total": len(rows)},
             "generated_at": _now_iso(),
             "class_term_options": sorted({row["class_term_no"] for row in base_rows if row.get("class_term_no")}),
+        }
+
+    __call__ = execute
+
+
+class GetUserOpsCardsQuery:
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self, request: UserOpsListRequest) -> JsonDict:
+        normalized_filters = normalize_filters(request.filters)
+        rows = apply_filters(self._repo.list_rows(), normalized_filters)
+        return {
+            "ok": True,
+            **_readonly_meta(),
+            "cards": build_overview_cards(rows),
+            "filters": normalized_filters.model_dump(),
+            "generated_at": _now_iso(),
+        }
+
+    __call__ = execute
+
+
+class GetUserOpsFilterOptionsQuery:
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self) -> JsonDict:
+        rows = self._repo.list_rows()
+        return {
+            "ok": True,
+            **_readonly_meta(),
+            "filter_options": _filter_options(rows),
+            "generated_at": _now_iso(),
         }
 
     __call__ = execute
@@ -107,6 +303,7 @@ class ListLeadPoolQuery:
         page = rows[request.offset : request.offset + request.limit]
         return {
             "ok": True,
+            **_readonly_meta(),
             "items": page,
             "total": total,
             "count": len(page),
@@ -115,6 +312,65 @@ class ListLeadPoolQuery:
             "filters": normalized_filters.model_dump(),
             "filter_options": _filter_options(base_rows),
             "meta": {"source": "aicrm_next", "generated_at": _now_iso()},
+        }
+
+    __call__ = execute
+
+
+class ListUserOpsCustomersQuery(ListLeadPoolQuery):
+    pass
+
+
+class GetUserOpsCustomerQuery:
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self, external_userid: str) -> JsonDict:
+        row = _find_projected_row(self._repo, external_userid=external_userid)
+        if row is None:
+            raise NotFoundError("user ops customer not found")
+        projected = _customer_summary(row)
+        return {
+            "ok": True,
+            **_readonly_meta(),
+            "customer": projected,
+            "profile": {
+                "external_userid": projected["external_userid"],
+                "customer_name": projected["customer_name"],
+                "owner_userid": projected["owner_userid"],
+                "mobile_masked": projected["mobile_masked"],
+            },
+            "drawer": {
+                "sections": [
+                    {"key": "profile", "title": "客户资料", "items": projected},
+                    {"key": "ops", "title": "运营状态", "items": {"activation_bucket": projected["activation_bucket"], "do_not_disturb": projected["do_not_disturb"]}},
+                ]
+            },
+        }
+
+    __call__ = execute
+
+
+class GetUserOpsCustomerTimelineQuery:
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self, external_userid: str, *, limit: int = 20, offset: int = 0) -> JsonDict:
+        row = _find_projected_row(self._repo, external_userid=external_userid)
+        if row is None:
+            raise NotFoundError("user ops customer not found")
+        events = _timeline_for_customer(row)
+        page = events[offset : offset + limit]
+        return {
+            "ok": True,
+            **_readonly_meta(),
+            "external_userid": external_userid,
+            "items": page,
+            "timeline": page,
+            "total": len(events),
+            "count": len(page),
+            "limit": limit,
+            "offset": offset,
         }
 
     __call__ = execute
@@ -156,6 +412,147 @@ class PreviewUserOpsBatchSendCommand:
         }
 
     __call__ = execute
+
+
+class PreviewUserOpsBroadcastCommand:
+    command_name = "user_ops.broadcast.preview"
+
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self, request: BroadcastPreviewRequest, *, idempotency_key: str = "") -> JsonDict:
+        command = Command(
+            command_name=self.command_name,
+            payload={"request": request.model_dump(), "target_id": "broadcast_preview"},
+            idempotency_key=idempotency_key,
+            context=CommandContext(
+                actor_id=request.operator,
+                actor_type="admin",
+                source_route="/api/admin/user-ops/broadcast/preview",
+            ),
+        )
+        result = _command_bus.execute(command)
+        if result.status == "failed":
+            raise ContractError(result.error)
+        return dict(result.payload)
+
+    __call__ = execute
+
+
+class PreviewUserOpsExportCommand:
+    command_name = "user_ops.export.preview"
+
+    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+        self._repo = repo or _default_repo()
+
+    def execute(self, request: ExportPreviewRequest, *, idempotency_key: str = "") -> JsonDict:
+        command = Command(
+            command_name=self.command_name,
+            payload={"request": request.model_dump(), "target_id": "export_preview"},
+            idempotency_key=idempotency_key,
+            context=CommandContext(
+                actor_id=request.operator,
+                actor_type="admin",
+                source_route="/api/admin/user-ops/export/preview",
+            ),
+        )
+        result = _command_bus.execute(command)
+        if result.status == "failed":
+            raise ContractError(result.error)
+        return dict(result.payload)
+
+    __call__ = execute
+
+
+def _handle_broadcast_preview(command: Command) -> JsonDict:
+    request = BroadcastPreviewRequest(**dict(command.payload.get("request") or {}))
+    repo = _default_repo()
+    filters = normalize_filters(request.filters)
+    rows = apply_filters(repo.list_rows(), filters)
+    batch_request = BatchSendRequest(
+        selection_mode=request.selection_mode,
+        filters=filters,
+        selected_ids=request.selected_ids,
+        excluded_ids=request.excluded_ids,
+        content=request.message.text,
+        include_do_not_disturb=request.include_do_not_disturb,
+        operator=request.operator,
+    )
+    preview = resolve_batch_targets(rows, batch_request)
+    side_effect_plan = _create_preview_plan(
+        command=command,
+        effect_type="wecom.broadcast.preview",
+        adapter_name="wecom",
+        target_id="broadcast_preview",
+        payload_summary={
+            "candidate_count": preview["selected_count"],
+            "eligible_count": preview["eligible_count"],
+            "message_preview": _message_preview(request.message.text),
+        },
+        risk_level="medium",
+    )
+    return {
+        "ok": True,
+        "preview_id": f"user_ops_broadcast_preview_{command.command_id[:16]}",
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "source_status": "next_command",
+        "candidate_count": preview["selected_count"],
+        "eligible_count": preview["eligible_count"],
+        "excluded_count": preview["skipped_count"],
+        "excluded_reasons": preview["skipped_summary"],
+        "sample_customers": [
+            {**item, "mobile": _mask_value("mobile", item.get("mobile")), "mobile_masked": _mask_value("mobile", item.get("mobile"))}
+            for item in preview["sendable_samples"]
+        ],
+        "message_preview": _message_preview(request.message.text),
+        "side_effect_plan": side_effect_plan,
+        "real_external_call_executed": False,
+        "audit_recorded": True,
+        "adapter_mode": "real_blocked",
+        "filters": filters.model_dump(),
+    }
+
+
+def _handle_export_preview(command: Command) -> JsonDict:
+    request = ExportPreviewRequest(**dict(command.payload.get("request") or {}))
+    repo = _default_repo()
+    filters = normalize_filters(request.filters)
+    rows = apply_filters(repo.list_rows(), filters)
+    requested_fields = [field.strip() for field in request.fields if field.strip()]
+    allowed_fields = ["external_userid", "customer_name", "mobile", "owner_userid", "class_term_no", "activation_bucket"]
+    fields = [field for field in requested_fields if field in allowed_fields] or allowed_fields[:4]
+    masked_sample = [
+        {
+            field: _mask_value(field, row.get(field)) if field in {"external_userid", "customer_name", "mobile"} else str(row.get(field) or "")
+            for field in fields
+        }
+        for row in rows[:5]
+    ]
+    side_effect_plan = _create_preview_plan(
+        command=command,
+        effect_type="user_ops.export.file",
+        adapter_name="storage",
+        target_id="export_preview",
+        payload_summary={"estimated_count": len(rows), "fields": fields},
+        risk_level="medium",
+    )
+    return {
+        "ok": True,
+        "preview_id": f"user_ops_export_preview_{command.command_id[:16]}",
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "source_status": "next_command",
+        "estimated_count": len(rows),
+        "fields": fields,
+        "masked_sample": masked_sample,
+        "requires_approval": True,
+        "side_effect_plan": side_effect_plan,
+        "real_external_call_executed": False,
+        "audit_recorded": True,
+        "adapter_mode": "real_blocked",
+        "filters": filters.model_dump(),
+    }
 
 
 class ExecuteUserOpsBatchSendCommand:
@@ -285,6 +682,7 @@ class ListUserOpsSendRecordsQuery:
         summaries = [{key: value for key, value in record.items() if key != "task_results"} for record in page]
         return {
             "ok": True,
+            **_readonly_meta(),
             "items": summaries,
             "records": summaries,
             "count": len(summaries),
@@ -308,6 +706,7 @@ class GetUserOpsSendRecordQuery:
         record_summary = {key: value for key, value in record.items() if key != "task_results"}
         return {
             "ok": True,
+            **_readonly_meta(),
             "record": record_summary,
             "task_results": task_results,
             "delivery_status_supported": False,
@@ -414,3 +813,6 @@ class SetUserOpsDoNotDisturbCommand:
         }
 
     __call__ = execute
+
+
+_register_preview_handlers()

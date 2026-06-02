@@ -6,6 +6,7 @@ from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_messages_broad_wildcard_deletion,
     check_sidebar_readonly_closeout_lock,
+    check_user_ops_next_native_preview,
     scan_source_tree,
 )
 
@@ -138,6 +139,108 @@ def test_messages_broad_wildcard_deletion_guard_allows_exact_routes(tmp_path: Pa
     )
 
     assert check_messages_broad_wildcard_deletion(tmp_path) == []
+
+
+def test_user_ops_next_native_preview_guard_flags_legacy_forward_and_real_external_calls(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    ops_api = tmp_path / "aicrm_next/ops_enrollment/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    ops_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text('@wildcard_router.api_route("/api/admin/user-ops/{path:path}", methods=_ALL_METHODS)\ndef user_ops_legacy():\n    return {}\n', encoding="utf-8")
+    ops_api.write_text(
+        "from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n"
+        "payload = {'fallback_used': True, 'real_external_call_executed': True}\n"
+        "mode = 'real_enabled'\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/user-ops*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - path_pattern: /api/admin/user-ops/broadcast/preview\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_enabled\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/user-ops*\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - route_pattern: /api/admin/user-ops/broadcast/preview\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: false\n",
+        encoding="utf-8",
+    )
+
+    violations = check_user_ops_next_native_preview(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "user_ops_production_compat_route" in codes
+    assert "user_ops_legacy_forward" in codes
+    assert "user_ops_fallback_used_true" in codes
+    assert "user_ops_real_external_call_true" in codes
+    assert "user_ops_real_enabled_marker" in codes
+    assert "user_ops_registry_readonly_legacy_allowed" in codes
+    assert "user_ops_preview_registry_owner" in codes
+    assert "user_ops_preview_registry_rollback_missing" in codes
+    assert "user_ops_preview_registry_adapter_mode" in codes
+    assert "user_ops_manifest_readonly_legacy_forward" in codes
+    assert "user_ops_preview_manifest_behavior" in codes
+
+
+def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    ops_api = tmp_path / "aicrm_next/ops_enrollment/api.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    ops_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text("", encoding="utf-8")
+    ops_api.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/user-ops*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "  - path_pattern: /api/admin/user-ops/broadcast/preview\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    replacement_status: validating\n"
+        "  - path_pattern: /api/admin/user-ops/export/preview\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/user-ops*\n"
+        "    production_behavior: next_read_model_only\n"
+        "    legacy_fallback_allowed: false\n"
+        "  - route_pattern: /api/admin/user-ops/broadcast/preview\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "  - route_pattern: /api/admin/user-ops/export/preview\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n",
+        encoding="utf-8",
+    )
+
+    assert check_user_ops_next_native_preview(tmp_path) == []
 
 
 def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle(tmp_path: Path) -> None:

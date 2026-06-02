@@ -433,9 +433,16 @@ def admin_user_ops_ui(request: Request):
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 
 
-@router.get("/admin/user-ops", name="api.admin_user_ops_legacy_redirect")
-def admin_user_ops_funnel(request: Request):
-    return RedirectResponse(url=_legacy_url_for("api.admin_hxc_dashboard_workspace"), status_code=302)
+@router.get("/admin/user-ops", name="api.admin_user_ops")
+def admin_user_ops_page(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="客户激活 / 客户列表",
+        page_summary="User Ops 读模型与预览能力由 Next-native API 提供。",
+        active_endpoint="api.admin_console_customers",
+    )
+    context.update({"admin_action_token": "", "action_result": {}})
+    return templates.TemplateResponse(request, "admin_console/user_ops.html", context)
 
 
 def _empty_hxc_dashboard_summary() -> dict:
