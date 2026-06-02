@@ -12,6 +12,24 @@ def _table_exists(conn, table_name: str) -> bool:
         return bool(row and row.get("exists"))
 
 
+def _column_exists(conn, table_name: str, column_name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = ANY (current_schemas(FALSE))
+                  AND table_name = %s
+                  AND column_name = %s
+            ) AS exists
+            """,
+            (table_name, column_name),
+        )
+        row = cur.fetchone()
+        return bool(row and row.get("exists"))
+
+
 def _row_count(conn, query: str, params: tuple[Any, ...]) -> int:
     with conn.cursor() as cur:
         cur.execute(query, params)
@@ -350,27 +368,32 @@ class PostgresOwnerMigrationRepository:
         }
 
     def _pending_review_counts(self, conn, source_owner_userid: str) -> dict[str, int]:
-        count_queries = {
+        count_queries: dict[str, tuple[str, str, str, tuple[Any, ...]]] = {
             "pending_user_ops_deferred_jobs": (
+                "user_ops_deferred_jobs",
+                "owner_userid",
                 "SELECT COUNT(*) AS count FROM user_ops_deferred_jobs WHERE owner_userid = %s AND status IN ('pending', 'running')",
                 (source_owner_userid,),
             ),
             "pending_broadcast_jobs": (
+                "broadcast_jobs",
+                "owner_userid",
                 "SELECT COUNT(*) AS count FROM broadcast_jobs WHERE owner_userid = %s AND status IN ('pending', 'queued', 'running', 'draft')",
                 (source_owner_userid,),
             ),
             "pending_outbound_tasks": (
+                "outbound_tasks",
+                "request_payload",
                 "SELECT COUNT(*) AS count FROM outbound_tasks WHERE request_payload LIKE %s AND status IN ('pending', 'created', 'queued')",
                 (f"%{source_owner_userid}%",),
             ),
         }
-        return {
-            key: _row_count(conn, query, params)
-            for key, (query, params) in count_queries.items()
-            if _table_exists(conn, key.replace("pending_", ""))
-            or (key == "pending_user_ops_deferred_jobs" and _table_exists(conn, "user_ops_deferred_jobs"))
-            or (key == "pending_outbound_tasks" and _table_exists(conn, "outbound_tasks"))
-        }
+        counts: dict[str, int] = {}
+        for key, (table_name, owner_column, query, params) in count_queries.items():
+            if not _table_exists(conn, table_name) or not _column_exists(conn, table_name, owner_column):
+                continue
+            counts[key] = _row_count(conn, query, params)
+        return counts
 
     def _insert_audit(
         self,
