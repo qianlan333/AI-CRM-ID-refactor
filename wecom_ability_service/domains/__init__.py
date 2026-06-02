@@ -89,6 +89,7 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         companion_service_modules=(
             "action_template_service.py",
             "admission_service.py",
+            "automation_member_backfill_service.py",
             "channel_binding_service.py",
             "channel_qrcode_download_service.py",
             "channel_service.py",
