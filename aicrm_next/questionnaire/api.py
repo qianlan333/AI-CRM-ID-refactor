@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.integration_gateway.legacy_flask_facade import (
@@ -27,8 +27,11 @@ from .application import (
     GetQuestionnaireDetailQuery,
     GetQuestionnairePreflightQuery,
     GetQuestionnaireShareQuery,
+    GetQuestionnaireResultsSummaryQuery,
     GetSubmissionResultQuery,
     LatestSubmitDebugQuery,
+    ListQuestionnaireQuestionsQuery,
+    ListQuestionnaireSubmissionsQuery,
     ListQuestionnairesQuery,
     SetQuestionnaireEnabledCommand,
     StartWechatOAuthQuery,
@@ -38,14 +41,12 @@ from .application import (
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
-    LegacyQuestionnaireDataUnavailable,
     create_questionnaire_in_legacy,
     delete_questionnaire_in_legacy,
     export_questionnaire_from_legacy,
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
     latest_submit_debug_from_legacy,
-    list_questionnaires_from_legacy,
     set_questionnaire_enabled_in_legacy,
     update_questionnaire_in_legacy,
 )
@@ -74,6 +75,12 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _read_response(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
+    if payload.get("source_status") == "production_unavailable":
+        return JSONResponse(jsonable_encoder(payload), status_code=503)
+    return payload
 
 
 def _build_excel_xml(headers: list[Any], rows: list[list[Any]]) -> bytes:
@@ -190,14 +197,9 @@ def _questionnaire_share_url(request: Request, questionnaire: dict[str, Any]) ->
     return f"{str(request.base_url).rstrip('/')}{public_path}"
 
 
-@router.get("/api/admin/questionnaires")
-def list_questionnaires(limit: int = 50, offset: int = 0) -> dict:
-    if production_data_ready():
-        try:
-            return list_questionnaires_from_legacy(limit=limit, offset=offset)
-        except LegacyQuestionnaireDataUnavailable as exc:
-            raise HTTPException(status_code=503, detail=f"legacy questionnaire production data unavailable: {exc}") from exc
-    return ListQuestionnairesQuery()(limit=limit, offset=offset)
+@router.get("/api/admin/questionnaires", response_model=None)
+def list_questionnaires(limit: int = 50, offset: int = 0) -> Any:
+    return _read_response(ListQuestionnairesQuery()(limit=limit, offset=offset))
 
 
 @router.get("/api/admin/questionnaires/preflight", response_model=None)
@@ -217,14 +219,34 @@ def create_questionnaire(payload: dict[str, Any]) -> dict:
         _raise_http(exc)
 
 
-@router.get("/api/admin/questionnaires/{questionnaire_id}")
-def get_questionnaire(questionnaire_id: int) -> dict:
+@router.get("/api/admin/questionnaires/{questionnaire_id}", response_model=None)
+def get_questionnaire(questionnaire_id: int) -> Any:
     try:
-        if production_data_ready():
-            return _questionnaire_payload_with_nested_questions(
-                get_questionnaire_detail_from_legacy(questionnaire_id)
-            )
-        return GetQuestionnaireDetailQuery()(questionnaire_id)
+        return _read_response(_questionnaire_payload_with_nested_questions(GetQuestionnaireDetailQuery()(questionnaire_id)))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/questionnaires/{questionnaire_id}/questions", response_model=None)
+def get_questionnaire_questions(questionnaire_id: int) -> Any:
+    try:
+        return _read_response(ListQuestionnaireQuestionsQuery()(questionnaire_id))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/questionnaires/{questionnaire_id}/results", response_model=None)
+def get_questionnaire_results(questionnaire_id: int) -> Any:
+    try:
+        return _read_response(GetQuestionnaireResultsSummaryQuery()(questionnaire_id))
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/questionnaires/{questionnaire_id}/submissions", response_model=None)
+def get_questionnaire_submissions(questionnaire_id: int, limit: int = 20, offset: int = 0) -> Any:
+    try:
+        return _read_response(ListQuestionnaireSubmissionsQuery()(questionnaire_id, limit=limit, offset=offset))
     except Exception as exc:
         _raise_http(exc)
 
