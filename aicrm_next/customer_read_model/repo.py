@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -792,7 +793,10 @@ def build_customer_read_model_repository(
     engine: Engine | None = None,
 ) -> CustomerReadRepository:
     settings = settings or get_settings()
-    backend = os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", settings.customer_read_model_repo_backend).strip().lower()
+    configured_backend = str(os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", "") or "").strip().lower()
+    backend = configured_backend or settings.customer_read_model_repo_backend.strip().lower()
+    if not configured_backend and database_mode() == "postgres":
+        backend = "sqlalchemy"
     if backend in {"sql", "sqlalchemy", "postgres", "postgresql"}:
         if session is not None:
             return assert_repository_allowed(
