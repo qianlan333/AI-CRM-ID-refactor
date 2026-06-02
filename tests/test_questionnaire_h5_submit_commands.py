@@ -45,6 +45,7 @@ def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(cli
     assert response.status_code == 200
     body = response.json()
     _assert_next_command(body, "questionnaire.h5.submit")
+    assert body["success"] is True
     assert body["submission_id"]
     assert body["questionnaire_id"] == 1
     assert body["slug"] == "hxc-activation-v1"
