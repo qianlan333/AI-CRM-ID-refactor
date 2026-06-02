@@ -17,5 +17,7 @@ def test_production_mode_does_not_return_fixture_customer_success(monkeypatch):
     assert payload["source_status"] == "production_unavailable"
     assert payload["read_model_status"] == "unavailable"
     assert payload["customers"] == []
+    assert "FixtureCustomerReadRepository" not in str(payload)
+    assert "fixture repository" not in str(payload).lower()
     assert "local_contract_probe" not in str(payload)
     assert "张小蓝" not in str(payload)
