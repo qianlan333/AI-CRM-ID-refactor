@@ -121,8 +121,17 @@ QUESTIONNAIRE_ADMIN_READ_ROUTES = (
     "/api/admin/questionnaires/{questionnaire_id}/results",
     "/api/admin/questionnaires/{questionnaire_id}/submissions",
 )
+QUESTIONNAIRE_ADMIN_WRITE_ROUTES = (
+    "/api/admin/questionnaires",
+    "/api/admin/questionnaires/{questionnaire_id}",
+    "/api/admin/questionnaires/{questionnaire_id}/duplicate",
+    "/api/admin/questionnaires/{questionnaire_id}/publish",
+    "/api/admin/questionnaires/{questionnaire_id}/enable",
+    "/api/admin/questionnaires/{questionnaire_id}/disable",
+    "/api/admin/questionnaires/{questionnaire_id}/export/preview",
+    "/api/admin/questionnaires/{questionnaire_id}/export",
+)
 QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES = (
-    "/api/admin/questionnaires*",
     "/api/h5/questionnaires*",
     "/api/h5/wechat/oauth*",
 )
@@ -752,6 +761,134 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
     return violations
 
 
+def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths):
+            if route_path.startswith("/api/admin/questionnaires") and route_path not in QUESTIONNAIRE_ADMIN_READ_ROUTES:
+                violations.append(
+                    Violation(
+                        "questionnaire_admin_write_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Questionnaire admin write routes must stay on Next CommandBus during validation; do not add production_compat handlers.",
+                    )
+                )
+
+    api_path = root / "aicrm_next/questionnaire/api.py"
+    if api_path.exists():
+        sources = _function_sources(
+            api_path,
+            {
+                "create_questionnaire",
+                "update_questionnaire",
+                "duplicate_questionnaire",
+                "publish_questionnaire",
+                "disable_questionnaire",
+                "enable_questionnaire",
+                "delete_questionnaire",
+                "export_questionnaire",
+                "export_questionnaire_preview",
+            },
+        )
+        forbidden_markers = {
+            "forward_to_legacy_flask": "questionnaire_admin_write_legacy_forward",
+            "legacy_questionnaire_facade": "questionnaire_admin_write_legacy_facade",
+            "create_questionnaire_in_legacy": "questionnaire_admin_write_legacy_facade",
+            "update_questionnaire_in_legacy": "questionnaire_admin_write_legacy_facade",
+            "delete_questionnaire_in_legacy": "questionnaire_admin_write_legacy_facade",
+            "set_questionnaire_enabled_in_legacy": "questionnaire_admin_write_legacy_facade",
+            "export_questionnaire_from_legacy": "questionnaire_admin_write_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "questionnaire_admin_write_compatibility_facade",
+            '"fallback_used": True': "questionnaire_admin_write_fallback_used_true",
+            "'fallback_used': True": "questionnaire_admin_write_fallback_used_true",
+        }
+        for function_name, source in sources.items():
+            for marker, code in forbidden_markers.items():
+                if marker in source:
+                    violations.append(
+                        Violation(
+                            code,
+                            str(api_path.relative_to(root)),
+                            f"{function_name}:{marker}",
+                            "Questionnaire admin write handlers must execute Next CommandBus commands without legacy forward or compatibility facade behavior.",
+                        )
+                    )
+
+    write_root = root / "aicrm_next/questionnaire"
+    for path in [write_root / "admin_write.py", api_path]:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        forbidden_markers = {
+            '"fallback_used": True': "questionnaire_admin_write_fallback_used_true",
+            "'fallback_used': True": "questionnaire_admin_write_fallback_used_true",
+            '"real_external_call_executed": True': "questionnaire_admin_write_real_external_call_true",
+            "'real_external_call_executed': True": "questionnaire_admin_write_real_external_call_true",
+            "real_enabled": "questionnaire_admin_write_real_enabled_marker",
+            "requests.post(": "questionnaire_admin_write_direct_external_call",
+            "httpx.post(": "questionnaire_admin_write_direct_external_call",
+        }
+        for marker, code in forbidden_markers.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(path.relative_to(root)),
+                        marker,
+                        "Questionnaire admin write commands must not expose fallback_used=true, real external calls, or real-enabled adapter behavior.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    write_family = registry_by_path.get("/api/admin/questionnaires*")
+    if write_family is None:
+        violations.append(Violation("questionnaire_admin_write_registry_family_missing", "docs/architecture/legacy_exit_route_registry.yaml", "/api/admin/questionnaires*"))
+    else:
+        if write_family.get("runtime_owner") != "next_native":
+            violations.append(Violation("questionnaire_admin_write_registry_owner", "/api/admin/questionnaires*", f"runtime_owner={write_family.get('runtime_owner')}"))
+        if write_family.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_admin_write_registry_rollback_missing", "/api/admin/questionnaires*", f"legacy_fallback_allowed={write_family.get('legacy_fallback_allowed')}"))
+        if write_family.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("questionnaire_admin_write_registry_adapter_mode", "/api/admin/questionnaires*", f"adapter_mode={write_family.get('adapter_mode')}"))
+        if write_family.get("delete_status") != "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_admin_write_registry_delete_status", "/api/admin/questionnaires*", f"delete_status={write_family.get('delete_status')}"))
+        if write_family.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_admin_write_registry_replacement_status", "/api/admin/questionnaires*", f"replacement_status={write_family.get('replacement_status')}"))
+        notes = str(write_family.get("notes") or "")
+        if "CommandBus" not in notes or "legacy rollback retained until validation" not in notes:
+            violations.append(Violation("questionnaire_admin_write_registry_notes", "/api/admin/questionnaires*", notes))
+
+    export_record = registry_by_path.get("/api/admin/questionnaires/{questionnaire_id}/export")
+    if export_record is None:
+        violations.append(Violation("questionnaire_admin_export_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", "/api/admin/questionnaires/{questionnaire_id}/export"))
+    elif export_record.get("adapter_mode") != "real_blocked" or export_record.get("replacement_status") != "validating":
+        violations.append(Violation("questionnaire_admin_export_registry_lifecycle", "/api/admin/questionnaires/{questionnaire_id}/export", f"adapter_mode={export_record.get('adapter_mode')} replacement_status={export_record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in ["/api/admin/questionnaires*", "/api/admin/questionnaires/{questionnaire_id}/export"]:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("questionnaire_admin_write_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") not in {"next", "next_native"}:
+            violations.append(Violation("questionnaire_admin_write_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("questionnaire_admin_write_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_admin_write_manifest_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("questionnaire_admin_write_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_admin_write_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -761,6 +898,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_sidebar_readonly_closeout_lock(ROOT)
         + check_user_ops_next_native_preview(ROOT)
         + check_questionnaire_admin_read_next_native(ROOT)
+        + check_questionnaire_admin_write_next_commandbus(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

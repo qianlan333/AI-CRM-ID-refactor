@@ -565,20 +565,62 @@ routes:
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
     notes: Questionnaire admin submissions API uses Next-native read model only; admin read legacy rollback removed and remains read-only.
-  - route_id: questionnaire_admin_write_family_out_of_scope
+  - route_id: questionnaire_admin_write_family_next_commandbus
     path_pattern: /api/admin/questionnaires*
     methods: [POST, PUT, PATCH, DELETE]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
     legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_source: legacy_questionnaire_admin_write_rollback_retained
     external_side_effect_risk: medium
     adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Next CommandBus primary, legacy rollback retained until validation; covers create/update/delete/duplicate/publish/enable/disable/export preview commands with AuditLedger and SideEffectPlan only; real_external_call_executed=false.
+  - route_id: questionnaire_admin_export_audit_next_commandbus
+    path_pattern: /api/admin/questionnaires/{questionnaire_id}/export
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: legacy_questionnaire_admin_write_rollback_retained
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Next CommandBus primary, legacy rollback retained until validation; existing export route now returns an audited export preview/plan instead of generating a real file; real_external_call_executed=false.
+  - route_id: questionnaire_admin_share_out_of_scope
+    path_pattern: /api/admin/questionnaires/{questionnaire_id}/share
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: production_compat
+    legacy_fallback_allowed: true
+    legacy_source: legacy_questionnaire_facade
+    external_side_effect_risk: none
+    adapter_mode: none
     delete_status: active
     replacement_status: not_started
-    checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
+    checker: tools/check_production_route_resolution.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin create/update/delete/publish/export write routes are explicitly out of scope for group 7 and must not be marked deletion_locked.
+    notes: Admin share payload route is inventoried only; not part of group 8 questionnaire admin write CommandBus replacement.
+  - route_id: questionnaire_admin_latest_submit_debug_out_of_scope
+    path_pattern: /api/admin/questionnaires/{questionnaire_id}/latest-submit-debug
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    runtime_owner: production_compat
+    legacy_fallback_allowed: true
+    legacy_source: legacy_questionnaire_facade
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: active
+    replacement_status: not_started
+    checker: tools/check_production_route_resolution.py
+    rollback_owner: aicrm_next.questionnaire
+    notes: Admin latest submit debug route is inventoried only; not part of group 8 questionnaire admin write CommandBus replacement.
   - route_id: questionnaire_public_h5_out_of_scope
     path_pattern: /api/h5/questionnaires*
     methods: [GET, POST, OPTIONS]

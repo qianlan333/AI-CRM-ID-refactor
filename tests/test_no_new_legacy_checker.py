@@ -6,6 +6,7 @@ from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_messages_broad_wildcard_deletion,
     check_questionnaire_admin_read_next_native,
+    check_questionnaire_admin_write_next_commandbus,
     check_sidebar_readonly_closeout_lock,
     check_user_ops_next_native_preview,
     scan_source_tree,
@@ -400,6 +401,154 @@ def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_rout
     )
 
     assert check_questionnaire_admin_read_next_native(tmp_path) == []
+
+
+def test_questionnaire_admin_write_guard_flags_legacy_and_lifecycle_drift(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
+    admin_write = tmp_path / "aicrm_next/questionnaire/admin_write.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    questionnaire_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        '@router.api_route("/api/admin/questionnaires/{questionnaire_id}/publish", methods=["POST"])\n'
+        "def legacy_publish():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    questionnaire_api.write_text(
+        "def create_questionnaire():\n"
+        "    return {'fallback_used': True}\n",
+        encoding="utf-8",
+    )
+    admin_write.write_text(
+        "def execute():\n"
+        "    return {'real_external_call_executed': True}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/questionnaires*\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    notes: wrong\n"
+        "  - path_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
+        "    adapter_mode: none\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/questionnaires*\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+
+    violations = check_questionnaire_admin_write_next_commandbus(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "questionnaire_admin_write_production_compat_route" in codes
+    assert "questionnaire_admin_write_fallback_used_true" in codes
+    assert "questionnaire_admin_write_real_external_call_true" in codes
+    assert "questionnaire_admin_write_registry_owner" in codes
+    assert "questionnaire_admin_write_registry_rollback_missing" in codes
+    assert "questionnaire_admin_write_registry_adapter_mode" in codes
+    assert "questionnaire_admin_write_registry_delete_status" in codes
+    assert "questionnaire_admin_write_manifest_behavior" in codes
+    assert "questionnaire_admin_write_manifest_rollback_missing" in codes
+
+
+def test_questionnaire_admin_write_guard_allows_next_commandbus_validation(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
+    admin_write = tmp_path / "aicrm_next/questionnaire/admin_write.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    questionnaire_api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text("", encoding="utf-8")
+    questionnaire_api.write_text(
+        "def create_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def update_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def duplicate_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def publish_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def disable_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def enable_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def delete_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def export_questionnaire():\n"
+        "    return {'fallback_used': False}\n"
+        "def export_questionnaire_preview():\n"
+        "    return {'fallback_used': False}\n",
+        encoding="utf-8",
+    )
+    admin_write.write_text(
+        "def execute():\n"
+        "    return {'fallback_used': False, 'real_external_call_executed': False}\n",
+        encoding="utf-8",
+    )
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/questionnaires*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "    notes: Next CommandBus primary, legacy rollback retained until validation\n"
+        "  - path_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
+        "    adapter_mode: real_blocked\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/questionnaires*\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+
+    assert check_questionnaire_admin_write_next_commandbus(tmp_path) == []
 
 
 def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle(tmp_path: Path) -> None:

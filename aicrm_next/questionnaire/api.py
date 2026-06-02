@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
-from xml.sax.saxutils import escape as xml_escape
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -19,10 +18,15 @@ from aicrm_next.integration_gateway.legacy_flask_facade import (
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
 
+from .admin_write import (
+    QuestionnaireAdminWriteCommand,
+    QuestionnaireAdminWriteInputError,
+    QuestionnaireAdminWriteNotFoundError,
+    QuestionnaireAdminWriteProductionUnavailableError,
+    execute_questionnaire_admin_write,
+)
 from .application import (
     CompleteWechatOAuthCallbackCommand,
-    DeleteQuestionnaireCommand,
-    ExportQuestionnaireQuery,
     GetPublicQuestionnaireQuery,
     GetQuestionnaireDetailQuery,
     GetQuestionnairePreflightQuery,
@@ -33,22 +37,15 @@ from .application import (
     ListQuestionnaireQuestionsQuery,
     ListQuestionnaireSubmissionsQuery,
     ListQuestionnairesQuery,
-    SetQuestionnaireEnabledCommand,
     StartWechatOAuthQuery,
     SubmitQuestionnaireCommand,
-    UpsertQuestionnaireCommand,
     build_questionnaire_share_payload,
 )
-from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
+from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
-    create_questionnaire_in_legacy,
-    delete_questionnaire_in_legacy,
-    export_questionnaire_from_legacy,
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
     latest_submit_debug_from_legacy,
-    set_questionnaire_enabled_in_legacy,
-    update_questionnaire_in_legacy,
 )
 
 router = APIRouter()
@@ -83,49 +80,83 @@ def _read_response(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
     return payload
 
 
-def _build_excel_xml(headers: list[Any], rows: list[list[Any]]) -> bytes:
-    def _render_row(values: list[Any]) -> str:
-        cells = "".join(
-            f'<Cell><Data ss:Type="String">{xml_escape(str(value or ""))}</Data></Cell>'
-            for value in values
+async def _execute_admin_write(
+    request: Request,
+    command_name: str,
+    *,
+    questionnaire_id: int | None = None,
+    body: dict[str, Any] | None = None,
+) -> Response:
+    try:
+        payload = body if body is not None else await _json_body(request)
+        command = QuestionnaireAdminWriteCommand(
+            command_name=command_name,
+            questionnaire_id=questionnaire_id,
+            payload={
+                key: value
+                for key, value in payload.items()
+                if key not in {"actor_id", "actor_type", "idempotency_key", "dry_run", "trace_id", "command_id"}
+            },
+            command_id=str(payload.get("command_id") or uuid4().hex),
+            idempotency_key=str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+            actor_id=str(payload.get("actor_id") or request.headers.get("X-AICRM-Actor-Id") or "questionnaire_admin"),
+            actor_type=str(payload.get("actor_type") or request.headers.get("X-AICRM-Actor-Type") or "user"),
+            dry_run=_as_bool(payload.get("dry_run")),
+            source_route=request.url.path,
+            trace_id=str(payload.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
         )
-        return f"<Row>{cells}</Row>"
-
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<?mso-application progid="Excel.Sheet"?>',
-        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
-        ' xmlns:o="urn:schemas-microsoft-com:office:office"',
-        ' xmlns:x="urn:schemas-microsoft-com:office:excel"',
-        ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
-        '<Worksheet ss:Name="Questionnaire">',
-        "<Table>",
-        _render_row(headers),
-    ]
-    lines.extend(_render_row(row) for row in rows)
-    lines.extend(["</Table>", "</Worksheet>", "</Workbook>"])
-    return "\n".join(lines).encode("utf-8")
+        response = execute_questionnaire_admin_write(command)
+        return JSONResponse(jsonable_encoder(response), status_code=200)
+    except QuestionnaireAdminWriteInputError as exc:
+        return _write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
+    except QuestionnaireAdminWriteNotFoundError as exc:
+        return _write_error(str(exc), status_code=404, source_status="not_found", write_model_status="not_found")
+    except QuestionnaireAdminWriteProductionUnavailableError as exc:
+        return _write_error(
+            str(exc),
+            status_code=503,
+            source_status="production_unavailable",
+            write_model_status="unavailable",
+            degraded=True,
+        )
 
 
-def _download_export_response(questionnaire_id: int, payload: dict[str, Any]) -> Response:
-    export_payload = payload.get("export") if isinstance(payload.get("export"), dict) else payload
-    filename = str(
-        export_payload.get("filename") or f"questionnaire_{questionnaire_id}_submissions.xls"
-    ).strip()
-    headers = export_payload.get("headers")
-    rows = export_payload.get("rows")
-    if isinstance(headers, list) and isinstance(rows, list):
-        content = _build_excel_xml(headers, rows)
-        media_type = "application/vnd.ms-excel"
-    else:
-        if not filename.endswith(".json"):
-            filename = f"questionnaire_{questionnaire_id}_submissions.json"
-        content = json.dumps(export_payload, ensure_ascii=False, default=str).encode("utf-8")
-        media_type = "application/json"
-    return Response(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+async def _json_body(request: Request) -> dict[str, Any]:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise QuestionnaireAdminWriteInputError("json object body is required")
+    return payload
+
+
+def _as_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _write_error(
+    message: str,
+    *,
+    status_code: int,
+    source_status: str,
+    write_model_status: str,
+    degraded: bool = False,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": message,
+            "source_status": source_status,
+            "write_model_status": write_model_status,
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "degraded": degraded,
+        },
+        status_code=status_code,
     )
 
 
@@ -210,13 +241,8 @@ async def questionnaire_preflight(request: Request) -> dict | Response:
 
 
 @router.post("/api/admin/questionnaires")
-def create_questionnaire(payload: dict[str, Any]) -> dict:
-    try:
-        if production_data_ready():
-            return create_questionnaire_in_legacy(payload)
-        return UpsertQuestionnaireCommand()(QuestionnaireUpsertRequest.model_validate(payload))
-    except Exception as exc:
-        _raise_http(exc)
+async def create_questionnaire(request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.create")
 
 
 @router.get("/api/admin/questionnaires/{questionnaire_id}", response_model=None)
@@ -277,57 +303,47 @@ def get_questionnaire_share(questionnaire_id: int, request: Request) -> dict:
 
 
 @router.put("/api/admin/questionnaires/{questionnaire_id}")
-def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict:
-    try:
-        if production_data_ready():
-            return update_questionnaire_in_legacy(questionnaire_id, payload)
-        return UpsertQuestionnaireCommand()(QuestionnaireUpsertRequest.model_validate(payload), questionnaire_id)
-    except Exception as exc:
-        _raise_http(exc)
+@router.patch("/api/admin/questionnaires/{questionnaire_id}")
+async def update_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.update", questionnaire_id=questionnaire_id)
+
+
+@router.post("/api/admin/questionnaires/{questionnaire_id}/duplicate")
+async def duplicate_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.duplicate", questionnaire_id=questionnaire_id)
+
+
+@router.post("/api/admin/questionnaires/{questionnaire_id}/publish")
+async def publish_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.publish", questionnaire_id=questionnaire_id)
 
 
 @router.post("/api/admin/questionnaires/{questionnaire_id}/disable")
-def disable_questionnaire(questionnaire_id: int, payload: dict | None = None) -> dict:
-    try:
-        enabled = not bool((payload or {}).get("is_disabled", True))
-        if production_data_ready():
-            return set_questionnaire_enabled_in_legacy(questionnaire_id, enabled=enabled)
-        return SetQuestionnaireEnabledCommand()(questionnaire_id, enabled=enabled)
-    except Exception as exc:
-        _raise_http(exc)
+async def disable_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    body = await _json_body(request)
+    enabled = not bool(body.get("is_disabled", True))
+    command_name = "questionnaire.admin.enable" if enabled else "questionnaire.admin.disable"
+    return await _execute_admin_write(request, command_name, questionnaire_id=questionnaire_id, body=body)
 
 
 @router.post("/api/admin/questionnaires/{questionnaire_id}/enable")
-def enable_questionnaire(questionnaire_id: int) -> dict:
-    try:
-        if production_data_ready():
-            return set_questionnaire_enabled_in_legacy(questionnaire_id, enabled=True)
-        return SetQuestionnaireEnabledCommand()(questionnaire_id, enabled=True)
-    except Exception as exc:
-        _raise_http(exc)
+async def enable_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.enable", questionnaire_id=questionnaire_id)
 
 
 @router.delete("/api/admin/questionnaires/{questionnaire_id}")
-def delete_questionnaire(questionnaire_id: int) -> dict:
-    try:
-        if production_data_ready():
-            return delete_questionnaire_in_legacy(questionnaire_id)
-        return DeleteQuestionnaireCommand()(questionnaire_id)
-    except Exception as exc:
-        _raise_http(exc)
+async def delete_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.delete", questionnaire_id=questionnaire_id)
 
 
 @router.get("/api/admin/questionnaires/{questionnaire_id}/export")
-def export_questionnaire(questionnaire_id: int) -> Response:
-    try:
-        if production_data_ready():
-            return _download_export_response(
-                questionnaire_id,
-                export_questionnaire_from_legacy(questionnaire_id),
-            )
-        return _download_export_response(questionnaire_id, ExportQuestionnaireQuery()(questionnaire_id))
-    except Exception as exc:
-        _raise_http(exc)
+async def export_questionnaire(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.export_audit", questionnaire_id=questionnaire_id)
+
+
+@router.post("/api/admin/questionnaires/{questionnaire_id}/export/preview")
+async def export_questionnaire_preview(questionnaire_id: int, request: Request) -> Response:
+    return await _execute_admin_write(request, "questionnaire.admin.export_preview", questionnaire_id=questionnaire_id)
 
 
 @router.get("/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug")

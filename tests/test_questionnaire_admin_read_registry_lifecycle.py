@@ -20,7 +20,6 @@ ADMIN_READ_API_ROUTES = {
 }
 
 OUT_OF_SCOPE_PATTERNS = {
-    "/api/admin/questionnaires*",
     "/api/h5/questionnaires*",
     "/api/h5/wechat/oauth*",
 }
@@ -49,7 +48,7 @@ def test_questionnaire_admin_read_routes_are_deletion_locked_after_rollback_remo
         assert entry.replacement_status == "locked"
 
 
-def test_questionnaire_write_h5_and_oauth_routes_remain_out_of_scope() -> None:
+def test_questionnaire_h5_and_oauth_routes_remain_out_of_scope() -> None:
     registry = yaml.safe_load(open("docs/architecture/legacy_exit_route_registry.yaml", encoding="utf-8"))
     by_path = {record["path_pattern"]: record for record in registry["routes"]}
 
@@ -72,7 +71,5 @@ def test_questionnaire_manifest_documents_read_primary_and_out_of_scope_families
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
 
-    assert by_route["/api/admin/questionnaires*"]["delete_ready"] is False
-    assert "out of scope" in by_route["/api/admin/questionnaires*"]["notes"]
     assert by_route["/api/h5/questionnaires/{slug}/submit"]["delete_ready"] is False
     assert by_route["/api/h5/wechat/oauth*"]["delete_ready"] is False
