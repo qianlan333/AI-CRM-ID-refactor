@@ -152,7 +152,13 @@ def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
-    compat.write_text('@router.api_route("/api/sidebar/profile", methods=["GET"])\ndef legacy_profile():\n    return {}\n', encoding="utf-8")
+    compat.write_text(
+        '@router.api_route("/api/sidebar/profile", methods=["GET"])\n'
+        '@router.api_route("/api/sidebar/bind-mobile", methods=["POST"])\n'
+        "def legacy_profile():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
     customer_api.write_text(
         '@router.get("/api/sidebar/profile")\n'
         "def sidebar_profile():\n"
@@ -192,7 +198,8 @@ def test_sidebar_readonly_closeout_guard_flags_legacy_fallback_and_bad_lifecycle
     assert "sidebar_readonly_registry_legacy_allowed" in codes
     assert "sidebar_readonly_registry_delete_status" in codes
     assert "sidebar_readonly_manifest_legacy_forward" in codes
-    assert "sidebar_write_route_mislocked_by_readonly_closeout" in codes
+    assert "sidebar_write_production_compat_route" in codes
+    assert "sidebar_write_manifest_behavior" in codes
 
 
 def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope_write_routes(tmp_path: Path) -> None:
@@ -207,7 +214,7 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
-    compat.write_text('@router.api_route("/api/sidebar/bind-mobile", methods=["POST"])\ndef write_route():\n    return {}\n', encoding="utf-8")
+    compat.write_text('@router.api_route("/api/sidebar/jssdk-config", methods=["GET"])\ndef jssdk_route():\n    return {}\n', encoding="utf-8")
     customer_api.write_text(
         '@router.get("/api/sidebar/profile")\n'
         "def sidebar_profile():\n"
@@ -231,7 +238,55 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
         "    runtime_owner: next_native\n"
         "    legacy_fallback_allowed: false\n"
         "    delete_status: deletion_locked\n"
-        "    replacement_status: locked\n",
+        "    replacement_status: locked\n"
+        "  - path_pattern: /api/sidebar/bind-mobile\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/signup-tags/mark\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/lead-pool/upsert-class-term\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/marketing-status/set-followup-segment\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/marketing-status/mark-enrolled\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/marketing-status/unmark-enrolled\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/v2/profile\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n"
+        "  - path_pattern: /api/sidebar/v2/materials/send\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    adapter_mode: real_blocked\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -245,13 +300,45 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
         "    production_behavior: readonly_facade\n"
         "    legacy_fallback_allowed: false\n"
         "  - route_pattern: /api/sidebar/bind-mobile\n"
-        "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_ready: false\n"
-        "  - route_pattern: /api/sidebar/signup-tags/mark\n"
+        "    current_runtime_owner: next\n"
         "    production_behavior: next_command\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_ready: false\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/signup-tags/mark\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/lead-pool/upsert-class-term\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/marketing-status/set-followup-segment\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/marketing-status/mark-enrolled\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/marketing-status/unmark-enrolled\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/v2/profile\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
+        "  - route_pattern: /api/sidebar/v2/materials/send\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n"
         "  - route_pattern: /api/sidebar/jssdk-config\n"
         "    production_behavior: legacy_forward\n"
         "    legacy_fallback_allowed: true\n"
@@ -264,4 +351,5 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
 
     assert "sidebar_readonly_production_compat_route" not in codes
     assert "sidebar_readonly_legacy_facade" not in codes
-    assert "sidebar_write_route_mislocked_by_readonly_closeout" not in codes
+    assert "sidebar_write_production_compat_route" not in codes
+    assert "sidebar_write_manifest_legacy_allowed" not in codes

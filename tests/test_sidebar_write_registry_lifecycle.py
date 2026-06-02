@@ -32,7 +32,7 @@ READONLY_LOCKED_ROUTES = [
 ]
 
 
-def test_sidebar_write_routes_are_next_commandbus_with_rollback_retained() -> None:
+def test_sidebar_write_routes_are_locked_next_commandbus_without_legacy_rollback() -> None:
     service = get_route_registry_service()
 
     for route, methods in WRITE_ROUTES.items():
@@ -40,14 +40,16 @@ def test_sidebar_write_routes_are_next_commandbus_with_rollback_retained() -> No
         assert entry is not None, route
         assert entry.capability_owner == "aicrm_next.sidebar_write"
         assert entry.runtime_owner == "next_native"
-        assert entry.legacy_fallback_allowed is True
-        assert entry.legacy_source == "production_compat rollback retained"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.legacy_source == ""
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
         assert entry.adapter_mode == "real_blocked"
         assert entry.external_side_effect_risk == ("high" if route in HIGH_RISK_ROUTES else "medium")
         assert "Next CommandBus" in entry.notes
-        assert "no real" in entry.notes
+        assert "rollback" in entry.notes
+        assert "removed" in entry.notes
+        assert "real_external_call_executed=false" in entry.notes
 
 
 def test_sidebar_readonly_routes_stay_locked_and_jssdk_remains_out_of_scope() -> None:

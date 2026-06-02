@@ -87,18 +87,17 @@ SIDEBAR_READONLY_ROUTES = (
     "/api/sidebar/signup-tags/status",
     "/api/sidebar/marketing-status",
 )
-SIDEBAR_OUT_OF_SCOPE_WRITE_ROUTES = (
+SIDEBAR_WRITE_ROUTES = (
     "/api/sidebar/bind-mobile",
-    "/api/sidebar/jssdk-config",
     "/api/sidebar/lead-pool/upsert-class-term",
     "/api/sidebar/signup-tags/mark",
     "/api/sidebar/marketing-status/set-followup-segment",
     "/api/sidebar/marketing-status/mark-enrolled",
     "/api/sidebar/marketing-status/unmark-enrolled",
-    "/api/sidebar/marketing-status*",
     "/api/sidebar/v2/profile",
     "/api/sidebar/v2/materials/send",
 )
+SIDEBAR_JSSDK_ROUTE = "/api/sidebar/jssdk-config"
 
 
 @dataclass(frozen=True)
@@ -336,6 +335,15 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
                         "Sidebar readonly exact routes are locked to Next-native owners and must not reappear in production_compat.",
                     )
                 )
+            if route_path in SIDEBAR_WRITE_ROUTES:
+                violations.append(
+                    Violation(
+                        "sidebar_write_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Sidebar write exact routes are deletion_locked to Next CommandBus and must not reappear in production_compat. JSSDK remains the only sidebar exact production_compat exception in this closeout.",
+                    )
+                )
 
     for api_path in [
         root / "aicrm_next/customer_read_model/api.py",
@@ -410,21 +418,88 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
         if record.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("sidebar_readonly_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
 
-    for route_path in SIDEBAR_OUT_OF_SCOPE_WRITE_ROUTES:
+    for route_path in SIDEBAR_WRITE_ROUTES:
         record = manifest_by_path.get(route_path)
         if record is None:
-            continue
-        behavior = record.get("production_behavior")
-        allowed_behaviors = {"legacy_forward"} if route_path == "/api/sidebar/jssdk-config" else {"legacy_forward", "next_command"}
-        if record.get("delete_ready") is True or behavior not in allowed_behaviors or record.get("legacy_fallback_allowed") is not True:
             violations.append(
                 Violation(
-                    "sidebar_write_route_mislocked_by_readonly_closeout",
+                    "sidebar_write_manifest_record_missing",
+                    "docs/route_ownership/production_route_ownership_manifest.yaml",
                     route_path,
-                    f"production_behavior={behavior} delete_ready={record.get('delete_ready')} legacy_fallback_allowed={record.get('legacy_fallback_allowed')}",
-                    "Sidebar write, JSSDK, and material send paths are out of scope for readonly closeout and must not be marked deleted or locked here; sidebar write group 5 may use next_command with rollback retained.",
+                    "Keep sidebar write routes in the production manifest as Next CommandBus locked routes.",
                 )
             )
+            continue
+        behavior = record.get("production_behavior")
+        if record.get("current_runtime_owner") not in {"next", "next_native"}:
+            violations.append(Violation("sidebar_write_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if behavior == "legacy_forward":
+            violations.append(Violation("sidebar_write_manifest_legacy_forward", route_path, "production_behavior=legacy_forward"))
+        if behavior != "next_command":
+            violations.append(Violation("sidebar_write_manifest_behavior", route_path, f"production_behavior={behavior}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_write_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True:
+            violations.append(Violation("sidebar_write_manifest_not_delete_ready", route_path, f"delete_ready={record.get('delete_ready')}"))
+
+    jssdk_record = manifest_by_path.get(SIDEBAR_JSSDK_ROUTE)
+    if jssdk_record is not None:
+        if jssdk_record.get("production_behavior") != "legacy_forward" or jssdk_record.get("delete_ready") is True:
+            violations.append(
+                Violation(
+                    "sidebar_jssdk_mislocked_by_write_closeout",
+                    SIDEBAR_JSSDK_ROUTE,
+                    f"production_behavior={jssdk_record.get('production_behavior')} delete_ready={jssdk_record.get('delete_ready')}",
+                    "Sidebar JSSDK signing is out of scope for sidebar write deletion closeout and must not be marked deleted or locked here.",
+                )
+            )
+
+    for route_path in SIDEBAR_WRITE_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(
+                Violation(
+                    "sidebar_write_registry_record_missing",
+                    "docs/architecture/legacy_exit_route_registry.yaml",
+                    route_path,
+                    "Keep sidebar write routes registered as deletion_locked Next CommandBus routes.",
+                )
+            )
+            continue
+        if record.get("runtime_owner") != "next_native":
+            violations.append(Violation("sidebar_write_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_write_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_status") != "deletion_locked":
+            violations.append(Violation("sidebar_write_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") not in {"locked", "deleted"}:
+            violations.append(Violation("sidebar_write_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("sidebar_write_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+
+    sidebar_write_api = root / "aicrm_next/sidebar_write/api.py"
+    sidebar_write_application = root / "aicrm_next/sidebar_write/application.py"
+    for api_path in [sidebar_write_api, sidebar_write_application]:
+        if not api_path.exists():
+            continue
+        text = api_path.read_text(encoding="utf-8")
+        forbidden_markers = {
+            "X-AICRM-Compatibility-Facade": "sidebar_write_compatibility_facade_header",
+            '"fallback_used": True': "sidebar_write_fallback_used_true",
+            "'fallback_used': True": "sidebar_write_fallback_used_true",
+            '"real_external_call_executed": True': "sidebar_write_real_external_call_true",
+            "'real_external_call_executed': True": "sidebar_write_real_external_call_true",
+        }
+        for marker, code in forbidden_markers.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(api_path.relative_to(root)),
+                        marker,
+                        "Sidebar write routes must not expose compatibility facade behavior, fallback_used=true, or real external calls.",
+                    )
+                )
 
     return violations
 

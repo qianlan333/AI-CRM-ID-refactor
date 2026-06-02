@@ -104,20 +104,8 @@ async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/sidebar/bind-mobile", methods=["POST", "OPTIONS"])
 @router.api_route("/api/sidebar/jssdk-config", methods=["GET", "HEAD", "OPTIONS"])
-@router.api_route("/api/sidebar/lead-pool/upsert-class-term", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/signup-tags/mark", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/set-followup-segment", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/mark-enrolled", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/unmark-enrolled", methods=["POST", "OPTIONS"])
 async def legacy_sidebar_compat_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
-@router.api_route("/api/sidebar/v2/profile", methods=["PUT", "OPTIONS"])
-@router.api_route("/api/sidebar/v2/materials/send", methods=["POST", "OPTIONS"])
-async def legacy_sidebar_v2_compat_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 

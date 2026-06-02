@@ -27,7 +27,7 @@ def test_sidebar_write_inventory_documents_exact_routes_and_commands() -> None:
     assert "Next CommandBus" in text
     assert "AuditLedger" in text
     assert "SideEffectPlan" in text
-    assert "legacy fallback" in text
+    assert "legacy production_compat rollback removed" in text
 
 
 def test_sidebar_write_inventory_marks_jssdk_out_of_scope_and_no_real_external_calls() -> None:

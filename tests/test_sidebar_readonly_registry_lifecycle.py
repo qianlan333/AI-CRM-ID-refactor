@@ -18,7 +18,9 @@ WRITE_ROUTES = [
     "/api/sidebar/bind-mobile",
     "/api/sidebar/lead-pool/upsert-class-term",
     "/api/sidebar/signup-tags/mark",
+    "/api/sidebar/marketing-status/set-followup-segment",
     "/api/sidebar/marketing-status/mark-enrolled",
+    "/api/sidebar/marketing-status/unmark-enrolled",
     "/api/sidebar/v2/profile",
     "/api/sidebar/v2/materials/send",
 ]
@@ -37,12 +39,14 @@ def test_sidebar_readonly_routes_are_locked_next_native_in_registry() -> None:
         assert entry.replacement_status == "locked"
 
 
-def test_sidebar_write_routes_remain_out_of_scope_and_not_deleted() -> None:
+def test_sidebar_write_routes_are_locked_by_their_own_closeout() -> None:
     service = get_route_registry_service()
 
     for route in WRITE_ROUTES:
         entry = service.find_route(route, {"POST", "PUT", "OPTIONS"})
         assert entry is not None, route
-        assert entry.legacy_fallback_allowed is True
-        assert entry.delete_status != "legacy_deleted"
-        assert "out of scope" in entry.notes.lower()
+        assert entry.legacy_fallback_allowed is False
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
+        assert "rollback" in entry.notes
+        assert "removed" in entry.notes
