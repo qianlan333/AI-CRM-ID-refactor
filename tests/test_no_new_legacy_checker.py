@@ -9,6 +9,7 @@ from scripts.check_no_new_legacy import (
     check_messages_broad_wildcard_deletion,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
+    check_questionnaire_h5_submit_next_commandbus,
     check_sidebar_readonly_closeout_lock,
     check_user_ops_next_native_preview,
     scan_source_tree,
@@ -37,6 +38,145 @@ def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
     tests.write_text("from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n", encoding="utf-8")
 
     assert scan_source_tree(tmp_path) == []
+
+
+def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/questionnaire/api.py"
+    h5_write = tmp_path / "aicrm_next/questionnaire/h5_write.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/h5/questionnaires/{slug}/submit', methods=['POST'])\n"
+        "def legacy_submit():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "def public_submit_questionnaire():\n"
+        "    return forward_to_legacy_flask()\n"
+        "def public_questionnaire_client_diagnostics():\n"
+        "    return {'fallback_used': True}\n",
+        encoding="utf-8",
+    )
+    h5_write.write_text("payload = {'real_external_call_executed': True}\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/h5/questionnaires/{slug}/submit\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    notes: legacy forward\n"
+        "  - path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "    notes: legacy forward\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/h5/questionnaires/{slug}/submit\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n"
+        "  - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_questionnaire_h5_submit_next_commandbus(tmp_path)}
+
+    assert "questionnaire_h5_submit_production_compat_route" in codes
+    assert "questionnaire_h5_submit_legacy_forward" in codes
+    assert "questionnaire_h5_submit_fallback_used_true" in codes
+    assert "questionnaire_h5_submit_real_external_call_true" in codes
+    assert "questionnaire_h5_submit_registry_owner" in codes
+    assert "questionnaire_h5_submit_registry_adapter_mode" in codes
+    assert "questionnaire_h5_submit_registry_delete_status" in codes
+    assert "questionnaire_h5_submit_manifest_behavior" in codes
+    assert "questionnaire_h5_submit_manifest_lifecycle" in codes
+
+
+def test_questionnaire_h5_submit_guard_allows_next_commandbus_validating_with_rollback(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/questionnaire/api.py"
+    h5_write = tmp_path / "aicrm_next/questionnaire/h5_write.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
+    api.write_text(
+        "def public_submit_questionnaire():\n"
+        "    return execute_questionnaire_h5_submit()\n"
+        "def public_questionnaire_client_diagnostics():\n"
+        "    return execute_questionnaire_client_diagnostics()\n",
+        encoding="utf-8",
+    )
+    h5_write.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/h5/questionnaires/{slug}/submit\n"
+        "    runtime_owner: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "    notes: Next CommandBus primary; real_external_call_executed=false\n"
+        "  - path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
+        "    runtime_owner: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "    notes: Next CommandBus primary; real_external_call_executed=false\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/h5/questionnaires/{slug}/submit\n"
+        "    current_runtime_owner: next_command\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - route_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
+        "    current_runtime_owner: next_command\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+
+    assert check_questionnaire_h5_submit_next_commandbus(tmp_path) == []
 
 
 def test_customer_read_model_legacy_deletion_guard_flags_deleted_patterns(tmp_path: Path) -> None:

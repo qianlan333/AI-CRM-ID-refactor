@@ -131,8 +131,11 @@ QUESTIONNAIRE_ADMIN_WRITE_ROUTES = (
     "/api/admin/questionnaires/{questionnaire_id}/export/preview",
     "/api/admin/questionnaires/{questionnaire_id}/export",
 )
+QUESTIONNAIRE_H5_COMMAND_ROUTES = (
+    "/api/h5/questionnaires/{slug}/submit",
+    "/api/h5/questionnaires/{slug}/client-diagnostics",
+)
 QUESTIONNAIRE_OUT_OF_SCOPE_ROUTES = (
-    "/api/h5/questionnaires*",
     "/api/h5/wechat/oauth*",
 )
 
@@ -972,6 +975,121 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
     return violations
 
 
+def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths):
+            if route_path in QUESTIONNAIRE_H5_COMMAND_ROUTES:
+                violations.append(
+                    Violation(
+                        "questionnaire_h5_submit_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Questionnaire H5 submit/diagnostics are Next CommandBus primary; do not re-add production_compat exact handlers.",
+                    )
+                )
+
+    api_path = root / "aicrm_next/questionnaire/api.py"
+    if api_path.exists():
+        sources = _function_sources(
+            api_path,
+            {
+                "public_submit_questionnaire",
+                "public_questionnaire_client_diagnostics",
+                "_execute_h5_submit",
+                "_execute_h5_diagnostics",
+            },
+        )
+        forbidden_markers = {
+            "forward_to_legacy_flask": "questionnaire_h5_submit_legacy_forward",
+            "legacy_questionnaire_facade": "questionnaire_h5_submit_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "questionnaire_h5_submit_compatibility_facade",
+            '"fallback_used": True': "questionnaire_h5_submit_fallback_used_true",
+            "'fallback_used': True": "questionnaire_h5_submit_fallback_used_true",
+            '"real_external_call_executed": True': "questionnaire_h5_submit_real_external_call_true",
+            "'real_external_call_executed': True": "questionnaire_h5_submit_real_external_call_true",
+        }
+        for function_name, source in sources.items():
+            for marker, code in forbidden_markers.items():
+                if marker in source:
+                    violations.append(
+                        Violation(
+                            code,
+                            str(api_path.relative_to(root)),
+                            f"{function_name}:{marker}",
+                            "Questionnaire H5 submit/diagnostics handlers must execute Next CommandBus commands without legacy forward, compatibility facade, fallback_used=true, or real external calls.",
+                        )
+                    )
+
+    for path in [root / "aicrm_next/questionnaire/h5_write.py", api_path]:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        forbidden_markers = {
+            '"fallback_used": True': "questionnaire_h5_submit_fallback_used_true",
+            "'fallback_used': True": "questionnaire_h5_submit_fallback_used_true",
+            '"real_external_call_executed": True': "questionnaire_h5_submit_real_external_call_true",
+            "'real_external_call_executed': True": "questionnaire_h5_submit_real_external_call_true",
+            "real_enabled": "questionnaire_h5_submit_real_enabled_marker",
+            "requests.post(": "questionnaire_h5_submit_direct_external_call",
+            "httpx.post(": "questionnaire_h5_submit_direct_external_call",
+            "X-AICRM-Compatibility-Facade": "questionnaire_h5_submit_compatibility_facade",
+        }
+        for marker, code in forbidden_markers.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(path.relative_to(root)),
+                        marker,
+                        "Questionnaire H5 submit/diagnostics must stay SideEffectPlan only with no compatibility facade or real external calls.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_path = {record.get("path_pattern"): record for record in registry_records}
+    for route_path in QUESTIONNAIRE_H5_COMMAND_ROUTES:
+        record = registry_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("questionnaire_h5_submit_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+            continue
+        if record.get("runtime_owner") != "next_command":
+            violations.append(Violation("questionnaire_h5_submit_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_h5_submit_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("questionnaire_h5_submit_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_h5_submit_registry_delete_status", route_path, f"delete_status={record.get('delete_status')}"))
+        if record.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_h5_submit_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
+        notes = str(record.get("notes") or "")
+        if "CommandBus" not in notes or "real_external_call_executed=false" not in notes:
+            violations.append(Violation("questionnaire_h5_submit_registry_notes", route_path, notes))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in QUESTIONNAIRE_H5_COMMAND_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("questionnaire_h5_submit_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next_command":
+            violations.append(Violation("questionnaire_h5_submit_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("questionnaire_h5_submit_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("questionnaire_h5_submit_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("questionnaire_h5_submit_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+            violations.append(Violation("questionnaire_h5_submit_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -982,6 +1100,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_user_ops_next_native_preview(ROOT)
         + check_questionnaire_admin_read_next_native(ROOT)
         + check_questionnaire_admin_write_next_commandbus(ROOT)
+        + check_questionnaire_h5_submit_next_commandbus(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

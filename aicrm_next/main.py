@@ -47,6 +47,7 @@ from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
+from .questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     if fixture_mode():
         reset_user_ops_fixture_state()
         reset_questionnaire_fixture_state()
+        reset_questionnaire_h5_write_fixture_state()
         reset_automation_fixture_state()
         reset_group_ops_fixture_state()
         reset_commerce_fixture_state()

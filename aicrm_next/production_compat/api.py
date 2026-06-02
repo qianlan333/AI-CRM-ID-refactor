@@ -63,12 +63,6 @@ async def legacy_questionnaire_oauth_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/h5/questionnaires/{slug}/submit", methods=["POST", "OPTIONS"])
-@router.api_route("/api/h5/questionnaires/{slug}/client-diagnostics", methods=["POST", "OPTIONS"])
-async def legacy_questionnaire_public_write_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/api/admin/wecom/tags", methods=_ALL_METHODS)
 @router.api_route("/api/admin/wecom/tags/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/wecom/tag-groups", methods=_ALL_METHODS)

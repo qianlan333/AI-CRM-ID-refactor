@@ -25,6 +25,15 @@ from .admin_write import (
     QuestionnaireAdminWriteProductionUnavailableError,
     execute_questionnaire_admin_write,
 )
+from .h5_write import (
+    QuestionnaireClientDiagnosticsCommand,
+    QuestionnaireH5SubmitCommand,
+    QuestionnaireH5WriteInputError,
+    QuestionnaireH5WriteNotFoundError,
+    QuestionnaireH5WriteProductionUnavailableError,
+    execute_questionnaire_client_diagnostics,
+    execute_questionnaire_h5_submit,
+)
 from .application import (
     CompleteWechatOAuthCallbackCommand,
     GetPublicQuestionnaireQuery,
@@ -38,10 +47,9 @@ from .application import (
     ListQuestionnaireSubmissionsQuery,
     ListQuestionnairesQuery,
     StartWechatOAuthQuery,
-    SubmitQuestionnaireCommand,
     build_questionnaire_share_payload,
 )
-from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest
+from .dto import OAuthCallbackRequest, OAuthStartRequest
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
@@ -133,6 +141,18 @@ async def _json_body(request: Request) -> dict[str, Any]:
     return payload
 
 
+async def _h5_json_body(request: Request) -> dict[str, Any]:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise QuestionnaireH5WriteInputError("json object body is required")
+    return payload
+
+
 def _as_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -157,6 +177,128 @@ def _write_error(
             "degraded": degraded,
         },
         status_code=status_code,
+    )
+
+
+def _h5_write_error(
+    message: str,
+    *,
+    status_code: int,
+    source_status: str,
+    write_model_status: str,
+    degraded: bool = False,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": message,
+            "source_status": source_status,
+            "write_model_status": write_model_status,
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "degraded": degraded,
+        },
+        status_code=status_code,
+    )
+
+
+def _h5_identity_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    identity: dict[str, Any] = {}
+    for key in ["respondent_identity", "identity"]:
+        value = payload.get(key)
+        if isinstance(value, dict):
+            identity.update(value)
+    for key in ["external_userid", "openid", "unionid", "mobile", "respondent_key"]:
+        if payload.get(key) not in (None, ""):
+            identity[key] = payload.get(key)
+    return identity
+
+
+def _h5_source_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    source = dict(payload.get("source") or {}) if isinstance(payload.get("source"), dict) else {}
+    for key in ["source_channel", "campaign_id", "staff_id"]:
+        value = request.query_params.get(key) or payload.get(key)
+        if value not in (None, ""):
+            source[key] = value
+    source.setdefault("route", request.url.path)
+    return source
+
+
+async def _execute_h5_submit(request: Request, slug: str) -> Response:
+    try:
+        payload = await _h5_json_body(request)
+        command = QuestionnaireH5SubmitCommand(
+            questionnaire_slug=slug,
+            answers=dict(payload.get("answers") or {}),
+            identity=_h5_identity_payload(payload),
+            source=_h5_source_payload(payload, request),
+            command_id=str(payload.get("command_id") or uuid4().hex),
+            idempotency_key=str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+            actor_id=str(payload.get("actor_id") or request.headers.get("X-AICRM-Actor-Id") or "anonymous"),
+            actor_type=str(payload.get("actor_type") or request.headers.get("X-AICRM-Actor-Type") or "h5_client"),
+            dry_run=_as_bool(payload.get("dry_run")),
+            source_route=request.url.path,
+            trace_id=str(payload.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
+        )
+        response = execute_questionnaire_h5_submit(command)
+        return JSONResponse(jsonable_encoder(response), status_code=200)
+    except QuestionnaireH5WriteInputError as exc:
+        return _h5_write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
+    except QuestionnaireH5WriteNotFoundError as exc:
+        return _h5_write_error(str(exc), status_code=404, source_status="not_found", write_model_status="not_found")
+    except QuestionnaireH5WriteProductionUnavailableError as exc:
+        return _h5_write_error(
+            str(exc),
+            status_code=503,
+            source_status="production_unavailable",
+            write_model_status="unavailable",
+            degraded=True,
+        )
+
+
+async def _execute_h5_diagnostics(request: Request, slug: str) -> Response:
+    try:
+        payload = await _h5_json_body(request)
+        diagnostics = dict(payload.get("diagnostics") or payload)
+        for key in ["identity", "respondent_identity", "source", "command_id", "idempotency_key", "actor_id", "actor_type", "dry_run", "trace_id"]:
+            diagnostics.pop(key, None)
+        command = QuestionnaireClientDiagnosticsCommand(
+            questionnaire_slug=slug,
+            diagnostics=diagnostics,
+            identity=_h5_identity_payload(payload),
+            source=_h5_source_payload(payload, request),
+            command_id=str(payload.get("command_id") or uuid4().hex),
+            idempotency_key=str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+            actor_id=str(payload.get("actor_id") or request.headers.get("X-AICRM-Actor-Id") or "anonymous"),
+            actor_type=str(payload.get("actor_type") or request.headers.get("X-AICRM-Actor-Type") or "h5_client"),
+            dry_run=_as_bool(payload.get("dry_run")),
+            source_route=request.url.path,
+            trace_id=str(payload.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
+        )
+        response = execute_questionnaire_client_diagnostics(command)
+        return JSONResponse(jsonable_encoder(response), status_code=200)
+    except QuestionnaireH5WriteInputError as exc:
+        return _h5_write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
+    except QuestionnaireH5WriteProductionUnavailableError as exc:
+        return _h5_write_error(
+            str(exc),
+            status_code=503,
+            source_status="production_unavailable",
+            write_model_status="unavailable",
+            degraded=True,
+        )
+
+
+def _h5_options_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": True,
+            "source_status": "next_command",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
     )
 
 
@@ -367,11 +509,23 @@ def public_get_questionnaire(slug: str) -> dict:
 
 
 @router.post("/api/h5/questionnaires/{slug}/submit")
-def public_submit_questionnaire(slug: str, payload: QuestionnaireSubmitRequest) -> dict:
-    try:
-        return SubmitQuestionnaireCommand()(slug, payload)
-    except Exception as exc:
-        _raise_http(exc)
+async def public_submit_questionnaire(slug: str, request: Request) -> Response:
+    return await _execute_h5_submit(request, slug)
+
+
+@router.options("/api/h5/questionnaires/{slug}/submit")
+def public_submit_questionnaire_options(slug: str) -> Response:
+    return _h5_options_response()
+
+
+@router.post("/api/h5/questionnaires/{slug}/client-diagnostics")
+async def public_questionnaire_client_diagnostics(slug: str, request: Request) -> Response:
+    return await _execute_h5_diagnostics(request, slug)
+
+
+@router.options("/api/h5/questionnaires/{slug}/client-diagnostics")
+def public_questionnaire_client_diagnostics_options(slug: str) -> Response:
+    return _h5_options_response()
 
 
 @router.get("/api/h5/questionnaires/{slug}/result/{submission_id}")
