@@ -427,7 +427,20 @@ def _backfill_source_for_external_userid(cur: Any, external_userid: str) -> Json
         get_db().rollback()
         pool_current = {}
     if not contact and not pool_current:
-        return {}
+        from wecom_ability_service.domains.automation_conversion import automation_member_backfill_service
+
+        candidate = automation_member_backfill_service.get_sidebar_binding_campaign_candidate(external_userid)
+        if candidate is None:
+            return {}
+        return {
+            "source": "sidebar_binding",
+            "external_userid": external_userid,
+            "owner_userid": candidate.owner_staff_id,
+            "customer_name": candidate.customer_name,
+            "mobile": candidate.phone,
+            "contact": {},
+            "pool_current": {},
+        }
     source = "contacts" if contact else "user_ops_pool_current"
     owner = _text((contact if contact else pool_current).get("owner_userid"))
     if not owner:
@@ -561,12 +574,21 @@ def backfill_automation_members_for_external_campaign(
             "target": source,
         }
         if not dry_run:
-            _insert_automation_member_from_backfill_source(
-                cur,
-                external_userid=external_userid,
-                owner_userid=source_owner or normalized_owner,
-                source=source,
-            )
+            if _text(source.get("source")) == "sidebar_binding":
+                from wecom_ability_service.domains.automation_conversion import automation_member_backfill_service
+
+                automation_member_backfill_service.ensure_campaign_member_from_sidebar_binding(
+                    external_userid,
+                    dry_run=False,
+                    commit=False,
+                )
+            else:
+                _insert_automation_member_from_backfill_source(
+                    cur,
+                    external_userid=external_userid,
+                    owner_userid=source_owner or normalized_owner,
+                    source=source,
+                )
         results.append(result)
     if dry_run:
         db.rollback()
@@ -884,6 +906,7 @@ def _preview_single_recipient_campaign(
         ],
         "contact": target.get("contact") or {},
         "target_source": _text(target.get("source")),
+        "automation_member_backfill": target.get("automation_member_backfill") or {},
         "would_create": _existing_campaign_response(campaign_code) is None,
     }
 
@@ -927,6 +950,7 @@ def _auto_backfill_for_recipients(
                     "pool_current": target.get("pool_current") or {},
                     "member": {},
                     "contact": target.get("contact") or {},
+                    "automation_member_backfill": _public_backfill_result(result),
                 }
         else:
             skipped.append(_public_backfill_result(result))
