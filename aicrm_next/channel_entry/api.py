@@ -8,12 +8,14 @@ from .application import (
     diagnose_channel_runtime,
     dry_run_channel_entry,
     encrypted_success_reply,
+    generate_channel_qrcode,
     process_wecom_external_contact_event,
     repair_channel_entry,
     verify_callback_echostr,
 )
 from .schemas import (
     DiagnoseChannelRuntimeQuery,
+    GenerateChannelQrCodeCommand,
     ProcessChannelEntryCommand,
     ProcessWeComExternalContactEventCommand,
     RepairChannelEntryCommand,
@@ -65,6 +67,28 @@ def runtime_diagnosis_by_channel(channel_id: int) -> dict:
     return diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(channel_id=int(channel_id)))
 
 
+@router.post("/api/admin/channels/{channel_id:int}/qrcode/generate")
+def generate_qrcode(channel_id: int, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    try:
+        result = generate_channel_qrcode(
+            GenerateChannelQrCodeCommand(
+                channel_id=int(channel_id),
+                scene_value=str(payload.get("scene_value") or payload.get("state") or "").strip(),
+                owner_staff_id=str(payload.get("owner_staff_id") or "").strip(),
+                operator_id=str(payload.get("operator_id") or "").strip(),
+                skip_verify=payload.get("skip_verify") if isinstance(payload.get("skip_verify"), bool) else None,
+            )
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result)
+    return result
+
+
 @router.post("/api/admin/channels/runtime-diagnosis/dry-run")
 def runtime_diagnosis_dry_run(payload: dict) -> dict:
     result = dry_run_channel_entry(
@@ -90,4 +114,3 @@ def repair_entry(payload: dict) -> JSONResponse:
         )
     )
     return JSONResponse({"ok": bool(result.get("handled")), "result": result, "source": "aicrm_next.channel_entry"})
-

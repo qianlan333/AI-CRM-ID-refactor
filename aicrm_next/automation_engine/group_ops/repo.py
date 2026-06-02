@@ -12,12 +12,15 @@ from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .domain import (
     binding_stats,
+    clamp_limit,
     clean_text,
     derive_node_scheduled_time,
     generate_webhook_key,
     generate_webhook_token,
+    group_manageable_by_userid,
     hash_webhook_token,
     mask_sensitive_payload,
+    normalize_group_admin_userids,
     normalize_plan_payload,
     normalize_scope_ids,
     utc_now_iso,
@@ -44,6 +47,8 @@ class GroupOpsRepository(Protocol):
     def get_group_asset(self, chat_id: str) -> dict[str, Any] | None: ...
     def upsert_group_asset(self, snapshot: dict[str, Any]) -> tuple[dict[str, Any], str]: ...
     def upsert_group_snapshots(self, groups: list[dict[str, Any]]) -> int: ...
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]: ...
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]: ...
     def list_owners(self) -> list[dict[str, Any]]: ...
     def list_nodes(self, plan_id: int) -> list[dict[str, Any]]: ...
     def create_node(self, plan_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -78,6 +83,7 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
             "group_name": "体验课 01 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 12,
             "external_member_count": 150,
             "synced_at": "2026-05-25T08:00:00Z",
@@ -88,6 +94,7 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
             "group_name": "体验课 02 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 10,
             "external_member_count": 160,
             "synced_at": "2026-05-25T08:00:00Z",
@@ -98,6 +105,7 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
             "group_name": "体验课 03 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 9,
             "external_member_count": 176,
             "synced_at": "2026-05-25T08:00:00Z",
@@ -108,6 +116,7 @@ def _fixture_groups() -> dict[str, dict[str, Any]]:
             "group_name": "成交陪跑 01 群",
             "owner_userid": "owner_002",
             "owner_name": "李小红",
+            "admin_userids": ["admin_001"],
             "internal_member_count": 8,
             "external_member_count": 88,
             "synced_at": "2026-05-25T08:00:00Z",
@@ -450,7 +459,7 @@ class InMemoryGroupOpsRepository:
         for group in self._groups.values():
             if keyword and keyword not in f"{group.get('group_name')} {group.get('chat_id')}".lower():
                 continue
-            if owner_userid and group.get("owner_userid") != owner_userid:
+            if owner_userid and not group_manageable_by_userid(group, owner_userid):
                 continue
             bound_plan = self._bound_plan_for_group(group["chat_id"], plan_id=plan_id)
             is_bound = bool(bound_plan)
@@ -500,12 +509,35 @@ class InMemoryGroupOpsRepository:
             "group_name": clean_text(snapshot.get("group_name") or chat_id),
             "owner_userid": clean_text(snapshot.get("owner_userid")),
             "owner_name": clean_text(snapshot.get("owner_name") or snapshot.get("owner_userid")),
+            "admin_userids": normalize_group_admin_userids(snapshot.get("admin_userids") or snapshot.get("admin_list")),
             "internal_member_count": int(snapshot.get("internal_member_count") or 0),
             "external_member_count": int(snapshot.get("external_member_count") or 0),
             "synced_at": utc_now_iso(),
             "status": clean_text(snapshot.get("status") or "active"),
         }
         return deepcopy(self._groups[chat_id]), action
+
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        return [
+            deepcopy(group)
+            for group in self._groups.values()
+            if group_manageable_by_userid(group, owner) and clean_text(group.get("owner_userid")) != owner
+        ]
+
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        max_items = clamp_limit(limit, default=100)
+        candidates = [
+            deepcopy(group)
+            for group in self._groups.values()
+            if clean_text(group.get("owner_userid")) != owner
+        ]
+        return candidates[:max_items]
 
     def list_owners(self) -> list[dict[str, Any]]:
         owners: dict[str, dict[str, Any]] = {}
@@ -517,6 +549,8 @@ class InMemoryGroupOpsRepository:
             current["group_count"] += 1
             if group.get("owner_name"):
                 current["name"] = clean_text(group.get("owner_name"))
+            for admin_userid in normalize_group_admin_userids(group.get("admin_userids")):
+                owners.setdefault(admin_userid, {"userid": admin_userid, "name": admin_userid, "group_count": 0})
         for plan in self._plans.values():
             userid = clean_text(plan.get("owner_userid"))
             if userid and userid not in owners:

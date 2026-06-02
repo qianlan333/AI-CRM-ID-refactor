@@ -3,11 +3,18 @@ from __future__ import annotations
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from wecom_ability_service.domains.campaigns.time_helpers import (
+    DEFAULT_SEND_TIME as _DEFAULT_CAMPAIGN_SEND_TIME,
+)
+from wecom_ability_service.domains.campaigns.time_helpers import (
+    DEFAULT_TIMEZONE as _DEFAULT_CAMPAIGN_TIMEZONE,
+)
+from wecom_ability_service.domains.campaigns.time_helpers import campaign_step_due_iso
 
 
 def _text(value: Any) -> str:
@@ -26,7 +33,12 @@ def _json(value: Any, *, default: Any) -> Any:
 
 
 def _json_dump(value: Any) -> str:
-    return json.dumps(value if value is not None else {}, ensure_ascii=False)
+    def _default(item: Any) -> str:
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
+
+    return json.dumps(value if value is not None else {}, ensure_ascii=False, default=_default)
 
 
 def _limit(value: int, *, default: int, maximum: int) -> int:
@@ -65,6 +77,17 @@ class CloudPlanRepository(Protocol):
     def reject_plan(self, plan_id: str, *, operator: str, reason: str = "") -> dict[str, Any] | None: ...
     def approve_recipient(self, plan_id: str, recipient_id: int, *, operator: str) -> dict[str, Any]: ...
     def reject_recipient(self, plan_id: str, recipient_id: int, *, operator: str, reason: str = "") -> dict[str, Any]: ...
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]: ...
 
 
 def _plan_view(row: dict[str, Any], stats: dict[str, int] | None = None) -> dict[str, Any]:
@@ -126,6 +149,22 @@ def _message_view(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _content_payload_for_package(content_package: dict[str, Any]) -> dict[str, Any]:
+    package = {
+        "content_text": _text(content_package.get("content_text")),
+        "image_library_ids": list(content_package.get("image_library_ids") or []),
+        "miniprogram_library_ids": list(content_package.get("miniprogram_library_ids") or []),
+        "attachment_library_ids": list(content_package.get("attachment_library_ids") or []),
+    }
+    return {
+        "content_package": package,
+        "image_library_ids": package["image_library_ids"],
+        "image_media_ids": [],
+        "miniprogram_library_ids": package["miniprogram_library_ids"],
+        "attachment_library_ids": package["attachment_library_ids"],
+    }
+
+
 def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
     status = _text(member_status)
     if status in {"completed", "sent"}:
@@ -142,6 +181,10 @@ def _legacy_recipient_status(member_status: str) -> tuple[str, str]:
 _LEGACY_GROUP_KEY_SQL = "COALESCE(NULLIF(c.metadata_json->>'group_code', ''), c.campaign_code)"
 _LEGACY_GROUP_KEY_UPDATE_SQL = _LEGACY_GROUP_KEY_SQL.replace("c.", "")
 _LEGACY_GROUP_LABEL_SQL = "COALESCE(MAX(NULLIF(c.metadata_json->>'group_label', '')), MAX(NULLIF(c.display_name, '')), " + _LEGACY_GROUP_KEY_SQL + ")"
+_CAMPAIGN_QUEUE_SOURCE_TYPE = "campaign"
+_CAMPAIGN_QUEUE_SOURCE_TABLE = "campaign_members"
+_CAMPAIGN_QUEUE_CONTENT_TYPE = "private_message"
+_CAMPAIGN_OPEN_JOB_STATUSES = ["waiting_approval", "queued", "claimed"]
 _CLOUD_HAS_MATCHING_LEGACY_GROUP_SQL = f"""
 EXISTS (
     SELECT 1
@@ -158,6 +201,14 @@ EXISTS (
       AND COALESCE(p.candidate_count, 0) > 0
 )
 """
+
+
+def _campaign_job_source_id(*, campaign_id: int, campaign_segment_id: int, step_index: int) -> str:
+    return f"{int(campaign_id)}:{int(campaign_segment_id)}:{int(step_index)}"
+
+
+def _legacy_campaign_job_source_id(*, campaign_id: int, step_index: int) -> str:
+    return f"{int(campaign_id)}:{int(step_index)}"
 
 
 class PostgresCloudPlanRepository:
@@ -183,6 +234,360 @@ class PostgresCloudPlanRepository:
             """,
             (_text(operator) or "crm_console", action_type, target_type, target_id, _json_dump(before), _json_dump(after)),
         )
+
+    def _approve_and_start_legacy_group(self, conn, plan_id: str, *, operator: str) -> dict[str, Any] | None:
+        normalized_plan_id = _text(plan_id)
+        campaigns = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            FOR UPDATE
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        if not campaigns:
+            return None
+        before = [dict(row) for row in campaigns]
+        if any(_text(row.get("review_status")) == "rejected" for row in campaigns):
+            raise ValueError("plan is rejected")
+        campaign_ids = [int(row["id"]) for row in campaigns]
+        conflict = conn.execute(
+            """
+            SELECT COUNT(*) AS conflict_count,
+                   STRING_AGG(DISTINCT cm.external_contact_id || '->' || other_c.campaign_code, ', ') AS examples
+            FROM campaign_members cm
+            JOIN campaign_members other_cm
+              ON other_cm.external_contact_id = cm.external_contact_id
+             AND other_cm.campaign_id <> cm.campaign_id
+             AND other_cm.status IN ('pending', 'running')
+            JOIN campaigns other_c
+              ON other_c.id = other_cm.campaign_id
+             AND other_c.run_status = 'active'
+            WHERE cm.campaign_id = ANY(%s)
+              AND other_cm.campaign_id <> ALL(%s)
+              AND cm.status = 'pending'
+              AND COALESCE(cm.external_contact_id, '') <> ''
+            """,
+            (campaign_ids, campaign_ids),
+        ).fetchone()
+        if int((conflict or {}).get("conflict_count") or 0):
+            raise ValueError(f"campaign has active member conflicts: {_text((conflict or {}).get('examples'))[:300]}")
+        conn.execute(
+            """
+            UPDATE campaigns
+            SET review_status = 'approved',
+                run_status = CASE
+                    WHEN run_status IN ('finished', 'completed', 'cancelled') THEN run_status
+                    ELSE 'active'
+                END,
+                approved_by = %s,
+                approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+                started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(%s)
+            """,
+            (_text(operator) or "crm_console", campaign_ids),
+        )
+        conn.execute(
+            """
+            UPDATE campaign_members cm
+            SET anchor_date = COALESCE(NULLIF(c.anchor_date, ''), TO_CHAR(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD')),
+                joined_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            FROM campaigns c
+            WHERE cm.campaign_id = c.id
+              AND c.id = ANY(%s)
+              AND COALESCE(c.anchor_mode, 'campaign_start_date') = 'campaign_start_date'
+              AND cm.status = 'pending'
+            """,
+            (campaign_ids,),
+        )
+        conn.execute(
+            """
+            UPDATE campaign_members cm
+            SET anchor_date = TO_CHAR(COALESCE(cm.joined_at, CURRENT_TIMESTAMP) AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
+                updated_at = CURRENT_TIMESTAMP
+            FROM campaigns c
+            WHERE cm.campaign_id = c.id
+              AND c.id = ANY(%s)
+              AND COALESCE(c.anchor_mode, 'campaign_start_date') <> 'campaign_start_date'
+              AND cm.status = 'pending'
+            """,
+            (campaign_ids,),
+        )
+        due_rows = conn.execute(
+            """
+            SELECT cm.id AS cm_id,
+                   cm.member_id,
+                   cm.external_contact_id,
+                   cm.campaign_id,
+                   cm.campaign_segment_id,
+                   cm.anchor_date,
+                   cm.trace_id AS member_trace_id,
+                   c.campaign_code,
+                   c.owner_userid,
+                   c.trace_id AS campaign_trace_id,
+                   cs.id AS step_id,
+                   cs.step_index,
+                   cs.day_offset,
+                   cs.send_time,
+                   cs.timezone,
+                   cs.content_text,
+                   cs.content_payload_json,
+                   cs.stop_on_reply,
+                   cs.skip_if_recently_touched_days
+            FROM campaign_members cm
+            JOIN campaigns c ON c.id = cm.campaign_id
+            JOIN LATERAL (
+                SELECT *
+                FROM campaign_steps cs
+                WHERE cs.campaign_segment_id = cm.campaign_segment_id
+                ORDER BY cs.step_index ASC, cs.id ASC
+                LIMIT 1
+            ) cs ON TRUE
+            WHERE cm.campaign_id = ANY(%s)
+              AND c.run_status = 'active'
+              AND cm.status = 'pending'
+            ORDER BY cm.id ASC
+            """,
+            (campaign_ids,),
+        ).fetchall()
+        groups: dict[str, dict[str, Any]] = {}
+        for row in due_rows:
+            due_iso = campaign_step_due_iso(
+                anchor_date=_text(row.get("anchor_date")),
+                day_offset=int(row.get("day_offset") or 0),
+                send_time=_text(row.get("send_time")) or _DEFAULT_CAMPAIGN_SEND_TIME,
+                step_timezone=_text(row.get("timezone")) or _DEFAULT_CAMPAIGN_TIMEZONE,
+            )
+            conn.execute(
+                """
+                UPDATE campaign_members
+                SET next_due_at = %s::timestamptz,
+                    current_step_index = -1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (due_iso, int(row["cm_id"])),
+            )
+            source_id = _campaign_job_source_id(
+                campaign_id=int(row["campaign_id"]),
+                campaign_segment_id=int(row["campaign_segment_id"]),
+                step_index=int(row.get("step_index") or 0),
+            )
+            if source_id not in groups:
+                groups[source_id] = {
+                    "source_ids": (
+                        source_id,
+                        _legacy_campaign_job_source_id(
+                            campaign_id=int(row["campaign_id"]),
+                            step_index=int(row.get("step_index") or 0),
+                        ),
+                    ),
+                    "scheduled_for": due_iso,
+                    "campaign": {
+                        "id": int(row["campaign_id"]),
+                        "campaign_code": _text(row.get("campaign_code")),
+                        "owner_userid": _text(row.get("owner_userid")),
+                        "trace_id": _text(row.get("campaign_trace_id") or row.get("member_trace_id")),
+                    },
+                    "step": {
+                        "id": int(row.get("step_id") or 0),
+                        "step_index": int(row.get("step_index") or 0),
+                        "day_offset": int(row.get("day_offset") or 0),
+                        "send_time": _text(row.get("send_time")),
+                        "content_text": _text(row.get("content_text")),
+                        "timezone": _text(row.get("timezone")),
+                        "content_payload_json": _json(row.get("content_payload_json"), default={}),
+                        "stop_on_reply": bool(row.get("stop_on_reply")),
+                        "skip_if_recently_touched_days": int(row.get("skip_if_recently_touched_days") or 0),
+                    },
+                    "members": [],
+                }
+            external_userid = _text(row.get("external_contact_id"))
+            if external_userid:
+                groups[source_id]["members"].append(
+                    {
+                        "cm_id": int(row["cm_id"]),
+                        "member_id": int(row.get("member_id") or 0),
+                        "external_contact_id": external_userid,
+                        "trace_id": _text(row.get("member_trace_id")),
+                        "campaign_segment_id": int(row["campaign_segment_id"]),
+                    }
+                )
+        enqueued = 0
+        for source_id, group in groups.items():
+            members = group["members"]
+            if not members:
+                continue
+            existing = conn.execute(
+                """
+                SELECT id
+                FROM broadcast_jobs
+                WHERE source_type = %s
+                  AND source_table = %s
+                  AND source_id = ANY(%s)
+                  AND status = ANY(%s)
+                LIMIT 1
+                """,
+                (_CAMPAIGN_QUEUE_SOURCE_TYPE, _CAMPAIGN_QUEUE_SOURCE_TABLE, list(group["source_ids"]), _CAMPAIGN_OPEN_JOB_STATUSES),
+            ).fetchone()
+            if existing:
+                continue
+            campaign = group["campaign"]
+            step = group["step"]
+            target_external_userids = [member["external_contact_id"] for member in members]
+            inserted = conn.execute(
+                """
+                INSERT INTO broadcast_jobs (
+                    source_type, source_id, source_table, scheduled_for, priority, batch_key,
+                    idempotency_key, status, requires_approval,
+                    target_external_userids, target_count, target_summary,
+                    content_type, content_payload, content_summary, trace_id, created_by
+                ) VALUES (
+                    %s, %s, %s, %s::timestamptz, 100, %s,
+                    %s, 'queued', FALSE,
+                    %s::jsonb, %s, %s,
+                    %s, %s::jsonb, %s, %s, %s
+                )
+                ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+                DO NOTHING
+                RETURNING id
+                """,
+                (
+                    _CAMPAIGN_QUEUE_SOURCE_TYPE,
+                    source_id,
+                    _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                    group["scheduled_for"],
+                    normalized_plan_id,
+                    f"campaign_member_step:{source_id}",
+                    _json_dump(target_external_userids),
+                    len(target_external_userids),
+                    f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
+                    _CAMPAIGN_QUEUE_CONTENT_TYPE,
+                    _json_dump({"campaign": campaign, "step": step, "members": members}),
+                    _text(step.get("content_text"))[:200],
+                    _text(campaign.get("trace_id")),
+                    _text(operator) or "crm_console",
+                ),
+            ).fetchone()
+            if inserted:
+                enqueued += 1
+        after = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            ORDER BY c.id ASC
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        self._audit(
+            conn,
+            operator=operator,
+            action_type="legacy_campaign_group_approve_and_start_from_cloud_plan",
+            target_type="legacy_campaign_group",
+            target_id=normalized_plan_id,
+            before={"campaigns": before},
+            after={"campaigns": [dict(row) for row in after], "queued_jobs": enqueued},
+        )
+        return self._legacy_group_plan_row(conn, normalized_plan_id)
+
+    def _reject_legacy_group(self, conn, plan_id: str, *, operator: str, reason: str = "") -> dict[str, Any] | None:
+        normalized_plan_id = _text(plan_id)
+        campaigns = conn.execute(
+            """
+            SELECT c.*
+            FROM campaigns c
+            WHERE """
+            + _LEGACY_GROUP_KEY_SQL
+            + """
+             = %s
+            FOR UPDATE
+            """,
+            (normalized_plan_id,),
+        ).fetchall()
+        if not campaigns:
+            return None
+        campaign_ids = [int(row["id"]) for row in campaigns]
+        before = [dict(row) for row in campaigns]
+        reason_text = _text(reason)[:200] or "cloud plan rejected"
+        updated_campaigns = conn.execute(
+            """
+            UPDATE campaigns
+            SET review_status = 'rejected',
+                run_status = CASE
+                    WHEN run_status IN ('finished', 'completed') THEN run_status
+                    ELSE 'cancelled'
+                END,
+                paused_reason = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(%s)
+            RETURNING *
+            """,
+            (reason_text, campaign_ids),
+        ).fetchall()
+        cancelled_members = conn.execute(
+            """
+            UPDATE campaign_members
+            SET status = 'cancelled',
+                next_due_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE campaign_id = ANY(%s)
+              AND status IN ('pending', 'running', 'queued', 'paused')
+            RETURNING id
+            """,
+            (campaign_ids,),
+        ).fetchall()
+        cancelled_jobs = conn.execute(
+            """
+            UPDATE broadcast_jobs bj
+            SET status = 'cancelled',
+                cancelled_by = %s,
+                cancelled_at = CURRENT_TIMESTAMP,
+                cancel_reason = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE bj.source_type = %s
+              AND COALESCE(bj.source_table, %s) = %s
+              AND bj.status = ANY(%s)
+              AND EXISTS (
+                  SELECT 1
+                  FROM unnest(%s::int[]) AS campaign_id
+                  WHERE bj.source_id LIKE (campaign_id::text || ':%')
+              )
+            RETURNING bj.id
+            """,
+            (
+                _text(operator) or "crm_console",
+                reason_text,
+                _CAMPAIGN_QUEUE_SOURCE_TYPE,
+                _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                _CAMPAIGN_QUEUE_SOURCE_TABLE,
+                _CAMPAIGN_OPEN_JOB_STATUSES,
+                campaign_ids,
+            ),
+        ).fetchall()
+        self._audit(
+            conn,
+            operator=operator,
+            action_type="legacy_campaign_group_reject_from_cloud_plan",
+            target_type="legacy_campaign_group",
+            target_id=normalized_plan_id,
+            before={"campaigns": before},
+            after={
+                "campaigns": [dict(row) for row in updated_campaigns],
+                "cancelled_members": len(cancelled_members),
+                "cancelled_jobs": len(cancelled_jobs),
+            },
+        )
+        return self._legacy_group_plan_row(conn, normalized_plan_id)
 
     def _stats_for_plan_ids(self, conn, plan_ids: list[str]) -> dict[str, dict[str, int]]:
         if not plan_ids:
@@ -288,10 +693,12 @@ class PostgresCloudPlanRepository:
                                WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
                                WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
                                WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                               WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                                ELSE 'draft'
                            END AS run_status,
                            CASE
                                WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                               WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                                ELSE 'draft'
                            END AS status,
                            MAX(c.updated_at) AS updated_at,
@@ -366,9 +773,14 @@ class PostgresCloudPlanRepository:
                        WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
                        WHEN BOOL_OR(c.run_status = 'paused') THEN 'paused'
                        WHEN BOOL_AND(c.run_status IN ('finished', 'completed')) THEN 'finished'
+                       WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
                        ELSE 'draft'
                    END AS run_status,
-                   CASE WHEN BOOL_OR(c.run_status = 'active') THEN 'active' ELSE 'draft' END AS status,
+                   CASE
+                       WHEN BOOL_OR(c.run_status = 'active') THEN 'active'
+                       WHEN BOOL_AND(c.run_status = 'cancelled') THEN 'cancelled'
+                       ELSE 'draft'
+                   END AS status,
                    MAX(c.updated_at) AS updated_at,
                    'legacy_campaign' AS source_type
             FROM campaigns c
@@ -477,7 +889,12 @@ class PostgresCloudPlanRepository:
         )
         rows = conn.execute(
             """
-            SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+            SELECT cm.id, cm.external_contact_id,
+                   CASE
+                       WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
+                       ELSE cm.status
+                   END AS status,
+                   cm.updated_at,
                    c.owner_userid,
                    COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
                    (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
@@ -522,7 +939,12 @@ class PostgresCloudPlanRepository:
                         return item
                 row = conn.execute(
                     """
-                    SELECT cm.id, cm.external_contact_id, cm.status, cm.updated_at,
+                    SELECT cm.id, cm.external_contact_id,
+                           CASE
+                               WHEN c.run_status = 'active' AND cm.status = 'pending' AND cm.next_due_at IS NOT NULL THEN 'queued'
+                               ELSE cm.status
+                           END AS status,
+                           cm.updated_at,
                            c.owner_userid,
                            COALESCE(NULLIF(contacts.customer_name, ''), NULLIF(contacts.remark, ''), cm.external_contact_id) AS display_name,
                            (SELECT COUNT(*) FROM campaign_steps cs WHERE cs.campaign_segment_id = cm.campaign_segment_id) AS planned_message_count
@@ -597,26 +1019,11 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute(
-                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
-                    (_text(plan_id),),
-                ).fetchone()
-                if not legacy_before:
+                row = self._approve_and_start_legacy_group(conn, _text(plan_id), operator=operator)
+                if not row:
                     return None
-                if _text(legacy_before.get("review_status")) == "rejected":
-                    raise ValueError("plan is rejected")
-                row = conn.execute(
-                    """
-                    UPDATE campaigns
-                    SET review_status = 'approved', updated_at = CURRENT_TIMESTAMP
-                    WHERE """ + _LEGACY_GROUP_KEY_UPDATE_SQL + """ = %s
-                    RETURNING *
-                    """,
-                    (_text(plan_id),),
-                ).fetchone()
-                self._audit(conn, operator=operator, action_type="cloud_plan_approve", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
                 conn.commit()
-                return self.get_plan(plan_id)
+                return _plan_view(dict(row), self.plan_stats(plan_id))
             if _text(before.get("review_status") or before.get("status")) == "rejected":
                 raise ValueError("plan is rejected")
             row = conn.execute(
@@ -637,25 +1044,11 @@ class PostgresCloudPlanRepository:
         with self._connect() as conn:
             before = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (_text(plan_id),)).fetchone()
             if not before:
-                legacy_before = conn.execute(
-                    "SELECT * FROM campaigns c WHERE " + _LEGACY_GROUP_KEY_SQL + " = %s FOR UPDATE",
-                    (_text(plan_id),),
-                ).fetchone()
-                if not legacy_before:
+                row = self._reject_legacy_group(conn, _text(plan_id), operator=operator, reason=reason)
+                if not row:
                     return None
-                row = conn.execute(
-                    """
-                    UPDATE campaigns
-                    SET review_status = 'rejected', run_status = CASE WHEN run_status = 'active' THEN run_status ELSE 'cancelled' END,
-                        paused_reason = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE """ + _LEGACY_GROUP_KEY_SQL + """ = %s
-                    RETURNING *
-                    """,
-                    (_text(reason)[:200], _text(plan_id)),
-                ).fetchone()
-                self._audit(conn, operator=operator, action_type="cloud_plan_reject", target_type="legacy_campaign", target_id=_text(plan_id), before=dict(legacy_before), after=dict(row or {}))
                 conn.commit()
-                return self.get_plan(plan_id)
+                return _plan_view(dict(row), self.plan_stats(plan_id))
             row = conn.execute(
                 """
                 UPDATE cloud_broadcast_plans
@@ -788,6 +1181,193 @@ class PostgresCloudPlanRepository:
             conn.commit()
         return {"status": "rejected", "recipient": _recipient_view(dict(row or {}))}
 
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        normalized_plan_id = _text(plan_id)
+        normalized_recipient_id = int(recipient_id)
+        normalized_message_id = int(message_id)
+        if normalized_recipient_id < 0:
+            return self._update_legacy_recipient_message(
+                normalized_plan_id,
+                normalized_recipient_id,
+                normalized_message_id,
+                content_package=content_package,
+                day_offset=day_offset,
+                send_time=send_time,
+                operator=operator,
+            )
+        content_payload = _content_payload_for_package(content_package)
+        with self._connect() as conn:
+            plan = conn.execute("SELECT * FROM cloud_broadcast_plans WHERE plan_id = %s FOR UPDATE", (normalized_plan_id,)).fetchone()
+            if not plan:
+                raise LookupError("plan not found")
+            if _text(plan.get("review_status") or plan.get("status")) == "rejected":
+                raise ValueError("plan is rejected")
+            recipient = conn.execute(
+                "SELECT * FROM cloud_broadcast_plan_recipients WHERE plan_id = %s AND id = %s FOR UPDATE",
+                (normalized_plan_id, normalized_recipient_id),
+            ).fetchone()
+            if not recipient:
+                raise LookupError("recipient not found")
+            if _text(recipient.get("approval_status")) != "pending" or _text(recipient.get("send_status")) != "pending":
+                raise ValueError("recipient is not editable")
+            message = conn.execute(
+                """
+                SELECT *
+                FROM cloud_broadcast_plan_recipient_messages
+                WHERE recipient_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (normalized_recipient_id, normalized_message_id),
+            ).fetchone()
+            if not message:
+                raise LookupError("message not found")
+            if _text(message.get("status")) != "pending":
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(message.get("day_offset") or 0)
+            normalized_send_time = (_text(send_time) or _text(message.get("send_time")))[:16]
+            row = conn.execute(
+                """
+                UPDATE cloud_broadcast_plan_recipient_messages
+                SET content_text = %s,
+                    content_payload_json = %s::jsonb,
+                    attachments_json = '[]'::jsonb,
+                    day_offset = %s,
+                    send_time = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    _text(content_package.get("content_text")),
+                    _json_dump(content_payload),
+                    normalized_day_offset,
+                    normalized_send_time,
+                    normalized_message_id,
+                ),
+            ).fetchone()
+            recipient_row = conn.execute(
+                "SELECT *, 'cloud_plan' AS source_type, TRUE AS supports_recipient_approval FROM cloud_broadcast_plan_recipients WHERE id = %s",
+                (normalized_recipient_id,),
+            ).fetchone()
+            self._audit(
+                conn,
+                operator=operator,
+                action_type="cloud_plan_recipient_message_update",
+                target_type="cloud_broadcast_plan_recipient_message",
+                target_id=f"{normalized_plan_id}:{normalized_recipient_id}:{normalized_message_id}",
+                before=dict(message),
+                after=dict(row or {}),
+            )
+            conn.commit()
+        return {
+            "status": "updated",
+            "recipient": _recipient_view(dict(recipient_row or {})),
+            "message": _message_view({**dict(row or {}), "source_type": "cloud_plan"}),
+        }
+
+    def _update_legacy_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        legacy_member_id = abs(int(recipient_id))
+        content_payload = _content_payload_for_package(content_package)
+        with self._connect() as conn:
+            member = conn.execute(
+                """
+                SELECT cm.*, c.owner_userid, c.review_status AS campaign_review_status,
+                       c.run_status AS campaign_run_status, c.status AS campaign_status
+                FROM campaign_members cm
+                JOIN campaigns c ON c.id = cm.campaign_id
+                WHERE """
+                + _LEGACY_GROUP_KEY_SQL
+                + """
+                  = %s
+                  AND cm.id = %s
+                FOR UPDATE OF cm, c
+                """,
+                (plan_id, legacy_member_id),
+            ).fetchone()
+            if not member:
+                raise LookupError("recipient not found")
+            if _text(member.get("campaign_review_status")) == "rejected":
+                raise ValueError("plan is rejected")
+            approval_status, send_status = _legacy_recipient_status(_text(member.get("status")))
+            if approval_status != "pending" or send_status != "pending":
+                raise ValueError("recipient is not editable")
+            step = conn.execute(
+                """
+                SELECT *, 'legacy_campaign' AS source_type
+                FROM campaign_steps
+                WHERE campaign_segment_id = %s AND id = %s
+                FOR UPDATE
+                """,
+                (int(member.get("campaign_segment_id") or 0), int(message_id)),
+            ).fetchone()
+            if not step:
+                raise LookupError("message not found")
+            if int(member.get("current_step_index") or -1) >= int(step.get("step_index") or 0):
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else step.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(step.get("day_offset") or 0)
+            normalized_send_time = (_text(send_time) or _text(step.get("send_time")))[:16]
+            row = conn.execute(
+                """
+                UPDATE campaign_steps
+                SET content_text = %s,
+                    content_payload_json = %s::jsonb,
+                    day_offset = %s,
+                    send_time = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *, 'legacy_campaign' AS source_type
+                """,
+                (
+                    _text(content_package.get("content_text")),
+                    _json_dump(content_payload),
+                    normalized_day_offset,
+                    normalized_send_time,
+                    int(message_id),
+                ),
+            ).fetchone()
+            self._audit(
+                conn,
+                operator=operator,
+                action_type="legacy_campaign_step_update_from_cloud_plan",
+                target_type="campaign_step",
+                target_id=f"{plan_id}:{legacy_member_id}:{int(message_id)}",
+                before=dict(step),
+                after=dict(row or {}),
+            )
+            conn.commit()
+        recipient = self.get_recipient(plan_id, recipient_id)
+        return {
+            "status": "updated",
+            "recipient": recipient or {},
+            "message": _message_view(dict(row or {})),
+        }
+
 
 class InMemoryCloudPlanRepository:
     def __init__(self) -> None:
@@ -914,6 +1494,35 @@ class InMemoryCloudPlanRepository:
                 item["updated_at"] = _now()
                 self.audits.append({"action_type": "cloud_plan_approve", "target_id": plan_id, "operator": operator})
                 return self.get_plan(plan_id)
+        for item in self.legacy_plans:
+            if item["plan_id"] == plan_id:
+                if item.get("review_status") == "rejected":
+                    raise ValueError("plan is rejected")
+                item["review_status"] = "approved"
+                item["run_status"] = "active"
+                item["status"] = "active"
+                item["updated_at"] = _now()
+                queued = 0
+                for recipient in self.legacy_recipients:
+                    if recipient["plan_id"] == plan_id and recipient.get("send_status") == "pending":
+                        recipient["approval_status"] = "approved"
+                        recipient["send_status"] = "queued"
+                        recipient["updated_at"] = _now()
+                        queued += 1
+                if queued:
+                    self.broadcast_jobs.append(
+                        {
+                            "id": len(self.broadcast_jobs) + 1,
+                            "source_type": "campaign",
+                            "source_table": "campaign_members",
+                            "source_id": f"{plan_id}:legacy",
+                            "status": "queued",
+                            "scheduled_for": _now(),
+                            "target_count": queued,
+                        }
+                    )
+                self.audits.append({"action_type": "legacy_campaign_group_approve_and_start_from_cloud_plan", "target_id": plan_id, "operator": operator})
+                return self.get_plan(plan_id)
         return None
 
     def reject_plan(self, plan_id: str, *, operator: str, reason: str = "") -> dict[str, Any] | None:
@@ -923,6 +1532,38 @@ class InMemoryCloudPlanRepository:
                 item["status"] = "rejected"
                 item["updated_at"] = _now()
                 self.audits.append({"action_type": "cloud_plan_reject", "target_id": plan_id, "operator": operator, "reason": reason})
+                return self.get_plan(plan_id)
+        for item in self.legacy_plans:
+            if item["plan_id"] == plan_id:
+                item["review_status"] = "rejected"
+                item["run_status"] = "cancelled"
+                item["status"] = "cancelled"
+                item["updated_at"] = _now()
+                cancelled_members = 0
+                for recipient in self.legacy_recipients:
+                    if recipient["plan_id"] == plan_id and recipient.get("send_status") != "sent":
+                        recipient["approval_status"] = "rejected"
+                        recipient["send_status"] = "cancelled"
+                        recipient["updated_at"] = _now()
+                        cancelled_members += 1
+                cancelled_jobs = 0
+                for job in self.broadcast_jobs:
+                    if job.get("source_type") == "campaign" and job.get("source_id") == f"{plan_id}:legacy" and job.get("status") in _CAMPAIGN_OPEN_JOB_STATUSES:
+                        job["status"] = "cancelled"
+                        job["cancelled_by"] = operator
+                        job["cancel_reason"] = reason or "cloud plan rejected"
+                        job["cancelled_at"] = _now()
+                        cancelled_jobs += 1
+                self.audits.append(
+                    {
+                        "action_type": "legacy_campaign_group_reject_from_cloud_plan",
+                        "target_id": plan_id,
+                        "operator": operator,
+                        "reason": reason,
+                        "cancelled_members": cancelled_members,
+                        "cancelled_jobs": cancelled_jobs,
+                    }
+                )
                 return self.get_plan(plan_id)
         return None
 
@@ -980,6 +1621,93 @@ class InMemoryCloudPlanRepository:
         recipient.update({"approval_status": "rejected", "send_status": "cancelled", "rejected_by": operator, "rejected_at": _now(), "reject_reason": reason, "updated_at": _now()})
         self.audits.append({"action_type": "cloud_plan_recipient_reject", "target_id": f"{plan_id}:{int(recipient_id)}", "operator": operator})
         return {"status": "rejected", "recipient": _recipient_view(copy.deepcopy(recipient))}
+
+    def update_recipient_message(
+        self,
+        plan_id: str,
+        recipient_id: int,
+        message_id: int,
+        *,
+        content_package: dict[str, Any],
+        day_offset: Any = None,
+        send_time: Any = None,
+        operator: str,
+    ) -> dict[str, Any]:
+        if int(recipient_id) < 0:
+            plan = self.get_plan(plan_id)
+            if not plan:
+                raise LookupError("plan not found")
+            if plan["review_status"] == "rejected":
+                raise ValueError("plan is rejected")
+            recipient = next((item for item in self.legacy_recipients if item["plan_id"] == plan_id and int(item["id"]) == int(recipient_id)), None)
+            if not recipient:
+                raise LookupError("recipient not found")
+            if recipient.get("approval_status") != "pending" or recipient.get("send_status") != "pending":
+                raise ValueError("recipient is not editable")
+            message = next((item for item in self.legacy_messages if int(item["recipient_id"]) == int(recipient_id) and int(item["id"]) == int(message_id)), None)
+            if not message:
+                raise LookupError("message not found")
+            if message.get("status") != "pending":
+                raise ValueError("message is not editable")
+            try:
+                normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+            except (TypeError, ValueError):
+                normalized_day_offset = int(message.get("day_offset") or 0)
+            content_payload = _content_payload_for_package(content_package)
+            message.update(
+                {
+                    "content_text": _text(content_package.get("content_text")),
+                    "content_payload_json": content_payload,
+                    "attachments_json": [],
+                    "day_offset": normalized_day_offset,
+                    "send_time": _text(send_time) or _text(message.get("send_time")),
+                    "updated_at": _now(),
+                }
+            )
+            recipient["updated_at"] = _now()
+            self.audits.append({"action_type": "legacy_campaign_step_update_from_cloud_plan", "target_id": f"{plan_id}:{int(recipient_id)}:{int(message_id)}", "operator": operator})
+            return {
+                "status": "updated",
+                "recipient": _recipient_view(copy.deepcopy(recipient)),
+                "message": _message_view(copy.deepcopy(message)),
+            }
+        plan = self.get_plan(plan_id)
+        if not plan:
+            raise LookupError("plan not found")
+        if plan["review_status"] == "rejected":
+            raise ValueError("plan is rejected")
+        recipient = next((item for item in self.recipients if item["plan_id"] == plan_id and int(item["id"]) == int(recipient_id)), None)
+        if not recipient:
+            raise LookupError("recipient not found")
+        if recipient.get("approval_status") != "pending" or recipient.get("send_status") != "pending":
+            raise ValueError("recipient is not editable")
+        message = next((item for item in self.messages if int(item["recipient_id"]) == int(recipient_id) and int(item["id"]) == int(message_id)), None)
+        if not message:
+            raise LookupError("message not found")
+        if message.get("status") != "pending":
+            raise ValueError("message is not editable")
+        try:
+            normalized_day_offset = max(0, int(day_offset if day_offset is not None else message.get("day_offset") or 0))
+        except (TypeError, ValueError):
+            normalized_day_offset = int(message.get("day_offset") or 0)
+        content_payload = _content_payload_for_package(content_package)
+        message.update(
+            {
+                "content_text": _text(content_package.get("content_text")),
+                "content_payload_json": content_payload,
+                "attachments_json": [],
+                "day_offset": normalized_day_offset,
+                "send_time": _text(send_time) or _text(message.get("send_time")),
+                "updated_at": _now(),
+            }
+        )
+        recipient["updated_at"] = _now()
+        self.audits.append({"action_type": "cloud_plan_recipient_message_update", "target_id": f"{plan_id}:{int(recipient_id)}:{int(message_id)}", "operator": operator})
+        return {
+            "status": "updated",
+            "recipient": _recipient_view(copy.deepcopy(recipient)),
+            "message": _message_view(copy.deepcopy(message)),
+        }
 
 
 _FIXTURE_REPO = InMemoryCloudPlanRepository()

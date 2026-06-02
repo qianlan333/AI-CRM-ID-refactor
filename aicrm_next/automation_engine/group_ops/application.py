@@ -6,7 +6,7 @@ from typing import Any
 
 from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract, WeComGroupAssetAdapterContract
 from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
-from aicrm_next.shared.repository_provider import blocked_production_payload
+from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 
 from . import CAPABILITY_OWNER
 from .domain import (
@@ -17,6 +17,7 @@ from .domain import (
     clean_text,
     clamp_limit,
     extract_bearer_token,
+    group_manageable_by_userid,
     mask_sensitive_payload,
     normalize_message_content,
     normalize_action_payload,
@@ -143,32 +144,42 @@ def _coerce_plan_id(value: Any) -> int:
 
 def _plan_public_payload(repo: GroupOpsRepository, plan: dict[str, Any]) -> dict[str, Any]:
     plan_id = int(plan["id"])
-    scopes = repo.list_plan_scopes(plan_id) if hasattr(repo, "list_plan_scopes") else []
+    scopes = _optional_group_ops_detail([], lambda: repo.list_plan_scopes(plan_id)) if hasattr(repo, "list_plan_scopes") else []
     groups = repo.list_bound_groups(plan_id)
-    segmentation = repo.get_segmentation(plan_id) if hasattr(repo, "get_segmentation") else None
+    segmentation = _optional_group_ops_detail(None, lambda: repo.get_segmentation(plan_id)) if hasattr(repo, "get_segmentation") else None
     rule_stats = {"total": 0, "layers": []}
     if segmentation and segmentation.get("rule_key") and segmentation.get("rule_version"):
         rows, total = ([], 0)
         if hasattr(repo, "list_audience_rule_results"):
-            rows, total = repo.list_audience_rule_results(
-                clean_text(segmentation["rule_key"]),
-                int(segmentation["rule_version"]),
-                plan_id,
-                {"limit": 10000, "offset": 0},
+            rows, total = _optional_group_ops_detail(
+                ([], 0),
+                lambda: repo.list_audience_rule_results(
+                    clean_text(segmentation["rule_key"]),
+                    int(segmentation["rule_version"]),
+                    plan_id,
+                    {"limit": 10000, "offset": 0},
+                ),
             )
         counts: dict[str, int] = {}
         for row in rows:
             layer = clean_text(row.get("layer_key"))
             counts[layer] = counts.get(layer, 0) + 1
         rule_stats = {"total": total, "layers": [{"layerKey": key, "count": value} for key, value in sorted(counts.items())]}
-    execution_rows, execution_total = repo.list_execution_logs(plan_id, {"limit": 1, "offset": 0}) if hasattr(repo, "list_execution_logs") else ([], 0)
+    execution_rows, execution_total = (
+        _optional_group_ops_detail(([], 0), lambda: repo.list_execution_logs(plan_id, {"limit": 1, "offset": 0}))
+        if hasattr(repo, "list_execution_logs")
+        else ([], 0)
+    )
     result_rows = []
     if segmentation and hasattr(repo, "list_audience_rule_results"):
-        result_rows = repo.list_audience_rule_results(
-            clean_text(segmentation.get("rule_key")),
-            int(segmentation.get("rule_version") or 0),
-            plan_id,
-            {"limit": 10000},
+        result_rows = _optional_group_ops_detail(
+            ([], 0),
+            lambda: repo.list_audience_rule_results(
+                clean_text(segmentation.get("rule_key")),
+                int(segmentation.get("rule_version") or 0),
+                plan_id,
+                {"limit": 10000},
+            ),
         )[0]
     webhook_key = clean_text(plan.get("webhook_key"))
     payload = {
@@ -213,6 +224,13 @@ def _plan_public_payload(repo: GroupOpsRepository, plan: dict[str, Any]) -> dict
         payload["webhook"]["token"] = clean_text(plan.get("plaintext_token"))
         payload["webhook"]["tokenStatus"] = "generated"
     return payload
+
+
+def _optional_group_ops_detail(default: Any, getter: Any) -> Any:
+    try:
+        return getter()
+    except RepositoryProviderError:
+        return default
 
 
 def _queue_count() -> int:
@@ -528,6 +546,64 @@ def _group_sync_blocked_response(
     }
 
 
+def _merge_group_sync_items(groups: list[dict[str, Any]], extra_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_chat_id: dict[str, dict[str, Any]] = {}
+    for group in [*groups, *extra_groups]:
+        chat_id = clean_text(group.get("chat_id"))
+        if not chat_id:
+            continue
+        by_chat_id[chat_id] = group
+    return list(by_chat_id.values())
+
+
+def _refresh_admin_candidate_groups(
+    *,
+    repo: GroupOpsRepository,
+    adapter: WeComGroupAssetAdapterContract,
+    owner_userid: str,
+    known_groups: list[dict[str, Any]],
+    limit: int,
+) -> tuple[list[dict[str, Any]], int, int, list[str]]:
+    candidate_loader = getattr(repo, "list_admin_candidate_group_assets", None)
+    if not callable(candidate_loader):
+        return [], 0, 0, []
+    known_chat_ids = {clean_text(group.get("chat_id")) for group in known_groups if clean_text(group.get("chat_id"))}
+    refreshed_groups: list[dict[str, Any]] = []
+    attempted_count = 0
+    skipped_count = 0
+    warnings: list[str] = []
+    for candidate in candidate_loader(owner_userid, limit=limit):
+        chat_id = clean_text(candidate.get("chat_id"))
+        if not chat_id or chat_id in known_chat_ids:
+            continue
+        attempted_count += 1
+        try:
+            detail = adapter.get_group_chat(chat_id=chat_id, owner_userid=owner_userid)
+        except TypeError:
+            detail = adapter.get_group_chat(chat_id=chat_id)
+        except Exception as exc:
+            skipped_count += 1
+            warnings.append(f"skipped_admin_candidate_refresh={chat_id}: {exc}")
+            continue
+        if not detail.get("ok") or not detail.get("group"):
+            skipped_count += 1
+            message = clean_text(detail.get("error_message")) or clean_text(detail.get("error_code")) or "not_found"
+            warnings.append(f"skipped_admin_candidate_refresh={chat_id}: {message}")
+            continue
+        normalized = normalize_group_snapshots([dict(detail["group"])])
+        if not normalized:
+            skipped_count += 1
+            warnings.append(f"skipped_admin_candidate_refresh={chat_id}: invalid group detail")
+            continue
+        group = normalized[0]
+        if clean_text(group.get("owner_userid")) == owner_userid:
+            continue
+        if group_manageable_by_userid(group, owner_userid):
+            refreshed_groups.append(group)
+            known_chat_ids.add(chat_id)
+    return refreshed_groups, attempted_count, skipped_count, warnings
+
+
 class PreviewGroupOpsOwnerGroupsSyncCommand:
     def __init__(self, repo: GroupOpsRepository | None = None, sync_adapter: WeComGroupAssetAdapterContract | None = None) -> None:
         self._repo = repo
@@ -544,7 +620,25 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
         result = adapter.list_group_chats(owner_userid=owner, limit=clamp_limit(request.limit, default=100), cursor=request.cursor)
         if not result.get("ok"):
             return _group_sync_blocked_response(owner_userid=owner, result=result, repo=repo)
+        sync_limit = clamp_limit(request.limit, default=100)
         groups = normalize_group_snapshots(list(result.get("groups") or []))
+        extra_groups = normalize_group_snapshots(repo.list_admin_group_assets(owner))
+        refreshed_groups, refreshed_attempted_count, refreshed_skipped_count, refresh_warnings = _refresh_admin_candidate_groups(
+            repo=repo,
+            adapter=adapter,
+            owner_userid=owner,
+            known_groups=[*groups, *extra_groups],
+            limit=sync_limit,
+        )
+        groups = _merge_group_sync_items(groups, [*extra_groups, *refreshed_groups])
+        warnings = [clean_text(item) for item in list(result.get("warnings") or []) if clean_text(item)]
+        if extra_groups:
+            warnings.append(f"included_admin_groups_from_local_cache={len(extra_groups)}")
+        if refreshed_groups:
+            warnings.append(f"included_admin_groups_from_refreshed_candidates={len(refreshed_groups)}")
+        if refreshed_attempted_count:
+            warnings.append(f"refreshed_admin_group_candidates={refreshed_attempted_count}")
+        warnings.extend(refresh_warnings)
         return _response(
             {
                 "owner_userid": owner,
@@ -556,9 +650,9 @@ class PreviewGroupOpsOwnerGroupsSyncCommand:
                 "synced_count": 0,
                 "new_count": 0,
                 "updated_count": 0,
-                "skipped_count": int(result.get("skipped_count") or 0),
+                "skipped_count": int(result.get("skipped_count") or 0) + refreshed_skipped_count,
                 "next_cursor": clean_text(result.get("next_cursor")),
-                "warnings": [clean_text(item) for item in list(result.get("warnings") or []) if clean_text(item)],
+                "warnings": warnings,
                 "side_effect_safety": group_ops_side_effect_safety(),
             },
             repo=repo,

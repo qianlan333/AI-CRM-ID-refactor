@@ -42,13 +42,13 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Production mode reads PostgreSQL through the customer legacy production facade; fixture/local_contract is not allowed in production.
+    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable.
   - route_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
@@ -107,8 +107,8 @@ routes:
   - route_pattern: /admin/jobs
     methods: [GET]
     capability_owner: aicrm_next.admin_jobs
-    current_runtime_owner: ai_crm_next
-    production_behavior: native_sync_jobs_console
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -118,8 +118,8 @@ routes:
   - route_pattern: /admin/broadcast-jobs
     methods: [GET]
     capability_owner: aicrm_next.admin_jobs
-    current_runtime_owner: ai_crm_next
-    production_behavior: native_broadcast_queue_console
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -196,57 +196,145 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact router; production reads through legacy customer facade when production_data_ready().
+    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable.
   - route_pattern: /api/customers/{external_userid}
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact customer detail route with production facade.
+    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable.
   - route_pattern: /api/customers/{external_userid}/timeline
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact customer timeline route with production facade.
+    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable.
   - route_pattern: /api/messages/{external_userid}/recent
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
-    production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
-    notes: Next exact recent-message read route; broader /api/messages/* production_compat fallback remains documented below.
+    notes: Customer read legacy facade removed for recent messages; Next read model is the only production read path. Missing production read model data returns production_unavailable. /api/messages* broad wildcard has been removed from production_compat and must not be used as fallback.
+  - route_pattern: /api/messages/{external_userid}
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Exact Next archive message list route added for /api/messages* fallback narrowing; missing production message archive data returns production_unavailable.
+  - route_pattern: /api/messages/search
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Exact Next archive message search route added for /api/messages* fallback narrowing; missing production message archive data returns production_unavailable.
+  - route_pattern: /api/messages/archive
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response for historical archive list path; no legacy forwarding and no external side effect.
+  - route_pattern: /api/messages/{external_userid}/archive
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response; replacement is /api/messages/{external_userid}.
+  - route_pattern: /api/messages/{external_userid}/history
+    methods: [GET]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_messages_exact_routes.py
+    notes: Explicit deprecated response; replacement is /api/messages/{external_userid}.
+  - route_pattern: /api/messages/send
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical message send route; no real WeCom send is executed.
+  - route_pattern: /api/messages/broadcast
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical broadcast route; no real WeCom send is executed.
+  - route_pattern: /api/messages/archive/sync
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tests/test_messages_no_real_side_effects.py
+    notes: Explicit blocked response for historical archive sync route; sync jobs are outside this replacement pass.
   - route_pattern: /api/messages*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
-    capability_owner: aicrm_next.integration_gateway
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.message_archive
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: production_compat catch-all for legacy message/archive surfaces until exact Next replacement exists.
+    delete_ready: true
+    checker: tests/test_messages_registry_lifecycle.py
+    notes: Broad wildcard removed from production_compat after exact route validation. Exact Next routes own known message surfaces; send/broadcast/sync remain blocked; no real external calls enabled.
   - route_pattern: /api/admin/questionnaires*
     methods: [GET, POST, PUT, DELETE]
     capability_owner: aicrm_next.questionnaire
@@ -481,8 +569,8 @@ routes:
   - route_pattern: /api/admin/automation-conversion/task-groups*
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: aicrm_next.automation_engine
-    production_behavior: next_native_exact_route
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -515,7 +603,7 @@ routes:
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
     current_runtime_owner: next
-    production_behavior: next_native_verified
+    production_behavior: next_exact
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
@@ -828,8 +916,19 @@ routes:
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly binding status owner; production data failures return degraded/error.
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next binding status route; production data failures return controlled production_unavailable; readonly legacy fallback is not allowed.
+  - route_pattern: /api/sidebar/binding-status
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.identity_contact
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next alias for contact binding status; readonly legacy fallback is not allowed and no real external call is enabled.
   - route_pattern: /api/sidebar/customer-context
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -838,9 +937,31 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_sidebar_profile_next_owner_readiness.py
-    notes: Next exact readonly customer context owner; production data failures return degraded/error.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next customer context route on the customer read model; production data failures return controlled production_unavailable; readonly legacy fallback is not allowed.
+  - route_pattern: /api/sidebar/profile
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next profile route backed by customer read model; readonly legacy fallback is not allowed.
+  - route_pattern: /api/sidebar/tags
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next tags route backed by customer tag/read projection; readonly legacy fallback is not allowed.
   - route_pattern: /api/admin/customers/profile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -865,6 +986,17 @@ routes:
     notes: Next exact readonly customer profile tags owner; broad profile subpath production_compat fallback is removed.
   - route_pattern: /api/sidebar/bind-mobile
     methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves mobile binding to Next CommandBus with AuditLedger. production_compat rollback retained during validation; no real external call is enabled.
+  - route_pattern: /api/sidebar/jssdk-config
+    methods: [GET, HEAD, OPTIONS]
     capability_owner: aicrm_next.frontend_compat
     current_runtime_owner: production_compat
     production_behavior: legacy_forward
@@ -873,18 +1005,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy mobile binding write only.
-  - route_pattern: /api/sidebar/jssdk-config
-    methods: [GET, HEAD, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
-    fixture_allowed_in_production: false
-    external_side_effect_risk: external_read
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for the real WeCom JSSDK signature read needed by the customer sidebar to resolve external_userid.
+    notes: Out of scope for sidebar readonly group 4 because JSSDK needs external signing semantics; narrow production_compat fallback retained.
   - route_pattern: /api/sidebar/lead-pool/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -893,20 +1014,20 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns the sidebar lead-pool status read; upsert writes remain a narrow production_compat fallback.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next lead-pool status route on customer read model projections; readonly legacy fallback is not allowed; upsert writes remain out of scope.
   - route_pattern: /api/sidebar/lead-pool/upsert-class-term
     methods: [POST, OPTIONS]
-    capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy lead-pool class-term writes only.
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves class-term status mutation to Next CommandBus with AuditLedger. production_compat rollback retained during validation; no real external call is enabled.
   - route_pattern: /api/sidebar/signup-tags/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -915,31 +1036,64 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns the sidebar signup-tag status read; mark writes remain a narrow production_compat fallback.
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next signup-tag status route on customer read model projections; readonly legacy fallback is not allowed; mark writes remain out of scope.
   - route_pattern: /api/sidebar/signup-tags/mark
     methods: [POST, OPTIONS]
-    capability_owner: aicrm_next.customer_read_model
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy signup-tag mark writes only.
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves signup tag marker to Next CommandBus and records a real_blocked SideEffectPlan for WeCom tag update. production_compat rollback retained during validation; no real external call is enabled.
   - route_pattern: /api/sidebar/marketing-status
     methods: [GET, HEAD]
-    capability_owner: aicrm_next.automation_engine
+    capability_owner: aicrm_next.customer_read_model
     current_runtime_owner: next
     production_behavior: readonly_facade
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    notes: Sidebar readonly group 4 closeout locked this exact Next marketing status route on customer read model marketing projections; readonly legacy fallback is not allowed; marketing state writes remain out of scope.
+  - route_pattern: /api/sidebar/marketing-status/set-followup-segment
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Next owns sidebar marketing status reads; marketing state writes remain narrow production_compat fallbacks.
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves followup segment mutation to Next CommandBus and records a real_blocked SideEffectPlan for automation runtime. production_compat rollback retained during validation; no real external call is enabled.
+  - route_pattern: /api/sidebar/marketing-status/mark-enrolled
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves enrollment marker to Next CommandBus with AuditLedger. production_compat rollback retained during validation; no real external call is enabled.
+  - route_pattern: /api/sidebar/marketing-status/unmark-enrolled
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves enrollment removal marker to Next CommandBus with AuditLedger. production_compat rollback retained during validation; no real external call is enabled.
   - route_pattern: /api/sidebar/marketing-status*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -950,7 +1104,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for legacy marketing status write routes only.
+    notes: Out of scope for sidebar readonly group 4; retained only as production_compat rollback catchall for legacy marketing status write routes while exact sidebar write group 5 routes validate in Next CommandBus.
   - route_pattern: /api/sidebar/v2*
     methods: [GET, HEAD]
     capability_owner: aicrm_next.customer_read_model
@@ -964,26 +1118,26 @@ routes:
     notes: Next owns sidebar v2 read-only workbench/questionnaire/material/product/order surfaces; workbench/orders use read-only variants and do not auto-bind mobile.
   - route_pattern: /api/sidebar/v2/profile
     methods: [PUT, OPTIONS]
-    capability_owner: aicrm_next.customer_read_model
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for sidebar v2 profile writes only.
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 moves v2 profile mutation to Next CommandBus and records a real_blocked SideEffectPlan for WeCom profile update. production_compat rollback retained during validation; no real external call is enabled.
   - route_pattern: /api/sidebar/v2/materials/send
     methods: [POST, OPTIONS]
-    capability_owner: aicrm_next.customer_read_model
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.sidebar_write
+    current_runtime_owner: next
+    production_behavior: next_command
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Narrow production_compat fallback retained for sidebar v2 material send writes only.
+    checker: tests/test_sidebar_write_registry_lifecycle.py
+    notes: Out of scope for sidebar readonly group 4; sidebar write group 5 records material send as SideEffectPlan only with adapter real_blocked. production_compat rollback retained during validation; no real WeCom material send is enabled.
   - route_pattern: /wecom/external-contact/callback
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.channel_entry
@@ -1028,6 +1182,17 @@ routes:
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
     notes: Next-native channel runtime diagnosis by channel id.
+  - route_pattern: /api/admin/channels/{channel_id}/qrcode/generate
+    methods: [POST]
+    capability_owner: aicrm_next.channel_entry
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_channel_entry_next_owner.py
+    notes: Next-native WeCom contact_way QR generation; no fake QR is written when real calls are disabled or config is missing.
   - route_pattern: /api/admin/channels/repair-entry
     methods: [POST]
     capability_owner: aicrm_next.channel_entry
@@ -1039,6 +1204,17 @@ routes:
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
     notes: Next-native channel entry repair; welcome resend is not faked when WelcomeCode is unavailable.
+  - route_pattern: /api/admin/hxc-dashboard*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: HXC dashboard API production_compat fallback remains documented while Next-native reads continue to be migrated.
   - route_pattern: /mcp
     methods: [GET, POST]
     capability_owner: aicrm_next.integration_gateway

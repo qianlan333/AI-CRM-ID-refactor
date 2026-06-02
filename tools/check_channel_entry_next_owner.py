@@ -49,14 +49,19 @@ def main() -> int:
     channels_api = _read("aicrm_next/automation_engine/channels_api.py")
     if "historical_scene_values" in channels_api and "wecom_external_contact_event_logs e" in channels_api and "automation_member m" in channels_api:
         blockers.append("channels_api still uses event_logs + automation_member as historical_scene_values primary source")
-    if "upsert_channel_scene_alias" not in channels_api:
-        blockers.append("channel save/update does not maintain automation_channel_scene_alias")
+    if "upsert_channel_scene_alias" in channels_api:
+        blockers.append("channel save/update still mutates automation_channel_scene_alias")
+    channel_entry_app = _read("aicrm_next/channel_entry/application.py")
+    channel_entry_repo = _read("aicrm_next/channel_entry/repo.py")
+    if "insert_qrcode_asset" not in channel_entry_app or "automation_channel_qrcode_asset" not in channel_entry_repo:
+        blockers.append("qrcode generate path does not maintain automation_channel_qrcode_asset")
 
     manifest = _read("docs/route_ownership/production_route_ownership_manifest.yaml")
     for route in (
         "/wecom/external-contact/callback",
         "/api/wecom/events",
         "/api/admin/channels/runtime-diagnosis",
+        "/api/admin/channels/{channel_id}/qrcode/generate",
         "/api/admin/channels/repair-entry",
     ):
         if route not in manifest:

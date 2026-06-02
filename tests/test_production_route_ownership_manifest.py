@@ -33,7 +33,7 @@ def test_manifest_checker_passes_current_app_routes() -> None:
     report = checker.build_report()
     assert report["ok"], report["blockers"]
     assert report["production_compat_catch_all_count"] >= 1
-    assert "/api/messages/{path:path}" in report["production_compat_catch_alls"]
+    assert "/api/messages/{path:path}" not in report["production_compat_catch_alls"]
 
 
 def test_mcp_owner_is_next_integration_gateway() -> None:

@@ -4,6 +4,8 @@ import hashlib
 import os
 from typing import Any
 
+from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
+
 from .audit import record_audit_event
 from .wecom_group_contract import Json
 
@@ -237,6 +239,7 @@ def _fake_group_chat_snapshots(owner_userid: str) -> list[dict[str, Any]]:
             "group_name": "体验课 01 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 12,
             "external_member_count": 150,
             "status": "active",
@@ -246,6 +249,7 @@ def _fake_group_chat_snapshots(owner_userid: str) -> list[dict[str, Any]]:
             "group_name": "体验课 02 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 10,
             "external_member_count": 160,
             "status": "active",
@@ -255,6 +259,7 @@ def _fake_group_chat_snapshots(owner_userid: str) -> list[dict[str, Any]]:
             "group_name": "体验课 03 群",
             "owner_userid": "owner_001",
             "owner_name": "王小明",
+            "admin_userids": [],
             "internal_member_count": 9,
             "external_member_count": 176,
             "status": "active",
@@ -264,6 +269,7 @@ def _fake_group_chat_snapshots(owner_userid: str) -> list[dict[str, Any]]:
             "group_name": "成交陪跑 01 群",
             "owner_userid": "owner_002",
             "owner_name": "李小红",
+            "admin_userids": ["admin_001"],
             "internal_member_count": 8,
             "external_member_count": 88,
             "status": "active",
@@ -305,6 +311,7 @@ def _normalize_group_chat_detail(detail: dict[str, Any], *, fallback_owner_useri
         "group_name": str(group_chat.get("name") or group_chat.get("group_name") or group_chat.get("chat_id") or "").strip(),
         "owner_userid": owner_userid,
         "owner_name": str(group_chat.get("owner_name") or owner_userid).strip(),
+        "admin_userids": normalize_group_admin_userids(group_chat.get("admin_list") or group_chat.get("admin_userids")),
         "internal_member_count": internal,
         "external_member_count": external,
         "skipped_member_count": skipped,

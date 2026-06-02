@@ -35,6 +35,7 @@ git switch -c <feature-branch>
 
 - 外网入口：`https://www.youcangogogo.com`
 - systemd 服务：`openclaw-wecom-postgres.service`
+- 商品支付外部推送 worker：`openclaw-external-push-worker.timer` / `openclaw-external-push-worker.service`
 - Nginx 上游：`http://127.0.0.1:5001`
 - 生产代码目录：`/home/ubuntu/极简 crm`
 - 环境变量文件：`/home/ubuntu/.openclaw-wecom-pg.env`
@@ -99,6 +100,13 @@ python3 app.py health
 python3 app.py init-db-legacy
 sudo systemctl restart openclaw-wecom-postgres.service
 curl -sS http://127.0.0.1:5001/health
+sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
+sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable openclaw-external-push-worker.timer
+sudo systemctl restart openclaw-external-push-worker.timer
+sudo systemctl start openclaw-external-push-worker.service
+sudo systemctl status openclaw-external-push-worker.timer --no-pager
 ```
 
 不要在未经审批时修改生产 Nginx、systemd 或 route flag。不要把本地/staging evidence 写成 production canary 已执行。
@@ -110,6 +118,9 @@ curl -sS http://127.0.0.1:5001/health
 - 自动化 due runner 日志：
   - `sudo journalctl -u openclaw-automation-conversion-due-runner.service -f`
   - `sudo systemctl status openclaw-automation-conversion-due-runner.timer --no-pager`
+- 商品支付外部推送日志：
+  - `sudo journalctl -u openclaw-external-push-worker.service -f`
+  - `sudo systemctl status openclaw-external-push-worker.timer --no-pager`
 - Nginx 日志：
   - `/var/log/nginx/access.log`
   - `/var/log/nginx/error.log`

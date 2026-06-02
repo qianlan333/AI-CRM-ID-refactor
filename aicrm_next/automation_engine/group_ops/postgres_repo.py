@@ -18,6 +18,7 @@ from .domain import (
     generate_webhook_key,
     generate_webhook_token,
     hash_webhook_token,
+    normalize_group_admin_userids,
     normalize_plan_payload,
 )
 
@@ -35,6 +36,44 @@ def _json_loads(value: Any, default: Any) -> Any:
         return json.loads(str(value))
     except (TypeError, ValueError):
         return deepcopy(default)
+
+
+def _json_list(value: Any) -> str:
+    return json.dumps(normalize_group_admin_userids(value), ensure_ascii=False, sort_keys=True)
+
+
+def _legacy_group_chat_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    raw_payload = _json_loads(row.get("raw_payload"), {})
+    group_chat = raw_payload.get("group_chat") if isinstance(raw_payload, dict) and isinstance(raw_payload.get("group_chat"), dict) else raw_payload
+    if not isinstance(group_chat, dict):
+        group_chat = {}
+    members = group_chat.get("member_list") if isinstance(group_chat.get("member_list"), list) else []
+    internal_count = 0
+    external_count = 0
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        try:
+            member_type = int(member.get("type") or 0)
+        except (TypeError, ValueError):
+            member_type = 0
+        if member_type == 1 or (member.get("userid") and not member.get("unionid")):
+            internal_count += 1
+        else:
+            external_count += 1
+    if not members:
+        external_count = _int(row.get("member_count"))
+    owner_userid = clean_text(group_chat.get("owner") or group_chat.get("owner_userid") or row.get("owner_userid"))
+    return {
+        "chat_id": clean_text(group_chat.get("chat_id") or row.get("chat_id")),
+        "group_name": clean_text(group_chat.get("name") or group_chat.get("group_name") or row.get("group_name")),
+        "owner_userid": owner_userid,
+        "owner_name": clean_text(group_chat.get("owner_name") or owner_userid),
+        "admin_userids": normalize_group_admin_userids(group_chat.get("admin_list") or group_chat.get("admin_userids")),
+        "internal_member_count": internal_count,
+        "external_member_count": external_count,
+        "status": clean_text(row.get("status") or "active"),
+    }
 
 
 def _as_mapping(row: Any) -> dict[str, Any] | None:
@@ -326,7 +365,8 @@ class PostgresGroupOpsRepository:
         if keyword:
             clauses.append("(LOWER(g.group_name) LIKE :keyword OR LOWER(g.chat_id) LIKE :keyword)")
         if owner_userid:
-            clauses.append("g.owner_userid = :owner_userid")
+            clauses.append("(g.owner_userid = :owner_userid OR g.admin_userids LIKE :admin_userid_pattern)")
+            params["admin_userid_pattern"] = f'%"{owner_userid}"%'
         if bind_status == "bound":
             clauses.append("p.id IS NOT NULL")
         elif bind_status == "unbound":
@@ -349,7 +389,7 @@ class PostgresGroupOpsRepository:
                         f"""
                         SELECT
                             g.chat_id, g.group_name, g.owner_userid, g.owner_name,
-                            g.internal_member_count, g.external_member_count,
+                            g.admin_userids, g.internal_member_count, g.external_member_count,
                             g.synced_at, g.status,
                             p.id AS bound_plan_id, p.plan_name AS plan_name
                         {base}
@@ -411,6 +451,7 @@ class PostgresGroupOpsRepository:
                     "group_name": clean_text(snapshot.get("group_name") or chat_id),
                     "owner_userid": clean_text(snapshot.get("owner_userid")),
                     "owner_name": clean_text(snapshot.get("owner_name") or snapshot.get("owner_userid")),
+                    "admin_userids": _json_list(snapshot.get("admin_userids") or snapshot.get("admin_list")),
                     "internal_member_count": _int(snapshot.get("internal_member_count")),
                     "external_member_count": _int(snapshot.get("external_member_count")),
                     "status": clean_text(snapshot.get("status") or "active"),
@@ -419,12 +460,12 @@ class PostgresGroupOpsRepository:
                     text(
                         """
                         INSERT INTO wecom_group_chat_snapshots (
-                            chat_id, group_name, owner_userid, owner_name,
+                            chat_id, group_name, owner_userid, owner_name, admin_userids,
                             internal_member_count, external_member_count,
                             synced_at, status
                         )
                         VALUES (
-                            :chat_id, :group_name, :owner_userid, :owner_name,
+                            :chat_id, :group_name, :owner_userid, :owner_name, :admin_userids,
                             :internal_member_count, :external_member_count,
                             CURRENT_TIMESTAMP, :status
                         )
@@ -432,6 +473,7 @@ class PostgresGroupOpsRepository:
                             group_name = excluded.group_name,
                             owner_userid = excluded.owner_userid,
                             owner_name = excluded.owner_name,
+                            admin_userids = excluded.admin_userids,
                             internal_member_count = excluded.internal_member_count,
                             external_member_count = excluded.external_member_count,
                             synced_at = CURRENT_TIMESTAMP,
@@ -447,6 +489,76 @@ class PostgresGroupOpsRepository:
                 return self._row_to_group_asset(_as_mapping(saved) or {}), "updated" if existing else "created"
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+
+    def list_admin_group_assets(self, owner_userid: str) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT chat_id, group_name, owner_userid, member_count, status, raw_payload
+                        FROM group_chats
+                        WHERE status = 'active'
+                          AND COALESCE(raw_payload, '') <> ''
+                        ORDER BY group_name ASC, chat_id ASC
+                        """
+                    )
+                ).fetchall()
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+        groups: list[dict[str, Any]] = []
+        for row in rows:
+            group = _legacy_group_chat_snapshot(_as_mapping(row) or {})
+            if not group.get("chat_id") or group.get("owner_userid") == owner:
+                continue
+            if owner in normalize_group_admin_userids(group.get("admin_userids")):
+                groups.append(group)
+        return groups
+
+    def list_admin_candidate_group_assets(self, owner_userid: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        owner = clean_text(owner_userid)
+        if not owner:
+            return []
+        max_items = max(1, min(_int(limit) or 100, 200))
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT chat_id, group_name, owner_userid, member_count, status, raw_payload, updated_at
+                        FROM group_chats
+                        WHERE status = 'active'
+                          AND COALESCE(owner_userid, '') <> :owner_userid
+                          AND COALESCE(raw_payload, '') <> ''
+                        ORDER BY
+                          CASE
+                            WHEN raw_payload LIKE :admin_userid_pattern THEN 0
+                            WHEN raw_payload LIKE :member_userid_pattern THEN 1
+                            ELSE 2
+                          END,
+                          updated_at ASC NULLS FIRST,
+                          group_name ASC,
+                          chat_id ASC
+                        LIMIT :limit
+                        """
+                    ),
+                    {
+                        "owner_userid": owner,
+                        "admin_userid_pattern": f'%"userid": "{owner}"%',
+                        "member_userid_pattern": f'%"userid": "{owner}"%',
+                        "limit": max_items,
+                    },
+                ).fetchall()
+        except SQLAlchemyError as exc:
+            raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
+        return [
+            group
+            for row in rows
+            if (group := _legacy_group_chat_snapshot(_as_mapping(row) or {})).get("chat_id")
+        ]
 
     def list_owners(self) -> list[dict[str, Any]]:
         try:
@@ -466,14 +578,30 @@ class PostgresGroupOpsRepository:
                         """
                     )
                 ).fetchall()
-                return [
-                    {
-                        "userid": clean_text((_as_mapping(row) or {}).get("userid")),
-                        "name": clean_text((_as_mapping(row) or {}).get("name") or (_as_mapping(row) or {}).get("userid")),
-                        "group_count": _int((_as_mapping(row) or {}).get("group_count")),
-                    }
-                    for row in rows
-                ]
+                owners = {}
+                for row in rows:
+                    item = _as_mapping(row) or {}
+                    userid = clean_text(item.get("userid"))
+                    if userid:
+                        owners[userid] = {
+                            "userid": userid,
+                            "name": clean_text(item.get("name") or userid),
+                            "group_count": _int(item.get("group_count")),
+                        }
+                admin_rows = conn.execute(
+                    text(
+                        """
+                        SELECT admin_userids
+                        FROM wecom_group_chat_snapshots
+                        WHERE status = 'active'
+                          AND admin_userids <> '[]'
+                        """
+                    )
+                ).fetchall()
+                for row in admin_rows:
+                    for admin_userid in normalize_group_admin_userids((_as_mapping(row) or {}).get("admin_userids")):
+                        owners.setdefault(admin_userid, {"userid": admin_userid, "name": admin_userid, "group_count": 0})
+                return [owners[userid] for userid in sorted(owners)]
         except SQLAlchemyError as exc:
             raise RepositoryProviderError(f"group ops repository unavailable: {exc}") from exc
 
@@ -1383,6 +1511,7 @@ class PostgresGroupOpsRepository:
             "group_name": clean_text(row.get("group_name")),
             "owner_userid": clean_text(row.get("owner_userid")),
             "owner_name": clean_text(row.get("owner_name")),
+            "admin_userids": normalize_group_admin_userids(row.get("admin_userids")),
             "internal_member_count": _int(row.get("internal_member_count")),
             "external_member_count": _int(row.get("external_member_count")),
             "synced_at": _iso(row.get("synced_at")),
@@ -1396,6 +1525,30 @@ class PostgresGroupOpsRepository:
         if not row:
             return None
         scheduled_time = derive_node_scheduled_time(row) or "20:00"
+        text_content = clean_text(row.get("text_content"))
+        content_package = _json_loads(
+            row.get("content_package_json"),
+            {
+                "content_text": text_content,
+                "image_library_ids": [],
+                "miniprogram_library_ids": [],
+                "attachment_library_ids": [],
+            },
+        )
+        if isinstance(content_package, dict):
+            has_material_ids = any(
+                content_package.get(key)
+                for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids")
+            )
+            if text_content and not clean_text(content_package.get("content_text")) and not has_material_ids:
+                content_package = {**content_package, "content_text": text_content}
+        else:
+            content_package = {
+                "content_text": text_content,
+                "image_library_ids": [],
+                "miniprogram_library_ids": [],
+                "attachment_library_ids": [],
+            }
         return {
             "id": _int(row.get("id")),
             "plan_id": _int(row.get("plan_id")),
@@ -1403,17 +1556,9 @@ class PostgresGroupOpsRepository:
             "scheduled_time": scheduled_time,
             "trigger_time_label": clean_text(row.get("trigger_time_label")),
             "action_title": clean_text(row.get("action_title")),
-            "text_content": clean_text(row.get("text_content")),
+            "text_content": text_content,
             "attachments": _json_loads(row.get("attachments_json"), []),
-            "content_package_json": _json_loads(
-                row.get("content_package_json"),
-                {
-                    "content_text": clean_text(row.get("text_content")),
-                    "image_library_ids": [],
-                    "miniprogram_library_ids": [],
-                    "attachment_library_ids": [],
-                },
-            ),
+            "content_package_json": content_package,
             "sort_order": _int(row.get("sort_order")),
             "status": clean_text(row.get("status")),
             "created_at": _iso(row.get("created_at")),

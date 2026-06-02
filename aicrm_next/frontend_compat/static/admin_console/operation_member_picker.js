@@ -19,6 +19,8 @@
     debounceTimer: null,
     errorMessage: "",
     escapeBound: false,
+    scope: "",
+    pageSize: "",
   };
 
   function memberLabel(member) {
@@ -259,6 +261,14 @@
     return String(modal.querySelector("[data-operation-member-search]")?.value || "").trim();
   }
 
+  function scopedUrl(q) {
+    const url = new URL(apiUrl, window.location.origin);
+    if (q) url.searchParams.set("q", q);
+    if (state.scope) url.searchParams.set("scope", state.scope);
+    if (state.pageSize) url.searchParams.set("page_size", state.pageSize);
+    return url;
+  }
+
   function renderEmpty(text) {
     return `<div class="operation-member-picker__empty">${escapeHtml(text)}</div>`;
   }
@@ -305,9 +315,8 @@
     state.loading = true;
     state.errorMessage = "";
     render();
-    const url = new URL(apiUrl, window.location.origin);
     const q = currentQuery();
-    if (q) url.searchParams.set("q", q);
+    const url = scopedUrl(q);
     try {
       const response = await fetch(url.toString(), { headers: { Accept: "application/json" }, credentials: "same-origin" });
       const data = await response.json().catch(() => ({}));
@@ -350,6 +359,8 @@
   async function open(options = {}) {
     const modal = ensureModal();
     const value = String(options.value || options.selectedUserId || "").trim();
+    state.scope = String(options.scope || "").trim();
+    state.pageSize = String(options.page_size || options.pageSize || "").trim();
     state.confirmed = options.selectedMember || (value ? { user_id: value, display_name: options.selectedLabel || value, avatar_url: "" } : null);
     state.selected = state.confirmed;
     state.onSelect = options.onSelect || options.onConfirm || null;
@@ -363,11 +374,16 @@
     if (search) search.focus();
   }
 
-  async function resolve(userId) {
+  async function resolve(userId, options = {}) {
     const normalized = String(userId || "").trim();
     if (!normalized) return null;
-    const url = new URL(apiUrl, window.location.origin);
-    url.searchParams.set("q", normalized);
+    const previousScope = state.scope;
+    const previousPageSize = state.pageSize;
+    state.scope = String(options.scope || "").trim();
+    state.pageSize = String(options.page_size || options.pageSize || "").trim();
+    const url = scopedUrl(normalized);
+    state.scope = previousScope;
+    state.pageSize = previousPageSize;
     const response = await fetch(url.toString(), { headers: { Accept: "application/json" }, credentials: "same-origin" });
     const data = await response.json().catch(() => ({}));
     return (data.items || []).find((item) => item.user_id === normalized) || (data.items || [])[0] || null;

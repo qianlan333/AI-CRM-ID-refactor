@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
+from decimal import Decimal
+import hashlib
 import json
 from typing import Any
+from uuid import UUID
 
 from aicrm_next.shared.runtime import raw_database_url
 
@@ -24,10 +28,34 @@ def _connect():
     return psycopg.connect(url, row_factory=dict_row)
 
 
+def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(json_safe(value if value is not None else {}), ensure_ascii=False)
+
+
 def _json(value: Any) -> Any:
     from psycopg.types.json import Jsonb
 
-    return Jsonb(value if value is not None else {})
+    return Jsonb(json_safe(value if value is not None else {}), dumps=_json_dumps)
 
 
 def find_channel_by_scene_value(scene_value: str) -> dict[str, Any] | None:
@@ -71,6 +99,34 @@ def find_channel_by_scene_alias(corp_id: str, scene_value: str) -> dict[str, Any
         return dict(row) if row else None
 
 
+def find_confirmed_channel_by_scene_alias(corp_id: str, scene_value: str) -> dict[str, Any] | None:
+    allowed_sources = ("next_create_contact_way", "legacy_import_confirmed", "admin_repair_confirmed")
+    sql = """
+        SELECT c.*,
+               a.id AS scene_alias_id,
+               a.corp_id AS scene_alias_corp_id,
+               a.scene_value AS scene_alias_value,
+               a.status AS scene_alias_status,
+               a.source AS scene_alias_source
+        FROM automation_channel_scene_alias a
+        JOIN automation_channel c ON c.id = a.channel_id
+        WHERE a.corp_id = %s
+          AND a.scene_value = %s
+          AND a.status IN ('active', 'retired')
+          AND a.source = ANY(%s)
+        ORDER BY CASE WHEN a.status = 'active' THEN 0 ELSE 1 END, a.updated_at DESC, a.id DESC
+        LIMIT 1
+    """
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, (text(corp_id), text(scene_value), list(allowed_sources)))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        cur.execute(sql, ("", text(scene_value), list(allowed_sources)))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def find_channel_by_historical_scene_value(scene_value: str) -> dict[str, Any] | None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -101,6 +157,204 @@ def find_channel_by_historical_scene_value(scene_value: str) -> dict[str, Any] |
         return dict(row) if row else None
 
 
+def qrcode_asset_hash(qr_url: str) -> str:
+    value = text(qr_url)
+    return hashlib.sha256(value.encode("utf-8")).hexdigest() if value else ""
+
+
+def get_active_qrcode_asset(channel_id: int) -> dict[str, Any] | None:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT *
+            FROM automation_channel_qrcode_asset
+            WHERE channel_id = %s
+              AND status = 'active'
+            ORDER BY generated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(channel_id),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def list_channel_qrcode_assets(channel_id: int, limit: int = 20) -> list[dict[str, Any]]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT *
+            FROM automation_channel_qrcode_asset
+            WHERE channel_id = %s
+            ORDER BY generated_at DESC, id DESC
+            LIMIT %s
+            """,
+            (int(channel_id), max(1, min(int(limit or 20), 100))),
+        )
+        return [dict(row) for row in cur.fetchall() or []]
+
+
+def find_qrcode_asset_by_scene(corp_id: str, scene_value: str) -> dict[str, Any] | None:
+    sql = """
+        SELECT a.*,
+               c.id AS channel_row_id,
+               c.channel_code,
+               c.channel_name,
+               c.channel_type,
+               c.carrier_type,
+               c.scene_value AS channel_scene_value,
+               c.qr_url AS channel_qr_url,
+               c.status AS channel_status,
+               c.owner_staff_id,
+               c.welcome_message,
+               c.welcome_image_library_ids,
+               c.welcome_miniprogram_library_ids,
+               c.welcome_attachment_library_ids,
+               c.entry_tag_id,
+               c.entry_tag_name,
+               c.entry_tag_group_name
+        FROM automation_channel_qrcode_asset a
+        JOIN automation_channel c ON c.id = a.channel_id
+        WHERE a.corp_id = %s
+          AND a.scene_value = %s
+        ORDER BY CASE a.status WHEN 'active' THEN 0 WHEN 'retired' THEN 1 ELSE 2 END,
+                 a.generated_at DESC,
+                 a.id DESC
+        LIMIT 1
+    """
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(sql, (text(corp_id), text(scene_value)))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        cur.execute(sql, ("", text(scene_value)))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def retire_active_qrcode_assets(channel_id: int, *, except_asset_id: int | None = None) -> int:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE automation_channel_qrcode_asset
+            SET status = 'retired',
+                retired_at = COALESCE(retired_at, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE channel_id = %s
+              AND status = 'active'
+              AND (%s IS NULL OR id <> %s)
+            """,
+            (int(channel_id), except_asset_id, except_asset_id),
+        )
+        count = int(cur.rowcount or 0)
+        conn.commit()
+        return count
+
+
+def mark_qrcode_asset_stale(channel_id: int, *, reason: str = "channel_owner_changed") -> int:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE automation_channel_qrcode_asset
+            SET status = 'stale',
+                provider_payload_json = provider_payload_json || %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE channel_id = %s
+              AND status = 'active'
+            """,
+            (_json({"stale_reason": text(reason)}), int(channel_id)),
+        )
+        count = int(cur.rowcount or 0)
+        conn.commit()
+        return count
+
+
+def insert_qrcode_asset(
+    *,
+    channel_id: int,
+    scene_value: str,
+    config_id: str,
+    qr_url: str,
+    corp_id: str = "",
+    provider_name: str = "wecom_contact_way",
+    provider_payload_json: dict[str, Any] | None = None,
+    status: str = "active",
+    generation_source: str = "",
+    created_by: str = "",
+) -> dict[str, Any]:
+    normalized_status = text(status) or "active"
+    if normalized_status not in {"active", "retired", "revoked", "stale", "quarantined"}:
+        normalized_status = "active"
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO automation_channel_qrcode_asset (
+                corp_id, channel_id, scene_value, config_id, qr_url, qr_url_hash,
+                provider_name, provider_payload_json, status, generation_source,
+                created_by, generated_at, retired_at, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
+                    CASE WHEN %s = 'retired' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (corp_id, scene_value) DO UPDATE
+            SET config_id = CASE WHEN EXCLUDED.config_id <> '' THEN EXCLUDED.config_id ELSE automation_channel_qrcode_asset.config_id END,
+                qr_url = CASE WHEN EXCLUDED.qr_url <> '' THEN EXCLUDED.qr_url ELSE automation_channel_qrcode_asset.qr_url END,
+                qr_url_hash = CASE WHEN EXCLUDED.qr_url_hash <> '' THEN EXCLUDED.qr_url_hash ELSE automation_channel_qrcode_asset.qr_url_hash END,
+                provider_name = EXCLUDED.provider_name,
+                provider_payload_json = EXCLUDED.provider_payload_json,
+                status = EXCLUDED.status,
+                generation_source = CASE WHEN EXCLUDED.generation_source <> '' THEN EXCLUDED.generation_source ELSE automation_channel_qrcode_asset.generation_source END,
+                created_by = CASE WHEN EXCLUDED.created_by <> '' THEN EXCLUDED.created_by ELSE automation_channel_qrcode_asset.created_by END,
+                retired_at = CASE WHEN EXCLUDED.status = 'retired' AND automation_channel_qrcode_asset.retired_at IS NULL THEN CURRENT_TIMESTAMP WHEN EXCLUDED.status <> 'retired' THEN NULL ELSE automation_channel_qrcode_asset.retired_at END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE automation_channel_qrcode_asset.channel_id = EXCLUDED.channel_id
+            RETURNING *
+            """,
+            (
+                text(corp_id),
+                int(channel_id),
+                text(scene_value),
+                text(config_id),
+                text(qr_url),
+                qrcode_asset_hash(qr_url),
+                text(provider_name) or "wecom_contact_way",
+                _json(provider_payload_json or {}),
+                normalized_status,
+                text(generation_source),
+                text(created_by),
+                normalized_status,
+            ),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                """
+                SELECT *, TRUE AS conflict, 'qrcode_asset_scene_channel_conflict' AS reason
+                FROM automation_channel_qrcode_asset
+                WHERE corp_id = %s AND scene_value = %s
+                LIMIT 1
+                """,
+                (text(corp_id), text(scene_value)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else {}
+
+
+def touch_qrcode_asset_callback(asset_id: int) -> None:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE automation_channel_qrcode_asset
+            SET last_callback_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (int(asset_id),),
+        )
+        conn.commit()
+
+
 def upsert_channel_scene_alias(
     *,
     channel_id: int,
@@ -117,42 +371,72 @@ def upsert_channel_scene_alias(
     if normalized_status not in {"active", "retired", "revoked"}:
         normalized_status = "active"
     with _connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO automation_channel_scene_alias (
-                corp_id, channel_id, scene_value, config_id, qr_url, carrier_type,
-                provider_name, status, source, first_seen_at, last_seen_at,
-                retired_at, created_at, updated_at
+        cur.execute("SELECT * FROM automation_channel_scene_alias WHERE corp_id = %s AND scene_value = %s FOR UPDATE", (text(corp_id), text(scene_value)))
+        existing = cur.fetchone()
+        if existing and int(existing.get("channel_id") or 0) != int(channel_id):
+            return {
+                **dict(existing),
+                "conflict": True,
+                "reason": "scene_alias_channel_conflict",
+                "attempted_channel_id": int(channel_id),
+            }
+        if existing:
+            cur.execute(
+                """
+                UPDATE automation_channel_scene_alias
+                SET config_id = CASE WHEN %s <> '' THEN %s ELSE config_id END,
+                    qr_url = CASE WHEN %s <> '' THEN %s ELSE qr_url END,
+                    carrier_type = %s,
+                    provider_name = %s,
+                    status = CASE WHEN status = 'revoked' THEN status ELSE %s END,
+                    source = CASE WHEN %s <> '' THEN %s ELSE source END,
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    retired_at = CASE WHEN %s = 'retired' AND retired_at IS NULL THEN CURRENT_TIMESTAMP WHEN %s <> 'retired' THEN NULL ELSE retired_at END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    text(config_id),
+                    text(config_id),
+                    text(qr_url),
+                    text(qr_url),
+                    text(carrier_type) or "qrcode",
+                    text(provider_name) or "wecom_contact_way",
+                    normalized_status,
+                    text(source),
+                    text(source),
+                    normalized_status,
+                    normalized_status,
+                    int(existing["id"]),
+                ),
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-                CASE WHEN %s = 'retired' THEN CURRENT_TIMESTAMP ELSE NULL END,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (corp_id, scene_value) DO UPDATE
-            SET channel_id = EXCLUDED.channel_id,
-                config_id = CASE WHEN EXCLUDED.config_id <> '' THEN EXCLUDED.config_id ELSE automation_channel_scene_alias.config_id END,
-                qr_url = CASE WHEN EXCLUDED.qr_url <> '' THEN EXCLUDED.qr_url ELSE automation_channel_scene_alias.qr_url END,
-                carrier_type = EXCLUDED.carrier_type,
-                provider_name = EXCLUDED.provider_name,
-                status = CASE WHEN automation_channel_scene_alias.status = 'revoked' THEN automation_channel_scene_alias.status ELSE EXCLUDED.status END,
-                source = CASE WHEN EXCLUDED.source <> '' THEN EXCLUDED.source ELSE automation_channel_scene_alias.source END,
-                last_seen_at = CURRENT_TIMESTAMP,
-                retired_at = CASE WHEN EXCLUDED.status = 'retired' AND automation_channel_scene_alias.retired_at IS NULL THEN CURRENT_TIMESTAMP WHEN EXCLUDED.status <> 'retired' THEN NULL ELSE automation_channel_scene_alias.retired_at END,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING *
-            """,
-            (
-                text(corp_id),
-                int(channel_id),
-                text(scene_value),
-                text(config_id),
-                text(qr_url),
-                text(carrier_type) or "qrcode",
-                text(provider_name) or "wecom_contact_way",
-                normalized_status,
-                text(source),
-                normalized_status,
-            ),
-        )
+        else:
+            cur.execute(
+                """
+                INSERT INTO automation_channel_scene_alias (
+                    corp_id, channel_id, scene_value, config_id, qr_url, carrier_type,
+                    provider_name, status, source, first_seen_at, last_seen_at,
+                    retired_at, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    CASE WHEN %s = 'retired' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING *
+                """,
+                (
+                    text(corp_id),
+                    int(channel_id),
+                    text(scene_value),
+                    text(config_id),
+                    text(qr_url),
+                    text(carrier_type) or "qrcode",
+                    text(provider_name) or "wecom_contact_way",
+                    normalized_status,
+                    text(source),
+                    normalized_status,
+                ),
+            )
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else {}
@@ -233,6 +517,27 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
         cur.execute("SELECT * FROM automation_channel WHERE id = %s LIMIT 1", (int(channel_id),))
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+def update_channel_qrcode(*, channel_id: int, scene_value: str, qr_url: str, config_id: str = "") -> dict[str, Any]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE automation_channel
+            SET scene_value = %s,
+                qr_url = %s,
+                qr_ticket = %s,
+                carrier_type = CASE WHEN carrier_type = '' THEN 'qrcode' ELSE carrier_type END,
+                channel_type = CASE WHEN channel_type = '' THEN 'qrcode' ELSE channel_type END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING *
+            """,
+            (text(scene_value), text(qr_url), text(config_id), int(channel_id)),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else {}
 
 
 def upsert_channel_contact(*, channel_id: int, external_contact_id: str, owner_staff_id: str, source_payload: dict[str, Any]) -> dict[str, Any]:
@@ -532,4 +837,3 @@ def decode_payload_json(value: Any) -> dict[str, Any]:
         except ValueError:
             return {}
     return {}
-

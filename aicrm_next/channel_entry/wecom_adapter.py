@@ -10,43 +10,17 @@ from .domain import text
 
 
 class WeComAdapterBlocked(RuntimeError):
-    pass
+    def __init__(self, reason: str, *, missing_config: list[str] | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.missing_config = list(missing_config or [])
 
 
-class WeComAPIError(RuntimeError):
-    pass
-
-
-def _bool_env(name: str) -> bool:
-    return text(os.getenv(name)).lower() in {"1", "true", "yes", "on"}
-
-
-def _runtime_env() -> str:
-    return text(os.getenv("AICRM_NEXT_ENV") or os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV")).lower()
-
-
-def _wecom_config() -> dict[str, str]:
-    return {
-        "corp_id": text(os.getenv("WECOM_CORP_ID")),
-        "secret": text(os.getenv("WECOM_CONTACT_SECRET") or os.getenv("WECOM_SECRET")),
-        "api_base": text(os.getenv("WECOM_API_BASE")) or "https://qyapi.weixin.qq.com",
-        "callback_token": text(os.getenv("WECOM_CALLBACK_TOKEN")),
-        "callback_aes_key": text(os.getenv("WECOM_CALLBACK_AES_KEY")),
-    }
-
-
-def missing_wecom_config() -> list[str]:
-    config = _wecom_config()
-    missing = []
-    if not config["corp_id"]:
-        missing.append("WECOM_CORP_ID")
-    if not config["secret"]:
-        missing.append("WECOM_CONTACT_SECRET")
-    if not config["callback_token"]:
-        missing.append("WECOM_CALLBACK_TOKEN")
-    if not config["callback_aes_key"]:
-        missing.append("WECOM_CALLBACK_AES_KEY")
-    return missing
+class WeComApiError(RuntimeError):
+    def __init__(self, message: str, *, payload: dict[str, Any] | None = None) -> None:
+        super().__init__("wecom_api_error")
+        self.message = message
+        self.payload = dict(payload or {})
 
 
 class GuardedWeComAdapter:
@@ -56,8 +30,23 @@ class GuardedWeComAdapter:
     inject an object with the same methods.
     """
 
+    def __init__(
+        self,
+        *,
+        welcome_reason: str = "wecom_welcome_external_call_blocked",
+        tag_reason: str = "wecom_tag_external_call_blocked",
+        contact_way_reason: str = "wecom_contact_way_external_call_blocked",
+        detail_reason: str = "wecom_contact_detail_external_call_blocked",
+        missing_config: list[str] | None = None,
+    ) -> None:
+        self.welcome_reason = welcome_reason
+        self.tag_reason = tag_reason
+        self.contact_way_reason = contact_way_reason
+        self.detail_reason = detail_reason
+        self.missing_config = list(missing_config or [])
+
     def send_welcome_msg(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raise WeComAdapterBlocked("wecom_welcome_external_call_blocked")
+        raise WeComAdapterBlocked(self.welcome_reason, missing_config=self.missing_config)
 
     def mark_external_contact_tags(
         self,
@@ -67,88 +56,89 @@ class GuardedWeComAdapter:
         add_tags: list[str],
         remove_tags: list[str],
     ) -> dict[str, Any]:
-        raise WeComAdapterBlocked("wecom_tag_external_call_blocked")
-
-    def get_external_contact_detail(self, external_userid: str) -> dict[str, Any]:
-        raise WeComAdapterBlocked(f"wecom_contact_detail_external_call_blocked:{text(external_userid)}")
+        raise WeComAdapterBlocked(self.tag_reason, missing_config=self.missing_config)
 
     def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
-        reason = describe_wecom_adapter()["real_wecom_adapter_reason"]
-        if reason == "missing_config":
-            raise WeComAdapterBlocked("missing_wecom_config")
-        if reason == "real_calls_disabled":
-            raise WeComAdapterBlocked("wecom_real_calls_disabled")
-        raise WeComAdapterBlocked("wecom_create_contact_way_external_call_blocked")
+        raise WeComAdapterBlocked(self.contact_way_reason, missing_config=self.missing_config)
+
+    def get_external_contact_detail(self, external_userid: str) -> dict[str, Any]:
+        raise WeComAdapterBlocked(self.detail_reason, missing_config=self.missing_config)
 
 
 class ProductionWeComAdapter:
-    def __init__(self, *, http: Any = requests, timeout: float = 8.0) -> None:
-        config = _wecom_config()
-        self.corp_id = config["corp_id"]
-        self.secret = config["secret"]
-        self.api_base = config["api_base"].rstrip("/")
-        self.timeout = timeout
-        self._http = http
+    def __init__(
+        self,
+        *,
+        corp_id: str | None = None,
+        secret: str | None = None,
+        api_base: str | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        self.corp_id = text(corp_id or os.getenv("WECOM_CORP_ID"))
+        self.secret = text(secret or os.getenv("WECOM_CONTACT_SECRET") or os.getenv("WECOM_SECRET"))
+        self.api_base = text(api_base or os.getenv("WECOM_API_BASE") or "https://qyapi.weixin.qq.com").rstrip("/")
+        self.timeout = float(timeout or os.getenv("WECOM_TIMEOUT_SECONDS") or 15)
         self._access_token = ""
-        self._access_token_expires_at = 0.0
-        missing = missing_wecom_config()
-        if missing:
-            raise WeComAdapterBlocked("missing_wecom_config")
+        self._token_expires_at = 0.0
 
-    def _get_access_token(self) -> str:
-        now = time.time()
-        if self._access_token and now < self._access_token_expires_at:
+    def get_access_token(self) -> str:
+        if self._access_token and self._token_expires_at > time.time():
             return self._access_token
-        response = self._http.get(
-            f"{self.api_base}/cgi-bin/gettoken",
+        payload = self._request_without_token(
+            "GET",
+            "/cgi-bin/gettoken",
             params={"corpid": self.corp_id, "corpsecret": self.secret},
-            timeout=self.timeout,
         )
-        response.raise_for_status()
-        payload = response.json()
         if int(payload.get("errcode") or 0) != 0:
-            raise WeComAPIError("wecom_api_error")
+            raise WeComApiError("gettoken failed", payload=payload)
         token = text(payload.get("access_token"))
         if not token:
-            raise WeComAPIError("wecom_api_error")
+            raise WeComApiError("gettoken missing access_token", payload=payload)
         expires_in = int(payload.get("expires_in") or 7200)
         self._access_token = token
-        self._access_token_expires_at = now + max(60, expires_in - 300)
+        self._token_expires_at = time.time() + max(60, expires_in - 60)
         return token
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _request_without_token(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
-            response = self._http.post(
+            response = requests.request(
+                method,
                 f"{self.api_base}{path}",
-                params={"access_token": self._get_access_token()},
-                json=payload,
+                params=params or {},
+                json=json_payload,
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            data = response.json()
-        except WeComAPIError:
-            raise
-        except Exception as exc:
-            raise WeComAPIError("wecom_api_error") from exc
-        return dict(data or {})
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise WeComApiError(str(exc)) from exc
+        return dict(payload or {})
 
-    def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
-        try:
-            response = self._http.get(
-                f"{self.api_base}{path}",
-                params={**params, "access_token": self._get_access_token()},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except WeComAPIError:
-            raise
-        except Exception as exc:
-            raise WeComAPIError("wecom_api_error") from exc
-        return dict(data or {})
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        access_token = self.get_access_token()
+        request_params = {"access_token": access_token}
+        request_params.update(params or {})
+        payload = self._request_without_token(method, path, params=request_params, json_payload=json_payload)
+        if int(payload.get("errcode") or 0) != 0:
+            raise WeComApiError(f"WeCom API failed for {path}", payload=payload)
+        return payload
 
     def send_welcome_msg(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._post("/cgi-bin/externalcontact/send_welcome_msg", payload)
+        return self._request("POST", "/cgi-bin/externalcontact/send_welcome_msg", json_payload=payload)
 
     def mark_external_contact_tags(
         self,
@@ -161,66 +151,45 @@ class ProductionWeComAdapter:
         payload: dict[str, Any] = {
             "userid": text(follow_user_userid),
             "external_userid": text(external_userid),
-            "add_tag": [tag for tag in add_tags if text(tag)],
+            "add_tag": [text(tag) for tag in add_tags if text(tag)],
         }
-        remove = [tag for tag in remove_tags if text(tag)]
-        if remove:
-            payload["remove_tag"] = remove
-        return self._post("/cgi-bin/externalcontact/mark_tag", payload)
+        normalized_remove_tags = [text(tag) for tag in (remove_tags or []) if text(tag)]
+        if normalized_remove_tags:
+            payload["remove_tag"] = normalized_remove_tags
+        return self._request("POST", "/cgi-bin/externalcontact/mark_tag", json_payload=payload)
 
     def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._post("/cgi-bin/externalcontact/add_contact_way", payload)
+        return self._request("POST", "/cgi-bin/externalcontact/add_contact_way", json_payload=payload)
 
     def get_external_contact_detail(self, external_userid: str) -> dict[str, Any]:
-        return self._get("/cgi-bin/externalcontact/get", {"external_userid": text(external_userid)})
+        return self._request("GET", "/cgi-bin/externalcontact/get", params={"external_userid": text(external_userid)})
 
 
-def normalize_wecom_exception_reason(exc: Exception, *, fallback: str) -> str:
-    reason = text(getattr(exc, "reason", "")) or text(str(exc))
-    allowed = {
-        "wecom_real_calls_disabled",
-        "missing_wecom_config",
-        "wecom_welcome_external_call_blocked",
-        "wecom_tag_external_call_blocked",
-        "wecom_api_error",
-        "welcome_code_missing",
-        "material_resolve_failed",
-    }
-    if reason in allowed:
-        return reason
-    if "missing_wecom_config" in reason:
-        return "missing_wecom_config"
-    if "real_calls_disabled" in reason:
-        return "wecom_real_calls_disabled"
-    if isinstance(exc, WeComAPIError):
-        return "wecom_api_error"
-    return fallback
+_adapter: Any | None = None
 
 
-def describe_wecom_adapter() -> dict[str, Any]:
+def _real_calls_enabled() -> bool:
+    return text(os.getenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED")).lower() in {"1", "true", "yes", "on"}
+
+
+def missing_wecom_config() -> list[str]:
+    missing: list[str] = []
+    if not text(os.getenv("WECOM_CORP_ID")):
+        missing.append("WECOM_CORP_ID")
+    if not (text(os.getenv("WECOM_CONTACT_SECRET")) or text(os.getenv("WECOM_SECRET"))):
+        missing.append("WECOM_CONTACT_SECRET")
+    return missing
+
+
+def wecom_adapter_diagnostics() -> dict[str, Any]:
     missing = missing_wecom_config()
-    real_enabled = _bool_env("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED")
-    if _adapter is not None:
-        is_guarded = isinstance(_adapter, GuardedWeComAdapter)
-        is_production = isinstance(_adapter, ProductionWeComAdapter)
-        reason = "injected_guarded_adapter" if is_guarded else ("production_adapter" if is_production else "injected_adapter")
-        return {
-            "real_wecom_adapter_enabled": bool(is_production or (not is_guarded and hasattr(_adapter, "send_welcome_msg"))),
-            "real_wecom_adapter_reason": reason,
-            "missing_config": missing,
-            "can_send_welcome": hasattr(_adapter, "send_welcome_msg") and not is_guarded,
-            "can_mark_tag": hasattr(_adapter, "mark_external_contact_tags") and not is_guarded,
-            "can_create_contact_way": hasattr(_adapter, "create_contact_way") and not is_guarded,
-            "runtime_env": _runtime_env(),
-            "real_calls_flag_enabled": real_enabled,
-        }
-    if missing:
-        reason = "missing_config"
-    elif not real_enabled:
-        reason = "real_calls_disabled"
+    enabled = _real_calls_enabled() and not missing
+    if enabled:
+        reason = "enabled"
+    elif missing:
+        reason = "missing_wecom_config"
     else:
-        reason = "production_adapter"
-    enabled = reason == "production_adapter"
+        reason = "wecom_real_calls_disabled"
     return {
         "real_wecom_adapter_enabled": enabled,
         "real_wecom_adapter_reason": reason,
@@ -228,29 +197,34 @@ def describe_wecom_adapter() -> dict[str, Any]:
         "can_send_welcome": enabled,
         "can_mark_tag": enabled,
         "can_create_contact_way": enabled,
-        "runtime_env": _runtime_env(),
-        "real_calls_flag_enabled": real_enabled,
     }
 
 
-_adapter: Any | None = None
-_production_adapter: ProductionWeComAdapter | None = None
+def _build_default_adapter() -> Any:
+    diagnostics = wecom_adapter_diagnostics()
+    reason = text(diagnostics["real_wecom_adapter_reason"])
+    if reason == "enabled":
+        return ProductionWeComAdapter()
+    if reason == "missing_wecom_config":
+        return GuardedWeComAdapter(
+            welcome_reason="missing_wecom_config",
+            tag_reason="missing_wecom_config",
+            contact_way_reason="missing_wecom_config",
+            detail_reason="missing_wecom_config",
+            missing_config=list(diagnostics["missing_config"]),
+        )
+    return GuardedWeComAdapter(
+        welcome_reason="wecom_real_calls_disabled",
+        tag_reason="wecom_real_calls_disabled",
+        contact_way_reason="wecom_real_calls_disabled",
+        detail_reason="wecom_real_calls_disabled",
+    )
 
 
 def set_wecom_adapter(adapter: Any) -> None:
-    global _adapter, _production_adapter
-    _adapter = None if isinstance(adapter, GuardedWeComAdapter) else adapter
-    if adapter is None or isinstance(adapter, GuardedWeComAdapter):
-        _production_adapter = None
+    global _adapter
+    _adapter = adapter
 
 
 def get_wecom_adapter() -> Any:
-    global _production_adapter
-    if _adapter is not None:
-        return _adapter
-    diagnosis = describe_wecom_adapter()
-    if diagnosis["real_wecom_adapter_enabled"]:
-        if _production_adapter is None:
-            _production_adapter = ProductionWeComAdapter()
-        return _production_adapter
-    return GuardedWeComAdapter()
+    return _adapter if _adapter is not None else _build_default_adapter()

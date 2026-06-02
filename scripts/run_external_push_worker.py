@@ -5,19 +5,21 @@ import json
 import sys
 
 try:
-    from scripts.script_runtime import ensure_repo_root_on_path
+    from scripts.script_runtime import ensure_repo_root_on_path, read_int_env
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from script_runtime import ensure_repo_root_on_path
+    from script_runtime import ensure_repo_root_on_path, read_int_env
 
 ensure_repo_root_on_path()
 
 from wecom_ability_service import create_app
 from wecom_ability_service.domains.external_push import service as external_push_service
 
+DEFAULT_BATCH_SIZE = 50
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run due external push webhook jobs.")
-    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--limit", type=int, default=read_int_env("EXTERNAL_PUSH_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE))
     parser.add_argument("--skip-events", action="store_true")
     parser.add_argument("--skip-retries", action="store_true")
     args = parser.parse_args()

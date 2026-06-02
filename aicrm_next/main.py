@@ -29,6 +29,7 @@ from .identity_contact.api import router as identity_router
 from .integration_gateway.api import router as mcp_router
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
+from .message_archive.api import router as message_archive_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .platform_foundation.api import router as platform_router
@@ -38,6 +39,8 @@ from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
 from .radar_links.api import router as radar_links_router
 from .radar_links.repo import reset_radar_links_fixture_state
+from .sidebar_write.api import router as sidebar_write_router
+from .sidebar_write import reset_sidebar_write_fixture_state
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
@@ -60,6 +63,7 @@ def create_app() -> FastAPI:
         reset_hxc_dashboard_fixture_state()
         reset_radar_links_fixture_state()
         reset_cloud_plan_fixture_state()
+        reset_sidebar_write_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -92,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
+    app.include_router(sidebar_write_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)
@@ -99,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(user_ops_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
+    app.include_router(message_archive_router)
     app.include_router(questionnaire_router)
     app.include_router(radar_links_router)
     app.include_router(automation_router)

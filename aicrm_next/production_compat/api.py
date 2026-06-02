@@ -128,7 +128,6 @@ async def legacy_customer_automation_compat_routes(request: Request) -> Response
     return await forward_to_legacy_flask(request)
 
 
-@wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/h5/wechat/oauth/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/auth/wecom/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/wechat-pay/{path:path}", methods=_ALL_METHODS)

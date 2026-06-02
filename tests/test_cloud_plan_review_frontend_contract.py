@@ -52,7 +52,7 @@ def test_plan_detail_page_contract(monkeypatch):
     assert response.status_code == 200
     html = response.text
     assert "AI 助手 · 计划二级明细" in html
-    assert "批准当前计划" in html
+    assert "批准并开始执行" in html
     assert "拒绝计划" in html
     assert "返回一级页" in html
     assert "目标人员" in html
@@ -62,6 +62,10 @@ def test_plan_detail_page_contract(monkeypatch):
     assert "继续加载 50 人" in html
     assert "已加载 0 / 0 人" in html
     assert "data-page-mode=\"detail\"" in html
+    assert "material_picker.css" in html
+    assert "send_content_composer.css" in html
+    assert "material_picker.js" in html
+    assert "send_content_composer.js" in html
     for forbidden in ["进入审批", "全部启动", "批量审批", "展开子计划", "加载子计划", "话术节奏", "cloud-camp-group-child"]:
         assert forbidden not in html
 
@@ -79,6 +83,20 @@ def test_plan_review_static_contract():
     assert "PAGE_SIZE = 50" in script
     assert "recipients?${params.toString()}" in script
     assert "updateRecipientInState(payload.recipient)" in script
+    assert "AICRMSendContentComposer.open" in script
+    assert ".cloud-plan-button--primary:hover:not([disabled])" in template
+    assert ".cloud-plan-button[disabled]:hover" in template
+    assert "contentPackageToTaskPayload" in script
+    assert "localRequestJson" in script
+    assert "JSON.stringify(finalOptions.body)" in script
+    assert "data-task-material-detail" in script
+    assert "/api/admin/send-content/preview" in script
+    assert "小程序：" in script
+    assert "已开始执行" in script
+    assert "开始执行" in script
+    assert "计划已批准并开始执行" in script
+    assert "run === \"active\"" in script
+    assert "approved ? \"开始执行\" : \"批准并开始执行\"" in script
     for forbidden in [
         "limit', '5000",
         "limit\", \"5000",

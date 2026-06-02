@@ -81,6 +81,24 @@ CREATE TABLE IF NOT EXISTS group_chats (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS wecom_group_chat_snapshots (
+    chat_id TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    owner_name TEXT NOT NULL DEFAULT '',
+    admin_userids TEXT NOT NULL DEFAULT '[]',
+    internal_member_count INTEGER NOT NULL DEFAULT 0,
+    external_member_count INTEGER NOT NULL DEFAULT 0,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS idx_wecom_group_chat_snapshots_owner
+ON wecom_group_chat_snapshots (owner_userid, status, synced_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_wecom_group_chat_snapshots_name
+ON wecom_group_chat_snapshots (group_name);
+
 CREATE INDEX IF NOT EXISTS idx_group_chats_owner_userid
 ON group_chats (owner_userid);
 
@@ -1467,6 +1485,35 @@ CREATE TABLE IF NOT EXISTS automation_channel_scene_alias (
 
 CREATE INDEX IF NOT EXISTS idx_automation_channel_scene_alias_channel_status
 ON automation_channel_scene_alias (channel_id, status);
+
+CREATE TABLE IF NOT EXISTS automation_channel_qrcode_asset (
+    id BIGSERIAL PRIMARY KEY,
+    corp_id TEXT NOT NULL DEFAULT '',
+    channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+    scene_value TEXT NOT NULL,
+    config_id TEXT NOT NULL DEFAULT '',
+    qr_url TEXT NOT NULL DEFAULT '',
+    qr_url_hash TEXT NOT NULL DEFAULT '',
+    provider_name TEXT NOT NULL DEFAULT 'wecom_contact_way',
+    provider_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'retired', 'revoked', 'stale', 'quarantined')),
+    generation_source TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    retired_at TIMESTAMPTZ,
+    last_callback_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_automation_channel_qrcode_asset_corp_scene UNIQUE (corp_id, scene_value)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_qrcode_asset_corp_config
+ON automation_channel_qrcode_asset (corp_id, config_id)
+WHERE config_id <> '';
+
+CREATE INDEX IF NOT EXISTS idx_automation_channel_qrcode_asset_channel_status
+ON automation_channel_qrcode_asset (channel_id, status);
 
 CREATE TABLE IF NOT EXISTS automation_channel_entry_effect_log (
     id BIGSERIAL PRIMARY KEY,

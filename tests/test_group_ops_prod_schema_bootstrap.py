@@ -45,3 +45,13 @@ def test_group_ops_node_content_package_column_is_bootstrapped() -> None:
     assert "content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in migration_source
     assert "ADD COLUMN IF NOT EXISTS content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in followup_migration
     assert "content_package_json JSONB NOT NULL DEFAULT '{}'::jsonb" in bootstrap_source
+
+
+def test_group_ops_admin_userids_column_is_bootstrapped() -> None:
+    migration_source = ALEMBIC_GROUP_OPS.read_text(encoding="utf-8")
+    bootstrap_source = POSTGRES_MIGRATIONS.read_text(encoding="utf-8")
+    followup_migration = (ROOT / "migrations" / "versions" / "0027_group_ops_admin_userids.py").read_text(encoding="utf-8")
+
+    assert "admin_userids TEXT NOT NULL DEFAULT '[]'" in migration_source
+    assert "ADD COLUMN IF NOT EXISTS admin_userids TEXT NOT NULL DEFAULT '[]'" in followup_migration
+    assert "admin_userids TEXT NOT NULL DEFAULT '[]'" in bootstrap_source

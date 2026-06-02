@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from typing import Any
 
 from . import repo
@@ -18,11 +19,12 @@ from .domain import (
 )
 from .schemas import (
     DiagnoseChannelRuntimeQuery,
+    GenerateChannelQrCodeCommand,
     ProcessChannelEntryCommand,
     ProcessWeComExternalContactEventCommand,
     RepairChannelEntryCommand,
 )
-from .wecom_adapter import describe_wecom_adapter, get_wecom_adapter, normalize_wecom_exception_reason
+from .wecom_adapter import WeComAdapterBlocked, WeComApiError, get_wecom_adapter, wecom_adapter_diagnostics
 from .wecom_crypto import build_encrypted_reply, decrypt_message, parse_callback_xml, verify_signature
 
 
@@ -74,29 +76,40 @@ def resolve_channel_for_scene(*, scene_value: str, corp_id: str = "", persist_al
     scene = text(scene_value)
     if not scene:
         return None, scene_match("missing_scene", "")
-    channel = repo.find_channel_by_scene_value(scene)
-    if channel:
-        if persist_alias:
-            repo.upsert_channel_scene_alias(
-                channel_id=int(channel["id"]),
-                scene_value=scene,
-                corp_id=text(corp_id),
-                qr_url=text(channel.get("qr_url")),
-                carrier_type=text(channel.get("carrier_type")) or "qrcode",
-                status="active",
-                source="current_scene",
-            )
-        return channel, scene_match("current_scene", scene, channel)
-    channel = repo.find_channel_by_scene_alias(text(corp_id), scene)
+    asset = repo.find_qrcode_asset_by_scene(text(corp_id), scene)
+    if asset:
+        asset_status = text(asset.get("status"))
+        match = scene_match(f"qrcode_asset_{asset_status or 'unknown'}", scene, {"id": asset.get("channel_id"), "scene_alias_id": asset.get("id"), "status": asset_status, "source": asset.get("generation_source")})
+        match["qrcode_asset_id"] = int(asset.get("id") or 0) or None
+        if asset_status in {"stale", "quarantined", "revoked"}:
+            match["reason"] = "qrcode_asset_not_acceptable"
+            return None, match
+        if int(asset.get("id") or 0) > 0 and persist_alias:
+            repo.touch_qrcode_asset_callback(int(asset["id"]))
+        channel = {
+            **asset,
+            "id": int(asset.get("channel_id") or asset.get("channel_row_id") or 0),
+            "scene_value": text(asset.get("channel_scene_value") or asset.get("scene_value")),
+            "qr_url": text(asset.get("channel_qr_url") or asset.get("qr_url")),
+            "status": text(asset.get("channel_status") or asset.get("status")),
+        }
+        if asset_status == "retired":
+            match["reason"] = "retired_qrcode_asset_used"
+        return channel, match
+    channel = repo.find_confirmed_channel_by_scene_alias(text(corp_id), scene)
     if channel:
         if persist_alias:
             repo.update_alias_last_seen_at(text(corp_id), scene)
         return channel, scene_match("scene_alias", scene, channel)
-    channel = repo.find_channel_by_historical_scene_value(scene)
-    if channel:
-        alias = repo.backfill_scene_alias_from_historical_vote(scene, int(channel["id"])) if persist_alias else {}
-        return channel, scene_match("historical_vote", scene, alias or channel)
-    return None, scene_match("not_found", scene)
+    suggestion = repo.find_channel_by_historical_scene_value(scene)
+    match = scene_match("not_found", scene)
+    match["reason"] = "qrcode_scene_unrecognized"
+    if suggestion:
+        match["historical_vote"] = {
+            "suggested_channel_id": int(suggestion.get("id") or 0) or None,
+            "requires_admin_confirmation": True,
+        }
+    return None, match
 
 
 def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempotency_key: str, status: str, channel_id: int | None, scene_value: str, reason: str, request_json: dict[str, Any] | None = None, response_json: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -112,9 +125,23 @@ def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempo
         external_contact_id=command.external_contact_id,
         owner_staff_id=command.follow_user_userid,
         reason=reason,
-        request_json=request_json or {},
-        response_json=response_json or {},
+        request_json=repo.json_safe(request_json or {}),
+        response_json=repo.json_safe(response_json or {}),
     )
+
+
+def _adapter_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
+    if isinstance(exc, WeComAdapterBlocked):
+        payload: dict[str, Any] = {"reason": exc.reason}
+        if exc.missing_config:
+            payload["missing_config"] = exc.missing_config
+        return exc.reason, payload
+    if isinstance(exc, WeComApiError):
+        payload = {"reason": "wecom_api_error", "message": exc.message}
+        if exc.payload:
+            payload["wecom_result"] = exc.payload
+        return "wecom_api_error", payload
+    return "wecom_api_error", {"reason": "wecom_api_error", "message": str(exc)}
 
 
 def _welcome_attachments(channel: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
@@ -193,8 +220,8 @@ def _send_welcome(command: ProcessChannelEntryCommand, *, channel: dict[str, Any
     try:
         wecom_result = get_wecom_adapter().send_welcome_msg(payload)
     except Exception as exc:
-        reason = normalize_wecom_exception_reason(exc, fallback="wecom_api_error")
-        result = {"attempted": True, "sent": False, "reason": reason, "welcome_code": welcome_code}
+        reason, failure = _adapter_failure(exc)
+        result = {"attempted": True, "sent": False, "reason": reason, "welcome_code": welcome_code, **failure}
         _log_effect(command, effect_type="welcome_message", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
         return result
     if int((wecom_result or {}).get("errcode") or 0) != 0:
@@ -228,8 +255,8 @@ def _apply_tag(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], 
     try:
         wecom_result = get_wecom_adapter().mark_external_contact_tags(**payload)
     except Exception as exc:
-        reason = normalize_wecom_exception_reason(exc, fallback="wecom_api_error")
-        result = {"attempted": True, "applied": False, "reason": reason, "entry_tag_id": tag_id}
+        reason, failure = _adapter_failure(exc)
+        result = {"attempted": True, "applied": False, "reason": reason, "entry_tag_id": tag_id, **failure}
         _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="failed", channel_id=channel_id, scene_value=scene, reason=reason, request_json=payload, response_json=result)
         return result
     if int((wecom_result or {}).get("errcode") or 0) != 0:
@@ -299,8 +326,9 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     if not scene:
         return {"handled": False, "mode": "channel_not_found", "reason": "missing_channel_scene", "scene_match": match}
     if not channel:
-        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{scene}:not_found", status="failed", channel_id=None, scene_value=scene, reason="channel_not_found")
-        return {"handled": False, "mode": "channel_not_found", "reason": "channel_not_found", "scene_match": match}
+        reason = text(match.get("reason")) or "channel_not_found"
+        _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{scene}:not_found", status="failed", channel_id=None, scene_value=scene, reason=reason, response_json={"scene_match": match})
+        return {"handled": False, "mode": "channel_not_found", "reason": reason, "scene_match": match}
 
     command.follow_user_userid = text(command.follow_user_userid) or text(channel.get("owner_staff_id")) or "HuangYouCan"
     channel_id = int(channel["id"])
@@ -411,7 +439,7 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
     aliases = repo.list_channel_scene_aliases(channel_id) if channel_id else []
     bindings = repo.list_active_bindings_for_channel(channel_id) if channel_id else []
     effects = repo.list_channel_entry_effect_logs(channel_id=channel_id or None, scene_value=text(query.scene_value), limit=20)
-    adapter = describe_wecom_adapter()
+    adapter = wecom_adapter_diagnostics()
     return {
         "ok": True,
         "scene_resolve_path": match,
@@ -424,24 +452,18 @@ def diagnose_channel_runtime(query: DiagnoseChannelRuntimeQuery) -> dict[str, An
         "entry_tag_configured": bool(text((channel or {}).get("entry_tag_id"))),
         "recent_wecom_external_contact_event_logs": repo.list_recent_events(text(query.scene_value), limit=20) if text(query.scene_value) else [],
         "recent_automation_channel_entry_effect_log": effects,
-        "recent_effect_logs": effects,
         "active_bindings": bindings,
         "bound_program_status": [text(item.get("program_status")) for item in bindings],
         "expected_baseline_effects": {"channel_contact": bool(channel and channel_enabled(channel)), "welcome_message": bool(text((channel or {}).get("welcome_message"))), "entry_tag": bool(text((channel or {}).get("entry_tag_id")))},
         "expected_program_admission_result": "program_archived" if any(text(item.get("program_status")) == "archived" for item in bindings) else ("active_binding" if bindings else "standalone_channel"),
-        "runtime_route_map": runtime_route_map_payload(),
-        "callback_route_owner": "aicrm_next.channel_entry",
         "real_wecom_adapter_enabled": adapter["real_wecom_adapter_enabled"],
         "real_wecom_adapter_reason": adapter["real_wecom_adapter_reason"],
         "can_send_welcome": adapter["can_send_welcome"],
         "can_mark_tag": adapter["can_mark_tag"],
         "can_create_contact_way": adapter["can_create_contact_way"],
         "missing_config": adapter["missing_config"],
-        "adapter_warnings": {
-            "welcome_message": "当前不会真实发欢迎语" if not adapter["can_send_welcome"] else "",
-            "entry_tag": "当前不会真实打标签" if not adapter["can_mark_tag"] else "",
-            "qrcode_generate": "当前不会真实生成二维码" if not adapter["can_create_contact_way"] else "",
-        },
+        "runtime_route_map": runtime_route_map_payload(),
+        "callback_route_owner": "aicrm_next.channel_entry",
         "web_release_sha": text(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA")) or "unknown",
         "worker_release_sha": text(os.getenv("WORKER_RELEASE_SHA")) or "unknown",
     }
@@ -479,12 +501,173 @@ def repair_channel_entry(command: RepairChannelEntryCommand) -> dict[str, Any]:
     return result
 
 
+def _generated_scene_value() -> str:
+    from datetime import datetime
+
+    return f"aqr_{datetime.now().strftime('%y%m%d')}_{secrets.token_hex(2)}"
+
+
+def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, Any]:
+    channel = repo.get_channel_by_id(int(command.channel_id))
+    if not channel:
+        raise LookupError("channel_not_found")
+    if text(channel.get("carrier_type")) == "link" or text(channel.get("channel_type")) == "wecom_customer_acquisition":
+        raise ValueError("link_channel_does_not_support_qrcode_generate")
+    owner_staff_id = text(command.owner_staff_id) or text(channel.get("owner_staff_id"))
+    if not owner_staff_id:
+        raise ValueError("owner_staff_id_required")
+    scene_value = text(command.scene_value) or _generated_scene_value()
+    previous_scene = text(channel.get("scene_value"))
+    corp_id = callback_config().get("corp_id", "")
+    payload = {
+        "type": 1,
+        "scene": 2,
+        "style": 1,
+        "skip_verify": bool(command.skip_verify if command.skip_verify is not None else channel.get("auto_accept_friend")),
+        "state": scene_value,
+        "user": [owner_staff_id],
+    }
+    try:
+        wecom_result = get_wecom_adapter().create_contact_way(payload)
+    except Exception as exc:
+        reason, failure = _adapter_failure(exc)
+        repo.upsert_channel_entry_effect_log(
+            effect_type="qrcode_generate",
+            idempotency_key=f"{corp_id}:{command.channel_id}:{scene_value}:qrcode_generate",
+            status="failed",
+            channel_id=int(command.channel_id),
+            scene_value=scene_value,
+            external_contact_id="",
+            owner_staff_id=owner_staff_id,
+            reason=reason,
+            request_json=payload,
+            response_json=failure,
+        )
+        return {
+            "ok": False,
+            "reason": reason,
+            "channel_id": int(command.channel_id),
+            "scene_value": scene_value,
+            "request_payload": payload,
+            **failure,
+            "source": "aicrm_next.channel_entry",
+            "route_owner": "ai_crm_next",
+        }
+    config_id = text((wecom_result or {}).get("config_id"))
+    qr_url = text((wecom_result or {}).get("qr_code") or (wecom_result or {}).get("qr_url"))
+    if not config_id or not qr_url:
+        response = {"reason": "wecom_api_error", "wecom_result": dict(wecom_result or {})}
+        repo.upsert_channel_entry_effect_log(
+            effect_type="qrcode_generate",
+            idempotency_key=f"{corp_id}:{command.channel_id}:{scene_value}:qrcode_generate",
+            status="failed",
+            channel_id=int(command.channel_id),
+            scene_value=scene_value,
+            external_contact_id="",
+            owner_staff_id=owner_staff_id,
+            reason="wecom_api_error",
+            request_json=payload,
+            response_json=response,
+        )
+        return {
+            "ok": False,
+            "reason": "wecom_api_error",
+            "channel_id": int(command.channel_id),
+            "scene_value": scene_value,
+            "wecom_result": response["wecom_result"],
+            "source": "aicrm_next.channel_entry",
+            "route_owner": "ai_crm_next",
+        }
+    asset = repo.insert_qrcode_asset(
+        channel_id=int(command.channel_id),
+        scene_value=scene_value,
+        config_id=config_id,
+        qr_url=qr_url,
+        corp_id=corp_id,
+        provider_payload_json=dict(wecom_result or {}),
+        status="active",
+        generation_source="next_create_contact_way",
+        created_by=owner_staff_id,
+    )
+    if asset.get("conflict"):
+        repo.upsert_channel_entry_effect_log(
+            effect_type="qrcode_generate",
+            idempotency_key=f"{corp_id}:{command.channel_id}:{scene_value}:qrcode_generate_conflict",
+            status="failed",
+            channel_id=int(command.channel_id),
+            scene_value=scene_value,
+            external_contact_id="",
+            owner_staff_id=owner_staff_id,
+            reason=text(asset.get("reason")) or "qrcode_asset_scene_channel_conflict",
+            request_json=payload,
+            response_json=asset,
+        )
+        return {
+            "ok": False,
+            "reason": text(asset.get("reason")) or "qrcode_asset_scene_channel_conflict",
+            "channel_id": int(command.channel_id),
+            "scene_value": scene_value,
+            "source": "aicrm_next.channel_entry",
+            "route_owner": "ai_crm_next",
+        }
+    if previous_scene and previous_scene != scene_value:
+        repo.upsert_channel_scene_alias(
+            channel_id=int(command.channel_id),
+            scene_value=previous_scene,
+            corp_id=corp_id,
+            qr_url=text(channel.get("qr_url")),
+            carrier_type=text(channel.get("carrier_type")) or "qrcode",
+            status="retired",
+            source="next_create_contact_way_previous_scene",
+        )
+    repo.retire_active_qrcode_assets(int(command.channel_id), except_asset_id=int(asset.get("id") or 0) or None)
+    updated = repo.update_channel_qrcode(channel_id=int(command.channel_id), scene_value=scene_value, qr_url=qr_url, config_id=config_id)
+    alias = repo.upsert_channel_scene_alias(
+        channel_id=int(command.channel_id),
+        scene_value=scene_value,
+        corp_id=corp_id,
+        config_id=config_id,
+        qr_url=qr_url,
+        carrier_type="qrcode",
+        status="active",
+        source="next_create_contact_way",
+    )
+    repo.upsert_channel_entry_effect_log(
+        effect_type="qrcode_generate",
+        idempotency_key=f"{corp_id}:{command.channel_id}:{scene_value}:qrcode_generate",
+        status="success",
+        channel_id=int(command.channel_id),
+        scene_value=scene_value,
+        external_contact_id="",
+        owner_staff_id=owner_staff_id,
+        reason="created",
+        request_json=payload,
+        response_json=dict(wecom_result or {}),
+    )
+    return {
+        "ok": True,
+        "channel_id": int(command.channel_id),
+        "scene_value": scene_value,
+        "config_id": config_id,
+        "qr_url": qr_url,
+        "alias_id": int(alias.get("id") or 0),
+        "qrcode_asset_id": int(asset.get("id") or 0),
+        "channel": channel_payload(updated or {**channel, "scene_value": scene_value, "qr_url": qr_url, "qr_ticket": config_id}),
+        "source": "aicrm_next.channel_entry",
+        "route_owner": "ai_crm_next",
+        "wecom_result": dict(wecom_result or {}),
+    }
+
+
 def runtime_route_map_payload() -> dict[str, Any]:
     return {
         "route_owner": "ai_crm_next",
         "wecom_callback_routes": {
             "/wecom/external-contact/callback": "aicrm_next.channel_entry.api",
             "/api/wecom/events": "aicrm_next.channel_entry.api",
+            "/api/admin/channels/{channel_id}/qrcode/generate": "aicrm_next.channel_entry.api",
+            "/api/admin/channels/{channel_id}/qrcode/status": "aicrm_next.automation_engine.channels_api",
+            "/api/admin/channels/{channel_id}/qrcode/download": "aicrm_next.automation_engine.channels_api",
         },
         "next_live_callback_gateway_enabled": True,
         "callback_async_enabled": "next_task_queue",

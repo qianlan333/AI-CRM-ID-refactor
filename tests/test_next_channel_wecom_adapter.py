@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from aicrm_next.channel_entry.wecom_adapter import (
     ProductionWeComAdapter,
-    describe_wecom_adapter,
+    WeComAdapterBlocked,
+    get_wecom_adapter,
     set_wecom_adapter,
+    wecom_adapter_diagnostics,
 )
 
 
@@ -15,78 +19,80 @@ class _Response:
         return None
 
     def json(self) -> dict:
-        return self._payload
+        return dict(self._payload)
 
 
-class _HTTP:
-    def __init__(self) -> None:
-        self.get_calls: list[dict] = []
-        self.post_calls: list[dict] = []
+def test_get_wecom_adapter_enables_production_adapter_only_with_flag_and_config(monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", "true")
+    monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
+    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret")
+    set_wecom_adapter(None)
+    try:
+        adapter = get_wecom_adapter()
+        diagnosis = wecom_adapter_diagnostics()
+    finally:
+        set_wecom_adapter(None)
 
-    def get(self, url, *, params, timeout):
-        self.get_calls.append({"url": url, "params": params, "timeout": timeout})
-        return _Response({"errcode": 0, "access_token": "token-real", "expires_in": 7200})
+    assert isinstance(adapter, ProductionWeComAdapter)
+    assert diagnosis["real_wecom_adapter_enabled"] is True
+    assert diagnosis["can_send_welcome"] is True
+    assert diagnosis["can_mark_tag"] is True
+    assert diagnosis["can_create_contact_way"] is True
 
-    def post(self, url, *, params, json, timeout):
-        self.post_calls.append({"url": url, "params": params, "json": json, "timeout": timeout})
-        if url.endswith("/add_contact_way"):
-            return _Response({"errcode": 0, "config_id": "cfg-1", "qr_code": "https://wework.qpic.cn/qr"})
+
+def test_get_wecom_adapter_blocks_when_flag_disabled_or_config_missing(monkeypatch):
+    monkeypatch.delenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", raising=False)
+    monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
+    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret")
+    set_wecom_adapter(None)
+    try:
+        with pytest.raises(WeComAdapterBlocked) as disabled:
+            get_wecom_adapter().send_welcome_msg({"welcome_code": "wc"})
+        disabled_diagnosis = wecom_adapter_diagnostics()
+
+        monkeypatch.setenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", "true")
+        monkeypatch.delenv("WECOM_CONTACT_SECRET", raising=False)
+        monkeypatch.delenv("WECOM_SECRET", raising=False)
+        with pytest.raises(WeComAdapterBlocked) as missing:
+            get_wecom_adapter().create_contact_way({"state": "aqr"})
+        missing_diagnosis = wecom_adapter_diagnostics()
+    finally:
+        set_wecom_adapter(None)
+
+    assert disabled.value.reason == "wecom_real_calls_disabled"
+    assert disabled_diagnosis["real_wecom_adapter_reason"] == "wecom_real_calls_disabled"
+    assert missing.value.reason == "missing_wecom_config"
+    assert missing_diagnosis["missing_config"] == ["WECOM_CONTACT_SECRET"]
+
+
+def test_production_wecom_adapter_contract_posts_real_wecom_endpoints(monkeypatch):
+    calls: list[dict] = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append({"method": method, "url": url, **kwargs})
+        if url.endswith("/cgi-bin/gettoken"):
+            return _Response({"errcode": 0, "access_token": "token", "expires_in": 7200})
+        if url.endswith("/cgi-bin/externalcontact/add_contact_way"):
+            return _Response({"errcode": 0, "config_id": "cfg", "qr_code": "https://qr"})
         return _Response({"errcode": 0, "errmsg": "ok"})
 
+    monkeypatch.setattr("aicrm_next.channel_entry.wecom_adapter.requests.request", fake_request)
 
-def _set_required_env(monkeypatch):
-    monkeypatch.setenv("WECOM_CORP_ID", "ww-real")
-    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret-real")
-    monkeypatch.setenv("WECOM_CALLBACK_TOKEN", "token")
-    monkeypatch.setenv("WECOM_CALLBACK_AES_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG")
-
-
-def test_wecom_adapter_diagnosis_reports_disabled_and_missing_config(monkeypatch):
-    set_wecom_adapter(None)
-    for name in ("WECOM_CORP_ID", "WECOM_CONTACT_SECRET", "WECOM_SECRET", "WECOM_CALLBACK_TOKEN", "WECOM_CALLBACK_AES_KEY", "AICRM_NEXT_WECOM_REAL_CALLS_ENABLED"):
-        monkeypatch.delenv(name, raising=False)
-
-    missing = describe_wecom_adapter()
-    assert missing["real_wecom_adapter_enabled"] is False
-    assert missing["real_wecom_adapter_reason"] == "missing_config"
-    assert "WECOM_CORP_ID" in missing["missing_config"]
-
-    _set_required_env(monkeypatch)
-    disabled = describe_wecom_adapter()
-    assert disabled["real_wecom_adapter_enabled"] is False
-    assert disabled["real_wecom_adapter_reason"] == "real_calls_disabled"
-    assert disabled["can_send_welcome"] is False
-    assert disabled["can_mark_tag"] is False
-    assert disabled["can_create_contact_way"] is False
-
-
-def test_production_wecom_adapter_uses_official_external_contact_payloads(monkeypatch):
-    set_wecom_adapter(None)
-    _set_required_env(monkeypatch)
-    http = _HTTP()
-    adapter = ProductionWeComAdapter(http=http, timeout=3)
-
-    welcome = adapter.send_welcome_msg({"welcome_code": "wc-1", "text": {"content": "hi"}})
-    tag = adapter.mark_external_contact_tags(
-        external_userid="wm-1",
-        follow_user_userid="owner-1",
-        add_tags=["tag-1"],
-        remove_tags=["tag-old"],
-    )
-    qrcode = adapter.create_contact_way({"type": 2, "scene": 2, "state": "aqr_260531_abcd", "user": ["owner-1"]})
-    detail = adapter.get_external_contact_detail("wm-1")
+    adapter = ProductionWeComAdapter(corp_id="ww-test", secret="secret", api_base="https://qyapi.weixin.qq.com")
+    welcome = adapter.send_welcome_msg({"welcome_code": "wc", "text": {"content": "hi"}})
+    tag = adapter.mark_external_contact_tags(external_userid="wm", follow_user_userid="owner", add_tags=["tag"], remove_tags=[])
+    qrcode = adapter.create_contact_way({"state": "aqr", "user": ["owner"]})
+    detail = adapter.get_external_contact_detail("wm")
 
     assert welcome["errcode"] == 0
     assert tag["errcode"] == 0
-    assert qrcode["config_id"] == "cfg-1"
+    assert qrcode["config_id"] == "cfg"
     assert detail["errcode"] == 0
-    assert http.get_calls[0]["url"].endswith("/cgi-bin/gettoken")
-    assert http.get_calls[0]["params"] == {"corpid": "ww-real", "corpsecret": "secret-real"}
-    assert [call["url"].rsplit("/", 1)[-1] for call in http.post_calls] == ["send_welcome_msg", "mark_tag", "add_contact_way"]
-    assert http.post_calls[1]["json"] == {
-        "userid": "owner-1",
-        "external_userid": "wm-1",
-        "add_tag": ["tag-1"],
-        "remove_tag": ["tag-old"],
-    }
-    assert http.post_calls[2]["json"]["state"] == "aqr_260531_abcd"
+    assert [call["url"].split("qyapi.weixin.qq.com", 1)[1].split("?", 1)[0] for call in calls] == [
+        "/cgi-bin/gettoken",
+        "/cgi-bin/externalcontact/send_welcome_msg",
+        "/cgi-bin/externalcontact/mark_tag",
+        "/cgi-bin/externalcontact/add_contact_way",
+        "/cgi-bin/externalcontact/get",
+    ]
+    assert calls[2]["json"] == {"userid": "owner", "external_userid": "wm", "add_tag": ["tag"]}

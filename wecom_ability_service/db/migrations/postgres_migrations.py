@@ -1891,6 +1891,44 @@ def _ensure_postgres_automation_program_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_channel_qrcode_asset (
+            id BIGSERIAL PRIMARY KEY,
+            corp_id TEXT NOT NULL DEFAULT '',
+            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            scene_value TEXT NOT NULL,
+            config_id TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            qr_url_hash TEXT NOT NULL DEFAULT '',
+            provider_name TEXT NOT NULL DEFAULT 'wecom_contact_way',
+            provider_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'retired', 'revoked', 'stale', 'quarantined')),
+            generation_source TEXT NOT NULL DEFAULT '',
+            created_by TEXT NOT NULL DEFAULT '',
+            generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            retired_at TIMESTAMPTZ,
+            last_callback_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_qrcode_asset_corp_scene UNIQUE (corp_id, scene_value)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_qrcode_asset_corp_config
+        ON automation_channel_qrcode_asset (corp_id, config_id)
+        WHERE config_id <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_qrcode_asset_channel_status
+        ON automation_channel_qrcode_asset (channel_id, status)
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS automation_channel_entry_effect_log (
             id BIGSERIAL PRIMARY KEY,
             event_log_id BIGINT,
@@ -2409,11 +2447,18 @@ def _ensure_postgres_group_ops_tables(db) -> None:
             group_name TEXT NOT NULL DEFAULT '',
             owner_userid TEXT NOT NULL DEFAULT '',
             owner_name TEXT NOT NULL DEFAULT '',
+            admin_userids TEXT NOT NULL DEFAULT '[]',
             internal_member_count INTEGER NOT NULL DEFAULT 0,
             external_member_count INTEGER NOT NULL DEFAULT 0,
             synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL DEFAULT 'active'
         )
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE wecom_group_chat_snapshots
+        ADD COLUMN IF NOT EXISTS admin_userids TEXT NOT NULL DEFAULT '[]'
         """
     )
     db.execute(

@@ -40,3 +40,16 @@ def sidebar_contact_binding_status(
     )
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(result, status_code=status_code)
+
+
+@router.get("/api/sidebar/binding-status")
+def sidebar_binding_status(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+):
+    result = GetSidebarContactBindingStatusQuery()(
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+    )
+    status_code = int(result.pop("status_code", 200) or 200)
+    return JSONResponse(result, status_code=status_code)

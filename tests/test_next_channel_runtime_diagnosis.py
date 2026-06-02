@@ -33,36 +33,49 @@ def test_dry_run_and_repair_routes_are_next_native(monkeypatch):
     assert repair.json()["source"] == "aicrm_next.channel_entry"
 
 
-def test_runtime_diagnosis_reports_real_adapter_capabilities(monkeypatch):
-    set_wecom_adapter(None)
-    monkeypatch.setenv("WECOM_CORP_ID", "ww-real")
-    monkeypatch.setenv("WECOM_CONTACT_SECRET", "secret-real")
-    monkeypatch.setenv("WECOM_CALLBACK_TOKEN", "token")
-    monkeypatch.setenv("WECOM_CALLBACK_AES_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG")
-    monkeypatch.delenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", raising=False)
+def test_runtime_diagnosis_reports_real_adapter_readiness(monkeypatch):
     channel = {
-        "id": 1,
-        "scene_value": "s1",
+        "id": 10,
+        "channel_code": "c",
+        "channel_name": "C",
+        "scene_value": "scene-a",
         "status": "active",
-        "welcome_message": "欢迎",
-        "entry_tag_id": "tag-1",
-        "carrier_type": "qrcode",
+        "welcome_message": "欢迎加入",
+        "entry_tag_id": "tag-a",
     }
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_value", lambda scene: channel)
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_scene_alias", lambda corp_id, scene: None)
+    monkeypatch.setenv("AICRM_NEXT_WECOM_REAL_CALLS_ENABLED", "true")
+    monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
+    monkeypatch.delenv("WECOM_CONTACT_SECRET", raising=False)
+    monkeypatch.delenv("WECOM_SECRET", raising=False)
+    set_wecom_adapter(None)
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.repo.find_qrcode_asset_by_scene",
+        lambda corp_id, scene: {
+            **channel,
+            "id": 88,
+            "channel_id": 10,
+            "channel_row_id": 10,
+            "channel_scene_value": "scene-a",
+            "channel_status": "active",
+            "status": "active",
+            "scene_value": scene,
+        },
+    )
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.touch_qrcode_asset_callback", lambda asset_id: None)
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.find_confirmed_channel_by_scene_alias", lambda corp_id, scene: None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.find_channel_by_historical_scene_value", lambda scene: None)
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_scene_aliases", lambda channel_id: [])
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: [])
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_entry_effect_logs", lambda **kwargs: [])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_scene_aliases", lambda channel_id: [{"id": 1, "scene_value": "scene-a", "source": "current_scene"}])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: [{"id": 20, "program_id": 30, "program_status": "archived"}])
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_entry_effect_logs", lambda **kwargs: [{"effect_type": "welcome_message", "reason": "missing_wecom_config"}])
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_recent_events", lambda scene, limit=20: [])
 
-    diagnosis = diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(scene_value="s1"))
+    result = diagnose_channel_runtime(DiagnoseChannelRuntimeQuery(scene_value="scene-a"))
 
-    assert diagnosis["real_wecom_adapter_enabled"] is False
-    assert diagnosis["real_wecom_adapter_reason"] == "real_calls_disabled"
-    assert diagnosis["can_send_welcome"] is False
-    assert diagnosis["can_mark_tag"] is False
-    assert diagnosis["can_create_contact_way"] is False
-    assert diagnosis["adapter_warnings"]["welcome_message"] == "当前不会真实发欢迎语"
-    assert diagnosis["adapter_warnings"]["entry_tag"] == "当前不会真实打标签"
-    assert diagnosis["adapter_warnings"]["qrcode_generate"] == "当前不会真实生成二维码"
+    assert result["callback_route_owner"] == "aicrm_next.channel_entry"
+    assert result["real_wecom_adapter_enabled"] is False
+    assert result["real_wecom_adapter_reason"] == "missing_wecom_config"
+    assert result["can_send_welcome"] is False
+    assert result["can_mark_tag"] is False
+    assert result["can_create_contact_way"] is False
+    assert result["missing_config"] == ["WECOM_CONTACT_SECRET"]
+    assert result["expected_program_admission_result"] == "program_archived"
