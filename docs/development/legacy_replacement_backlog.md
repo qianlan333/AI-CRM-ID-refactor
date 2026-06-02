@@ -156,7 +156,7 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-019` `/api/customers/{external_userid}`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
 - `LRB-020` `/api/customers/{external_userid}/timeline`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`
 - `LRB-021` `/api/messages/{external_userid}/recent`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.customer_read_model`
-- `LRB-022` `/api/messages*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.integration_gateway`
+- `LRB-022` `/api/messages*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.message_archive` / deleted locked
 - `LRB-023` `/api/admin/questionnaires*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.questionnaire`
 - `LRB-024` `/api/h5/questionnaires*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.questionnaire`
 - `LRB-025` `/api/h5/questionnaires/{slug}/submit`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.questionnaire`
@@ -223,6 +223,6 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - `LRB-086` `/api/sidebar/v2*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.customer_read_model`
 - `LRB-087` `/api/sidebar/v2/profile`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
 - `LRB-088` `/api/sidebar/v2/materials/send`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.customer_read_model`
-- `LRB-089` `/wecom/external-contact/callback`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
-- `LRB-090` `/api/wecom/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.integration_gateway`
+- `LRB-089` `/wecom/external-contact/callback`: `P2` / `retired` / `channel_entry` / owner `aicrm_next.channel_entry`
+- `LRB-090` `/api/wecom/events`: `P2` / `retired` / `channel_entry` / owner `aicrm_next.channel_entry`
 - `LRB-091` `/mcp`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.integration_gateway`

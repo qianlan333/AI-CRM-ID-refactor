@@ -1,11 +1,43 @@
 from __future__ import annotations
 
+from aicrm_next.shared.repository_provider import RepositoryProviderError
 from tests.group_ops_test_helpers import error_code, group_ops_api_client
 
 
 class FixedQueueStatsGateway:
     def count_group_ops_queue(self) -> int:
         return 7
+
+
+class DetailRepoWithMissingOptionalTables:
+    source_status = "postgres_group_ops_repository"
+
+    def get_plan(self, plan_id: int) -> dict:
+        return {
+            "id": int(plan_id),
+            "plan_name": "生产详情兼容计划",
+            "plan_type": "standard",
+            "owner_userid": "owner_001",
+            "owner_name": "Owner",
+            "status": "draft",
+            "created_at": "2026-06-01T00:00:00",
+            "updated_at": "2026-06-01T00:00:00",
+        }
+
+    def list_bound_groups(self, plan_id: int) -> list[dict]:
+        return []
+
+    def list_nodes(self, plan_id: int) -> list[dict]:
+        return []
+
+    def list_plan_scopes(self, plan_id: int) -> list[dict]:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_plan_scope does not exist")
+
+    def get_segmentation(self, plan_id: int) -> dict | None:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_plan_segmentation does not exist")
+
+    def list_execution_logs(self, plan_id: int, filters: dict) -> tuple[list[dict], int]:
+        raise RepositoryProviderError("group ops repository unavailable: relation automation_group_ops_execution_log does not exist")
 
 
 def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client):
@@ -30,6 +62,20 @@ def test_plan_list_returns_plan_fields_without_next_action(group_ops_api_client)
         assert "next_action" not in item
 
 
+def test_plan_detail_tolerates_missing_optional_webhook_rule_tables():
+    from aicrm_next.automation_engine.group_ops.application import GetGroupOpsPlanQuery
+
+    payload = GetGroupOpsPlanQuery(repo=DetailRepoWithMissingOptionalTables())(7)
+
+    assert payload["ok"] is True
+    assert payload["item"]["id"] == 7
+    assert payload["plan"]["boundGroupIds"] == []
+    assert payload["plan"]["boundAudienceIds"] == []
+    assert payload["plan"]["segmentation"] == {}
+    assert payload["plan"]["segmentationStats"] == {"total": 0, "layers": []}
+    assert payload["plan"]["executionStats"] == {"total": 0, "lastStatus": ""}
+
+
 def test_plan_list_returns_group_ops_queue_count(group_ops_api_client, monkeypatch):
     from aicrm_next.integration_gateway import wecom_group_adapter
 
@@ -47,9 +93,10 @@ def test_owners_api_returns_multiple_fixture_owners(group_ops_api_client):
     assert response.status_code == 200
     items = response.json()["items"]
     by_userid = {item["userid"]: item for item in items}
-    assert {"owner_001", "owner_002"} <= set(by_userid)
+    assert {"owner_001", "owner_002", "admin_001"} <= set(by_userid)
     assert by_userid["owner_001"]["name"] == "王小明"
     assert by_userid["owner_002"]["group_count"] >= 1
+    assert by_userid["admin_001"]["group_count"] == 0
 
 
 def test_create_standard_plan_uses_requested_owner_and_type(group_ops_api_client):
@@ -83,13 +130,28 @@ def test_create_webhook_plan_returns_webhook_and_config(group_ops_api_client):
     assert "webhook_url" in config.json()
 
 
-def test_plan_group_binding_allows_only_owner_groups(group_ops_api_client):
+def test_plan_group_binding_allows_owner_or_group_admin_groups(group_ops_api_client):
     ok_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/groups",
         json={"chat_id": "wrOgAAA003", "operator": "pytest"},
     )
     assert ok_response.status_code == 201
     assert ok_response.json()["summary"]["bound_group_count"] == 3
+
+    admin_plan = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={"plan_name": "群管理员计划", "plan_type": "standard", "owner_userid": "admin_001", "status": "draft"},
+    )
+    admin_groups = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/groups?owner_userid=admin_001")
+    admin_response = group_ops_api_client.post(
+        f"/api/admin/automation-conversion/group-ops/plans/{admin_plan.json()['item']['id']}/groups",
+        json={"chat_id": "wrOgBBB001", "operator": "pytest"},
+    )
+    assert admin_plan.status_code == 201
+    assert admin_groups.status_code == 200
+    assert [item["chat_id"] for item in admin_groups.json()["items"]] == ["wrOgBBB001"]
+    assert admin_groups.json()["items"][0]["admin_userids"] == ["admin_001"]
+    assert admin_response.status_code == 201
 
     bad_response = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/groups",
@@ -260,6 +322,54 @@ def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_cl
     item = response.json()["item"]
     assert item["content_package_json"]["content_text"] == "旧节点话术"
     assert item["attachments"][0]["msgtype"] == "miniprogram"
+
+
+def test_standard_plan_node_update_preserves_legacy_attachments_when_saving_new_content(group_ops_api_client):
+    created = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans/1/nodes",
+        json={
+            "day_index": 4,
+            "scheduled_time": "10:00",
+            "action_title": "历史附件动作",
+            "text_content": "老话术",
+            "attachments": [
+                {
+                    "msgtype": "file",
+                    "file": {"media_id": "legacy-file-media", "name": "历史附件.pdf"},
+                }
+            ],
+            "sort_order": 70,
+            "status": "active",
+        },
+    )
+    assert created.status_code == 201
+    node_id = created.json()["item"]["id"]
+
+    updated = group_ops_api_client.put(
+        f"/api/admin/automation-conversion/group-ops/plans/1/nodes/{node_id}",
+        json={
+            "day_index": 4,
+            "scheduled_time": "10:00",
+            "action_title": "历史附件动作",
+            "content_package_json": {
+                "content_text": "新话术",
+                "image_library_ids": [12],
+            },
+            "sort_order": 70,
+            "status": "active",
+        },
+    )
+
+    assert updated.status_code == 200
+    item = updated.json()["item"]
+    assert item["content_package_json"]["content_text"] == "新话术"
+    assert item["content_package_json"]["image_library_ids"] == [12]
+    assert item["attachments"] == [
+        {
+            "msgtype": "file",
+            "file": {"media_id": "legacy-file-media", "name": "历史附件.pdf"},
+        }
+    ]
 
 
 def test_standard_plan_nodes_reject_invalid_scheduled_time(group_ops_api_client):

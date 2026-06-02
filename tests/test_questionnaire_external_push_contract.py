@@ -4,6 +4,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def test_questionnaire_external_push_application_contract_is_importable():
     sys.modules.setdefault("imghdr", types.ModuleType("imghdr"))
@@ -153,6 +155,41 @@ def test_next_questionnaire_editor_does_not_prefill_external_push_defaults():
     assert "external_push_expires_at_ts: 1809100800" not in combined
     assert "placeholder=\"1809100800\"" not in combined
     assert "placeholder=\"20\"" not in combined
+
+
+def test_questionnaire_editor_exposes_trial_external_push_type():
+    root = Path(__file__).resolve().parents[1]
+    sources = [
+        root / "aicrm_next" / "frontend_compat" / "templates" / "admin_questionnaires.html",
+        root / "wecom_ability_service" / "templates" / "admin_questionnaires.html",
+    ]
+    for source in sources:
+        content = source.read_text(encoding="utf-8")
+        assert 'value="trial"' in content
+        assert "首月权益" in content
+
+
+def test_questionnaire_external_push_accepts_trial_type_without_pg(monkeypatch):
+    sys.modules.setdefault("imghdr", types.ModuleType("imghdr"))
+
+    from wecom_ability_service.domains.questionnaire import _service_helpers as helpers
+
+    monkeypatch.setattr(helpers, "_questionnaire_exists_by_slug", lambda *args, **kwargs: False)
+
+    payload = {
+        "name": "trial external push",
+        "title": "首月权益问卷",
+        "external_push_enabled": True,
+        "external_push_url": "https://hooks.example.com/q",
+        "external_push_type": "trial",
+        "questions": [],
+    }
+
+    normalized = helpers._normalize_questionnaire_payload(payload)
+    assert normalized["external_push_type"] == "trial"
+
+    with pytest.raises(ValueError, match="external_push_type must be subscription, premium or trial"):
+        helpers._normalize_questionnaire_payload({**payload, "external_push_type": "unknown"})
 
 
 def test_postgres_questionnaire_external_push_type_default_is_blank():

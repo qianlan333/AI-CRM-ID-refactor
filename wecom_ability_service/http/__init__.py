@@ -164,6 +164,7 @@ HTTP_ROUTE_PLACEMENT = {
         "automation_conversion_task_runtime.py for operation-task due-runner handlers registered by automation_conversion.py",
         "automation_conversion_runtime_api.py for internal runtime triggers and callback endpoints registered by automation_conversion.py",
         "automation_conversion_execution_outbound.py for execution-item outbound send handlers registered by automation_conversion.py",
+        "aicrm_next.channel_entry.api owns channel runtime diagnosis, dry-run, and repair routes",
         "admin_dashboard.py for /api/admin/dashboard/* shell status",
         "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for legacy questionnaire admin write fallback only; D5 retired admin questionnaire readonly GET ownership",

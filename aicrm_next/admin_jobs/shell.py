@@ -37,7 +37,10 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_user_ops_ui": "/admin/user-ops/ui",
         "api.admin_hxc_dashboard_workspace": "/admin/hxc-dashboard",
         "api.admin_hxc_send_config_page": "/admin/hxc-send-config",
-        "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator/campaigns",
+        "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator/plans",
+        "api.admin_cloud_orchestrator_plans_workspace": "/admin/cloud-orchestrator/plans",
+        "api.admin_cloud_orchestrator_plan_detail": "/admin/cloud-orchestrator/plans/"
+        + quote(str(path_params.get("plan_id", "")).strip(), safe=""),
         "api.admin_cloud_orchestrator_campaigns_workspace": "/admin/cloud-orchestrator/campaigns",
         "api.admin_cloud_orchestrator_observability": "/admin/cloud-orchestrator/observability",
         "api.admin_wecom_tags_page": "/admin/wecom-tags",

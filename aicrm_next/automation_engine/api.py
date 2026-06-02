@@ -66,6 +66,8 @@ from .programs import (
     delete_automation_program_operation_task_group,
     list_automation_program_operation_tasks,
     preview_automation_program_operation_task_audience,
+    publish_automation_program_entry,
+    publish_automation_program_full,
     save_automation_program_audience_entry_rule,
     save_automation_program_operation_task_content,
     save_automation_program_segmentation,
@@ -170,6 +172,34 @@ def save_automation_program_setup_segmentation(program_id: int, payload: dict) -
 def save_automation_program_setup_audience_entry_rule(program_id: int, payload: dict) -> dict:
     try:
         result = save_automation_program_audience_entry_rule(int(program_id), payload, operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "source_status": "ai_crm_next", "route_owner": "ai_crm_next", **result}
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/publish-entry",
+    name="api_admin_automation_program_publish_entry",
+)
+def publish_automation_program_entry_api(program_id: int) -> dict:
+    try:
+        result = publish_automation_program_entry(int(program_id), operator_id="admin")
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "source_status": "ai_crm_next", "route_owner": "ai_crm_next", **result}
+
+
+@router.post(
+    "/api/admin/automation-conversion/programs/{program_id}/publish-full",
+    name="api_admin_automation_program_publish_full",
+)
+def publish_automation_program_full_api(program_id: int) -> dict:
+    try:
+        result = publish_automation_program_full(int(program_id), operator_id="admin")
     except AutomationProgramDataUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

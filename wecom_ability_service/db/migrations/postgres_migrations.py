@@ -1182,6 +1182,127 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
     )
 
 
+def _ensure_postgres_external_push_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS external_push_config (
+            id BIGSERIAL PRIMARY KEY,
+            tenant_id TEXT NOT NULL DEFAULT 'aicrm',
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            webhook_url TEXT NOT NULL DEFAULT '',
+            push_type TEXT NOT NULL DEFAULT '',
+            expires_at_ts BIGINT,
+            day INTEGER,
+            frequency INTEGER,
+            remark TEXT NOT NULL DEFAULT '',
+            custom_params JSONB NOT NULL DEFAULT '{}'::jsonb,
+            secret TEXT NOT NULL DEFAULT '',
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_external_push_config_target_event
+        ON external_push_config (tenant_id, target_type, target_id, event_type)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_external_push_config_target
+        ON external_push_config (tenant_id, target_type, target_id)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_external_push_config_event
+        ON external_push_config (tenant_id, event_type)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS external_push_delivery (
+            id BIGSERIAL PRIMARY KEY,
+            tenant_id TEXT NOT NULL DEFAULT 'aicrm',
+            config_id BIGINT NOT NULL REFERENCES external_push_config(id) ON DELETE CASCADE,
+            event_type TEXT NOT NULL,
+            delivery_id TEXT NOT NULL UNIQUE,
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            order_id BIGINT NOT NULL DEFAULT 0,
+            product_id BIGINT NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'sending', 'success', 'failed', 'retrying', 'gave_up', 'skipped')),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            request_url TEXT NOT NULL DEFAULT '',
+            request_headers JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_body JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_status INTEGER,
+            response_body TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            next_retry_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_external_push_delivery_config_order_event
+        ON external_push_delivery (config_id, order_id, event_type)
+        WHERE order_id > 0
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_external_push_delivery_order
+        ON external_push_delivery (tenant_id, order_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_external_push_delivery_retry
+        ON external_push_delivery (status, next_retry_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS domain_event_outbox (
+            id BIGSERIAL PRIMARY KEY,
+            tenant_id TEXT NOT NULL DEFAULT 'aicrm',
+            event_type TEXT NOT NULL,
+            aggregate_type TEXT NOT NULL,
+            aggregate_id TEXT NOT NULL,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'processing', 'success', 'failed', 'gave_up', 'skipped')),
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            next_retry_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_domain_event_outbox_event_aggregate
+        ON domain_event_outbox (tenant_id, event_type, aggregate_type, aggregate_id)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_domain_event_outbox_status_retry
+        ON domain_event_outbox (status, next_retry_at, id ASC)
+        """
+    )
+
+
 def _ensure_postgres_alipay_pay_tables(db) -> None:
     db.execute(
         """
@@ -1741,6 +1862,113 @@ def _ensure_postgres_automation_program_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_channel_scene_alias (
+            id BIGSERIAL PRIMARY KEY,
+            corp_id TEXT NOT NULL DEFAULT '',
+            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            scene_value TEXT NOT NULL,
+            config_id TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            carrier_type TEXT NOT NULL DEFAULT 'qrcode',
+            provider_name TEXT NOT NULL DEFAULT 'wecom_contact_way',
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'retired', 'revoked')),
+            source TEXT NOT NULL DEFAULT '',
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMPTZ,
+            retired_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_scene_alias_corp_scene UNIQUE (corp_id, scene_value)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_scene_alias_channel_status
+        ON automation_channel_scene_alias (channel_id, status)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_channel_qrcode_asset (
+            id BIGSERIAL PRIMARY KEY,
+            corp_id TEXT NOT NULL DEFAULT '',
+            channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            scene_value TEXT NOT NULL,
+            config_id TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            qr_url_hash TEXT NOT NULL DEFAULT '',
+            provider_name TEXT NOT NULL DEFAULT 'wecom_contact_way',
+            provider_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'retired', 'revoked', 'stale', 'quarantined')),
+            generation_source TEXT NOT NULL DEFAULT '',
+            created_by TEXT NOT NULL DEFAULT '',
+            generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            retired_at TIMESTAMPTZ,
+            last_callback_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_qrcode_asset_corp_scene UNIQUE (corp_id, scene_value)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_channel_qrcode_asset_corp_config
+        ON automation_channel_qrcode_asset (corp_id, config_id)
+        WHERE config_id <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_qrcode_asset_channel_status
+        ON automation_channel_qrcode_asset (channel_id, status)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_channel_entry_effect_log (
+            id BIGSERIAL PRIMARY KEY,
+            event_log_id BIGINT,
+            channel_id BIGINT REFERENCES automation_channel(id) ON DELETE SET NULL,
+            scene_value TEXT NOT NULL DEFAULT '',
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            effect_type TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            status TEXT NOT NULL
+                CHECK (status IN ('skipped', 'attempted', 'success', 'failed')),
+            reason TEXT NOT NULL DEFAULT '',
+            request_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_channel_entry_effect_idempotency UNIQUE (effect_type, idempotency_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_channel
+        ON automation_channel_entry_effect_log (channel_id, created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_scene
+        ON automation_channel_entry_effect_log (scene_value, created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_entry_effect_external
+        ON automation_channel_entry_effect_log (external_contact_id, created_at DESC)
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS automation_channel_contact (
             id BIGSERIAL PRIMARY KEY,
             channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
@@ -2219,11 +2447,18 @@ def _ensure_postgres_group_ops_tables(db) -> None:
             group_name TEXT NOT NULL DEFAULT '',
             owner_userid TEXT NOT NULL DEFAULT '',
             owner_name TEXT NOT NULL DEFAULT '',
+            admin_userids TEXT NOT NULL DEFAULT '[]',
             internal_member_count INTEGER NOT NULL DEFAULT 0,
             external_member_count INTEGER NOT NULL DEFAULT 0,
             synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL DEFAULT 'active'
         )
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE wecom_group_chat_snapshots
+        ADD COLUMN IF NOT EXISTS admin_userids TEXT NOT NULL DEFAULT '[]'
         """
     )
     db.execute(
@@ -2526,6 +2761,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_questionnaire_scrm_apply_log_columns(db)
     _ensure_postgres_wechat_pay_tables(db)
+    _ensure_postgres_external_push_tables(db)
     _ensure_postgres_alipay_pay_tables(db)
     _ensure_postgres_hxc_dashboard_v6_columns(db)
     _ensure_postgres_user_ops_page_tables(db)

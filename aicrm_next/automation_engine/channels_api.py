@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
+from aicrm_next.channel_entry import repo as channel_entry_repo
 from aicrm_next.shared.runtime import raw_database_url
 
 router = APIRouter()
@@ -89,6 +90,21 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = _text(value).lower()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
 def _channel_type(payload: dict[str, Any]) -> tuple[str, str]:
     channel_type = _text(payload.get("channel_type")) or "qrcode"
     carrier_type = _text(payload.get("carrier_type")) or ("link" if channel_type == "wecom_customer_acquisition" else "qrcode")
@@ -125,6 +141,7 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["welcome_attachment_library_ids"] = _json_list(channel.get("welcome_attachment_library_ids"))
     channel["welcome_attachment_count"] = len(channel["welcome_image_library_ids"]) + len(channel["welcome_miniprogram_library_ids"]) + len(channel["welcome_attachment_library_ids"])
     channel["welcome_message_configured"] = bool(channel["welcome_message"])
+    channel["auto_accept_friend"] = bool(channel.get("auto_accept_friend", False))
     channel["entry_tag_id"] = _text(channel.get("entry_tag_id"))
     channel["entry_tag_name"] = _text(channel.get("entry_tag_name"))
     channel["entry_tag_group_name"] = _text(channel.get("entry_tag_group_name"))
@@ -135,6 +152,8 @@ def _serialize_channel(row: dict[str, Any]) -> dict[str, Any]:
     channel["latest_channel_entered_at"] = _iso(channel.get("latest_channel_entered_at"))
     channel["bound_program_name"] = _text(channel.get("bound_program_name"))
     channel["qr_download_url"] = f"/api/admin/channels/{channel['id']}/qrcode/download" if carrier_type != "link" and channel["id"] else ""
+    channel["qrcode_status"] = _text(channel.get("qrcode_status")) or ("legacy_untracked" if channel["qr_url"] and channel["scene_value"] else "not_generated")
+    channel["qrcode_asset_id"] = int(channel.get("qrcode_asset_id") or channel.get("active_qrcode_asset_id") or 0)
     channel["created_at"] = _iso(channel.get("created_at"))
     channel["updated_at"] = _iso(channel.get("updated_at"))
     return channel
@@ -167,6 +186,7 @@ def _serialize_program_binding(row: dict[str, Any]) -> dict[str, Any]:
         "final_url": row.get("final_url") or row.get("wca_final_url"),
         "status": row.get("channel_status") or row.get("status"),
         "owner_staff_id": row.get("owner_staff_id"),
+        "auto_accept_friend": row.get("auto_accept_friend"),
         "entry_tag_id": row.get("entry_tag_id"),
         "entry_tag_name": row.get("entry_tag_name"),
         "entry_tag_group_name": row.get("entry_tag_group_name"),
@@ -185,6 +205,7 @@ def _default_channel() -> dict[str, Any]:
         "welcome_image_library_ids": [],
         "welcome_miniprogram_library_ids": [],
         "welcome_attachment_library_ids": [],
+        "auto_accept_friend": False,
     }
 
 
@@ -198,6 +219,8 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
             cur.execute(
                 """
                 SELECT c.*,
+                       active_asset.id AS active_qrcode_asset_id,
+                       active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
                        binding.program_name AS bound_program_name,
@@ -206,6 +229,14 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                        wca.final_url AS wca_final_url,
                        COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
+                LEFT JOIN LATERAL (
+                    SELECT id, status
+                    FROM automation_channel_qrcode_asset qa
+                    WHERE qa.channel_id = c.id
+                      AND qa.status = 'active'
+                    ORDER BY qa.generated_at DESC, qa.id DESC
+                    LIMIT 1
+                ) active_asset ON TRUE
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
                     FROM automation_channel_contact
@@ -222,22 +253,12 @@ def get_channel_resource(channel_id: int) -> dict[str, Any] | None:
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
-                    FROM (
-                        SELECT
-                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
-                            MAX(e.created_at) AS latest_event_at
-                        FROM wecom_external_contact_event_logs e
-                        JOIN automation_member m ON m.external_contact_id = e.external_userid
-                        WHERE m.source_channel_id = c.id
-                          AND e.change_type = 'add_external_contact'
-                          AND e.external_userid <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
-                        GROUP BY 1
-                        ORDER BY latest_event_at DESC
-                        LIMIT 12
-                    ) scene_rows
+                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
+                    FROM automation_channel_scene_alias a
+                    WHERE a.channel_id = c.id
+                      AND a.scene_value <> c.scene_value
+                      AND a.status <> 'revoked'
+                    LIMIT 12
                 ) historical_scenes ON TRUE
                 WHERE c.id = %s
                 """,
@@ -253,6 +274,13 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
         channels = [_serialize_channel(item) for item in _FIXTURE_CHANNELS.values()]
         if status:
             channels = [item for item in channels if item.get("status") == status]
+        if int(available_for_program_id or 0) > 0:
+            active_channel_ids = {
+                int(item.get("channel_id") or 0)
+                for item in _FIXTURE_PROGRAM_BINDINGS.values()
+                if _text(item.get("binding_status")) == "active"
+            }
+            channels = [item for item in channels if int(item.get("id") or 0) not in active_channel_ids]
         return sorted(channels, key=lambda item: int(item.get("id") or 0), reverse=True)[:limit]
     params: list[Any] = []
     where = ""
@@ -275,6 +303,8 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
             cur.execute(
                 f"""
                 SELECT c.*,
+                       active_asset.id AS active_qrcode_asset_id,
+                       active_asset.status AS qrcode_status,
                        COALESCE(contact_stats.channel_contact_count, 0) AS channel_contact_count,
                        contact_stats.latest_channel_entered_at,
                        binding.program_name AS bound_program_name,
@@ -283,6 +313,14 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                        wca.final_url AS wca_final_url,
                        COALESCE(historical_scenes.historical_scene_values, '[]'::jsonb) AS historical_scene_values
                 FROM automation_channel c
+                LEFT JOIN LATERAL (
+                    SELECT id, status
+                    FROM automation_channel_qrcode_asset qa
+                    WHERE qa.channel_id = c.id
+                      AND qa.status = 'active'
+                    ORDER BY qa.generated_at DESC, qa.id DESC
+                    LIMIT 1
+                ) active_asset ON TRUE
                 LEFT JOIN (
                     SELECT channel_id, count(*) AS channel_contact_count, max(last_channel_entered_at) AS latest_channel_entered_at
                     FROM automation_channel_contact
@@ -299,22 +337,12 @@ def _list_channels_from_postgres(*, limit: int, status: str = "", available_for_
                 LEFT JOIN wecom_customer_acquisition_links wca
                   ON wca.automation_channel_id = c.id AND wca.status = 'active'
                 LEFT JOIN LATERAL (
-                    SELECT jsonb_agg(scene_value ORDER BY latest_event_at DESC) AS historical_scene_values
-                    FROM (
-                        SELECT
-                            COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) AS scene_value,
-                            MAX(e.created_at) AS latest_event_at
-                        FROM wecom_external_contact_event_logs e
-                        JOIN automation_member m ON m.external_contact_id = e.external_userid
-                        WHERE m.source_channel_id = c.id
-                          AND e.change_type = 'add_external_contact'
-                          AND e.external_userid <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> ''
-                          AND COALESCE(NULLIF(e.payload_json->>'State', ''), NULLIF(e.payload_json->>'state', '')) <> c.scene_value
-                        GROUP BY 1
-                        ORDER BY latest_event_at DESC
-                        LIMIT 12
-                    ) scene_rows
+                    SELECT jsonb_agg(a.scene_value ORDER BY a.updated_at DESC, a.id DESC) AS historical_scene_values
+                    FROM automation_channel_scene_alias a
+                    WHERE a.channel_id = c.id
+                      AND a.scene_value <> c.scene_value
+                      AND a.status <> 'revoked'
+                    LIMIT 12
                 ) historical_scenes ON TRUE
                 {where}
                 ORDER BY c.updated_at DESC, c.id DESC
@@ -361,6 +389,7 @@ def list_program_channel_bindings_resource(program_id: int) -> list[dict[str, An
                     c.final_url,
                     c.status AS channel_status,
                     c.owner_staff_id,
+                    c.auto_accept_friend,
                     c.entry_tag_id,
                     c.entry_tag_name,
                     c.entry_tag_group_name,
@@ -402,7 +431,7 @@ def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], p
     priority = int(payload.get("priority") or 0)
     conn = _connect()
     if conn is None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for channel_id in normalized_ids:
             if channel_id not in _FIXTURE_CHANNELS:
                 raise LookupError("channel_not_found")
@@ -512,7 +541,7 @@ def archive_program_channel_binding_resource(program_id: int, binding_id: int) -
         if not binding or int(binding.get("program_id") or 0) != int(program_id):
             raise LookupError("binding_not_found")
         binding["binding_status"] = "archived"
-        binding["unbound_at"] = datetime.now(UTC).isoformat()
+        binding["unbound_at"] = datetime.now(timezone.utc).isoformat()
         binding["updated_at"] = binding["unbound_at"]
         return {"binding": _serialize_program_binding({**(_FIXTURE_CHANNELS.get(int(binding.get("channel_id") or 0), {})), **binding}), "reason": "program_channel_unbound"}
     with conn:
@@ -541,7 +570,12 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
     existing = existing or {}
     customer_channel = _text(payload.get("customer_channel") or payload.get("scene_value"))
     channel_code = _text(payload.get("channel_code")) or _text(existing.get("channel_code"))
-    scene_value = customer_channel if carrier_type == "link" else _text(existing.get("scene_value") or payload.get("scene_value") or channel_code)
+    if carrier_type != "link" and _text(payload.get("scene_value")) and _text(payload.get("scene_value")) != _text(existing.get("scene_value")):
+        raise ValueError("scene_value_is_system_managed")
+    if carrier_type != "link" and _text(payload.get("qr_url")) and _text(payload.get("qr_url")) != _text(existing.get("qr_url")):
+        raise ValueError("qr_url_is_system_managed")
+    scene_value = customer_channel if carrier_type == "link" else _text(existing.get("scene_value"))
+    qr_url = _text(existing.get("qr_url")) if carrier_type != "link" else _text(payload.get("qr_url") or existing.get("qr_url"))
     final_url = _text(payload.get("final_url"))
     link_url = _text(payload.get("link_url"))
     if carrier_type == "link" and link_url and customer_channel and not final_url:
@@ -553,7 +587,7 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         "channel_name": _text(payload.get("channel_name")) or _text(existing.get("channel_name")) or channel_code or "未命名渠道",
         "channel_code": channel_code,
         "scene_value": scene_value,
-        "qr_url": _text(existing.get("qr_url") or payload.get("qr_url")),
+        "qr_url": qr_url,
         "status": _text(payload.get("status")) or _text(existing.get("status")) or "active",
         "owner_staff_id": _text(payload.get("owner_staff_id") or existing.get("owner_staff_id")),
         "customer_channel": customer_channel if carrier_type == "link" else "",
@@ -563,6 +597,7 @@ def _coerce_channel_payload(payload: dict[str, Any], *, existing: dict[str, Any]
         "welcome_image_library_ids": _json_list(payload.get("welcome_image_library_ids")),
         "welcome_miniprogram_library_ids": _json_list(payload.get("welcome_miniprogram_library_ids")),
         "welcome_attachment_library_ids": _json_list(payload.get("welcome_attachment_library_ids")),
+        "auto_accept_friend": _bool(payload.get("auto_accept_friend"), default=_bool(existing.get("auto_accept_friend"))),
         "entry_tag_id": _text(payload.get("entry_tag_id")),
         "entry_tag_name": _text(payload.get("entry_tag_name")),
         "entry_tag_group_name": _text(payload.get("entry_tag_group_name")),
@@ -576,7 +611,7 @@ def _save_fixture_channel(payload: dict[str, Any], channel_id: int | None = None
     if channel_id is None:
         channel_id = _NEXT_ID
         _NEXT_ID += 1
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     channel = {**existing, **data, "id": int(channel_id), "updated_at": now, "created_at": existing.get("created_at") or now}
     _FIXTURE_CHANNELS[int(channel_id)] = channel
     return _serialize_channel(channel)
@@ -608,11 +643,13 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
         "welcome_image_library_ids",
         "welcome_miniprogram_library_ids",
         "welcome_attachment_library_ids",
+        "auto_accept_friend",
         "entry_tag_id",
         "entry_tag_name",
         "entry_tag_group_name",
     ]
     values = [Jsonb(data[key]) if key.endswith("_ids") else data[key] for key in columns]
+    owner_changed = bool(channel_id and _text((existing or {}).get("owner_staff_id")) and _text(data.get("owner_staff_id")) and _text((existing or {}).get("owner_staff_id")) != _text(data.get("owner_staff_id")))
     with conn:
         with conn.cursor() as cur:
             if channel_id:
@@ -630,7 +667,59 @@ def _save_postgres_channel(payload: dict[str, Any], channel_id: int | None = Non
                 )
                 saved_id = int((cur.fetchone() or {}).get("id") or 0)
         conn.commit()
+    if owner_changed:
+        channel_entry_repo.mark_qrcode_asset_stale(saved_id, reason="owner_staff_id_changed")
     return get_channel_resource(saved_id) or {"id": saved_id, **data}
+
+
+def get_channel_qrcode_status_resource(channel_id: int) -> dict[str, Any]:
+    channel = get_channel_resource(int(channel_id))
+    if not channel:
+        raise LookupError("channel_not_found")
+    if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
+        return {"channel_id": int(channel_id), "downloadable": False, "reason": "link_channel_does_not_support_qrcode_download", "channel": channel}
+    conn = _connect()
+    if conn is None:
+        raw_channel = _FIXTURE_CHANNELS.get(int(channel_id), {})
+        asset = dict(raw_channel.get("_active_qrcode_asset") or {})
+        aliases: list[dict[str, Any]] = list(raw_channel.get("_scene_aliases") or [])
+        effects: list[dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
+    else:
+        asset = channel_entry_repo.get_active_qrcode_asset(int(channel_id)) or {}
+        aliases = channel_entry_repo.list_channel_scene_aliases(int(channel_id))
+        effects = channel_entry_repo.list_channel_entry_effect_logs(channel_id=int(channel_id), limit=10)
+        events = channel_entry_repo.list_recent_events(_text(channel.get("scene_value")), limit=10) if _text(channel.get("scene_value")) else []
+    reason = "downloadable"
+    downloadable = True
+    if not asset:
+        downloadable = False
+        reason = "qrcode_not_generated"
+    elif int(asset.get("channel_id") or 0) != int(channel_id):
+        downloadable = False
+        reason = "qrcode_asset_channel_mismatch"
+    elif _text(asset.get("status")) != "active":
+        downloadable = False
+        reason = "qrcode_asset_not_downloadable"
+    elif _text(asset.get("scene_value")) != _text(channel.get("scene_value")) or _text(asset.get("qr_url")) != _text(channel.get("qr_url")):
+        downloadable = False
+        reason = "qrcode_asset_mismatch"
+    elif not _text(asset.get("qr_url")).startswith(("http://", "https://")):
+        downloadable = False
+        reason = "qrcode_asset_missing_url"
+    return {
+        "channel_id": int(channel_id),
+        "channel_name": _text(channel.get("channel_name")),
+        "active_qrcode_asset": asset,
+        "channel_cached_scene": _text(channel.get("scene_value")),
+        "channel_cached_qr_url": _text(channel.get("qr_url")),
+        "consistency_status": "ok" if downloadable else reason,
+        "downloadable": downloadable,
+        "reason": reason,
+        "aliases": aliases,
+        "recent_callback_states": events,
+        "recent_effect_logs": effects,
+    }
 
 
 def list_channel_owner_candidates() -> list[dict[str, Any]]:
@@ -786,18 +875,43 @@ def get_channel_share_link(channel_id: int) -> dict[str, Any]:
 
 @router.get("/api/admin/channels/{channel_id:int}/qrcode/download")
 def download_channel_qrcode(channel_id: int):
-    channel = get_channel_resource(int(channel_id))
-    if not channel:
+    try:
+        status = get_channel_qrcode_status_resource(int(channel_id))
+    except LookupError:
         raise HTTPException(status_code=404, detail="channel_not_found")
-    if channel.get("carrier_type") == "link" or channel.get("channel_type") == "wecom_customer_acquisition":
+    if status.get("reason") == "link_channel_does_not_support_qrcode_download":
         return JSONResponse(
             status_code=400,
             content={"ok": False, "error": "link channel does not support qrcode download", "reason": "link_channel_does_not_support_qrcode_download"},
         )
-    qr_url = _text(channel.get("qr_url"))
+    if not status.get("downloadable"):
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "reason": status.get("reason"), "qrcode_status": status},
+            headers={"Cache-Control": "no-store"},
+        )
+    asset = status.get("active_qrcode_asset") or {}
+    qr_url = _text(asset.get("qr_url"))
     if qr_url.startswith(("http://", "https://")):
-        return RedirectResponse(qr_url, status_code=302)
+        return RedirectResponse(
+            qr_url,
+            status_code=302,
+            headers={
+                "Cache-Control": "no-store",
+                "X-AICRM-Channel-ID": str(int(channel_id)),
+                "X-AICRM-QR-Scene": _text(asset.get("scene_value")),
+                "X-AICRM-QR-Asset-ID": str(int(asset.get("id") or 0)),
+            },
+        )
     raise HTTPException(status_code=404, detail="qrcode_not_ready")
+
+
+@router.get("/api/admin/channels/{channel_id:int}/qrcode/status")
+def get_channel_qrcode_status(channel_id: int) -> dict[str, Any]:
+    try:
+        return {"ok": True, **get_channel_qrcode_status_resource(int(channel_id)), "source": "ai_crm_next"}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/admin/channel-welcome-materials")

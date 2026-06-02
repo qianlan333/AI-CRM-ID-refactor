@@ -52,6 +52,7 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/admin/image-library"),
     ("POST", "/api/admin/image-library/upload"),
     ("GET", "/api/admin/image-library/image_masked_001"),
+    ("POST", "/api/admin/cloud-orchestrator/media/upload"),
     ("POST", "/api/admin/automation-conversion/jobs/run-due"),
     ("POST", "/wecom/external-contact/callback"),
     ("POST", "/api/wecom/events"),

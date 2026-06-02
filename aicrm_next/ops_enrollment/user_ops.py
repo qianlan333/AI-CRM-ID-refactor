@@ -38,6 +38,7 @@ def normalize_filters(filters: UserOpsFilters | None) -> UserOpsFilters:
         mobile_binding_status=mobile_binding_status if mobile_binding_status in {"bound", "unbound", "all"} else "",
         activation_bucket=activation_bucket if activation_bucket in {"activated", "not_activated", "pending_input", "all"} else "",
         class_term_no=_norm(filters.class_term_no),
+        tag=_norm(filters.tag),
         keyword=_norm(filters.keyword),
         mobile=_norm(filters.mobile),
         owner_userid=_norm(filters.owner_userid),
@@ -59,6 +60,8 @@ def apply_filters(rows: list[JsonDict], filters: UserOpsFilters) -> list[JsonDic
         filtered = [item for item in filtered if item["activation_bucket"] == normalized.activation_bucket]
     if normalized.class_term_no:
         filtered = [item for item in filtered if item["class_term_no"] == normalized.class_term_no]
+    if normalized.tag:
+        filtered = [item for item in filtered if normalized.tag in {str(tag) for tag in item.get("tags") or []}]
     if normalized.mobile:
         filtered = [item for item in filtered if normalized.mobile in str(item.get("mobile") or "")]
     if normalized.owner_userid:

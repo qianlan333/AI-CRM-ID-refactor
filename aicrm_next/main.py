@@ -12,11 +12,14 @@ from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channels_api import router as automation_channels_router
+from .channel_entry.api import router as channel_entry_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
 from .common_operation_members import router as common_operation_members_router
+from .cloud_orchestrator.api import router as cloud_orchestrator_router
+from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from .customer_tags.api import router as customer_tags_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
@@ -26,17 +29,24 @@ from .identity_contact.api import router as identity_router
 from .integration_gateway.api import router as mcp_router
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
+from .message_archive.api import router as message_archive_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
+from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
 from .production_compat.api import router as production_compat_router
 from .production_compat.api import wildcard_router as production_compat_wildcard_router
 from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
+from .radar_links.api import router as radar_links_router
+from .radar_links.repo import reset_radar_links_fixture_state
+from .sidebar_write.api import router as sidebar_write_router
+from .sidebar_write import reset_sidebar_write_fixture_state
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
+from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 
@@ -53,6 +63,10 @@ def create_app() -> FastAPI:
         reset_media_library_fixture_state()
         reset_admin_jobs_fixture_state()
         reset_hxc_dashboard_fixture_state()
+        reset_radar_links_fixture_state()
+        reset_cloud_plan_fixture_state()
+        reset_sidebar_write_fixture_state()
+        reset_questionnaire_admin_write_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -82,8 +96,10 @@ def create_app() -> FastAPI:
     )
     app.include_router(platform_router)
     app.include_router(common_operation_members_router)
+    app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
+    app.include_router(sidebar_write_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)
@@ -91,13 +107,17 @@ def create_app() -> FastAPI:
     app.include_router(user_ops_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
+    app.include_router(message_archive_router)
     app.include_router(questionnaire_router)
+    app.include_router(radar_links_router)
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
+    app.include_router(cloud_orchestrator_router)
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)
+    app.include_router(owner_migration_router)
     app.include_router(frontend_compat_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_wildcard_router)

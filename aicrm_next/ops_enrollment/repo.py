@@ -64,6 +64,7 @@ def _default_pool_rows() -> list[JsonDict]:
             "created_at": "2026-05-01T09:00:00+08:00",
             "updated_at": "2026-05-18T10:00:00+08:00",
             "activation_bucket": "activated",
+            "tags": ["黄小璨", "已激活"],
             "manual_dnd_reasons": [],
             "auto_dnd_reasons": [],
         },
@@ -81,6 +82,7 @@ def _default_pool_rows() -> list[JsonDict]:
             "created_at": "2026-05-02T09:00:00+08:00",
             "updated_at": "2026-05-18T10:20:00+08:00",
             "activation_bucket": "pending_input",
+            "tags": ["黄小璨", "待录入"],
             "manual_dnd_reasons": [],
             "auto_dnd_reasons": [dict(AUTO_DND_REASON)],
         },
@@ -98,6 +100,7 @@ def _default_pool_rows() -> list[JsonDict]:
             "created_at": "2026-05-03T09:00:00+08:00",
             "updated_at": "2026-05-18T10:40:00+08:00",
             "activation_bucket": "not_activated",
+            "tags": ["未激活"],
             "manual_dnd_reasons": [],
             "auto_dnd_reasons": [],
         },
@@ -115,6 +118,7 @@ def _default_pool_rows() -> list[JsonDict]:
             "created_at": "2026-05-04T09:00:00+08:00",
             "updated_at": "2026-05-18T11:00:00+08:00",
             "activation_bucket": "not_activated",
+            "tags": ["黄小璨", "未激活"],
             "manual_dnd_reasons": [],
             "auto_dnd_reasons": [],
         },
@@ -152,6 +156,7 @@ def _project_row(row: JsonDict) -> JsonDict:
             "do_not_disturb_reasons": reasons,
             "can_open_customer_detail": bool(external_userid),
             "can_batch_send": bool(external_userid),
+            "tags": list(projected.get("tags") or []),
         }
     )
     return projected

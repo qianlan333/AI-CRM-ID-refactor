@@ -69,3 +69,23 @@ def runtime_health_state() -> dict:
         "legacy_production_facade_enabled": legacy_production_facade_enabled(),
         "warning": warning,
     }
+
+
+def runtime_route_map_state() -> dict:
+    return {
+        "web_release_sha": str(os.getenv("RELEASE_SHA") or os.getenv("GIT_SHA") or "unknown").strip() or "unknown",
+        "worker_release_sha": str(os.getenv("WORKER_RELEASE_SHA") or "unknown").strip() or "unknown",
+        "route_owner": "ai_crm_next",
+        "app_name": "aicrm-next",
+        "task_queue_backend": "next_task_queue",
+        "task_queue_pending": None,
+        "callback_async_enabled": "next_task_queue",
+        "redis_url_active": bool(str(os.getenv("REDIS_URL") or "").strip()),
+        "wecom_callback_routes": {
+            "/wecom/external-contact/callback": "aicrm_next.channel_entry.api",
+            "/api/wecom/events": "aicrm_next.channel_entry.api",
+            "/api/admin/channels/{channel_id}/qrcode/generate": "aicrm_next.channel_entry.api",
+        },
+        "next_live_callback_gateway_enabled": True,
+        "legacy_callback_fallback_enabled": False,
+    }

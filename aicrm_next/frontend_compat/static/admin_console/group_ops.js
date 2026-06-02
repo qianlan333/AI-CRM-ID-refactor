@@ -23,8 +23,11 @@
     refreshingOwnerGroups: false,
     notice: "",
     showCreate: false,
+    createNotice: "",
     showGroupPicker: false,
     groupPickerSearch: "",
+    groupPickerNotice: "",
+    bindingGroups: false,
     showNodeModal: false,
     editingNodeId: 0,
     oneTimeToken: "",
@@ -153,12 +156,45 @@
     };
   }
 
+  function contentPackageIsEmpty(contentPackage) {
+    const normalized = normalizeContentPackage(contentPackage);
+    return !normalized.content_text
+      && !normalized.image_library_ids.length
+      && !normalized.miniprogram_library_ids.length
+      && !normalized.attachment_library_ids.length;
+  }
+
+  function addUniqueId(target, value) {
+    const id = parseInt(String(value || "").trim(), 10);
+    if (id > 0 && target.indexOf(id) === -1) target.push(id);
+  }
+
+  function mergeRecognizedLegacyAttachmentIds(contentPackage, attachments) {
+    const merged = normalizeContentPackage(contentPackage);
+    legacyAttachmentsForNode(attachments).forEach((item) => {
+      const msgtype = String((item && item.msgtype) || "").toLowerCase();
+      const image = item && item.image && typeof item.image === "object" ? item.image : {};
+      const mini = item && item.miniprogram && typeof item.miniprogram === "object" ? item.miniprogram : {};
+      const file = item && item.file && typeof item.file === "object" ? item.file : {};
+      if (msgtype === "image") addUniqueId(merged.image_library_ids, image.library_id || item.library_id);
+      if (msgtype === "miniprogram") addUniqueId(merged.miniprogram_library_ids, mini.library_id || item.library_id);
+      if (msgtype && !["image", "miniprogram"].includes(msgtype)) {
+        addUniqueId(merged.attachment_library_ids, file.library_id || item.library_id);
+      }
+    });
+    return merged;
+  }
+
   function nodeToContentPackage(node) {
     const current = node || {};
     if (current.content_package_json && typeof current.content_package_json === "object") {
-      return normalizeContentPackage(current.content_package_json);
+      const normalized = normalizeContentPackage(current.content_package_json);
+      if (contentPackageIsEmpty(normalized) && current.text_content) {
+        normalized.content_text = String(current.text_content || "").trim();
+      }
+      return mergeRecognizedLegacyAttachmentIds(normalized, current.attachments);
     }
-    return normalizeContentPackage({ content_text: current.text_content || "" });
+    return mergeRecognizedLegacyAttachmentIds({ content_text: current.text_content || "" }, current.attachments);
   }
 
   function contentPackageToNodePayload(contentPackage) {
@@ -332,6 +368,8 @@
     window.OperationMemberPicker.open({
       value,
       title: title || "选择运营人员",
+      scope: "group_ops",
+      page_size: 100,
       onSelect: (member) => {
         setMemberField(fieldName, member);
         if (typeof onPicked === "function") onPicked(member);
@@ -385,7 +423,7 @@
     });
     if (action === "pick-group-filter-owner") return openMemberPicker({
       fieldName: "owner_userid",
-      title: "选择群主",
+      title: "选择群主/管理员",
       value: currentFormValue("owner_userid"),
       onPicked: (member) => {
         state.groupFilterOwner = member;
@@ -402,32 +440,44 @@
 
   function showCreatePlan() {
     state.showCreate = true;
+    state.createNotice = "";
     renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
   }
 
   function cancelCreatePlan() {
     state.showCreate = false;
+    state.createNotice = "";
     renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
   }
 
   async function createPlan() {
     const owner = currentFormValue("create_owner_userid");
     if (!owner) {
-      state.notice = "请选择运营成员";
+      state.showCreate = true;
+      state.createNotice = "请选择运营成员";
+      state.notice = "";
       renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
       return;
     }
-    const created = await requestJson(routes.apiPlans, {
-      method: "POST",
-      body: {
-        plan_name: currentFormValue("create_plan_name") || "新建群运营计划",
-        plan_type: currentFormValue("create_plan_type") || "standard",
-        owner_userid: owner,
-        status: "draft",
-      },
-    });
-    const item = created.item || created;
-    if (item.id) window.location.assign(routes.plan(item.id));
+    try {
+      const created = await requestJson(routes.apiPlans, {
+        method: "POST",
+        body: {
+          plan_name: currentFormValue("create_plan_name") || "新建群运营计划",
+          plan_type: currentFormValue("create_plan_type") || "standard",
+          owner_userid: owner,
+          status: "draft",
+        },
+      });
+      const item = created.item || created;
+      if (item.id) window.location.assign(routes.plan(item.id));
+    } catch (error) {
+      const message = requestErrorMessage(error, "创建失败");
+      state.showCreate = true;
+      state.createNotice = message.includes("创建失败") ? message : `创建失败：${message}`;
+      state.notice = "";
+      renderList(state.lastTotal || state.plans.length, state.queueCount || 0);
+    }
   }
 
   async function disablePlan(planId) {
@@ -472,30 +522,45 @@
   function openGroupPicker() {
     state.showGroupPicker = true;
     state.groupPickerSearch = "";
+    state.groupPickerNotice = "";
     renderDetail();
   }
 
   function closeGroupPicker() {
+    if (state.bindingGroups) return;
     state.showGroupPicker = false;
     state.groupPickerSearch = "";
+    state.groupPickerNotice = "";
     renderDetail();
   }
 
   async function confirmGroupPicker() {
-    if (!state.plan || !state.plan.id) return;
+    if (!state.plan || !state.plan.id || state.bindingGroups) return;
     const selected = Array.from(app.querySelectorAll("[data-group-choice]:checked")).map((item) => item.value).filter(Boolean);
     if (!selected.length) {
-      state.notice = "请选择群";
+      state.groupPickerNotice = "请选择群";
       renderDetail();
       return;
     }
-    for (const chatId of selected) {
-      await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId, operator: "admin_ui" } });
+    state.bindingGroups = true;
+    state.groupPickerNotice = "绑定中";
+    renderDetail();
+    try {
+      for (const chatId of selected) {
+        await requestJson(routes.apiPlanGroups(state.plan.id), { method: "POST", body: { chat_id: chatId, operator: "admin_ui" } });
+      }
+      state.notice = `已添加 ${formatNumber(selected.length)} 个群`;
+      state.showGroupPicker = false;
+      state.groupPickerSearch = "";
+      state.groupPickerNotice = "";
+      loadDetailPage(state.plan.id);
+    } catch (error) {
+      state.groupPickerNotice = requestErrorMessage(error, "绑定失败");
+      state.notice = "";
+      renderDetail();
+    } finally {
+      state.bindingGroups = false;
     }
-    state.notice = `已添加 ${formatNumber(selected.length)} 个群`;
-    state.showGroupPicker = false;
-    state.groupPickerSearch = "";
-    loadDetailPage(state.plan.id);
   }
 
   async function removeGroup(chatId) {
@@ -641,6 +706,7 @@
           <label class="group-ops__field group-ops__field--wide"><span>计划名称</span><input name="create_plan_name" value="新建群运营计划"></label>
           <label class="group-ops__field"><span>计划类型</span><select name="create_plan_type"><option value="standard">标准编排计划</option><option value="webhook">Webhook 接收计划</option></select></label>
           <label class="group-ops__field"><span>运营成员</span>${ownerField}</label>
+          <div class="group-ops__modal-notice" ${state.createNotice ? "" : "hidden"}>${escapeHtml(state.createNotice)}</div>
           <div class="group-ops__row-actions">${actionButton("保存计划", "create-plan", "group-ops__button--primary")}${actionButton("取消", "cancel-create-plan")}</div>
         </div>
       </section>
@@ -694,6 +760,7 @@
       </section>
     `);
     state.notice = "";
+    state.createNotice = "";
   }
 
   async function loadDetailPage(planId) {
@@ -731,6 +798,22 @@
     return row.owner_name || row.owner_userid || row.owner_userid_snapshot || "-";
   }
 
+  function groupAdminUserids(row) {
+    if (Array.isArray(row.admin_userids)) return row.admin_userids.map((item) => String(item || "").trim()).filter(Boolean);
+    try {
+      const parsed = JSON.parse(row.admin_userids || "[]");
+      return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function groupManageableBy(group, userid) {
+    const member = String(userid || "").trim();
+    if (!member) return false;
+    return group.owner_userid === member || groupAdminUserids(group).includes(member);
+  }
+
   function renderBoundGroups() {
     if (!state.planGroups.length) return '<div class="group-ops__empty">暂无绑定群</div>';
     return state.planGroups
@@ -750,7 +833,7 @@
   function availableGroupsForCurrentOwner() {
     const selectedOwner = currentFormValue("owner_userid") || (state.plan && state.plan.owner_userid) || "";
     const bound = new Set(state.planGroups.map((group) => group.chat_id));
-    return state.groups.filter((group) => group.owner_userid === selectedOwner && !bound.has(group.chat_id));
+    return state.groups.filter((group) => groupManageableBy(group, selectedOwner) && !bound.has(group.chat_id));
   }
 
   function renderGroupPickerOptions() {
@@ -787,10 +870,13 @@
             <span>群名 / 群 ID</span>
             <input data-group-picker-search name="group_picker_keyword" value="${escapeHtml(state.groupPickerSearch)}">
           </label>
+          <div class="group-ops__modal-notice" ${state.groupPickerNotice ? "" : "hidden"}>${escapeHtml(state.groupPickerNotice)}</div>
           <div class="group-ops__group-picker-list">${renderGroupPickerOptions()}</div>
           <div class="group-ops__modal-footer">
             ${actionButton("取消", "close-group-picker")}
-            ${actionButton("确认选择", "confirm-group-picker", "group-ops__button--primary")}
+            <button class="group-ops__button group-ops__button--primary" type="button" data-action="confirm-group-picker"${
+              state.bindingGroups ? " disabled" : ""
+            }>${state.bindingGroups ? "绑定中" : "确认选择"}</button>
           </div>
         </div>
       </div>
@@ -812,6 +898,15 @@
     target.innerHTML =
       `<strong>话术：</strong><span>${escapeHtml(summary.text)}</span>` +
       `<strong>素材：</strong><span>图片 ${summary.imageCount} / 小程序 ${summary.miniprogramCount} / 附件 ${summary.attachmentCount}</span>`;
+  }
+
+  function renderLegacyAttachmentNotice(node) {
+    if (!legacyAttachmentsForNode((node || {}).attachments).length) return "";
+    return `
+      <div class="group-ops__modal-notice">
+        历史素材已保留，保存新素材不会自动删除历史素材
+      </div>
+    `;
   }
 
   function openNodeContentComposer() {
@@ -898,6 +993,7 @@
                   <strong>素材数量</strong><span>图片 ${currentContentSummary.imageCount} / 小程序 ${currentContentSummary.miniprogramCount} / 附件 ${currentContentSummary.attachmentCount}</span>
                 </div>
                 <button class="group-ops__button" type="button" data-action="configure-node-content">配置话术和素材</button>
+                ${renderLegacyAttachmentNotice(current)}
                 <input type="hidden" name="node_content_package_json" value="${escapeHtml(JSON.stringify(currentContentPackage))}">
               </aside>
             </div>
@@ -1082,8 +1178,8 @@
       <section class="group-ops__card">
         <div class="group-ops__filters">
           <label class="group-ops__field group-ops__field--wide"><span>群名 / 群 ID</span><input name="keyword" data-filter></label>
-          <label class="group-ops__field"><span>群主</span>${renderMemberField("owner_userid", (state.groupFilterOwner || {}).user_id, "pick-group-filter-owner", state.groupFilterOwner ? "更换群主" : "选择群主")}</label>
-          <div class="group-ops__row-actions">${actionButton("清除群主", "clear-group-filter-owner")}</div>
+          <label class="group-ops__field"><span>群主/管理员</span>${renderMemberField("owner_userid", (state.groupFilterOwner || {}).user_id, "pick-group-filter-owner", state.groupFilterOwner ? "更换成员" : "选择成员")}</label>
+          <div class="group-ops__row-actions">${actionButton("清除成员", "clear-group-filter-owner")}</div>
           <label class="group-ops__field"><span>所属计划</span><select name="plan_id" data-filter><option value="">全部</option>${renderPlanFilter()}</select></label>
           <label class="group-ops__field"><span>已绑定 / 未绑定</span><select name="bind_status" data-filter><option value="">全部</option><option value="bound">已绑定</option><option value="unbound">未绑定</option></select></label>
         </div>

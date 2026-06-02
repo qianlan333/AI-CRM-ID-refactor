@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 GROUP_OPS_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/group_ops.js"
 GROUP_OPS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/group_ops.html"
+PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
 
 
 def _source() -> str:
@@ -64,6 +65,8 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
     assert "apiMembers" in source
     assert "/api/admin/common/operation-members?scope=group_ops" in source
     assert "OperationMemberPicker.open" in source
+    assert 'scope: "group_ops"' in source
+    assert "page_size: 100" in source
     assert "create_owner_userid_text" not in source
     assert '"owner_001"' not in source
 
@@ -85,6 +88,9 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
     assert "open-node-modal" in source
     assert "group-ops__modal" in source
     assert "group_picker_keyword" in source
+    assert "groupPickerNotice" in source
+    assert "绑定中" in source
+    assert "requestErrorMessage(error, \"绑定失败\")" in source
     assert "配置话术和素材" in source
     assert "AICRMSendContentComposer.open" in source
     assert "配置群运营动作内容" in source
@@ -103,6 +109,7 @@ def test_group_ops_detail_frontend_contract_matches_standard_and_webhook_require
         assert label in source
     assert "一次性 token" in source
     assert "复制后不可再次查看" in source
+    assert "历史素材已保留，保存新素材不会自动删除历史素材" in source
 
     for forbidden in ["适用场景", "JSON 示例", "请求字段说明大表", "请求字段说明", "明文 token", "明文 Token"]:
         assert forbidden not in source
@@ -202,6 +209,17 @@ vm.createContext(sandbox);
 vm.runInContext(source, sandbox);
 const adapter = sandbox.window.AICRMGroupOpsContentAdapter;
 const fromOld = adapter.nodeToContentPackage({{ text_content: "  老话术  ", attachments: [{{msgtype:"image"}}] }});
+const fromEmptyPackage = adapter.nodeToContentPackage({{ text_content: "  老话术  ", content_package_json: {{}} }});
+const fromLegacyIds = adapter.nodeToContentPackage({{
+  text_content: "历史素材",
+  content_package_json: {{}},
+  attachments: [
+    {{msgtype: "image", image: {{library_id: "12"}}}},
+    {{msgtype: "miniprogram", miniprogram: {{library_id: 34}}}},
+    {{msgtype: "file", file: {{library_id: "56"}}}},
+    {{msgtype: "file", file: {{media_id: "legacy-file"}}}}
+  ]
+}});
 const fromPackage = adapter.nodeToContentPackage({{
   content_package_json: {{
     content_text: "  新话术  ",
@@ -217,7 +235,7 @@ const toNode = adapter.contentPackageToNodePayload({{
   attachment_library_ids: ["301", "301", 302]
 }});
 const empty = adapter.normalizeContentPackage({{}});
-console.log(JSON.stringify({{ fromOld, fromPackage, toNode, empty }}));
+console.log(JSON.stringify({{ fromOld, fromEmptyPackage, fromLegacyIds, fromPackage, toNode, empty }}));
 """
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     payload = json.loads(result.stdout)
@@ -227,6 +245,13 @@ console.log(JSON.stringify({{ fromOld, fromPackage, toNode, empty }}));
         "image_library_ids": [],
         "miniprogram_library_ids": [],
         "attachment_library_ids": [],
+    }
+    assert payload["fromEmptyPackage"]["content_text"] == "老话术"
+    assert payload["fromLegacyIds"] == {
+        "content_text": "历史素材",
+        "image_library_ids": [12],
+        "miniprogram_library_ids": [34],
+        "attachment_library_ids": [56],
     }
     assert payload["fromPackage"] == {
         "content_text": "新话术",
@@ -249,6 +274,106 @@ console.log(JSON.stringify({{ fromOld, fromPackage, toNode, empty }}));
         "miniprogram_library_ids": [],
         "attachment_library_ids": [],
     }
+
+
+def test_group_ops_list_create_panel_errors_and_post_failures_are_visible():
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(GROUP_OPS_JS))}, "utf8");
+const actions = {{}};
+const values = {{}};
+function attr(html, name) {{
+  const re = new RegExp('name="' + name + '"[^>]*value="([^"]*)"', 'm');
+  const match = html.match(re);
+  return match ? match[1] : "";
+}}
+const app = {{
+  dataset: {{ pageMode: "list" }},
+  _html: "",
+  set innerHTML(value) {{
+    this._html = String(value || "");
+    for (const key of Object.keys(actions)) delete actions[key];
+    const re = /data-action="([^"]+)"/g;
+    let match;
+    while ((match = re.exec(this._html))) {{
+      const action = match[1];
+      actions[action] = {{
+        dataset: {{ action }},
+        addEventListener(eventName, handler) {{
+          if (eventName === "click") this.handler = handler;
+        }}
+      }};
+    }}
+  }},
+  get innerHTML() {{ return this._html; }},
+  querySelectorAll(selector) {{
+    if (selector === "[data-action]") return Object.values(actions);
+    return [];
+  }},
+  querySelector(selector) {{
+    const match = selector.match(/^\\[name="([^"]+)"\\]$/);
+    if (!match) return null;
+    const name = match[1];
+    return {{ value: values[name] ?? attr(this._html, name) }};
+  }}
+}};
+let postFailures = 0;
+const sandbox = {{
+  window: {{
+    AdminApi: {{
+      escapeHtml(value) {{ return String(value || ""); }},
+      requestJson(url, options) {{
+        if (options && options.method === "POST") {{
+          postFailures += 1;
+          return Promise.reject({{ payload: {{ error_message: "权限不足" }} }});
+        }}
+        if (String(url).includes("operation-members")) return Promise.resolve({{ items: [] }});
+        return Promise.resolve({{ items: [], total: 0, queue_count: 0 }});
+      }}
+    }},
+    location: {{ assign() {{ throw new Error("should_not_redirect"); }} }}
+  }},
+  document: {{ getElementById() {{ return app; }} }},
+  Intl
+}};
+sandbox.window.window = sandbox.window;
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox);
+(async () => {{
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await actions["show-create-plan"].handler({{ currentTarget: actions["show-create-plan"] }});
+  const opened = app.innerHTML.includes('name="create_owner_userid"') && app.innerHTML.includes("保存计划");
+  await actions["create-plan"].handler({{ currentTarget: actions["create-plan"] }});
+  const missingOwner = app.innerHTML.includes("请选择运营成员");
+  values.create_owner_userid = "owner_001";
+  await actions["create-plan"].handler({{ currentTarget: actions["create-plan"] }});
+  const postFailed = app.innerHTML.includes("创建失败") && app.innerHTML.includes("权限不足");
+  console.log(JSON.stringify({{ opened, missingOwner, postFailed, postFailures }}));
+}})().catch((error) => {{
+  console.error(error && error.stack || error);
+  process.exit(1);
+}});
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "opened": True,
+        "missingOwner": True,
+        "postFailed": True,
+        "postFailures": 1,
+    }
+
+
+def test_operation_member_picker_can_scope_group_ops_without_changing_default_common_scope():
+    source = PICKER_JS.read_text(encoding="utf-8")
+
+    assert "function scopedUrl(q)" in source
+    assert 'url.searchParams.set("scope", state.scope)' in source
+    assert 'url.searchParams.set("page_size", state.pageSize)' in source
+    assert 'state.scope = String(options.scope || "").trim();' in source
+    assert 'state.pageSize = String(options.page_size || options.pageSize || "").trim();' in source
 
 
 def test_group_ops_all_groups_frontend_contract_has_only_required_columns():

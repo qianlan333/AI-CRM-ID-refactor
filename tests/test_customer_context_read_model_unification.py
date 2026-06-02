@@ -49,16 +49,16 @@ def test_customer_context_query_unifies_detail_timeline_messages_and_binding(mon
 
 
 def test_customer_context_query_does_not_return_fixture_success_when_production_ready(monkeypatch):
-    from aicrm_next.integration_gateway import legacy_customer_read_facade
+    from aicrm_next.customer_read_model import application
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://ctx:ctx@127.0.0.1:1/aicrm_ctx")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.delenv("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE", raising=False)
     monkeypatch.setattr(
-        legacy_customer_read_facade,
-        "get_customer_via_legacy",
-        lambda request: (_ for _ in ()).throw(RuntimeError("postgres unavailable")),
+        application,
+        "build_customer_read_model_repository",
+        lambda: (_ for _ in ()).throw(RuntimeError("postgres unavailable")),
     )
 
     result = GetCustomerContextQuery()(CustomerContextRequest(external_userid="wx_ext_001"))

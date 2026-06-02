@@ -32,6 +32,17 @@ def test_channel_form_uses_standard_send_content_composer_assets() -> None:
     assert "标准内容编辑器未加载，请刷新页面后重试" in js
 
 
+def test_channel_form_exposes_auto_accept_friend_toggle() -> None:
+    html = _read(TEMPLATE)
+    js = _read(CHANNEL_JS)
+
+    assert 'name="auto_accept_friend"' in html
+    assert "扫码添加负责人时自动通过好友申请" in html
+    assert "skip_verify" in html
+    assert "auto_accept_friend:" in js
+    assert '[name="auto_accept_friend"]' in js
+
+
 def test_channel_form_no_longer_uses_private_welcome_material_picker() -> None:
     combined = _read(TEMPLATE) + "\n" + _read(CHANNEL_JS)
 

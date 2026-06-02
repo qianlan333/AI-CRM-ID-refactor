@@ -31,14 +31,24 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
         json={
             "channel_name": "Next 普通二维码",
             "channel_code": "aqr_next_runtime",
-            "scene_value": "aqr_next_runtime",
-            "qr_url": "https://wework.qpic.cn/next-runtime-qr",
             "status": "active",
         },
     )
     assert created.status_code == 201
     channel = created.json()["channel"]
     channel_id = int(channel["id"])
+    assert channel["scene_value"] == ""
+    assert channel["qr_url"] == ""
+    assert channel["qrcode_status"] == "not_generated"
+    channels_api._FIXTURE_CHANNELS[channel_id]["scene_value"] = "aqr_next_runtime"
+    channels_api._FIXTURE_CHANNELS[channel_id]["qr_url"] = "https://wework.qpic.cn/next-runtime-qr"
+    channels_api._FIXTURE_CHANNELS[channel_id]["_active_qrcode_asset"] = {
+        "id": 77,
+        "channel_id": channel_id,
+        "scene_value": "aqr_next_runtime",
+        "qr_url": "https://wework.qpic.cn/next-runtime-qr",
+        "status": "active",
+    }
     channels_api._FIXTURE_CHANNELS[channel_id]["historical_scene_values"] = ["aqr_legacy_runtime"]
 
     listed = client.get("/api/admin/channels")
@@ -68,6 +78,7 @@ def test_next_channel_center_page_and_channel_crud_routes(monkeypatch):
     qrcode = client.get(f"/api/admin/channels/{channel_id}/qrcode/download", follow_redirects=False)
     assert qrcode.status_code == 302
     assert qrcode.headers["location"] == "https://wework.qpic.cn/next-runtime-qr"
+    assert qrcode.headers["x-aicrm-qr-scene"] == "aqr_next_runtime"
 
     link_created = client.post(
         "/api/admin/channels",
@@ -105,8 +116,6 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
         json={
             "channel_name": "方案二维码入口",
             "channel_code": "aqr_program_runtime",
-            "scene_value": "aqr_program_runtime",
-            "qr_url": "https://wework.qpic.cn/program-runtime-qr",
         },
     ).json()["channel"]
     link = client.post(
@@ -125,8 +134,6 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
         json={
             "channel_name": "候选二维码入口",
             "channel_code": "aqr_program_candidate",
-            "scene_value": "aqr_program_candidate",
-            "qr_url": "https://wework.qpic.cn/program-candidate",
         },
     ).json()["channel"]
 
@@ -137,10 +144,32 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
     assert bound.status_code == 201
     assert len(bound.json()["bindings"]) == 2
 
+    rebound = client.post(
+        "/api/admin/automation-conversion/programs/1/channel-bindings",
+        json={"channel_ids": [link["id"], candidate["id"]]},
+    )
+    assert rebound.status_code == 201
+    rebound_ids = {int(item["channel_id"]) for item in rebound.json()["bindings"]}
+    assert rebound_ids == {int(qrcode["id"]), int(link["id"]), int(candidate["id"])}
+    assert len(rebound.json()["bindings"]) == 3
+
     bindings = client.get("/api/admin/automation-conversion/programs/1/channel-bindings")
     assert bindings.status_code == 200
     bound_names = {item["channel"]["channel_name"] for item in bindings.json()["bindings"]}
-    assert bound_names == {"方案二维码入口", "方案获客入口"}
+    assert bound_names == {"方案二维码入口", "方案获客入口", "候选二维码入口"}
+
+    other_program_channel = client.post(
+        "/api/admin/channels",
+        json={
+            "channel_name": "其他方案占用渠道",
+            "channel_code": "aqr_other_program_bound",
+        },
+    ).json()["channel"]
+    other_bound = client.post(
+        "/api/admin/automation-conversion/programs/2/channel-bindings",
+        json={"channel_ids": [other_program_channel["id"]]},
+    )
+    assert other_bound.status_code == 201
 
     qrcode_bindings = client.get(f"/api/admin/channels/{qrcode['id']}/bindings")
     assert qrcode_bindings.status_code == 200
@@ -156,9 +185,12 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
     available = client.get("/api/admin/channels?available_for_program_id=1")
     assert available.status_code == 200
     available_ids = {int(item["id"]) for item in available.json()["channels"]}
-    assert int(candidate["id"]) in available_ids
+    assert int(qrcode["id"]) not in available_ids
+    assert int(candidate["id"]) not in available_ids
+    assert int(other_program_channel["id"]) not in available_ids
 
-    first_binding_id = int(bindings.json()["bindings"][0]["id"])
+    qrcode_binding = next(item for item in bindings.json()["bindings"] if int(item["channel_id"]) == int(qrcode["id"]))
+    first_binding_id = int(qrcode_binding["id"])
     deleted = client.request(
         "DELETE",
         f"/api/admin/automation-conversion/programs/1/channel-bindings/{first_binding_id}",
@@ -166,3 +198,14 @@ def test_next_program_entry_channel_page_and_bindings_api(monkeypatch):
     )
     assert deleted.status_code == 200
     assert deleted.json()["reason"] == "program_channel_unbound"
+    assert deleted.json()["binding"]["binding_status"] == "archived"
+
+    after_delete = client.get("/api/admin/automation-conversion/programs/1/channel-bindings")
+    assert after_delete.status_code == 200
+    after_delete_ids = {int(item["channel_id"]) for item in after_delete.json()["bindings"]}
+    assert int(qrcode["id"]) not in after_delete_ids
+
+    available_after_delete = client.get("/api/admin/channels?available_for_program_id=1")
+    assert available_after_delete.status_code == 200
+    available_after_delete_ids = {int(item["id"]) for item in available_after_delete.json()["channels"]}
+    assert int(qrcode["id"]) in available_after_delete_ids

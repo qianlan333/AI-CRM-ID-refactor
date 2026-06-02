@@ -754,6 +754,76 @@ def test_propose_campaign_group_code_round_trip(app):
     assert standalone["group_label"] == ""
 
 
+def test_cloud_campaign_group_over_500_is_listed_and_batch_started(app):
+    """Admin review surface must not truncate one group at the old 500-row list cap."""
+    import json as _json
+
+    from unittest.mock import patch
+
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+
+    db = get_db()
+    cur = db.cursor()
+    group_code = "grp_over_500_for_admin_review"
+    metadata = _json.dumps({"group_code": group_code, "group_label": "Over 500 group"})
+    rows = [
+        (
+            f"camp-over-500-{idx:03d}",
+            f"Over 500 #{idx:03d}",
+            "bulk over 500",
+            "campaign_start_date",
+            "2026-05-30",
+            "pending_review",
+            "draft",
+            "SenderX",
+            metadata,
+        )
+        for idx in range(505)
+    ]
+    cur.executemany(
+        """
+        INSERT INTO campaigns
+            (campaign_code, display_name, intent, anchor_mode, anchor_date,
+             review_status, run_status, owner_userid, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    db.commit()
+
+    listed = campaign_service.list_campaigns(group_code=group_code, limit=1000)
+    assert len(listed) == 505
+    assert {row["group_code"] for row in listed} == {group_code}
+
+    started: list[int] = []
+
+    def fake_start_campaign(*, campaign_id: int, human_approver: str, approval_token_value: str):
+        started.append(int(campaign_id))
+        return {"id": campaign_id, "run_status": "active"}
+
+    client = app.test_client()
+    with patch(
+        "wecom_ability_service.http.cloud_orchestrator_campaigns.approval_token_module.issue_token",
+        return_value={"token": "approval-token"},
+    ), patch(
+        "wecom_ability_service.http.cloud_orchestrator_campaigns.campaign_service.start_campaign",
+        side_effect=fake_start_campaign,
+    ):
+        response = client.post(
+            "/api/admin/cloud-orchestrator/campaigns/batch-start",
+            json={"group_code": group_code, "operator": "tester"},
+        )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["started_count"] == 505
+    assert body["skipped_count"] == 0
+    assert body["failed_count"] == 0
+    assert len(started) == 505
+
+
 def test_pg_bug_200_register_member_reply_clears_next_due(app):
     """``register_member_reply`` 把 next_due_at 清空 —— PR #200 修了 SET = '' 写入。"""
     from wecom_ability_service.db import get_db
@@ -1023,6 +1093,116 @@ def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
     progressed = cur.fetchone()
     assert progressed["status"] == "completed"
     assert int(progressed["current_step_index"]) == 0
+
+
+def test_pause_campaign_cancels_open_campaign_broadcast_jobs(app):
+    """暂停 Campaign 必须同步取消已经预排期的 broadcast_jobs。"""
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+
+    _insert_segment_with_known_member(app, segment_code="seg-pause-cancel", member_id=970, external_id="ext-970")
+    overview = campaign_service.propose_campaign(
+        display_name="pause cancels queue",
+        intent="暂停时取消预排期 job",
+        segments=[{
+            "segment_code": "seg-pause-cancel",
+            "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "hello"}],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+    token = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="alice",
+        approval_token_value=token["token"],
+    )
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ? AND status = 'queued'",
+        (f"{camp_id}:%",),
+    )
+    assert int(cur.fetchone()["c"]) == 1
+
+    campaign_service.pause_campaign(campaign_id=camp_id, reason="test pause")
+
+    cur.execute(
+        "SELECT status, cancel_reason FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ?",
+        (f"{camp_id}:%",),
+    )
+    row = cur.fetchone()
+    assert row["status"] == "cancelled"
+    assert row["cancel_reason"] == "test pause"
+
+
+def test_claimed_campaign_job_checks_live_pause_before_dispatch(app):
+    """即使 job 已经 claimed，worker 真发前也要按实时 run_status 拦截。"""
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.broadcast_jobs import handlers
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+
+    _insert_segment_with_known_member(app, segment_code="seg-claimed-pause", member_id=971, external_id="ext-971")
+    overview = campaign_service.propose_campaign(
+        display_name="claimed pause guard",
+        intent="claimed 后暂停也不能发送",
+        segments=[{
+            "segment_code": "seg-claimed-pause",
+            "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "hello"}],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+    token = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="alice",
+        approval_token_value=token["token"],
+    )
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "UPDATE broadcast_jobs SET scheduled_for = ? WHERE source_type = 'campaign' AND source_id LIKE ?",
+        ("2020-01-01 00:00:00+00:00", f"{camp_id}:%"),
+    )
+    db.commit()
+
+    claimed = queue_service.claim_due_jobs(limit=10)
+    claimed_campaign_jobs = [j for j in claimed if j.get("source_type") == "campaign" and str(j.get("source_id") or "").startswith(f"{camp_id}:")]
+    assert len(claimed_campaign_jobs) == 1
+
+    campaign_service.pause_campaign(campaign_id=camp_id, reason="claimed pause")
+
+    dispatched: list[dict[str, Any]] = []
+
+    def _fake_dispatch(task_type: str, fn_name: str, payload: dict, **kwargs) -> dict:
+        dispatched.append(payload)
+        return {"task_id": 971}
+
+    with patch(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
+        side_effect=_fake_dispatch,
+    ):
+        result = handlers.execute_job(claimed_campaign_jobs[0])
+
+    assert result["ok"] is False
+    assert result["error"] == "campaign_not_active:paused"
+    assert dispatched == []
 
 
 def test_start_campaign_prequeues_first_step_at_step_timezone(app):

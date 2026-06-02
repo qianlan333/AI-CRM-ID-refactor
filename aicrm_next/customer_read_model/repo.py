@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -407,6 +408,25 @@ class FixtureCustomerReadRepository:
         rows = _apply_customer_filters([deepcopy(item) for item in self._customers], filters or {})
         return _apply_page(rows, limit=limit, offset=offset)
 
+    def replace_all(
+        self,
+        *,
+        customers: list[JsonDict],
+        timeline_by_external_userid: dict[str, list[JsonDict]] | None = None,
+        messages_by_external_userid: dict[str, list[JsonDict]] | None = None,
+    ) -> None:
+        self._customers = [deepcopy(item) for item in customers]
+        self._timeline = {
+            str(external_userid): [deepcopy(item) for item in items]
+            for external_userid, items in (timeline_by_external_userid or {}).items()
+        }
+        self._messages = {
+            str(external_userid): [deepcopy(item) for item in items]
+            for external_userid, items in (messages_by_external_userid or {}).items()
+        }
+
+    seed = replace_all
+
     def get_customer(self, external_userid: str) -> JsonDict | None:
         item = next((item for item in self._customers if item.get("external_userid") == external_userid), None)
         return deepcopy(item) if item else None
@@ -445,11 +465,29 @@ class SqlAlchemyCustomerReadModelRepository:
         self._session = session
 
     def reset(self) -> None:
+        self.clear()
+        self.seed_from_fixture()
+        self._session.commit()
+
+    def clear(self) -> None:
         self._session.execute(delete(customer_recent_message_next))
         self._session.execute(delete(customer_timeline_event_next))
         self._session.execute(delete(customer_detail_snapshot_next))
         self._session.execute(delete(customer_list_index_next))
-        self.seed_from_fixture()
+
+    def replace_all(
+        self,
+        *,
+        customers: list[JsonDict],
+        timeline_by_external_userid: dict[str, list[JsonDict]] | None = None,
+        messages_by_external_userid: dict[str, list[JsonDict]] | None = None,
+    ) -> None:
+        self.clear()
+        self.seed(
+            customers=customers,
+            timeline_by_external_userid=timeline_by_external_userid,
+            messages_by_external_userid=messages_by_external_userid,
+        )
         self._session.commit()
 
     def seed_from_fixture(self, fixture: FixtureCustomerReadRepository | None = None) -> None:
@@ -755,7 +793,10 @@ def build_customer_read_model_repository(
     engine: Engine | None = None,
 ) -> CustomerReadRepository:
     settings = settings or get_settings()
-    backend = os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", settings.customer_read_model_repo_backend).strip().lower()
+    configured_backend = str(os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", "") or "").strip().lower()
+    backend = configured_backend or settings.customer_read_model_repo_backend.strip().lower()
+    if not configured_backend and database_mode() == "postgres":
+        backend = "sqlalchemy"
     if backend in {"sql", "sqlalchemy", "postgres", "postgresql"}:
         if session is not None:
             return assert_repository_allowed(

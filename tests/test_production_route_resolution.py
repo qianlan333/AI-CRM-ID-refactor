@@ -25,6 +25,8 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/customers") == "aicrm_next.customer_read_model.api"
     assert _owner_for(samples, "GET", "/api/messages/wx_ext_001/recent") == "next"
     assert _endpoint_for(samples, "GET", "/api/messages/wx_ext_001/recent") == "aicrm_next.customer_read_model.api"
+    assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/media/upload") == "production_compat"
+    assert _endpoint_for(samples, "POST", "/api/admin/cloud-orchestrator/media/upload") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/admin/image-library") == "next"
     assert _endpoint_for(samples, "GET", "/api/admin/image-library") == "aicrm_next.media_library.api"
     assert _owner_for(samples, "POST", "/api/admin/image-library/upload") == "next"
@@ -57,6 +59,10 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/sidebar/v2/workbench") == "aicrm_next.customer_read_model.api"
     assert _owner_for(samples, "GET", "/api/sidebar/v2/materials") == "next"
     assert _endpoint_for(samples, "GET", "/api/sidebar/v2/materials") == "aicrm_next.customer_read_model.api"
+    assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "next"
+    assert _endpoint_for(samples, "POST", "/api/sidebar/bind-mobile") == "aicrm_next.sidebar_write.api"
+    assert _owner_for(samples, "POST", "/api/sidebar/v2/materials/send") == "next"
+    assert _endpoint_for(samples, "POST", "/api/sidebar/v2/materials/send") == "aicrm_next.sidebar_write.api"
     assert _owner_for(samples, "GET", "/api/customers/automation/signup-conversion/batches") == "next"
     assert (
         _endpoint_for(samples, "GET", "/api/customers/automation/signup-conversion/batches")
@@ -74,8 +80,10 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     result = checker.run_check()
     samples = result["resolution_samples"]
 
-    assert _owner_for(samples, "POST", "/wecom/external-contact/callback") == "production_compat"
-    assert _endpoint_for(samples, "POST", "/wecom/external-contact/callback") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/wecom/external-contact/callback") == "next"
+    assert _endpoint_for(samples, "POST", "/wecom/external-contact/callback") == "aicrm_next.channel_entry.api"
+    assert _owner_for(samples, "POST", "/api/wecom/events") == "next"
+    assert _endpoint_for(samples, "POST", "/api/wecom/events") == "aicrm_next.channel_entry.api"
     assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/admin/wechat-pay/products") == "production_compat"
@@ -98,10 +106,6 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/sidebar/jssdk-config") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "production_compat"
-    assert _endpoint_for(samples, "POST", "/api/sidebar/bind-mobile") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "POST", "/api/sidebar/v2/materials/send") == "production_compat"
-    assert _endpoint_for(samples, "POST", "/api/sidebar/v2/materials/send") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "production_compat"
     assert (
         _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry")

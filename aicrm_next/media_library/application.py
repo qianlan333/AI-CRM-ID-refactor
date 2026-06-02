@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import os
 from typing import Any
 
 from aicrm_next.integration_gateway.media_adapters import build_cloud_storage_adapter, build_wecom_media_adapter, extract_base64_payload
 from aicrm_next.shared.errors import ContractError
+from aicrm_next.shared import runtime
 
 from .dto import AttachmentUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
 from .repo import MediaLibraryRepository, build_media_library_repository, normalize_tags
@@ -38,6 +40,16 @@ def _media_adapter_summary(cloud_result: dict[str, Any] | None, wecom_result: di
         "wecom_media": wecom_result or {},
         "side_effect_safety": _side_effect_safety(),
     }
+
+
+def _looks_like_fake_media_id(media_id: str) -> bool:
+    value = str(media_id or "").strip().lower()
+    return value.startswith(("fake_", "staging_")) or value.startswith("fake://")
+
+
+def _production_wecom_media_required() -> bool:
+    mode = str(os.getenv("AICRM_NEXT_WECOM_MEDIA_MODE", "") or "").strip().lower()
+    return runtime.production_environment() or mode == "production"
 
 
 class ListMediaItemsQuery:
@@ -139,7 +151,13 @@ class UpsertMediaItemCommand:
                     "wecom_media_id": wecom_result.get("media_id"),
                     "side_effect_safety": _side_effect_safety(),
                 }
-        result = {"ok": True, "item": self._repo.save_item(self._kind, data, item_id)}
+        item = self._repo.save_item(self._kind, data, item_id)
+        result = {"ok": True, "item": item}
+        if self._kind == "miniprogram" and data.get("resolve_thumb_media", True) and item.get("thumb_image_id"):
+            thumb_resolve = TestResolveMiniprogramThumbCommand(self._repo)(str(item["id"]))
+            result["thumb_resolve"] = thumb_resolve
+            if thumb_resolve.get("ok") and isinstance(thumb_resolve.get("item"), dict):
+                result["item"] = thumb_resolve["item"]
         if cloud_result or wecom_result:
             result["adapter_result"] = _media_adapter_summary(cloud_result, wecom_result)
         return result
@@ -156,17 +174,28 @@ class DeleteMediaItemCommand:
 
 def _validate_image_upload(*, file_bytes: bytes, file_name: str, content_type: str) -> str:
     if not file_bytes:
-        raise ContractError("image file is empty")
-    if len(file_bytes) > 2 * 1024 * 1024:
-        raise ContractError("image file too large; max 2MB")
+        raise ContractError("invalid_image: image file is empty")
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise ContractError("request_body_too_large: image file too large; max 10MB")
     lower_name = file_name.lower()
     normalized = "image/jpeg" if content_type in {"image/jpg", "image/jpeg"} or lower_name.endswith((".jpg", ".jpeg")) else content_type
-    if normalized not in {"image/png", "image/jpeg"}:
-        raise ContractError("only JPG/PNG images are supported")
+    if lower_name.endswith(".webp") and normalized in {"application/octet-stream", "image/webp"}:
+        normalized = "image/webp"
+    if normalized == "application/octet-stream":
+        if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            normalized = "image/png"
+        elif file_bytes.startswith(b"\xff\xd8"):
+            normalized = "image/jpeg"
+        elif file_bytes.startswith(b"RIFF") and file_bytes[8:12] == b"WEBP":
+            normalized = "image/webp"
+    if normalized not in {"image/png", "image/jpeg", "image/webp"}:
+        raise ContractError("unsupported_mime_type: only JPG/PNG/WEBP images are supported")
     if normalized == "image/png" and not file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ContractError("invalid PNG image")
+        raise ContractError("invalid_image: invalid PNG image")
     if normalized == "image/jpeg" and not file_bytes.startswith(b"\xff\xd8"):
-        raise ContractError("invalid JPG image")
+        raise ContractError("invalid_image: invalid JPG image")
+    if normalized == "image/webp" and not (file_bytes.startswith(b"RIFF") and file_bytes[8:12] == b"WEBP"):
+        raise ContractError("invalid_image: invalid WEBP image")
     return normalized
 
 
@@ -213,13 +242,21 @@ class UploadAttachmentCommand:
 
     def __call__(self, *, file_bytes: bytes, file_name: str, content_type: str, name: str = "", tags: Any = None) -> dict[str, Any]:
         if not file_bytes:
-            raise ContractError("attachment file is empty")
+            raise ContractError("invalid_attachment: attachment file is empty")
+        normalized_type = str(content_type or "application/octet-stream").split(";")[0].strip().lower()
+        if file_name.lower().endswith(".pdf") and normalized_type in {"application/octet-stream", "application/pdf"}:
+            normalized_type = "application/pdf"
+        if normalized_type == "application/pdf":
+            if len(file_bytes) > 50 * 1024 * 1024:
+                raise ContractError("request_body_too_large: pdf file too large; max 50MB")
+            if not file_bytes.startswith(b"%PDF-"):
+                raise ContractError("invalid_pdf: invalid PDF file")
         item = self._repo.save_item(
             "attachment",
             {
                 "name": name or file_name,
                 "file_name": file_name,
-                "mime_type": content_type or "application/octet-stream",
+                "mime_type": normalized_type or "application/octet-stream",
                 "file_size": len(file_bytes),
                 "data_base64": base64.b64encode(file_bytes).decode("ascii"),
                 "tags": normalize_tags(tags),
@@ -240,13 +277,28 @@ class TestResolveMiniprogramThumbCommand:
 
             raise NotFoundError("miniprogram item not found")
         thumb_media_id = str(item.get("thumb_media_id") or "")
-        if thumb_media_id:
-            return {"ok": True, "thumb_media_id": thumb_media_id}
+        if thumb_media_id and not _looks_like_fake_media_id(thumb_media_id):
+            return {"ok": True, "thumb_media_id": thumb_media_id, "item": item, "source": "miniprogram_cache"}
         thumb_image_id = item.get("thumb_image_id")
         if not thumb_image_id:
             return {"ok": False, "error": "thumb_image_id is required before resolving WeCom media"}
         image = self._repo.get_item("image", str(thumb_image_id), include_data=True)
-        if not image or not image.get("data_base64"):
+        if not image:
+            return {"ok": False, "error": "thumb image item is unavailable"}
+        image_media_id = str(image.get("thumb_media_id") or image.get("wecom_media_id") or "")
+        if image_media_id and not _looks_like_fake_media_id(image_media_id):
+            updated = self._repo.save_item("miniprogram", {"thumb_media_id": image_media_id}, item_id)
+            return {"ok": True, "thumb_media_id": image_media_id, "item": updated, "source": "image_library_cache"}
+
+        if _production_wecom_media_required():
+            return {
+                "ok": False,
+                "error": "real_wecom_media_resolve_failed",
+                "error_message": "image_library must contain a real WeCom media_id before miniprogram material can be resolved in production",
+                "thumb_image_id": thumb_image_id,
+            }
+
+        if not image.get("data_base64"):
             return {"ok": False, "error": "thumb image data is unavailable"}
         result = build_wecom_media_adapter().upload_image(
             data_base64=str(image.get("data_base64") or ""),

@@ -338,6 +338,7 @@
       welcome_image_library_ids: imageIds,
       welcome_miniprogram_library_ids: miniprogramIds,
       welcome_attachment_library_ids: attachmentIds,
+      auto_accept_friend: !isLink && !!form.querySelector('[name="auto_accept_friend"]')?.checked,
       entry_tag_id: entryTagId,
       entry_tag_name: entryTagName,
       entry_tag_group_name: entryTagGroupName,
@@ -641,6 +642,8 @@
         body: JSON.stringify({
           admin_action_token: adminToken,
           channel_ids: ids,
+          initial_audience_code: "pending_questionnaire",
+          operator_id: "next_admin",
         }),
       }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {

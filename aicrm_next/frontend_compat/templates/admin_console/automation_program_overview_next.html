@@ -11,11 +11,21 @@
   .overview-panel { display: grid; gap: 14px; padding: 20px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
   .overview-panel h2, .overview-panel h3 { margin: 0; color: #111827; }
   .overview-muted { margin: 0; color: #64748b; line-height: 1.7; }
+  .overview-section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .overview-list-block { display: grid; gap: 10px; min-width: 0; }
+  .overview-list-block h3 { font-size: 17px; }
+  .overview-list { display: grid; gap: 8px; }
+  .overview-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fafc; }
+  .overview-row strong { color: #111827; font-size: 15px; }
+  .overview-row span { color: #64748b; font-size: 13px; font-weight: 800; }
+  .overview-row em { color: #111827; font-style: normal; font-size: 22px; font-weight: 900; }
+  .overview-empty { padding: 14px; border-radius: 10px; background: #f8fafc; color: #64748b; font-weight: 800; }
+  .overview-alert { padding: 12px 14px; border-radius: 10px; background: #fff7ed; color: #9a3412; font-weight: 800; }
   .overview-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
   .overview-action { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border: 1px solid rgba(37,99,235,.18); border-radius: 10px; background: #eef4ff; color: #1456f0; font-weight: 800; text-decoration: none; }
   .overview-action.is-primary { background: #2563eb; color: #fff; box-shadow: 0 10px 22px rgba(37,99,235,.18); }
   @media (max-width: 960px) {
-    .overview-grid { grid-template-columns: 1fr; }
+    .overview-grid, .overview-section-grid { grid-template-columns: 1fr; }
   }
 </style>
 {% endblock %}
@@ -25,6 +35,10 @@
 {% set program = workspace.program or {} %}
 {% set summary = workspace.summary or {} %}
 {% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "停用" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
+{% set audience_segments = workspace.audience_segments or [] %}
+{% set stage_segments = workspace.stage_segments or [] %}
+{% set profile_segments = workspace.profile_segments or [] %}
+{% set behavior_segments = workspace.behavior_segments or [] %}
 
 <section class="program-overview">
   <section class="overview-panel">
@@ -42,6 +56,9 @@
     </nav>
     {% endif %}
   </section>
+  {% if workspace.page_error %}
+  <div class="overview-alert">{{ workspace.page_error }}</div>
+  {% endif %}
 
   <div class="overview-grid">
     <article class="overview-card"><span>入口数</span><strong>{{ summary.channel_count or 0 }}</strong></article>
@@ -65,6 +82,64 @@
       <a class="overview-action" href="{{ url_for('api.admin_automation_program_copy_form', program_id=program.id) }}">复制方案</a>
       <a class="overview-action" href="{{ url_for('api.admin_automation_program_entry_channels', program_id=program.id) }}">入口渠道</a>
       <a class="overview-action is-primary" href="{{ url_for('api.admin_automation_program_setup', program_id=program.id) }}?step=basic">编辑配置</a>
+    </div>
+  </section>
+
+  <section class="overview-panel">
+    <div>
+      <h3>运行概况</h3>
+      <p class="overview-muted">当前方案内用户按阶段、画像分层和行为分层统计。</p>
+    </div>
+    <div class="overview-section-grid">
+      <article class="overview-list-block">
+        <h3>阶段分布</h3>
+        <div class="overview-list">
+          {% for item in audience_segments %}
+          <div class="overview-row"><span><strong>{{ item.label }}</strong><br>{{ item.key }}</span><em>{{ item.count }}</em></div>
+          {% else %}
+          <div class="overview-empty">当前方案还没有入池用户。</div>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="overview-list-block">
+        <h3>入池状态</h3>
+        <div class="overview-list">
+          {% for item in stage_segments %}
+          <div class="overview-row"><span><strong>{{ item.label }}</strong><br>{{ item.key }}</span><em>{{ item.count }}</em></div>
+          {% else %}
+          <div class="overview-empty">当前方案还没有阶段记录。</div>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="overview-panel">
+    <div>
+      <h3>分层人数</h3>
+      <p class="overview-muted">画像分层和行为分层来自当前方案成员的物化分层结果。</p>
+    </div>
+    <div class="overview-section-grid">
+      <article class="overview-list-block">
+        <h3>画像分层</h3>
+        <div class="overview-list">
+          {% for item in profile_segments %}
+          <div class="overview-row"><span><strong>{{ item.label }}</strong><br>{{ item.key }}</span><em>{{ item.count }}</em></div>
+          {% else %}
+          <div class="overview-empty">当前方案还没有画像分层数据。</div>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="overview-list-block">
+        <h3>行为分层</h3>
+        <div class="overview-list">
+          {% for item in behavior_segments %}
+          <div class="overview-row"><span><strong>{{ item.label }}</strong><br>{{ item.key }}</span><em>{{ item.count }}</em></div>
+          {% else %}
+          <div class="overview-empty">当前方案还没有行为分层数据。</div>
+          {% endfor %}
+        </div>
+      </article>
     </div>
   </section>
 </section>

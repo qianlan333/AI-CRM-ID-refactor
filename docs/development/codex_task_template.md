@@ -20,6 +20,7 @@
 
 - Do not change runtime behavior unless the task explicitly asks for it.
 - Do not change production_compat route behavior without route ownership manifest updates.
+- 不要新增 Next 兼容层或兼容 shim，必须完全基于 AI-CRM Next 架构实现需求。
 - Do not restore `openclaw_service/` or `legacy_flask/openclaw_legacy/`.
 - Do not delete `wecom_ability_service/`.
 - Do not modify deploy/nginx/systemd production config unless explicitly approved.

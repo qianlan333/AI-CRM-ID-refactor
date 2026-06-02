@@ -4917,7 +4917,7 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
     assert blank_type_response.status_code == 200
     assert blank_type_response.get_json()["questionnaire"]["external_push_type"] == ""
 
-    invalid_type_response = client.post(
+    trial_type_response = client.post(
         "/api/admin/questionnaires",
         json=_build_questionnaire_payload(
             external_push_enabled=True,
@@ -4925,10 +4925,21 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
             external_push_type="trial",
         ),
     )
+    assert trial_type_response.status_code == 200
+    assert trial_type_response.get_json()["questionnaire"]["external_push_type"] == "trial"
+
+    invalid_type_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_type="unknown",
+        ),
+    )
     assert invalid_type_response.status_code == 400
     assert invalid_type_response.get_json() == {
         "ok": False,
-        "error": "external_push_type must be subscription or premium",
+        "error": "external_push_type must be subscription, premium or trial",
     }
 
     reserved_name_response = client.post(

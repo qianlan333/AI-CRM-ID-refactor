@@ -45,19 +45,19 @@ def test_key_admin_pages_render_server_side_rows_or_stats(monkeypatch):
         assert has_real_data, (route, row_count)
 
 
-def test_ai_assistant_entry_uses_campaign_review_workspace(monkeypatch):
+def test_ai_assistant_entry_uses_plan_review_workspace(monkeypatch):
     client = _client(monkeypatch)
 
     redirect = client.get("/admin/cloud-orchestrator", follow_redirects=False)
     assert redirect.status_code == 302
-    assert redirect.headers["location"] == "/admin/cloud-orchestrator/campaigns"
+    assert redirect.headers["location"] == "/admin/cloud-orchestrator/plans"
 
-    response = client.get("/admin/cloud-orchestrator/campaigns")
+    response = client.get("/admin/cloud-orchestrator/plans")
 
     assert response.status_code == 200
     assert "AI 助手 · 运营计划审阅" in response.text
-    assert "Agent 上架的多分层多步骤运营计划在这里审阅启动。" in response.text
-    assert "/api/admin/cloud-orchestrator/campaigns?" in response.text
+    assert "计划列表、目标人员明细与逐人审批。" in response.text
+    assert "cloud_plan_review.js" in response.text
     assert "只读展示 automation_agent_config" not in response.text
     assert "production_unavailable" not in response.text
 
@@ -490,6 +490,17 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
         },
     }
     monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(
+        legacy_routes,
+        "get_automation_program_overview_payload",
+        lambda program_id: {
+            **program_data,
+            "audience_segments": [{"key": "operating", "label": "运营中", "count": 8}],
+            "stage_segments": [{"key": "questionnaire_review", "label": "问卷审核", "count": 3}],
+            "profile_segments": [{"key": "high", "label": "高意向", "count": 5}],
+            "behavior_segments": [{"key": "gte_10", "label": "10 次及以上互动", "count": 2}],
+        },
+    )
 
     client = TestClient(create_app(), raise_server_exceptions=False)
     setup_response = client.get("/admin/automation-conversion/programs/7/setup?step=basic")
@@ -504,6 +515,10 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
     assert overview_response.status_code == 200
     assert "方案概览" in overview_response.text
     assert "入口已发布" in overview_response.text
+    assert "运行概况" in overview_response.text
+    assert "分层人数" in overview_response.text
+    assert "高意向" in overview_response.text
+    assert "10 次及以上互动" in overview_response.text
     assert copy_response.status_code == 200
     assert "复制自动化运营方案" in copy_response.text
     assert 'action="/admin/automation-conversion/programs/7/copy"' in copy_response.text
@@ -544,6 +559,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             "channels": [
                 {
                     "id": 31,
+                    "binding_id": 101,
                     "channel_name": "默认渠道二维码",
                     "channel_code": "aqr_260521_b91c",
                     "channel_type": "qrcode",
@@ -558,6 +574,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
                 },
                 {
                     "id": 32,
+                    "binding_id": 102,
                     "channel_name": "获客助手链接",
                     "channel_code": "wca_260521_b91c",
                     "channel_type": "wecom_customer_acquisition",
@@ -566,10 +583,27 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
                     "binding_status": "active",
                     "customer_channel": "wca_260521_b91c",
                     "final_url": "https://work.weixin.qq.com/ca/example",
+                },
+            ],
+            "candidate_channels": [
+                {
+                    "id": 33,
+                    "channel_name": "候选渠道二维码",
+                    "channel_code": "aqr_260522_cand",
+                    "channel_type": "qrcode",
+                    "carrier_type": "qrcode",
+                    "status": "active",
+                    "scene_value": "aqr_260522_cand",
+                    "qr_url": "https://wework.qpic.cn/candidate",
                 }
             ],
+            "api_urls": {
+                "bindings": "/api/admin/automation-conversion/programs/7/channel-bindings",
+                "binding_base": "/api/admin/automation-conversion/programs/7/channel-bindings/0",
+            },
             "qrcode_channel": {
                 "id": 31,
+                "binding_id": 101,
                 "channel_name": "默认渠道二维码",
                 "channel_code": "aqr_260521_b91c",
                 "channel_type": "qrcode",
@@ -593,9 +627,34 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             ],
         },
         "segmentation": {
+            "questionnaire_id": 9,
+            "available_questionnaires": [
+                {
+                    "id": 9,
+                    "title": "信息收集测试",
+                    "status": "published",
+                    "question_count": 1,
+                    "questions": [
+                        {
+                            "id": 19,
+                            "title": "你当前最关注什么",
+                            "options": [{"id": 1, "option_text": "先了解"}],
+                        }
+                    ],
+                }
+            ],
+            "question_rows": [
+                {
+                    "id": 19,
+                    "title": "你当前最关注什么",
+                    "options": [{"id": 1, "option_text": "先了解"}],
+                }
+            ],
             "selected_questionnaire": {"title": "信息收集测试"},
             "default_strategy": "normal_question_rules",
             "normal_question_rules": {
+                "segmentation_question_id": 19,
+                "selected_question": {"id": 19, "title": "你当前最关注什么"},
                 "segmentation_question_title": "你当前最关注什么",
                 "category_rows": [
                     {
@@ -652,8 +711,8 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
             ],
         },
         "publish_check": {
-            "entry": {"items": [{"label": "至少有一个当前方案入口", "passed": True, "message": "已完成"}]},
-            "full": {"items": [{"label": "存在启用中的运营任务", "passed": True, "message": "已完成"}]},
+            "entry": {"passed": True, "items": [{"label": "至少有一个当前方案入口", "passed": True, "message": "已完成"}]},
+            "full": {"passed": True, "items": [{"label": "存在启用中的运营任务", "passed": True, "message": "已完成"}]},
         },
     }
 
@@ -668,8 +727,8 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
     assertions = {
         "entry": ["默认渠道二维码", "aqr_260521_b91c", "获客助手链接", "https://wework.qpic.cn/example"],
         "segmentation": ["信息收集测试", "你当前最关注什么", "入门用户", "高意向"],
-        "entry-rule": ["入口进入后", "任一当前方案入口", "问卷提交后", "成交标记"],
-        "operations": ["首日欢迎触达", "峰会跟进", "运营中", "unified"],
+        "entry-rule": ["扫码进入", "当前方案入口", "问卷审核", "已转化"],
+        "operations": ["运营编排", "data-operation-task-root", "data-task-list", "data-save-task"],
         "publish": ["入口发布检查", "至少有一个当前方案入口", "完整自动化发布检查", "存在启用中的运营任务"],
     }
     for step, markers in assertions.items():
@@ -678,11 +737,26 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
         for marker in markers:
             assert marker in response.text, (step, marker)
         assert "Not Found" not in response.text
+    publish_response = client.get("/admin/automation-conversion/programs/7/setup?step=publish")
+    assert 'data-publish-full' in publish_response.text
+    assert "/api/admin/automation-conversion/programs/7/publish-full" in publish_response.text
+    assert "发布入口" not in publish_response.text
+    assert "查看概览" not in publish_response.text
+    assert publish_response.text.count("发布完整自动化") == 1
     entry_response = client.get("/admin/automation-conversion/programs/7/setup?step=entry")
     assert "前往入口渠道页" in entry_response.text
+    assert "绑定已有渠道码" in entry_response.text
+    assert "候选渠道二维码" in entry_response.text
+    assert 'data-open-bind-modal' in entry_response.text
+    assert 'data-confirm-bind' in entry_response.text
+    assert 'data-bind-channel-checkbox' in entry_response.text
+    assert 'data-unbind-channel' in entry_response.text
+    assert '"candidate_channels"' in entry_response.text
+    assert '"bindings"' in entry_response.text
+    assert "/api/admin/automation-conversion/programs/7/channel-bindings" in entry_response.text
+    assert "/api/admin/automation-conversion/programs/7/channel-bindings/0" in entry_response.text
     assert "当前二维码入口" not in entry_response.text
     assert "入口配置块" not in entry_response.text
-    assert "欢迎来到峰会" not in entry_response.text
 
 
 def test_automation_program_entry_channels_page_uses_next_binding_payload(monkeypatch):
@@ -796,6 +870,24 @@ def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
     assert "legacy-auth-forwarded:GET:/login:next=/admin/automation-conversion/programs/7/entry-channels" in response.text
 
 
+def test_automation_program_summary_derives_publish_state_from_next_readiness():
+    from aicrm_next.automation_engine.programs import _program_summary
+
+    entry = _program_summary(
+        {"id": 7, "status": "active"},
+        {"channel_count": 1, "entry_publish_ready": True, "full_publish_ready": False},
+    )
+    full = _program_summary(
+        {"id": 8, "status": "active"},
+        {"channel_count": 1, "entry_publish_ready": True, "full_publish_ready": True},
+    )
+
+    assert entry["publish_status"] == "entry"
+    assert entry["publish_status_label"] == "入口已发布"
+    assert full["publish_status"] == "full"
+    assert full["publish_status_label"] == "完整自动化已发布"
+
+
 def test_admin_wecom_tag_routes_forward_to_legacy(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
@@ -871,6 +963,39 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
         assert response.status_code == 200, (method, path, response.text)
         assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
         assert response.json()["forwarded"] == f"{method}:{path.split('?', 1)[0]}:{path.split('?', 1)[1] if '?' in path else ''}"
+
+
+def test_admin_cloud_orchestrator_media_upload_route_forwards_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "forwarded": f"{request.method}:{request.url.path}:{request.url.query}",
+                "media_id": "media-live-probe",
+            },
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+
+    response = TestClient(create_app(), raise_server_exceptions=False).post(
+        "/api/admin/cloud-orchestrator/media/upload",
+        files={"image": ("probe.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert response.json()["forwarded"] == "POST:/api/admin/cloud-orchestrator/media/upload:"
+    assert response.json()["media_id"] == "media-live-probe"
 
 
 def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):

@@ -29,6 +29,7 @@ from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
     copy_automation_program,
+    get_automation_program_overview_payload,
     get_automation_program_setup_payload,
     get_automation_program_with_summary,
     list_automation_programs_payload,
@@ -37,11 +38,10 @@ from aicrm_next.automation_engine.programs import (
 )
 from aicrm_next.customer_read_model.application import GetAdminCustomerProfileQuery, ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
-from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
-from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
-    LegacyQuestionnaireDataUnavailable,
-    get_questionnaire_detail_from_legacy,
-    list_questionnaires_from_legacy,
+from aicrm_next.questionnaire.application import (
+    GetQuestionnaireEditorQuery,
+    GetQuestionnairePreflightQuery,
+    ListQuestionnairesQuery,
 )
 from .admin_shell import (
     legacy_url_for as _legacy_url_for,
@@ -66,6 +66,10 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires/{questionnaire_id}/external-push-logs",
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/retry-batch",
     "/admin/questionnaires/{questionnaire_id}/external-push-logs/{push_log_id}/retry",
+    "/admin/radar-links",
+    "/admin/radar-links/new",
+    "/admin/radar-links/{link_id}/edit",
+    "/admin/radar-links/{link_id}/detail",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/hxc-dashboard",
@@ -146,11 +150,7 @@ def _questionnaire_editor_response(
     page_error = ""
     if questionnaire_id is not None:
         try:
-            payload = (
-                get_questionnaire_detail_from_legacy(questionnaire_id)
-                if production_data_ready()
-                else GetQuestionnaireDetailQuery()(questionnaire_id)
-            )
+            payload = GetQuestionnaireEditorQuery()(questionnaire_id)
         except Exception as exc:
             context = _shell_context(
                 request=request,
@@ -168,6 +168,23 @@ def _questionnaire_editor_response(
                 }
             )
             return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
+        if payload.get("source_status") == "production_unavailable":
+            context = _shell_context(
+                request=request,
+                page_title="问卷数据不可用",
+                page_summary="当前生产问卷读模型不可用。",
+                active_endpoint="api.admin_questionnaires",
+            )
+            context.update(
+                {
+                    "state_title": "生产问卷数据不可用",
+                    "state_body": str(payload.get("page_error") or "请确认生产问卷读模型已经完成同步。"),
+                    "state_items": ["source_status=production_unavailable", "fallback_used=false", "route_owner=ai_crm_next"],
+                    "actions": [{"label": "返回问卷管理", "href": "/admin/questionnaires", "variant": "secondary"}],
+                    "page_error": str(payload.get("page_error") or ""),
+                }
+            )
+            return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=503)
 
     questionnaire = jsonable_encoder((payload or {}).get("questionnaire")) if payload else None
     if questionnaire is not None and isinstance(payload, dict):
@@ -428,9 +445,16 @@ def admin_user_ops_ui(request: Request):
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 
 
-@router.get("/admin/user-ops", name="api.admin_user_ops_legacy_redirect")
-def admin_user_ops_funnel(request: Request):
-    return RedirectResponse(url=_legacy_url_for("api.admin_hxc_dashboard_workspace"), status_code=302)
+@router.get("/admin/user-ops", name="api.admin_user_ops")
+def admin_user_ops_page(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="客户激活 / 客户列表",
+        page_summary="User Ops 读模型与预览能力由 Next-native API 提供。",
+        active_endpoint="api.admin_console_customers",
+    )
+    context.update({"admin_action_token": "", "action_result": {}})
+    return templates.TemplateResponse(request, "admin_console/user_ops.html", context)
 
 
 def _empty_hxc_dashboard_summary() -> dict:
@@ -500,7 +524,7 @@ def admin_hxc_send_config(request: Request):
 @router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
 def admin_cloud_orchestrator(request: Request):
     return RedirectResponse(
-        url=_legacy_url_for("api.admin_cloud_orchestrator_campaigns_workspace"),
+        url=_legacy_url_for("api.admin_cloud_orchestrator_plans_workspace"),
         status_code=302,
     )
 
@@ -569,35 +593,8 @@ def admin_wecom_tags(request: Request):
 @router.get("/admin/questionnaires", name="api.admin_questionnaires")
 @router.get("/admin/questionnaires/ui", name="api.admin_console_questionnaires")
 def admin_questionnaires(request: Request):
-    if production_data_ready():
-        try:
-            list_payload = list_questionnaires_from_legacy(limit=100, offset=0)
-        except LegacyQuestionnaireDataUnavailable as exc:
-            list_payload = {"questionnaires": [], "items": [], "total": 0}
-            preflight_error = f"生产问卷数据读取失败：{exc}"
-        else:
-            preflight_error = ""
-    else:
-        list_payload = {
-            "questionnaires": [
-                {
-                    "id": "local_contract_questionnaire",
-                    "slug": "local-contract-questionnaire",
-                    "title": "本地结构校验问卷",
-                    "name": "本地结构校验问卷",
-                    "enabled": True,
-                    "is_disabled": False,
-                    "created_at": "2026-05-20T00:00:00Z",
-                    "updated_at": "2026-05-20T00:00:00Z",
-                    "submission_count": 0,
-                    "assessment_enabled": False,
-                    "public_path": "/s/local-contract-questionnaire",
-                }
-            ],
-            "total": 1,
-            "source_status": "local_contract_probe",
-        }
-        preflight_error = ""
+    list_payload = ListQuestionnairesQuery()(limit=100, offset=0)
+    preflight_error = str(list_payload.get("page_error") or "") if list_payload.get("degraded") else ""
     preflight_payload = GetQuestionnairePreflightQuery()()
     context = _shell_context(
         request=request,
@@ -617,7 +614,13 @@ def admin_questionnaires(request: Request):
         "preflight_error": preflight_error,
         "total": list_payload.get("total", len(questionnaires)),
         "source_status": list_payload.get("source_status", "local_contract_probe"),
+        "read_model_status": list_payload.get("read_model_status", ""),
+        "route_owner": list_payload.get("route_owner", "ai_crm_next"),
+        "fallback_used": bool(list_payload.get("fallback_used", False)),
+        "degraded": bool(list_payload.get("degraded", False)),
     }
+    if preflight_error:
+        context["page_error"] = preflight_error
     return templates.TemplateResponse(request, "admin_console/questionnaires.html", context)
 
 
@@ -629,6 +632,75 @@ def admin_questionnaire_new(request: Request):
 @router.get("/admin/questionnaires/{questionnaire_id:int}", name="api.admin_console_questionnaire_detail")
 def admin_questionnaire_detail(request: Request, questionnaire_id: int):
     return _questionnaire_editor_response(request, questionnaire_id=questionnaire_id)
+
+
+@router.get("/admin/radar-links", name="api.admin_radar_links")
+def admin_radar_links(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="内容雷达",
+        page_summary="管理可追踪的链接、图片和 PDF。配置和查看记录进入二级页面。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["page_actions"] = [{"label": "新建内容雷达", "href": "/admin/radar-links/new", "variant": "primary"}]
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达"},
+    ]
+    return templates.TemplateResponse(request, "admin_console/radar_links.html", context)
+
+
+@router.get("/admin/radar-links/new", name="api.admin_radar_link_new")
+def admin_radar_link_new(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="新建内容雷达",
+        page_summary="选择链接、图片或 PDF。素材可以从素材库选择，也可以上传。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": "新建内容雷达"},
+    ]
+    context["radar_form_mode"] = "new"
+    context["radar_link_id"] = 0
+    return templates.TemplateResponse(request, "admin_console/radar_link_form.html", context)
+
+
+@router.get("/admin/radar-links/{link_id:int}/edit", name="api.admin_radar_link_edit")
+def admin_radar_link_edit(request: Request, link_id: int):
+    context = _shell_context(
+        request=request,
+        page_title="编辑内容雷达",
+        page_summary="维护内容雷达的基础配置、素材来源与启用状态。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": f"编辑 #{link_id}"},
+    ]
+    context["radar_form_mode"] = "edit"
+    context["radar_link_id"] = int(link_id)
+    return templates.TemplateResponse(request, "admin_console/radar_link_form.html", context)
+
+
+@router.get("/admin/radar-links/{link_id:int}/detail", name="api.admin_radar_link_detail")
+def admin_radar_link_detail(request: Request, link_id: int):
+    context = _shell_context(
+        request=request,
+        page_title="点击记录",
+        page_summary="只展示 unionid、外部联系人 ID 和访问时间。编辑请返回列表点击“编辑”。",
+        active_endpoint="api.admin_radar_links",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "内容雷达", "href": "/admin/radar-links"},
+        {"label": f"点击记录 #{link_id}"},
+    ]
+    context["radar_link_id"] = int(link_id)
+    return templates.TemplateResponse(request, "admin_console/radar_link_detail.html", context)
 
 
 @router.api_route(
@@ -779,7 +851,20 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
         "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
         "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
         "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
+        "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
     }
+    entry = dict(workspace.get("entry") or {})
+    entry.setdefault("api_urls", {
+        "bindings": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings",
+        "binding_base": f"/api/admin/automation-conversion/programs/{program_id}/channel-bindings/0",
+    })
+    if normalized_step == "entry":
+        if "candidate_channels" not in entry:
+            try:
+                entry["candidate_channels"] = list_program_entry_candidate_channels(program_id)
+            except Exception:
+                entry["candidate_channels"] = []
+    workspace["entry"] = entry
     workspace["operations_workspace"] = {
         "program_id": program_id,
         "api_urls": {
@@ -806,14 +891,15 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
 
 
 def _overview_workspace(request: Request, program: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+    del request
     program_id = int(program.get("id") or 0)
-    return {
-        "program": program,
-        "summary": summary,
-        "api_urls": {
-            "dashboard": f"/api/admin/automation-conversion/overview?program_id={program_id}",
-        },
-    }
+    try:
+        workspace = get_automation_program_overview_payload(program_id)
+    except AutomationProgramDataUnavailable as exc:
+        workspace = {"program": program, "summary": summary, "page_error": str(exc)}
+    workspace["program"] = workspace.get("program") or program
+    workspace["summary"] = workspace.get("summary") or summary
+    return workspace
 
 
 @router.get("/admin/automation-conversion/programs/{program_id:int}/setup", name="api.admin_automation_program_setup")
@@ -840,6 +926,7 @@ def admin_automation_program_setup(request: Request, program_id: int) -> Respons
                 },
             ],
             "setup_workspace": _setup_workspace(request, program, summary, step=str(request.query_params.get("step") or "basic")),
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "setup"),
             "program_context": _automation_program_context(request, program, active_key="setup"),
             "admin_action_token": "",

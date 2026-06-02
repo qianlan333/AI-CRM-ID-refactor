@@ -5,18 +5,11 @@ from fastapi.responses import JSONResponse, Response
 
 from aicrm_next.integration_gateway.legacy_automation_facade import get_automation_member_detail_from_legacy
 from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
-from aicrm_next.integration_gateway.wecom_callback_facade import handle_wecom_callback_via_legacy
 
 router = APIRouter()
 wildcard_router = APIRouter()
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-
-
-@router.api_route("/wecom/external-contact/callback", methods=["GET", "POST", "OPTIONS", "HEAD"])
-@router.api_route("/api/wecom/events", methods=["GET", "POST", "OPTIONS", "HEAD"])
-async def wecom_callback_routes(request: Request) -> Response:
-    return await handle_wecom_callback_via_legacy(request)
 
 
 @router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
@@ -48,6 +41,11 @@ async def legacy_production_compat_timer_routes(request: Request) -> Response:
 @router.api_route("/api/admin/cloud-orchestrator/campaigns", methods=_ALL_METHODS)
 @router.api_route("/api/admin/cloud-orchestrator/campaigns/{path:path}", methods=_ALL_METHODS)
 async def legacy_cloud_orchestrator_campaign_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
+@router.api_route("/api/admin/cloud-orchestrator/media/upload", methods=["POST", "OPTIONS"])
+async def legacy_cloud_orchestrator_media_upload_route(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
@@ -106,20 +104,8 @@ async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/sidebar/bind-mobile", methods=["POST", "OPTIONS"])
 @router.api_route("/api/sidebar/jssdk-config", methods=["GET", "HEAD", "OPTIONS"])
-@router.api_route("/api/sidebar/lead-pool/upsert-class-term", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/signup-tags/mark", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/set-followup-segment", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/mark-enrolled", methods=["POST", "OPTIONS"])
-@router.api_route("/api/sidebar/marketing-status/unmark-enrolled", methods=["POST", "OPTIONS"])
 async def legacy_sidebar_compat_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
-@router.api_route("/api/sidebar/v2/profile", methods=["PUT", "OPTIONS"])
-@router.api_route("/api/sidebar/v2/materials/send", methods=["POST", "OPTIONS"])
-async def legacy_sidebar_v2_compat_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
@@ -130,7 +116,6 @@ async def legacy_customer_automation_compat_routes(request: Request) -> Response
     return await forward_to_legacy_flask(request)
 
 
-@wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/h5/wechat/oauth/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/auth/wecom/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/wechat-pay/{path:path}", methods=_ALL_METHODS)

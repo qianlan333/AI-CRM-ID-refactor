@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlparse
 
 from .audit import record_audit_event
 from .idempotency import get_or_create, make_idempotency_key
@@ -43,6 +43,7 @@ def _base_result(
     target: dict[str, Any],
     result: dict[str, Any] | None,
     audit_id: str,
+    side_effect_executed: bool = False,
     error_code: str = "",
     error_message: str = "",
 ) -> Json:
@@ -55,7 +56,7 @@ def _base_result(
         "target": _safe_target(target),
         "result": result or {},
         "audit_id": audit_id,
-        "side_effect_executed": False,
+        "side_effect_executed": side_effect_executed,
         "error_code": error_code,
         "error_message": error_message,
     }
@@ -157,6 +158,11 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
         resolved_state = (state or slug or "questionnaire_fake_state").strip()
         target = {"state": resolved_state, "slug": slug or "", "openid": openid or "", "unionid": unionid or "", "external_userid": external_userid or ""}
         key = idempotency_key or make_idempotency_key(operation=operation, payload=target)
+        if self.mode == "production":
+            guarded = self._production_guarded_result(operation=operation, idempotency_key=key, target=target)
+            if guarded:
+                return guarded
+            return self._real_authorize_url_result(operation=operation, idempotency_key=key, target=target, state=resolved_state, redirect=redirect)
         guarded = self._guarded_result(operation=operation, idempotency_key=key, target=target)
         if guarded:
             return guarded
@@ -166,6 +172,11 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
         operation = "exchange_code"
         target = {"state": state or "", "code_hash": _digest(code or "")[:12], "redirect": redirect or ""}
         key = idempotency_key or make_idempotency_key(operation=operation, payload=target)
+        if self.mode == "production":
+            guarded = self._production_guarded_result(operation=operation, idempotency_key=key, target=target)
+            if guarded:
+                return guarded
+            return self._real_identity_result(operation=operation, idempotency_key=key, target=target, state=state, redirect=redirect, openid=None, unionid=None, external_userid=None, code=code)
         guarded = self._guarded_result(operation=operation, idempotency_key=key, target=target)
         if guarded:
             return guarded
@@ -181,6 +192,18 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
         operation = "fetch_userinfo"
         target = {"openid": openid, "unionid": unionid or ""}
         key = idempotency_key or make_idempotency_key(operation=operation, payload=target)
+        if self.mode == "production":
+            guarded = self._production_guarded_result(operation=operation, idempotency_key=key, target=target)
+            if guarded:
+                return guarded
+            return self._adapter_result(
+                ok=False,
+                operation=operation,
+                idempotency_key=key,
+                target=target,
+                error_code="access_token_required",
+                error_message="WeChat userinfo requires an OAuth access token in production mode",
+            )
         guarded = self._guarded_result(operation=operation, idempotency_key=key, target=target)
         if guarded:
             return guarded
@@ -201,10 +224,231 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
         operation = "resolve_oauth_identity"
         target = {"state": state or "", "openid": openid or "", "unionid": unionid or "", "external_userid": external_userid or "", "code_hash": _digest(code or "")[:12] if code else ""}
         key = idempotency_key or make_idempotency_key(operation=operation, payload=target)
+        if self.mode == "production":
+            guarded = self._production_guarded_result(operation=operation, idempotency_key=key, target=target)
+            if guarded:
+                return guarded
+            return self._real_identity_result(operation=operation, idempotency_key=key, target=target, state=state, redirect=redirect, openid=openid, unionid=unionid, external_userid=external_userid, code=code)
         guarded = self._guarded_result(operation=operation, idempotency_key=key, target=target)
         if guarded:
             return guarded
         return self._successful_result(operation=operation, idempotency_key=key, target=target, factory=lambda: self._fake_identity(state, redirect, openid, unionid, external_userid, code))
+
+    def _production_guarded_result(self, *, operation: str, idempotency_key: str, target: dict[str, Any]) -> Json | None:
+        if _env_true(self.production_flag):
+            return None
+        return self._adapter_result(
+            ok=False,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            target=target,
+            error_code="production_guard_failed",
+            error_message=f"{self.adapter_name} production mode is not enabled for real outbound calls",
+        )
+
+    def _real_authorize_url_result(self, *, operation: str, idempotency_key: str, target: dict[str, Any], state: str, redirect: str | None) -> Json:
+        app_id = self._wechat_app_id()
+        if not app_id:
+            return self._adapter_result(
+                ok=False,
+                operation=operation,
+                idempotency_key=idempotency_key,
+                target=target,
+                error_code="wechat_oauth_not_configured",
+                error_message="WECHAT_MP_APP_ID is required for real WeChat OAuth",
+            )
+        redirect_uri = self._absolute_redirect_uri(redirect)
+        query = urlencode(
+            {
+                "appid": app_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": self._oauth_scope(),
+                "state": state,
+            }
+        )
+        result = {
+            "redirect_url": f"https://open.weixin.qq.com/connect/oauth2/authorize?{query}#wechat_redirect",
+            "state": state,
+            "source_status": "production",
+            "oauth_provider": "wechat_mp",
+        }
+        return self._adapter_result(ok=True, operation=operation, idempotency_key=idempotency_key, target=target, result=result)
+
+    def _real_identity_result(
+        self,
+        *,
+        operation: str,
+        idempotency_key: str,
+        target: dict[str, Any],
+        state: str | None,
+        redirect: str | None,
+        openid: str | None,
+        unionid: str | None,
+        external_userid: str | None,
+        code: str | None,
+    ) -> Json:
+        if not code:
+            return self._adapter_result(
+                ok=False,
+                operation=operation,
+                idempotency_key=idempotency_key,
+                target=target,
+                error_code="oauth_code_required",
+                error_message="WeChat OAuth callback code is required in production mode",
+            )
+        app_id = self._wechat_app_id()
+        app_secret = self._wechat_app_secret()
+        if not app_id or not app_secret:
+            return self._adapter_result(
+                ok=False,
+                operation=operation,
+                idempotency_key=idempotency_key,
+                target=target,
+                error_code="wechat_oauth_not_configured",
+                error_message="WECHAT_MP_APP_ID and WECHAT_MP_APP_SECRET are required for real WeChat OAuth",
+            )
+        try:
+            from wecom_ability_service.infra import wechat_oauth
+
+            exchange_payload = wechat_oauth.exchange_wechat_oauth_code(app_id=app_id, app_secret=app_secret, code=code)
+            if self._wechat_error_code(exchange_payload):
+                return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=exchange_payload)
+            resolved_openid = str(exchange_payload.get("openid") or openid or "").strip()
+            resolved_unionid = str(exchange_payload.get("unionid") or unionid or "").strip()
+            access_token = str(exchange_payload.get("access_token") or "").strip()
+            if not resolved_openid:
+                return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=exchange_payload)
+            if not resolved_unionid and access_token and self._oauth_scope() == "snsapi_userinfo":
+                userinfo_payload = wechat_oauth.fetch_wechat_userinfo(access_token=access_token, openid=resolved_openid)
+                if self._wechat_error_code(userinfo_payload):
+                    return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=userinfo_payload)
+                resolved_unionid = str(userinfo_payload.get("unionid") or "").strip()
+        except Exception as exc:
+            return self._adapter_result(
+                ok=False,
+                operation=operation,
+                idempotency_key=idempotency_key,
+                target=target,
+                side_effect_executed=True,
+                error_code="wechat_oauth_exchange_failed",
+                error_message=str(exc),
+            )
+        result = {
+            "openid": resolved_openid,
+            "unionid": resolved_unionid,
+            "external_userid": external_userid or "",
+            "redirect_url": redirect or (f"/s/{state}" if state else "/"),
+            "state": (state or "").strip(),
+            "source_status": "production",
+            "oauth_provider": "wechat_mp",
+        }
+        return self._adapter_result(ok=True, operation=operation, idempotency_key=idempotency_key, target=target, result=result, side_effect_executed=True)
+
+    def _wechat_payload_error(self, *, operation: str, idempotency_key: str, target: dict[str, Any], payload: dict[str, Any]) -> Json:
+        return self._adapter_result(
+            ok=False,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            target=target,
+            side_effect_executed=True,
+            error_code="wechat_oauth_exchange_failed",
+            error_message=str(payload.get("errmsg") or payload.get("errcode") or "invalid WeChat OAuth payload"),
+        )
+
+    def _adapter_result(
+        self,
+        *,
+        ok: bool,
+        operation: str,
+        idempotency_key: str,
+        target: dict[str, Any],
+        result: dict[str, Any] | None = None,
+        side_effect_executed: bool = False,
+        error_code: str = "",
+        error_message: str = "",
+    ) -> Json:
+        audit = record_audit_event(
+            adapter=self.adapter_name,
+            operation=operation,
+            mode=self.mode,
+            idempotency_key=idempotency_key,
+            side_effect_executed=side_effect_executed,
+            status="ok" if ok else "blocked",
+            error_code=error_code,
+        )
+        return _base_result(
+            ok=ok,
+            adapter=self.adapter_name,
+            mode=self.mode,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            target=target,
+            result=result or {},
+            audit_id=audit["audit_id"],
+            side_effect_executed=side_effect_executed,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    @staticmethod
+    def _wechat_error_code(payload: dict[str, Any]) -> bool:
+        errcode = payload.get("errcode")
+        if errcode in (None, "", 0, "0"):
+            return False
+        return True
+
+    @staticmethod
+    def _wechat_app_id() -> str:
+        return str(os.getenv("WECHAT_MP_APP_ID", "") or "").strip()
+
+    @staticmethod
+    def _wechat_app_secret() -> str:
+        return str(os.getenv("WECHAT_MP_APP_SECRET", "") or "").strip()
+
+    @staticmethod
+    def _oauth_scope() -> str:
+        return str(os.getenv("WECHAT_MP_OAUTH_SCOPE", "snsapi_userinfo") or "snsapi_userinfo").strip() or "snsapi_userinfo"
+
+    @classmethod
+    def _absolute_redirect_uri(cls, redirect: str | None) -> str:
+        value = str(redirect or "").strip()
+        if value.startswith(("http://", "https://")):
+            return value
+        if not value.startswith("/"):
+            value = "/" + value
+        return cls._public_base_url() + value
+
+    @staticmethod
+    def _public_base_url() -> str:
+        env_values = {
+            str(os.getenv("AICRM_NEXT_ENV", "") or "").strip().lower(),
+            str(os.getenv("ENVIRONMENT", "") or "").strip().lower(),
+            str(os.getenv("APP_ENV", "") or "").strip().lower(),
+            str(os.getenv("FLASK_ENV", "") or "").strip().lower(),
+        }
+        production = bool(env_values & {"prod", "production"})
+        for key in (
+            "AICRM_PUBLIC_BASE_URL",
+            "PUBLIC_BASE_URL",
+            "EXTERNAL_BASE_URL",
+            "APP_EXTERNAL_BASE_URL",
+            "NEXT_PUBLIC_BASE_URL",
+        ):
+            value = str(os.getenv(key, "") or "").strip().rstrip("/")
+            if value:
+                if production and "localhost" in value:
+                    continue
+                return value
+        notify_url = str(os.getenv("WECHAT_PAY_NOTIFY_URL", "") or "").strip()
+        parsed = urlparse(notify_url)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            candidate = f"{parsed.scheme}://{parsed.netloc}"
+            if not production or "localhost" not in candidate:
+                return candidate
+        if production:
+            return "https://www.youcangogogo.com"
+        return "http://localhost"
 
     def _fake_authorize_url(self, state: str, redirect: str | None, openid: str | None, unionid: str | None, external_userid: str | None) -> Json:
         redirect_url = redirect or f"/api/h5/wechat/oauth/callback?state={quote(state)}"

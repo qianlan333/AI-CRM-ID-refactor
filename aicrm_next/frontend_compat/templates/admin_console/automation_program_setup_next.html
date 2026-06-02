@@ -2,25 +2,29 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
 <style>
-  .setup-shell { display: grid; gap: 18px; min-width: 0; }
-  .setup-guide { display: grid; gap: 14px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
-  .setup-guide h2, .setup-panel h2, .setup-panel h3 { margin: 0; color: #111827; }
-  .setup-muted { margin: 0; color: #64748b; line-height: 1.7; }
-  .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-  .setup-step { display: grid; gap: 6px; min-height: 82px; padding: 14px; border: 1px solid rgba(37,99,235,.14); border-radius: 10px; background: #fff; color: #1f2937; text-decoration: none; }
+  .setup-shell { display: grid; gap: 14px; max-width: 1800px; min-width: 0; margin: 0 auto; }
+  .setup-topbar-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; box-shadow: 0 8px 18px rgba(15,23,42,.04); }
+  .setup-topbar-tab { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border-radius: 9px; color: #111827; font-weight: 800; text-decoration: none; }
+  .setup-topbar-tab.is-active { background: #eff6ff; color: #1456f0; box-shadow: inset 0 0 0 1px #bfdbfe; }
+  .setup-panel h2, .setup-panel h3 { margin: 0; color: #111827; }
+  .setup-muted { margin: 0; color: #64748b; line-height: 1.62; }
+  .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .setup-step { display: grid; gap: 5px; min-height: 74px; padding: 13px 15px; border: 1px solid rgba(37,99,235,.14); border-radius: 14px; background: #fff; color: #1f2937; text-decoration: none; }
   .setup-step.is-active { background: #eaf2ff; color: #1456f0; border-color: rgba(37,99,235,.34); box-shadow: 0 0 0 3px rgba(37,99,235,.08); }
   .setup-step span { font-size: 12px; font-weight: 800; }
   .setup-step strong { font-size: 16px; line-height: 1.35; }
-  .setup-panel { display: grid; gap: 16px; padding: 22px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }
+  .setup-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: #fff; box-shadow: 0 14px 34px rgba(15,23,42,.05); }
+  .setup-panel--operations { padding: 0; border: 0; background: transparent; box-shadow: none; }
   .setup-panel-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
-  .setup-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .setup-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .setup-field { display: grid; gap: 7px; }
   .setup-field span { color: #475569; font-size: 13px; font-weight: 800; }
-  .setup-field input, .setup-field select, .setup-field textarea { width: 100%; padding: 12px 14px; border: 1px solid rgba(15,23,42,.14); border-radius: 10px; background: #fff; font-size: 15px; }
-  .setup-field textarea { min-height: 112px; resize: vertical; }
-  .setup-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-  .setup-summary-item { display: grid; gap: 8px; padding: 16px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fafc; }
+  .setup-field input, .setup-field select, .setup-field textarea, .setup-table input, .setup-table textarea { width: 100%; padding: 11px 13px; border: 1px solid rgba(15,23,42,.14); border-radius: 11px; background: #fff; color: #111827; font: inherit; }
+  .setup-field textarea { min-height: 92px; resize: vertical; }
+  .setup-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .setup-summary-item { display: grid; gap: 7px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 13px; background: #f8fafc; }
   .setup-summary-item span { color: #64748b; font-size: 13px; font-weight: 800; }
   .setup-summary-item strong { color: #111827; font-size: 24px; }
   .setup-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -39,11 +43,14 @@
   .setup-chip-list, .setup-option-pool { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .setup-chip { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; background: #eef4ff; color: #1456f0; font-size: 12px; font-weight: 800; }
   .setup-chip-remove { width: 20px; height: 20px; margin-left: 6px; border: 0; border-radius: 999px; background: rgba(37,99,235,.12); color: #1456f0; cursor: pointer; font-weight: 900; line-height: 1; }
-  .setup-category-grid { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
+  .setup-seg-toolbar { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.25fr) minmax(240px, .8fr); gap: 12px; align-items: end; }
+  .setup-category-grid { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 14px; align-items: start; }
   .setup-unassigned-panel, .setup-category-list { display: grid; gap: 10px; }
+  .setup-category-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .setup-unassigned-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .setup-count { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; border-radius: 999px; background: #e0edff; color: #1456f0; font-weight: 900; }
-  .setup-category-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #fff; }
+  .setup-category-card { display: grid; gap: 10px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: #fff; }
+  .setup-category-card__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
   .setup-option-pool { min-height: 36px; }
   .setup-option-pill { border: 1px solid rgba(15,23,42,.10); border-radius: 999px; padding: 7px 10px; background: #f8fafc; color: #334155; font-weight: 800; cursor: pointer; }
   .setup-option-pill:hover { border-color: rgba(37,99,235,.34); color: #1456f0; background: #eef4ff; }
@@ -85,13 +92,14 @@
   .setup-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
   .setup-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border: 1px solid rgba(37,99,235,.18); border-radius: 10px; background: #eef4ff; color: #1456f0; font-weight: 800; text-decoration: none; cursor: pointer; }
   .setup-action.is-primary { background: #2563eb; color: #fff; box-shadow: 0 10px 22px rgba(37,99,235,.18); }
+  .setup-action.is-danger { border-color: #fecaca; background: #fff; color: #b42318; }
   .setup-action:disabled { opacity: .55; cursor: not-allowed; }
   .setup-feedback { display: none; padding: 12px 14px; border-radius: 10px; background: #fef2f2; color: #991b1b; }
   .setup-feedback.is-success { background: #ecfdf3; color: #166534; }
-  .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
+  .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
   .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 1080px) {
-    .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid, .setup-category-grid, .setup-audience-row { grid-template-columns: 1fr; }
+    .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid, .setup-category-grid, .setup-category-list, .setup-audience-row, .setup-seg-toolbar { grid-template-columns: 1fr; }
     .setup-panel-head { align-items: stretch; flex-direction: column; }
     .setup-footer { align-items: stretch; flex-direction: column; }
   }
@@ -107,23 +115,6 @@
 {% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "停用" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
 
 <section class="setup-shell" data-setup-root data-urls='{{ urls|tojson|forceescape }}' data-program-id="{{ program.id or '' }}">
-  <header class="setup-guide">
-    <div>
-      <h2>配置向导</h2>
-      <p class="setup-muted">{{ program.program_name or "自动化运营方案" }} · {{ status_label }}</p>
-    </div>
-  </header>
-
-  {% if workspace_tabs %}
-  <nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
-    {% for item in workspace_tabs %}
-    <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
-      <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
-    </a>
-    {% endfor %}
-  </nav>
-  {% endif %}
-
   <nav class="setup-steps" aria-label="配置步骤">
     {% for item in workspace.steps or [] %}
     <a class="setup-step{% if item.key == current_step %} is-active{% endif %}" href="{{ urls['base'] }}?step={{ item.key }}">
@@ -136,9 +127,8 @@
   <div class="setup-feedback" data-setup-feedback></div>
 
   {% if current_step == "basic" %}
-  <form class="setup-panel" method="post" action="{{ urls['update'] }}">
+  <form id="setup-basic-form" class="setup-panel" method="post" action="{{ urls['update'] }}">
     <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
-    <input type="hidden" name="next" value="{{ urls['base'] }}?step=basic">
     <div>
       <h2>方案身份</h2>
       <p class="setup-muted">编辑当前方案自己的名称、编码、说明和状态。</p>
@@ -156,10 +146,6 @@
       </label>
       <label class="setup-field" style="grid-column: 1 / -1;"><span>方案描述</span><textarea name="description">{{ program.description or "" }}</textarea></label>
     </div>
-    <div class="setup-actions">
-      <button class="setup-action is-primary" type="submit">保存草稿</button>
-      <a class="setup-action" href="{{ urls['base'] }}?step=entry">保存并下一步</a>
-    </div>
   </form>
 
   <section class="setup-panel">
@@ -175,34 +161,90 @@
   </section>
   {% elif current_step == "entry" %}
   {% set entry = workspace.entry or {} %}
-  <section class="setup-panel">
-    <div class="setup-panel-head">
-      <div>
-        <h2>入口渠道</h2>
-        <p class="setup-muted">入口渠道已迁移到当前方案的入口渠道页。这里仅保留旧数据只读展示，不再创建、绑定或重新生成渠道。</p>
+  {% set entry_payload = {"program": program, "bindings": entry.channels or [], "candidate_channels": entry.candidate_channels or [], "api_urls": entry.api_urls or {}} %}
+  <div
+    class="channel-page"
+    data-channel-admission-page="entry-channels"
+    data-program-id="{{ program.id }}"
+    data-api-bindings="{{ (entry.api_urls or {}).bindings }}"
+    data-admin-token="{{ admin_action_token }}"
+  >
+    <script type="application/json" data-channel-bootstrap>{{ entry_payload | tojson }}</script>
+    <section class="setup-panel">
+      <div class="setup-panel-head">
+        <div>
+          <h2>入口渠道</h2>
+          <p class="setup-muted">入口渠道用于承接不同二维码或企微获客助手链接进入的人群。一个方案可以绑定多个入口渠道；渠道本体请在渠道码中心维护。</p>
+        </div>
+        <div class="setup-actions">
+          <button class="setup-action is-primary" type="button" data-open-bind-modal>绑定已有渠道码</button>
+          <a class="setup-action" href="{{ urls['entry_channels'] }}">前往入口渠道页</a>
+        </div>
       </div>
-      <a class="setup-action is-primary" href="{{ urls['entry_channels'] }}">前往入口渠道页</a>
-    </div>
-    <div class="setup-table-wrap">
-      <table class="setup-table">
-        <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>标识</th><th>链接</th></tr></thead>
-        <tbody>
-          {% for channel in entry.channels or [] %}
-          {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
-          <tr>
-            <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
-            <td>{{ channel.channel_name or channel.channel_code }}</td>
-            <td>{{ channel.status or "-" }}</td>
-            <td>{{ (channel.customer_channel or channel.scene_value or channel.channel_code or "-") if is_link else (channel.scene_value or channel.channel_code or "-") }}</td>
-            <td>{{ channel.final_url or channel.link_url or channel.qr_url or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5">当前没有旧入口渠道数据。</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+      <div class="setup-summary-grid">
+        <article class="setup-summary-item"><span>已绑定渠道数量</span><strong>{{ (entry.channels or []) | length }}</strong></article>
+        <article class="setup-summary-item"><span>可绑定候选</span><strong>{{ (entry.candidate_channels or []) | length }}</strong></article>
+        <article class="setup-summary-item"><span>渠道维护</span><strong><a href="/admin/channels">渠道码中心</a></strong></article>
+      </div>
+      <div class="setup-table-wrap">
+        <table class="setup-table">
+          <thead><tr><th>类型</th><th>名称</th><th>状态</th><th>标识</th><th>链接</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for channel in entry.channels or [] %}
+            {% set is_link = channel.carrier_type == "link" or channel.channel_type == "wecom_customer_acquisition" %}
+            <tr data-bound-channel-id="{{ channel.id }}" data-binding-id="{{ channel.binding_id }}" data-bound-carrier="{{ 'link' if is_link else 'qrcode' }}">
+              <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
+              <td>{{ channel.channel_name or channel.channel_code }}</td>
+              <td>{{ {"active":"启用","paused":"暂停","archived":"已解绑"}.get(channel.binding_status, channel.status or "-") }}</td>
+              <td>{{ (channel.customer_channel or channel.scene_value or channel.channel_code or "-") if is_link else (channel.scene_value or channel.channel_code or "-") }}</td>
+              <td>{{ channel.final_url or channel.link_url or channel.qr_url or "-" }}</td>
+              <td>
+                <button class="setup-action" type="button" data-unbind-channel data-binding-id="{{ channel.binding_id }}" {% if not channel.binding_id %}disabled{% endif %}>解绑</button>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">当前方案还没有绑定渠道，请绑定已有渠道码。</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="channel-modal" data-bind-modal hidden>
+      <div class="channel-modal__panel">
+        <div class="setup-modal__head">
+          <div>
+            <h2>绑定已有渠道码</h2>
+            <p class="setup-muted">可多选普通二维码或企微获客助手链接；已被其他方案 active 绑定的渠道不会出现在这里。</p>
+          </div>
+          <button class="setup-action" type="button" data-close-bind-modal>关闭</button>
+        </div>
+        <div class="setup-table-wrap">
+          <table class="setup-table">
+            <thead><tr><th>选择</th><th>渠道</th><th>类型</th><th>状态</th><th>标识</th><th>链接</th></tr></thead>
+            <tbody>
+              {% for item in entry.candidate_channels or [] %}
+              {% set is_link = item.carrier_type == "link" or item.channel_type == "wecom_customer_acquisition" %}
+              <tr data-bind-candidate data-channel-id="{{ item.id }}" data-candidate-carrier="{{ 'link' if is_link else 'qrcode' }}">
+                <td><input type="checkbox" value="{{ item.id }}" data-bind-channel-checkbox></td>
+                <td><strong>{{ item.channel_name or item.channel_code }}</strong><span class="channel-code">{{ item.channel_code }}</span></td>
+                <td>{{ "企微获客助手链接" if is_link else "普通二维码" }}</td>
+                <td>{{ item.status or "active" }}</td>
+                <td>{{ (item.customer_channel or item.scene_value or item.channel_code or "-") if is_link else (item.scene_value or item.channel_code or "-") }}</td>
+                <td>{{ item.final_url or item.link_url or item.qr_url or "-" }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6">没有可绑定渠道。请先去<a href="/admin/channels">渠道码中心</a>创建渠道，或解绑其他方案占用的渠道。</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="setup-actions">
+          <button class="setup-action is-primary" type="button" data-confirm-bind>确认绑定</button>
+        </div>
+      </div>
+    </aside>
+  </div>
   {% elif current_step == "segmentation" %}
   {% set segmentation = workspace.segmentation or {} %}
   {% set normal = segmentation.normal_question_rules or {} %}
@@ -216,7 +258,8 @@
       </div>
       <a class="setup-action" href="/admin/questionnaires" target="_blank" rel="noreferrer">去问卷模块创建</a>
     </div>
-    <div class="setup-form-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+    <input type="hidden" name="default_strategy" value="{{ segmentation.default_strategy or 'normal_question_rules' }}">
+    <div class="setup-seg-toolbar">
       <label class="setup-field">
         <span>问卷选择器</span>
         <select name="questionnaire_id" data-questionnaire-select>
@@ -226,36 +269,16 @@
           {% endfor %}
         </select>
       </label>
-      <label class="setup-field">
-        <span>默认分层策略</span>
-        <select name="default_strategy">
-          <option value="normal_question_rules" {% if segmentation.default_strategy == "normal_question_rules" %}selected{% endif %}>普通问卷规则</option>
-          <option value="score_segments" {% if segmentation.default_strategy == "score_segments" %}selected{% endif %}>总分分层</option>
-          <option value="manual" {% if segmentation.default_strategy == "manual" %}selected{% endif %}>手动选择 / 暂不自动分层</option>
-        </select>
-      </label>
+      <div class="setup-tabs" aria-label="分层策略">
+        <button class="setup-tab is-active" type="button" data-setup-tab="normal" data-default-strategy="normal_question_rules">普通问卷规则</button>
+        <button class="setup-tab" type="button" data-setup-tab="score" data-default-strategy="score_segments">总分分层</button>
+        <button class="setup-tab" type="button" data-setup-tab="profile" data-default-strategy="manual">多维画像</button>
+      </div>
       <article class="setup-result-card"><strong>当前问卷</strong><span>{{ (segmentation.selected_questionnaire or {}).title or "未绑定问卷" }}</span></article>
-    </div>
-    <div class="setup-tabs">
-      <button class="setup-tab is-active" type="button" data-setup-tab="normal">普通问卷规则</button>
-      <button class="setup-tab" type="button" data-setup-tab="score">总分分层</button>
-      <button class="setup-tab" type="button" data-setup-tab="profile">多维画像</button>
     </div>
 
     <div class="setup-tab-panel" data-setup-tab-panel="normal">
       {% set selected_question = normal.selected_question or {} %}
-      <div class="setup-form-grid">
-        <label class="setup-field">
-          <span>分层题目</span>
-          <select name="segmentation_question_id" data-segmentation-question-select>
-            {% if not segmentation.question_rows %}<option value="">当前问卷没有可用于分层的单选或多选题</option>{% endif %}
-            {% for question in segmentation.question_rows or [] %}
-            <option value="{{ question.id }}" data-options='{{ (question.options or [])|tojson|forceescape }}' {% if question.id == normal.segmentation_question_id %}selected{% endif %}>{{ question.title }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div class="setup-result-card"><strong>默认方式</strong><span>普通问卷选项分类</span></div>
-      </div>
       {% if normal.legacy_rows %}
       <div class="setup-result-card">
         <strong>旧规则已保留</strong>
@@ -265,9 +288,19 @@
       <div class="setup-category-grid" data-normal-category-editor>
         <aside class="setup-result-card setup-unassigned-panel">
           <div class="setup-unassigned-head">
-            <h3>未分配选项</h3>
+            <h3>分层题目选择</h3>
             <span class="setup-count" data-unassigned-count>{{ (normal.unassigned_options or [])|length }}</span>
           </div>
+          <label class="setup-field">
+            <span>分层题目</span>
+            <select name="segmentation_question_id" data-segmentation-question-select>
+              {% if not segmentation.question_rows %}<option value="">当前问卷没有可用于分层的单选或多选题</option>{% endif %}
+              {% for question in segmentation.question_rows or [] %}
+              <option value="{{ question.id }}" data-options='{{ (question.options or [])|tojson|forceescape }}' {% if question.id == normal.segmentation_question_id %}selected{% endif %}>{{ question.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <h3>未分配选项</h3>
           <div class="setup-option-pool" data-unassigned-options>
             {% for option in normal.unassigned_options or [] %}
             <span class="setup-chip" data-option-id="{{ option.id }}">{{ option.option_text }}</span>
@@ -275,13 +308,14 @@
             <span class="setup-muted">所有选项都已分配。需要调整时，先从右侧分类中移除选项。</span>
             {% endfor %}
           </div>
-          <p class="setup-muted">未分配选项是唯一可加入分类的选项池；已加入某个分类后，会从这里和其他分类的可选列表中移除。</p>
         </aside>
         <div class="setup-category-list" data-category-body>
           {% for category in normal.category_rows or [] %}
           <article class="setup-category-card" data-category-card data-category-key="{{ category.category_key }}">
-            <label class="setup-field"><span>分类名称</span><input name="category_name" value="{{ category.category_name }}" placeholder="例如：入门用户"></label>
-            <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选">{{ category.description }}</textarea></label>
+            <div class="setup-category-card__head">
+              <label class="setup-field"><span>分类名称</span><input name="category_name" value="{{ category.category_name }}" placeholder="例如：入门用户"></label>
+              <button class="setup-action is-danger" type="button" data-remove-category>删除分类</button>
+            </div>
             <div class="setup-field">
               <span>已选择选项</span>
               <div class="setup-chip-list" data-selected-options>
@@ -293,23 +327,23 @@
               </div>
             </div>
             <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
-            <div class="setup-actions"><button class="setup-action" type="button" data-remove-category>删除分类</button></div>
           </article>
           {% else %}
           <article class="setup-category-card" data-category-card data-category-key="category_a">
-            <label class="setup-field"><span>分类名称</span><input name="category_name" placeholder="例如：入门用户"></label>
-            <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
+            <div class="setup-category-card__head">
+              <label class="setup-field"><span>分类名称</span><input name="category_name" placeholder="例如：入门用户"></label>
+              <button class="setup-action is-danger" type="button" data-remove-category>删除分类</button>
+            </div>
             <div class="setup-field">
               <span>已选择选项</span>
               <div class="setup-chip-list" data-selected-options><span class="setup-muted" data-empty-selected>还没有选择选项</span></div>
             </div>
             <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
-            <div class="setup-actions"><button class="setup-action" type="button" data-remove-category>删除分类</button></div>
           </article>
           {% endfor %}
         </div>
       </div>
-      <div class="setup-actions"><button class="setup-action" type="button" data-add-category>新增分类</button><button class="setup-action" type="button" data-apply-category-presets>应用示例三档</button></div>
+      <div class="setup-actions"><button class="setup-action" type="button" data-add-category>新增分类</button></div>
     </div>
 
     <div class="setup-tab-panel" data-setup-tab-panel="score" hidden>
@@ -333,11 +367,6 @@
         <div class="setup-result-card"><strong>状态</strong><span>{{ "已绑定" if profile.template_id else "未绑定" }}</span></div>
       </div>
       <p class="setup-muted">多维画像可用于后续内容变量、细分触达和运营动作条件；本阶段不作为完整发布必填项。</p>
-    </div>
-    <div class="setup-actions">
-      <button class="setup-action" type="button" data-save-current>保存草稿</button>
-      <button class="setup-action" type="button" data-save-and-publish>去检查发布</button>
-      <button class="setup-action is-primary" type="button" data-save-and-next data-next-step="entry-rule">保存并下一步</button>
     </div>
   </section>
   {% elif current_step == "entry-rule" %}
@@ -449,11 +478,6 @@
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="conversion_review">{{ next_steps.conversion_review or "本项已关闭" }}</strong></div>
       </article>
     </div>
-    <div class="setup-actions">
-      <button class="setup-action" type="button" data-save-current>保存草稿</button>
-      <button class="setup-action" type="button" data-save-and-publish>去检查发布</button>
-      <button class="setup-action is-primary" type="button" data-save-and-next data-next-step="operations">保存并下一步</button>
-    </div>
   </section>
   <div class="setup-modal" data-audience-modal hidden>
     <div class="setup-modal__panel" role="dialog" aria-modal="true" aria-labelledby="audience-picker-title">
@@ -494,42 +518,9 @@
     </div>
   </div>
   {% elif current_step == "operations" %}
-  {% set operations = workspace.operations or {} %}
-  <section class="setup-panel">
-    <div>
-      <h2>运营编排</h2>
-      <p class="setup-muted">读取当前方案已有运营任务；下方继续加载 Next 运营任务面板。</p>
-    </div>
-    <div class="setup-summary-grid">
-      <article class="setup-summary-item"><span>运营任务</span><strong>{{ (operations.tasks or [])|length }}</strong></article>
-      <article class="setup-summary-item"><span>启用中</span><strong>{{ operations.active_count or 0 }}</strong></article>
-      <article class="setup-summary-item"><span>最近执行</span><strong>{{ summary.latest_execution_at or "-" }}</strong></article>
-    </div>
-    <div class="setup-table-wrap">
-      <table class="setup-table">
-        <thead><tr><th>任务</th><th>分组</th><th>状态</th><th>触发</th><th>目标人群</th><th>内容模式</th><th>更新时间</th></tr></thead>
-        <tbody>
-          {% for task in operations.tasks or [] %}
-          <tr>
-            <td><strong>{{ task.task_name or ("任务 " ~ task.id) }}</strong><br><span class="setup-muted">{{ task.description or "" }}</span></td>
-            <td>{{ task.group_name or "未分组" }}</td>
-            <td>{{ task.status }}</td>
-            <td>{{ task.trigger_type }} {{ task.send_time or "" }}</td>
-            <td>{{ task.target_audience_label or task.target_audience_code }}</td>
-            <td>{{ task.content_mode }}</td>
-            <td>{{ task.updated_at or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="7">当前方案还没有运营任务。</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  <section class="setup-panel setup-panel--operations">
     {% set operations_workspace = workspace.operations_workspace or {} %}
     {% include "admin_console/_automation_operation_orchestration_panel.html" %}
-    <div class="setup-actions">
-      <a class="setup-action is-primary" href="{{ urls['base'] }}?step=publish">下一步</a>
-    </div>
   </section>
   {% else %}
   {% set checks = workspace.publish_check or {} %}
@@ -555,24 +546,28 @@
       </article>
       {% endfor %}
     </div>
-    <div class="setup-actions">
-      <a class="setup-action is-primary" href="{{ urls['overview'] }}">查看概览</a>
-    </div>
   </section>
   {% endif %}
 
   <footer class="setup-footer">
     <div class="setup-footer-side">
       <a class="setup-action" href="{{ url_for('api.admin_automation_conversion') }}">返回列表</a>
-      <a class="setup-action" href="{{ urls['overview'] }}">概览</a>
     </div>
     <div class="setup-footer-side">
-      {% if current_step == "segmentation" %}
+      {% if current_step == "basic" %}
+      <button class="setup-action" type="submit" form="setup-basic-form" name="next" value="{{ urls['base'] }}?step=publish">去检查发布</button>
+      <button class="setup-action is-primary" type="submit" form="setup-basic-form" name="next" value="{{ urls['base'] }}?step=entry">保存并下一步</button>
+      {% elif current_step == "segmentation" %}
       <button class="setup-action" type="button" data-save-and-publish>去检查发布</button>
       <button class="setup-action is-primary" type="button" data-save-and-next data-next-step="entry-rule">保存并下一步</button>
       {% elif current_step == "entry-rule" %}
       <button class="setup-action" type="button" data-save-and-publish>去检查发布</button>
       <button class="setup-action is-primary" type="button" data-save-and-next data-next-step="operations">保存并下一步</button>
+      {% elif current_step == "operations" %}
+      <button class="setup-action" type="button" data-save-operations-and-publish>去检查发布</button>
+      <button class="setup-action is-primary" type="button" data-save-operations-and-next data-next-step="publish">保存并下一步</button>
+      {% elif current_step == "publish" %}
+      <button class="setup-action is-primary" type="button" data-publish-full {% if not (((workspace.publish_check or {}).get("full") or {}).get("passed")) %}disabled{% endif %}>发布完整自动化</button>
       {% else %}
       <a class="setup-action" href="{{ urls['base'] }}?step=publish">去检查发布</a>
       <a class="setup-action is-primary" href="{{ urls['base'] }}?step={{ 'entry' if current_step == 'basic' else 'segmentation' if current_step == 'entry' else 'entry-rule' if current_step == 'segmentation' else 'operations' if current_step == 'entry-rule' else 'publish' }}">保存并下一步</a>
@@ -580,6 +575,9 @@
     </div>
   </footer>
 </section>
+{% if current_step == "entry" %}
+<script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}"></script>
+{% endif %}
 {% if current_step == "segmentation" %}
 <script>
 (() => {
@@ -605,6 +603,8 @@
   root.querySelectorAll("[data-setup-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const key = button.dataset.setupTab;
+      const strategy = button.dataset.defaultStrategy;
+      if (strategy && form.querySelector("[name='default_strategy']")) form.querySelector("[name='default_strategy']").value = strategy;
       root.querySelectorAll("[data-setup-tab]").forEach((item) => item.classList.toggle("is-active", item === button));
       root.querySelectorAll("[data-setup-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.setupTabPanel !== key; });
     });
@@ -677,25 +677,17 @@
     card.dataset.categoryCard = "";
     card.dataset.categoryKey = key || categoryKey(index);
     card.innerHTML = `
-      <label class="setup-field"><span>分类名称</span><input name="category_name" value="${escapeHtml(name)}" placeholder="例如：入门用户"></label>
-      <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
+      <div class="setup-category-card__head">
+        <label class="setup-field"><span>分类名称</span><input name="category_name" value="${escapeHtml(name)}" placeholder="例如：入门用户"></label>
+        <button class="setup-action is-danger" type="button" data-remove-category>删除分类</button>
+      </div>
       <div class="setup-field"><span>已选择选项</span><div class="setup-chip-list" data-selected-options>${selectedOptions.map((option) => selectedChipHtml(option)).join("")}</div></div>
       <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
-      <div class="setup-actions"><button class="setup-action" type="button" data-remove-category>删除分类</button></div>
     `;
     categoryBody.appendChild(card);
     updateOptionState();
   };
   root.querySelector("[data-add-category]")?.addEventListener("click", () => addCategoryCard());
-  root.querySelector("[data-apply-category-presets]")?.addEventListener("click", () => {
-    if (!categoryBody) return;
-    const options = currentQuestionOptions();
-    const chunk = Math.ceil(Math.max(options.length, 1) / 3);
-    categoryBody.innerHTML = "";
-    addCategoryCard("入门用户", options.slice(0, chunk).map((item) => item.id), "category_a");
-    addCategoryCard("进阶用户", options.slice(chunk, chunk * 2).map((item) => item.id), "category_b");
-    addCategoryCard("专家用户", options.slice(chunk * 2).map((item) => item.id), "category_c");
-  });
   questionnaireSelect?.addEventListener("change", renderQuestionOptions);
   questionSelect?.addEventListener("change", () => {
     resetSelectedOptions();
@@ -960,6 +952,80 @@
     });
   });
   updateNextSteps();
+})();
+</script>
+{% endif %}
+{% if current_step == "operations" %}
+<script>
+(() => {
+  const root = document.querySelector("[data-setup-root]");
+  if (!root) return;
+  const urls = JSON.parse(root.dataset.urls || "{}");
+  const feedback = root.querySelector("[data-setup-feedback]");
+  const showFeedback = (message, ok = false) => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.classList.toggle("is-success", ok);
+    feedback.style.display = "block";
+    feedback.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  const saveAndGo = async (step) => {
+    try {
+      if (typeof window.__automationOperationSaveCurrent === "function") {
+        await window.__automationOperationSaveCurrent();
+      }
+      window.location.href = `${urls.base}?step=${encodeURIComponent(step || "publish")}`;
+    } catch (error) {
+      showFeedback(error.message || "保存运营任务失败，请先处理当前任务配置");
+    }
+  };
+  root.querySelector("[data-save-operations-and-next]")?.addEventListener("click", (event) => {
+    saveAndGo(event.currentTarget?.dataset.nextStep || "publish");
+  });
+  root.querySelector("[data-save-operations-and-publish]")?.addEventListener("click", () => {
+    saveAndGo("publish");
+  });
+})();
+</script>
+{% endif %}
+{% if current_step == "publish" %}
+<script>
+(() => {
+  const root = document.querySelector("[data-setup-root]");
+  if (!root) return;
+  const urls = JSON.parse(root.dataset.urls || "{}");
+  const feedback = root.querySelector("[data-setup-feedback]");
+  const showFeedback = (message, ok = false) => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.classList.toggle("is-success", ok);
+    feedback.style.display = "block";
+    feedback.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  const postJson = async (url) => {
+    const response = await fetch(url, { method: "POST", headers: {"Accept": "application/json"} });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.detail || data.error || "发布失败，请稍后重试");
+    return data;
+  };
+  const bindPublish = (selector, urlKey, label) => {
+    root.querySelectorAll(selector).forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const data = await postJson(urls[urlKey]);
+          const status = (data.summary || {}).publish_status_label || label;
+          showFeedback(`${status}，正在刷新发布状态`, true);
+          window.setTimeout(() => { window.location.href = urls.overview || window.location.href; }, 550);
+        } catch (error) {
+          button.disabled = false;
+          showFeedback(error.message || "发布失败，请先处理检查项");
+        }
+      });
+    });
+  };
+  bindPublish("[data-publish-full]", "publish_full", "完整自动化已发布");
 })();
 </script>
 {% endif %}
