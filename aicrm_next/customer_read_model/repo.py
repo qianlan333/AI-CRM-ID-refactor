@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.repository_provider import assert_repository_allowed
-from aicrm_next.shared.runtime import database_mode
+from aicrm_next.shared.runtime import database_mode, raw_database_url
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -786,6 +786,14 @@ def _iso(value: object) -> str | None:
     return str(value)
 
 
+def _sqlalchemy_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
+
+
 def build_customer_read_model_repository(
     settings: Settings | None = None,
     *,
@@ -803,7 +811,8 @@ def build_customer_read_model_repository(
                 SqlAlchemyCustomerReadModelRepository(session),
                 capability_owner="customer_read_model",
             )
-        engine = engine or create_engine(settings.database_url, future=True)
+        database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
+        engine = engine or create_engine(database_url, future=True)
         session_factory = sessionmaker(bind=engine, future=True)
         return assert_repository_allowed(
             SqlAlchemyCustomerReadModelRepository(session_factory()),
