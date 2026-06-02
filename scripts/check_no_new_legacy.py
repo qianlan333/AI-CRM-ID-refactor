@@ -1037,7 +1037,6 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             "'fallback_used': True": "questionnaire_h5_submit_fallback_used_true",
             '"real_external_call_executed": True': "questionnaire_h5_submit_real_external_call_true",
             "'real_external_call_executed': True": "questionnaire_h5_submit_real_external_call_true",
-            "real_enabled": "questionnaire_h5_submit_real_enabled_marker",
             "send_private_message(": "questionnaire_h5_submit_direct_wecom_mutation",
             "dispatch_wecom_task(": "questionnaire_h5_submit_direct_wecom_mutation",
             "mark_contact_tags(": "questionnaire_h5_submit_direct_wecom_mutation",
@@ -1054,7 +1053,7 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
                         code,
                         str(path.relative_to(root)),
                         marker,
-                        "Questionnaire H5 submit/diagnostics must stay SideEffectPlan only with no compatibility facade or real external calls.",
+                        "Questionnaire H5 submit/diagnostics must stay on the Next CommandBus with no compatibility facade or direct API-layer external calls.",
                     )
                 )
 
@@ -1071,7 +1070,8 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             violations.append(Violation("questionnaire_h5_submit_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("legacy_source") in {"production_compat", "legacy_questionnaire_facade"}:
             violations.append(Violation("questionnaire_h5_submit_registry_legacy_source", route_path, f"legacy_source={record.get('legacy_source')}"))
-        if record.get("adapter_mode") != "real_blocked":
+        expected_adapter_mode = "real_enabled" if route_path == "/api/h5/questionnaires/{slug}/submit" else "real_blocked"
+        if record.get("adapter_mode") != expected_adapter_mode:
             violations.append(Violation("questionnaire_h5_submit_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
         if record.get("delete_status") == "next_primary_with_legacy_rollback":
             violations.append(Violation("questionnaire_h5_submit_registry_rollback_lifecycle", route_path, f"delete_status={record.get('delete_status')}"))
@@ -1080,7 +1080,11 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
         if record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_h5_submit_registry_replacement_status", route_path, f"replacement_status={record.get('replacement_status')}"))
         notes = str(record.get("notes") or "")
-        if "CommandBus" not in notes or "legacy rollback removed" not in notes or "real_external_call_executed=false" not in notes:
+        if "CommandBus" not in notes or "legacy rollback removed" not in notes:
+            violations.append(Violation("questionnaire_h5_submit_registry_notes", route_path, notes))
+        elif route_path == "/api/h5/questionnaires/{slug}/submit" and "configured questionnaire external push executes" not in notes:
+            violations.append(Violation("questionnaire_h5_submit_registry_notes", route_path, notes))
+        elif route_path != "/api/h5/questionnaires/{slug}/submit" and "real_external_call_executed=false" not in notes:
             violations.append(Violation("questionnaire_h5_submit_registry_notes", route_path, notes))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
@@ -1098,7 +1102,8 @@ def check_questionnaire_h5_submit_next_commandbus(root: Path = ROOT) -> list[Vio
             violations.append(Violation("questionnaire_h5_submit_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("delete_ready") is not True:
             violations.append(Violation("questionnaire_h5_submit_manifest_not_delete_ready", route_path, f"delete_ready={record.get('delete_ready')}"))
-        if record.get("adapter_mode") != "real_blocked":
+        expected_adapter_mode = "real_enabled" if route_path == "/api/h5/questionnaires/{slug}/submit" else "real_blocked"
+        if record.get("adapter_mode") != expected_adapter_mode:
             violations.append(Violation("questionnaire_h5_submit_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
         if record.get("delete_status") == "next_primary_with_legacy_rollback":
             violations.append(Violation("questionnaire_h5_submit_manifest_rollback_lifecycle", route_path, f"delete_status={record.get('delete_status')}"))

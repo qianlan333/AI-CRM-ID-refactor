@@ -147,17 +147,17 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tm
         "    return execute_questionnaire_client_diagnostics()\n",
         encoding="utf-8",
     )
-    h5_write.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    h5_write.write_text("payload = {'fallback_used': False}\n", encoding="utf-8")
     registry.write_text(
         "routes:\n"
         "  - path_pattern: /api/h5/questionnaires/{slug}/submit\n"
         "    runtime_owner: next_command\n"
         "    legacy_fallback_allowed: false\n"
         "    legacy_source: none\n"
-        "    adapter_mode: real_blocked\n"
+        "    adapter_mode: real_enabled\n"
         "    delete_status: deletion_locked\n"
         "    replacement_status: locked\n"
-        "    notes: Next CommandBus only; legacy rollback removed; real_external_call_executed=false\n"
+        "    notes: Next CommandBus only; legacy rollback removed; configured questionnaire external push executes\n"
         "  - path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics\n"
         "    runtime_owner: next_command\n"
         "    legacy_fallback_allowed: false\n"
@@ -174,7 +174,7 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tm
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
         "    legacy_fallback_allowed: false\n"
-        "    adapter_mode: real_blocked\n"
+        "    adapter_mode: real_enabled\n"
         "    delete_ready: true\n"
         "    delete_status: deletion_locked\n"
         "    replacement_status: locked\n"

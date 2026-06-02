@@ -22,12 +22,16 @@ def test_questionnaire_h5_submit_routes_are_next_command_deletion_locked() -> No
         assert entry.legacy_fallback_allowed is False
         assert entry.legacy_source == "none"
         assert entry.external_side_effect_risk == "medium"
-        assert entry.adapter_mode == "real_blocked"
+        expected_adapter_mode = "real_enabled" if route == "/api/h5/questionnaires/{slug}/submit" else "real_blocked"
+        assert entry.adapter_mode == expected_adapter_mode
         assert entry.delete_status == "deletion_locked"
         assert entry.replacement_status == "locked"
         assert "CommandBus" in entry.notes
         assert "legacy rollback removed" in entry.notes
-        assert "real_external_call_executed=false" in entry.notes
+        if route == "/api/h5/questionnaires/{slug}/submit":
+            assert "configured questionnaire external push executes" in entry.notes
+        else:
+            assert "real_external_call_executed=false" in entry.notes
 
 
 def test_questionnaire_h5_submit_manifest_is_next_command_deletion_locked() -> None:
@@ -43,9 +47,13 @@ def test_questionnaire_h5_submit_manifest_is_next_command_deletion_locked() -> N
         assert record["delete_ready"] is True
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
-        assert record["adapter_mode"] == "real_blocked"
+        expected_adapter_mode = "real_enabled" if route == "/api/h5/questionnaires/{slug}/submit" else "real_blocked"
+        assert record["adapter_mode"] == expected_adapter_mode
         assert "legacy rollback removed" in record["notes"]
-        assert "real_external_call_executed=false" in record["notes"]
+        if route == "/api/h5/questionnaires/{slug}/submit":
+            assert "configured questionnaire external push executes" in record["notes"]
+        else:
+            assert "real_external_call_executed=false" in record["notes"]
 
 
 def test_questionnaire_oauth_and_admin_read_write_lifecycle_boundaries_remain_intact() -> None:
