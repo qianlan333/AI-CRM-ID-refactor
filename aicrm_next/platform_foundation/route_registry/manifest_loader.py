@@ -27,6 +27,8 @@ def _slug(value: str) -> str:
 def _runtime_owner(record: dict[str, Any]) -> str:
     owner = str(record.get("runtime_owner") or record.get("current_runtime_owner") or "").strip()
     behavior = str(record.get("production_behavior") or "").strip()
+    if owner == "next_command" or behavior == "next_command":
+        return "next_command"
     if owner in {"next", "ai_crm_next"} or owner.startswith("aicrm_next."):
         return "next_native"
     if owner == "frontend_compat":
@@ -39,7 +41,7 @@ def _runtime_owner(record: dict[str, Any]) -> str:
         return "fake_adapter"
     if behavior == "real_blocked" or str(record.get("external_side_effect_risk") or "") == "real_blocked":
         return "real_blocked"
-    return owner if owner in {"sandbox_adapter", "unknown"} else "unknown"
+    return owner if owner in {"next_command", "sandbox_adapter", "unknown"} else "unknown"
 
 
 def _risk(record: dict[str, Any]) -> str:

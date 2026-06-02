@@ -432,31 +432,31 @@ routes:
   - route_pattern: /api/admin/questionnaires*
     methods: [POST, PUT, PATCH, DELETE]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: next
+    current_runtime_owner: next_command
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     adapter_mode: real_blocked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
-    notes: Questionnaire admin write routes use Next CommandBus primary, legacy rollback retained until validation; create/update/delete/duplicate/publish/enable/disable/export preview responses include route_owner=ai_crm_next, fallback_used=false, source_status=next_command, real_external_call_executed=false, and SideEffectPlan only for guarded effects.
+    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; create/update/delete/duplicate/publish/enable/disable/export preview responses include route_owner=ai_crm_next, fallback_used=false, source_status=next_command, real_external_call_executed=false, and SideEffectPlan only for guarded effects; no real external calls.
   - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: next
+    current_runtime_owner: next_command
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     adapter_mode: real_blocked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
-    notes: Existing admin export route is now an audited Next CommandBus export preview/plan route, not real storage or file generation; legacy rollback retained until validation; real_external_call_executed=false.
+    notes: Existing admin export route is an audited Next CommandBus export preview/plan route, not real storage or file generation; admin write legacy rollback removed; SideEffectPlan only; no real external calls; real_external_call_executed=false.
   - route_pattern: /api/admin/questionnaires/{questionnaire_id}/share
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
