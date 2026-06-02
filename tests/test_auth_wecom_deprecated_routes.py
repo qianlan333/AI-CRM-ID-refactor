@@ -38,3 +38,16 @@ def test_unknown_deprecated_options_do_not_fall_to_wildcard() -> None:
         assert response.status_code == 200
         assert payload["source_status"] == "next_auth_wecom_exact"
         assert payload["fallback_used"] is False
+
+
+def test_random_auth_wecom_and_h5_oauth_subpaths_do_not_legacy_forward(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    from aicrm_next.main import create_app
+
+    client = TestClient(create_app())
+
+    for path in ["/api/h5/wechat/oauth/random-not-registered", "/auth/wecom/random-not-registered"]:
+        response = client.get(path)
+
+        assert response.status_code == 404
+        assert response.headers.get("X-AICRM-Compatibility-Facade") is None

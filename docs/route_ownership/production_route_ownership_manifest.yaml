@@ -738,31 +738,31 @@ routes:
   - route_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: validating
-    notes: OAuth wildcard inventory completed in group 11; exact start/callback are deletion_locked to Next OAuth adapter only, /api/h5/wechat/oauth/unknown has an exact deprecated Next response, and wildcard deletion waits for the next closeout.
+    delete_status: legacy_deleted
+    replacement_status: deleted
+    notes: OAuth wildcard removed from production_compat after exact route validation; exact start/callback and /api/h5/wechat/oauth/unknown own known surfaces; random OAuth subpaths return 404 instead of legacy forwarding; no real OAuth default.
   - route_pattern: /api/h5/wechat/oauth/unknown
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_auth_wecom_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_shadow
-    replacement_status: validating
-    notes: Explicit deprecated Next response for historical H5 OAuth unknown route; no real OAuth call, fallback_used=false, real_external_call_executed=false; wildcard retained for one validation cycle.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Explicit deprecated Next response for historical H5 OAuth unknown route; no real OAuth call, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
   - route_pattern: /api/admin/wecom/tags*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.customer_tags
@@ -788,59 +788,59 @@ routes:
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_next_production_runtime_gaps.py
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: validating
-    notes: Auth/wecom wildcard inventory completed in group 11; start/callback/unknown have exact Next responses, not real OAuth/WeCom enablement, and wildcard deletion waits for the next closeout.
+    delete_status: legacy_deleted
+    replacement_status: deleted
+    notes: Auth/wecom wildcard removed from production_compat after exact route validation; start/callback/unknown exact routes own known surfaces; random auth/wecom subpaths return 404 instead of legacy forwarding; no real WeCom call enabled.
   - route_pattern: /auth/wecom/start
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_auth_wecom_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Exact Next blocked response for admin WeCom SSO start; no real authorize URL call, fallback_used=false, real_external_call_executed=false; legacy rollback retained for one validation cycle.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Exact Next blocked response for admin WeCom SSO start; no real authorize URL call, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
   - route_pattern: /auth/wecom/callback
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_auth_wecom_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Exact Next blocked response for admin WeCom SSO callback; no code exchange, fallback_used=false, real_external_call_executed=false; legacy rollback retained for one validation cycle.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Exact Next blocked response for admin WeCom SSO callback; no code exchange, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
   - route_pattern: /auth/wecom/unknown
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: real_blocked
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_auth_wecom_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_shadow
-    replacement_status: validating
-    notes: Explicit deprecated Next response for historical auth/wecom unknown route; no real WeCom call, fallback_used=false, real_external_call_executed=false; wildcard retained for one validation cycle.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Explicit deprecated Next response for historical auth/wecom unknown route; no real WeCom call, fallback_used=false, real_external_call_executed=false; wildcard rollback removed and locked.
   - route_pattern: /api/admin/automation-conversion/reply-monitor*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine

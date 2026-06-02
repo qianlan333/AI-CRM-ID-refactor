@@ -23,7 +23,9 @@ def test_auth_wecom_inventory_documents_search_results_and_decisions() -> None:
     assert "aicrm_next/frontend_compat/api_docs_view_model.py" in text
     assert "deprecated" in text
     assert "external_call_blocked" in text
-    assert "wildcard deletion closeout" in text
+    assert "Wildcard Deleted" in text
+    assert "legacy_deleted" in text
+    assert "Random unregistered auth subpaths now return 404" in text
 
 
 def test_auth_wecom_inventory_marks_missing_search_dirs_non_fatal() -> None:

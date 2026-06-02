@@ -46,11 +46,15 @@ def test_questionnaire_oauth_manifest_is_next_adapter_deletion_locked_without_ro
         assert "production real OAuth blocked by default" in record["notes"]
 
 
-def test_questionnaire_oauth_wildcard_and_auth_wecom_stay_out_of_scope() -> None:
+def test_questionnaire_oauth_wildcard_and_auth_wecom_are_deleted_after_closeout() -> None:
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
     by_route = {record["route_pattern"]: record for record in manifest["routes"]}
 
-    assert by_route["/api/h5/wechat/oauth*"]["current_runtime_owner"] == "production_compat"
-    assert by_route["/api/h5/wechat/oauth*"]["delete_status"] == "active"
-    assert by_route["/auth/wecom*"]["current_runtime_owner"] == "production_compat"
-    assert by_route["/auth/wecom*"]["delete_status"] == "active"
+    assert by_route["/api/h5/wechat/oauth*"]["current_runtime_owner"] == "next"
+    assert by_route["/api/h5/wechat/oauth*"]["production_behavior"] != "legacy_forward"
+    assert by_route["/api/h5/wechat/oauth*"]["legacy_fallback_allowed"] is False
+    assert by_route["/api/h5/wechat/oauth*"]["delete_status"] == "legacy_deleted"
+    assert by_route["/auth/wecom*"]["current_runtime_owner"] == "next"
+    assert by_route["/auth/wecom*"]["production_behavior"] != "legacy_forward"
+    assert by_route["/auth/wecom*"]["legacy_fallback_allowed"] is False
+    assert by_route["/auth/wecom*"]["delete_status"] == "legacy_deleted"

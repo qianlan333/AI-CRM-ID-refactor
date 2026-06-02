@@ -65,8 +65,9 @@ def test_questionnaire_oauth_and_admin_read_write_lifecycle_boundaries_remain_in
     assert by_path["/api/h5/wechat/oauth/start"]["legacy_fallback_allowed"] is False
     assert by_path["/api/h5/wechat/oauth/callback"]["delete_status"] == "deletion_locked"
     assert by_path["/api/h5/wechat/oauth/callback"]["legacy_fallback_allowed"] is False
-    assert by_path["/api/h5/wechat/oauth*"]["delete_status"] == "active"
-    assert by_path["/api/h5/wechat/oauth*"]["legacy_fallback_allowed"] is True
+    assert by_path["/api/h5/wechat/oauth*"]["delete_status"] == "legacy_deleted"
+    assert by_path["/api/h5/wechat/oauth*"]["replacement_status"] == "deleted"
+    assert by_path["/api/h5/wechat/oauth*"]["legacy_fallback_allowed"] is False
 
     for route in ["/api/admin/questionnaires", "/api/admin/questionnaires*"]:
         assert by_path[route]["delete_status"] == "deletion_locked"

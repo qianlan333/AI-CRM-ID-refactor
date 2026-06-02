@@ -349,6 +349,7 @@ def test_auth_wecom_guard_flags_exact_production_compat_and_missing_lifecycle(tm
         "from fastapi import APIRouter\n"
         "router = APIRouter()\n"
         "@router.api_route('/auth/wecom/start', methods=['GET'])\n"
+        "@router.api_route('/auth/wecom/{path:path}', methods=['GET'])\n"
         "def auth_wecom_start():\n"
         "    pass\n",
         encoding="utf-8",
@@ -361,13 +362,15 @@ def test_auth_wecom_guard_flags_exact_production_compat_and_missing_lifecycle(tm
     codes = {violation.code for violation in check_auth_wecom_wildcard_inventory(tmp_path)}
 
     assert "auth_wecom_production_compat_exact_route" in codes
+    assert "auth_wecom_deleted_wildcard_reintroduced" in codes
+    assert "auth_wecom_unregistered_wildcard" in codes
     assert "auth_wecom_fallback_used_true" in codes
     assert "auth_wecom_real_external_call_true" in codes
     assert "auth_wecom_registry_missing" in codes
     assert "auth_wecom_manifest_missing" in codes
 
 
-def test_auth_wecom_guard_allows_exact_next_routes_with_retained_wildcards(tmp_path: Path) -> None:
+def test_auth_wecom_guard_allows_locked_exact_routes_with_deleted_wildcards(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     auth_api = tmp_path / "aicrm_next/auth_wecom/api.py"
     inventory = tmp_path / "docs/architecture/auth_wecom_route_inventory.md"
@@ -379,51 +382,45 @@ def test_auth_wecom_guard_allows_exact_next_routes_with_retained_wildcards(tmp_p
     registry.parent.mkdir(parents=True, exist_ok=True)
     manifest.parent.mkdir(parents=True, exist_ok=True)
 
-    compat.write_text(
-        "@wildcard_router.api_route('/api/h5/wechat/oauth/{path:path}', methods=['GET'])\n"
-        "@wildcard_router.api_route('/auth/wecom/{path:path}', methods=['GET'])\n"
-        "def wildcard():\n"
-        "    pass\n",
-        encoding="utf-8",
-    )
+    compat.write_text("from fastapi import APIRouter\nwildcard_router = APIRouter()\n", encoding="utf-8")
     auth_api.write_text("payload = {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
     inventory.write_text("/auth/wecom/start\n/auth/wecom/callback\n/auth/wecom/unknown\n/api/h5/wechat/oauth/unknown\n/api/h5/wechat/oauth/{path:path}\n/auth/wecom/{path:path}\n/api/h5/wechat/oauth/start\n/api/h5/wechat/oauth/callback\n", encoding="utf-8")
     registry.write_text(
         "routes:\n"
         "  - path_pattern: /auth/wecom/start\n"
         "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /auth/wecom/callback\n"
         "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /auth/wecom/unknown\n"
         "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_shadow\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /api/h5/wechat/oauth/unknown\n"
         "    runtime_owner: next_native\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_shadow\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /api/h5/wechat/oauth*\n"
-        "    runtime_owner: production_compat\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: active\n"
-        "    replacement_status: validating\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: legacy_deleted\n"
+        "    replacement_status: deleted\n"
         "  - path_pattern: /auth/wecom*\n"
-        "    runtime_owner: production_compat\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: active\n"
-        "    replacement_status: validating\n",
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: legacy_deleted\n"
+        "    replacement_status: deleted\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -431,33 +428,39 @@ def test_auth_wecom_guard_allows_exact_next_routes_with_retained_wildcards(tmp_p
         "  - route_pattern: /auth/wecom/start\n"
         "    current_runtime_owner: next\n"
         "    production_behavior: next_exact\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /auth/wecom/callback\n"
         "    current_runtime_owner: next\n"
         "    production_behavior: next_exact\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /auth/wecom/unknown\n"
         "    current_runtime_owner: next\n"
         "    production_behavior: next_exact\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: next_shadow\n"
-        "    replacement_status: validating\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /api/h5/wechat/oauth/unknown\n"
         "    current_runtime_owner: next\n"
         "    production_behavior: next_exact\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: next_shadow\n"
-        "    replacement_status: validating\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /api/h5/wechat/oauth*\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: active\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: legacy_deleted\n"
+        "    replacement_status: deleted\n"
         "  - route_pattern: /auth/wecom*\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_status: active\n",
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: legacy_deleted\n"
+        "    replacement_status: deleted\n",
         encoding="utf-8",
     )
 

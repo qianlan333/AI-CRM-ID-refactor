@@ -1247,13 +1247,21 @@ def check_auth_wecom_wildcard_inventory(root: Path = ROOT) -> list[Violation]:
                         "auth_wecom_production_compat_exact_route",
                         str(compat_path.relative_to(root)),
                         route_path,
-                        "Known auth/wecom and OAuth probe exact routes must stay Next-owned; keep only documented wildcard rollback for validation.",
+                        "Known auth/wecom and OAuth probe exact routes must stay Next-owned with no production_compat fallback.",
+                    )
+                )
+            if route_path in AUTH_WECOM_WILDCARD_ROUTES:
+                violations.append(
+                    Violation(
+                        "auth_wecom_deleted_wildcard_reintroduced",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Auth/wecom and OAuth wildcard fallbacks are deleted and locked; do not re-add production_compat wildcard decorators.",
                     )
                 )
             if (
                 (route_path.startswith("/auth/wecom") or route_path.startswith("/api/h5/wechat/oauth"))
                 and "{path:path}" in route_path
-                and route_path not in AUTH_WECOM_WILDCARD_ROUTES
             ):
                 violations.append(
                     Violation(
@@ -1308,11 +1316,11 @@ def check_auth_wecom_wildcard_inventory(root: Path = ROOT) -> list[Violation]:
         else:
             if record.get("runtime_owner") != "next_native":
                 violations.append(Violation("auth_wecom_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-            if record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("auth_wecom_registry_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("auth_wecom_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
             if record.get("adapter_mode") not in {"real_blocked", "none"}:
                 violations.append(Violation("auth_wecom_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-            if record.get("delete_status") not in {"next_shadow", "next_primary_with_legacy_rollback"} or record.get("replacement_status") != "validating":
+            if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
                 violations.append(Violation("auth_wecom_registry_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
         manifest_record = manifest_by_path.get(route_path)
         if manifest_record is None:
@@ -1322,9 +1330,9 @@ def check_auth_wecom_wildcard_inventory(root: Path = ROOT) -> list[Violation]:
                 violations.append(Violation("auth_wecom_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
             if manifest_record.get("production_behavior") != "next_exact":
                 violations.append(Violation("auth_wecom_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
-            if manifest_record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("auth_wecom_manifest_legacy_not_retained", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
-            if manifest_record.get("delete_status") not in {"next_shadow", "next_primary_with_legacy_rollback"} or manifest_record.get("replacement_status") != "validating":
+            if manifest_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("auth_wecom_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
                 violations.append(Violation("auth_wecom_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     for route_path in AUTH_WECOM_WILDCARD_REGISTRY_ROUTES:
@@ -1332,18 +1340,28 @@ def check_auth_wecom_wildcard_inventory(root: Path = ROOT) -> list[Violation]:
         if record is None:
             violations.append(Violation("auth_wecom_wildcard_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
         else:
-            if record.get("delete_status") == "deletion_locked":
-                violations.append(Violation("auth_wecom_wildcard_registry_mislocked", route_path, "delete_status=deletion_locked"))
-            if record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("auth_wecom_wildcard_registry_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("runtime_owner") == "production_compat":
+                violations.append(Violation("auth_wecom_wildcard_registry_production_compat", route_path, f"runtime_owner={record.get('runtime_owner')}"))
+            if record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("auth_wecom_wildcard_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("delete_status") == "active" or record.get("replacement_status") == "validating":
+                violations.append(Violation("auth_wecom_wildcard_registry_retained_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+            if record.get("delete_status") not in {"legacy_deleted", "deletion_locked"} or record.get("replacement_status") not in {"deleted", "locked"}:
+                violations.append(Violation("auth_wecom_wildcard_registry_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
         manifest_record = manifest_by_path.get(route_path)
         if manifest_record is None:
             violations.append(Violation("auth_wecom_wildcard_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
         else:
-            if manifest_record.get("delete_status") == "deletion_locked":
-                violations.append(Violation("auth_wecom_wildcard_manifest_mislocked", route_path, "delete_status=deletion_locked"))
-            if manifest_record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("auth_wecom_wildcard_manifest_legacy_not_retained", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("current_runtime_owner") == "production_compat":
+                violations.append(Violation("auth_wecom_wildcard_manifest_production_compat", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+            if manifest_record.get("production_behavior") == "legacy_forward":
+                violations.append(Violation("auth_wecom_wildcard_manifest_legacy_forward", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("auth_wecom_wildcard_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("delete_status") == "active" or manifest_record.get("replacement_status") == "validating":
+                violations.append(Violation("auth_wecom_wildcard_manifest_retained_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
+            if manifest_record.get("delete_status") not in {"legacy_deleted", "deletion_locked"} or manifest_record.get("replacement_status") not in {"deleted", "locked"}:
+                violations.append(Violation("auth_wecom_wildcard_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     return violations
 
