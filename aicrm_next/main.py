@@ -46,6 +46,7 @@ from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
+from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
         reset_radar_links_fixture_state()
         reset_cloud_plan_fixture_state()
         reset_sidebar_write_fixture_state()
+        reset_questionnaire_admin_write_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):

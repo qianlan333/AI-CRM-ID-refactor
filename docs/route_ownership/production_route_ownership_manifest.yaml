@@ -430,16 +430,55 @@ routes:
     checker: tests/test_messages_registry_lifecycle.py
     notes: Broad wildcard removed from production_compat after exact route validation. Exact Next routes own known message surfaces; send/broadcast/sync remain blocked; no real external calls enabled.
   - route_pattern: /api/admin/questionnaires*
-    methods: [GET, POST, PUT, DELETE]
+    methods: [POST, PUT, PATCH, DELETE]
     capability_owner: aicrm_next.questionnaire
     current_runtime_owner: next
-    production_behavior: guarded_preview
+    production_behavior: next_command
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    adapter_mode: real_blocked
+    checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
+    notes: Questionnaire admin write routes use Next CommandBus primary, legacy rollback retained until validation; create/update/delete/duplicate/publish/enable/disable/export preview responses include route_owner=ai_crm_next, fallback_used=false, source_status=next_command, real_external_call_executed=false, and SideEffectPlan only for guarded effects.
+  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    adapter_mode: real_blocked
+    checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
+    notes: Existing admin export route is now an audited Next CommandBus export preview/plan route, not real storage or file generation; legacy rollback retained until validation; real_external_call_executed=false.
+  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/share
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: production_compat
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Exact admin read routes are documented separately as Next read model primary. Create/update/delete/publish/export write routes remain out of scope and guarded by questionnaire contracts.
+    notes: Admin share payload route is inventoried only and remains outside the group 8 questionnaire admin write CommandBus replacement.
+  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/latest-submit-debug
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: production_compat
+    production_behavior: guarded_debug
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Admin latest submit debug route is inventoried only and remains outside the group 8 questionnaire admin write CommandBus replacement.
   - route_pattern: /api/admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
