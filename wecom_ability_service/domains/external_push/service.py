@@ -199,7 +199,7 @@ def redact_sensitive_fields(payload: Any) -> Any:
             redacted[key] = "[REDACTED]"
         elif lowered in {"phone", "mobile", "mobile_snapshot", "phone_number"}:
             redacted[key] = _mask_phone(value)
-        elif lowered in {"openid", "payer_openid"}:
+        elif lowered in {"openid", "payer_openid", "unionid"}:
             redacted[key] = _mask_openid(value)
         else:
             redacted[key] = redact_sensitive_fields(value)
@@ -267,6 +267,12 @@ def build_external_push_payload(
         "event": EVENT_TRANSACTION_PAID,
         "order": order_payload,
         "product": product_payload,
+        "buyer": {
+            "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
+            "openid": _mask_openid(order.get("payer_openid")),
+            "unionid": _normalized_text(order.get("unionid")),
+            "phone": _mask_phone(order.get("mobile_snapshot")),
+        },
     }
 
 

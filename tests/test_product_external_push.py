@@ -54,7 +54,13 @@ def _create_product(**overrides) -> dict:
     return product_service.create_admin_product(payload, operator="pytest")
 
 
-def _insert_order(product: dict, *, out_trade_no: str = "WXP_PUSH_TEST", status: str = "paying") -> dict:
+def _insert_order(
+    product: dict,
+    *,
+    out_trade_no: str = "WXP_PUSH_TEST",
+    status: str = "paying",
+    unionid: str = "unionid_product_push",
+) -> dict:
     return wechat_pay_repo.insert_order(
         {
             "out_trade_no": out_trade_no,
@@ -63,6 +69,7 @@ def _insert_order(product: dict, *, out_trade_no: str = "WXP_PUSH_TEST", status:
             "description": product["name"],
             "amount_total": product["amount_total"],
             "payer_openid": "openid_product_push",
+            "unionid": unionid,
             "external_userid": "wm_product_push",
             "userid_snapshot": "tester",
             "mobile_snapshot": "13800000000",
@@ -88,6 +95,26 @@ def _success_transaction(order: dict) -> dict:
 
 def _response(status_code: int, text: str):
     return SimpleNamespace(status_code=status_code, text=text, is_redirect=False, headers={})
+
+
+def test_external_push_payload_includes_empty_buyer_unionid_when_missing():
+    payload = external_push_service.build_external_push_payload(
+        "transaction.paid",
+        {
+            "id": 7,
+            "out_trade_no": "WXP_NO_UNIONID",
+            "amount_total": 9900,
+            "payer_total": 9900,
+            "paid_at": "2026-05-30T10:00:00+08:00",
+            "payer_openid": "openid_product_push",
+            "mobile_snapshot": "13800000000",
+        },
+        {"id": 3, "product_code": "prd_no_unionid", "name": "无 unionid 商品", "amount_total": 9900},
+        {},
+        delivery_id="deliv_no_unionid",
+    )
+
+    assert payload["buyer"]["unionid"] == ""
 
 
 def test_product_external_push_config_api_validates_and_saves(app, client, monkeypatch):
@@ -259,11 +286,18 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
             "name": "外推测试商品",
             "price": 9900,
         },
+        "buyer": {
+            "id": "wm_product_push",
+            "openid": "open***push",
+            "unionid": "unionid_product_push",
+            "phone": "138****0000",
+        },
     }
     assert delivery["request_body"]["event"] == "transaction.paid"
     assert delivery["request_body"]["phone_number"] == "138****0000"
     assert delivery["request_body"]["submitted_at"] == "2026-06-01T15:30:10+08:00"
-    assert "buyer" not in delivery["request_body"]
+    assert delivery["request_body"]["buyer"]["unionid"] == "unio***push"
+    assert delivery["request_body"]["buyer"]["phone"] == "138****0000"
     assert "config" not in delivery["request_body"]
     assert "tenant" not in delivery["request_body"]
     assert delivery["request_headers"]["X-AICRM-Signature"].startswith("sha256=")
