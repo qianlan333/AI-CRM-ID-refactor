@@ -1,0 +1,160 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>迁移范围</h2>
+    </div>
+  </div>
+
+  <form class="admin-filter-bar admin-form-grid admin-form-grid--wide-filters" method="post" action="{{ url_for('api.admin_owner_migration_action') }}">
+    <label>
+      <span>原负责人</span>
+      <input type="text" name="source_owner_userid" value="{{ owner_migration_form.source_owner_userid }}" required>
+    </label>
+    <label>
+      <span>目标负责人</span>
+      <input type="text" name="target_owner_userid" value="{{ owner_migration_form.target_owner_userid }}" required>
+    </label>
+    <label>
+      <span>操作人</span>
+      <input type="text" name="operator" value="{{ owner_migration_form.operator }}" required>
+    </label>
+    <label>
+      <span>转接欢迎语</span>
+      <input type="text" name="transfer_success_msg" value="{{ owner_migration_form.transfer_success_msg }}">
+    </label>
+    <label>
+      <span>企微转接</span>
+      <label class="admin-checkline">
+        <input type="hidden" name="perform_wecom_transfer" value="0">
+        <input type="checkbox" name="perform_wecom_transfer" value="1" {% if owner_migration_form.perform_wecom_transfer %}checked{% endif %}>
+        <span>先调用企微官方转接接口</span>
+      </label>
+    </label>
+    <label>
+      <span>确认执行</span>
+      <label class="admin-checkline">
+        <input type="checkbox" name="confirm" value="1">
+        <span>我确认执行企微转接并同步 CRM 归属</span>
+      </label>
+    </label>
+    <div class="admin-toolbar">
+      <button type="submit" class="admin-button admin-button--secondary" name="action" value="preview">预览</button>
+      <button type="submit" class="admin-button admin-button--primary" name="action" value="execute">执行迁移</button>
+    </div>
+  </form>
+</section>
+
+{% if owner_migration_result %}
+<section class="admin-card">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>{% if owner_migration_result.mode == "execute" %}执行结果{% else %}预览结果{% endif %}</h2>
+      <p>{{ owner_migration_result.source_owner_userid }} → {{ owner_migration_result.target_owner_userid }}</p>
+    </div>
+    <div class="admin-chip admin-chip--neutral">{{ owner_migration_result.source_status or "-" }}</div>
+  </div>
+
+  {% if owner_migration_result.ok %}
+  <div class="admin-metric-grid">
+    <div class="admin-metric-card">
+      <span>候选客户</span>
+      <strong>{{ owner_migration_result.candidate_count or 0 }}</strong>
+    </div>
+    <div class="admin-metric-card">
+      <span>已触达客户</span>
+      <strong>{{ owner_migration_result.touched_count or 0 }}</strong>
+    </div>
+    <div class="admin-metric-card">
+      <span>企微转接成功</span>
+      <strong>{{ (owner_migration_result.wecom_transfer or {}).get("success_count", 0) }}</strong>
+    </div>
+    <div class="admin-metric-card">
+      <span>企微转接失败</span>
+      <strong>{{ (owner_migration_result.wecom_transfer or {}).get("failed_count", 0) }}</strong>
+    </div>
+  </div>
+
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>数据面</th>
+          <th>预览数量</th>
+          <th>更新数量</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, value in (owner_migration_result.surface_counts or {}).items() %}
+        <tr>
+          <td><code>{{ key }}</code></td>
+          <td>{{ value }}</td>
+          <td>{{ (owner_migration_result.update_counts or {}).get(key, "-") }}</td>
+        </tr>
+        {% endfor %}
+        {% for key, value in (owner_migration_result.update_counts or {}).items() %}
+        {% if key not in (owner_migration_result.surface_counts or {}) %}
+        <tr>
+          <td><code>{{ key }}</code></td>
+          <td>-</td>
+          <td>{{ value }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if owner_migration_result.pending_review %}
+  <div class="admin-state admin-state--inline">
+    <strong>待复核任务</strong>
+    <span>
+      {% for key, value in owner_migration_result.pending_review.items() %}
+      {{ key }}={{ value }}{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </span>
+  </div>
+  {% endif %}
+
+  {% if owner_migration_result.wecom_transfer %}
+  <div class="admin-state admin-state--inline">
+    <strong>企微转接</strong>
+    <span>
+      enabled={{ owner_migration_result.wecom_transfer.enabled }} ·
+      requested={{ owner_migration_result.wecom_transfer.requested_count or 0 }} ·
+      success={{ owner_migration_result.wecom_transfer.success_count or 0 }} ·
+      failed={{ owner_migration_result.wecom_transfer.failed_count or 0 }}
+    </span>
+  </div>
+  {% endif %}
+
+  {% if owner_migration_result.sample_external_userids %}
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>样本 external_userid</h2>
+    </div>
+  </div>
+  <div class="admin-inline-list">
+    {% for external_userid in owner_migration_result.sample_external_userids %}
+    <code>{{ external_userid }}</code>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if owner_migration_result.notes %}
+  <div class="admin-state admin-state--inline">
+    <strong>边界</strong>
+    <span>{{ owner_migration_result.notes | join(" / ") }}</span>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>无法执行</strong>
+    <span>{{ owner_migration_result.error }}</span>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
