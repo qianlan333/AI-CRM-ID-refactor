@@ -27,6 +27,8 @@ class QuestionnaireRepository(Protocol):
     def get_submission(self, submission_id: str) -> dict[str, Any] | None: ...
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def export_submissions(self, questionnaire_id: int) -> dict[str, Any] | None: ...
+    def get_app_setting(self, key: str) -> str | None: ...
+    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]: ...
 
 
 def _now() -> str:
@@ -102,7 +104,7 @@ def _answer_snapshots(questions: list[dict[str, Any]], answers: dict[str, Any]) 
                     selected_option_tags.append(tag_text)
         snapshots.append(
             {
-                "question_id": int(question_id),
+                "question_id": question_id,
                 "question_type": question_type,
                 "question_title_snapshot": _text(question.get("title")),
                 "selected_option_ids": [option.get("id") for option in selected_options],
@@ -246,8 +248,10 @@ class InMemoryQuestionnaireRepository:
                 "created_at": "2026-05-20T10:10:00Z",
             }
         ]
+        self._external_push_logs: list[dict[str, Any]] = []
         self._next_id = max(item["id"] for item in self._questionnaires) + 1
         self._next_submission = len(self._submissions) + 1
+        self._next_external_push_log = 1
 
     def list_questionnaires(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         rows = deepcopy(self._questionnaires)
@@ -349,6 +353,9 @@ class InMemoryQuestionnaireRepository:
         submission = deepcopy(payload)
         submission["submission_id"] = submission.get("submission_id") or f"sub_next_{self._next_submission:03d}"
         submission["created_at"] = submission.get("created_at") or _now()
+        questionnaire = self._raw_questionnaire(int(submission["questionnaire_id"]))
+        if questionnaire and "answer_snapshots" not in submission:
+            submission["answer_snapshots"] = _answer_snapshots(questionnaire.get("questions") or [], dict(submission.get("answers") or {}))
         self._next_submission += 1
         self._submissions.append(submission)
         for item in self._questionnaires:
@@ -379,6 +386,18 @@ class InMemoryQuestionnaireRepository:
             "total": len(rows),
             "format": "json",
         }
+
+    def get_app_setting(self, key: str) -> str | None:
+        return None
+
+    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]:
+        row = dict(kwargs)
+        row["id"] = self._next_external_push_log
+        row["created_at"] = _now()
+        row["updated_at"] = row["created_at"]
+        self._next_external_push_log += 1
+        self._external_push_logs.append(row)
+        return deepcopy(row)
 
 
 class PostgresQuestionnaireReadRepository:
@@ -744,6 +763,7 @@ class PostgresQuestionnaireReadRepository:
             "created_at": submitted_at,
             "submitted_at": submitted_at,
             "updated_at": _text(payload.get("updated_at") or submitted_at),
+            "answer_snapshots": answer_snapshots,
         }
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
@@ -773,8 +793,10 @@ class PostgresQuestionnaireReadRepository:
                 (int(row["id"]),),
             ).fetchall()
         answers: dict[str, Any] = {}
+        answer_snapshots: list[dict[str, Any]] = []
         for answer in answer_rows:
             answer_payload = dict(answer)
+            answer_snapshots.append(answer_payload)
             key = str(answer_payload.get("question_id"))
             if answer_payload.get("question_type") in {"textarea", "mobile"}:
                 answers[key] = _text(answer_payload.get("text_value"))
@@ -791,6 +813,7 @@ class PostgresQuestionnaireReadRepository:
             "mobile": _text(row.get("mobile_snapshot")),
             "created_at": _timestamp(row.get("submitted_at")),
             "submitted_at": _timestamp(row.get("submitted_at")),
+            "answer_snapshots": answer_snapshots,
         }
 
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None:
@@ -801,6 +824,45 @@ class PostgresQuestionnaireReadRepository:
 
     def export_submissions(self, questionnaire_id: int) -> dict[str, Any] | None:
         raise RepositoryProviderError("questionnaire export remains out of scope for the admin read replacement")
+
+    def get_app_setting(self, key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = %s", (str(key or "").strip(),)).fetchone()
+        if not row:
+            return None
+        return _text(row.get("value"))
+
+    def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO questionnaire_external_push_logs (
+                    questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id,
+                    retry_attempt, user_id, target_url, request_payload, response_status_code, response_body,
+                    status, failure_reason, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id, questionnaire_id, questionnaire_title_snapshot, submission_record_id,
+                          retry_from_log_id, retry_attempt, user_id, target_url, request_payload,
+                          response_status_code, response_body, status, failure_reason, created_at, updated_at
+                """,
+                (
+                    int(kwargs["questionnaire_id"]),
+                    _text(kwargs.get("questionnaire_title_snapshot")),
+                    int(kwargs["submission_record_id"]),
+                    int(kwargs["retry_from_log_id"]) if kwargs.get("retry_from_log_id") else None,
+                    max(0, int(kwargs.get("retry_attempt") or 0)),
+                    _text(kwargs.get("user_id")),
+                    _text(kwargs.get("target_url")),
+                    _jsonb(_json_dict(kwargs.get("request_payload"))),
+                    kwargs.get("response_status_code"),
+                    _text(kwargs.get("response_body")),
+                    _text(kwargs.get("status")),
+                    _text(kwargs.get("failure_reason")),
+                ),
+            ).fetchone()
+            conn.commit()
+        return dict(row)
 
 
 _DEFAULT_REPO = InMemoryQuestionnaireRepository()

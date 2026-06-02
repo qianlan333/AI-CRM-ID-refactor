@@ -755,12 +755,12 @@ routes:
     legacy_fallback_allowed: false
     legacy_source: none
     external_side_effect_risk: medium
-    adapter_mode: real_blocked
+    adapter_mode: real_enabled
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_questionnaire_h5_submit_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: H5 submit legacy rollback removed; Next CommandBus only; writes Next submission projection in local/test, returns controlled production_unavailable when production write model is unavailable, and plans WeCom/external push/automation as SideEffectPlan only; no real external calls; real_external_call_executed=false.
+    notes: H5 submit legacy rollback removed; Next CommandBus only; writes Next submission projection; configured questionnaire external push executes a POST and writes questionnaire_external_push_logs; WeCom tag mutation and automation runtime remain SideEffectPlan only.
   - route_id: questionnaire_h5_client_diagnostics_next_commandbus
     path_pattern: /api/h5/questionnaires/{slug}/client-diagnostics
     methods: [POST, OPTIONS]

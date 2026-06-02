@@ -15,6 +15,7 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError, block
 from aicrm_next.shared.runtime import production_data_ready
 
 from .domain import score_and_tags, validate_required_answers
+from .external_push import deliver_questionnaire_external_push
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -166,6 +167,7 @@ def _execute_platform_command(
 def _audit_hook(command: Command, result: CommandResult) -> None:
     payload = result.payload if isinstance(result.payload, dict) else {}
     target_id = str(payload.get("submission_id") or payload.get("diagnostic_id") or command.payload.get("questionnaire_slug") or "")
+    real_external_call_executed = bool(payload.get("real_external_call_executed"))
     _audit_ledger.record_event(
         event_type=f"{command.command_name}.{result.status}",
         actor_id=result.actor_id,
@@ -179,7 +181,7 @@ def _audit_hook(command: Command, result: CommandResult) -> None:
             "status": result.status,
             "questionnaire_slug": command.payload.get("questionnaire_slug") or "",
             "fallback_used": False,
-            "real_external_call_executed": False,
+            "real_external_call_executed": real_external_call_executed,
         },
     )
 
@@ -286,12 +288,20 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         if production_data_ready():
             raise QuestionnaireH5WriteProductionUnavailableError(str(exc)) from exc
         raise
+    external_push_result = deliver_questionnaire_external_push(
+        repo=repo,
+        questionnaire=item,
+        submission=submission,
+        computed_result=result,
+    )
     side_effect_plan = _create_submit_side_effect_plan(
         command=command,
         questionnaire=item,
         submission=submission,
         final_tags=final_tags,
+        external_push_result=external_push_result,
     )
+    real_external_call_executed = bool(external_push_result.get("attempted"))
     return {
         "ok": True,
         "success": True,
@@ -310,6 +320,8 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         "final_tags": final_tags,
         "redirect_url": item.get("redirect_url") or f"/s/{item['slug']}/submitted",
         "write_model_status": "submitted",
+        "external_push": external_push_result,
+        "real_external_call_executed": real_external_call_executed,
         "side_effect_plan": _plan_response(side_effect_plan),
     }
 
@@ -412,13 +424,15 @@ def _create_submit_side_effect_plan(
     questionnaire: dict[str, Any],
     submission: dict[str, Any],
     final_tags: list[str],
+    external_push_result: dict[str, Any],
 ) -> SideEffectPlan:
     external_push_config = dict(questionnaire.get("external_push_config") or {})
+    external_push_attempted = bool(external_push_result.get("attempted"))
     return _side_effect_plans.create_plan(
         command_id=command.command_id,
         effect_type="questionnaire.h5.submit.side_effects",
         adapter_name="questionnaire_submit",
-        adapter_mode="real_blocked",
+        adapter_mode="real_enabled" if external_push_attempted else "real_blocked",
         target_type="questionnaire_submission",
         target_id=str(submission.get("submission_id") or ""),
         payload={
@@ -428,32 +442,37 @@ def _create_submit_side_effect_plan(
                 "submission_id": submission.get("submission_id") or "",
                 "final_tag_count": len(final_tags),
                 "external_push_configured": bool(external_push_config.get("enabled")),
+                "external_push_attempted": external_push_attempted,
+                "external_push_status": external_push_result.get("status") or "",
+                "external_push_log_id": (external_push_result.get("log") or {}).get("id") if isinstance(external_push_result.get("log"), dict) else None,
             },
             "planned_effects": [
                 effect
                 for effect in [
                     "wecom.tag.plan" if final_tags else "",
-                    "external_push.plan" if external_push_config.get("enabled") else "",
+                    "external_push.executed" if external_push_attempted else ("external_push.skipped" if external_push_config.get("enabled") else ""),
                     "automation.questionnaire_result.plan",
                 ]
                 if effect
             ],
-            "real_external_call_executed": False,
+            "real_external_call_executed": external_push_attempted,
         },
-        status="planned",
+        status="executed" if external_push_attempted else "planned",
         risk_level="medium",
-        requires_approval=True,
+        requires_approval=not external_push_attempted,
+        executed_at=utcnow_iso() if external_push_attempted else "",
     )
 
 
 def _plan_response(plan: SideEffectPlan) -> dict[str, Any]:
     payload = plan.to_dict()
-    payload["real_external_call_executed"] = False
-    payload["requires_approval"] = True
+    payload["real_external_call_executed"] = bool((payload.get("payload") or {}).get("real_external_call_executed"))
+    payload["requires_approval"] = bool(payload.get("requires_approval"))
     return payload
 
 
 def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dict[str, Any]:
+    real_external_call_executed = bool(payload.get("real_external_call_executed"))
     payload.update(
         {
             "command_name": result.command_name,
@@ -461,7 +480,7 @@ def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dic
             "source_status": "next_command",
             "route_owner": "ai_crm_next",
             "fallback_used": False,
-            "real_external_call_executed": False,
+            "real_external_call_executed": real_external_call_executed,
             "audit_recorded": True,
         }
     )

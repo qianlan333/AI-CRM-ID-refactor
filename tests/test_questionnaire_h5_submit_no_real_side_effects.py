@@ -46,7 +46,6 @@ def test_h5_write_source_has_no_real_external_call_markers() -> None:
         forbidden = [
             '"real_external_call_executed": True',
             "'real_external_call_executed': True",
-            "real_enabled",
             "requests.post(",
             "httpx.post(",
             "X-AICRM-Compatibility-Facade",
