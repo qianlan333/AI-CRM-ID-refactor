@@ -43,6 +43,15 @@ def test_channel_form_exposes_auto_accept_friend_toggle() -> None:
     assert '[name="auto_accept_friend"]' in js
 
 
+def test_channel_form_cache_busts_channel_save_script() -> None:
+    html = _read(TEMPLATE)
+    js = _read(CHANNEL_JS)
+
+    assert "channel_admission_pages.js') }}?v=channel-auto-approve-save-20260602" in html
+    assert "function responseMessage" in js
+    assert "payload.detail" in js
+
+
 def test_channel_form_no_longer_uses_private_welcome_material_picker() -> None:
     combined = _read(TEMPLATE) + "\n" + _read(CHANNEL_JS)
 
