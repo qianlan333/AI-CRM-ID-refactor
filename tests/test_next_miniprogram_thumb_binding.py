@@ -66,11 +66,6 @@ def test_production_thumb_resolve_does_not_fallback_to_fake_media(monkeypatch) -
     )
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
-    monkeypatch.setattr(
-        app_module,
-        "_resolve_thumb_media_id_via_legacy_image_library",
-        lambda thumb_image_id: (_ for _ in ()).throw(RuntimeError("legacy uploader unavailable")),
-    )
 
     class FakeAdapterShouldNotRun:
         def upload_image(self, **kwargs):

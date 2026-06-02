@@ -47,25 +47,9 @@ def _looks_like_fake_media_id(media_id: str) -> bool:
     return value.startswith(("fake_", "staging_")) or value.startswith("fake://")
 
 
-def _positive_int(value: Any) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
 def _production_wecom_media_required() -> bool:
     mode = str(os.getenv("AICRM_NEXT_WECOM_MEDIA_MODE", "") or "").strip().lower()
     return runtime.production_environment() or mode == "production"
-
-
-def _resolve_thumb_media_id_via_legacy_image_library(thumb_image_id: int) -> str:
-    from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app
-    from wecom_ability_service.domains import image_library as legacy_image_library
-
-    with _legacy_app().app_context():
-        return str(legacy_image_library.resolve_image_media_id(int(thumb_image_id)) or "").strip()
 
 
 class ListMediaItemsQuery:
@@ -306,29 +290,11 @@ class TestResolveMiniprogramThumbCommand:
             updated = self._repo.save_item("miniprogram", {"thumb_media_id": image_media_id}, item_id)
             return {"ok": True, "thumb_media_id": image_media_id, "item": updated, "source": "image_library_cache"}
 
-        legacy_error = ""
-        numeric_thumb_image_id = _positive_int(thumb_image_id)
-        if numeric_thumb_image_id:
-            try:
-                resolved_media_id = _resolve_thumb_media_id_via_legacy_image_library(numeric_thumb_image_id)
-                if resolved_media_id and not _looks_like_fake_media_id(resolved_media_id):
-                    updated = self._repo.save_item("miniprogram", {"thumb_media_id": resolved_media_id}, item_id)
-                    return {
-                        "ok": True,
-                        "thumb_media_id": resolved_media_id,
-                        "item": updated,
-                        "source": "legacy_image_library",
-                    }
-                if resolved_media_id:
-                    legacy_error = "legacy image library returned fake media_id"
-            except Exception as exc:
-                legacy_error = str(exc)
-
         if _production_wecom_media_required():
             return {
                 "ok": False,
                 "error": "real_wecom_media_resolve_failed",
-                "error_message": legacy_error or "real WeCom media upload did not return a usable media_id",
+                "error_message": "image_library must contain a real WeCom media_id before miniprogram material can be resolved in production",
                 "thumb_image_id": thumb_image_id,
             }
 
