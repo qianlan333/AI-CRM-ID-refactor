@@ -260,10 +260,12 @@ def test_questionnaire_oauth_guard_flags_exact_legacy_route_and_lifecycle_drift(
     assert "questionnaire_oauth_legacy_forward" in codes
     assert "questionnaire_oauth_fallback_used_true" in codes
     assert "questionnaire_oauth_registry_owner" in codes
+    assert "questionnaire_oauth_registry_lifecycle" in codes
     assert "questionnaire_oauth_manifest_legacy_forward" in codes
+    assert "questionnaire_oauth_manifest_lifecycle" in codes
 
 
-def test_questionnaire_oauth_guard_allows_next_adapter_with_retained_wildcard_rollback(tmp_path: Path) -> None:
+def test_questionnaire_oauth_guard_allows_next_adapter_locked_with_retained_wildcard_rollback(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     api = tmp_path / "aicrm_next/questionnaire/api.py"
     oauth = tmp_path / "aicrm_next/questionnaire/oauth.py"
@@ -294,16 +296,18 @@ def test_questionnaire_oauth_guard_allows_next_adapter_with_retained_wildcard_ro
         "routes:\n"
         "  - path_pattern: /api/h5/wechat/oauth/start\n"
         "    runtime_owner: next_adapter\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: ''\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /api/h5/wechat/oauth/callback\n"
         "    runtime_owner: next_adapter\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: ''\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n",
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -311,17 +315,17 @@ def test_questionnaire_oauth_guard_allows_next_adapter_with_retained_wildcard_ro
         "  - route_pattern: /api/h5/wechat/oauth/start\n"
         "    current_runtime_owner: next_adapter\n"
         "    production_behavior: next_oauth_adapter\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /api/h5/wechat/oauth/callback\n"
         "    current_runtime_owner: next_adapter\n"
         "    production_behavior: next_oauth_adapter\n"
-        "    legacy_fallback_allowed: true\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n",
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
         encoding="utf-8",
     )
 

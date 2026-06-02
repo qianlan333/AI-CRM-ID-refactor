@@ -1167,11 +1167,17 @@ def check_questionnaire_oauth_next_adapter(root: Path = ROOT) -> list[Violation]
             continue
         if record.get("runtime_owner") != "next_adapter":
             violations.append(Violation("questionnaire_oauth_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("questionnaire_oauth_registry_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("questionnaire_oauth_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") in {"production_compat", "legacy_questionnaire_facade"}:
+            violations.append(Violation("questionnaire_oauth_registry_legacy_source", route_path, f"legacy_source={record.get('legacy_source')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_oauth_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("questionnaire_oauth_registry_production_compat_owner", route_path, "runtime_owner=production_compat"))
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_oauth_registry_rollback_lifecycle", route_path, "delete_status=next_primary_with_legacy_rollback"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_oauth_registry_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
@@ -1185,11 +1191,15 @@ def check_questionnaire_oauth_next_adapter(root: Path = ROOT) -> list[Violation]
             violations.append(Violation("questionnaire_oauth_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
         if record.get("production_behavior") in {"legacy_forward", "production_compat"}:
             violations.append(Violation("questionnaire_oauth_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
-        if record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("questionnaire_oauth_manifest_legacy_not_retained", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("questionnaire_oauth_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_oauth_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+        if record.get("current_runtime_owner") == "production_compat":
+            violations.append(Violation("questionnaire_oauth_manifest_production_compat_owner", route_path, "current_runtime_owner=production_compat"))
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("questionnaire_oauth_manifest_rollback_lifecycle", route_path, "delete_status=next_primary_with_legacy_rollback"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_oauth_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
     return violations
 

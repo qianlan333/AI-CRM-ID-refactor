@@ -780,29 +780,29 @@ routes:
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_oauth_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: OAuth start is Next OAuth adapter primary with signed state, nonce, expiry, redirect allowlist, adapter_mode real_blocked by production default, route_owner=ai_crm_next, fallback_used=false, no real OAuth default; legacy rollback retained for this validation group.
+    notes: Exact OAuth start legacy rollback removed; Next OAuth adapter only with signed state, nonce, expiry, redirect allowlist, adapter_mode real_blocked by production default, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and no real OAuth default.
   - route_id: questionnaire_oauth_callback_next_adapter
     path_pattern: /api/h5/wechat/oauth/callback
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_questionnaire_oauth_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: OAuth callback is Next OAuth adapter primary with signed state verification, replay protection, signed identity session cookie, AuditLedger, diagnostics on failure, route_owner=ai_crm_next, fallback_used=false, no real OAuth default; legacy rollback retained for this validation group.
+    notes: Exact OAuth callback legacy rollback removed; Next OAuth adapter only with state verification, replay protection, signed identity session cookie, AuditLedger, diagnostics on failure, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and no real OAuth default.
   - route_id: questionnaire_oauth_family_inventory
     path_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
@@ -816,7 +816,7 @@ routes:
     replacement_status: not_started
     checker: tests/test_questionnaire_oauth_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: OAuth family wildcard is retained as inventory-only rollback for unknown subpaths and remains out of scope for deletion; exact start/callback are Next OAuth adapter primary in group 10; auth/wecom remains separate out of scope and is not deletion_locked.
+    notes: OAuth family wildcard is retained as inventory-only rollback for unknown subpaths and remains out of scope for deletion; exact start/callback are deletion_locked to Next OAuth adapter only; auth/wecom remains separate out of scope and is not deletion_locked.
   - route_id: questionnaire_submitted_page
     path_pattern: /s/{slug}/submitted
     methods: [GET]

@@ -15,4 +15,5 @@ def test_questionnaire_oauth_inventory_documents_group_10_routes() -> None:
         assert route in text
     assert "signed state" in text
     assert "real_blocked" in text
-    assert "does not delete OAuth/auth legacy rollback" in text
+    assert "locked the exact start/callback legacy rollback closed" in text
+    assert "does not delete OAuth/auth wildcard rollback" in text
