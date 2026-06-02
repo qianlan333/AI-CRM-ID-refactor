@@ -1,50 +1,76 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import yaml
 
-
-ROOT = Path(__file__).resolve().parents[1]
-READ_ROUTES = {"/api/admin/wecom/tags", "/api/admin/wecom/tag-groups"}
-FAMILY_ROUTES = {"/api/admin/wecom/tags*", "/api/admin/wecom/tag-groups*"}
+from aicrm_next.platform_foundation.route_registry.service import get_route_registry_service
 
 
-def _records(path: Path, key: str) -> dict[str, dict]:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return {record[key]: record for record in payload["routes"]}
+READ_ROUTES = {
+    "/api/admin/wecom/tags",
+    "/api/admin/wecom/tags/{tag_id}",
+    "/api/admin/wecom/tag-groups",
+    "/api/admin/wecom/tag-groups/{group_id}",
+}
+
+WRITE_FAMILIES = {
+    "/api/admin/wecom/tags*",
+    "/api/admin/wecom/tag-groups*",
+}
 
 
-def test_wecom_tag_read_routes_are_next_primary_with_legacy_rollback_in_registry() -> None:
-    registry = _records(ROOT / "docs/architecture/legacy_exit_route_registry.yaml", "path_pattern")
-
-    for route in READ_ROUTES:
-        record = registry[route]
-        assert record["runtime_owner"] == "next_native"
-        assert record["legacy_fallback_allowed"] is True
-        assert record["legacy_source"] == "production_compat"
-        assert record["external_side_effect_risk"] == "none"
-        assert record["adapter_mode"] == "none"
-        assert record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert record["replacement_status"] == "validating"
-
-
-def test_wecom_tag_read_manifest_marks_exact_reads_next_and_families_out_of_scope() -> None:
-    manifest = _records(ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml", "route_pattern")
+def test_wecom_tag_read_registry_entries_are_validating_next_native() -> None:
+    get_route_registry_service.cache_clear()
+    service = get_route_registry_service()
 
     for route in READ_ROUTES:
-        record = manifest[route]
-        assert record["current_runtime_owner"] == "next"
-        assert record["production_behavior"] == "next_exact"
-        assert record["legacy_fallback_allowed"] is True
-        assert record["external_side_effect_risk"] == "none"
-        assert record["delete_ready"] is False
-        assert record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert record["replacement_status"] == "validating"
+        entry = service.find_route(route, {"GET"})
+        assert entry is not None
+        assert entry.capability_owner == "aicrm_next.customer_tags"
+        assert entry.runtime_owner == "next_native"
+        assert entry.legacy_fallback_allowed is True
+        assert entry.external_side_effect_risk == "none"
+        assert entry.adapter_mode == "none"
+        assert entry.delete_status == "next_primary_with_legacy_rollback"
+        assert entry.replacement_status == "validating"
 
-    for route in FAMILY_ROUTES:
-        record = manifest[route]
-        assert record["current_runtime_owner"] == "production_compat"
-        assert record["production_behavior"] == "legacy_forward"
-        assert record["legacy_fallback_allowed"] is True
-        assert record["delete_ready"] is False
+
+def test_wecom_tag_write_and_sync_families_remain_out_of_scope() -> None:
+    get_route_registry_service.cache_clear()
+    service = get_route_registry_service()
+
+    for route in WRITE_FAMILIES:
+        entry = service.find_route(route, {"POST"})
+        assert entry is not None
+        assert entry.runtime_owner == "production_compat"
+        assert entry.legacy_fallback_allowed is True
+        assert entry.delete_status == "active"
+        assert entry.replacement_status == "not_started"
+        assert entry.adapter_mode == "real_blocked"
+
+
+def test_wecom_tag_live_gate_stays_out_of_scope() -> None:
+    get_route_registry_service.cache_clear()
+    service = get_route_registry_service()
+    entry = service.find_route("/api/admin/wecom/tags/live/gate", {"GET"})
+
+    assert entry is not None
+    assert entry.runtime_owner == "next_native"
+    assert entry.legacy_fallback_allowed is False
+    assert entry.adapter_mode == "real_blocked"
+    assert entry.delete_status == "active"
+    assert entry.replacement_status == "not_started"
+
+
+def test_wecom_tag_read_route_registry_yaml_matches_lifecycle() -> None:
+    registry = yaml.safe_load(open("docs/architecture/legacy_exit_route_registry.yaml", encoding="utf-8"))
+    by_route = {record["path_pattern"]: record for record in registry["routes"]}
+
+    for route in READ_ROUTES:
+        assert by_route[route]["runtime_owner"] == "next_native"
+        assert by_route[route]["delete_status"] == "next_primary_with_legacy_rollback"
+        assert by_route[route]["replacement_status"] == "validating"
+
+    for route in WRITE_FAMILIES:
+        assert by_route[route]["runtime_owner"] == "production_compat"
+        assert by_route[route]["delete_status"] == "active"
+        assert by_route[route]["replacement_status"] == "not_started"

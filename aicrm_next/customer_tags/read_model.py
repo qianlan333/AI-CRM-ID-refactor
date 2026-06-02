@@ -38,6 +38,7 @@ def _fixture_rows() -> tuple[list[Json], list[Json]]:
     synced_at = _timestamp()
     groups = [
         {
+            "tag_group_id": "group_fixture_lifecycle",
             "group_id": "group_fixture_lifecycle",
             "group_key": "group_fixture_lifecycle",
             "group_name": "客户阶段",
@@ -49,6 +50,7 @@ def _fixture_rows() -> tuple[list[Json], list[Json]]:
     ]
     tags = [
         {
+            "tag_group_id": "group_fixture_lifecycle",
             "tag_id": "tag_fixture_active",
             "tag_name": "活跃客户",
             "group_id": "group_fixture_lifecycle",
@@ -60,6 +62,7 @@ def _fixture_rows() -> tuple[list[Json], list[Json]]:
             "synced_at": synced_at,
         },
         {
+            "tag_group_id": "group_fixture_lifecycle",
             "tag_id": "tag_fixture_trial",
             "tag_name": "体验中",
             "group_id": "group_fixture_lifecycle",
@@ -94,6 +97,7 @@ class TagCatalog:
             groups.append(
                 {
                     **dict(group),
+                    "tag_group_id": _text(group.get("tag_group_id")) or _text(group.get("group_id")),
                     "group_key": group_key,
                     "missing_group_id": not bool(_text(group.get("group_id"))),
                     "tag_count": len(group_tags),
@@ -109,6 +113,7 @@ class TagCatalog:
             groups.append(
                 {
                     "group_id": _text(group_tags[0].get("group_id")),
+                    "tag_group_id": _text(group_tags[0].get("tag_group_id")) or _text(group_tags[0].get("group_id")),
                     "group_key": group_key or f"group-name:{group_name}",
                     "group_name": group_name,
                     "missing_group_id": not bool(_text(group_tags[0].get("group_id"))),
@@ -134,6 +139,8 @@ class TagCatalog:
             "route_owner": "ai_crm_next",
             "fallback_used": False,
             "real_external_call_executed": False,
+            "sync_executed": False,
+            "fixture_used": self.source_status == "local_contract_probe",
         }
 
 
@@ -185,6 +192,7 @@ class PostgresTagCatalogRepository(TagCatalogRepository):
         groups = [
             {
                 "group_id": _text(row.get("group_id")),
+                "tag_group_id": _text(row.get("group_id")),
                 "group_key": _text(row.get("group_key")) or _text(row.get("group_id")),
                 "group_name": _text(row.get("group_name")),
                 "tag_count": int(row.get("tag_count") or 0),
@@ -198,6 +206,7 @@ class PostgresTagCatalogRepository(TagCatalogRepository):
             {
                 "tag_id": _text(row.get("tag_id")),
                 "tag_name": _text(row.get("tag_name")),
+                "tag_group_id": _text(row.get("group_id")),
                 "group_id": _text(row.get("group_id")),
                 "group_name": _text(row.get("group_name")),
                 "order": int(row.get("order_index") or 0),

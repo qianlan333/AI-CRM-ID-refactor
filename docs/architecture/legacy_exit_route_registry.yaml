@@ -1167,6 +1167,76 @@ routes:
     checker: tests/test_next_wecom_tags_management_contract.py
     rollback_owner: aicrm_next.customer_tags
     notes: WeCom tags admin page shell.
+  - route_id: wecom_tag_read_detail_api
+    path_pattern: /api/admin/wecom/tags/{tag_id}
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Optional tag detail read over the Next tag catalog; write/sync subpaths remain out of scope.
+  - route_id: wecom_tag_live_gate_out_of_scope
+    path_pattern: /api/admin/wecom/tags/live/gate
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    checker: tests/test_wecom_tag_read_no_real_side_effects.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Existing live WeCom tag adapter gate is out of scope for group 12 and remains blocked unless explicit live flags approve it.
+  - route_id: wecom_tag_group_read_detail_api
+    path_pattern: /api/admin/wecom/tag-groups/{group_id}
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_native
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Optional tag group detail read over the Next tag catalog; group CRUD remains out of scope.
+  - route_id: wecom_tag_write_sync_out_of_scope_family
+    path_pattern: /api/admin/wecom/tags*
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: production_compat
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Tag CRUD, sync, fake-stub write, live mark/unmark, customer mutation, and questionnaire tag side effects are out of scope for group 12.
+  - route_id: wecom_tag_group_write_out_of_scope_family
+    path_pattern: /api/admin/wecom/tag-groups*
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: production_compat
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_tags
+    notes: Tag group CRUD stays out of scope for group 12 and remains guarded by production_compat.
   - route_id: frontend_compat_legacy_routes_inventory
     path_pattern: /api/frontend-compat/legacy-routes
     methods: [GET]

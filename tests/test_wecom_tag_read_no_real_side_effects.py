@@ -15,6 +15,8 @@ def test_wecom_tag_read_sources_do_not_call_legacy_or_real_wecom() -> None:
         for obj in [
             api.list_admin_wecom_tags_read_model,
             api.list_admin_wecom_tag_groups_read_model,
+            api.get_admin_wecom_tag_read_model,
+            api.get_admin_wecom_tag_group_read_model,
             api._read_catalog_payload,
             api._production_unavailable,
             read_model.LocalContractTagCatalogRepository,
@@ -46,10 +48,13 @@ def test_wecom_tag_read_requests_do_not_invoke_real_side_effect_adapters(monkeyp
         raise AssertionError("read route attempted a real side effect")
 
     monkeypatch.setattr(api, "build_wecom_tag_application_service", fail_side_effect)
-    client = TestClient(create_app())
+    client = TestClient(create_app(), raise_server_exceptions=False)
 
     tags = client.get("/api/admin/wecom/tags").json()
     groups = client.get("/api/admin/wecom/tag-groups").json()
+    tag_detail = client.get("/api/admin/wecom/tags/tag_fixture_active").json()
 
-    assert tags["real_external_call_executed"] is False
-    assert groups["real_external_call_executed"] is False
+    for payload in [tags, groups, tag_detail]:
+        assert payload["fallback_used"] is False
+        assert payload["real_external_call_executed"] is False
+        assert payload["sync_executed"] is False
