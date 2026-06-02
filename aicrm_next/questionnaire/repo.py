@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
@@ -48,6 +49,81 @@ def _json_list(value: Any) -> list[Any]:
 
 def _json_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _jsonb(value: Any) -> Any:
+    from psycopg.types.json import Jsonb
+
+    return Jsonb(value, dumps=_json_dumps)
+
+
+def _answer_value_list(raw_value: Any) -> list[str]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        return [str(item) for item in raw_value if item not in (None, "")]
+    if raw_value == "":
+        return []
+    return [str(raw_value)]
+
+
+def _text_answer(raw_value: Any) -> str:
+    values = _answer_value_list(raw_value)
+    return "、".join(values)
+
+
+def _answer_snapshots(questions: list[dict[str, Any]], answers: dict[str, Any]) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    for question in questions:
+        question_id = question.get("id")
+        question_key = str(question_id)
+        if question_key not in answers:
+            continue
+        question_type = _text(question.get("type") or "single_choice")
+        raw_value = answers.get(question_key)
+        selected_values = set(_answer_value_list(raw_value))
+        selected_options: list[dict[str, Any]] = []
+        if question_type in {"single_choice", "multi_choice"}:
+            for option in question.get("options") or []:
+                option_id = str(option.get("id") or "")
+                option_value = str(option.get("value") or option_id)
+                if option_id in selected_values or option_value in selected_values:
+                    selected_options.append(option)
+        selected_option_scores = [float(option.get("score") or 0) for option in selected_options]
+        selected_option_tags: list[str] = []
+        for option in selected_options:
+            for tag_code in option.get("tag_codes") or []:
+                tag_text = str(tag_code or "").strip()
+                if tag_text and tag_text not in selected_option_tags:
+                    selected_option_tags.append(tag_text)
+        snapshots.append(
+            {
+                "question_id": int(question_id),
+                "question_type": question_type,
+                "question_title_snapshot": _text(question.get("title")),
+                "selected_option_ids": [option.get("id") for option in selected_options],
+                "selected_option_texts_snapshot": [_text(option.get("label") or option.get("option_text")) for option in selected_options],
+                "selected_option_scores_snapshot": selected_option_scores,
+                "selected_option_tags_snapshot": selected_option_tags,
+                "text_value": _text_answer(raw_value) if question_type in {"textarea", "mobile"} else "",
+                "score_contribution": sum(selected_option_scores) if question_type not in {"textarea", "mobile"} else 0.0,
+            }
+        )
+    return snapshots
+
+
+def _mobile_answer(questions: list[dict[str, Any]], answers: dict[str, Any]) -> str:
+    for question in questions:
+        if _text(question.get("type")) != "mobile":
+            continue
+        value = _text_answer(answers.get(str(question.get("id")))).strip()
+        if value:
+            return value
+    return ""
 
 
 def _psycopg_url(url: str) -> str:
@@ -572,10 +648,150 @@ class PostgresQuestionnaireReadRepository:
         raise RepositoryProviderError("questionnaire delete remains out of scope for the admin read replacement")
 
     def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raise RepositoryProviderError("questionnaire submit remains out of scope for the admin read replacement")
+        questionnaire_id = int(payload.get("questionnaire_id") or 0)
+        if not questionnaire_id:
+            raise RepositoryProviderError("questionnaire_id is required for questionnaire submit")
+        answers = _json_dict(payload.get("answers") or payload.get("answers_json"))
+        questions = self.list_questions(questionnaire_id) or []
+        answer_snapshots = _answer_snapshots(questions, answers)
+        source = _json_dict(payload.get("source_json"))
+        respondent_identity = _json_dict(payload.get("respondent_identity"))
+        mobile_snapshot = _text(payload.get("mobile") or respondent_identity.get("mobile") or _mobile_answer(questions, answers)).strip()
+        final_tags = _json_list(payload.get("final_tags"))
+        score = float(payload.get("score") or (payload.get("result_json") or {}).get("score") or 0)
+        assessment_result = _json_dict((payload.get("result_json") or {}).get("assessment_result"))
+        redirect_url = _text(payload.get("redirect_url") or "")
+
+        with self._connect() as conn:
+            with conn.transaction():
+                row = conn.execute(
+                    """
+                    INSERT INTO questionnaire_submissions (
+                        questionnaire_id, respondent_key, openid, unionid, external_userid,
+                        follow_user_userid, matched_by, mobile_snapshot, source_channel, campaign_id,
+                        staff_id, total_score, final_tags, assessment_result_snapshot, result_token,
+                        redirect_url_snapshot, submitted_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    RETURNING id, submitted_at
+                    """,
+                    (
+                        questionnaire_id,
+                        _text(payload.get("respondent_key") or respondent_identity.get("respondent_key")),
+                        _text(payload.get("openid") or respondent_identity.get("openid")),
+                        _text(payload.get("unionid") or respondent_identity.get("unionid")),
+                        _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+                        _text(payload.get("follow_user_userid")),
+                        _text(payload.get("matched_by")),
+                        mobile_snapshot,
+                        _text(source.get("source_channel")),
+                        _text(source.get("campaign_id")),
+                        _text(source.get("staff_id")),
+                        score,
+                        _jsonb(final_tags),
+                        _jsonb(assessment_result),
+                        _text(payload.get("result_token")),
+                        redirect_url,
+                    ),
+                ).fetchone()
+                submission_id = int(row["id"])
+                for item in answer_snapshots:
+                    conn.execute(
+                        """
+                        INSERT INTO questionnaire_submission_answers (
+                            submission_id, question_id, question_type, question_title_snapshot,
+                            selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                            selected_option_tags_snapshot, text_value, score_contribution, created_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        """,
+                        (
+                            submission_id,
+                            int(item["question_id"]),
+                            item["question_type"],
+                            item["question_title_snapshot"],
+                            _jsonb(item.get("selected_option_ids") or []),
+                            _jsonb(item.get("selected_option_texts_snapshot") or []),
+                            _jsonb(item.get("selected_option_scores_snapshot") or []),
+                            _jsonb(item.get("selected_option_tags_snapshot") or []),
+                            item.get("text_value", "") or "",
+                            float(item.get("score_contribution") or 0),
+                        ),
+                    )
+        submitted_at = _timestamp(row.get("submitted_at"))
+        return {
+            "id": submission_id,
+            "submission_id": str(submission_id),
+            "questionnaire_id": questionnaire_id,
+            "slug": _text(payload.get("slug")),
+            "answers": answers,
+            "answers_json": answers,
+            "result_json": _json_dict(payload.get("result_json")),
+            "source_json": source,
+            "diagnostics_json": _json_dict(payload.get("diagnostics_json")),
+            "respondent_identity": respondent_identity,
+            "person_id": payload.get("person_id"),
+            "external_userid": _text(payload.get("external_userid") or respondent_identity.get("external_userid")),
+            "openid": _text(payload.get("openid") or respondent_identity.get("openid")),
+            "unionid": _text(payload.get("unionid") or respondent_identity.get("unionid")),
+            "mobile": mobile_snapshot,
+            "mobile_snapshot": mobile_snapshot,
+            "binding_status": _text(payload.get("binding_status") or "unresolved"),
+            "score": score,
+            "total_score": score,
+            "final_tags": final_tags,
+            "status": _text(payload.get("status") or "submitted"),
+            "created_at": submitted_at,
+            "submitted_at": submitted_at,
+            "updated_at": _text(payload.get("updated_at") or submitted_at),
+        }
 
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
-        return None
+        normalized_id = str(submission_id or "").strip()
+        if not normalized_id:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT qs.*, q.slug
+                FROM questionnaire_submissions qs
+                JOIN questionnaires q ON q.id = qs.questionnaire_id
+                WHERE qs.id::text = %s OR qs.result_token = %s
+                LIMIT 1
+                """,
+                (normalized_id, normalized_id),
+            ).fetchone()
+            if not row:
+                return None
+            answer_rows = conn.execute(
+                """
+                SELECT question_id, question_type, selected_option_ids, text_value
+                FROM questionnaire_submission_answers
+                WHERE submission_id = %s
+                ORDER BY id ASC
+                """,
+                (int(row["id"]),),
+            ).fetchall()
+        answers: dict[str, Any] = {}
+        for answer in answer_rows:
+            answer_payload = dict(answer)
+            key = str(answer_payload.get("question_id"))
+            if answer_payload.get("question_type") in {"textarea", "mobile"}:
+                answers[key] = _text(answer_payload.get("text_value"))
+            else:
+                selected = _json_list(answer_payload.get("selected_option_ids"))
+                answers[key] = selected[0] if len(selected) == 1 else selected
+        return {
+            **dict(row),
+            "submission_id": str(row.get("id")),
+            "slug": _text(row.get("slug")),
+            "answers": answers,
+            "score": float(row.get("total_score") or 0),
+            "final_tags": _json_list(row.get("final_tags")),
+            "mobile": _text(row.get("mobile_snapshot")),
+            "created_at": _timestamp(row.get("submitted_at")),
+            "submitted_at": _timestamp(row.get("submitted_at")),
+        }
 
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None:
         submissions = self.list_submissions(questionnaire_id, limit=1, offset=0)

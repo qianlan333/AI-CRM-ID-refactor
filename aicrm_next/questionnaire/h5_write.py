@@ -236,6 +236,10 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         if not bool(item.get("enabled", True)):
             raise NotFoundError("questionnaire disabled")
         validate_required_answers(item, answers)
+        if not identity_payload.get("mobile"):
+            mobile_answer = _mobile_answer_from_questions(item, answers)
+            if mobile_answer:
+                identity_payload["mobile"] = mobile_answer
         identity = ResolvePersonIdentityQuery()(
             ResolvePersonIdentityRequest(
                 mobile=identity_payload.get("mobile"),
@@ -290,6 +294,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
     )
     return {
         "ok": True,
+        "success": True,
         "submission_id": submission["submission_id"],
         "questionnaire_id": int(item["id"]),
         "slug": item["slug"],
@@ -372,6 +377,19 @@ def _identity_payload(raw: Any) -> dict[str, Any]:
         "mobile": str(identity.get("mobile") or "").strip(),
         "respondent_key": str(identity.get("respondent_key") or "").strip(),
     }
+
+
+def _mobile_answer_from_questions(questionnaire: dict[str, Any], answers: dict[str, Any]) -> str:
+    for question in questionnaire.get("questions") or []:
+        if str(question.get("type") or "").strip() != "mobile":
+            continue
+        value = answers.get(str(question.get("id")))
+        if isinstance(value, list):
+            value = "、".join(str(item) for item in value if item not in (None, ""))
+        mobile = str(value or "").strip()
+        if mobile:
+            return mobile
+    return ""
 
 
 def _public_identity(submission: dict[str, Any]) -> dict[str, Any]:
