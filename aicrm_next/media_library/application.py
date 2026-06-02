@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import os
 from typing import Any
 
 from aicrm_next.integration_gateway.media_adapters import build_cloud_storage_adapter, build_wecom_media_adapter, extract_base64_payload
 from aicrm_next.shared.errors import ContractError
+from aicrm_next.shared import runtime
 
 from .dto import AttachmentUpsertRequest, ImageFromBase64Request, ImageFromUrlRequest, ImageUpsertRequest, MiniprogramUpsertRequest
 from .repo import MediaLibraryRepository, build_media_library_repository, normalize_tags
@@ -38,6 +40,32 @@ def _media_adapter_summary(cloud_result: dict[str, Any] | None, wecom_result: di
         "wecom_media": wecom_result or {},
         "side_effect_safety": _side_effect_safety(),
     }
+
+
+def _looks_like_fake_media_id(media_id: str) -> bool:
+    value = str(media_id or "").strip().lower()
+    return value.startswith(("fake_", "staging_")) or value.startswith("fake://")
+
+
+def _positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _production_wecom_media_required() -> bool:
+    mode = str(os.getenv("AICRM_NEXT_WECOM_MEDIA_MODE", "") or "").strip().lower()
+    return runtime.production_environment() or mode == "production"
+
+
+def _resolve_thumb_media_id_via_legacy_image_library(thumb_image_id: int) -> str:
+    from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app
+    from wecom_ability_service.domains import image_library as legacy_image_library
+
+    with _legacy_app().app_context():
+        return str(legacy_image_library.resolve_image_media_id(int(thumb_image_id)) or "").strip()
 
 
 class ListMediaItemsQuery:
@@ -139,7 +167,13 @@ class UpsertMediaItemCommand:
                     "wecom_media_id": wecom_result.get("media_id"),
                     "side_effect_safety": _side_effect_safety(),
                 }
-        result = {"ok": True, "item": self._repo.save_item(self._kind, data, item_id)}
+        item = self._repo.save_item(self._kind, data, item_id)
+        result = {"ok": True, "item": item}
+        if self._kind == "miniprogram" and data.get("resolve_thumb_media", True) and item.get("thumb_image_id"):
+            thumb_resolve = TestResolveMiniprogramThumbCommand(self._repo)(str(item["id"]))
+            result["thumb_resolve"] = thumb_resolve
+            if thumb_resolve.get("ok") and isinstance(thumb_resolve.get("item"), dict):
+                result["item"] = thumb_resolve["item"]
         if cloud_result or wecom_result:
             result["adapter_result"] = _media_adapter_summary(cloud_result, wecom_result)
         return result
@@ -259,13 +293,46 @@ class TestResolveMiniprogramThumbCommand:
 
             raise NotFoundError("miniprogram item not found")
         thumb_media_id = str(item.get("thumb_media_id") or "")
-        if thumb_media_id:
-            return {"ok": True, "thumb_media_id": thumb_media_id}
+        if thumb_media_id and not _looks_like_fake_media_id(thumb_media_id):
+            return {"ok": True, "thumb_media_id": thumb_media_id, "item": item, "source": "miniprogram_cache"}
         thumb_image_id = item.get("thumb_image_id")
         if not thumb_image_id:
             return {"ok": False, "error": "thumb_image_id is required before resolving WeCom media"}
         image = self._repo.get_item("image", str(thumb_image_id), include_data=True)
-        if not image or not image.get("data_base64"):
+        if not image:
+            return {"ok": False, "error": "thumb image item is unavailable"}
+        image_media_id = str(image.get("thumb_media_id") or image.get("wecom_media_id") or "")
+        if image_media_id and not _looks_like_fake_media_id(image_media_id):
+            updated = self._repo.save_item("miniprogram", {"thumb_media_id": image_media_id}, item_id)
+            return {"ok": True, "thumb_media_id": image_media_id, "item": updated, "source": "image_library_cache"}
+
+        legacy_error = ""
+        numeric_thumb_image_id = _positive_int(thumb_image_id)
+        if numeric_thumb_image_id:
+            try:
+                resolved_media_id = _resolve_thumb_media_id_via_legacy_image_library(numeric_thumb_image_id)
+                if resolved_media_id and not _looks_like_fake_media_id(resolved_media_id):
+                    updated = self._repo.save_item("miniprogram", {"thumb_media_id": resolved_media_id}, item_id)
+                    return {
+                        "ok": True,
+                        "thumb_media_id": resolved_media_id,
+                        "item": updated,
+                        "source": "legacy_image_library",
+                    }
+                if resolved_media_id:
+                    legacy_error = "legacy image library returned fake media_id"
+            except Exception as exc:
+                legacy_error = str(exc)
+
+        if _production_wecom_media_required():
+            return {
+                "ok": False,
+                "error": "real_wecom_media_resolve_failed",
+                "error_message": legacy_error or "real WeCom media upload did not return a usable media_id",
+                "thumb_image_id": thumb_image_id,
+            }
+
+        if not image.get("data_base64"):
             return {"ok": False, "error": "thumb image data is unavailable"}
         result = build_wecom_media_adapter().upload_image(
             data_base64=str(image.get("data_base64") or ""),
