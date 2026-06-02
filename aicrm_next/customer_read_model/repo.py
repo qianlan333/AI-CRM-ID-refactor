@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import create_engine, delete, insert, select
+from sqlalchemy import bindparam, create_engine, delete, insert, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -706,6 +707,448 @@ class SqlAlchemyCustomerReadModelRepository:
         return payload
 
 
+class LiveSourceCustomerReadRepository:
+    """Read live customer data from production source tables when projections are not ready."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list_customers(
+        self,
+        filters: JsonDict | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[JsonDict]:
+        rows = self._customer_rows(filters or {}, limit=limit, offset=offset)
+        return self._decorate_customer_rows(rows)
+
+    def get_customer(self, external_userid: str) -> JsonDict | None:
+        rows = self._customer_rows({"external_userid": str(external_userid or "").strip()}, limit=1, offset=0)
+        customers = self._decorate_customer_rows(rows)
+        return customers[0] if customers else None
+
+    get_customer_detail = get_customer
+
+    def list_timeline(
+        self,
+        external_userid: str,
+        filters: JsonDict | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[JsonDict]:
+        event_type = str((filters or {}).get("event_type") or "").strip()
+        messages = [
+            {
+                "event_id": f"message:{item.get('source_id') or item.get('msgid')}",
+                "event_type": "message",
+                "event_time": item.get("send_time"),
+                "title": f"消息 · {item.get('msgtype') or 'unknown'}",
+                "summary": item.get("content") or "",
+                "source_table": "archived_messages",
+                "source_id": str(item.get("source_id") or ""),
+                "metadata": dict(item),
+            }
+            for item in self.list_recent_messages(external_userid, limit=(limit or 50) + offset)
+        ]
+        if event_type:
+            messages = [item for item in messages if item.get("event_type") == event_type]
+        return _apply_page(messages, limit=limit, offset=offset)
+
+    get_customer_timeline = list_timeline
+
+    def list_recent_messages(self, external_userid: str, *, limit: int | None = None) -> list[JsonDict]:
+        rows = self._session.execute(
+            text(
+                """
+                SELECT id, msgid, chat_type, external_userid, owner_userid, sender, receiver,
+                       msgtype, content, send_time, raw_payload, created_at
+                FROM archived_messages
+                WHERE external_userid = :external_userid
+                ORDER BY send_time DESC, id DESC
+                LIMIT :limit
+                """
+            ),
+            {"external_userid": str(external_userid or "").strip(), "limit": max(1, int(limit or 20))},
+        ).mappings()
+        return [
+            {
+                "msgid": row.get("msgid") or "",
+                "external_userid": row.get("external_userid") or "",
+                "msgtype": row.get("msgtype") or "text",
+                "content": row.get("content") or "",
+                "send_time": _iso(row.get("send_time")),
+                "owner_userid": row.get("owner_userid") or "",
+                "chat_type": row.get("chat_type") or "single",
+                "sender": row.get("sender") or "",
+                "receiver": row.get("receiver") or "",
+                "source_id": str(row.get("id") or ""),
+                "raw_payload": row.get("raw_payload") or "",
+            }
+            for row in rows
+        ]
+
+    get_recent_messages = list_recent_messages
+
+    def customer_exists(self, external_userid: str) -> bool:
+        return self.get_customer(external_userid) is not None
+
+    def _customer_rows(self, filters: JsonDict, *, limit: int | None, offset: int) -> list[JsonDict]:
+        where, params = self._customer_where(filters)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        sql = f"""
+            WITH scope AS (
+                SELECT external_userid FROM contacts
+                UNION
+                SELECT external_userid FROM external_contact_bindings
+                UNION
+                SELECT external_userid FROM wecom_external_contact_identity_map
+                UNION
+                SELECT external_userid FROM wecom_external_contact_follow_users
+                UNION
+                SELECT external_userid FROM contact_tags
+                UNION
+                SELECT external_userid FROM class_user_status_current
+                UNION
+                SELECT external_userid FROM archived_messages
+            ),
+            latest_messages AS (
+                SELECT external_userid, MAX(send_time) AS last_message_at
+                FROM archived_messages
+                WHERE external_userid IS NOT NULL AND external_userid <> ''
+                GROUP BY external_userid
+            ),
+            decorated AS (
+                SELECT
+                    scope.external_userid,
+                    COALESCE(
+                        NULLIF(class_status.owner_userid_snapshot, ''),
+                        NULLIF(contact.owner_userid, ''),
+                        NULLIF(binding.last_owner_userid, ''),
+                        NULLIF(binding.first_owner_userid, ''),
+                        NULLIF((
+                            SELECT identity.follow_user_userid
+                            FROM wecom_external_contact_identity_map identity
+                            WHERE identity.external_userid = scope.external_userid
+                              AND identity.follow_user_userid IS NOT NULL
+                              AND identity.follow_user_userid <> ''
+                            ORDER BY identity.updated_at DESC, identity.id DESC
+                            LIMIT 1
+                        ), ''),
+                        NULLIF((
+                            SELECT follow_user.user_id
+                            FROM wecom_external_contact_follow_users follow_user
+                            WHERE follow_user.external_userid = scope.external_userid
+                              AND follow_user.user_id IS NOT NULL
+                              AND follow_user.user_id <> ''
+                            ORDER BY follow_user.is_primary DESC, follow_user.updated_at DESC, follow_user.id DESC
+                            LIMIT 1
+                        ), ''),
+                        ''
+                    ) AS owner_userid,
+                    COALESCE(
+                        NULLIF(class_status.customer_name_snapshot, ''),
+                        NULLIF(contact.customer_name, ''),
+                        NULLIF((
+                            SELECT identity.name
+                            FROM wecom_external_contact_identity_map identity
+                            WHERE identity.external_userid = scope.external_userid
+                              AND identity.name IS NOT NULL
+                              AND identity.name <> ''
+                            ORDER BY identity.updated_at DESC, identity.id DESC
+                            LIMIT 1
+                        ), ''),
+                        scope.external_userid
+                    ) AS customer_name,
+                    COALESCE(NULLIF(people.mobile, ''), NULLIF(class_status.mobile_snapshot, ''), '') AS mobile,
+                    COALESCE(contact.remark, '') AS remark,
+                    COALESCE(contact.description, '') AS description,
+                    COALESCE(class_status.signup_status, '') AS signup_status,
+                    COALESCE(class_status.signup_label_name, '') AS signup_label_name,
+                    COALESCE(CAST(class_status.status_flags_json AS TEXT), '{{}}') AS status_flags_json,
+                    CASE WHEN binding.external_userid IS NULL THEN 0 ELSE 1 END AS is_bound,
+                    binding.person_id AS person_id,
+                    people.third_party_user_id AS third_party_user_id,
+                    contact.updated_at AS contact_updated_at,
+                    binding.updated_at AS binding_updated_at,
+                    class_status.updated_at AS class_status_updated_at,
+                    latest_messages.last_message_at AS last_message_at,
+                    COALESCE(
+                        CAST(class_status.updated_at AS TEXT),
+                        CAST(contact.updated_at AS TEXT),
+                        CAST(binding.updated_at AS TEXT),
+                        latest_messages.last_message_at,
+                        ''
+                    ) AS sort_updated_at
+                FROM scope
+                LEFT JOIN contacts contact ON contact.external_userid = scope.external_userid
+                LEFT JOIN external_contact_bindings binding ON binding.external_userid = scope.external_userid
+                LEFT JOIN people people ON people.id = binding.person_id
+                LEFT JOIN class_user_status_current class_status ON class_status.external_userid = scope.external_userid
+                LEFT JOIN latest_messages ON latest_messages.external_userid = scope.external_userid
+                WHERE scope.external_userid IS NOT NULL AND scope.external_userid <> ''
+            )
+            SELECT *
+            FROM decorated
+            {where_sql}
+            ORDER BY sort_updated_at DESC, external_userid DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params.update({"limit": max(1, int(limit or 100000)), "offset": max(0, int(offset or 0))})
+        return [dict(row) for row in self._session.execute(text(sql), params).mappings()]
+
+    def _customer_where(self, filters: JsonDict) -> tuple[list[str], JsonDict]:
+        where: list[str] = []
+        params: JsonDict = {}
+        external_userid = str(filters.get("external_userid") or "").strip()
+        if external_userid:
+            where.append("decorated.external_userid = :external_userid")
+            params["external_userid"] = external_userid
+        owner_userid = str(filters.get("owner_userid") or "").strip()
+        if owner_userid:
+            where.append(
+                """
+                (
+                    decorated.owner_userid = :owner_userid
+                    OR EXISTS (
+                        SELECT 1
+                        FROM owner_role_map owner_role
+                        WHERE owner_role.userid = decorated.owner_userid
+                          AND owner_role.display_name = :owner_userid
+                    )
+                )
+                """
+            )
+            params["owner_userid"] = owner_userid
+        tag = str(filters.get("tag") or "").strip()
+        if tag:
+            where.append(
+                """
+                (
+                    decorated.signup_label_name = :tag
+                    OR EXISTS (
+                        SELECT 1
+                        FROM contact_tags tag
+                        WHERE tag.external_userid = decorated.external_userid
+                          AND (tag.tag_id = :tag OR tag.tag_name = :tag)
+                    )
+                )
+                """
+            )
+            params["tag"] = tag
+        status = str(filters.get("status") or "").strip()
+        if status:
+            where.append(
+                """
+                (
+                    decorated.signup_status = :status
+                    OR (:status = 'bound' AND decorated.is_bound = 1)
+                    OR (:status = 'unbound' AND decorated.is_bound = 0)
+                )
+                """
+            )
+            params["status"] = status
+        is_bound = _normalize_bool_filter(filters.get("is_bound"))
+        if is_bound is not None:
+            where.append("decorated.is_bound = :is_bound")
+            params["is_bound"] = 1 if is_bound else 0
+        mobile = str(filters.get("mobile") or "").strip()
+        if mobile:
+            where.append("decorated.mobile LIKE :mobile")
+            params["mobile"] = f"%{mobile}%"
+        keyword = str(filters.get("keyword") or "").strip().lower()
+        if keyword:
+            where.append(
+                """
+                (
+                    LOWER(decorated.external_userid) LIKE :keyword
+                    OR LOWER(decorated.customer_name) LIKE :keyword
+                    OR LOWER(decorated.owner_userid) LIKE :keyword
+                    OR LOWER(decorated.remark) LIKE :keyword
+                    OR LOWER(decorated.description) LIKE :keyword
+                    OR LOWER(decorated.mobile) LIKE :keyword
+                    OR LOWER(decorated.signup_status) LIKE :keyword
+                    OR LOWER(decorated.signup_label_name) LIKE :keyword
+                    OR EXISTS (
+                        SELECT 1
+                        FROM owner_role_map owner_role
+                        WHERE owner_role.userid = decorated.owner_userid
+                          AND LOWER(owner_role.display_name) LIKE :keyword
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM contact_tags tag
+                        WHERE tag.external_userid = decorated.external_userid
+                          AND (LOWER(tag.tag_id) LIKE :keyword OR LOWER(tag.tag_name) LIKE :keyword)
+                    )
+                )
+                """
+            )
+            params["keyword"] = f"%{keyword}%"
+        return where, params
+
+    def _decorate_customer_rows(self, rows: list[JsonDict]) -> list[JsonDict]:
+        external_userids = [str(row.get("external_userid") or "").strip() for row in rows if str(row.get("external_userid") or "").strip()]
+        tag_map = self._tag_map(external_userids)
+        follow_users_map = self._follow_users_map(external_userids)
+        identity_map = self._identity_map(external_userids)
+        owner_display_map = self._owner_display_map(
+            [
+                str(row.get("owner_userid") or "").strip()
+                for row in rows
+                if str(row.get("owner_userid") or "").strip()
+            ]
+        )
+        customers: list[JsonDict] = []
+        for row in rows:
+            external_userid = str(row.get("external_userid") or "").strip()
+            owner_userid = str(row.get("owner_userid") or "").strip()
+            mobile = str(row.get("mobile") or "").strip() or None
+            is_bound = bool(row.get("is_bound"))
+            class_user_status = {
+                "current_status": row.get("signup_status") or "",
+                "signup_status": row.get("signup_status") or "",
+                "signup_label_name": row.get("signup_label_name") or "",
+                "activation_bucket": _json_dict(row.get("status_flags_json")).get("activation_bucket", ""),
+                "updated_at": _iso(row.get("class_status_updated_at")),
+            }
+            identity = identity_map.get(external_userid) or {}
+            customers.append(
+                {
+                    "person_id": str(row.get("person_id") or identity.get("person_id") or ""),
+                    "external_userid": external_userid,
+                    "customer_name": row.get("customer_name") or external_userid,
+                    "remark": row.get("remark") or "",
+                    "description": row.get("description") or "",
+                    "owner_userid": owner_userid,
+                    "owner_display_name": owner_display_map.get(owner_userid) or owner_userid,
+                    "mobile": mobile,
+                    "tags": tag_map.get(external_userid, []),
+                    "class_user_status": class_user_status,
+                    "last_message_at": _iso(row.get("last_message_at")),
+                    "last_touch_at": _iso(row.get("class_status_updated_at") or row.get("contact_updated_at") or row.get("binding_updated_at")),
+                    "updated_at": _iso(row.get("sort_updated_at")),
+                    "created_at": _iso(row.get("contact_updated_at") or row.get("binding_updated_at") or row.get("class_status_updated_at")),
+                    "binding": {
+                        "is_bound": is_bound,
+                        "mobile": mobile,
+                        "binding_status": "bound" if is_bound else "unbound",
+                        "person_id": row.get("person_id"),
+                        "third_party_user_id": row.get("third_party_user_id") or "",
+                    },
+                    "identity": {
+                        "person_id": row.get("person_id"),
+                        "external_userid": external_userid,
+                        "mobile": mobile,
+                        "unionid": identity.get("unionid") or "",
+                        "openid": identity.get("openid") or "",
+                        "status": identity.get("status") or "",
+                    },
+                    "follow_users": follow_users_map.get(external_userid, []),
+                    "marketing_summary": {},
+                    "marketing_profile": {},
+                    "contact": {
+                        "external_userid": external_userid,
+                        "name": row.get("customer_name") or external_userid,
+                        "remark": row.get("remark") or "",
+                        "description": row.get("description") or "",
+                    },
+                    "sidebar_context": {
+                        "can_open_sidebar": bool(external_userid),
+                        "customer_profile_url": f"/admin/customers/{external_userid}" if external_userid else "",
+                    },
+                }
+            )
+        return customers
+
+    def _tag_map(self, external_userids: list[str]) -> dict[str, list[str]]:
+        rows = self._execute_in_query(
+            """
+            SELECT external_userid, COALESCE(NULLIF(tag_name, ''), tag_id) AS tag
+            FROM contact_tags
+            WHERE external_userid IN :external_userids
+            ORDER BY external_userid ASC, tag ASC
+            """,
+            external_userids,
+        )
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            external_userid = str(row.get("external_userid") or "").strip()
+            tag = str(row.get("tag") or "").strip()
+            if external_userid and tag and tag not in result.setdefault(external_userid, []):
+                result[external_userid].append(tag)
+        return result
+
+    def _follow_users_map(self, external_userids: list[str]) -> dict[str, list[JsonDict]]:
+        rows = self._execute_in_query(
+            """
+            SELECT external_userid, user_id, relation_status, is_primary, remark, description, updated_at
+            FROM wecom_external_contact_follow_users
+            WHERE external_userid IN :external_userids
+            ORDER BY external_userid ASC, is_primary DESC, updated_at DESC, id DESC
+            """,
+            external_userids,
+        )
+        result: dict[str, list[JsonDict]] = {}
+        for row in rows:
+            external_userid = str(row.get("external_userid") or "").strip()
+            userid = str(row.get("user_id") or "").strip()
+            if not external_userid or not userid:
+                continue
+            result.setdefault(external_userid, []).append(
+                {
+                    "userid": userid,
+                    "display_name": userid,
+                    "relation_status": str(row.get("relation_status") or "").strip(),
+                    "is_primary": bool(row.get("is_primary")),
+                    "remark": str(row.get("remark") or "").strip(),
+                    "description": str(row.get("description") or "").strip(),
+                    "updated_at": _iso(row.get("updated_at")),
+                }
+            )
+        return result
+
+    def _identity_map(self, external_userids: list[str]) -> dict[str, JsonDict]:
+        rows = self._execute_in_query(
+            """
+            SELECT external_userid, unionid, openid, follow_user_userid, name, status, updated_at, id
+            FROM wecom_external_contact_identity_map
+            WHERE external_userid IN :external_userids
+            ORDER BY external_userid ASC, updated_at DESC, id DESC
+            """,
+            external_userids,
+        )
+        result: dict[str, JsonDict] = {}
+        for row in rows:
+            external_userid = str(row.get("external_userid") or "").strip()
+            if external_userid and external_userid not in result:
+                result[external_userid] = dict(row)
+        return result
+
+    def _owner_display_map(self, userids: list[str]) -> dict[str, str]:
+        rows = self._execute_in_query(
+            """
+            SELECT userid, display_name
+            FROM owner_role_map
+            WHERE userid IN :external_userids
+            """,
+            userids,
+        )
+        return {
+            str(row.get("userid") or "").strip(): str(row.get("display_name") or "").strip()
+            for row in rows
+            if str(row.get("userid") or "").strip()
+        }
+
+    def _execute_in_query(self, sql: str, values: list[str]) -> list[JsonDict]:
+        normalized = [str(value or "").strip() for value in values if str(value or "").strip()]
+        if not normalized:
+            return []
+        stmt = text(sql).bindparams(bindparam("external_userids", expanding=True))
+        return [dict(row) for row in self._session.execute(stmt, {"external_userids": normalized}).mappings()]
+
+
 def _apply_customer_filters(rows: list[JsonDict], filters: JsonDict) -> list[JsonDict]:
     owner_userid = str(filters.get("owner_userid") or "").strip()
     tag = str(filters.get("tag") or "").strip()
@@ -786,12 +1229,45 @@ def _iso(value: object) -> str | None:
     return str(value)
 
 
+def _json_dict(value: object) -> JsonDict:
+    if isinstance(value, dict):
+        return dict(value)
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(str(value))
+    except Exception:
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
 def _sqlalchemy_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://") :]
     if url.startswith("postgresql://"):
         return "postgresql+psycopg://" + url[len("postgresql://") :]
     return url
+
+
+def build_customer_live_source_repository(
+    settings: Settings | None = None,
+    *,
+    session: Session | None = None,
+    engine: Engine | None = None,
+) -> CustomerReadRepository:
+    settings = settings or get_settings()
+    if session is not None:
+        return assert_repository_allowed(
+            LiveSourceCustomerReadRepository(session),
+            capability_owner="customer_read_model",
+        )
+    database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
+    engine = engine or create_engine(database_url, future=True)
+    session_factory = sessionmaker(bind=engine, future=True)
+    return assert_repository_allowed(
+        LiveSourceCustomerReadRepository(session_factory()),
+        capability_owner="customer_read_model",
+    )
 
 
 def build_customer_read_model_repository(
