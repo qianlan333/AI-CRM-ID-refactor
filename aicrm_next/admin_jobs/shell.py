@@ -34,6 +34,8 @@ def legacy_url_for(name: str, **path_params: object) -> str:
     path_map = {
         "api.admin_console_dashboard": "/admin",
         "api.admin_console_customers": "/admin/customers",
+        "api.admin_owner_migration_page": "/admin/owner-migration",
+        "api.admin_owner_migration_action": "/admin/owner-migration",
         "api.admin_user_ops_ui": "/admin/user-ops/ui",
         "api.admin_hxc_dashboard_workspace": "/admin/hxc-dashboard",
         "api.admin_hxc_send_config_page": "/admin/hxc-send-config",
@@ -53,6 +55,10 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
+        "api.admin_radar_links": "/admin/radar-links",
+        "api.admin_radar_link_new": "/admin/radar-links/new",
+        "api.admin_radar_link_edit": "/admin/radar-links/" + str(path_params.get("link_id", "")).strip() + "/edit",
+        "api.admin_radar_link_detail": "/admin/radar-links/" + str(path_params.get("link_id", "")).strip() + "/detail",
         "api.admin_console_global_questionnaire_external_push_logs": "/admin/questionnaires/external-push-logs",
         "api.admin_console_global_questionnaire_external_push_logs_retry_batch": "/admin/questionnaires/external-push-logs/retry-batch",
         "api.admin_console_global_questionnaire_external_push_logs_retry": "/admin/questionnaires/external-push-logs/"
@@ -109,6 +115,7 @@ ADMIN_NAV_GROUPS = [
             {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
             {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
             {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_questionnaires"},
+            {"key": "radar_links", "label": "内容雷达", "endpoint": "api.admin_radar_links"},
             {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
         ],
     },
@@ -131,6 +138,7 @@ ADMIN_NAV_GROUPS = [
         "title": "配置及后台",
         "items": [
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
+            {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
             {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_api_docs"},
         ],
