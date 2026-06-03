@@ -35,6 +35,20 @@ from .campaigns_read import (
     ROUTE_OWNER as CAMPAIGN_READ_ROUTE_OWNER,
     SOURCE_STATUS as CAMPAIGN_READ_SOURCE_STATUS,
 )
+from .campaigns_write import (
+    AddCloudCampaignStepCommand,
+    ApproveCloudCampaignCommand,
+    BatchStartCloudCampaignsCommand,
+    CloudCampaignWriteInputError,
+    CloudCampaignWriteNotFoundError,
+    DeleteCloudCampaignCommand,
+    DeleteCloudCampaignStepCommand,
+    PauseCloudCampaignCommand,
+    RejectCloudCampaignCommand,
+    StartCloudCampaignCommand,
+    UpdateCloudCampaignStepCommand,
+    execute_cloud_campaign_command,
+)
 from .media_upload import build_upload_command, diagnostics_payload
 
 router = APIRouter()
@@ -51,6 +65,13 @@ _CAMPAIGN_READ_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
     "X-AICRM-Real-External-Call-Executed": "false",
+}
+_CAMPAIGN_WRITE_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Campaign-Execute-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
 }
 
 
@@ -83,12 +104,75 @@ def _campaign_read_error(error: str, *, status_code: int = 404) -> JSONResponse:
     )
 
 
+def _campaign_write_error(error: str, *, status_code: int = 400) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": error,
+            "source_status": "next_command",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "adapter_mode": "real_blocked",
+            "real_external_call_executed": False,
+            "campaign_execute_executed": False,
+            "wecom_send_executed": False,
+        },
+        status_code=status_code,
+        headers=_CAMPAIGN_WRITE_HEADERS,
+    )
+
+
 async def _write_context(request: Request) -> tuple[dict[str, Any], str | None]:
     payload = await _request_payload(request)
     token_error = await _action_token_error(request, payload)
     if token_error:
         return payload, token_error
     return payload, None
+
+
+async def _campaign_write_payload(request: Request) -> dict[str, Any]:
+    payload = await _request_payload(request)
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise CloudCampaignWriteInputError("payload must be an object")
+    return payload
+
+
+def _campaign_actor(request: Request, payload: dict[str, Any]) -> str:
+    return str(payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor") or "admin_ui").strip()
+
+
+def _campaign_idempotency_key(request: Request, payload: dict[str, Any]) -> str:
+    return str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip()
+
+
+def _campaign_trace_id(request: Request, payload: dict[str, Any]) -> str:
+    return str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip()
+
+
+def _campaign_command_common(request: Request, payload: dict[str, Any], source_route: str) -> dict[str, Any]:
+    return {
+        "payload": {key: value for key, value in payload.items() if key not in {"operator", "actor_id", "actor_type", "idempotency_key", "dry_run", "trace_id", "command_id"}},
+        "idempotency_key": _campaign_idempotency_key(request, payload),
+        "actor_id": _campaign_actor(request, payload),
+        "actor_type": str(payload.get("actor_type") or "admin").strip(),
+        "source_route": source_route,
+        "dry_run": bool(payload.get("dry_run", False)),
+        "trace_id": _campaign_trace_id(request, payload),
+    }
+
+
+def _campaign_write_response(command) -> JSONResponse:
+    try:
+        payload = execute_cloud_campaign_command(command)
+    except CloudCampaignWriteNotFoundError as exc:
+        return _campaign_write_error(str(exc) or "campaign_not_found", status_code=404)
+    except CloudCampaignWriteInputError as exc:
+        return _campaign_write_error(str(exc) or "invalid_campaign_command", status_code=400)
+    except Exception as exc:
+        return _campaign_write_error(str(exc) or "campaign_command_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_CAMPAIGN_WRITE_HEADERS)
 
 
 @router.get(
@@ -232,6 +316,140 @@ def api_list_cloud_campaign_steps(campaign_code: str) -> JSONResponse:
     except Exception as exc:
         return _campaign_read_error(str(exc) or "campaign_steps_unavailable", status_code=503)
     return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/batch-start")
+async def api_batch_start_cloud_campaigns(request: Request) -> JSONResponse:
+    try:
+        payload = await _campaign_write_payload(request)
+    except CloudCampaignWriteInputError as exc:
+        return _campaign_write_error(str(exc))
+    codes = tuple(str(code).strip() for code in (payload.get("campaign_codes") or []) if str(code).strip())
+    command = BatchStartCloudCampaignsCommand(
+        campaign_codes=codes,
+        group_code=str(payload.get("group_code") or "").strip(),
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/batch-start",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/approve")
+async def api_approve_cloud_campaign(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = ApproveCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/approve",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/reject")
+async def api_reject_cloud_campaign(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = RejectCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/reject",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/start")
+async def api_start_cloud_campaign(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = StartCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/start",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/pause")
+async def api_pause_cloud_campaign(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = PauseCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/pause",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.delete("/api/admin/cloud-orchestrator/campaigns/{campaign_code}")
+async def api_delete_cloud_campaign(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = DeleteCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps")
+async def api_add_cloud_campaign_step(campaign_code: str, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = AddCloudCampaignStepCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}")
+@router.patch("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}")
+async def api_update_cloud_campaign_step(campaign_code: str, step_index: int, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = UpdateCloudCampaignStepCommand(
+        campaign_code=campaign_code,
+        step_index=step_index,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}",
+        ),
+    )
+    return _campaign_write_response(command)
+
+
+@router.delete("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}")
+async def api_delete_cloud_campaign_step(campaign_code: str, step_index: int, request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    command = DeleteCloudCampaignStepCommand(
+        campaign_code=campaign_code,
+        step_index=step_index,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}",
+        ),
+    )
+    return _campaign_write_response(command)
 
 
 @router.get(

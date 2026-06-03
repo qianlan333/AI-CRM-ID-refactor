@@ -65,6 +65,7 @@
       </header>
       <div class="cloud-camp-drawer-body" id="cloud-camp-detail-body" style="padding:16px 18px;"></div>
       <footer class="cloud-camp-detail-footer" style="padding:12px 18px;border-top:1px solid #f0f0f0;margin:0;">
+        <button class="admin-button admin-button--ghost" id="cloud-camp-approve">批准</button>
         <button class="admin-button admin-button--primary" id="cloud-camp-start">启动</button>
         <button class="admin-button admin-button--ghost cloud-camp-reject" id="cloud-camp-reject">拒绝</button>
       </footer>
@@ -196,6 +197,7 @@
   const reviewSel = root.querySelector('#cloud-camp-filter-review');
   const runSel = root.querySelector('#cloud-camp-filter-run');
   const refreshBtn = root.querySelector('#cloud-camp-refresh');
+  const approveBtn = root.querySelector('#cloud-camp-approve');
   const startBtn = root.querySelector('#cloud-camp-start');
   const rejectBtn = root.querySelector('#cloud-camp-reject');
   const moreBtn = root.querySelector('#cloud-camp-more');
@@ -210,8 +212,8 @@
   const drawerBody = root.querySelector('#cloud-camp-drawer-body');
 
   let currentCode = '';
-  const CAMPAIGN_WRITE_DISABLED = true;
-  const CAMPAIGN_WRITE_DISABLED_MESSAGE = '本组仅开放 Campaign read/workspace 预览；启动、暂停、拒绝、删除和 step 编辑仍在 legacy fallback 删除前置阶段，当前页面不会执行写入或发送。';
+  const CAMPAIGN_WRITE_DISABLED = false;
+  const CAMPAIGN_WRITE_DISABLED_MESSAGE = 'Campaign write controls 当前进入 Next CommandBus：只写审计/本地投影/SideEffectPlan，不真实发送、不运行 runtime。';
 
   const fmt = s => (s == null ? '' : String(s));
   const escapeHtml = s => fmt(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -232,6 +234,13 @@
   };
   const reviewLabel = s => REVIEW_STATUS_LABEL[s] || fmt(s);
   const runLabel = s => RUN_STATUS_LABEL[s] || fmt(s);
+
+  function commandHeaders(action) {
+    return {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `cloud-campaign-${action}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    };
+  }
 
   // 后端 jsonify 把 datetime 序列化成 RFC1123 ("Sun, 10 May 2026 01:23:45 GMT")
   // 也可能是 ISO ("2026-05-10T01:23:45Z")。两种都丢给 Date 都能解，最后统一渲染
@@ -441,12 +450,12 @@
         batchBtn.textContent = '启动中…';
         try {
           const resp = await fetch('/api/admin/cloud-orchestrator/campaigns/batch-start', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: commandHeaders('batch-start'),
             body: JSON.stringify({ group_code: gcode, operator }),
           });
           const d = await resp.json().catch(() => ({}));
           if (!resp.ok || !d.ok) { alert('批量启动失败：' + (d.error || `HTTP ${resp.status}`)); return; }
-          alert(`批量启动完成 ✓\n成功：${d.started_count}\n跳过（已启动/拒绝）：${d.skipped_count}\n失败：${d.failed_count}`);
+          alert(`批量启动计划已生成 ✓\n成功：${d.started_count}\n跳过：${d.skipped_count}\n失败：${d.failed_count}\n真实发送：否`);
           loadList();
         } finally {
           batchBtn.disabled = false;
@@ -607,7 +616,7 @@
         const stepIndex = btn.dataset.stepIndex;
         if (!confirm(`确认删除 step ${stepIndex}？此操作不可撤销。`)) return;
         const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(stepIndex)}`, {
-          method: 'DELETE',
+          method: 'DELETE', headers: commandHeaders('step-delete'),
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data.ok) { alert('删除失败：' + (data.error || `HTTP ${resp.status}`)); return; }
@@ -620,7 +629,7 @@
         const segId = parseInt(btn.dataset.segmentId, 10);
         if (!segId) return;
         const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
+          method: 'POST', headers: commandHeaders('step-add'),
           body: JSON.stringify({ campaign_segment_id: segId, day_offset: 0, send_time: '10:00', content_text: '', stop_on_reply: true }),
         });
         const data = await resp.json().catch(() => ({}));
@@ -631,6 +640,8 @@
 
     const startable = !CAMPAIGN_WRITE_DISABLED && ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
     const hasSteps = (overview.segments || []).some(s => (s.steps || []).length > 0);
+    approveBtn.disabled = CAMPAIGN_WRITE_DISABLED || !['draft','pending_review'].includes(camp.review_status);
+    approveBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : '仅写入 Next CommandBus 审批状态，不真实发送';
     startBtn.disabled = !startable || !hasSteps;
     startBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : (!hasSteps ? '请先让 Agent 提交带节奏的 propose_campaign' : '');
     rejectBtn.disabled = CAMPAIGN_WRITE_DISABLED || ['rejected','cancelled','finished'].includes(camp.review_status) || ['cancelled','finished'].includes(camp.run_status);
@@ -641,38 +652,42 @@
     deleteBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : '';
   }
 
+  approveBtn.addEventListener('click', async () => {
+    if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
+    if (!currentCode) return;
+    const operator = (window.prompt('批准人（仅做审计标记，可填昵称或工号）', 'ui_user') || '').trim();
+    if (!operator) return;
+    const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/approve`, {
+      method: 'POST', headers: commandHeaders('approve'),
+      body: JSON.stringify({ operator }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) { alert('批准失败：' + (data.error || `HTTP ${resp.status}`)); return; }
+    alert(`审批已写入 ✓\nCommand：${data.command_id || '-'}\n真实发送：否`);
+    loadDetail(currentCode);
+    loadList();
+  });
+
   startBtn.addEventListener('click', async () => {
     if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
     if (!currentCode) return;
-    if (!confirm(`确认启动这个 Campaign 吗？启动后会按节奏自动推送，且不可撤回。`)) return;
+    if (!confirm(`确认生成这个 Campaign 的启动计划吗？本操作只写 CommandBus/AuditLedger/SideEffectPlan，不会真实发送。`)) return;
     const operator = (window.prompt('确认人（仅做审计标记，可填昵称或工号）', 'ui_user') || '').trim();
     if (!operator) return;
     startBtn.disabled = true;
     const oldText = startBtn.textContent;
-    startBtn.textContent = '启动中…';
+    startBtn.textContent = '生成计划中…';
     try {
-      const resp1 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/approve`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ operator }),
-      });
-      // 即使 500 也尝试解析 body 拿 error；之前只看 d.ok 在 500 时直接被忽略，用户什么都看不到
-      const d1 = await resp1.json().catch(() => ({}));
-      if (!resp1.ok || !d1.ok) {
-        alert(`启动失败（签发授权环节）：${d1.error || `HTTP ${resp1.status}`}`);
-        return;
-      }
-      const token = d1.approval && d1.approval.token;
-      if (!token) { alert('未拿到授权 token'); return; }
       const resp2 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/start`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ approval_token: token, human_approver: operator }),
+        method: 'POST', headers: commandHeaders('start'),
+        body: JSON.stringify({ operator, human_approver: operator }),
       });
       const d2 = await resp2.json().catch(() => ({}));
       if (!resp2.ok || !d2.ok) {
-        alert(`启动失败：${d2.error || `HTTP ${resp2.status}（看 server log / journalctl 或 query_recent_audit_logs 查 traceback）`}`);
+        alert(`启动计划失败：${d2.error || `HTTP ${resp2.status}`}`);
         return;
       }
-      alert(`已启动 ✓\n运行状态：${d2.campaign?.run_status || 'active'}\n下一次 cron 扫描时（约 1 分钟内）开始推送 D+0`);
+      alert(`启动计划已生成 ✓\nCommand：${d2.command_id || '-'}\n真实发送：否\nRuntime 执行：否`);
       loadDetail(currentCode);
       loadList();
     } finally {
@@ -687,7 +702,7 @@
     const reason = prompt('拒绝原因？（会写入审计日志）', '运营审阅未通过');
     if (reason === null) return;
     const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/reject`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: commandHeaders('reject'),
       body: JSON.stringify({ reason }),
     });
     const data = await resp.json();
@@ -710,7 +725,7 @@
     const reason = prompt('暂停原因？', '运营手动暂停');
     if (reason === null) return;
     await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/pause`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: commandHeaders('pause'),
       body: JSON.stringify({ reason }),
     });
     loadDetail(currentCode);
@@ -723,7 +738,7 @@
     morePop.hidden = true;
     if (!confirm('永久删除这个 Campaign？包含所有节奏、命中成员、待发批次都会一并清空，且不可恢复。')) return;
     const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}`, {
-      method: 'DELETE',
+      method: 'DELETE', headers: commandHeaders('delete'),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) {
@@ -786,7 +801,7 @@
         stop_on_reply: rowEl.querySelector('.edit-stop-on-reply').checked,
       };
       const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(step.step_index)}`, {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        method: 'PATCH', headers: commandHeaders('step-update'),
         body: JSON.stringify(body),
       });
       const data = await resp.json();

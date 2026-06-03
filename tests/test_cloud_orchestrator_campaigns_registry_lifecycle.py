@@ -43,19 +43,21 @@ def test_campaign_page_registry_is_locked_over_next_read_apis():
     assert record["adapter_mode"] == "none"
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
-    assert "write controls remain disabled" in record["notes"]
+    assert "write controls call Next CommandBus" in record["notes"]
 
 
 def test_campaign_write_registry_stays_out_of_scope_active():
     record = next(item for item in _records(REGISTRY) if item.get("route_id") == "cloud_orchestrator_campaigns_write_legacy_family")
 
     assert record["methods"] == ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    assert record["runtime_owner"] == "production_compat"
+    assert record["runtime_owner"] == "next_command"
     assert record["legacy_fallback_allowed"] is True
-    assert record["delete_status"] == "active"
-    assert record["replacement_status"] == "not_started"
-    assert "deletion_locked" in record["notes"]
-    assert "out of scope" in record["notes"]
+    assert record["legacy_source"] == "production_compat"
+    assert record["delete_status"] == "next_primary_with_legacy_rollback"
+    assert record["replacement_status"] == "validating"
+    assert record["adapter_mode"] == "real_blocked"
+    assert "Next CommandBus" in record["notes"]
+    assert "run-due remains out of scope" in record["notes"]
 
 
 def test_campaign_manifest_read_write_and_run_due_states():
@@ -72,11 +74,12 @@ def test_campaign_manifest_read_write_and_run_due_states():
     assert read["delete_status"] == "deletion_locked"
     assert read["replacement_status"] == "locked"
 
-    assert write["current_runtime_owner"] == "production_compat"
-    assert write["production_behavior"] == "legacy_forward"
+    assert write["current_runtime_owner"] == "next_command"
+    assert write["production_behavior"] == "next_command"
     assert write["legacy_fallback_allowed"] is True
-    assert write["delete_status"] == "active"
-    assert write["replacement_status"] == "not_started"
+    assert write["delete_status"] == "next_primary_with_legacy_rollback"
+    assert write["replacement_status"] == "validating"
+    assert write["adapter_mode"] == "real_blocked"
 
     assert run_due["current_runtime_owner"] == "production_compat"
     assert run_due["production_behavior"] == "scheduled_safe_mode"

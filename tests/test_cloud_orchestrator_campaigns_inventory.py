@@ -46,6 +46,7 @@ def test_campaign_inventory_covers_read_write_and_timer_boundaries():
     assert "legacy_fallback_allowed=false" in text
     assert "legacy fallback removed" in text
     assert "locked: Next read model only" in text
+    assert "Next CommandBus validating" in text
     assert "No real WeCom send" in text
     assert "No automation runtime" in text
     assert "Media upload remains locked" in text

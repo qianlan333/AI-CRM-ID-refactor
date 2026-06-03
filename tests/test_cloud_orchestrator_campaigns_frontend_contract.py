@@ -21,18 +21,20 @@ def test_workspace_template_calls_next_read_campaign_apis():
     assert "production_compat" not in source
 
 
-def test_workspace_write_controls_are_explicitly_disabled_for_group_18():
+def test_workspace_write_controls_call_next_commandbus_routes():
     source = _source()
 
-    assert "const CAMPAIGN_WRITE_DISABLED = true;" in source
+    assert "const CAMPAIGN_WRITE_DISABLED = false;" in source
     assert "全部启动" in source
     assert "/api/admin/cloud-orchestrator/campaigns/batch-start" in source
     assert "/approve" in source
     assert "/start" in source
     assert "/reject" in source
     assert "/pause" in source
+    assert "cloud-camp-approve" in source
     assert "CAMPAIGN_WRITE_DISABLED_MESSAGE" in source
-    assert "if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }" in source
+    assert "Next CommandBus" in source
+    assert "Idempotency-Key" in source
     assert "const editable = !CAMPAIGN_WRITE_DISABLED" in source
     assert "const startable = !CAMPAIGN_WRITE_DISABLED" in source
 

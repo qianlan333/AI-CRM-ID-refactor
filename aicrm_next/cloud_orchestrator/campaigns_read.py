@@ -125,6 +125,35 @@ def _member_view(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _step_payload_view(payload: dict[str, Any]) -> dict[str, Any]:
+    content_package = _json(payload.get("content_package_json") or payload.get("content_package"), default={})
+    content_payload = _json(payload.get("content_payload_json"), default={})
+    if not content_payload:
+        content_payload = {
+            "content_text": _text(payload.get("content_text") or payload.get("message_text")),
+            "image_library_ids": payload.get("image_library_ids") or [],
+            "miniprogram_library_ids": payload.get("miniprogram_library_ids") or [],
+            "attachment_library_ids": payload.get("attachment_library_ids") or [],
+        }
+    if content_package and isinstance(content_package, dict):
+        content_payload.update({key: value for key, value in content_package.items() if value not in (None, "")})
+    if payload.get("message_text") not in (None, "") or payload.get("content_text") not in (None, ""):
+        content_payload["content_text"] = _text(payload.get("message_text") or payload.get("content_text"))
+    return {
+        "step_index": int(payload.get("step_index") or 0),
+        "day_offset": int(payload.get("day_offset") or 0),
+        "send_time": _text(payload.get("send_time")) or "10:00",
+        "content_text": _text(payload.get("message_text") or payload.get("content_text") or content_payload.get("content_text")),
+        "stop_on_reply": bool(payload.get("stop_on_reply", True)),
+        "skip_if_recently_touched_days": int(payload.get("skip_if_recently_touched_days") or 0),
+        "content_payload_json": content_payload,
+        "content_package_json": content_package if isinstance(content_package, dict) else {},
+        "image_library_ids": content_payload.get("image_library_ids") or [],
+        "miniprogram_library_ids": content_payload.get("miniprogram_library_ids") or [],
+        "attachment_library_ids": content_payload.get("attachment_library_ids") or [],
+    }
+
+
 class CloudCampaignReadRepository(Protocol):
     def list_campaigns(self, *, review_status: str = "", run_status: str = "", group_code: str = "", limit: int = 5000, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
     def get_campaign(self, campaign_code: str) -> dict[str, Any] | None: ...
@@ -364,6 +393,7 @@ class InMemoryCloudCampaignReadRepository:
             {"id": 101, "member_id": 501, "external_contact_id": "wm_fixture_a", "status": "pending", "phone": "13800000001", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "warm"},
             {"id": 102, "member_id": 502, "external_contact_id": "wm_fixture_b", "status": "pending", "phone": "13800000002", "segment_label": "Fixture segment", "segment_priority": 100, "segment_name": "Fixture segment", "segment_code": "seg_fixture", "profile_segment_key": "trial", "behavior_tier_key": "cold"},
         ]
+        self.deleted_campaign_codes: set[str] = set()
 
     def list_campaigns(self, *, review_status: str = "", run_status: str = "", group_code: str = "", limit: int = 5000, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         rows = [_campaign_view(copy.deepcopy(row)) for row in self.campaigns]
@@ -382,6 +412,76 @@ class InMemoryCloudCampaignReadRepository:
         for row in self.campaigns:
             if row["campaign_code"] == campaign_code:
                 return _campaign_view(copy.deepcopy(row))
+        return None
+
+    def update_campaign_status(
+        self,
+        campaign_code: str,
+        *,
+        review_status: str | None = None,
+        run_status: str | None = None,
+        deleted: bool = False,
+    ) -> dict[str, Any] | None:
+        for row in self.campaigns:
+            if row["campaign_code"] != campaign_code:
+                continue
+            if deleted:
+                row["review_status"] = "deleted"
+                row["run_status"] = "cancelled"
+                self.deleted_campaign_codes.add(campaign_code)
+            if review_status is not None:
+                row["review_status"] = review_status
+            if run_status is not None:
+                row["run_status"] = run_status
+            row["updated_at"] = "2026-06-03T14:00:00+08:00"
+            return _campaign_view(copy.deepcopy(row))
+        return None
+
+    def _segment_for_step(self, campaign_code: str, campaign_segment_id: int | None = None) -> dict[str, Any] | None:
+        if not self.get_campaign(campaign_code):
+            return None
+        if campaign_segment_id:
+            for segment in self.segments:
+                if int(segment.get("campaign_segment_id") or 0) == int(campaign_segment_id):
+                    return segment
+        return self.segments[0] if self.segments else None
+
+    def add_step(self, campaign_code: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        segment = self._segment_for_step(campaign_code, payload.get("campaign_segment_id"))
+        if not segment:
+            return None
+        steps = segment.setdefault("steps", [])
+        next_index = max([int(step.get("step_index") or 0) for step in steps] or [-1]) + 1
+        item = _step_payload_view({**payload, "step_index": payload.get("step_index", next_index)})
+        steps.append(item)
+        self.update_campaign_status(campaign_code)
+        return copy.deepcopy(item)
+
+    def update_step(self, campaign_code: str, step_index: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if not self.get_campaign(campaign_code):
+            return None
+        for segment in self.segments:
+            for index, step in enumerate(segment.get("steps") or []):
+                if int(step.get("step_index") or 0) != int(step_index):
+                    continue
+                updated = _step_payload_view({**step, **payload, "step_index": int(step_index)})
+                segment["steps"][index] = updated
+                self.update_campaign_status(campaign_code)
+                return copy.deepcopy(updated)
+        return None
+
+    def delete_step(self, campaign_code: str, step_index: int) -> dict[str, Any] | None:
+        if not self.get_campaign(campaign_code):
+            return None
+        for segment in self.segments:
+            steps = list(segment.get("steps") or [])
+            for index, step in enumerate(steps):
+                if int(step.get("step_index") or 0) != int(step_index):
+                    continue
+                removed = steps.pop(index)
+                segment["steps"] = steps
+                self.update_campaign_status(campaign_code)
+                return copy.deepcopy(removed)
         return None
 
     def campaign_overview(self, campaign_code: str) -> dict[str, Any] | None:

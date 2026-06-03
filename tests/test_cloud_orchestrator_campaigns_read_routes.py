@@ -100,5 +100,6 @@ def test_campaign_page_is_non_empty_and_references_next_read_api(monkeypatch):
     assert "运营计划审阅" in html
     assert "Campaign" in html
     assert "/api/admin/cloud-orchestrator/campaigns?" in html
-    assert "CAMPAIGN_WRITE_DISABLED = true" in html
+    assert "CAMPAIGN_WRITE_DISABLED = false" in html
+    assert "Next CommandBus" in html
     assert "production_compat" not in html

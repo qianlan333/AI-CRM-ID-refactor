@@ -20,6 +20,8 @@ from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
 from .common_operation_members import router as common_operation_members_router
 from .cloud_orchestrator.api import router as cloud_orchestrator_router
+from .cloud_orchestrator.campaigns_read import reset_campaign_read_fixture_state
+from .cloud_orchestrator.campaigns_write import reset_campaign_write_fixture_state
 from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from .customer_tags.api import read_router as customer_tags_read_router
 from .customer_tags.api import router as customer_tags_router
@@ -74,6 +76,8 @@ def create_app() -> FastAPI:
         reset_hxc_dashboard_fixture_state()
         reset_radar_links_fixture_state()
         reset_cloud_plan_fixture_state()
+        reset_campaign_read_fixture_state()
+        reset_campaign_write_fixture_state()
         reset_sidebar_write_fixture_state()
         reset_questionnaire_admin_write_fixture_state()
         reset_wecom_tag_write_fixture_state()

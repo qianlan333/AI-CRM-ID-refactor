@@ -8,6 +8,7 @@ from scripts.check_no_new_legacy import (
     check_auth_wecom_wildcard_inventory,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_campaign_read_closeout_lock,
+    check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
@@ -257,6 +258,10 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
 
 def test_cloud_orchestrator_campaign_read_closeout_guard_passes_current_repo() -> None:
     assert check_cloud_orchestrator_campaign_read_closeout_lock() == []
+
+
+def test_cloud_orchestrator_campaign_write_commandbus_guard_passes_current_repo() -> None:
+    assert check_cloud_orchestrator_campaign_write_next_commandbus() == []
 
 
 def test_cloud_orchestrator_campaign_read_closeout_guard_blocks_rollback(tmp_path: Path) -> None:
