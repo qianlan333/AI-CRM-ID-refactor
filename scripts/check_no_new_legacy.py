@@ -686,7 +686,7 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
                         "sidebar_jssdk_default_real_enabled",
                         str(path.relative_to(root)),
                         marker,
-                        "Sidebar JSSDK production default must stay real_blocked; real signing enablement is out of scope.",
+                        "Sidebar JSSDK production default must stay real_blocked; real signing requires the explicit real_enabled gate.",
                     )
                 )
 

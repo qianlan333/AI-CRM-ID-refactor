@@ -28,3 +28,4 @@ GET accepts `url`, optional `debug`, optional `agentid` / `agent_id` / `agentId`
 2. The legacy production_compat exact route has been removed; `/api/sidebar/jssdk-config` is Next adapter only and `legacy_fallback_allowed=false`.
 3. Real WeCom signing is allowed only for this JSSDK route and only under the explicit real-enabled gate.
 4. Material send, tag mutation, payment, storage, OpenClaw, and automation runtime remain out of scope.
+5. Default fake/sandbox/real_blocked responses record AuditLedger planned/blocked attempts with `real_external_call_executed=false`; explicit real_enabled records the real signing attempt.
