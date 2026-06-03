@@ -3815,6 +3815,8 @@ CREATE TABLE IF NOT EXISTS wechat_pay_products (
     require_mobile BOOLEAN NOT NULL DEFAULT FALSE,
     lead_program_id BIGINT,
     lead_channel_id BIGINT,
+    completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    completion_redirect_url TEXT NOT NULL DEFAULT '',
     metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

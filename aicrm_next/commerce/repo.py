@@ -6,7 +6,7 @@ from typing import Any, Protocol
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 
-from .domain import normalize_status, now_iso, validate_price_cents
+from .domain import completion_redirect_projection, normalize_status, now_iso, validate_completion_redirect, validate_price_cents
 
 
 class CommerceRepository(Protocol):
@@ -40,6 +40,8 @@ def _seed_products() -> list[dict[str, Any]]:
             "detail_image_ids": ["image_masked_001"],
             "detail_sections": [{"title": "商品详情", "body": "脱敏 fixture 内容"}],
             "buy_button_text": "立即购买",
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
             "created_at": ts,
             "updated_at": ts,
             "deleted": False,
@@ -57,6 +59,8 @@ def _seed_products() -> list[dict[str, Any]]:
             "detail_image_ids": [],
             "detail_sections": [],
             "buy_button_text": "暂不可购买",
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
             "created_at": ts,
             "updated_at": ts,
             "deleted": False,
@@ -85,6 +89,10 @@ def _seed_orders() -> list[dict[str, Any]]:
             "created_at": ts,
             "updated_at": ts,
             "quantity": 1,
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
+            "completion_redirect": {"enabled": False, "url": ""},
+            "completion_action": {"type": "default", "redirect_url": ""},
         }
     ]
 
@@ -109,6 +117,18 @@ class InMemoryCommerceRepository:
 
     def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]:
         validate_price_cents(int(payload.get("price_cents", 0)))
+        normalized_redirect = validate_completion_redirect(
+            payload.get("completion_redirect_enabled"),
+            payload.get("completion_redirect_url"),
+        )
+        payload = {
+            **payload,
+            **normalized_redirect,
+            **completion_redirect_projection(
+                normalized_redirect["completion_redirect_enabled"],
+                normalized_redirect["completion_redirect_url"],
+            ),
+        }
         now = now_iso()
         code = str(payload["product_code"])
         existing = self.get_product_by_code(code)

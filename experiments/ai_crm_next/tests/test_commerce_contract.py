@@ -52,6 +52,70 @@ def test_product_create_update_enable_disable_delete_and_validation() -> None:
     assert deleted["soft_deleted"] is True
 
 
+def test_product_completion_redirect_fields_flow_through_checkout_and_order_status() -> None:
+    client = make_client()
+    payload = {
+        "product_code": "course_redirect_new",
+        "title": "跳转商品",
+        "description": "fixture",
+        "price_cents": 100,
+        "page_slug": "course-redirect-new",
+        "completion_redirect_enabled": True,
+        "completion_redirect_url": "https://example.com/after-paid",
+    }
+    created = client.post("/api/admin/wechat-pay/products", json=payload)
+    assert created.status_code == 200
+    product = created.json()["product"]
+    assert product["completion_redirect_enabled"] is True
+    assert product["completion_redirect_url"] == "https://example.com/after-paid"
+
+    public_product = client.get("/api/products/course-redirect-new").json()["product"]
+    assert public_product["completion_redirect"]["url"] == "https://example.com/after-paid"
+    assert public_product["completion_action"] == {
+        "type": "redirect",
+        "redirect_url": "https://example.com/after-paid",
+    }
+
+    checkout = client.post("/api/checkout/wechat", json={"product_code": "course_redirect_new", "quantity": 1}).json()
+    assert checkout["completion_redirect_url"] == "https://example.com/after-paid"
+    assert checkout["completion_action"]["type"] == "redirect"
+    status = client.get(f"/api/orders/{checkout['order_no']}/status").json()
+    assert status["order"]["completion_redirect"]["url"] == "https://example.com/after-paid"
+    assert status["order"]["completion_action"]["redirect_url"] == "https://example.com/after-paid"
+
+
+def test_product_completion_redirect_allows_safe_internal_path() -> None:
+    client = make_client()
+    response = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "course_internal_redirect",
+            "title": "站内跳转商品",
+            "price_cents": 100,
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "/welcome",
+        },
+    )
+    assert response.status_code == 200
+    product = response.json()["product"]
+    assert product["completion_action"] == {"type": "redirect", "redirect_url": "/welcome"}
+
+
+def test_product_completion_redirect_rejects_invalid_url_when_enabled() -> None:
+    client = make_client()
+    response = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product_code": "course_bad_redirect",
+            "title": "坏跳转商品",
+            "price_cents": 100,
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "javascript:alert(1)",
+        },
+    )
+    assert response.status_code == 400
+
+
 def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> None:
     client = make_client()
     seeded_detail = client.get("/admin/wechat-pay/transactions/order_masked_001")

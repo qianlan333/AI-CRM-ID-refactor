@@ -244,6 +244,20 @@
           <label>引流渠道码</label>
           <select id="leadChannel"></select>
         </div>
+        <p class="wp-muted" id="completionRedirectLeadHint" style="display:none;margin:14px 0 0">当前已开启完成后跳转，支付成功后将不会自动弹出引流二维码。</p>
+      </section>
+
+      <section class="wp-section">
+        <h2>报名完成后跳转</h2>
+        <p class="wp-muted" style="margin:-8px 0 16px">开启后，用户完成商品报名/支付成功后将直接跳转到指定链接，不再弹出引流二维码。关闭后保持原有二维码引流逻辑。</p>
+        <div class="wp-field">
+          <label class="wp-switch-row"><input id="completionRedirectEnabled" type="checkbox"> 开启完成后跳转</label>
+        </div>
+        <div class="wp-field" style="margin-top:14px">
+          <label>跳转链接</label>
+          <input id="completionRedirectUrl" placeholder="https://example.com/welcome">
+          <p class="wp-muted" style="margin:8px 0 0">建议填写 https 链接。开启后该链接优先级高于支付后引流二维码。</p>
+        </div>
       </section>
 
       <section class="wp-section" id="externalPushSection">
@@ -366,6 +380,8 @@
       require_mobile: true,
       lead_program_id: 0,
       lead_channel_id: 0,
+      completion_redirect_enabled: false,
+      completion_redirect_url: "",
       slices: []
     };
     let externalPush = {
@@ -461,6 +477,10 @@
       draft.cta_text = $("ctaText").value.trim() || "立即报名";
       draft.require_mobile = document.querySelector('input[name="requireMobile"]:checked')?.value === "yes";
       draft.lead_channel_id = Number($("leadChannel").value || 0);
+      draft.completion_redirect_enabled = Boolean($("completionRedirectEnabled") && $("completionRedirectEnabled").checked);
+      draft.completion_redirect_url = $("completionRedirectUrl") ? $("completionRedirectUrl").value.trim() : "";
+      const redirectHint = $("completionRedirectLeadHint");
+      if (redirectHint) redirectHint.style.display = draft.completion_redirect_enabled ? "block" : "none";
     }
 
     function fillFields() {
@@ -472,6 +492,9 @@
         input.checked = (input.value === "yes") === Boolean(draft.require_mobile);
       });
       $("leadChannel").value = String(draft.lead_channel_id || 0);
+      if ($("completionRedirectEnabled")) $("completionRedirectEnabled").checked = Boolean(draft.completion_redirect_enabled);
+      if ($("completionRedirectUrl")) $("completionRedirectUrl").value = draft.completion_redirect_url || "";
+      syncDraftFromFields();
     }
 
     function fillExternalPushFields() {
@@ -536,6 +559,18 @@
         frequency: numberOrNull(externalPush.frequency, "frequency"),
         remark: externalPush.remark,
         custom_params: externalPush.custom_params || {}
+      };
+    }
+
+    function completionRedirectPayload() {
+      const enabled = Boolean(draft.completion_redirect_enabled);
+      const url = String(draft.completion_redirect_url || "").trim();
+      const isSafeInternalPath = /^\/(?!\/)[^\s\\]*$/.test(url);
+      if (enabled && !url) throw new Error("请填写跳转链接");
+      if (url && !/^https:\/\/[^/\s?#]+/i.test(url) && !isSafeInternalPath) throw new Error("跳转链接格式不合法");
+      return {
+        completion_redirect_enabled: enabled,
+        completion_redirect_url: url
       };
     }
 
@@ -752,7 +787,7 @@
 
     async function saveProduct() {
       syncDraftFromFields();
-      const body = {
+      const body = Object.assign({
         name: draft.name,
         amount_total: draft.amount_total,
         status: draft.status,
@@ -762,7 +797,7 @@
         slices: draft.slices.map(function (slice, index) {
           return { image_library_id: Number(slice.image_library_id), sort_order: index + 1 };
         })
-      };
+      }, completionRedirectPayload());
       const isEdit = productId > 0;
       const payload = await api(isEdit ? "/api/admin/wechat-pay/products/" + productId : "/api/admin/wechat-pay/products", {
         method: isEdit ? "PUT" : "POST",
@@ -894,7 +929,7 @@
     }
 
     document.addEventListener("input", function (event) {
-      if (["productName", "productPrice", "ctaText"].includes(event.target.id)) syncDraftFromFields();
+      if (["productName", "productPrice", "ctaText", "completionRedirectUrl"].includes(event.target.id)) syncDraftFromFields();
       if (event.target.id && event.target.id.startsWith("externalPush")) {
         try { syncExternalPushFromFields(); } catch (err) {}
       }
@@ -903,7 +938,7 @@
       }
     });
     document.addEventListener("change", function (event) {
-      if (["productStatus", "leadChannel"].includes(event.target.id) || event.target.name === "requireMobile") syncDraftFromFields();
+      if (["productStatus", "leadChannel", "completionRedirectEnabled"].includes(event.target.id) || event.target.name === "requireMobile") syncDraftFromFields();
       if (event.target.id && event.target.id.startsWith("externalPush")) {
         try { syncExternalPushFromFields(); } catch (err) {}
       }
