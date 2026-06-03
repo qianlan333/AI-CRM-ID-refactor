@@ -25,6 +25,7 @@ class CommerceRepository(Protocol):
     def list_lead_channels(self) -> list[dict[str, Any]]: ...
     def get_external_push_config(self, product_id: str) -> dict[str, Any]: ...
     def save_external_push_config(self, product_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def count_orders_for_product_code(self, product_code: str) -> int: ...
     def create_order(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_order(self, order_no: str) -> dict[str, Any] | None: ...
     def apply_notify(self, order_no: str, provider: str, status: str, transaction_id: str | None) -> dict[str, Any]: ...
@@ -183,11 +184,17 @@ class InMemoryCommerceRepository:
     def delete_product(self, product_id: str) -> dict[str, Any]:
         for item in self._products:
             if item["id"] == product_id and not item.get("deleted"):
+                if str(item.get("status") or "").strip().lower() == "active" and self.count_orders_for_product_code(str(item.get("product_code") or "")) > 0:
+                    raise ContractError("已有订单的商品不能删除，请先下架")
                 item["deleted"] = True
                 item["enabled"] = False
                 item["updated_at"] = now_iso()
-                return {"ok": True, "deleted": True, "soft_deleted": True, "product_id": product_id}
+                return {"ok": True, "deleted": True, "soft_deleted": False, "product_id": product_id}
         raise NotFoundError("product not found")
+
+    def count_orders_for_product_code(self, product_code: str) -> int:
+        code = str(product_code or "").strip()
+        return sum(1 for order in self._orders if str(order.get("product_code") or "") == code)
 
     def copy_product(self, product_id: str) -> dict[str, Any]:
         product = self.get_product(product_id)
@@ -665,8 +672,56 @@ class PostgresCommerceRepository:
         return self._serialize_product(row)
 
     def delete_product(self, product_id: str) -> dict[str, Any]:
-        result = self.set_product_enabled(product_id, False)
-        return {"ok": True, "deleted": True, "soft_deleted": True, "product_id": product_id, "product": result}
+        with self._connect() as conn:
+            product = conn.execute(
+                "SELECT id, product_code, status FROM wechat_pay_products WHERE id::text = %s LIMIT 1",
+                (str(product_id),),
+            ).fetchone()
+            if not product:
+                raise NotFoundError("product not found")
+            product_code = str(product.get("product_code") or "").strip()
+            status = str(product.get("status") or "").strip().lower()
+            if status == "active" and product_code and self._count_orders_for_product_code(conn, product_code) > 0:
+                raise ContractError("已有订单的商品不能删除，请先下架")
+            config_rows = conn.execute(
+                """
+                DELETE FROM external_push_config
+                WHERE target_type = 'product'
+                  AND target_id = %s
+                RETURNING id
+                """,
+                (str(product_id),),
+            ).fetchall()
+            row = conn.execute(
+                """
+                DELETE FROM wechat_pay_products
+                WHERE id::text = %s
+                RETURNING *
+                """,
+                (str(product_id),),
+            ).fetchone()
+            conn.commit()
+        if not row:
+            raise NotFoundError("product not found")
+        return {
+            "ok": True,
+            "deleted": True,
+            "soft_deleted": False,
+            "product_id": str(product_id),
+            "product": self._serialize_product(row),
+            "deleted_external_push_config_count": len(config_rows),
+        }
+
+    def count_orders_for_product_code(self, product_code: str) -> int:
+        with self._connect() as conn:
+            return self._count_orders_for_product_code(conn, str(product_code or "").strip())
+
+    def _count_orders_for_product_code(self, conn: Any, product_code: str) -> int:
+        row = conn.execute(
+            "SELECT count(*) AS total FROM wechat_pay_orders WHERE product_code = %s",
+            (str(product_code or "").strip(),),
+        ).fetchone() or {}
+        return int(row.get("total") or 0)
 
     def copy_product(self, product_id: str) -> dict[str, Any]:
         product = self.get_product(product_id)
