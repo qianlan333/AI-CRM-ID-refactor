@@ -949,18 +949,18 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
     else:
         if write_family.get("runtime_owner") != "next_command":
             violations.append(Violation("questionnaire_admin_write_registry_owner", "/api/admin/questionnaires*", f"runtime_owner={write_family.get('runtime_owner')}"))
-        if write_family.get("legacy_fallback_allowed") is not False:
+        if write_family.get("legacy_fallback_allowed") is not True:
             violations.append(Violation("questionnaire_admin_write_registry_legacy_allowed", "/api/admin/questionnaires*", f"legacy_fallback_allowed={write_family.get('legacy_fallback_allowed')}"))
-        if write_family.get("legacy_source"):
+        if write_family.get("legacy_source") != "legacy_flask_facade":
             violations.append(Violation("questionnaire_admin_write_registry_legacy_source", "/api/admin/questionnaires*", f"legacy_source={write_family.get('legacy_source')}"))
         if write_family.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_admin_write_registry_adapter_mode", "/api/admin/questionnaires*", f"adapter_mode={write_family.get('adapter_mode')}"))
-        if write_family.get("delete_status") != "deletion_locked":
+        if write_family.get("delete_status") != "active_fallback":
             violations.append(Violation("questionnaire_admin_write_registry_delete_status", "/api/admin/questionnaires*", f"delete_status={write_family.get('delete_status')}"))
-        if write_family.get("replacement_status") != "locked":
+        if write_family.get("replacement_status") != "production_fallback":
             violations.append(Violation("questionnaire_admin_write_registry_replacement_status", "/api/admin/questionnaires*", f"replacement_status={write_family.get('replacement_status')}"))
         notes = str(write_family.get("notes") or "")
-        if "CommandBus" not in notes or "legacy rollback removed" not in notes:
+        if "CommandBus" not in notes or "legacy_flask_facade" not in notes or "production_data_ready" not in notes:
             violations.append(Violation("questionnaire_admin_write_registry_notes", "/api/admin/questionnaires*", notes))
 
     export_record = registry_by_path.get("/api/admin/questionnaires/{questionnaire_id}/export")
@@ -990,13 +990,17 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
             continue
         if record.get("current_runtime_owner") != "next_command":
             violations.append(Violation("questionnaire_admin_write_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
-        if record.get("production_behavior") != "next_command":
+        expected_behavior = "next_command_local_legacy_write_fallback" if route_path == "/api/admin/questionnaires*" else "next_command"
+        if record.get("production_behavior") != expected_behavior:
             violations.append(Violation("questionnaire_admin_write_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
-        if record.get("legacy_fallback_allowed") is not False:
+        expected_fallback = route_path == "/api/admin/questionnaires*"
+        if record.get("legacy_fallback_allowed") is not expected_fallback:
             violations.append(Violation("questionnaire_admin_write_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_admin_write_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+        expected_delete_status = "active_fallback" if route_path == "/api/admin/questionnaires*" else "deletion_locked"
+        expected_replacement_status = "production_fallback" if route_path == "/api/admin/questionnaires*" else "locked"
+        if record.get("delete_status") != expected_delete_status or record.get("replacement_status") != expected_replacement_status:
             violations.append(Violation("questionnaire_admin_write_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
     return violations
 

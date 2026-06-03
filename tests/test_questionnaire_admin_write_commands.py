@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.responses import JSONResponse
 
 from aicrm_next.main import create_app
+import aicrm_next.questionnaire.api as questionnaire_api
 from aicrm_next.questionnaire.admin_write import get_questionnaire_admin_write_audit_events
 
 
@@ -121,15 +123,41 @@ def test_questionnaire_admin_write_routes_return_controlled_errors(client: TestC
     assert missing_questionnaire.json()["source_status"] == "not_found"
 
 
-def test_questionnaire_admin_write_production_unavailable_does_not_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://questionnaire-write:questionnaire-write@127.0.0.1:1/aicrm")
-    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
-    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/api/admin/questionnaires", _payload()),
+        ("put", "/api/admin/questionnaires/11", _payload("生产更新")),
+        ("post", "/api/admin/questionnaires/11/disable", {"is_disabled": True}),
+        ("post", "/api/admin/questionnaires/11/enable", {}),
+        ("delete", "/api/admin/questionnaires/11", {}),
+    ],
+)
+def test_questionnaire_admin_write_production_uses_legacy_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path: str,
+    body: dict,
+) -> None:
+    forwarded: list[tuple[str, str]] = []
 
-    response = TestClient(create_app()).post("/api/admin/questionnaires", json=_payload())
+    async def fake_forward_to_legacy_flask(request):
+        forwarded.append((request.method, request.url.path))
+        return JSONResponse(
+            {"ok": True, "questionnaire": {"id": 11, "title": "legacy"}, "fallback_used": True},
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
 
-    assert response.status_code == 503
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(questionnaire_api, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+
+    client = TestClient(create_app())
+    request = getattr(client, method)
+    kwargs = {"json": body} if method != "delete" else {}
+    response = request(path, **kwargs)
+
+    assert response.status_code == 200
+    assert forwarded == [(method.upper(), path)]
     body = response.json()
-    assert body["source_status"] == "production_unavailable"
-    assert body["fallback_used"] is False
-    assert body["real_external_call_executed"] is False
+    assert body["ok"] is True
+    assert response.headers["x-aicrm-compatibility-facade"] == "legacy_flask_facade"

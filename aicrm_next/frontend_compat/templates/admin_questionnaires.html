@@ -1793,7 +1793,7 @@
               <p class="section-subtitle">{% if editor_default_assessment %}这是专门创建测评模板的页面，左侧只放模板建设需要的动作。{% else %}点击添加到当前问卷。{% endif %}</p>
             </div>
           </div>
-          <div id="tag-catalog-message" class="inline-alert hidden" style="margin-bottom:12px;">企微标签加载失败，可稍后重试或手工填写 tag_id</div>
+          <div id="tag-catalog-message" class="inline-alert hidden" style="margin-bottom:12px;">当前未获取到企微标签，可手工填写 tag_id</div>
           <div class="tool-grid">
             <button id="add-single" type="button" class="tool-card">
               <span class="tool-mark">单</span>
@@ -2755,6 +2755,21 @@
       return fallback;
     }
 
+    function extractErrorMessage(data) {
+      if (!data) return '';
+      if (typeof data === 'string') return data;
+      const detail = data.detail;
+      if (typeof detail === 'string') return detail;
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        return detail.message || detail.error || detail.detail || detail.page_error || '';
+      }
+      if (Array.isArray(detail) && detail.length) {
+        const first = detail[0] || {};
+        return first.msg || first.message || first.error || '';
+      }
+      return data.message || data.error || data.page_error || '';
+    }
+
     function showToast(message, isError = false) {
       if (!message) return;
       toastEl.textContent = message;
@@ -3243,7 +3258,7 @@
       const response = await fetch(url, options);
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) {
-        throw new Error(humanizeErrorMessage(data.message || data.error || '', '请求失败，请稍后重试'));
+        throw new Error(humanizeErrorMessage(extractErrorMessage(data), '请求失败，请稍后重试'));
       }
       return data;
     }
@@ -3253,8 +3268,8 @@
         const data = await fetchJson('/api/admin/wecom/tags');
         state.availableTags = data.items || [];
         state.availableTagMap = new Map(state.availableTags.map((item) => [item.tag_id, item]));
-        if (!state.availableTags.length) {
-          tagCatalogMessageEl.textContent = '当前未获取到企微标签，可手工填写 tag_id';
+        if (data.degraded || !state.availableTags.length) {
+          tagCatalogMessageEl.textContent = data.page_error || '当前未获取到企微标签，可手工填写 tag_id';
           tagCatalogMessageEl.className = 'inline-alert warning';
         } else {
           tagCatalogMessageEl.textContent = '';

@@ -75,6 +75,13 @@ _QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
     "staff_id",
 )
 _QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_IDENTITY_HINT_FIELDS + _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
+_PRODUCTION_LEGACY_ADMIN_WRITE_COMMANDS = {
+    "questionnaire.admin.create",
+    "questionnaire.admin.update",
+    "questionnaire.admin.enable",
+    "questionnaire.admin.disable",
+    "questionnaire.admin.delete",
+}
 
 
 def _raise_http(exc: Exception) -> None:
@@ -98,6 +105,8 @@ async def _execute_admin_write(
     questionnaire_id: int | None = None,
     body: dict[str, Any] | None = None,
 ) -> Response:
+    if production_data_ready() and command_name in _PRODUCTION_LEGACY_ADMIN_WRITE_COMMANDS:
+        return await forward_to_legacy_flask(request)
     try:
         payload = body if body is not None else await _json_body(request)
         command = QuestionnaireAdminWriteCommand(

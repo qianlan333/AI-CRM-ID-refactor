@@ -6,7 +6,7 @@ from aicrm_next.customer_tags.read_model import TagCatalog, TagCatalogRepository
 from aicrm_next.main import create_app
 
 
-def test_wecom_tag_read_returns_controlled_unavailable_without_production_projection(monkeypatch) -> None:
+def test_wecom_tag_read_returns_degraded_empty_payload_without_production_projection(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -17,8 +17,8 @@ def test_wecom_tag_read_returns_controlled_unavailable_without_production_projec
         response = client.get(path)
         payload = response.json()
 
-        assert response.status_code == 503
-        assert payload["ok"] is False
+        assert response.status_code == 200
+        assert payload["ok"] is True
         assert payload["degraded"] is True
         assert payload["error_code"] == "production_unavailable"
         assert payload["source_status"] == "production_unavailable"
@@ -29,6 +29,8 @@ def test_wecom_tag_read_returns_controlled_unavailable_without_production_projec
         assert payload["sync_executed"] is False
         assert payload["fixture_used"] is False
         assert payload["items"] == []
+        assert payload["groups"] == []
+        assert payload["page_error"] == "当前未获取到企微标签，可手工填写 tag_id"
         assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
