@@ -178,99 +178,99 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.media_library
     runtime_owner: frontend_compat over Next APIs
-    legacy_fallback_allowed: true
-    legacy_source: frontend_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.frontend_compat
-    notes: Covers image, miniprogram, and attachment library admin pages rendered by frontend_compat templates over Next APIs.
+    notes: Covers image, miniprogram, and attachment library admin pages rendered by frontend_compat templates over Next APIs; production_compat rollback is removed and locked for Media Library group 16.
   - route_id: media_library_image_read_family
     path_pattern: /api/admin/image-library*
     methods: [GET]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: local
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Image list/detail/facets/thumbnail/variant routes are Next-owned and do not execute external calls.
+    notes: Image list/detail/facets/thumbnail/variant routes are Next-owned, locked, and do not execute external calls.
   - route_id: media_library_image_command_family
     path_pattern: /api/admin/image-library*
     methods: [POST, PUT, DELETE, OPTIONS]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_storage_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: local / fake / real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Image create/update/upload/import/delete routes return route-owner metadata, guarded adapter results, or SideEffectPlan only; real storage and WeCom media upload are not executed.
+    notes: Image create/update/upload/import/delete routes return route-owner metadata, guarded adapter results, or SideEffectPlan only; production_compat rollback is removed, real storage and WeCom media upload are not executed.
   - route_id: media_library_attachment_read_family
     path_pattern: /api/admin/attachment-library*
     methods: [GET]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: local
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Attachment list/detail routes are Next-owned and read repository state only.
+    notes: Attachment list/detail routes are Next-owned, locked, and read repository state only.
   - route_id: media_library_attachment_command_family
     path_pattern: /api/admin/attachment-library*
     methods: [POST, PUT, DELETE, OPTIONS]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_storage_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: local / fake / real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Attachment create/upload/update/delete routes write repository state and return SideEffectPlan; real external calls are not executed.
+    notes: Attachment create/upload/update/delete routes write repository state and return SideEffectPlan; production_compat rollback is removed and real external calls are not executed.
   - route_id: media_library_miniprogram_read_family
     path_pattern: /api/admin/miniprogram-library*
     methods: [GET]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: local
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Miniprogram list/detail routes are Next-owned and expose image thumbnail references without real media upload.
+    notes: Miniprogram list/detail routes are Next-owned, locked, and expose image thumbnail references without real media upload.
   - route_id: media_library_miniprogram_command_family
     path_pattern: /api/admin/miniprogram-library*
     methods: [POST, PUT, DELETE, OPTIONS]
     capability_owner: aicrm_next.media_library
     runtime_owner: next_storage_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat rollback retained for this group
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: local / fake / real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
     rollback_owner: aicrm_next.media_library
-    notes: Miniprogram create/update/delete and test-resolve routes remain guarded; real WeCom media upload is blocked unless separately enabled.
+    notes: Miniprogram create/update/delete and test-resolve routes remain guarded and locked; production_compat rollback is removed and real WeCom media upload is blocked unless separately enabled.
   - route_id: customer_admin_profile_family
     path_pattern: /api/admin/customers/profile*
     methods: [GET]

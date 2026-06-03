@@ -82,8 +82,8 @@ def _entry_from_ownership(record: dict[str, Any]) -> RouteRegistryEntry:
         legacy_source="production_route_ownership_manifest" if bool(record.get("legacy_fallback_allowed")) or behavior == "legacy_forward" else "",
         external_side_effect_risk=_risk(record),  # type: ignore[arg-type]
         adapter_mode=_adapter_mode(record),  # type: ignore[arg-type]
-        delete_status="active",
-        replacement_status="not_started",
+        delete_status=str(record.get("delete_status") or "active"),  # type: ignore[arg-type]
+        replacement_status=str(record.get("replacement_status") or "not_started"),  # type: ignore[arg-type]
         checker=str(record.get("checker") or ""),
         rollback_owner=str(record.get("rollback_owner") or record.get("capability_owner") or ""),
         notes=str(record.get("notes") or ""),

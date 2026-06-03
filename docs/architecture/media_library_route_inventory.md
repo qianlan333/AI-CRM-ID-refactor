@@ -1,12 +1,25 @@
 # Media Library Route Inventory
 
-Scope: Legacy Exit group 16 validates the media library admin pages, API routes, storage adapter boundary, and route precedence on top of `origin/main` at PR #1006 (`acdac47d`). It does not remove legacy fallback code in this group, does not enable real external object storage, and does not execute real WeCom media upload.
+Scope: Legacy Exit group 16 deletion closeout locks the media library admin pages, API routes, storage adapter boundary, and route precedence after PR #1007 and the #1009 no-real-external hardening. Media Library production_compat rollback is removed, `legacy_fallback_allowed=false`, real external object storage is not enabled, and real WeCom media upload is not executed.
 
 Route precedence check:
 
 - `aicrm_next.main.create_app()` currently registers `production_compat_router` before `media_library_router`, but `aicrm_next.production_compat.api` has no media-library exact route or broad `/api/admin/{path:path}` route that can catch media library requests.
 - `media_library_router` is registered before `frontend_compat_router` and `production_compat_wildcard_router`.
 - `tools/check_production_route_resolution.py` samples every media library API family plus the three admin pages; `tests/test_production_route_resolution.py` asserts they resolve to `aicrm_next.media_library.api` or `aicrm_next.frontend_compat.legacy_routes`, not production_compat.
+- `scripts/check_no_new_legacy.py --strict` now treats any Media Library production_compat route, direct HTTP/storage client, or `legacy_fallback_allowed=true` lifecycle drift as a violation.
+
+Closeout lock status:
+
+| Route family | Runtime owner | delete_status | replacement_status | legacy_fallback_allowed | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `/admin/*-library` | `frontend_compat over Next APIs` | `deletion_locked` | `locked` | `false` | Page templates remain frontend_compat shells, but they call Next APIs and no production_compat rollback route is retained. |
+| `/api/admin/image-library*` GET | `next_native` | `deletion_locked` | `locked` | `false` | list/detail/facets/thumbnail/variant resolve to `aicrm_next.media_library.api`. |
+| `/api/admin/image-library*` POST/PUT/DELETE/OPTIONS | `next_storage_adapter` | `deletion_locked` | `locked` | `false` | create/upload/from-url/from-base64/update/delete stay guarded and local/fake/real_blocked. |
+| `/api/admin/attachment-library*` GET | `next_native` | `deletion_locked` | `locked` | `false` | list/detail resolve to `aicrm_next.media_library.api`. |
+| `/api/admin/attachment-library*` POST/PUT/DELETE/OPTIONS | `next_storage_adapter` | `deletion_locked` | `locked` | `false` | create/upload/update/delete stay guarded and local/fake/real_blocked. |
+| `/api/admin/miniprogram-library*` GET | `next_native` | `deletion_locked` | `locked` | `false` | list/detail resolve to `aicrm_next.media_library.api`. |
+| `/api/admin/miniprogram-library*` POST/PUT/DELETE/OPTIONS | `next_storage_adapter` | `deletion_locked` | `locked` | `false` | create/update/delete/test-resolve stay guarded; real WeCom media upload remains blocked. |
 
 Storage and side-effect boundary:
 
@@ -87,4 +100,3 @@ Binary thumbnail/variant responses include headers:
 - Automation runtime.
 - Payment/storage/OpenClaw real external calls.
 - Public CDN optimization.
-- Removing legacy fallback in this group.
