@@ -24,12 +24,12 @@
 
 ### 1.2 后台 Campaign 管理入口
 
-这些能力当前也必须保留。Next 生产架构下由 `aicrm_next.production_compat` 接管 `/api/admin/cloud-orchestrator/campaigns*`，再转发到现有 Campaign domain handler；响应头会带 `X-AICRM-Route-Owner: ai_crm_next`，并通过 compatibility facade 执行。
+这些能力当前也必须保留，但运行边界已拆分：Campaign read/workspace GET 已锁定到 `aicrm_next.cloud_orchestrator` Next read model，`legacy_fallback_allowed=false`，不会通过 compatibility facade；写入、启动、删除、step mutation 和 run-due 仍是后续组的 out-of-scope 能力，由 `aicrm_next.production_compat` 保留受控 fallback。
 
 | 能力 | HTTP 方法 | 路径 | 当前用途 |
 |---|---:|---|---|
-| Campaign 列表 | GET | `/api/admin/cloud-orchestrator/campaigns` | 后台列表、按状态筛选 |
-| Campaign 详情 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | 查看分层、steps、成员状态汇总 |
+| Campaign 列表 | GET | `/api/admin/cloud-orchestrator/campaigns` | Next read model locked；后台列表、按状态筛选 |
+| Campaign 详情 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | Next read model locked；查看分层、steps、成员状态汇总 |
 | 签发启动审批 token | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/approve` | 为人工启动签发一次性 token |
 | 启动 Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/start` | 人工批准后启动 draft/paused Campaign |
 | 批量启动同 group Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/batch-start` | 按 `group_code` 批量审批并启动 |
@@ -37,7 +37,7 @@
 | 拒绝 Campaign | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/reject` | 拒绝并取消 Campaign |
 | 删除 Campaign | DELETE | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | 删除非 active Campaign 及关联 steps/members/jobs |
 | 扫描到期 Campaign 成员 | POST | `/api/admin/cloud-orchestrator/campaigns/run-due` | 内部定时器/受控运维扫描 due 成员 |
-| 查询成员明细 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members` | 查看命中成员和发送状态 |
+| 查询成员明细 | GET | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members` | Next read model locked；查看命中成员和发送状态 |
 | 新增 step | POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps` | 为可编辑 Campaign 追加 step |
 | 更新 step | PATCH/POST | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | 更新文案、时间、素材等 |
 | 删除 step | DELETE | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | 删除可编辑 Campaign 的 step |

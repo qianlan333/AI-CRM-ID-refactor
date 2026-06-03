@@ -35,3 +35,11 @@ def test_workspace_write_controls_are_explicitly_disabled_for_group_18():
     assert "if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }" in source
     assert "const editable = !CAMPAIGN_WRITE_DISABLED" in source
     assert "const startable = !CAMPAIGN_WRITE_DISABLED" in source
+
+
+def test_campaign_read_urls_do_not_point_to_legacy_or_compat_surfaces():
+    source = _source()
+
+    assert "production_compat" not in source
+    assert "fetch('/admin/cloud-orchestrator/campaigns" not in source
+    assert 'fetch("/admin/cloud-orchestrator/campaigns' not in source

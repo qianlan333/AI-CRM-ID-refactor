@@ -136,15 +136,29 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
     runtime_owner: next_read_model
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_cloud_orchestrator_campaigns_read_routes.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Campaign list/detail/members/steps read surfaces are Next exact/read-model primary; production_compat broad rollback is retained for this validation group; no real WeCom send and no automation runtime.
+    notes: Campaign list/detail/members/steps read legacy rollback removed; Next read model only; no real WeCom send and no automation runtime.
+  - route_id: cloud_orchestrator_campaigns_page
+    path_pattern: /admin/cloud-orchestrator/campaigns
+    methods: [GET]
+    capability_owner: aicrm_next.cloud_orchestrator
+    runtime_owner: frontend_compat over Next read APIs
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_cloud_orchestrator_campaigns_frontend_contract.py
+    rollback_owner: aicrm_next.cloud_orchestrator
+    notes: Campaign workspace page is locked to the Next shell over Next campaign read APIs; write controls remain disabled/out of scope; no real send/runtime.
   - route_id: cloud_orchestrator_campaigns_write_legacy_family
     path_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]

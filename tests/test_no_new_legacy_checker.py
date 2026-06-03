@@ -7,6 +7,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
     check_cloud_orchestrator_media_upload_closeout_lock,
+    check_cloud_orchestrator_campaign_read_closeout_lock,
     check_customer_read_model_legacy_deletion,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
@@ -135,6 +136,142 @@ def test_cloud_orchestrator_media_upload_closeout_guard_blocks_rollback(tmp_path
     assert "cloud_media_upload_registry_rollback_lifecycle" in codes
     assert "cloud_media_upload_manifest_legacy_allowed" in codes
     assert "cloud_media_upload_manifest_rollback_lifecycle" in codes
+
+
+def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory = tmp_path / "docs/architecture/cloud_orchestrator_campaigns_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    read_model = tmp_path / "aicrm_next/cloud_orchestrator/campaigns_read.py"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    compat.parent.mkdir(parents=True, exist_ok=True)
+    api.parent.mkdir(parents=True, exist_ok=True)
+
+    legacy_allowed = "false" if locked else "true"
+    legacy_source = '""' if locked else "production_compat"
+    delete_status = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement_status = "locked" if locked else "validating"
+    delete_ready = "true" if locked else "false"
+
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: cloud_orchestrator_campaigns_read_family\n"
+        "    path_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {'next_read_model' if locked else 'production_compat'}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: cloud_orchestrator_campaigns_page\n"
+        "    path_pattern: /admin/cloud-orchestrator/campaigns\n"
+        "    methods: [GET]\n"
+        "    runtime_owner: frontend_compat over Next read APIs\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    legacy_source: \"\"\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: cloud_orchestrator_campaigns_write_legacy_family\n"
+        "    path_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
+        "    methods: [POST, PUT, PATCH, DELETE, OPTIONS]\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        f"    production_behavior: {'next_exact' if locked else 'legacy_forward'}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_pattern: /admin/cloud-orchestrator/campaigns\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
+        "    methods: [POST, PUT, PATCH, DELETE, OPTIONS]\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    external_side_effect_risk: real_blocked\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_ready: false\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    inventory.write_text(
+        "Frontend API Backend Contract Matrix\n"
+        "Deletion Closeout Status Matrix\n"
+        "legacy_fallback_allowed=false\n"
+        "deletion_locked\n"
+        "legacy fallback removed\n"
+        "write controls disabled/out-of-scope\n"
+        "No real WeCom send\n"
+        "No automation runtime\n"
+        "/api/admin/cloud-orchestrator/campaigns\n"
+        "/api/admin/cloud-orchestrator/campaigns/{campaign_code}\n"
+        "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members\n"
+        "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps\n",
+        encoding="utf-8",
+    )
+    methods = "_ALL_METHODS" if compat_get else "_CAMPAIGN_WRITE_METHODS"
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "_ALL_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']\n"
+        "_CAMPAIGN_WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']\n"
+        f"@router.api_route('/api/admin/cloud-orchestrator/campaigns', methods={methods})\n"
+        f"@router.api_route('/api/admin/cloud-orchestrator/campaigns/{{path:path}}', methods={methods})\n"
+        "async def legacy_cloud_orchestrator_campaign_routes(request):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    api.write_text("def read():\n    return {'fallback_used': False, 'real_external_call_executed': False}\n", encoding="utf-8")
+    read_model.write_text("def read():\n    return {'ok': True}\n", encoding="utf-8")
+
+
+def test_cloud_orchestrator_campaign_read_closeout_guard_passes_current_repo() -> None:
+    assert check_cloud_orchestrator_campaign_read_closeout_lock() == []
+
+
+def test_cloud_orchestrator_campaign_read_closeout_guard_blocks_rollback(tmp_path: Path) -> None:
+    _write_cloud_campaign_read_docs(tmp_path, locked=False, compat_get=True)
+
+    violations = check_cloud_orchestrator_campaign_read_closeout_lock(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "cloud_campaign_read_production_compat_get_route" in codes
+    assert "cloud_campaign_read_registry_owner" in codes
+    assert "cloud_campaign_read_registry_legacy_allowed" in codes
+    assert "cloud_campaign_read_registry_rollback_lifecycle" in codes
+    assert "cloud_campaign_read_manifest_legacy_allowed" in codes
+    assert "cloud_campaign_read_manifest_legacy_forward" in codes
+    assert "cloud_campaign_read_manifest_rollback_lifecycle" in codes
 
 
 def _write_media_library_docs(tmp_path: Path, *, locked: bool = True) -> None:

@@ -37,6 +37,11 @@ def test_campaign_read_exact_routes_win_over_production_compat():
 
     assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/batch-start") == "production_compat"
     assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "production_compat"
+    for item in samples:
+        if item["method"] == "GET" and item["path"].startswith("/api/admin/cloud-orchestrator/campaigns"):
+            assert item["manifest_production_behavior"] == "next_exact"
+            assert item["manifest_current_runtime_owner"] == "next"
+            assert item["route_owner"] == "next"
 
 
 def test_campaign_read_requests_do_not_touch_legacy_forward(monkeypatch):

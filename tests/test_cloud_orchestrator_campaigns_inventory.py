@@ -16,7 +16,9 @@ def test_campaign_inventory_exists_and_has_contract_matrix():
     text = _text()
 
     assert "Frontend API Backend Contract Matrix" in text
+    assert "Deletion Closeout Status Matrix" in text
     assert "| 页面入口 | 前端模板/JS | 动作 | API | Method | Handler | Repo/Read Model | 外部副作用 | 本组决策 | Smoke |" in text
+    assert "| 页面入口 | 前端模板/JS | 动作 | API | Method | Handler | Closeout 状态 | Smoke |" in text
     assert "cloud_campaigns_workspace.html" in text
     assert "/admin/cloud-orchestrator/campaigns" in text
 
@@ -41,6 +43,9 @@ def test_campaign_inventory_covers_read_write_and_timer_boundaries():
 
     assert "out-of-scope" in text
     assert "not deletion_locked" in text
+    assert "legacy_fallback_allowed=false" in text
+    assert "legacy fallback removed" in text
+    assert "locked: Next read model only" in text
     assert "No real WeCom send" in text
     assert "No automation runtime" in text
     assert "Media upload remains locked" in text

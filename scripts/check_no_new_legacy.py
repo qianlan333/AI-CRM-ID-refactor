@@ -225,6 +225,33 @@ MEDIA_LIBRARY_DIRECT_EXTERNAL_MARKERS = {
     "default real_enabled": "media_library_real_enabled_default",
 }
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
+CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
+CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
+CLOUD_ORCHESTRATOR_CAMPAIGN_READ_SAMPLES = (
+    "/api/admin/cloud-orchestrator/campaigns",
+    "/api/admin/cloud-orchestrator/campaigns/{campaign_code}",
+    "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members",
+    "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps",
+)
+CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
+    "WeComClient.from_app": "cloud_campaign_read_wecom_client",
+    "send_message": "cloud_campaign_read_send_message",
+    "dispatch_wecom_task": "cloud_campaign_read_dispatch_wecom_task",
+    "process_due_campaign_members": "cloud_campaign_read_runtime",
+    "run_due": "cloud_campaign_read_runtime",
+    "requests.": "cloud_campaign_read_direct_http_client",
+    "httpx": "cloud_campaign_read_direct_http_client",
+    "access_token": "cloud_campaign_read_access_token",
+    "real_external_call_executed=True": "cloud_campaign_read_real_external_call_true",
+    "real_external_call_executed = True": "cloud_campaign_read_real_external_call_true",
+    '"real_external_call_executed": True': "cloud_campaign_read_real_external_call_true",
+    "'real_external_call_executed': True": "cloud_campaign_read_real_external_call_true",
+    "automation_runtime=True": "cloud_campaign_read_runtime_true",
+    "automation_runtime = True": "cloud_campaign_read_runtime_true",
+    "wecom_send=True": "cloud_campaign_read_wecom_send_true",
+    "wecom_send = True": "cloud_campaign_read_wecom_send_true",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_media_upload_wecom_client",
     "_upload_private_message_image": "cloud_media_upload_private_image_upload",
@@ -341,6 +368,59 @@ def _decorator_route_paths(path: Path) -> list[str]:
     return route_paths
 
 
+def _module_list_constants(tree: ast.AST) -> dict[str, tuple[str, ...]]:
+    constants: dict[str, tuple[str, ...]] = {}
+    for node in getattr(tree, "body", []):
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        if not isinstance(node.value, (ast.List, ast.Tuple)):
+            continue
+        values: list[str] = []
+        for item in node.value.elts:
+            if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                values.append(item.value.upper())
+        if values:
+            constants[node.targets[0].id] = tuple(values)
+    return constants
+
+
+def _decorator_route_methods(path: Path) -> list[tuple[str, tuple[str, ...]]]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    constants = _module_list_constants(tree)
+    route_methods: list[tuple[str, tuple[str, ...]]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            attr = decorator.func
+            if not isinstance(attr, ast.Attribute) or attr.attr != "api_route":
+                continue
+            if not decorator.args:
+                continue
+            first = decorator.args[0]
+            if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+                continue
+            methods: tuple[str, ...] = ("GET",)
+            for keyword in decorator.keywords:
+                if keyword.arg != "methods":
+                    continue
+                if isinstance(keyword.value, (ast.List, ast.Tuple)):
+                    parsed = [
+                        str(item.value).upper()
+                        for item in keyword.value.elts
+                        if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                    ]
+                    methods = tuple(parsed)
+                elif isinstance(keyword.value, ast.Name):
+                    methods = constants.get(keyword.value.id, methods)
+            route_methods.append((first.value, methods))
+    return route_methods
+
+
 def _decorated_route_function_sources(path: Path) -> dict[str, list[str]]:
     text = path.read_text(encoding="utf-8")
     tree = ast.parse(text)
@@ -382,12 +462,12 @@ def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
     service = RouteRegistryService()
     violations: list[Violation] = []
     compat_path = root / "aicrm_next/production_compat/api.py"
-    for route_path in _decorator_route_paths(compat_path):
+    for route_path, methods in _decorator_route_methods(compat_path):
         registry_lookup_path = {
             "/api/admin/wecom/tags": "/api/admin/wecom/tags*",
             "/api/admin/wecom/tag-groups": "/api/admin/wecom/tag-groups*",
         }.get(route_path, route_path)
-        entry = service.find_route(registry_lookup_path, None)
+        entry = service.find_route(registry_lookup_path, set(methods))
         if not entry:
             violations.append(Violation("production_compat_route_not_registered", str(compat_path.relative_to(root)), route_path))
             continue
@@ -2048,6 +2128,193 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
     return violations
 
 
+def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/cloud_orchestrator_campaigns_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(
+            Violation(
+                "cloud_campaign_read_inventory_missing",
+                str(inventory_path.relative_to(root)),
+                "missing Cloud Orchestrator campaigns route inventory document",
+            )
+        )
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Deletion Closeout Status Matrix",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "legacy fallback removed",
+            "write controls disabled/out-of-scope",
+            "No real WeCom send",
+            "No automation runtime",
+        ):
+            if phrase not in inventory_text:
+                violations.append(
+                    Violation(
+                        "cloud_campaign_read_inventory_boundary_missing",
+                        str(inventory_path.relative_to(root)),
+                        phrase,
+                        "Document that campaign read/workspace routes are locked to Next and write/run-due remain out of scope.",
+                    )
+                )
+        for route_path in CLOUD_ORCHESTRATOR_CAMPAIGN_READ_SAMPLES:
+            if route_path not in inventory_text:
+                violations.append(
+                    Violation(
+                        "cloud_campaign_read_inventory_route_missing",
+                        str(inventory_path.relative_to(root)),
+                        route_path,
+                    )
+                )
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, methods in _decorator_route_methods(compat_path):
+            if route_path in {
+                "/api/admin/cloud-orchestrator/campaigns",
+                "/api/admin/cloud-orchestrator/campaigns/{path:path}",
+            } and "GET" in set(methods):
+                violations.append(
+                    Violation(
+                        "cloud_campaign_read_production_compat_get_route",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={methods}",
+                        "Campaign GET read rollback is deletion_locked; production_compat may retain only write/run-due methods.",
+                    )
+                )
+
+    read_model_path = root / "aicrm_next/cloud_orchestrator/campaigns_read.py"
+    if read_model_path.exists():
+        text = read_model_path.read_text(encoding="utf-8")
+        rel = str(read_model_path.relative_to(root))
+        for marker, code in CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Campaign read closeout must not trigger real WeCom send, automation runtime, token exchange, or direct HTTP calls.",
+                    )
+                )
+
+    api_path = root / "aicrm_next/cloud_orchestrator/api.py"
+    if api_path.exists():
+        api_text = api_path.read_text(encoding="utf-8")
+        rel = str(api_path.relative_to(root))
+        for marker in (
+            "X-AICRM-Compatibility-Facade",
+            '"fallback_used": True',
+            "'fallback_used': True",
+            "fallback_used=True",
+            "real_external_call_executed=True",
+            "real_external_call_executed = True",
+            '"real_external_call_executed": True',
+            "'real_external_call_executed': True",
+        ):
+            if marker in api_text:
+                violations.append(
+                    Violation(
+                        "cloud_campaign_read_response_contract_drift",
+                        rel,
+                        marker,
+                        "Campaign read API must return fallback_used=false, no compatibility facade, and no real_external_call_executed=true.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    read_record = registry_by_id.get("cloud_orchestrator_campaigns_read_family")
+    if read_record is None:
+        violations.append(Violation("cloud_campaign_read_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", "cloud_orchestrator_campaigns_read_family"))
+    else:
+        if read_record.get("path_pattern") != CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE or tuple(read_record.get("methods") or []) != ("GET",):
+            violations.append(Violation("cloud_campaign_read_registry_route_shape", "cloud_orchestrator_campaigns_read_family", f"path_pattern={read_record.get('path_pattern')} methods={read_record.get('methods')}"))
+        if read_record.get("runtime_owner") != "next_read_model":
+            violations.append(Violation("cloud_campaign_read_registry_owner", "cloud_orchestrator_campaigns_read_family", f"runtime_owner={read_record.get('runtime_owner')}"))
+        if read_record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("cloud_campaign_read_registry_production_compat_owner", "cloud_orchestrator_campaigns_read_family", "runtime_owner=production_compat"))
+        if read_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_read_registry_legacy_allowed", "cloud_orchestrator_campaigns_read_family", f"legacy_fallback_allowed={read_record.get('legacy_fallback_allowed')}"))
+        if read_record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("cloud_campaign_read_registry_legacy_source", "cloud_orchestrator_campaigns_read_family", f"legacy_source={read_record.get('legacy_source')}"))
+        if read_record.get("external_side_effect_risk") != "none":
+            violations.append(Violation("cloud_campaign_read_registry_side_effect_risk", "cloud_orchestrator_campaigns_read_family", f"external_side_effect_risk={read_record.get('external_side_effect_risk')}"))
+        if read_record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("cloud_campaign_read_registry_rollback_lifecycle", "cloud_orchestrator_campaigns_read_family", "delete_status=next_primary_with_legacy_rollback"))
+        if read_record.get("delete_status") != "deletion_locked" or read_record.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_read_registry_lifecycle", "cloud_orchestrator_campaigns_read_family", f"delete_status={read_record.get('delete_status')} replacement_status={read_record.get('replacement_status')}"))
+
+    page_record = registry_by_id.get("cloud_orchestrator_campaigns_page")
+    if page_record is None:
+        violations.append(Violation("cloud_campaign_page_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", "cloud_orchestrator_campaigns_page"))
+    else:
+        if page_record.get("path_pattern") != CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE or tuple(page_record.get("methods") or []) != ("GET",):
+            violations.append(Violation("cloud_campaign_page_registry_route_shape", "cloud_orchestrator_campaigns_page", f"path_pattern={page_record.get('path_pattern')} methods={page_record.get('methods')}"))
+        if page_record.get("runtime_owner") != "frontend_compat over Next read APIs":
+            violations.append(Violation("cloud_campaign_page_registry_owner", "cloud_orchestrator_campaigns_page", f"runtime_owner={page_record.get('runtime_owner')}"))
+        if page_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_page_registry_legacy_allowed", "cloud_orchestrator_campaigns_page", f"legacy_fallback_allowed={page_record.get('legacy_fallback_allowed')}"))
+        if page_record.get("delete_status") != "deletion_locked" or page_record.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_page_registry_lifecycle", "cloud_orchestrator_campaigns_page", f"delete_status={page_record.get('delete_status')} replacement_status={page_record.get('replacement_status')}"))
+
+    write_record = registry_by_id.get("cloud_orchestrator_campaigns_write_legacy_family")
+    if write_record is None:
+        violations.append(Violation("cloud_campaign_write_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", "cloud_orchestrator_campaigns_write_legacy_family"))
+    else:
+        if write_record.get("runtime_owner") != "production_compat":
+            violations.append(Violation("cloud_campaign_write_registry_owner", "cloud_orchestrator_campaigns_write_legacy_family", f"runtime_owner={write_record.get('runtime_owner')}"))
+        if write_record.get("delete_status") == "deletion_locked" or write_record.get("replacement_status") == "locked":
+            violations.append(Violation("cloud_campaign_write_registry_mislocked", "cloud_orchestrator_campaigns_write_legacy_family", f"delete_status={write_record.get('delete_status')} replacement_status={write_record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    read_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, ("GET",))
+    if read_manifest is None:
+        violations.append(Violation("cloud_campaign_read_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE))
+    else:
+        if read_manifest.get("current_runtime_owner") != "next":
+            violations.append(Violation("cloud_campaign_read_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"current_runtime_owner={read_manifest.get('current_runtime_owner')}"))
+        if read_manifest.get("production_behavior") != "next_exact":
+            violations.append(Violation("cloud_campaign_read_manifest_behavior", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"production_behavior={read_manifest.get('production_behavior')}"))
+        if read_manifest.get("production_behavior") == "legacy_forward":
+            violations.append(Violation("cloud_campaign_read_manifest_legacy_forward", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, "production_behavior=legacy_forward"))
+        if read_manifest.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_read_manifest_legacy_allowed", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"legacy_fallback_allowed={read_manifest.get('legacy_fallback_allowed')}"))
+        if read_manifest.get("external_side_effect_risk") != "none":
+            violations.append(Violation("cloud_campaign_read_manifest_side_effect_risk", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"external_side_effect_risk={read_manifest.get('external_side_effect_risk')}"))
+        if read_manifest.get("delete_ready") is not True:
+            violations.append(Violation("cloud_campaign_read_manifest_delete_ready", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"delete_ready={read_manifest.get('delete_ready')}"))
+        if read_manifest.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("cloud_campaign_read_manifest_rollback_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, "delete_status=next_primary_with_legacy_rollback"))
+        if read_manifest.get("delete_status") != "deletion_locked" or read_manifest.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_read_manifest_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"delete_status={read_manifest.get('delete_status')} replacement_status={read_manifest.get('replacement_status')}"))
+
+    page_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE, ("GET",))
+    if page_manifest is None:
+        violations.append(Violation("cloud_campaign_page_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE))
+    else:
+        if page_manifest.get("current_runtime_owner") != "next":
+            violations.append(Violation("cloud_campaign_page_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE, f"current_runtime_owner={page_manifest.get('current_runtime_owner')}"))
+        if page_manifest.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_page_manifest_legacy_allowed", CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE, f"legacy_fallback_allowed={page_manifest.get('legacy_fallback_allowed')}"))
+        if page_manifest.get("delete_status") != "deletion_locked" or page_manifest.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_page_manifest_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE, f"delete_status={page_manifest.get('delete_status')} replacement_status={page_manifest.get('replacement_status')}"))
+
+    write_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_METHODS)
+    if write_manifest is None:
+        violations.append(Violation("cloud_campaign_write_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE))
+    else:
+        if write_manifest.get("current_runtime_owner") != "production_compat":
+            violations.append(Violation("cloud_campaign_write_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"current_runtime_owner={write_manifest.get('current_runtime_owner')}"))
+        if write_manifest.get("delete_status") == "deletion_locked" or write_manifest.get("replacement_status") == "locked":
+            violations.append(Violation("cloud_campaign_write_manifest_mislocked", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"delete_status={write_manifest.get('delete_status')} replacement_status={write_manifest.get('replacement_status')}"))
+
+    return violations
+
+
 def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     inventory_path = root / "docs/architecture/wecom_tag_write_route_inventory.md"
@@ -2322,6 +2589,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
+        + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
