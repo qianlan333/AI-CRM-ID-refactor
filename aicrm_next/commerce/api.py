@@ -35,6 +35,7 @@ from .application import (
     UpsertProductCommand,
 )
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
+from .repo import build_commerce_repository
 
 router = APIRouter()
 _COMMERCE_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -273,6 +274,14 @@ def list_products(limit: int = 50, offset: int = 0) -> dict:
         _raise_http(exc)
 
 
+@router.get("/api/admin/wechat-pay/products/lead-channels")
+def list_product_lead_channels() -> dict:
+    try:
+        return {"ok": True, "items": build_commerce_repository().list_lead_channels()}
+    except Exception as exc:
+        _raise_http(exc)
+
+
 @router.get("/api/admin/wechat-pay/products/{product_id}")
 def get_product(product_id: str) -> dict:
     try:
@@ -288,6 +297,69 @@ def share_product(product_id: str, request: Request) -> dict:
     except Exception as exc:
         _raise_http(exc)
     return {"ok": True, "share": _share_payload(request, product)}
+
+
+@router.post("/api/admin/wechat-pay/products/{product_id}/copy")
+def copy_product(product_id: str) -> JSONResponse:
+    try:
+        product = build_commerce_repository().copy_product(product_id)
+    except Exception as exc:
+        _raise_http(exc)
+    return JSONResponse({"ok": True, "product": product}, status_code=201)
+
+
+@router.get("/api/admin/wechat-pay/products/{product_id}/external-push")
+def get_product_external_push(product_id: str) -> dict:
+    try:
+        return {"ok": True, "config": build_commerce_repository().get_external_push_config(product_id)}
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/wechat-pay/products/{product_id}/external-push")
+async def save_product_external_push(product_id: str, request: Request) -> dict:
+    try:
+        payload = await request.json()
+        config = build_commerce_repository().save_external_push_config(product_id, payload if isinstance(payload, dict) else {})
+    except Exception as exc:
+        _raise_http(exc)
+    return {"ok": True, "config": config}
+
+
+@router.post("/api/admin/wechat-pay/products/{product_id}/external-push/test")
+def test_product_external_push(product_id: str) -> dict:
+    try:
+        repo = build_commerce_repository()
+        product = repo.get_product(product_id)
+        if not product:
+            raise NotFoundError("product not found")
+        config = repo.get_external_push_config(product_id)
+        if not config.get("webhook_url"):
+            raise ContractError("please save external push config first")
+    except Exception as exc:
+        _raise_http(exc)
+    return {
+        "ok": True,
+        "result": {
+            "delivery": {
+                "status": "preview",
+                "delivery_id": f"preview_product_{product_id}",
+                "request_url": config.get("webhook_url", ""),
+                "product_id": str(product.get("id") or product_id),
+                "side_effect_executed": False,
+            },
+            "payload_preview": {
+                "event": "external_push.test",
+                "product": {
+                    "id": str(product.get("id") or ""),
+                    "code": str(product.get("product_code") or ""),
+                    "name": str(product.get("title") or product.get("name") or ""),
+                },
+                "custom_params": config.get("custom_params") or {},
+            },
+        },
+        "side_effect_safety": {"side_effect_executed": False, "real_external_call_executed": False},
+    }
 
 
 @router.post("/api/admin/wechat-pay/products")
