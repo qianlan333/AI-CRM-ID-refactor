@@ -131,20 +131,34 @@ routes:
     checker: tests/test_admin_hxc_dashboard.py
     rollback_owner: aicrm_next.hxc_dashboard
     notes: HXC dashboard pages retain legacy fallback while Next page parity continues.
-  - route_id: cloud_orchestrator_campaigns_legacy_family
+  - route_id: cloud_orchestrator_campaigns_read_family
     path_pattern: /api/admin/cloud-orchestrator/campaigns*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    methods: [GET]
+    capability_owner: aicrm_next.cloud_orchestrator
+    runtime_owner: next_read_model
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_cloud_orchestrator_campaigns_read_routes.py
+    rollback_owner: aicrm_next.cloud_orchestrator
+    notes: Campaign list/detail/members/steps read surfaces are Next exact/read-model primary; production_compat broad rollback is retained for this validation group; no real WeCom send and no automation runtime.
+  - route_id: cloud_orchestrator_campaigns_write_legacy_family
+    path_pattern: /api/admin/cloud-orchestrator/campaigns*
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
     runtime_owner: production_compat
     legacy_fallback_allowed: true
     legacy_source: production_compat
-    external_side_effect_risk: medium
+    external_side_effect_risk: high
     adapter_mode: real_blocked
     delete_status: active
     replacement_status: not_started
-    checker: tests/test_cloud_orchestrator_external_agent.py
+    checker: tests/test_cloud_orchestrator_campaigns_inventory.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Legacy campaign execution fallback retained for cloud orchestrator.
+    notes: Campaign write/execute/step mutation/batch-start routes remain out of scope for group 18 and are not deletion_locked; real sends and automation runtime are not executed by the Next read surface.
   - route_id: cloud_orchestrator_admin_family
     path_pattern: /admin/cloud-orchestrator*
     methods: [GET]

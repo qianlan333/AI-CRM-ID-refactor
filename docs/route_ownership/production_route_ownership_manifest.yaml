@@ -1068,6 +1068,34 @@ routes:
     delete_ready: false
     checker: tools/check_next_timer_route_readiness.py
     notes: Campaign run-due timer route is safe-mode only.
+  - route_pattern: /api/admin/cloud-orchestrator/campaigns*
+    methods: [GET]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: false
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tools/check_production_route_resolution.py
+    notes: Campaign read/list/detail/members/steps are Next primary exact routes; broad production_compat rollback is retained until validation; no real WeCom send, no real storage, and no automation runtime.
+  - route_pattern: /api/admin/cloud-orchestrator/campaigns*
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    adapter_mode: real_blocked
+    delete_ready: false
+    delete_status: active
+    replacement_status: not_started
+    checker: tools/check_production_route_resolution.py
+    notes: Campaign write/execute/step mutation/batch-start routes remain out of scope for group 18; retained legacy fallback is not deletion_locked and this group does not permit real send/runtime execution.
   - route_pattern: /api/admin/cloud-orchestrator/media/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator

@@ -210,6 +210,8 @@
   const drawerBody = root.querySelector('#cloud-camp-drawer-body');
 
   let currentCode = '';
+  const CAMPAIGN_WRITE_DISABLED = true;
+  const CAMPAIGN_WRITE_DISABLED_MESSAGE = '本组仅开放 Campaign read/workspace 预览；启动、暂停、拒绝、删除和 step 编辑仍在 legacy fallback 删除前置阶段，当前页面不会执行写入或发送。';
 
   const fmt = s => (s == null ? '' : String(s));
   const escapeHtml = s => fmt(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -408,7 +410,7 @@
   function renderGroupRow(g) {
     const total = g.campaigns.reduce((s, c) => s + (Number(c.member_count) || 0), 0);
     const owners = Array.from(new Set(g.campaigns.map(c => c.owner_userid || '').filter(Boolean)));
-    const hasDraft = g.campaigns.some(c => ['draft', 'pending_review'].includes(c.review_status) && ['draft', 'paused'].includes(c.run_status));
+    const hasDraft = !CAMPAIGN_WRITE_DISABLED && g.campaigns.some(c => ['draft', 'pending_review'].includes(c.review_status) && ['draft', 'paused'].includes(c.run_status));
     const headTr = document.createElement('tr');
     headTr.className = 'cloud-camp-group-head';
     headTr.style.cssText = 'cursor:pointer;background:#fff8e6;border-top:2px solid #f0b400;';
@@ -518,7 +520,7 @@
       </div>
     `);
 
-    const editable = ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
+    const editable = !CAMPAIGN_WRITE_DISABLED && ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
 
     let segHtml = '';
     for (const seg of (overview.segments || [])) {
@@ -627,16 +629,20 @@
       });
     });
 
-    const startable = ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
+    const startable = !CAMPAIGN_WRITE_DISABLED && ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
     const hasSteps = (overview.segments || []).some(s => (s.steps || []).length > 0);
     startBtn.disabled = !startable || !hasSteps;
-    startBtn.title = !hasSteps ? '请先让 Agent 提交带节奏的 propose_campaign' : '';
-    rejectBtn.disabled = ['rejected','cancelled','finished'].includes(camp.review_status) || ['cancelled','finished'].includes(camp.run_status);
-    pauseBtn.disabled = camp.run_status !== 'active';
-    deleteBtn.disabled = camp.run_status === 'active';
+    startBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : (!hasSteps ? '请先让 Agent 提交带节奏的 propose_campaign' : '');
+    rejectBtn.disabled = CAMPAIGN_WRITE_DISABLED || ['rejected','cancelled','finished'].includes(camp.review_status) || ['cancelled','finished'].includes(camp.run_status);
+    rejectBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : '';
+    pauseBtn.disabled = CAMPAIGN_WRITE_DISABLED || camp.run_status !== 'active';
+    pauseBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : '';
+    deleteBtn.disabled = CAMPAIGN_WRITE_DISABLED || camp.run_status === 'active';
+    deleteBtn.title = CAMPAIGN_WRITE_DISABLED ? CAMPAIGN_WRITE_DISABLED_MESSAGE : '';
   }
 
   startBtn.addEventListener('click', async () => {
+    if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
     if (!currentCode) return;
     if (!confirm(`确认启动这个 Campaign 吗？启动后会按节奏自动推送，且不可撤回。`)) return;
     const operator = (window.prompt('确认人（仅做审计标记，可填昵称或工号）', 'ui_user') || '').trim();
@@ -676,6 +682,7 @@
   });
 
   rejectBtn.addEventListener('click', async () => {
+    if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
     if (!currentCode) return;
     const reason = prompt('拒绝原因？（会写入审计日志）', '运营审阅未通过');
     if (reason === null) return;
@@ -697,6 +704,7 @@
   });
 
   pauseBtn.addEventListener('click', async () => {
+    if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
     if (!currentCode) return;
     morePop.hidden = true;
     const reason = prompt('暂停原因？', '运营手动暂停');
@@ -710,6 +718,7 @@
   });
 
   deleteBtn.addEventListener('click', async () => {
+    if (CAMPAIGN_WRITE_DISABLED) { alert(CAMPAIGN_WRITE_DISABLED_MESSAGE); return; }
     if (!currentCode) return;
     morePop.hidden = true;
     if (!confirm('永久删除这个 Campaign？包含所有节奏、命中成员、待发批次都会一并清空，且不可恢复。')) return;

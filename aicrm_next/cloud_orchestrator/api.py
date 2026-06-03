@@ -27,6 +27,14 @@ from .application import (
     RejectCloudPlanRecipientCommand,
     UpdateCloudPlanRecipientMessageCommand,
 )
+from .campaigns_read import (
+    GetCloudCampaignQuery,
+    ListCloudCampaignMembersQuery,
+    ListCloudCampaignStepsQuery,
+    ListCloudCampaignsQuery,
+    ROUTE_OWNER as CAMPAIGN_READ_ROUTE_OWNER,
+    SOURCE_STATUS as CAMPAIGN_READ_SOURCE_STATUS,
+)
 from .media_upload import build_upload_command, diagnostics_payload
 
 router = APIRouter()
@@ -38,6 +46,11 @@ _MEDIA_UPLOAD_HEADERS = {
     "X-AICRM-Fallback-Used": "false",
     "X-AICRM-Real-External-Call-Executed": "false",
     "X-AICRM-WeCom-Media-Upload-Executed": "false",
+}
+_CAMPAIGN_READ_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
 }
 
 
@@ -53,6 +66,21 @@ def _media_error(error: str, *, status_code: int = 400) -> JSONResponse:
     payload = diagnostics_payload()
     payload.update({"ok": False, "error": error})
     return JSONResponse(payload, status_code=status_code, headers=_MEDIA_UPLOAD_HEADERS)
+
+
+def _campaign_read_error(error: str, *, status_code: int = 404) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": error,
+            "source_status": CAMPAIGN_READ_SOURCE_STATUS,
+            "route_owner": CAMPAIGN_READ_ROUTE_OWNER,
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        },
+        status_code=status_code,
+        headers=_CAMPAIGN_READ_HEADERS,
+    )
 
 
 async def _write_context(request: Request) -> tuple[dict[str, Any], str | None]:
@@ -90,6 +118,37 @@ def admin_cloud_plans(request: Request):
     return templates.TemplateResponse(request, "admin_console/cloud_plan_review.html", context)
 
 
+@router.get(
+    "/admin/cloud-orchestrator/campaigns",
+    response_class=HTMLResponse,
+    name="api.admin_cloud_orchestrator_campaigns_workspace",
+)
+def admin_cloud_campaigns(request: Request):
+    context = shell_context(
+        request=request,
+        page_title="AI 助手 · 运营计划审阅",
+        page_summary="Agent 上架的多分层多步骤运营计划在这里审阅启动。",
+        active_endpoint="api.admin_cloud_orchestrator_workspace",
+    )
+    context.update(
+        {
+            "breadcrumbs": [
+                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+                {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
+                {"label": "运营计划审阅"},
+            ],
+            "page_actions": [
+                {
+                    "label": "可观察性",
+                    "href": "/admin/cloud-orchestrator/observability",
+                    "variant": "ghost",
+                },
+            ],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/cloud_campaigns_workspace.html", context)
+
+
 @router.options("/api/admin/cloud-orchestrator/media/upload")
 def api_cloud_orchestrator_media_upload_options() -> JSONResponse:
     payload = diagnostics_payload()
@@ -122,6 +181,57 @@ async def api_cloud_orchestrator_media_upload(
     except ValueError as exc:
         return _media_error(str(exc))
     return JSONResponse(payload, headers=_MEDIA_UPLOAD_HEADERS)
+
+
+@router.get("/api/admin/cloud-orchestrator/campaigns")
+def api_list_cloud_campaigns(
+    review_status: str = "",
+    run_status: str = "",
+    group_code: str = "",
+    limit: int = 5000,
+    offset: int = 0,
+) -> JSONResponse:
+    payload = ListCloudCampaignsQuery()(
+        review_status=review_status,
+        run_status=run_status,
+        group_code=group_code,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.get("/api/admin/cloud-orchestrator/campaigns/{campaign_code}")
+def api_get_cloud_campaign(campaign_code: str) -> JSONResponse:
+    try:
+        payload = GetCloudCampaignQuery()(campaign_code)
+    except LookupError as exc:
+        return _campaign_read_error(str(exc) or "campaign_not_found")
+    except Exception as exc:
+        return _campaign_read_error(str(exc) or "campaign_read_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.get("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members")
+def api_list_cloud_campaign_members(campaign_code: str, status: str = "", limit: int = 200, offset: int = 0) -> JSONResponse:
+    try:
+        payload = ListCloudCampaignMembersQuery()(campaign_code, status=status, limit=limit, offset=offset)
+    except LookupError as exc:
+        return _campaign_read_error(str(exc) or "campaign_not_found")
+    except Exception as exc:
+        return _campaign_read_error(str(exc) or "campaign_members_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.get("/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps")
+def api_list_cloud_campaign_steps(campaign_code: str) -> JSONResponse:
+    try:
+        payload = ListCloudCampaignStepsQuery()(campaign_code)
+    except LookupError as exc:
+        return _campaign_read_error(str(exc) or "campaign_not_found")
+    except Exception as exc:
+        return _campaign_read_error(str(exc) or "campaign_steps_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
 
 
 @router.get(
