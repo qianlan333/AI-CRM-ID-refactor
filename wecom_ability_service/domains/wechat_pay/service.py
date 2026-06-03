@@ -8,6 +8,8 @@ from typing import Any
 
 from flask import current_app
 
+from aicrm_next.commerce.domain import safe_completion_redirect_url
+
 from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ...infra.settings import get_setting
@@ -15,7 +17,7 @@ from ...infra.text_encoding import repair_utf8_mojibake
 from . import repo
 from .client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from .exceptions import WeChatPayConfigError, WeChatPayOrderError
-from .product_service import get_lead_qr_for_product_code, get_product, list_products
+from .product_service import get_completion_redirect_for_product_code, get_lead_qr_for_product_code, get_product, list_products
 
 
 logger = logging.getLogger(__name__)
@@ -134,10 +136,27 @@ def _order_public_payload(order: dict[str, Any]) -> dict[str, Any]:
         "paid_at": _normalized_text(order.get("paid_at")),
         "created_at": _normalized_text(order.get("created_at")),
     }
+    completion_redirect = get_completion_redirect_for_product_code(payload["product_code"])
+    payload["completion_redirect_enabled"] = bool(completion_redirect.get("completion_redirect_enabled"))
+    payload["completion_redirect_url"] = safe_completion_redirect_url(completion_redirect.get("completion_redirect_url"))
+    effective_completion_redirect = dict(completion_redirect.get("completion_redirect") or {})
+    payload["completion_redirect"] = {
+        "enabled": bool(effective_completion_redirect.get("enabled")),
+        "url": safe_completion_redirect_url(effective_completion_redirect.get("url")),
+    }
+    payload["completion_action"] = (
+        {"type": "redirect", "redirect_url": payload["completion_redirect"]["url"]}
+        if payload["completion_redirect"]["enabled"] and payload["completion_redirect"]["url"]
+        else {"type": "default", "redirect_url": ""}
+    )
     if _is_order_effectively_paid(order):
-        lead_qr = get_lead_qr_for_product_code(payload["product_code"])
-        if lead_qr.get("qr_url"):
-            payload["lead_qr"] = lead_qr
+        if payload["completion_redirect"]["enabled"] and payload["completion_redirect"]["url"]:
+            payload["completion_redirect_url"] = payload["completion_redirect"]["url"]
+        else:
+            lead_qr = get_lead_qr_for_product_code(payload["product_code"])
+            if lead_qr.get("qr_url"):
+                payload["lead_qr"] = lead_qr
+                payload["completion_action"] = {"type": "lead_qr", "redirect_url": ""}
     return payload
 
 
@@ -543,6 +562,7 @@ def build_checkout_page_state(
         raise WeChatPayOrderError("product_not_configured")
     identity_payload = dict(identity or {})
     paid_order = _existing_paid_order_for_product(product, identity_payload) if identity_payload else None
+    completion_redirect = get_completion_redirect_for_product_code(product["product_code"])
     return {
         "product": product,
         "identity_ready": bool(_normalized_text(identity_payload.get("openid"))),
@@ -553,5 +573,7 @@ def build_checkout_page_state(
         "require_mobile": bool(product.get("require_mobile")),
         "cta_text": _normalized_text(product.get("cta_text")) or "确认支付",
         "lead_plan_configured": bool(product.get("lead_plan_configured")),
+        "completion_redirect": completion_redirect,
+        "completion_action": completion_redirect.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
     }

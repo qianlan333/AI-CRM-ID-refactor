@@ -9,7 +9,8 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
-from .domain import normalize_status, now_iso, validate_price_cents, validate_product_code
+from .domain import completion_redirect_projection, normalize_status, now_iso, validate_completion_redirect, validate_price_cents
+from .domain import validate_product_code
 
 
 class CommerceRepository(Protocol):
@@ -48,6 +49,8 @@ def _seed_products() -> list[dict[str, Any]]:
             "detail_image_ids": ["image_masked_001"],
             "detail_sections": [{"title": "商品详情", "body": "脱敏 fixture 内容"}],
             "buy_button_text": "立即购买",
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
             "require_mobile": False,
             "lead_program_id": None,
             "lead_channel_id": None,
@@ -70,6 +73,8 @@ def _seed_products() -> list[dict[str, Any]]:
             "detail_image_ids": [],
             "detail_sections": [],
             "buy_button_text": "暂不可购买",
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
             "require_mobile": True,
             "lead_program_id": None,
             "lead_channel_id": None,
@@ -102,6 +107,10 @@ def _seed_orders() -> list[dict[str, Any]]:
             "created_at": ts,
             "updated_at": ts,
             "quantity": 1,
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "",
+            "completion_redirect": {"enabled": False, "url": ""},
+            "completion_action": {"type": "default", "redirect_url": ""},
         }
     ]
 
@@ -127,6 +136,18 @@ class InMemoryCommerceRepository:
 
     def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]:
         validate_price_cents(int(payload.get("price_cents", 0)))
+        normalized_redirect = validate_completion_redirect(
+            payload.get("completion_redirect_enabled"),
+            payload.get("completion_redirect_url"),
+        )
+        payload = {
+            **payload,
+            **normalized_redirect,
+            **completion_redirect_projection(
+                normalized_redirect["completion_redirect_enabled"],
+                normalized_redirect["completion_redirect_url"],
+            ),
+        }
         now = now_iso()
         code = validate_product_code(str(payload["product_code"]))
         payload = {**payload, "product_code": code}
@@ -291,6 +312,10 @@ class InMemoryCommerceRepository:
             "lead_channel_id": _positive_int_or_none(payload.get("lead_channel_id")),
             "slices": slices,
             "slice_count": len(slices),
+            **completion_redirect_projection(
+                payload.get("completion_redirect_enabled"),
+                payload.get("completion_redirect_url"),
+            ),
         }
 
     def _serialize_product(self, item: dict[str, Any]) -> dict[str, Any]:
@@ -299,6 +324,10 @@ class InMemoryCommerceRepository:
         status = _normalize_product_status(item.get("status") or ("active" if item.get("enabled") else "disabled"))
         cta = str(item.get("buy_button_text") or item.get("cta_text") or "立即购买").strip() or "立即购买"
         slices = _normalize_slices(item.get("slices") or [])
+        completion_redirect = completion_redirect_projection(
+            item.get("completion_redirect_enabled"),
+            item.get("completion_redirect_url"),
+        )
         return {
             **deepcopy(item),
             "title": title,
@@ -314,6 +343,7 @@ class InMemoryCommerceRepository:
             "lead_channel_id": _positive_int_or_none(item.get("lead_channel_id")),
             "slices": slices,
             "slice_count": len(slices),
+            **completion_redirect,
         }
 
 
@@ -490,6 +520,11 @@ class PostgresCommerceRepository:
 
     def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]:
         validate_price_cents(int(payload.get("price_cents", 0)))
+        normalized_redirect = validate_completion_redirect(
+            payload.get("completion_redirect_enabled"),
+            payload.get("completion_redirect_url"),
+        )
+        payload = {**payload, **normalized_redirect}
         code = validate_product_code(str(payload["product_code"]))
         status = _normalize_product_status(payload.get("status") or ("active" if payload.get("enabled", True) else "disabled"))
         enabled = status == "active"
@@ -507,6 +542,8 @@ class PostgresCommerceRepository:
             "require_mobile": bool(payload.get("require_mobile", False)),
             "lead_program_id": lead_program_id,
             "lead_channel_id": lead_channel_id,
+            "completion_redirect_enabled": bool(normalized_redirect["completion_redirect_enabled"]),
+            "completion_redirect_url": str(normalized_redirect["completion_redirect_url"] or ""),
             "metadata_json": _jsonb(metadata),
         }
         with self._connect() as conn:
@@ -544,6 +581,8 @@ class PostgresCommerceRepository:
                         require_mobile = %(require_mobile)s,
                         lead_program_id = %(lead_program_id)s,
                         lead_channel_id = %(lead_channel_id)s,
+                        completion_redirect_enabled = %(completion_redirect_enabled)s,
+                        completion_redirect_url = %(completion_redirect_url)s,
                         metadata_json = %(metadata_json)s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id::text = %(product_id)s
@@ -574,6 +613,8 @@ class PostgresCommerceRepository:
                     require_mobile,
                     lead_program_id,
                     lead_channel_id,
+                    completion_redirect_enabled,
+                    completion_redirect_url,
                     metadata_json,
                     created_at,
                     updated_at
@@ -589,6 +630,8 @@ class PostgresCommerceRepository:
                     %(require_mobile)s,
                     %(lead_program_id)s,
                     %(lead_channel_id)s,
+                    %(completion_redirect_enabled)s,
+                    %(completion_redirect_url)s,
                     %(metadata_json)s,
                     CURRENT_TIMESTAMP,
                     CURRENT_TIMESTAMP
@@ -763,6 +806,10 @@ class PostgresCommerceRepository:
         cta = str(row.get("cta_text") or "立即购买")
         status = str(row.get("status") or ("active" if row.get("enabled") else "disabled"))
         slices = slices or []
+        completion_redirect = completion_redirect_projection(
+            row.get("completion_redirect_enabled"),
+            row.get("completion_redirect_url"),
+        )
         return {
             "id": str(row.get("id") or ""),
             "product_code": product_code,
@@ -785,6 +832,7 @@ class PostgresCommerceRepository:
             "lead_channel_id": _positive_int_or_none(row.get("lead_channel_id")),
             "slices": slices,
             "slice_count": int(row.get("slice_count") or len(slices)),
+            **completion_redirect,
             "created_at": str(row.get("created_at") or ""),
             "updated_at": str(row.get("updated_at") or ""),
             "deleted": False,

@@ -129,6 +129,22 @@
             <label for="leadChannel">引流渠道码</label>
             <select id="leadChannel"></select>
           </div>
+          <div class="product-toast" id="completionRedirectLeadHint" style="display:none;">当前已开启完成后跳转，支付成功后将不会自动弹出引流二维码。</div>
+        </div>
+
+        <div class="product-section">
+          <h2>报名完成后跳转</h2>
+          <div class="product-toast">开启后，用户完成商品报名/支付成功后将直接跳转到指定链接，不再弹出引流二维码。关闭后保持原有二维码引流逻辑。</div>
+          <div class="product-field-grid">
+            <div class="product-field product-wide">
+              <label><input id="completionRedirectEnabled" type="checkbox"> 开启完成后跳转</label>
+            </div>
+            <div class="product-field product-wide">
+              <label for="completionRedirectUrl">跳转链接</label>
+              <input id="completionRedirectUrl" placeholder="https://example.com/welcome">
+              <div class="product-toast">建议填写 https 链接。开启后该链接优先级高于支付后引流二维码。</div>
+            </div>
+          </div>
         </div>
 
         <div class="product-section" id="externalPushSection">
@@ -209,7 +225,14 @@
   const mode = root.dataset.mode || "list";
   const initialProduct = JSON.parse(root.dataset.product || "{}");
   const toast = document.getElementById("productToast");
-  let product = Object.assign({ status: "draft", buy_button_text: "立即购买", require_mobile: false, slices: [] }, initialProduct);
+  let product = Object.assign({
+    status: "draft",
+    buy_button_text: "立即购买",
+    require_mobile: false,
+    completion_redirect_enabled: false,
+    completion_redirect_url: "",
+    slices: []
+  }, initialProduct);
   let externalPush = { enabled: false, webhook_url: "", push_type: "", expires_at_ts: "", day: "", frequency: "", remark: "", custom_params: {} };
   let leadChannels = [{ channel_id: 0, channel_name: "不配置引流渠道码", selectable: true }];
   let dragId = "";
@@ -266,7 +289,27 @@
     $("requireMobile").value = product.require_mobile ? "true" : "false";
     $("productDescription").value = product.description || "";
     $("leadChannel").value = String(product.lead_channel_id || 0);
+    $("completionRedirectEnabled").checked = Boolean(product.completion_redirect_enabled);
+    $("completionRedirectUrl").value = product.completion_redirect_url || "";
+    syncCompletionRedirectHint();
     renderSlices();
+  }
+
+  function syncCompletionRedirectHint() {
+    const hint = $("completionRedirectLeadHint");
+    if (hint) hint.style.display = $("completionRedirectEnabled")?.checked ? "block" : "none";
+  }
+
+  function completionRedirectPayload() {
+    const enabled = Boolean($("completionRedirectEnabled").checked);
+    const url = String($("completionRedirectUrl").value || "").trim();
+    const isSafeInternalPath = /^\/(?!\/)[^\s\\]*$/.test(url);
+    if (enabled && !url) throw new Error("请填写跳转链接");
+    if (url && !/^https:\/\/[^/\s?#]+/i.test(url) && !isSafeInternalPath) throw new Error("跳转链接格式不合法");
+    return {
+      completion_redirect_enabled: enabled,
+      completion_redirect_url: url
+    };
   }
 
   function readProductBody() {
@@ -280,6 +323,7 @@
       buy_button_text: $("buyButtonText").value.trim() || "立即购买",
       require_mobile: $("requireMobile").value === "true",
       lead_channel_id: Number($("leadChannel").value || 0) || null,
+      ...completionRedirectPayload(),
       slices: (product.slices || []).map((slice, index) => ({ image_library_id: Number(slice.image_library_id), sort_order: index + 1 }))
     };
   }
@@ -474,6 +518,8 @@
     uploadSlices(event.target.files).catch(error => showToast(error.message || "上传失败"));
     event.target.value = "";
   });
+
+  $("completionRedirectEnabled")?.addEventListener("change", syncCompletionRedirectHint);
 
   $("productForm")?.addEventListener("submit", async event => {
     event.preventDefault();

@@ -109,6 +109,12 @@ def test_admin_product_management_routes_render_and_mutate(app, client):
     assert new_page.status_code == 200
     assert "保存商品" in new_page.get_data(as_text=True)
     assert "支付后引流渠道码" in new_page.get_data(as_text=True)
+    assert "报名完成后跳转" in new_page.get_data(as_text=True)
+    assert "开启完成后跳转" in new_page.get_data(as_text=True)
+    assert "当前已开启完成后跳转" in new_page.get_data(as_text=True)
+    assert "请填写跳转链接" in new_page.get_data(as_text=True)
+    assert "跳转链接格式不合法" in new_page.get_data(as_text=True)
+    assert "completionRedirectUrl" in new_page.get_data(as_text=True)
     assert "支付后引流计划" not in new_page.get_data(as_text=True)
 
     edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
@@ -218,6 +224,201 @@ def test_delete_admin_product_allows_disabled_product_with_orders(monkeypatch):
 
     assert deleted == [9]
     assert commits == ["commit"]
+
+
+def test_completion_redirect_payload_validation_is_effective_only_when_url_is_valid():
+    normalized = product_service._normalize_completion_redirect_payload(
+        {
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "https://example.com/after-paid",
+        },
+        {},
+    )
+    assert normalized == {
+        "completion_redirect_enabled": True,
+        "completion_redirect_url": "https://example.com/after-paid",
+    }
+    internal_path = product_service._normalize_completion_redirect_payload(
+        {
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "/after-paid",
+        },
+        {},
+    )
+    assert internal_path == {
+        "completion_redirect_enabled": True,
+        "completion_redirect_url": "/after-paid",
+    }
+
+    empty_url = product_service._normalize_completion_redirect_payload(
+        {
+            "completion_redirect_enabled": True,
+            "completion_redirect_url": "",
+        },
+        {},
+    )
+    assert empty_url == {"completion_redirect_enabled": True, "completion_redirect_url": ""}
+
+    with pytest.raises(product_service.WeChatPayProductError, match="完成后跳转 URL"):
+        product_service._normalize_completion_redirect_payload(
+            {
+                "completion_redirect_enabled": True,
+                "completion_redirect_url": "javascript:alert(1)",
+            },
+            {},
+        )
+    with pytest.raises(product_service.WeChatPayProductError, match="完成后跳转 URL"):
+        product_service._normalize_completion_redirect_payload(
+            {
+                "completion_redirect_enabled": True,
+                "completion_redirect_url": "//evil.com",
+            },
+            {},
+        )
+    with pytest.raises(product_service.WeChatPayProductError, match="完成后跳转 URL"):
+        product_service._normalize_completion_redirect_payload(
+            {
+                "completion_redirect_enabled": True,
+                "completion_redirect_url": "data:text/html,evil",
+            },
+            {},
+        )
+
+
+def test_order_public_payload_completion_redirect_suppresses_lead_qr(monkeypatch):
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_completion_redirect_for_product_code",
+        lambda product_code: product_service.completion_redirect_projection(
+            True,
+            "https://example.com/after-paid",
+        ),
+    )
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_lead_qr_for_product_code",
+        lambda product_code: pytest.fail("lead_qr must not be resolved when completion redirect is active"),
+    )
+
+    payload = wechat_pay_service._order_public_payload(
+        {
+            "out_trade_no": "WXP_REDIRECT_UNIT",
+            "product_code": "prd_redirect_unit",
+            "product_name": "跳转商品",
+            "amount_total": 9900,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        }
+    )
+
+    assert payload["completion_redirect_enabled"] is True
+    assert payload["completion_redirect"]["enabled"] is True
+    assert payload["completion_redirect"]["url"] == "https://example.com/after-paid"
+    assert payload["completion_action"] == {
+        "type": "redirect",
+        "redirect_url": "https://example.com/after-paid",
+    }
+    assert "lead_qr" not in payload
+
+
+def test_order_public_payload_empty_completion_redirect_keeps_lead_qr(monkeypatch):
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_completion_redirect_for_product_code",
+        lambda product_code: product_service.completion_redirect_projection(True, ""),
+    )
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_lead_qr_for_product_code",
+        lambda product_code: {"qr_url": "https://example.com/lead-qr.png", "channel_id": 12},
+    )
+
+    payload = wechat_pay_service._order_public_payload(
+        {
+            "out_trade_no": "WXP_EMPTY_REDIRECT_UNIT",
+            "product_code": "prd_empty_redirect_unit",
+            "product_name": "空跳转商品",
+            "amount_total": 9900,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        }
+    )
+
+    assert payload["completion_redirect_enabled"] is True
+    assert payload["completion_redirect_url"] == ""
+    assert payload["completion_redirect"]["enabled"] is False
+    assert payload["completion_action"] == {"type": "lead_qr", "redirect_url": ""}
+    assert payload["lead_qr"]["qr_url"] == "https://example.com/lead-qr.png"
+
+
+def test_order_public_payload_without_redirect_or_lead_qr_keeps_success_url(monkeypatch):
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_completion_redirect_for_product_code",
+        lambda product_code: product_service.completion_redirect_projection(False, ""),
+    )
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_lead_qr_for_product_code",
+        lambda product_code: {},
+    )
+
+    payload = wechat_pay_service._order_public_payload(
+        {
+            "out_trade_no": "WXP_SUCCESS_URL_UNIT",
+            "product_code": "prd_success_url_unit",
+            "product_name": "成功页商品",
+            "amount_total": 9900,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+            "success_url": "/paid",
+        }
+    )
+
+    assert payload["completion_action"] == {"type": "default", "redirect_url": ""}
+    assert "lead_qr" not in payload
+    assert payload["success_url"] == "/paid"
+
+
+def test_copy_admin_product_payload_preserves_completion_redirect(monkeypatch):
+    captured: dict[str, object] = {}
+    source = {
+        "id": 8,
+        "product_code": "prd_copy_source",
+        "name": "可复制跳转商品",
+        "amount_total": 9900,
+        "currency": "CNY",
+        "status": "active",
+        "enabled": True,
+        "cta_text": "立即报名",
+        "require_mobile": False,
+        "lead_program_id": None,
+        "lead_channel_id": None,
+        "completion_redirect_enabled": True,
+        "completion_redirect_url": "https://example.com/copied-after-paid",
+        "metadata_json": {},
+    }
+
+    class FakeDb:
+        def commit(self):
+            captured["committed"] = True
+
+    def fake_insert_product(payload):
+        captured["payload"] = payload
+        return {**source, **payload, "id": 9, "product_code": "prd_copy_target"}
+
+    monkeypatch.setattr(product_service.product_repo, "get_product_by_id", lambda product_id: source)
+    monkeypatch.setattr(product_service.product_repo, "insert_product", fake_insert_product)
+    monkeypatch.setattr(product_service.product_repo, "list_product_slices", lambda *args, **kwargs: [])
+    monkeypatch.setattr(product_service.product_repo, "replace_product_slices", lambda *args, **kwargs: [])
+    monkeypatch.setattr(product_service, "get_admin_product", lambda product_id: captured["payload"])
+    monkeypatch.setattr(product_service, "get_db", lambda: FakeDb())
+
+    copied = product_service.copy_admin_product(8, operator="pytest")
+
+    assert copied["completion_redirect_enabled"] is True
+    assert copied["completion_redirect_url"] == "https://example.com/copied-after-paid"
+    assert captured["committed"] is True
 
 
 def test_create_jsapi_order_success_path_commits_with_fake_client(monkeypatch):
@@ -394,6 +595,71 @@ def test_product_can_bind_direct_lead_channel(app, client):
     assert cleared["lead_channel_id"] is None
     assert cleared["lead_program_id"] is None
     assert product_service.get_lead_qr_for_product_code(product["product_code"]) == {}
+
+
+def test_product_completion_redirect_create_update_copy_and_validation(app, client):
+    token = _login_admin(client)
+    product = _create_product(
+        client,
+        token,
+        completion_redirect_enabled=True,
+        completion_redirect_url="https://example.com/after-paid",
+    )
+
+    detail = product_service.get_admin_product(product["id"])
+    assert detail["completion_redirect_enabled"] is True
+    assert detail["completion_redirect_url"] == "https://example.com/after-paid"
+
+    updated = product_service.update_admin_product(
+        product["id"],
+        {
+            "name": product["name"],
+            "amount_total": product["amount_total"],
+            "status": "active",
+            "require_mobile": False,
+            "cta_text": "立即报名",
+            "completion_redirect_enabled": False,
+            "completion_redirect_url": "https://example.com/welcome",
+            "slices": [],
+        },
+        operator="pytest",
+    )
+    assert updated["completion_redirect_enabled"] is False
+    assert updated["completion_redirect_url"] == "https://example.com/welcome"
+    assert updated["completion_redirect"]["enabled"] is False
+    assert updated["completion_action"] == {"type": "default", "redirect_url": ""}
+
+    copied = product_service.copy_admin_product(product["id"], operator="pytest")
+    assert copied["completion_redirect_enabled"] is False
+    assert copied["completion_redirect_url"] == "https://example.com/welcome"
+
+    with pytest.raises(product_service.WeChatPayProductError, match="完成后跳转 URL"):
+        product_service.update_admin_product(
+            product["id"],
+            {
+                "name": product["name"],
+                "amount_total": product["amount_total"],
+                "status": "active",
+                "completion_redirect_enabled": True,
+                "completion_redirect_url": "javascript:alert(1)",
+            },
+            operator="pytest",
+        )
+
+
+def test_product_copy_preserves_enabled_completion_redirect(app, client):
+    token = _login_admin(client)
+    product = _create_product(
+        client,
+        token,
+        completion_redirect_enabled=True,
+        completion_redirect_url="https://example.com/copy-after-paid",
+    )
+
+    copied = product_service.copy_admin_product(product["id"], operator="pytest")
+
+    assert copied["completion_redirect_enabled"] is True
+    assert copied["completion_redirect_url"] == "https://example.com/copy-after-paid"
 
 
 def test_product_slices_sort_and_public_page_render_order(app, client):
@@ -833,6 +1099,8 @@ def test_checkout_template_uses_normalized_paid_status_only():
     assert 'order.status === "paid"' in source
     assert 'order.trade_state === "SUCCESS"' not in source
     assert 'order.status !== "paid" && order.trade_state !== "SUCCESS"' not in source
+    assert 'page_state.completion_action.type != "redirect"' in source
+    assert "page_state.completion_redirect.enabled" not in source
 
 
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
@@ -885,6 +1153,136 @@ def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
     get_db().commit()
     paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
     assert paid["lead_qr"]["qr_url"] == "https://example.com/qr.png"
+
+
+def test_paid_order_completion_redirect_takes_priority_over_lead_qr(app, client):
+    token = _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_redirect_priority', '跳转优先计划', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    channel = get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_redirect_priority', '默认渠道', 'https://example.com/redirect-priority-qr.png', 'active')
+        RETURNING *
+        """,
+        (program["id"],),
+    ).fetchone()
+    get_db().commit()
+    product = _create_product(
+        client,
+        token,
+        lead_program_id=program["id"],
+        completion_redirect_enabled=True,
+        completion_redirect_url="https://example.com/after-paid-priority",
+    )
+    assert product["lead_channel_id"] == channel["id"]
+
+    order = wechat_pay_repo.insert_order(
+        {
+            "out_trade_no": "WXP_REDIRECT_PRIORITY",
+            "product_code": product["product_code"],
+            "product_name": product["name"],
+            "description": product["name"],
+            "amount_total": product["amount_total"],
+            "payer_openid": "op_redirect",
+            "status": "paid",
+            "metadata": {},
+            "request_meta": {},
+        }
+    )
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET trade_state = 'SUCCESS'
+        WHERE out_trade_no = ?
+        """,
+        (order["out_trade_no"],),
+    )
+    get_db().commit()
+
+    paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    assert paid["completion_redirect_enabled"] is True
+    assert paid["completion_redirect_url"] == "https://example.com/after-paid-priority"
+    assert paid["completion_redirect"]["url"] == "https://example.com/after-paid-priority"
+    assert paid["completion_action"] == {
+        "type": "redirect",
+        "redirect_url": "https://example.com/after-paid-priority",
+    }
+    assert "lead_qr" not in paid
+
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {"openid": "op_redirect", "payer_name": "已报名用户"}
+    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    assert "completionActionFromOrder" in html
+    assert 'setState("报名成功，正在跳转...", "success")' in html
+    assert 'id="showLeadQrButton"' not in html
+
+
+def test_completion_redirect_empty_url_keeps_existing_lead_qr_logic(app, client):
+    token = _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_empty_redirect', '空跳转计划', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    channel = get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_empty_redirect', '默认渠道', 'https://example.com/empty-redirect-qr.png', 'active')
+        RETURNING *
+        """,
+        (program["id"],),
+    ).fetchone()
+    get_db().commit()
+    product = _create_product(
+        client,
+        token,
+        lead_program_id=program["id"],
+        completion_redirect_enabled=True,
+        completion_redirect_url="",
+    )
+    assert product["lead_channel_id"] == channel["id"]
+    assert product["completion_redirect_enabled"] is True
+
+    order = wechat_pay_repo.insert_order(
+        {
+            "out_trade_no": "WXP_EMPTY_REDIRECT",
+            "product_code": product["product_code"],
+            "product_name": product["name"],
+            "description": product["name"],
+            "amount_total": product["amount_total"],
+            "payer_openid": "op_empty_redirect",
+            "status": "paid",
+            "metadata": {},
+            "request_meta": {},
+        }
+    )
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET trade_state = 'SUCCESS'
+        WHERE out_trade_no = ?
+        """,
+        (order["out_trade_no"],),
+    )
+    get_db().commit()
+
+    paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    assert paid["completion_redirect"]["enabled"] is False
+    assert paid["completion_redirect_url"] == ""
+    assert paid["completion_action"] == {"type": "lead_qr", "redirect_url": ""}
+    assert paid["lead_qr"]["qr_url"] == "https://example.com/empty-redirect-qr.png"
 
 
 def test_legacy_catalog_product_api_still_works(app, client, tmp_path):

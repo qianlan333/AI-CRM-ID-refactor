@@ -18,6 +18,8 @@ class ProductUpsertRequest(BaseModel):
     detail_image_ids: list[str] = Field(default_factory=list)
     detail_sections: list[dict[str, Any]] = Field(default_factory=list)
     buy_button_text: str = "立即购买"
+    completion_redirect_enabled: bool = False
+    completion_redirect_url: str = ""
     require_mobile: bool = False
     lead_program_id: int | None = None
     lead_channel_id: int | None = None

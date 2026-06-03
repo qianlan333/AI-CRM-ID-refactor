@@ -954,6 +954,8 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
             require_mobile BOOLEAN NOT NULL DEFAULT FALSE,
             lead_program_id BIGINT,
             lead_channel_id BIGINT,
+            completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            completion_redirect_url TEXT NOT NULL DEFAULT '',
             metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -965,6 +967,8 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
         "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS require_mobile BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS lead_program_id BIGINT",
         "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS lead_channel_id BIGINT",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS completion_redirect_url TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb",
     ):
         db.execute(stmt)
