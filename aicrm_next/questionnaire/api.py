@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -7,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.integration_gateway.legacy_flask_facade import (
@@ -50,7 +51,7 @@ from .application import (
     build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest
-from .oauth import COOKIE_NAME
+from .oauth import COOKIE_NAME, questionnaire_h5_identity_from_cookies, questionnaire_oauth_state_context
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
     get_public_questionnaire_from_legacy,
     get_questionnaire_detail_from_legacy,
@@ -58,6 +59,7 @@ from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 
@@ -156,6 +158,62 @@ async def _h5_json_body(request: Request) -> dict[str, Any]:
 
 def _as_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_redirect_response_mode(response_mode: str | None, browser_redirect: Any = None) -> bool:
+    mode = str(response_mode or "").strip().lower()
+    return mode == "redirect" or _as_bool(browser_redirect)
+
+
+def _safe_questionnaire_return_url(value: str | None, slug: str | None) -> str:
+    target = str(value or "").strip()
+    if target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    slug_value = str(slug or "").strip()
+    return f"/s/{slug_value}" if slug_value else "/"
+
+
+def _safe_oauth_success_redirect_url(value: str | None, slug: str | None) -> str:
+    target = str(value or "").strip()
+    if target.startswith(("http://", "https://")):
+        return target
+    return _safe_questionnaire_return_url(target, slug)
+
+
+def _oauth_html_error(
+    *,
+    title: str,
+    message: str,
+    return_url: str | None,
+    slug: str | None = None,
+    status_code: int = 400,
+) -> HTMLResponse:
+    from html import escape
+
+    safe_return_url = _safe_questionnaire_return_url(return_url, slug)
+    html = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f2f3f5; color: #1f2329; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }}
+    main {{ width: min(100%, 420px); padding: 28px 22px; border: 1px solid #dee0e3; border-radius: 20px; background: #fff; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
+    h1 {{ margin: 0 0 12px; font-size: 22px; line-height: 1.35; }}
+    p {{ margin: 0; color: #646a73; font-size: 15px; line-height: 1.7; }}
+    a {{ display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; min-height: 44px; padding: 0 20px; border-radius: 999px; background: #3370ff; color: #fff; font-weight: 700; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{escape(title)}</h1>
+    <p>{escape(message)}</p>
+    <a href="{escape(safe_return_url, quote=True)}">返回问卷</a>
+  </main>
+</body>
+</html>"""
+    return HTMLResponse(html, status_code=status_code)
 
 
 def _write_error(
@@ -365,7 +423,8 @@ def _request_values(request: Request, fields: tuple[str, ...]) -> dict[str, str]
 
 
 def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> str:
-    query = {"slug": str(slug or "").strip(), **source_params}
+    slug_value = str(slug or "").strip()
+    query = {"slug": slug_value, "response_mode": "redirect", "redirect": f"/s/{slug_value}", **source_params}
     return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
 
 
@@ -550,26 +609,56 @@ def public_submission_result(slug: str, submission_id: str) -> dict:
         _raise_http(exc)
 
 
-@router.get("/api/h5/wechat/oauth/start")
+@router.get("/api/h5/wechat/oauth/start", response_model=None)
 def wechat_oauth_start(
     slug: str | None = None,
     state: str | None = None,
     redirect: str | None = None,
     scene: str | None = None,
+    response_mode: str | None = None,
+    browser_redirect: str | None = None,
+    source_channel: str | None = None,
+    campaign_id: str | None = None,
+    staff_id: str | None = None,
     openid: str | None = None,
     unionid: str | None = None,
     external_userid: str | None = None,
-) -> dict:
-    return StartWechatOAuthQuery()(
+) -> Any:
+    browser_mode = _is_redirect_response_mode(response_mode, browser_redirect)
+    payload = StartWechatOAuthQuery()(
         OAuthStartRequest(
             slug=slug,
             state=state,
             redirect=redirect,
             scene=scene,
+            browser_redirect=browser_mode,
+            source_channel=source_channel,
+            campaign_id=campaign_id,
+            staff_id=staff_id,
             openid=openid,
             unionid=unionid,
             external_userid=external_userid,
         )
+    )
+    if not browser_mode:
+        return payload
+    if payload.get("ok") and payload.get("redirect_url") and payload.get("adapter_mode") != "real_blocked" and not payload.get("external_call_blocked"):
+        return RedirectResponse(str(payload["redirect_url"]), status_code=302)
+    logger.warning(
+        "questionnaire oauth start browser redirect unavailable",
+        extra={
+            "slug": slug,
+            "adapter_mode": payload.get("adapter_mode"),
+            "error": payload.get("error"),
+            "source_status": payload.get("source_status"),
+        },
+    )
+    return _oauth_html_error(
+        title="当前微信授权配置未完成",
+        message="当前微信授权配置未完成，请联系管理员。",
+        return_url=redirect,
+        slug=slug or state,
+        status_code=503,
     )
 
 
@@ -583,12 +672,16 @@ def wechat_oauth_callback(
     code: str | None = None,
     state: str | None = None,
     redirect: str | None = None,
+    response_mode: str | None = None,
+    browser_redirect: str | None = None,
     error: str | None = None,
     errcode: str | None = None,
     openid: str | None = None,
     unionid: str | None = None,
     external_userid: str | None = None,
 ) -> Response:
+    state_context = questionnaire_oauth_state_context(state)
+    browser_mode = _is_redirect_response_mode(response_mode, browser_redirect) or bool(state_context.get("browser_redirect"))
     payload = CompleteWechatOAuthCallbackCommand()(
         OAuthCallbackRequest(
             code=code,
@@ -603,6 +696,40 @@ def wechat_oauth_callback(
     )
     signed_cookie = str(payload.pop("session_cookie", "") or "")
     status_code = int(payload.pop("status_code", 200 if payload.get("ok") else 400) or 400)
+    if browser_mode:
+        if payload.get("ok"):
+            redirect_target = str(payload.get("redirect_url") or state_context.get("redirect_url") or redirect or "")
+            redirect_response = RedirectResponse(
+                _safe_oauth_success_redirect_url(redirect_target, str(payload.get("slug") or state_context.get("slug") or "")),
+                status_code=302,
+            )
+            if signed_cookie:
+                redirect_response.set_cookie(
+                    COOKIE_NAME,
+                    signed_cookie,
+                    httponly=True,
+                    secure=False,
+                    samesite="lax",
+                    max_age=3600,
+                    path="/",
+                )
+            return redirect_response
+        logger.warning(
+            "questionnaire oauth callback browser redirect failed",
+            extra={
+                "slug": payload.get("slug") or state_context.get("slug"),
+                "adapter_mode": payload.get("adapter_mode"),
+                "error": payload.get("error"),
+                "source_status": payload.get("source_status"),
+            },
+        )
+        return _oauth_html_error(
+            title="授权未完成",
+            message="授权未完成，请重新进入问卷。",
+            return_url=str(state_context.get("redirect_url") or redirect or ""),
+            slug=str(payload.get("slug") or state_context.get("slug") or ""),
+            status_code=status_code,
+        )
     json_response = JSONResponse(jsonable_encoder(payload), status_code=status_code)
     if payload.get("ok") and signed_cookie:
         json_response.set_cookie(
@@ -635,9 +762,9 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     questions = jsonable_encoder(payload.get("questions") or [])
     source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
     request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
-    session_identity = legacy_questionnaire_session_identity(request.cookies)
+    session_identity = legacy_questionnaire_session_identity(request.cookies) or questionnaire_h5_identity_from_cookies(request.cookies)
     is_wechat_browser = _is_wechat_browser(request)
-    is_authorized = bool(session_identity.get("openid"))
+    is_authorized = bool(session_identity.get("openid") or session_identity.get("unionid") or session_identity.get("respondent_key"))
     oauth_configured = legacy_questionnaire_oauth_is_configured()
     page_mode = "auth_gate" if is_wechat_browser and not is_authorized else "questionnaire"
     env_notice = ""

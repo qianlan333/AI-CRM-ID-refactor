@@ -24,6 +24,7 @@ from .questionnaire_support import (
     _encode_oauth_state,
     _external_base_url,
     _mask_identity_value,
+    _oauth_browser_error_page,
     _questionnaire_request_meta,
     _is_wechat_browser,
     _require_wechat_browser_api,
@@ -54,6 +55,16 @@ def _payment_oauth_callback_url() -> str:
 def _payment_oauth_start_url(return_url: str) -> str:
     query = urlencode({"return_url": _safe_return_url(return_url)})
     return f"{url_for('api.h5_wechat_pay_oauth_start')}?{query}"
+
+
+def _wechat_pay_oauth_error_page(message: str, *, return_url: str = "/", status_code: int = 400):
+    return _oauth_browser_error_page(
+        title="微信支付授权未完成",
+        message=message,
+        return_url=_safe_return_url(return_url),
+        button_label="返回商品页",
+        status_code=status_code,
+    )
 
 
 def _wechat_pay_oauth_scope() -> str:
@@ -130,7 +141,7 @@ def h5_wechat_pay_product_page(product_code: str):
 
 def h5_wechat_pay_oauth_start():
     if not _wechat_oauth_is_configured():
-        return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
+        return _wechat_pay_oauth_error_page("当前微信授权配置未完成，请联系管理员。", status_code=501)
     return_url = _safe_return_url(request.args.get("return_url", "/"))
     authorize_url = _wechat_oauth_authorize_url(
         app_id=current_app.config["WECHAT_MP_APP_ID"],
@@ -143,12 +154,12 @@ def h5_wechat_pay_oauth_start():
 
 def h5_wechat_pay_oauth_callback():
     if not _wechat_oauth_is_configured():
-        return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
+        return _wechat_pay_oauth_error_page("当前微信授权配置未完成，请联系管理员。", status_code=501)
     code = _normalized_text(request.args.get("code"))
     state_payload = _decode_oauth_state(_normalized_text(request.args.get("state")))
     return_url = _safe_return_url(_normalized_text(state_payload.get("return_url")) or "/")
     if not code:
-        return jsonify({"ok": False, "error": "code is required"}), 400
+        return _wechat_pay_oauth_error_page("授权未完成，请重新进入商品页。", return_url=return_url, status_code=400)
     try:
         oauth_payload = exchange_wechat_oauth_code(
             app_id=current_app.config["WECHAT_MP_APP_ID"],
@@ -157,10 +168,10 @@ def h5_wechat_pay_oauth_callback():
         )
     except WeChatOAuthRequestError as exc:
         logger.exception("wechat pay oauth exchange failed return_url=%s", return_url)
-        return jsonify({"ok": False, "error": f"wechat_oauth_exchange_failed: {exc}"}), 502
+        return _wechat_pay_oauth_error_page("授权服务暂不可用，请稍后重试。", return_url=return_url, status_code=502)
     if oauth_payload.get("errcode") not in (None, 0):
         logger.warning("wechat pay oauth exchange returned error payload=%s", oauth_payload)
-        return jsonify({"ok": False, "error": "wechat_oauth_exchange_failed", "wechat_payload": oauth_payload}), 502
+        return _wechat_pay_oauth_error_page("授权服务暂不可用，请稍后重试。", return_url=return_url, status_code=502)
     openid = _normalized_text(oauth_payload.get("openid"))
     unionid = _normalized_text(oauth_payload.get("unionid"))
     access_token = _normalized_text(oauth_payload.get("access_token"))

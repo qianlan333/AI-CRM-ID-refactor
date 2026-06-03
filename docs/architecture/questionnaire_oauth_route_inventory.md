@@ -13,7 +13,9 @@ Scope: Legacy Exit group 10 moved Questionnaire H5 OAuth/auth exact start/callba
 
 - Builds a signed state with `slug`, redirect target, nonce, issued-at, expiry, and adapter mode.
 - Enforces redirect allowlist. Relative `/...` targets are allowed; absolute redirects require `AICRM_QUESTIONNAIRE_OAUTH_REDIRECT_ALLOWLIST`.
-- Returns `source_status=next_oauth_adapter`, `route_owner=ai_crm_next`, `fallback_used=false`, and `real_external_call_executed=false`.
+- Default API mode returns JSON with `source_status=next_oauth_adapter`, `route_owner=ai_crm_next`, `fallback_used=false`, and `real_external_call_executed=false`.
+- Browser mode is enabled with `response_mode=redirect` or `browser_redirect=1`. Successful fake/sandbox start returns `302` to the prepared callback URL; successful real-enabled start returns `302` to the WeChat authorize URL.
+- In browser mode, `real_blocked` or adapter errors return a readable HTML page instead of exposing JSON/state to the user.
 - Local/test defaults to `fake`; production defaults to `real_blocked`.
 
 ## B. OAuth Callback
@@ -21,10 +23,23 @@ Scope: Legacy Exit group 10 moved Questionnaire H5 OAuth/auth exact start/callba
 - Verifies signed state, nonce, expiry, and replay status.
 - Fake/sandbox modes create deterministic test identity without network calls.
 - `real_blocked` records a controlled blocked result and does not exchange code with WeChat.
-- Successful callback creates a signed `questionnaire_h5_identity` cookie and records AuditLedger evidence.
-- Error paths write diagnostics without logging sensitive tokens.
+- Default API mode returns JSON, creates a signed `questionnaire_h5_identity` cookie on success, and records AuditLedger evidence.
+- Browser mode is enabled with `response_mode=redirect`, `browser_redirect=1`, or the signed state field `browser_redirect=true`. Successful callback writes `questionnaire_h5_identity` on the `RedirectResponse` and returns to the signed redirect target such as `/s/{slug}`.
+- Browser-mode callback errors return a readable HTML page with a return-to-questionnaire link. Error paths write diagnostics without logging sensitive tokens.
 
-## C. Wildcard / Out Of Scope
+## C. Production Configuration
+
+Real WeChat OAuth is still disabled by default. To enable the real browser authorization URL in production, configure all of:
+
+- `AICRM_QUESTIONNAIRE_OAUTH_ADAPTER_MODE=real_enabled`
+- `AICRM_QUESTIONNAIRE_OAUTH_ENABLE_REAL=1`
+- `WECHAT_MP_APP_ID`
+- `WECHAT_MP_APP_SECRET`
+- `SECRET_KEY` or `AICRM_QUESTIONNAIRE_OAUTH_STATE_SECRET`
+
+The existing public base URL settings (`AICRM_PUBLIC_BASE_URL`, `PUBLIC_BASE_URL`, `EXTERNAL_BASE_URL`, `APP_EXTERNAL_BASE_URL`, or `NEXT_PUBLIC_BASE_URL`) should point to the production HTTPS origin used by the WeChat callback. Without the explicit real-enabled gate, production remains `real_blocked`; browser users see the controlled HTML error page rather than raw adapter JSON.
+
+## D. Wildcard / Out Of Scope
 
 - `/api/h5/wechat/oauth/{path:path}` remains retained legacy rollback for unknown OAuth subpaths; exact start/callback are deletion_locked and do not use this rollback.
 - `/auth/wecom/*` remains out of scope and is not deletion locked by this group.

@@ -43,6 +43,10 @@ class OAuthStartRequest(BaseModel):
     state: str | None = None
     redirect: str | None = None
     scene: str | None = None
+    browser_redirect: bool = False
+    source_channel: str | None = None
+    campaign_id: str | None = None
+    staff_id: str | None = None
     openid: str | None = None
     unionid: str | None = None
     external_userid: str | None = None

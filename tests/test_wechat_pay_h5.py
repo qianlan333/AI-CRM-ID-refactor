@@ -238,6 +238,34 @@ def test_wechat_pay_oauth_requests_userinfo_by_default(app, client, tmp_path):
     assert "scope=snsapi_userinfo" in response.headers["Location"]
 
 
+def test_wechat_pay_oauth_start_unconfigured_returns_readable_html(app, client):
+    app.config.update(WECHAT_MP_APP_ID="", WECHAT_MP_APP_SECRET="", SECRET_KEY="")
+
+    response = client.get(
+        "/api/h5/wechat-pay/oauth/start?return_url=/pay/assessment_report_v1",
+        headers=_wechat_headers(),
+    )
+
+    assert response.status_code == 501
+    assert response.content_type.startswith("text/html")
+    assert "当前微信授权配置未完成，请联系管理员" in response.get_data(as_text=True)
+    assert '{"ok":' not in response.get_data(as_text=True)
+
+
+def test_wechat_pay_oauth_callback_missing_code_returns_readable_html(app, client, tmp_path):
+    _configure_pay(app, tmp_path)
+
+    response = client.get(
+        "/api/h5/wechat-pay/oauth/callback",
+        headers=_wechat_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.content_type.startswith("text/html")
+    assert "授权未完成，请重新进入商品页" in response.get_data(as_text=True)
+    assert '{"ok":' not in response.get_data(as_text=True)
+
+
 def test_wechat_pay_oauth_callback_stores_payer_name(app, client, tmp_path, monkeypatch):
     _configure_pay(app, tmp_path)
 

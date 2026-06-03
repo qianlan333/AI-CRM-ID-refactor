@@ -8,8 +8,8 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
-from urllib.parse import urlencode, urlparse
+from typing import Any, Mapping
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from aicrm_next.integration_gateway.questionnaire_adapters import WeChatOAuthAdapter, build_wechat_oauth_adapter
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
@@ -23,6 +23,7 @@ ADAPTER_MODES = {"fake", "sandbox", "real_blocked", "real_enabled"}
 COOKIE_NAME = "questionnaire_h5_identity"
 SOURCE_STATUS = "next_oauth_adapter"
 STATE_TTL_SECONDS = 600
+SOURCE_PARAM_FIELDS = ("source_channel", "campaign_id", "staff_id")
 
 _AUDIT_LEDGER = InMemoryAuditLedger()
 _DIAGNOSTICS: list[Json] = []
@@ -113,6 +114,69 @@ def _normalize_redirect(redirect: str | None, slug: str | None) -> str:
     return target
 
 
+def _source_params(payload: Json) -> dict[str, str]:
+    source = payload.get("source") if isinstance(payload.get("source"), dict) else payload
+    result: dict[str, str] = {}
+    if not isinstance(source, dict):
+        return result
+    for key in SOURCE_PARAM_FIELDS:
+        value = str(source.get(key) or "").strip()
+        if value:
+            result[key] = value
+    return result
+
+
+def _redirect_with_source_params(redirect: str, source: Json) -> str:
+    params = _source_params(source)
+    if not params:
+        return redirect
+    parts = urlsplit(redirect)
+    existing = dict(parse_qsl(parts.query, keep_blank_values=True))
+    existing.update(params)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(existing), parts.fragment))
+
+
+def _safe_state_context(state: str | None) -> Json:
+    if not state:
+        return {}
+    try:
+        payload = _load_signed_blob(state)
+    except Exception:
+        return {}
+    slug = str(payload.get("slug") or "").strip()
+    try:
+        redirect = _normalize_redirect(str(payload.get("redirect") or ""), slug)
+    except OAuthStateError:
+        redirect = f"/s/{slug}" if slug else "/"
+    redirect = _redirect_with_source_params(redirect, payload)
+    return {
+        "slug": slug,
+        "redirect_url": redirect,
+        "browser_redirect": bool(payload.get("browser_redirect")),
+    }
+
+
+def questionnaire_oauth_state_context(state: str | None) -> Json:
+    return _safe_state_context(state)
+
+
+def questionnaire_h5_identity_from_cookies(cookies: Mapping[str, str]) -> Json:
+    raw_cookie = str(cookies.get(COOKIE_NAME) or "").strip()
+    if not raw_cookie:
+        return {}
+    try:
+        payload = _load_signed_blob(raw_cookie)
+    except Exception:
+        return {}
+    return {
+        "openid": str(payload.get("openid") or "").strip(),
+        "unionid": str(payload.get("unionid") or "").strip(),
+        "respondent_key": str(payload.get("respondent_key") or "").strip(),
+        "external_userid": str(payload.get("external_userid") or "").strip(),
+        "slug": str(payload.get("slug") or "").strip(),
+    }
+
+
 @dataclass(frozen=True)
 class OAuthStateError(Exception):
     code: str
@@ -138,13 +202,19 @@ class QuestionnaireOAuthAdapter:
     def __init__(self, adapter: WeChatOAuthAdapter | None = None, *, mode: str | None = None) -> None:
         self.mode = mode if mode in ADAPTER_MODES else resolve_adapter_mode()
         self._adapter = adapter or build_wechat_oauth_adapter()
+        if self.mode == "real_enabled" and isinstance(self._adapter, WeChatOAuthAdapter):
+            self._adapter.mode = "production"
+            self._adapter.production_flag = "AICRM_QUESTIONNAIRE_OAUTH_ENABLE_REAL"
 
     def build_authorize_url(self, request: OAuthStartRequest) -> Json:
         try:
             redirect = _normalize_redirect(request.redirect, request.slug)
             state_payload = self._state_payload(request, redirect)
             state = _signed_blob(state_payload)
-            callback_url = f"/api/h5/wechat/oauth/callback?{urlencode({'code': 'fake-code', 'state': state})}"
+            callback_query = {"code": "fake-code", "state": state}
+            if request.browser_redirect:
+                callback_query["response_mode"] = "redirect"
+            callback_url = f"/api/h5/wechat/oauth/callback?{urlencode(callback_query)}"
             result: Json = {
                 "ok": True,
                 "redirect_url": callback_url,
@@ -162,6 +232,7 @@ class QuestionnaireOAuthAdapter:
                 "redirect_target": redirect,
                 "external_call_blocked": self.mode == "real_blocked",
                 "redirect_prepared": self.mode == "real_blocked",
+                "browser_redirect": bool(request.browser_redirect),
             }
             if self.mode == "real_enabled":
                 result.update(self._real_authorize_response(request, state, redirect))
@@ -257,7 +328,10 @@ class QuestionnaireOAuthAdapter:
             session_identity, signed_cookie = self.create_identity_session(identity, state_payload)
             result = {
                 "ok": True,
-                "redirect_url": state_payload.get("redirect") or f"/s/{state_payload.get('slug', '')}",
+                "redirect_url": _redirect_with_source_params(
+                    str(state_payload.get("redirect") or f"/s/{state_payload.get('slug', '')}"),
+                    state_payload,
+                ),
                 "slug": state_payload.get("slug", ""),
                 "identity": session_identity,
                 "session_cookie_name": COOKIE_NAME,
@@ -268,6 +342,7 @@ class QuestionnaireOAuthAdapter:
                 "fallback_used": False,
                 "real_external_call_executed": bool(identity.get("real_external_call_executed")),
                 "audit_recorded": True,
+                "browser_redirect": bool(state_payload.get("browser_redirect")),
             }
             self._audit("questionnaire.oauth.callback", result, target_id=str(state_payload.get("slug") or ""))
             return result
@@ -281,6 +356,14 @@ class QuestionnaireOAuthAdapter:
             "slug": (request.slug or request.state or "hxc-activation-v1").strip(),
             "redirect": redirect,
             "scene": request.scene or "",
+            "browser_redirect": bool(request.browser_redirect),
+            "source": _source_params(
+                {
+                    "source_channel": request.source_channel,
+                    "campaign_id": request.campaign_id,
+                    "staff_id": request.staff_id,
+                }
+            ),
             "nonce": secrets.token_urlsafe(16),
             "iat": now,
             "exp": now + STATE_TTL_SECONDS,
@@ -291,7 +374,7 @@ class QuestionnaireOAuthAdapter:
         adapter_result = self._adapter.build_authorize_url(
             slug=request.slug,
             state=state,
-            redirect=redirect,
+            redirect="/api/h5/wechat/oauth/callback",
             openid=request.openid,
             unionid=request.unionid,
             external_userid=request.external_userid,
