@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.customer_tags.read_model import TagCatalog, TagCatalogRepository
 from aicrm_next.main import create_app
 
 
@@ -25,5 +26,24 @@ def test_wecom_tag_read_returns_controlled_unavailable_without_production_projec
         assert payload["route_owner"] == "ai_crm_next"
         assert payload["fallback_used"] is False
         assert payload["real_external_call_executed"] is False
+        assert payload["sync_executed"] is False
+        assert payload["fixture_used"] is False
         assert payload["items"] == []
         assert "X-AICRM-Compatibility-Facade" not in response.headers
+
+
+def test_empty_production_projection_is_controlled_empty_state() -> None:
+    class EmptyProductionTagCatalogRepository(TagCatalogRepository):
+        source_status = "production_postgres_tag_catalog"
+        read_model_status = "primary"
+
+        def list_catalog(self) -> TagCatalog:
+            return TagCatalog(groups=[], tags=[], source_status=self.source_status, read_model_status=self.read_model_status)
+
+    payload = EmptyProductionTagCatalogRepository().list_catalog().to_payload()
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "production_postgres_tag_catalog"
+    assert payload["read_model_status"] == "primary"
+    assert payload["fixture_used"] is False
+    assert payload["items"] == []

@@ -776,7 +776,49 @@ routes:
     adapter_mode: none
     delete_status: next_primary_with_legacy_rollback
     replacement_status: validating
-    notes: Next-native WeCom tag catalog read model for admin, questionnaire editor, and selector surfaces; returns route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false; write and sync routes remain production_compat out of scope.
+    notes: WeCom tag catalog read route is Next-native over the tag projection read model; production projection unavailable returns production_unavailable, no fixture masquerade, no real WeCom call, fallback_used=false.
+  - route_pattern: /api/admin/wecom/tags/{tag_id}
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Optional tag detail read is served from the Next tag catalog read model; write/sync subpaths remain out of scope.
+  - route_pattern: /api/admin/wecom/tags/live/gate
+    methods: [GET]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tests/test_wecom_tag_read_no_real_side_effects.py
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    notes: Existing live WeCom tag adapter gate remains out of scope for group 12; no real call unless explicit live adapter flags approve it.
+  - route_pattern: /api/admin/wecom/tags*
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    notes: WeCom tag write, sync, fake-stub write, and live mark/unmark subpaths remain out of scope for group 12 and keep guarded production_compat rollback.
   - route_pattern: /api/admin/wecom/tag-groups
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -790,20 +832,23 @@ routes:
     adapter_mode: none
     delete_status: next_primary_with_legacy_rollback
     replacement_status: validating
-    notes: Next-native WeCom tag group read model for admin and selector surfaces; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
-  - route_pattern: /api/admin/wecom/tags*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    notes: WeCom tag groups read route is Next-native over the tag projection read model; no fixture masquerade and no real WeCom call.
+  - route_pattern: /api/admin/wecom/tag-groups/{group_id}
+    methods: [GET]
     capability_owner: aicrm_next.customer_tags
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    current_runtime_owner: next
+    production_behavior: next_exact
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Write, sync, mutation, and subpath fallback remain production_compat out of scope while exact GET /api/admin/wecom/tags is Next-native read primary; no real WeCom sync is enabled by this group.
+    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Optional tag group detail read is served from the Next tag catalog read model; CRUD remains out of scope.
   - route_pattern: /api/admin/wecom/tag-groups*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: production_compat
     production_behavior: legacy_forward
@@ -812,7 +857,10 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Tag group write and subpath fallback remain production_compat out of scope while exact GET /api/admin/wecom/tag-groups is Next-native read primary; no real WeCom sync is enabled by this group.
+    adapter_mode: real_blocked
+    delete_status: active
+    replacement_status: not_started
+    notes: WeCom tag group CRUD remains legacy-forwarded with the same guarded admin tag-management contract; group 12 only replaces GET read paths.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

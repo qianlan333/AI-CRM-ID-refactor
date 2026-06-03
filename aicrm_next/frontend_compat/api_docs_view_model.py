@@ -116,6 +116,7 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     from aicrm_next.automation_engine.channels_api import router as automation_channels_router
     from aicrm_next.commerce.api import router as commerce_router
     from aicrm_next.customer_read_model.api import router as customer_router
+    from aicrm_next.customer_tags.api import read_router as customer_tags_read_router
     from aicrm_next.customer_tags.api import router as customer_tags_router
     from aicrm_next.identity_contact.api import router as identity_router
     from aicrm_next.integration_gateway.api import router as mcp_router
@@ -131,6 +132,7 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
         platform_router,
         automation_channels_router,
         customer_router,
+        customer_tags_read_router,
         customer_tags_router,
         user_ops_router,
         mcp_router,

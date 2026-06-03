@@ -94,6 +94,8 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
                 "route_owner": "ai_crm_next",
                 "fallback_used": False,
                 "real_external_call_executed": False,
+                "sync_executed": False,
+                "fixture_used": False,
                 "page_error": str(exc),
                 "groups": [],
                 "tags": [],
@@ -120,6 +122,22 @@ def list_admin_wecom_tags_read_model():
         return _production_unavailable(exc)
 
 
+@read_router.get("/api/admin/wecom/tags/{tag_id}")
+def get_admin_wecom_tag_read_model(tag_id: str):
+    try:
+        payload = _read_catalog_payload()
+    except TagCatalogUnavailable as exc:
+        return _production_unavailable(exc)
+    normalized = str(tag_id or "").strip()
+    tags = [tag for tag in payload["tags"] if str(tag.get("tag_id") or "").strip() == normalized]
+    groups = [
+        group
+        for group in payload["groups"]
+        if tags and str(group.get("group_id") or "").strip() == str(tags[0].get("group_id") or "").strip()
+    ]
+    return {**payload, "items": tags, "tags": tags, "groups": groups, "count": len(tags), "total_tags": len(tags)}
+
+
 @read_router.get("/api/admin/wecom/tag-groups")
 def list_admin_wecom_tag_groups_read_model():
     try:
@@ -127,6 +145,18 @@ def list_admin_wecom_tag_groups_read_model():
     except TagCatalogUnavailable as exc:
         return _production_unavailable(exc)
     return {**payload, "items": payload["groups"], "count": len(payload["groups"])}
+
+
+@read_router.get("/api/admin/wecom/tag-groups/{group_id}")
+def get_admin_wecom_tag_group_read_model(group_id: str):
+    try:
+        payload = _read_catalog_payload()
+    except TagCatalogUnavailable as exc:
+        return _production_unavailable(exc)
+    normalized = str(group_id or "").strip()
+    groups = [group for group in payload["groups"] if str(group.get("group_id") or "").strip() == normalized]
+    tags = [tag for tag in payload["tags"] if str(tag.get("group_id") or "").strip() == normalized]
+    return {**payload, "items": tags, "groups": groups, "tags": tags, "count": len(tags), "total_tags": len(tags)}
 
 
 @router.post("/api/admin/wecom/tags/sync")
@@ -196,7 +226,7 @@ def dry_run_unmark_tags(payload: DryRunTagRequest) -> dict:
     )
 
 
-@router.get("/api/admin/wecom/tags/live/gate")
+@read_router.get("/api/admin/wecom/tags/live/gate")
 def list_wecom_tags_live_gate() -> dict:
     return build_wecom_tag_application_service().list_wecom_tags_live()
 
