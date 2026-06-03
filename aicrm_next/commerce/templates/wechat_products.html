@@ -2,164 +2,76 @@
 
 {% block head_extra %}
 <style>
-  .product-admin {
-    display: grid;
-    gap: 18px;
+  .product-admin { display: grid; gap: 18px; }
+  .product-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .product-table { min-width: 980px; }
+  .product-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 800; }
+  .product-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; background: #eef2f7; color: #475569; font-size: 12px; font-weight: 800; }
+  .product-pill.active { background: #e7f8ee; color: #0f7a43; }
+  .product-pill.draft { background: #fff4d6; color: #8a5a00; }
+  .product-editor { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+  .product-form { display: grid; gap: 18px; }
+  .product-section { display: grid; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .product-section:last-child { border-bottom: 0; padding-bottom: 0; }
+  .product-section h2 { margin: 0; font-size: 16px; }
+  .product-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+  .product-field { display: flex; flex-direction: column; gap: 8px; }
+  .product-field label { color: var(--muted); font-size: 13px; font-weight: 800; }
+  .product-field input, .product-field select, .product-field textarea {
+    width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: #fffdf8; color: var(--text); font: inherit;
   }
-
-  .product-toolbar {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .product-meta {
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  .product-table {
-    min-width: 880px;
-  }
-
-  .product-mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .product-pill {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: #eef2f7;
-    color: #475569;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .product-pill.is-active {
-    background: #e7f8ee;
-    color: #0f7a43;
-  }
-
-  .product-form {
-    display: grid;
-    gap: 16px;
-    max-width: 760px;
-  }
-
-  .product-field-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 16px;
-  }
-
-  .product-field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .product-field label {
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .product-field input,
-  .product-field select,
-  .product-field textarea {
-    width: 100%;
-    min-height: 42px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fffdf8;
-    color: var(--text);
-    font: inherit;
-  }
-
-  .product-field textarea {
-    min-height: 108px;
-    resize: vertical;
-  }
-
-  .product-field--wide {
-    grid-column: 1 / -1;
-  }
-
-  .product-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .product-toast {
-    min-height: 22px;
-    color: var(--muted);
-    font-weight: 800;
-  }
-
-  .product-error {
-    color: #b91c1c;
-    font-weight: 800;
-  }
-
-  @media (max-width: 760px) {
-    .product-toolbar,
-    .product-field-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .product-toolbar {
-      align-items: stretch;
-      flex-direction: column;
-    }
-  }
+  .product-field textarea { min-height: 92px; resize: vertical; }
+  .product-wide { grid-column: 1 / -1; }
+  .product-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .product-toast { min-height: 22px; color: var(--muted); font-weight: 800; }
+  .product-error { color: #b91c1c; font-weight: 800; }
+  .product-slices { display: grid; gap: 10px; }
+  .product-slice { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }
+  .product-drag { display: grid; place-items: center; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; cursor: grab; color: var(--muted); font-weight: 900; }
+  .product-side { position: sticky; top: 16px; display: grid; gap: 12px; }
+  .product-qr { width: 220px; height: 220px; justify-self: center; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fff; }
+  .product-share-link { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; }
+  .product-param-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) auto; gap: 8px; }
+  @media (max-width: 980px) { .product-editor, .product-field-grid { grid-template-columns: 1fr; } .product-side { position: static; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="product-admin" data-product-page-mode="{{ product_page_mode }}">
-  {% if page_error %}
-  <section class="admin-card">
-    <div class="product-error">{{ page_error }}</div>
-  </section>
-  {% endif %}
+<div class="product-admin" data-mode="{{ product_page_mode }}" data-product="{{ initial_product_json|forceescape }}">
+  {% if page_error %}<section class="admin-card"><div class="product-error">{{ page_error }}</div></section>{% endif %}
 
   {% if product_page_mode == "list" %}
   <section class="admin-card">
     <div class="product-toolbar">
-      <div class="product-meta">共 {{ product_total }} 个商品</div>
+      <div class="product-toast">共 {{ product_total }} 个商品</div>
       <a class="admin-button admin-button--primary" href="/admin/wechat-pay/products/new">创建商品</a>
     </div>
     <div class="admin-table-wrap" style="margin-top:14px;">
       <table class="admin-table product-table">
         <thead>
           <tr>
-            <th>商品编码</th>
-            <th>商品名称</th>
-            <th>价格</th>
-            <th>状态</th>
-            <th>更新时间</th>
-            <th>操作</th>
+            <th>商品编码</th><th>商品名称</th><th>价格</th><th>状态</th><th>贴图</th><th>更新时间</th><th>操作</th>
           </tr>
         </thead>
         <tbody id="productRows">
           {% for product in initial_products %}
           <tr>
             <td class="product-mono">{{ product.product_code }}</td>
-            <td>{{ product.title }}</td>
-            <td>{{ "%.2f"|format((product.price_cents or 0) / 100) }} {{ product.currency or "CNY" }}</td>
-            <td><span class="product-pill {% if product.enabled %}is-active{% endif %}">{{ "已上架" if product.enabled else "已下架" }}</span></td>
+            <td>{{ product.title or product.name }}</td>
+            <td>{{ "%.2f"|format((product.price_cents or product.amount_total or 0) / 100) }} {{ product.currency or "CNY" }}</td>
+            <td><span class="product-pill {{ product.status }}">{{ {"active":"已上架","draft":"草稿","disabled":"已下架"}.get(product.status, product.status) }}</span></td>
+            <td>{{ product.slice_count or 0 }}</td>
             <td>{{ product.updated_at }}</td>
-            <td><a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products/{{ product.id }}/edit">编辑</a></td>
+            <td>
+              <div class="product-actions">
+                <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products/{{ product.id }}/edit">编辑</a>
+                <button class="admin-button admin-button--ghost" data-action="share" data-id="{{ product.id }}" type="button">分享</button>
+                <button class="admin-button admin-button--ghost" data-action="copy" data-id="{{ product.id }}" type="button">复制</button>
+                <button class="admin-button admin-button--ghost" data-action="{{ 'disable' if product.status == 'active' else 'enable' }}" data-id="{{ product.id }}" type="button">{{ "下架" if product.status == "active" else "上架" }}</button>
+                <button class="admin-button admin-button--danger" data-action="delete" data-id="{{ product.id }}" type="button">删除</button>
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -167,103 +79,427 @@
     </div>
   </section>
   {% else %}
-  <section class="admin-card">
-    <form class="product-form" id="productForm">
-      <div class="product-field-grid">
-        <div class="product-field">
-          <label for="productCode">商品编码</label>
-          <input id="productCode" name="productCode" class="product-mono" required minlength="3" maxlength="80" autocomplete="off" {% if product_page_mode == "edit" %}readonly{% endif %}>
+  <div class="product-editor">
+    <section class="admin-card">
+      <form class="product-form" id="productForm">
+        <div class="product-section">
+          <h2>商品基础信息</h2>
+          <div class="product-field-grid">
+            <div class="product-field">
+              <label for="productCode">商品编码</label>
+              <input id="productCode" class="product-mono" required minlength="3" maxlength="80" autocomplete="off" {% if product_page_mode == "edit" %}readonly{% endif %}>
+            </div>
+            <div class="product-field">
+              <label for="productTitle">商品名称</label>
+              <input id="productTitle" required maxlength="120" autocomplete="off">
+            </div>
+            <div class="product-field">
+              <label for="productPrice">价格</label>
+              <input id="productPrice" type="number" min="0" step="0.01" required>
+            </div>
+            <div class="product-field">
+              <label for="productStatus">状态</label>
+              <select id="productStatus">
+                <option value="active">已上架</option>
+                <option value="draft">草稿</option>
+                <option value="disabled">已下架</option>
+              </select>
+            </div>
+            <div class="product-field">
+              <label for="buyButtonText">磁吸按钮话术</label>
+              <input id="buyButtonText" maxlength="24" autocomplete="off">
+            </div>
+            <div class="product-field">
+              <label for="requireMobile">手机号要求</label>
+              <select id="requireMobile">
+                <option value="false">不要求</option>
+                <option value="true">要求填写</option>
+              </select>
+            </div>
+            <div class="product-field product-wide">
+              <label for="productDescription">描述</label>
+              <textarea id="productDescription"></textarea>
+            </div>
+          </div>
         </div>
-        <div class="product-field">
-          <label for="productTitle">商品名称</label>
-          <input id="productTitle" name="title" required autocomplete="off">
+
+        <div class="product-section">
+          <h2>支付后引流渠道码</h2>
+          <div class="product-field">
+            <label for="leadChannel">引流渠道码</label>
+            <select id="leadChannel"></select>
+          </div>
         </div>
-        <div class="product-field">
-          <label for="productPrice">价格</label>
-          <input id="productPrice" name="price" type="number" min="0" step="0.01" required>
+
+        <div class="product-section" id="externalPushSection">
+          <h2>外部推送</h2>
+          <div class="product-field-grid">
+            <div class="product-field">
+              <label for="externalPushEnabled">开启状态</label>
+              <select id="externalPushEnabled"><option value="false">关闭</option><option value="true">开启</option></select>
+            </div>
+            <div class="product-field">
+              <label for="externalPushUrl">推送地址</label>
+              <input id="externalPushUrl" placeholder="https://hooks.example.com/...">
+            </div>
+            <div class="product-field">
+              <label for="externalPushType">type</label>
+              <input id="externalPushType" placeholder="paid_notify">
+            </div>
+            <div class="product-field">
+              <label for="externalPushExpiresAtTs">expires_at_ts</label>
+              <input id="externalPushExpiresAtTs" type="number" step="1">
+            </div>
+            <div class="product-field">
+              <label for="externalPushDay">day</label>
+              <input id="externalPushDay" type="number" step="1">
+            </div>
+            <div class="product-field">
+              <label for="externalPushFrequency">frequency</label>
+              <input id="externalPushFrequency" type="number" step="1">
+            </div>
+            <div class="product-field product-wide">
+              <label for="externalPushRemark">remark</label>
+              <textarea id="externalPushRemark"></textarea>
+            </div>
+          </div>
+          <div class="product-field">
+            <label>自定义参数</label>
+            <div id="externalPushParams" class="product-slices"></div>
+            <button class="admin-button admin-button--ghost" id="addExternalPushParam" type="button">新增参数</button>
+          </div>
+          <div class="product-actions">
+            <button class="admin-button admin-button--ghost" id="testExternalPushBtn" type="button">测试推送</button>
+            <span class="product-toast" id="externalPushResult"></span>
+          </div>
         </div>
-        <div class="product-field">
-          <label for="productEnabled">状态</label>
-          <select id="productEnabled" name="enabled">
-            <option value="true">已上架</option>
-            <option value="false">已下架</option>
-          </select>
+
+        <div class="product-section">
+          <h2>全景贴图长图切片</h2>
+          <div class="product-actions">
+            <label class="admin-button admin-button--ghost">
+              上传切片
+              <input id="sliceInput" type="file" accept="image/png,image/jpeg" multiple style="display:none">
+            </label>
+            <span class="product-toast">最多 10 张，保存后生效</span>
+          </div>
+          <div class="product-slices" id="sliceList"></div>
         </div>
-        <div class="product-field">
-          <label for="buyButtonText">按钮文案</label>
-          <input id="buyButtonText" name="buyButtonText" autocomplete="off">
+
+        <div class="product-actions">
+          <button class="admin-button admin-button--primary" type="submit">保存商品</button>
+          <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products">返回列表</a>
+          <span class="product-toast" id="productToast"></span>
         </div>
-        <div class="product-field product-field--wide">
-          <label for="productDescription">描述</label>
-          <textarea id="productDescription" name="description"></textarea>
-        </div>
-      </div>
-      <div class="product-actions">
-        <button class="admin-button admin-button--primary" type="submit">保存</button>
-        <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products">返回列表</a>
-        <span class="product-toast" id="productToast"></span>
-      </div>
-    </form>
-  </section>
+      </form>
+    </section>
+
+    <aside class="admin-card product-side">
+      <h2 style="margin:0;font-size:16px;">扫码预览</h2>
+      <div id="sharePreview" class="product-toast">保存商品后生成扫码预览</div>
+    </aside>
+  </div>
   {% endif %}
 </div>
 
 <script>
 (() => {
-  const mode = {{ product_page_mode|tojson }};
-  const initialProduct = {{ initial_product_json|safe }};
-  const form = document.getElementById("productForm");
+  const root = document.querySelector(".product-admin");
+  if (!root) return;
+  const mode = root.dataset.mode || "list";
+  const initialProduct = JSON.parse(root.dataset.product || "{}");
   const toast = document.getElementById("productToast");
+  let product = Object.assign({ status: "draft", buy_button_text: "立即购买", require_mobile: false, slices: [] }, initialProduct);
+  let externalPush = { enabled: false, webhook_url: "", push_type: "", expires_at_ts: "", day: "", frequency: "", remark: "", custom_params: {} };
+  let leadChannels = [{ channel_id: 0, channel_name: "不配置引流渠道码", selectable: true }];
+  let dragId = "";
 
-  function moneyToCents(value) {
-    const amount = Number.parseFloat(String(value || "0"));
-    if (!Number.isFinite(amount) || amount < 0) return 0;
-    return Math.round(amount * 100);
+  function $(id) { return document.getElementById(id); }
+  function esc(value) { return String(value == null ? "" : value).replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])); }
+  function cents(value) { const n = Number.parseFloat(String(value || "0")); return Number.isFinite(n) ? Math.round(n * 100) : 0; }
+  function money(value) { return ((Number(value || 0)) / 100).toFixed(2); }
+  function showToast(text) { if (toast) toast.textContent = text; }
+  async function api(url, options) {
+    const res = await fetch(url, Object.assign({ credentials: "same-origin" }, options || {}));
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || payload.ok === false) throw new Error(payload.detail || payload.error || "请求失败");
+    return payload;
   }
 
-  function fillForm(product) {
-    if (!form) return;
-    document.getElementById("productCode").value = product.product_code || "";
-    document.getElementById("productTitle").value = product.title || "";
-    document.getElementById("productPrice").value = ((product.price_cents || 0) / 100).toFixed(2);
-    document.getElementById("productEnabled").value = product.enabled === false ? "false" : "true";
-    document.getElementById("buyButtonText").value = product.buy_button_text || "立即购买";
-    document.getElementById("productDescription").value = product.description || "";
+  function renderRows(items) {
+    const target = $("productRows");
+    if (!target) return;
+    target.innerHTML = (items || []).map(item => {
+      const status = item.status || (item.enabled ? "active" : "disabled");
+      const toggle = status === "active" ? "disable" : "enable";
+      return `<tr>
+        <td class="product-mono">${esc(item.product_code)}</td>
+        <td>${esc(item.title || item.name)}</td>
+        <td>${money(item.price_cents || item.amount_total)} ${esc(item.currency || "CNY")}</td>
+        <td><span class="product-pill ${esc(status)}">${esc({active:"已上架",draft:"草稿",disabled:"已下架"}[status] || status)}</span></td>
+        <td>${Number(item.slice_count || 0)}</td>
+        <td>${esc(item.updated_at || "")}</td>
+        <td><div class="product-actions">
+          <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products/${encodeURIComponent(item.id)}/edit">编辑</a>
+          <button class="admin-button admin-button--ghost" data-action="share" data-id="${esc(item.id)}" type="button">分享</button>
+          <button class="admin-button admin-button--ghost" data-action="copy" data-id="${esc(item.id)}" type="button">复制</button>
+          <button class="admin-button admin-button--ghost" data-action="${toggle}" data-id="${esc(item.id)}" type="button">${toggle === "disable" ? "下架" : "上架"}</button>
+          <button class="admin-button admin-button--danger" data-action="delete" data-id="${esc(item.id)}" type="button">删除</button>
+        </div></td>
+      </tr>`;
+    }).join("");
   }
 
-  fillForm(initialProduct);
+  async function refreshList() {
+    if (mode !== "list") return;
+    const payload = await api("/api/admin/wechat-pay/products?limit=100");
+    renderRows(payload.items || []);
+  }
 
-  if (!form) return;
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    toast.textContent = "保存中";
-    const productId = initialProduct.id || "";
-    const body = {
-      product: { code: document.getElementById("productCode").value.trim() },
-      title: document.getElementById("productTitle").value.trim(),
-      description: document.getElementById("productDescription").value.trim(),
-      price_cents: moneyToCents(document.getElementById("productPrice").value),
-      enabled: document.getElementById("productEnabled").value === "true",
-      buy_button_text: document.getElementById("buyButtonText").value.trim() || "立即购买"
+  function fillForm() {
+    if (!$("productForm")) return;
+    $("productCode").value = product.product_code || "";
+    $("productTitle").value = product.title || product.name || "";
+    $("productPrice").value = money(product.price_cents || product.amount_total);
+    $("productStatus").value = product.status || (product.enabled ? "active" : "disabled");
+    $("buyButtonText").value = product.buy_button_text || product.cta_text || "立即购买";
+    $("requireMobile").value = product.require_mobile ? "true" : "false";
+    $("productDescription").value = product.description || "";
+    $("leadChannel").value = String(product.lead_channel_id || 0);
+    renderSlices();
+  }
+
+  function readProductBody() {
+    return {
+      product: { code: $("productCode").value.trim() },
+      title: $("productTitle").value.trim(),
+      description: $("productDescription").value.trim(),
+      price_cents: cents($("productPrice").value),
+      status: $("productStatus").value,
+      enabled: $("productStatus").value === "active",
+      buy_button_text: $("buyButtonText").value.trim() || "立即购买",
+      require_mobile: $("requireMobile").value === "true",
+      lead_channel_id: Number($("leadChannel").value || 0) || null,
+      slices: (product.slices || []).map((slice, index) => ({ image_library_id: Number(slice.image_library_id), sort_order: index + 1 }))
     };
-    const response = await fetch(
-      mode === "edit" ? `/api/admin/wechat-pay/products/${encodeURIComponent(productId)}` : "/api/admin/wechat-pay/products",
-      {
-        method: mode === "edit" ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.ok) {
-      toast.textContent = payload.detail || payload.error || "保存失败";
+  }
+
+  function renderLeadChannels() {
+    const select = $("leadChannel");
+    if (!select) return;
+    select.innerHTML = leadChannels.map(channel => {
+      const disabled = channel.selectable === false ? " disabled" : "";
+      const program = channel.program_name ? ` · ${channel.program_name}` : "";
+      const suffix = channel.selectable === false ? " · 未配置二维码" : "";
+      return `<option value="${Number(channel.channel_id || 0)}"${disabled}>${esc((channel.channel_name || "渠道") + program + suffix)}</option>`;
+    }).join("");
+  }
+
+  function renderSlices() {
+    const target = $("sliceList");
+    if (!target) return;
+    const slices = product.slices || [];
+    if (!slices.length) {
+      target.innerHTML = '<div class="product-toast">暂无贴图切片</div>';
       return;
     }
-    toast.textContent = "已保存";
+    target.innerHTML = slices.map((slice, index) => {
+      const key = slice.local_id || slice.id || slice.image_library_id;
+      return `<div class="product-slice" draggable="true" data-key="${esc(key)}">
+        <div class="product-drag">::</div>
+        <div>${index + 1}. ${esc(slice.name || slice.file_name || "图片切片")}</div>
+        <button class="admin-button admin-button--danger" data-action="remove-slice" data-key="${esc(key)}" type="button">删除</button>
+      </div>`;
+    }).join("");
+    target.querySelectorAll(".product-slice").forEach(row => {
+      row.addEventListener("dragstart", () => { dragId = row.dataset.key || ""; });
+      row.addEventListener("dragover", event => event.preventDefault());
+      row.addEventListener("drop", event => {
+        event.preventDefault();
+        const targetKey = row.dataset.key || "";
+        if (!dragId || dragId === targetKey) return;
+        const from = product.slices.findIndex(slice => String(slice.local_id || slice.id || slice.image_library_id) === dragId);
+        const to = product.slices.findIndex(slice => String(slice.local_id || slice.id || slice.image_library_id) === targetKey);
+        if (from < 0 || to < 0) return;
+        const [moved] = product.slices.splice(from, 1);
+        product.slices.splice(to, 0, moved);
+        renderSlices();
+      });
+    });
+  }
+
+  function renderExternalPushParams() {
+    const target = $("externalPushParams");
+    if (!target) return;
+    const entries = Object.entries(externalPush.custom_params || {});
+    if (!entries.length) entries.push(["", ""]);
+    target.innerHTML = entries.map(([key, value]) => `<div class="product-param-row">
+      <input class="push-key" placeholder="key" value="${esc(key)}">
+      <input class="push-value" placeholder="value" value="${esc(value)}">
+      <button class="admin-button admin-button--danger" data-action="remove-param" type="button">删除</button>
+    </div>`).join("");
+  }
+
+  function fillExternalPush() {
+    if (!$("externalPushSection")) return;
     if (mode !== "edit") {
-      window.location.href = "/admin/wechat-pay/products";
+      $("externalPushSection").hidden = true;
+      return;
+    }
+    $("externalPushEnabled").value = externalPush.enabled ? "true" : "false";
+    $("externalPushUrl").value = externalPush.webhook_url || "";
+    $("externalPushType").value = externalPush.push_type || "";
+    $("externalPushExpiresAtTs").value = externalPush.expires_at_ts == null ? "" : externalPush.expires_at_ts;
+    $("externalPushDay").value = externalPush.day == null ? "" : externalPush.day;
+    $("externalPushFrequency").value = externalPush.frequency == null ? "" : externalPush.frequency;
+    $("externalPushRemark").value = externalPush.remark || "";
+    renderExternalPushParams();
+  }
+
+  function readExternalPushBody() {
+    const params = {};
+    document.querySelectorAll(".product-param-row").forEach(row => {
+      const key = row.querySelector(".push-key").value.trim();
+      const value = row.querySelector(".push-value").value;
+      if (key) params[key] = value;
+    });
+    const numberOrNull = id => $(id).value.trim() ? Number($(id).value.trim()) : null;
+    return {
+      enabled: $("externalPushEnabled").value === "true",
+      webhook_url: $("externalPushUrl").value.trim(),
+      push_type: $("externalPushType").value.trim(),
+      expires_at_ts: numberOrNull("externalPushExpiresAtTs"),
+      day: numberOrNull("externalPushDay"),
+      frequency: numberOrNull("externalPushFrequency"),
+      remark: $("externalPushRemark").value.trim(),
+      custom_params: params
+    };
+  }
+
+  async function renderSharePreview() {
+    const target = $("sharePreview");
+    if (!target || !product.id) return;
+    try {
+      const payload = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share`);
+      const share = payload.share || {};
+      target.innerHTML = `<img class="product-qr" src="${esc(share.qr_data_url || "")}" alt="商品二维码">
+        <input class="product-share-link" value="${esc(share.url || "")}" readonly>
+        <a class="admin-button admin-button--ghost" href="${esc(share.url || "#")}" target="_blank" rel="noreferrer">打开页面</a>`;
+    } catch (error) {
+      target.textContent = "扫码预览生成失败";
+    }
+  }
+
+  async function uploadSlices(files) {
+    const selected = Array.from(files || []);
+    if ((product.slices || []).length + selected.length > 10) throw new Error("全景贴图最多 10 张");
+    for (const file of selected) {
+      const form = new FormData();
+      form.append("image", file);
+      form.append("name", file.name);
+      const payload = await api("/api/admin/image-library/upload", { method: "POST", body: form });
+      product.slices.push({
+        local_id: `local_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        image_library_id: payload.item.id,
+        name: payload.item.name || file.name,
+        file_name: payload.item.file_name || file.name,
+        file_size: payload.item.file_size || file.size
+      });
+    }
+    renderSlices();
+  }
+
+  async function initEditor() {
+    if (!$("productForm")) return;
+    const channels = await api("/api/admin/wechat-pay/products/lead-channels").catch(() => ({ items: leadChannels }));
+    leadChannels = channels.items || leadChannels;
+    renderLeadChannels();
+    if (mode === "edit" && product.id) {
+      const detail = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}`);
+      product = detail.product || product;
+      externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`).catch(() => ({ config: externalPush }))).config || externalPush;
+    }
+    fillForm();
+    fillExternalPush();
+    renderSharePreview();
+  }
+
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    const action = button.dataset.action || "";
+    const id = button.dataset.id || "";
+    try {
+      if (action === "enable" || action === "disable") {
+        await api(`/api/admin/wechat-pay/products/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+        await refreshList();
+      } else if (action === "copy") {
+        await api(`/api/admin/wechat-pay/products/${encodeURIComponent(id)}/copy`, { method: "POST" });
+        await refreshList();
+      } else if (action === "delete") {
+        if (!window.confirm("确认删除这个商品吗？已有订单的商品请下架保留。")) return;
+        await api(`/api/admin/wechat-pay/products/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await refreshList();
+      } else if (action === "share") {
+        const payload = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(id)}/share`);
+        window.prompt("商品链接", (payload.share || {}).url || "");
+      } else if (action === "remove-slice") {
+        const key = button.dataset.key || "";
+        product.slices = (product.slices || []).filter(slice => String(slice.local_id || slice.id || slice.image_library_id) !== key);
+        renderSlices();
+      } else if (action === "remove-param") {
+        button.closest(".product-param-row").remove();
+      }
+    } catch (error) {
+      showToast(error.message || "操作失败");
     }
   });
+
+  $("addExternalPushParam")?.addEventListener("click", () => {
+    $("externalPushParams").insertAdjacentHTML("beforeend", '<div class="product-param-row"><input class="push-key" placeholder="key"><input class="push-value" placeholder="value"><button class="admin-button admin-button--danger" data-action="remove-param" type="button">删除</button></div>');
+  });
+
+  $("testExternalPushBtn")?.addEventListener("click", async () => {
+    try {
+      if (!product.id) throw new Error("保存商品后才能测试推送");
+      await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readExternalPushBody()) });
+      const payload = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push/test`, { method: "POST" });
+      $("externalPushResult").textContent = `测试推送 ${payload.result.delivery.status}，delivery_id: ${payload.result.delivery.delivery_id}`;
+    } catch (error) {
+      $("externalPushResult").textContent = error.message || "测试失败";
+    }
+  });
+
+  $("sliceInput")?.addEventListener("change", event => {
+    uploadSlices(event.target.files).catch(error => showToast(error.message || "上传失败"));
+    event.target.value = "";
+  });
+
+  $("productForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    showToast("保存中");
+    try {
+      const productId = product.id || "";
+      const saved = await api(
+        mode === "edit" ? `/api/admin/wechat-pay/products/${encodeURIComponent(productId)}` : "/api/admin/wechat-pay/products",
+        { method: mode === "edit" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readProductBody()) }
+      );
+      product = saved.product || product;
+      if (mode === "edit") {
+        externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readExternalPushBody()) })).config || externalPush;
+        fillExternalPush();
+        renderSharePreview();
+        showToast("已保存");
+      } else {
+        window.location.href = `/admin/wechat-pay/products/${encodeURIComponent(product.id)}/edit`;
+      }
+    } catch (error) {
+      showToast(error.message || "保存失败");
+    }
+  });
+
+  refreshList().catch(() => {});
+  initEditor().catch(error => showToast(error.message || "加载失败"));
 })();
 </script>
 {% endblock %}

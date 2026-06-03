@@ -94,16 +94,86 @@ def test_product_admin_pages_are_next_native_and_submit_product_code_alias() -> 
     assert new_page.status_code == 200
     assert 'id="productCode"' in new_page.text
     assert "product: { code:" in new_page.text
+    assert "支付后引流渠道码" in new_page.text
+    assert "外部推送" in new_page.text
+    assert "全景贴图长图切片" in new_page.text
     assert 'mode === "edit" ? "PUT" : "POST"' in new_page.text
 
     created = client.post(
         "/api/admin/wechat-pay/products",
-        json={"product": {"code": "admin_page_code_2026"}, "title": "后台创建商品", "price_cents": 12800},
+        json={
+            "product": {"code": "admin_page_code_2026"},
+            "title": "后台创建商品",
+            "price_cents": 12800,
+            "status": "draft",
+            "require_mobile": True,
+            "buy_button_text": "立即报名",
+            "slices": [{"image_library_id": 1, "sort_order": 1}],
+        },
     ).json()["product"]
+    assert created["status"] == "draft"
+    assert created["require_mobile"] is True
+    assert created["slice_count"] == 1
     edit_page = client.get(f"/admin/wechat-pay/products/{created['id']}/edit")
     assert edit_page.status_code == 200
     assert "admin_page_code_2026" in edit_page.text
     assert "readonly" in edit_page.text
+
+
+def test_product_admin_restores_lead_external_push_copy_and_slice_contracts() -> None:
+    client = make_client()
+    created = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "product": {"code": "capability_course_2026"},
+            "title": "能力回归商品",
+            "price_cents": 16800,
+            "status": "active",
+            "cta_text": "马上加入",
+            "require_mobile": True,
+            "slices": [{"image_library_id": 1, "sort_order": 1}],
+        },
+    ).json()["product"]
+
+    detail = client.get(f"/api/admin/wechat-pay/products/{created['id']}").json()["product"]
+    assert detail["name"] == "能力回归商品"
+    assert detail["amount_total"] == 16800
+    assert detail["status"] == "active"
+    assert detail["cta_text"] == "马上加入"
+    assert detail["require_mobile"] is True
+    assert [item["image_library_id"] for item in detail["slices"]] == [1]
+
+    channels = client.get("/api/admin/wechat-pay/products/lead-channels").json()
+    assert channels["ok"] is True
+    assert channels["items"][0]["channel_id"] == 0
+
+    config = client.put(
+        f"/api/admin/wechat-pay/products/{created['id']}/external-push",
+        json={
+            "enabled": True,
+            "webhook_url": "https://hooks.example.test/product",
+            "push_type": "paid_notify",
+            "expires_at_ts": 1999999999,
+            "day": 7,
+            "frequency": 1,
+            "remark": "支付后通知",
+            "custom_params": {"source": "product"},
+        },
+    ).json()["config"]
+    assert config["enabled"] is True
+    assert config["custom_params"] == {"source": "product"}
+    assert client.get(f"/api/admin/wechat-pay/products/{created['id']}/external-push").json()["config"]["push_type"] == "paid_notify"
+
+    test_push = client.post(f"/api/admin/wechat-pay/products/{created['id']}/external-push/test").json()
+    assert test_push["result"]["delivery"]["status"] == "preview"
+    assert test_push["side_effect_safety"]["real_external_call_executed"] is False
+
+    copied = client.post(f"/api/admin/wechat-pay/products/{created['id']}/copy")
+    assert copied.status_code == 201
+    copied_product = copied.json()["product"]
+    assert copied_product["product_code"] != created["product_code"]
+    assert copied_product["status"] == "draft"
+    assert copied_product["slice_count"] == 1
 
 
 def test_product_share_route_is_next_native() -> None:
