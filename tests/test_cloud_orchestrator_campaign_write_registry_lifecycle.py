@@ -28,7 +28,7 @@ def test_campaign_write_registry_is_next_commandbus_locked_without_rollback():
     assert record["replacement_status"] == "locked"
     assert "Next CommandBus" in record["notes"]
     assert "production_compat rollback removed" in record["notes"]
-    assert "run-due remains out of scope" in record["notes"]
+    assert "run-due is separately deletion_locked" in record["notes"]
 
 
 def test_campaign_write_manifest_is_next_command_locked_without_rollback():
@@ -52,7 +52,7 @@ def test_campaign_write_manifest_is_next_command_locked_without_rollback():
     assert "no campaign execute" in record["notes"]
 
 
-def test_campaign_read_locked_and_run_due_out_of_scope_do_not_regress():
+def test_campaign_read_locked_and_run_due_locked_state_do_not_regress():
     registry_records = _records(REGISTRY)
     manifest_records = _records(MANIFEST)
 
@@ -62,7 +62,8 @@ def test_campaign_read_locked_and_run_due_out_of_scope_do_not_regress():
     assert read["legacy_fallback_allowed"] is False
 
     run_due = next(item for item in manifest_records if item.get("route_pattern") == "/api/admin/cloud-orchestrator/campaigns/run-due*")
-    assert run_due["current_runtime_owner"] == "production_compat"
-    assert run_due["production_behavior"] == "scheduled_safe_mode"
-    assert run_due["delete_ready"] is False
-    assert run_due.get("delete_status") != "deletion_locked"
+    assert run_due["current_runtime_owner"] == "next_runtime_plan"
+    assert run_due["production_behavior"] == "next_command"
+    assert run_due["legacy_fallback_allowed"] is False
+    assert run_due["delete_ready"] is True
+    assert run_due["delete_status"] == "deletion_locked"

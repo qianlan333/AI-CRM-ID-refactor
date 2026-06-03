@@ -35,7 +35,8 @@ def test_campaign_write_exact_routes_win_over_production_compat_wildcard():
         assert _owner_for(samples, method, path) == "next"
         assert _endpoint_for(samples, method, path) == "aicrm_next.cloud_orchestrator.api"
 
-    assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "production_compat"
+    assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "next"
+    assert _endpoint_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "aicrm_next.cloud_orchestrator.api"
 
 
 def test_campaign_write_requests_do_not_call_legacy_forward(monkeypatch):

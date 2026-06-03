@@ -41,12 +41,12 @@ def test_campaign_inventory_covers_read_write_and_timer_boundaries():
     for item in required:
         assert item in text
 
-    assert "out-of-scope" in text
-    assert "not deletion_locked" in text
+    assert "Next safe-mode planner" in text
+    assert "production_compat rollback removed" in text
     assert "legacy_fallback_allowed=false" in text
     assert "legacy fallback removed" in text
     assert "locked: Next read model only" in text
-    assert "Next CommandBus validating" in text
+    assert "Next CommandBus" in text
     assert "No real WeCom send" in text
     assert "No automation runtime" in text
     assert "Media upload remains locked" in text

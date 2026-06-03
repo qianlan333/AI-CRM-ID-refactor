@@ -18,8 +18,8 @@ Legacy Exit group 18 moved Cloud Orchestrator campaign read/workspace surfaces t
 | `/admin/cloud-orchestrator/campaigns` | `cloud_campaigns_workspace.html` inline JS | reject campaign | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/reject` | POST | `api_reject_cloud_campaign` | `RejectCloudCampaignCommand` | none | locked: UI calls controlled write API | API 200, `source_status=next_command` |
 | `/admin/cloud-orchestrator/campaigns` | `cloud_campaigns_workspace.html` inline JS | delete campaign | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | DELETE | `api_delete_cloud_campaign` | `DeleteCloudCampaignCommand` | none | locked: UI calls controlled write API | API 200, `source_status=next_command` |
 | `/admin/cloud-orchestrator/campaigns` | `cloud_campaigns_workspace.html` inline JS | create/edit/delete steps | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps*` | POST/PATCH/DELETE | `api_add_cloud_campaign_step` / `api_update_cloud_campaign_step` / `api_delete_cloud_campaign_step` | step mutation commands | none | locked: edit controls call controlled write API | API 200, `source_status=next_command` |
-| timer / job runner | no page caller in this group | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | legacy timer facade | real runtime/send risk, safe-mode guarded by legacy route | out-of-scope; no campaign execution in group 19 | not executed |
-| timer / preview | no page caller in this group | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | legacy timer facade | preview/noop path only | out-of-scope; retained for timer validation | not executed |
+| timer / job runner | no page caller; API-only / timer-only | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `api_plan_cloud_campaign_run_due` | `PlanCloudCampaignRunDueCommand` | SideEffectPlan / AuditLedger / ExternalCallAttempt blocked record only | locked: Next safe-mode planner; no real send/runtime | API 200, `source_status=next_run_due_plan` |
+| timer / preview | no page caller; API-only / timer-only | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `api_preview_cloud_campaign_run_due` | `PreviewCloudCampaignRunDueCommand` | due candidates / estimated actions only; no writes | locked: Next safe-mode preview; no real send/runtime | API 200, `source_status=next_run_due_preview` |
 
 ## Response Contract
 
@@ -49,7 +49,7 @@ Next campaign read JSON responses include:
 
 ## Decision Notes
 
-Read/workspace GET routes are deletion_locked to Next exact read APIs with `legacy_fallback_allowed=false`. Campaign write, step mutation, and batch-start routes are now locked on Next CommandBus with `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. run-due routes stay active/out-of-scope in production_compat and are not marked `deletion_locked` in this group.
+Read/workspace GET routes are deletion_locked to Next exact read APIs with `legacy_fallback_allowed=false`. Campaign write, step mutation, and batch-start routes are locked on Next CommandBus with `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. run-due and preview routes are separately locked on the Next safe-mode planner with production_compat rollback removed.
 
 ## Deletion Closeout Status Matrix
 
@@ -61,4 +61,4 @@ Read/workspace GET routes are deletion_locked to Next exact read APIs with `lega
 | `/admin/cloud-orchestrator/campaigns` | inline JS | members drawer | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/members` | GET | `api_list_cloud_campaign_members` | locked: Next read model only, legacy fallback removed | API 200 for fixture |
 | `/admin/cloud-orchestrator/campaigns` | API-only validation | steps read | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps` | GET | `api_list_cloud_campaign_steps` | locked: Next read model only, legacy fallback removed | API 200 for fixture |
 | `/admin/cloud-orchestrator/campaigns` | inline JS write controls | approve/start/pause/reject/delete/batch-start/step mutation | `/api/admin/cloud-orchestrator/campaigns*` | POST/PATCH/DELETE | Next CommandBus exact routes | locked: legacy rollback removed; deletion_locked | API 200, next_command |
-| timer / job runner | no page caller in this group | run-due / preview | `/api/admin/cloud-orchestrator/campaigns/run-due*` | POST | production_compat timer fallback | retained out-of-scope; pending later runtime group; not deletion_locked | not executed |
+| timer / job runner | no page caller; API-only / timer-only | run-due / preview | `/api/admin/cloud-orchestrator/campaigns/run-due*` | POST/OPTIONS | Next safe-mode planner | deletion_locked; production_compat rollback removed; no real send/runtime | preview/run-due/OPTIONS smoke |

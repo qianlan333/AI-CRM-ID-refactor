@@ -58,7 +58,7 @@ def test_campaign_write_registry_is_locked_on_next_commandbus():
     assert record["adapter_mode"] == "real_blocked"
     assert "Next CommandBus" in record["notes"]
     assert "production_compat rollback removed" in record["notes"]
-    assert "run-due remains out of scope" in record["notes"]
+    assert "run-due is separately deletion_locked" in record["notes"]
 
 
 def test_campaign_manifest_read_write_and_run_due_states():
@@ -83,9 +83,12 @@ def test_campaign_manifest_read_write_and_run_due_states():
     assert write["replacement_status"] == "locked"
     assert write["adapter_mode"] == "real_blocked"
 
-    assert run_due["current_runtime_owner"] == "production_compat"
-    assert run_due["production_behavior"] == "scheduled_safe_mode"
-    assert run_due["delete_ready"] is False
+    assert run_due["current_runtime_owner"] == "next_runtime_plan"
+    assert run_due["production_behavior"] == "next_command"
+    assert run_due["legacy_fallback_allowed"] is False
+    assert run_due["delete_ready"] is True
+    assert run_due["delete_status"] == "deletion_locked"
+    assert run_due["replacement_status"] == "locked"
 
 
 def test_campaign_page_manifest_is_locked():

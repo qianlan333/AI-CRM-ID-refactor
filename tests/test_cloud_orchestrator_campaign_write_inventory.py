@@ -56,4 +56,4 @@ def test_campaign_write_inventory_covers_controls_steps_and_runtime_boundaries()
     assert "legacy_fallback_allowed=false" in text
     assert "deletion_locked" in text
     assert "legacy fallback removed" in text
-    assert "run-due remains production_compat/out-of-scope" in text
+    assert "run-due and preview are now separately deletion_locked" in text

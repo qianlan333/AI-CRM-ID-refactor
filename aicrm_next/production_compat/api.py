@@ -32,8 +32,6 @@ async def automation_member_detail_route(request: Request) -> Response:
 @router.api_route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/jobs/run-due", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/jobs/run-due/preview", methods=["POST", "OPTIONS"])
-@router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due", methods=["POST", "OPTIONS"])
-@router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due/preview", methods=["POST", "OPTIONS"])
 async def legacy_production_compat_timer_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
