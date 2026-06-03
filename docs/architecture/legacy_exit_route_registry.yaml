@@ -836,29 +836,29 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Next-native WeCom tag catalog read model for admin, questionnaire editor, and selector surfaces; returns route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false; write and sync routes remain production_compat out of scope.
+    notes: Read legacy rollback removed and locked; Next tag catalog only for admin, questionnaire editor, and selector surfaces; returns route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, sync_executed=false; write and sync routes remain production_compat out of scope.
   - route_id: wecom_tag_groups_read_next_native
     path_pattern: /api/admin/wecom/tag-groups
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Next-native WeCom tag group read model for admin and selector surfaces; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
+    notes: Read legacy rollback removed and locked; Next tag catalog only for tag group reads; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
   - route_id: auth_wecom_start_blocked_next
     path_pattern: /auth/wecom/start
     methods: [GET, OPTIONS]
@@ -1172,15 +1172,15 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Optional tag detail read over the Next tag catalog; write/sync subpaths remain out of scope.
+    notes: Optional tag detail read over the Next tag catalog with read legacy rollback removed and locked; write/sync subpaths remain out of scope.
   - route_id: wecom_tag_live_gate_out_of_scope
     path_pattern: /api/admin/wecom/tags/live/gate
     methods: [GET]
@@ -1200,15 +1200,15 @@ routes:
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Optional tag group detail read over the Next tag catalog; group CRUD remains out of scope.
+    notes: Optional tag group detail read over the Next tag catalog with read legacy rollback removed and locked; group CRUD remains out of scope.
   - route_id: wecom_tag_write_sync_out_of_scope_family
     path_pattern: /api/admin/wecom/tags*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]

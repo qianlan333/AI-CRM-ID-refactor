@@ -26,6 +26,9 @@ def test_wecom_tag_read_inventory_covers_read_write_selector_and_sync_scope() ->
     assert "No separate sidebar tag catalog selector" in text
     assert "Write Out Of Scope" in text
     assert "External Side Effects Out Of Scope" in text
+    assert "Frontend API Backend Contract Matrix" in text
+    assert "deletion_locked" in text
+    assert "legacy_fallback_allowed=false" in text
     assert "does not execute real WeCom sync" in text
     assert "does not create/update/delete tags or groups" in text
     assert "does not mutate customer or questionnaire tags" in text
@@ -39,3 +42,26 @@ def test_wecom_tag_read_inventory_marks_external_systems_out_of_scope() -> None:
     assert "Payment, storage, OpenClaw, and automation runtime remain out of scope" in text
     assert "does not call WeCom" in text
     assert "Empty production projection tables return an empty catalog rather than fixture data" in text
+
+
+def test_wecom_tag_read_inventory_frontend_backend_matrix_covers_entry_pages() -> None:
+    text = INVENTORY.read_text(encoding="utf-8")
+
+    for marker in [
+        "/admin/wecom-tags",
+        "/admin/questionnaires/new",
+        "/admin/questionnaires/{questionnaire_id}",
+        "/admin/channels",
+        "/admin/channels/{channel_id}/edit",
+        "/admin/automation-conversion",
+        "/admin/automation-conversion/programs/{program_id}/setup",
+        "config_wecom_tags.html",
+        "wecom_tag_management.js",
+        "admin_questionnaires.html",
+        "channel_admission_pages.js",
+        "automation_agent_config_tag_picker.js",
+        "list_admin_wecom_tags_read_model",
+        "PostgresTagCatalogRepository",
+        "production_unavailable",
+    ]:
+        assert marker in text

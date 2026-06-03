@@ -768,29 +768,29 @@ routes:
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: WeCom tag catalog read route is Next-native over the tag projection read model; production projection unavailable returns production_unavailable, no fixture masquerade, no real WeCom call, fallback_used=false.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Read legacy rollback removed and locked; WeCom tag catalog read route is Next-native only over the tag projection read model; production projection unavailable returns production_unavailable, no fixture masquerade, no real WeCom call, fallback_used=false, sync_executed=false.
   - route_pattern: /api/admin/wecom/tags/{tag_id}
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Optional tag detail read is served from the Next tag catalog read model; write/sync subpaths remain out of scope.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Optional tag detail read is served from the Next tag catalog read model with read legacy rollback removed and locked; write/sync subpaths remain out of scope.
   - route_pattern: /api/admin/wecom/tags/live/gate
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -824,29 +824,29 @@ routes:
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: WeCom tag groups read route is Next-native over the tag projection read model; no fixture masquerade and no real WeCom call.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Read legacy rollback removed and locked; WeCom tag groups read route is Next-native only over the tag projection read model; no fixture masquerade and no real WeCom call.
   - route_pattern: /api/admin/wecom/tag-groups/{group_id}
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     adapter_mode: none
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Optional tag group detail read is served from the Next tag catalog read model; CRUD remains out of scope.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Optional tag group detail read is served from the Next tag catalog read model with read legacy rollback removed and locked; CRUD remains out of scope.
   - route_pattern: /api/admin/wecom/tag-groups*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
