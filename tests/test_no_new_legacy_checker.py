@@ -13,6 +13,7 @@ from scripts.check_no_new_legacy import (
     check_questionnaire_h5_submit_next_commandbus,
     check_questionnaire_oauth_next_adapter,
     check_sidebar_readonly_closeout_lock,
+    check_sidebar_jssdk_next_adapter,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
     check_wecom_tag_read_next_native,
@@ -52,8 +53,8 @@ def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tm
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     api.parent.mkdir(parents=True)
-    registry.parent.mkdir(parents=True)
-    manifest.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
 
     compat.write_text(
         "from fastapi import APIRouter\n"
@@ -139,8 +140,8 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tm
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     api.parent.mkdir(parents=True)
-    registry.parent.mkdir(parents=True)
-    manifest.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
 
     compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
     api.write_text(
@@ -320,6 +321,77 @@ def test_wecom_tag_live_mutation_guard_flags_legacy_route_and_real_gateway_drift
     assert "wecom_tag_live_mutation_manifest_behavior" in codes
     assert "wecom_tag_live_mutation_manifest_legacy_behavior" in codes
     assert "wecom_tag_live_mutation_manifest_rollback_allowed" in codes
+
+
+def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path: Path) -> None:
+    inventory = tmp_path / "docs/architecture/sidebar_jssdk_route_inventory.md"
+    api = tmp_path / "aicrm_next/identity_contact/sidebar_jssdk.py"
+    adapter = tmp_path / "aicrm_next/integration_gateway/wecom_jssdk_adapter.py"
+    main = tmp_path / "aicrm_next/main.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    adapter.parent.mkdir(parents=True)
+    main.parent.mkdir(parents=True, exist_ok=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    inventory.write_text(
+        "Frontend ↔ API ↔ Backend Contract Matrix\n"
+        "/sidebar/bind-mobile sidebar_customer_workbench.html sidebar_workbench.js /api/sidebar/jssdk-config\n"
+        "url debug agentid ok appId corpId timestamp nonceStr signature jsApiList source_status adapter_mode route_owner fallback_used real_external_call_executed\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "def sidebar_jssdk_config():\n"
+        "    return forward_to_legacy_flask()\n"
+        "HEAD = 'HEAD'\n"
+        "OPTIONS = 'OPTIONS'\n"
+        "build_sidebar_jssdk_config = object\n",
+        encoding="utf-8",
+    )
+    adapter.write_text(
+        "class ExternalCallAttempt: pass\n"
+        "def build_sidebar_jssdk_config():\n"
+        "    return requests.post('https://example.com')\n"
+        "def record_event(): pass\n"
+        "real_external_call_executed = False\n",
+        encoding="utf-8",
+    )
+    main.write_text("production_compat_router = object\nsidebar_jssdk_router = object\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/sidebar/jssdk-config\n"
+        "    methods: [GET, HEAD, OPTIONS]\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: active\n"
+        "    replacement_status: not_started\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/sidebar/jssdk-config\n"
+        "    methods: [GET, HEAD, OPTIONS]\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n"
+        "    adapter_mode: real_enabled\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_sidebar_jssdk_next_adapter(tmp_path)}
+
+    assert "sidebar_jssdk_legacy_forward" in codes
+    assert "sidebar_jssdk_direct_http_client" in codes
+    assert "sidebar_jssdk_router_order" in codes
+    assert "sidebar_jssdk_registry_owner" in codes
+    assert "sidebar_jssdk_registry_lifecycle" in codes
+    assert "sidebar_jssdk_manifest_owner" in codes
+    assert "sidebar_jssdk_manifest_behavior" in codes
 
 
 def test_questionnaire_oauth_guard_flags_exact_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:

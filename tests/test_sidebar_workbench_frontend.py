@@ -145,6 +145,7 @@ def test_sidebar_legacy_binding_apis_remain_available(client):
     assert status_response.status_code == 400
     assert bind_response.status_code == 400
     assert jssdk_response.status_code == 400
+    assert "X-AICRM-Compatibility-Facade" not in jssdk_response.headers
 
 
 def test_sidebar_workbench_v2_can_fallback_to_legacy_by_query(client):

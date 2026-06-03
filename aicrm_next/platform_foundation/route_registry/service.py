@@ -21,7 +21,8 @@ def route_matches(entry: RouteRegistryEntry, path: str, methods: set[str] | None
     if methods is None:
         return True
     entry_methods = set(entry.methods)
-    return bool(entry_methods & {method for method in methods if method != "HEAD"})
+    normalized_methods = {"GET" if method == "HEAD" else method for method in methods}
+    return bool(entry_methods & normalized_methods)
 
 
 class RouteRegistryService:
