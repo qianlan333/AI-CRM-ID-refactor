@@ -12,7 +12,7 @@ LIVE_ROUTES = {
 }
 
 
-def test_wecom_tag_live_mutation_registry_entries_are_validating_real_blocked() -> None:
+def test_wecom_tag_live_mutation_registry_entries_are_deletion_locked_real_blocked() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
@@ -21,37 +21,38 @@ def test_wecom_tag_live_mutation_registry_entries_are_validating_real_blocked() 
         assert entry is not None
         assert entry.capability_owner == "aicrm_next.customer_tags"
         assert entry.runtime_owner == owner
-        assert entry.legacy_fallback_allowed is True
+        assert entry.legacy_fallback_allowed is False
         assert entry.external_side_effect_risk == "high"
         assert entry.adapter_mode == "real_blocked"
-        assert entry.replacement_status == "validating"
-        assert entry.delete_status in {"active", "next_primary_with_legacy_rollback"}
+        assert entry.replacement_status == "locked"
+        assert entry.delete_status == "deletion_locked"
 
 
-def test_wecom_tag_live_mutation_manifest_matches_validating_lifecycle() -> None:
+def test_wecom_tag_live_mutation_manifest_matches_deletion_locked_lifecycle() -> None:
     registry = yaml.safe_load(open("docs/architecture/legacy_exit_route_registry.yaml", encoding="utf-8"))
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
     registry_by_route = {(record["path_pattern"], tuple(record["methods"])): record for record in registry["routes"]}
     manifest_by_route = {(record["route_pattern"], tuple(record["methods"])): record for record in manifest["routes"]}
 
     expected = [
-        ("/api/admin/wecom/tags/live/gate", ("GET",), "next_native", "next_exact", "active"),
-        ("/api/admin/wecom/tags/live/mark", ("POST", "OPTIONS"), "next_command", "next_command", "next_primary_with_legacy_rollback"),
-        ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command", "next_primary_with_legacy_rollback"),
+        ("/api/admin/wecom/tags/live/gate", ("GET",), "next_native", "next_exact"),
+        ("/api/admin/wecom/tags/live/mark", ("POST", "OPTIONS"), "next_command", "next_command"),
+        ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command"),
     ]
-    for route, methods, registry_owner, behavior, delete_status in expected:
+    for route, methods, registry_owner, behavior in expected:
         registry_record = registry_by_route[(route, methods)]
         manifest_record = manifest_by_route[(route, methods)]
         assert registry_record["runtime_owner"] == registry_owner
-        assert registry_record["legacy_fallback_allowed"] is True
-        assert registry_record["delete_status"] == delete_status
-        assert registry_record["replacement_status"] == "validating"
+        assert registry_record["legacy_fallback_allowed"] is False
+        assert registry_record["delete_status"] == "deletion_locked"
+        assert registry_record["replacement_status"] == "locked"
         assert registry_record["adapter_mode"] == "real_blocked"
         assert manifest_record["current_runtime_owner"] == "next"
         assert manifest_record["production_behavior"] == behavior
-        assert manifest_record["legacy_fallback_allowed"] is True
-        assert manifest_record["delete_status"] == delete_status
-        assert manifest_record["replacement_status"] == "validating"
+        assert manifest_record["legacy_fallback_allowed"] is False
+        assert manifest_record["delete_ready"] is True
+        assert manifest_record["delete_status"] == "deletion_locked"
+        assert manifest_record["replacement_status"] == "locked"
 
 
 def test_wecom_tag_crud_and_sync_remain_deletion_locked() -> None:

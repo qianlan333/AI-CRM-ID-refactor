@@ -14,6 +14,7 @@ from scripts.check_no_new_legacy import (
     check_questionnaire_oauth_next_adapter,
     check_sidebar_readonly_closeout_lock,
     check_user_ops_next_native_preview,
+    check_wecom_tag_live_mutation_next_commandbus,
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
@@ -192,6 +193,133 @@ def test_questionnaire_h5_submit_guard_allows_next_commandbus_deletion_locked(tm
     )
 
     assert check_questionnaire_h5_submit_next_commandbus(tmp_path) == []
+
+
+def test_wecom_tag_live_mutation_guard_flags_legacy_route_and_real_gateway_drift(tmp_path: Path) -> None:
+    inventory = tmp_path / "docs/architecture/wecom_tag_live_mutation_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/customer_tags/api.py"
+    live_mutation = tmp_path / "aicrm_next/customer_tags/live_mutation.py"
+    commands = tmp_path / "aicrm_next/customer_tags/mutation_commands.py"
+    questionnaire = tmp_path / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory.parent.mkdir(parents=True)
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    questionnaire.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    inventory.write_text(
+        "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix\n"
+        "/api/admin/wecom/tags/live/gate\n"
+        "/api/admin/wecom/tags/live/mark\n"
+        "/api/admin/wecom/tags/live/unmark\n"
+        "PlanWeComTagMarkCommand PlanWeComTagUnmarkCommand PlanCustomerTagAssignmentCommand PlanQuestionnaireTagSideEffectCommand\n"
+        "real_external_call_executed=false wecom_api_called=false real_blocked\n",
+        encoding="utf-8",
+    )
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/admin/wecom/tags/live/mark', methods=['POST'])\n"
+        "def legacy_live_mark():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "def mark_tags_live():\n"
+        "    return WeComTagLiveGateway()\n"
+        "def unmark_tags_live():\n"
+        "    return {'ok': True}\n"
+        "def execute_wecom_tag_mutation():\n"
+        "    return {'ok': True}\n"
+        "def live_gate_status():\n"
+        "    return {'ok': True}\n",
+        encoding="utf-8",
+    )
+    live_mutation.write_text(
+        "class InMemoryAuditLedger: pass\n"
+        "class InMemorySideEffectPlanRepository: pass\n"
+        "def execute_wecom_tag_mutation():\n"
+        "    return {'access_token': 'token', 'wecom_api_called': False}\n",
+        encoding="utf-8",
+    )
+    commands.write_text(
+        "class PlanWeComTagMarkCommand: pass\n"
+        "class PlanWeComTagUnmarkCommand: pass\n"
+        "class PlanCustomerTagAssignmentCommand: pass\n"
+        "class PlanQuestionnaireTagSideEffectCommand: pass\n",
+        encoding="utf-8",
+    )
+    questionnaire.write_text("PlanQuestionnaireTagSideEffectCommand = object\nexecute_wecom_tag_mutation = object\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - path_pattern: /api/admin/wecom/tags/live/gate\n"
+        "    methods: [GET]\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - path_pattern: /api/admin/wecom/tags/live/mark\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    runtime_owner: next_command\n"
+        "    legacy_fallback_allowed: true\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - path_pattern: /api/admin/wecom/tags/live/unmark\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: false\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/wecom/tags/live/gate\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - route_pattern: /api/admin/wecom/tags/live/mark\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_primary_with_legacy_rollback\n"
+        "    legacy_fallback_allowed: true\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n"
+        "  - route_pattern: /api/admin/wecom/tags/live/unmark\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_wecom_tag_live_mutation_next_commandbus(tmp_path)}
+
+    assert "wecom_tag_live_mutation_production_compat_route" in codes
+    assert "wecom_tag_live_mutation_real_wecom_gateway" in codes
+    assert "wecom_tag_live_mutation_real_wecom_token" in codes
+    assert "wecom_tag_live_mutation_registry_rollback_allowed" in codes
+    assert "wecom_tag_live_mutation_registry_rollback_lifecycle" in codes
+    assert "wecom_tag_live_mutation_manifest_behavior" in codes
+    assert "wecom_tag_live_mutation_manifest_legacy_behavior" in codes
+    assert "wecom_tag_live_mutation_manifest_rollback_allowed" in codes
 
 
 def test_questionnaire_oauth_guard_flags_exact_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:

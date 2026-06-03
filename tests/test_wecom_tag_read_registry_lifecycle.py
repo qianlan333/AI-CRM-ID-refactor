@@ -48,17 +48,17 @@ def test_wecom_tag_auxiliary_families_remain_out_of_scope_after_write_closeout()
         assert entry.adapter_mode == "real_blocked"
 
 
-def test_wecom_tag_live_gate_is_group14_validating_boundary() -> None:
+def test_wecom_tag_live_gate_is_group14_locked_boundary() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
     entry = service.find_route("/api/admin/wecom/tags/live/gate", {"GET"})
 
     assert entry is not None
     assert entry.runtime_owner == "next_native"
-    assert entry.legacy_fallback_allowed is True
+    assert entry.legacy_fallback_allowed is False
     assert entry.adapter_mode == "real_blocked"
-    assert entry.delete_status == "active"
-    assert entry.replacement_status == "validating"
+    assert entry.delete_status == "deletion_locked"
+    assert entry.replacement_status == "locked"
 
 
 def test_wecom_tag_read_route_registry_yaml_matches_lifecycle() -> None:
