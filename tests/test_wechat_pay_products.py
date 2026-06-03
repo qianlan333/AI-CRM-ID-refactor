@@ -186,7 +186,7 @@ def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
     monkeypatch.setattr(
         product_service.product_repo,
         "get_product_by_id",
-        lambda product_id: {"id": int(product_id), "product_code": "prd_ordered"},
+        lambda product_id: {"id": int(product_id), "product_code": "prd_ordered", "status": "active"},
     )
     monkeypatch.setattr(product_service.product_repo, "count_orders_for_product_code", lambda product_code: 1)
     monkeypatch.setattr(product_service.product_repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
@@ -195,6 +195,29 @@ def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
         product_service.delete_admin_product(8)
 
     assert deleted == []
+
+
+def test_delete_admin_product_allows_disabled_product_with_orders(monkeypatch):
+    deleted: list[int] = []
+    commits: list[str] = []
+
+    class FakeDb:
+        def commit(self):
+            commits.append("commit")
+
+    monkeypatch.setattr(
+        product_service.product_repo,
+        "get_product_by_id",
+        lambda product_id: {"id": int(product_id), "product_code": "prd_disabled_ordered", "status": "disabled"},
+    )
+    monkeypatch.setattr(product_service.product_repo, "count_orders_for_product_code", lambda product_code: 1)
+    monkeypatch.setattr(product_service.product_repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
+    monkeypatch.setattr(product_service, "get_db", lambda: FakeDb())
+
+    product_service.delete_admin_product(9)
+
+    assert deleted == [9]
+    assert commits == ["commit"]
 
 
 def test_create_jsapi_order_success_path_commits_with_fake_client(monkeypatch):
