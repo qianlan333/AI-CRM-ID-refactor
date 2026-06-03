@@ -859,6 +859,90 @@ routes:
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
     notes: Read legacy rollback removed and locked; Next tag catalog only for tag group reads; no real WeCom sync or mutation; write and sync routes remain production_compat out of scope.
+  - route_id: wecom_tag_create_next_command
+    path_pattern: /api/admin/wecom/tags
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Group 13 create tag route is Next CommandBus primary with retained production_compat rollback; creates only local projection and SideEffectPlan, no real WeCom call.
+  - route_id: wecom_tag_update_delete_next_command
+    path_pattern: /api/admin/wecom/tags/{tag_id}
+    methods: [PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Group 13 tag update/delete route is Next CommandBus primary with retained production_compat rollback; writes local projection and SideEffectPlan only.
+  - route_id: wecom_tag_sync_next_command
+    path_pattern: /api/admin/wecom/tags/sync
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Group 13 tag catalog sync command plans a real WeCom sync through SideEffectPlan but keeps real calls blocked.
+  - route_id: wecom_tag_sync_due_next_command
+    path_pattern: /api/admin/wecom/tags/sync-due
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Historical sync-due entrypoint now resolves to the same blocked Next CommandBus sync plan.
+  - route_id: wecom_tag_group_create_next_command
+    path_pattern: /api/admin/wecom/tag-groups
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Group 13 create tag group route is Next CommandBus primary with retained production_compat rollback; SideEffectPlan only.
+  - route_id: wecom_tag_group_update_delete_next_command
+    path_pattern: /api/admin/wecom/tag-groups/{group_id}
+    methods: [PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    runtime_owner: next_command
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    rollback_owner: production_compat
+    notes: Group 13 tag group update/delete route is Next CommandBus primary with retained production_compat rollback; SideEffectPlan only.
   - route_id: auth_wecom_start_blocked_next
     path_pattern: /auth/wecom/start
     methods: [GET, OPTIONS]
@@ -1219,10 +1303,10 @@ routes:
     external_side_effect_risk: high
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
-    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Tag CRUD, sync, fake-stub write, live mark/unmark, customer mutation, and questionnaire tag side effects are out of scope for group 12.
+    notes: Group 13 exact tag CRUD and sync routes are Next CommandBus primary; this wildcard remains as the retained production_compat rollback family for fake-stub write, live mark/unmark, customer mutation, and other subpaths.
   - route_id: wecom_tag_group_write_out_of_scope_family
     path_pattern: /api/admin/wecom/tag-groups*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
@@ -1233,10 +1317,10 @@ routes:
     external_side_effect_risk: high
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
-    checker: tests/test_wecom_tag_read_registry_lifecycle.py
+    replacement_status: validating
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Tag group CRUD stays out of scope for group 12 and remains guarded by production_compat.
+    notes: Group 13 exact tag group CRUD routes are Next CommandBus primary; this wildcard remains as the retained production_compat rollback family for other tag-group subpaths.
   - route_id: frontend_compat_legacy_routes_inventory
     path_pattern: /api/frontend-compat/legacy-routes
     methods: [GET]

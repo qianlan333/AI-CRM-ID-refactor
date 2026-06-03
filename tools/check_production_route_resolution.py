@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 
-NEXT_OWNED_BEHAVIORS = {"next_exact", "guarded_preview", "fake_adapter", "readonly_facade"}
+NEXT_OWNED_BEHAVIORS = {"next_exact", "next_command", "guarded_preview", "fake_adapter", "readonly_facade"}
 PRODUCTION_COMPAT_BEHAVIORS = {"legacy_forward", "scheduled_safe_mode"}
 
 RESOLUTION_SAMPLES = [
@@ -38,7 +38,15 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/h5/questionnaires/hxc-activation-v1"),
     ("GET", "/api/h5/wechat/oauth/start"),
     ("GET", "/api/admin/wecom/tags"),
+    ("POST", "/api/admin/wecom/tags"),
+    ("PATCH", "/api/admin/wecom/tags/tag_fixture_active"),
+    ("DELETE", "/api/admin/wecom/tags/tag_fixture_active"),
+    ("POST", "/api/admin/wecom/tags/sync"),
+    ("POST", "/api/admin/wecom/tags/sync-due"),
     ("GET", "/api/admin/wecom/tag-groups"),
+    ("POST", "/api/admin/wecom/tag-groups"),
+    ("PATCH", "/api/admin/wecom/tag-groups/group_fixture_lifecycle"),
+    ("DELETE", "/api/admin/wecom/tag-groups/group_fixture_lifecycle"),
     ("GET", "/api/admin/automation-conversion/overview"),
     ("GET", "/api/admin/automation-conversion/agents/options"),
     ("POST", "/api/customer-automation/activation-webhook"),
@@ -157,11 +165,21 @@ def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(f"^{escaped}$")
 
 
-def manifest_record_for_path(records: list[dict[str, Any]], path: str) -> dict[str, Any] | None:
-    exact = [record for record in records if str(record["route_pattern"]) == path]
+def _record_supports_method(record: dict[str, Any], method: str | None) -> bool:
+    if method is None:
+        return True
+    return method.upper() in {str(item).upper() for item in record.get("methods") or []}
+
+
+def manifest_record_for_path(records: list[dict[str, Any]], path: str, method: str | None = None) -> dict[str, Any] | None:
+    exact = [record for record in records if str(record["route_pattern"]) == path and _record_supports_method(record, method)]
     if exact:
         return exact[0]
-    matches = [record for record in records if _pattern_to_regex(str(record["route_pattern"])).match(path)]
+    matches = [
+        record
+        for record in records
+        if _record_supports_method(record, method) and _pattern_to_regex(str(record["route_pattern"])).match(path)
+    ]
     if not matches:
         return None
     return sorted(matches, key=lambda item: len(str(item["route_pattern"]).replace("*", "")), reverse=True)[0]
@@ -178,7 +196,7 @@ def shadowed_exact_routes(routes: list[dict[str, Any]], records: list[dict[str, 
         first = first_matching_route(routes, method=method, path=route["path"])
         if not first or not first["is_production_compat"]:
             continue
-        manifest = manifest_record_for_path(records, route["path"]) or {}
+        manifest = manifest_record_for_path(records, route["path"], method) or {}
         shadowed.append(
             {
                 "method": method,
@@ -197,7 +215,7 @@ def resolution_samples(routes: list[dict[str, Any]], records: list[dict[str, Any
     samples: list[dict[str, Any]] = []
     for method, path in RESOLUTION_SAMPLES:
         first = first_matching_route(routes, method=method, path=path)
-        manifest = manifest_record_for_path(records, path) or {}
+        manifest = manifest_record_for_path(records, path, method) or {}
         samples.append(
             {
                 "method": method,

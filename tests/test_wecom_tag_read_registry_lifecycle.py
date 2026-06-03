@@ -44,7 +44,7 @@ def test_wecom_tag_write_and_sync_families_remain_out_of_scope() -> None:
         assert entry.runtime_owner == "production_compat"
         assert entry.legacy_fallback_allowed is True
         assert entry.delete_status == "active"
-        assert entry.replacement_status == "not_started"
+        assert entry.replacement_status == "validating"
         assert entry.adapter_mode == "real_blocked"
 
 
@@ -63,36 +63,40 @@ def test_wecom_tag_live_gate_stays_out_of_scope() -> None:
 
 def test_wecom_tag_read_route_registry_yaml_matches_lifecycle() -> None:
     registry = yaml.safe_load(open("docs/architecture/legacy_exit_route_registry.yaml", encoding="utf-8"))
-    by_route = {record["path_pattern"]: record for record in registry["routes"]}
+    by_route = {(record["path_pattern"], tuple(record["methods"])): record for record in registry["routes"]}
 
     for route in READ_ROUTES:
-        assert by_route[route]["runtime_owner"] == "next_native"
-        assert by_route[route]["legacy_fallback_allowed"] is False
-        assert by_route[route]["legacy_source"] == ""
-        assert by_route[route]["delete_status"] == "deletion_locked"
-        assert by_route[route]["replacement_status"] == "locked"
+        record = by_route[(route, ("GET",))]
+        assert record["runtime_owner"] == "next_native"
+        assert record["legacy_fallback_allowed"] is False
+        assert record["legacy_source"] == ""
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
 
     for route in WRITE_FAMILIES:
-        assert by_route[route]["runtime_owner"] == "production_compat"
-        assert by_route[route]["delete_status"] == "active"
-        assert by_route[route]["replacement_status"] == "not_started"
+        record = by_route[(route, ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"))]
+        assert record["runtime_owner"] == "production_compat"
+        assert record["delete_status"] == "active"
+        assert record["replacement_status"] == "validating"
 
 
 def test_wecom_tag_read_production_manifest_locks_read_routes_only() -> None:
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
-    by_route = {record["route_pattern"]: record for record in manifest["routes"]}
+    by_route = {(record["route_pattern"], tuple(record["methods"])): record for record in manifest["routes"]}
 
     for route in READ_ROUTES:
-        assert by_route[route]["current_runtime_owner"] == "next"
-        assert by_route[route]["production_behavior"] == "next_exact"
-        assert by_route[route]["legacy_fallback_allowed"] is False
-        assert by_route[route]["delete_ready"] is True
-        assert by_route[route]["delete_status"] == "deletion_locked"
-        assert by_route[route]["replacement_status"] == "locked"
+        record = by_route[(route, ("GET",))]
+        assert record["current_runtime_owner"] == "next"
+        assert record["production_behavior"] == "next_exact"
+        assert record["legacy_fallback_allowed"] is False
+        assert record["delete_ready"] is True
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
 
     for route in WRITE_FAMILIES:
-        assert by_route[route]["current_runtime_owner"] == "production_compat"
-        assert by_route[route]["production_behavior"] == "legacy_forward"
-        assert by_route[route]["legacy_fallback_allowed"] is True
-        assert by_route[route]["delete_status"] == "active"
-        assert by_route[route]["replacement_status"] == "not_started"
+        record = by_route[(route, ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"))]
+        assert record["current_runtime_owner"] == "production_compat"
+        assert record["production_behavior"] == "legacy_forward"
+        assert record["legacy_fallback_allowed"] is True
+        assert record["delete_status"] == "active"
+        assert record["replacement_status"] == "validating"

@@ -2,12 +2,29 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .application import build_wecom_tag_application_service
+from .admin_write import (
+    WeComTagWriteInputError,
+    WeComTagWriteNotFoundError,
+    WeComTagWriteProductionUnavailableError,
+    execute_wecom_tag_write,
+)
+from .commands import (
+    CreateWeComTagCommand,
+    CreateWeComTagGroupCommand,
+    DeleteWeComTagCommand,
+    DeleteWeComTagGroupCommand,
+    SyncWeComTagCatalogCommand,
+    UpdateWeComTagCommand,
+    UpdateWeComTagGroupCommand,
+    WeComTagWriteCommand,
+)
 from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
 from .read_model import TagCatalogUnavailable, build_tag_catalog_repository
 from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_enabled, production_environment
@@ -15,6 +32,7 @@ from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_ena
 
 router = APIRouter()
 read_router = APIRouter()
+write_router = APIRouter()
 
 
 def _timestamp() -> str:
@@ -159,41 +177,103 @@ def get_admin_wecom_tag_group_read_model(group_id: str):
     return {**payload, "items": tags, "groups": groups, "tags": tags, "count": len(tags), "total_tags": len(tags)}
 
 
-@router.post("/api/admin/wecom/tags/sync")
-@router.post("/api/admin/wecom/tags/sync-due")
-def sync_admin_wecom_tags_fixture() -> dict:
-    _ensure_local_fixture_allowed()
-    catalog = _fixture_catalog()
-    return {
-        "ok": True,
-        "fetched_groups": len(catalog["groups"]),
-        "fetched_tags": len(catalog["items"]),
-        "upserted_groups": len(catalog["groups"]),
-        "upserted_tags": len(catalog["items"]),
-        "marked_deleted_tags": 0,
-        "source_status": "next_fixture",
-        "error_message": "",
-        "synced_at": catalog["synced_at"],
-    }
+@write_router.api_route("/api/admin/wecom/tags/sync", methods=["POST", "OPTIONS"])
+@write_router.api_route("/api/admin/wecom/tags/sync-due", methods=["POST", "OPTIONS"])
+async def sync_admin_wecom_tags_command(request: Request):
+    return await _execute_write(request, SyncWeComTagCatalogCommand)
 
 
-@router.post("/api/admin/wecom/tag-groups")
-@router.put("/api/admin/wecom/tag-groups/{group_id}")
-@router.delete("/api/admin/wecom/tag-groups/{group_id}")
-@router.post("/api/admin/wecom/tags")
-@router.put("/api/admin/wecom/tags/{tag_id}")
-@router.delete("/api/admin/wecom/tags/{tag_id}")
-def mutate_admin_wecom_tags_fixture(group_id: str = "", tag_id: str = "") -> dict:
-    _ensure_local_fixture_allowed()
-    return {
-        "ok": True,
-        "result": {
-            "source_status": "next_fixture",
-            "group_id": group_id,
-            "tag_id": tag_id,
-            "synced_at": _timestamp(),
+@write_router.api_route("/api/admin/wecom/tag-groups", methods=["POST", "OPTIONS"])
+async def create_admin_wecom_tag_group_command(request: Request):
+    return await _execute_write(request, CreateWeComTagGroupCommand)
+
+
+@write_router.api_route("/api/admin/wecom/tag-groups/{group_id}", methods=["PUT", "PATCH", "DELETE", "OPTIONS"])
+async def mutate_admin_wecom_tag_group_command(request: Request, group_id: str):
+    command_type = DeleteWeComTagGroupCommand if request.method == "DELETE" else UpdateWeComTagGroupCommand
+    return await _execute_write(request, command_type, target_id=group_id)
+
+
+@write_router.api_route("/api/admin/wecom/tags", methods=["POST", "OPTIONS"])
+async def create_admin_wecom_tag_command(request: Request):
+    return await _execute_write(request, CreateWeComTagCommand)
+
+
+@write_router.api_route("/api/admin/wecom/tags/{tag_id}", methods=["PUT", "PATCH", "DELETE", "OPTIONS"])
+async def mutate_admin_wecom_tag_command(request: Request, tag_id: str):
+    command_type = DeleteWeComTagCommand if request.method == "DELETE" else UpdateWeComTagCommand
+    return await _execute_write(request, command_type, target_id=tag_id)
+
+
+async def _execute_write(request: Request, command_type: type[WeComTagWriteCommand], target_id: str = "") -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204)
+    try:
+        body = await _json_body(request)
+        command = command_type(
+            idempotency_key=str(request.headers.get("Idempotency-Key") or body.get("idempotency_key") or "").strip(),
+            actor_id=str(body.get("actor_id") or request.headers.get("X-AICRM-Actor-Id") or "wecom_tag_admin"),
+            actor_type=str(body.get("actor_type") or request.headers.get("X-AICRM-Actor-Type") or "user"),
+            target_id=target_id,
+            payload={
+                key: value
+                for key, value in body.items()
+                if key not in {"actor_id", "actor_type", "idempotency_key", "dry_run", "trace_id", "command_id"}
+            },
+            dry_run=_as_bool(body.get("dry_run")),
+            source_route=request.url.path,
+            trace_id=str(body.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
+        )
+        payload = execute_wecom_tag_write(command)
+        return JSONResponse(jsonable_encoder(payload), status_code=200)
+    except WeComTagWriteInputError as exc:
+        return _write_error(str(exc), status_code=400, source_status="next_command", write_model_status="input_error", error_code="input_error")
+    except WeComTagWriteNotFoundError as exc:
+        return _write_error(str(exc), status_code=404, source_status="next_command", write_model_status="not_found", error_code="not_found")
+    except WeComTagWriteProductionUnavailableError as exc:
+        return _write_error(str(exc), status_code=503, source_status="production_unavailable", write_model_status="unavailable", error_code="production_unavailable", degraded=True)
+
+
+async def _json_body(request: Request) -> dict[str, Any]:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise WeComTagWriteInputError("json object body is required")
+    return payload
+
+
+def _as_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _write_error(
+    message: str,
+    *,
+    status_code: int,
+    source_status: str,
+    write_model_status: str,
+    error_code: str,
+    degraded: bool = False,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": message,
+            "error_code": error_code,
+            "source_status": source_status,
+            "write_model_status": write_model_status,
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "sync_executed": False,
+            "degraded": degraded,
         },
-    }
+        status_code=status_code,
+    )
 
 
 @router.get("/api/admin/wecom/tags/fake-stub")
