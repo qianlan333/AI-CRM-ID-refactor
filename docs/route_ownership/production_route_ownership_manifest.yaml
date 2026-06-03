@@ -370,10 +370,10 @@ routes:
     production_behavior: readonly_facade
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Admin media page is readonly; upload adapters remain fake/staging-disabled.
+    checker: tests/test_media_library_next_contract.py
+    notes: Admin image library page is frontend_compat over Next APIs; page shell performs no external calls and legacy rollback remains available during group 16 validation.
   - route_pattern: /admin/miniprogram-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
@@ -381,10 +381,10 @@ routes:
     production_behavior: readonly_facade
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Admin miniprogram page is readonly; WeCom media calls remain blocked.
+    checker: tests/test_media_library_next_contract.py
+    notes: Admin miniprogram library page is frontend_compat over Next APIs; thumbnail references go through image library routes and real WeCom media calls remain blocked.
   - route_pattern: /admin/attachment-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
@@ -392,10 +392,10 @@ routes:
     production_behavior: readonly_facade
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Admin attachment page is readonly; external storage calls remain blocked.
+    checker: tests/test_media_library_next_contract.py
+    notes: Admin attachment library page is frontend_compat over Next APIs; page shell performs no external calls and upload commands return SideEffectPlan.
   - route_pattern: /api/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
@@ -1452,45 +1452,45 @@ routes:
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: false
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
+    external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next media routes own broad image library list/read/metadata surfaces; multipart upload is Next-owned and stores PostgreSQL rows without external media providers.
+    notes: Next media routes own broad image library list/read/metadata/thumbnail/variant surfaces; route contract exposes route_owner/fallback/adapter fields and no real external calls are executed by read routes.
   - route_pattern: /api/admin/image-library/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: guarded_preview
-    legacy_fallback_allowed: false
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: medium
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next multipart local image upload used by product slices and image pickers stores image_library rows without calling cloud storage or WeCom media providers.
+    notes: Next multipart local image upload stores media library rows without cloud storage or WeCom media providers; response includes SideEffectPlan and real_external_call_executed=false.
   - route_pattern: /api/admin/attachment-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: false
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
+    external_side_effect_risk: medium
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next attachment library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters.
+    notes: Next attachment library routes own list/read/create/upload/update/delete surfaces; local writes return SideEffectPlan and real external storage/WeCom media upload remains blocked.
   - route_pattern: /api/admin/miniprogram-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: false
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
+    external_side_effect_risk: high
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next miniprogram library routes own broad list/read/metadata surfaces with fake/staging-disabled adapters.
+    notes: Next miniprogram library routes own list/read/create/update/delete and guarded thumbnail resolve surfaces; real WeCom media upload remains blocked unless explicitly enabled.
   - route_pattern: /sidebar/bind-mobile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.frontend_compat
