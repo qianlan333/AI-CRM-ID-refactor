@@ -354,21 +354,6 @@ def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = N
     return JSONResponse(jsonable_encoder(result), status_code=_status_code(result))
 
 
-@router.get("/api/sidebar/jssdk-config")
-def get_sidebar_jssdk_config(url: str | None = None):
-    if not str(url or "").strip():
-        return _sidebar_input_error("url is required")
-    return JSONResponse(
-        {
-            "ok": False,
-            "error": "jssdk signature is disabled in Next read-only cleanup",
-            "source_status": "external_call_blocked",
-            "route_owner": "ai_crm_next",
-        },
-        status_code=503,
-    )
-
-
 @router.get("/api/sidebar/lead-pool/status")
 def get_sidebar_lead_pool_status(external_userid: str | None = None, owner_userid: str | None = None):
     resolved_external_userid = str(external_userid or "").strip()

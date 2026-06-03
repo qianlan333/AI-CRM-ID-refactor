@@ -124,8 +124,8 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/api/sidebar/jssdk-config") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "next"
+    assert _endpoint_for(samples, "GET", "/api/sidebar/jssdk-config") == "aicrm_next.identity_contact.sidebar_jssdk"
     assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "production_compat"
     assert (
         _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry")
@@ -150,7 +150,6 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
                 "/api/admin/wecom/tag-groups*",
                 "/api/h5/questionnaires/{slug}/submit",
                 "/api/h5/wechat/oauth*",
-                "/api/sidebar/jssdk-config",
                 "/p/{page_slug}",
                 "/pay/{product_code}",
                 "/api/products*",

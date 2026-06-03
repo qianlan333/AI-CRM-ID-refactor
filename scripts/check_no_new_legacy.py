@@ -98,6 +98,7 @@ SIDEBAR_WRITE_ROUTES = (
     "/api/sidebar/v2/materials/send",
 )
 SIDEBAR_JSSDK_ROUTE = "/api/sidebar/jssdk-config"
+SIDEBAR_JSSDK_METHODS = ("GET", "OPTIONS")
 USER_OPS_READONLY_ROUTES = (
     "/api/admin/user-ops/overview",
     "/api/admin/user-ops/cards",
@@ -540,13 +541,13 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
 
     jssdk_record = manifest_by_path.get(SIDEBAR_JSSDK_ROUTE)
     if jssdk_record is not None:
-        if jssdk_record.get("production_behavior") != "legacy_forward" or jssdk_record.get("delete_ready") is True:
+        if jssdk_record.get("production_behavior") not in {"legacy_forward", "next_adapter"} or jssdk_record.get("delete_ready") is True:
             violations.append(
                 Violation(
                     "sidebar_jssdk_mislocked_by_write_closeout",
                     SIDEBAR_JSSDK_ROUTE,
                     f"production_behavior={jssdk_record.get('production_behavior')} delete_ready={jssdk_record.get('delete_ready')}",
-                    "Sidebar JSSDK signing is out of scope for sidebar write deletion closeout and must not be marked deleted or locked here.",
+                    "Sidebar JSSDK signing must stay out of sidebar write deletion locking; group 15 may own it as a next_adapter validating route with rollback retained.",
                 )
             )
 
@@ -596,6 +597,112 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
                         "Sidebar write routes must not expose compatibility facade behavior, fallback_used=true, or real external calls.",
                     )
                 )
+
+    return violations
+
+
+def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    inventory_path = root / "docs/architecture/sidebar_jssdk_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("sidebar_jssdk_inventory_missing", str(inventory_path.relative_to(root)), "missing inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend ↔ API ↔ Backend Contract Matrix",
+            "/sidebar/bind-mobile",
+            "sidebar_customer_workbench.html",
+            "sidebar_workbench.js",
+            "/api/sidebar/jssdk-config",
+            "url",
+            "debug",
+            "agentid",
+            "ok",
+            "appId",
+            "corpId",
+            "timestamp",
+            "nonceStr",
+            "signature",
+            "jsApiList",
+            "source_status",
+            "adapter_mode",
+            "route_owner",
+            "fallback_used",
+            "real_external_call_executed",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("sidebar_jssdk_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    api_path = root / "aicrm_next/identity_contact/sidebar_jssdk.py"
+    adapter_path = root / "aicrm_next/integration_gateway/wecom_jssdk_adapter.py"
+    main_path = root / "aicrm_next/main.py"
+    for path, markers in [
+        (api_path, ("sidebar_jssdk_config", "build_sidebar_jssdk_config", "HEAD", "OPTIONS")),
+        (adapter_path, ("build_sidebar_jssdk_config", "ExternalCallAttempt", "record_event", "real_external_call_executed")),
+    ]:
+        if not path.exists():
+            violations.append(Violation("sidebar_jssdk_module_missing", str(path.relative_to(root)), ",".join(markers)))
+            continue
+        source = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in source:
+                violations.append(Violation("sidebar_jssdk_module_marker_missing", str(path.relative_to(root)), marker))
+        for forbidden, code in {
+            "forward_to_legacy_flask": "sidebar_jssdk_legacy_forward",
+            "legacy_flask_facade": "sidebar_jssdk_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "sidebar_jssdk_compatibility_facade",
+            "requests.": "sidebar_jssdk_direct_http_client",
+            "httpx.": "sidebar_jssdk_direct_http_client",
+            '"real_external_call_executed": True': "sidebar_jssdk_real_external_call_true",
+            "'real_external_call_executed': True": "sidebar_jssdk_real_external_call_true",
+        }.items():
+            if forbidden in source:
+                violations.append(Violation(code, str(path.relative_to(root)), forbidden))
+
+    if main_path.exists():
+        main_text = main_path.read_text(encoding="utf-8")
+        if "sidebar_jssdk_router" not in main_text:
+            violations.append(Violation("sidebar_jssdk_router_not_included", str(main_path.relative_to(root)), "sidebar_jssdk_router"))
+        elif "production_compat_router" in main_text and main_text.index("sidebar_jssdk_router") > main_text.index("production_compat_router"):
+            violations.append(
+                Violation(
+                    "sidebar_jssdk_router_order",
+                    str(main_path.relative_to(root)),
+                    "sidebar_jssdk_router must be included before production_compat_router",
+                )
+            )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_route = {(record.get("path_pattern"), tuple(record.get("methods") or [])): record for record in registry_records}
+    registry_record = registry_by_route.get((SIDEBAR_JSSDK_ROUTE, ("GET", "HEAD", "OPTIONS")))
+    if registry_record is None:
+        violations.append(Violation("sidebar_jssdk_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", SIDEBAR_JSSDK_ROUTE))
+    else:
+        if registry_record.get("runtime_owner") != "next_adapter":
+            violations.append(Violation("sidebar_jssdk_registry_owner", SIDEBAR_JSSDK_ROUTE, f"runtime_owner={registry_record.get('runtime_owner')}"))
+        if registry_record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("sidebar_jssdk_registry_rollback_removed_too_early", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+        if registry_record.get("delete_status") != "next_primary_with_legacy_rollback" or registry_record.get("replacement_status") != "validating":
+            violations.append(Violation("sidebar_jssdk_registry_lifecycle", SIDEBAR_JSSDK_ROUTE, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
+        if registry_record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("sidebar_jssdk_registry_adapter_mode", SIDEBAR_JSSDK_ROUTE, f"adapter_mode={registry_record.get('adapter_mode')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_route = {(record.get("route_pattern"), tuple(record.get("methods") or [])): record for record in manifest_records}
+    manifest_record = manifest_by_route.get((SIDEBAR_JSSDK_ROUTE, ("GET", "HEAD", "OPTIONS")))
+    if manifest_record is None:
+        violations.append(Violation("sidebar_jssdk_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", SIDEBAR_JSSDK_ROUTE))
+    else:
+        if manifest_record.get("current_runtime_owner") != "next_adapter":
+            violations.append(Violation("sidebar_jssdk_manifest_owner", SIDEBAR_JSSDK_ROUTE, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+        if manifest_record.get("production_behavior") != "next_adapter":
+            violations.append(Violation("sidebar_jssdk_manifest_behavior", SIDEBAR_JSSDK_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
+        if manifest_record.get("legacy_fallback_allowed") is not True:
+            violations.append(Violation("sidebar_jssdk_manifest_rollback_removed_too_early", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+        if manifest_record.get("delete_ready") is not False:
+            violations.append(Violation("sidebar_jssdk_manifest_delete_ready", SIDEBAR_JSSDK_ROUTE, f"delete_ready={manifest_record.get('delete_ready')}"))
+        if manifest_record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("sidebar_jssdk_manifest_adapter_mode", SIDEBAR_JSSDK_ROUTE, f"adapter_mode={manifest_record.get('adapter_mode')}"))
 
     return violations
 
@@ -1857,6 +1964,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)
+        + check_sidebar_jssdk_next_adapter(ROOT)
         + check_user_ops_next_native_preview(ROOT)
         + check_questionnaire_admin_read_next_native(ROOT)
         + check_questionnaire_admin_write_next_commandbus(ROOT)

@@ -31,6 +31,8 @@ from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
 from .identity_contact.api import router as identity_router
+from .identity_contact.sidebar_jssdk import router as sidebar_jssdk_router
+from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
 from .integration_gateway.api import router as mcp_router
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
@@ -76,6 +78,7 @@ def create_app() -> FastAPI:
         reset_questionnaire_admin_write_fixture_state()
         reset_wecom_tag_write_fixture_state()
         reset_wecom_tag_live_mutation_fixture_state()
+        reset_sidebar_jssdk_attempts()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -109,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
     app.include_router(sidebar_write_router)
+    app.include_router(sidebar_jssdk_router)
     app.include_router(customer_tags_read_router)
     app.include_router(customer_tags_write_router)
     if legacy_production_facade_enabled():

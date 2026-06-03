@@ -52,7 +52,7 @@ def test_sidebar_write_routes_are_locked_next_commandbus_without_legacy_rollback
         assert "real_external_call_executed=false" in entry.notes
 
 
-def test_sidebar_readonly_routes_stay_locked_and_jssdk_remains_out_of_scope() -> None:
+def test_sidebar_readonly_routes_stay_locked_and_jssdk_moves_to_group15_adapter() -> None:
     service = get_route_registry_service()
 
     for route in READONLY_LOCKED_ROUTES:
@@ -65,6 +65,9 @@ def test_sidebar_readonly_routes_stay_locked_and_jssdk_remains_out_of_scope() ->
 
     jssdk = service.find_route("/api/sidebar/jssdk-config", {"GET"})
     assert jssdk is not None
-    assert jssdk.runtime_owner in {"production_compat", "legacy_forward"}
+    assert jssdk.runtime_owner == "next_adapter"
     assert jssdk.legacy_fallback_allowed is True
+    assert jssdk.delete_status == "next_primary_with_legacy_rollback"
+    assert jssdk.replacement_status == "validating"
+    assert jssdk.adapter_mode == "real_blocked"
     assert "JSSDK" in jssdk.notes or "jssdk" in jssdk.notes

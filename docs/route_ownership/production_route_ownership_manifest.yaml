@@ -1592,15 +1592,18 @@ routes:
     notes: Sidebar write group 5 deletion closeout removed legacy production_compat rollback; Next CommandBus is the only route owner; external side effects remain SideEffectPlan only with real_external_call_executed=false; JSSDK remains separate out-of-scope group.
   - route_pattern: /api/sidebar/jssdk-config
     methods: [GET, HEAD, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.identity_contact
+    current_runtime_owner: next_adapter
+    production_behavior: next_adapter
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: high
     delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Out of scope for sidebar readonly group 4 because JSSDK needs external signing semantics; narrow production_compat fallback retained.
+    checker: tests/test_sidebar_jssdk_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Sidebar JSSDK group 15 moves config signing contract to Next adapter primary; real signing is blocked by default, production_compat rollback retained for this validation group.
   - route_pattern: /api/sidebar/lead-pool/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine
