@@ -441,6 +441,7 @@ def list_admin_orders(*, filters: dict[str, Any], limit: int, cursor: str = "") 
             transaction_id,
             payer_name_snapshot,
             mobile_snapshot,
+            unionid,
             userid_snapshot,
             external_userid,
             respondent_key,
