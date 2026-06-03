@@ -34,17 +34,17 @@ def test_wecom_tag_read_registry_entries_are_deletion_locked_next_native() -> No
         assert entry.replacement_status == "locked"
 
 
-def test_wecom_tag_write_and_sync_families_remain_out_of_scope() -> None:
+def test_wecom_tag_auxiliary_families_remain_out_of_scope_after_write_closeout() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
     for route in WRITE_FAMILIES:
         entry = service.find_route(route, {"POST"})
         assert entry is not None
-        assert entry.runtime_owner == "production_compat"
-        assert entry.legacy_fallback_allowed is True
+        assert entry.runtime_owner == "next_native"
+        assert entry.legacy_fallback_allowed is False
         assert entry.delete_status == "active"
-        assert entry.replacement_status == "validating"
+        assert entry.replacement_status == "not_started"
         assert entry.adapter_mode == "real_blocked"
 
 
@@ -75,9 +75,10 @@ def test_wecom_tag_read_route_registry_yaml_matches_lifecycle() -> None:
 
     for route in WRITE_FAMILIES:
         record = by_route[(route, ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"))]
-        assert record["runtime_owner"] == "production_compat"
+        assert record["runtime_owner"] == "next_native"
+        assert record["legacy_fallback_allowed"] is False
         assert record["delete_status"] == "active"
-        assert record["replacement_status"] == "validating"
+        assert record["replacement_status"] == "not_started"
 
 
 def test_wecom_tag_read_production_manifest_locks_read_routes_only() -> None:
@@ -95,8 +96,8 @@ def test_wecom_tag_read_production_manifest_locks_read_routes_only() -> None:
 
     for route in WRITE_FAMILIES:
         record = by_route[(route, ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"))]
-        assert record["current_runtime_owner"] == "production_compat"
-        assert record["production_behavior"] == "legacy_forward"
-        assert record["legacy_fallback_allowed"] is True
+        assert record["current_runtime_owner"] == "next"
+        assert record["production_behavior"] == "guarded_preview"
+        assert record["legacy_fallback_allowed"] is False
         assert record["delete_status"] == "active"
-        assert record["replacement_status"] == "validating"
+        assert record["replacement_status"] == "not_started"

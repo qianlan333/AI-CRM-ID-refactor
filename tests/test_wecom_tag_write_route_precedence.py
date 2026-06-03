@@ -25,6 +25,14 @@ def test_wecom_tag_write_routes_resolve_before_production_compat_when_facade_exi
         for route in app.routes
     ]
 
+    production_compat_wecom_routes = [
+        route
+        for route in routes
+        if route["is_production_compat"]
+        and (route["path"].startswith("/api/admin/wecom/tags") or route["path"].startswith("/api/admin/wecom/tag-groups"))
+    ]
+    assert production_compat_wecom_routes == []
+
     for method, path in [
         ("POST", "/api/admin/wecom/tags"),
         ("PATCH", "/api/admin/wecom/tags/tag_fixture_active"),

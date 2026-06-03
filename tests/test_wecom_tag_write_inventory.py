@@ -32,15 +32,15 @@ def test_wecom_tag_write_inventory_covers_frontend_api_backend_matrix() -> None:
         assert marker in text
 
 
-def test_wecom_tag_write_inventory_marks_side_effects_and_rollback() -> None:
+def test_wecom_tag_write_inventory_marks_side_effects_and_legacy_deletion() -> None:
     text = INVENTORY.read_text(encoding="utf-8")
 
     for marker in [
         "next_command",
-        "legacy_fallback_allowed=true",
-        "legacy_source=production_compat",
-        "next_primary_with_legacy_rollback",
-        "replacement_status=validating",
+        "legacy_fallback_allowed=false",
+        "production_compat rollback removed",
+        "deletion_locked",
+        "replacement_status=locked",
         "SideEffectPlan",
         "adapter_mode=real_blocked",
         "real_external_call_executed=false",

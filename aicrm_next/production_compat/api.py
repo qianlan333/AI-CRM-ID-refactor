@@ -10,7 +10,6 @@ router = APIRouter()
 wildcard_router = APIRouter()
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-_WRITE_FALLBACK_METHODS = ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
 @router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
@@ -55,14 +54,6 @@ async def legacy_cloud_orchestrator_media_upload_route(request: Request) -> Resp
 @router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)
 @router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
 async def legacy_hxc_dashboard_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
-@router.api_route("/api/admin/wecom/tags", methods=_WRITE_FALLBACK_METHODS)
-@router.api_route("/api/admin/wecom/tags/{path:path}", methods=_WRITE_FALLBACK_METHODS)
-@router.api_route("/api/admin/wecom/tag-groups", methods=_WRITE_FALLBACK_METHODS)
-@router.api_route("/api/admin/wecom/tag-groups/{path:path}", methods=_WRITE_FALLBACK_METHODS)
-async def legacy_admin_wecom_tag_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
