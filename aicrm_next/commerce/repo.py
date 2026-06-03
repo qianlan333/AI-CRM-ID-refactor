@@ -6,7 +6,7 @@ from typing import Any, Protocol
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 
-from .domain import normalize_status, now_iso, validate_price_cents
+from .domain import normalize_status, now_iso, validate_price_cents, validate_product_code
 
 
 class CommerceRepository(Protocol):
@@ -110,7 +110,8 @@ class InMemoryCommerceRepository:
     def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]:
         validate_price_cents(int(payload.get("price_cents", 0)))
         now = now_iso()
-        code = str(payload["product_code"])
+        code = validate_product_code(str(payload["product_code"]))
+        payload = {**payload, "product_code": code}
         existing = self.get_product_by_code(code)
         if existing and existing["id"] != product_id:
             raise ContractError("product_code must be unique")
