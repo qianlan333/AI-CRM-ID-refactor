@@ -36,12 +36,6 @@ async def legacy_hxc_dashboard_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/admin/automation-conversion/tasks/run-due", methods=["POST", "OPTIONS"])
-@router.api_route("/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu", methods=["POST", "OPTIONS"])
-async def legacy_automation_workspace_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/login", methods=_ALL_METHODS)
 @router.api_route("/logout", methods=_ALL_METHODS)
 async def legacy_admin_auth_routes(request: Request) -> Response:

@@ -15,12 +15,12 @@ This inventory locks the reply monitor and registered jobs timer family to Next 
 | Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/jobs/run-due` | `automation_conversion.jobs.run_due.plan` via `PlanAutomationJobsRunDueCommand`; idempotency key supported; JSON/query `jobs`, `job_codes`, `limit`, `batch_size`, `dry_run` supported; invalid inputs return 400 | `effect_type=automation_conversion.jobs.run_due`; `adapter_mode=real_blocked`; `status=blocked`; no registered jobs runtime; `source_status=next_jobs_run_due_plan`; `jobs_run_due_executed=false` |
 | Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/jobs/run-due` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
 
-## Explicit Out Of Scope Routes
+## Adjacent Workspace Routes
 
 | Caller | API | CommandBus | SideEffectPlan |
 | --- | --- | --- | --- |
-| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/tasks/run-due` | Out of scope for this timer cutover; remains in `production_compat` | Existing legacy-forward behavior remains inventoried and unchanged |
-| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu` | Out of scope for this timer cutover; remains in `production_compat` | Existing legacy-forward behavior remains inventoried and unchanged |
+| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/tasks/run-due` | Covered by `automation_workspace_runtime_route_inventory.md` after the group 22 cutover | Next safe-mode planner returns `source_status=next_automation_tasks_run_due_plan` with no legacy runtime execution |
+| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu` | Covered by `automation_workspace_runtime_route_inventory.md` after the group 22 cutover | Next safe-mode planner returns `source_status=next_bazhuayu_dispatch_plan` with no outbound send |
 
 ## Deletion Lock
 

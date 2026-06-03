@@ -7,6 +7,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
     check_automation_conversion_timers_next_safe_mode,
+    check_automation_workspace_runtime_next_safe_mode,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
@@ -2286,3 +2287,135 @@ def test_automation_timer_guard_allows_next_safe_mode_locked(tmp_path: Path) -> 
     _write_automation_timer_guard_fixture(tmp_path, locked=True)
 
     assert check_automation_conversion_timers_next_safe_mode(tmp_path) == []
+
+
+def _write_automation_workspace_runtime_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
+    inventory = tmp_path / "docs/architecture/automation_workspace_runtime_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/automation_engine/api.py"
+    runtime_module = tmp_path / "aicrm_next/automation_engine/workspace_runtime.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory.parent.mkdir(parents=True)
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    inventory.write_text(
+        "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix\n"
+        "PlanAutomationOperationTasksRunDueCommand PlanAutomationExecutionItemBazhuayuDispatchCommand\n"
+        "legacy_fallback_allowed=false deletion_locked adapter_mode=real_blocked\n"
+        "real_external_call_executed=false automation_runtime_executed=false operation_tasks_executed=false\n"
+        "bazhuayu_send_executed=false wecom_send_executed=false\n"
+        "next_automation_tasks_run_due_plan next_bazhuayu_dispatch_plan\n"
+        "member/manual/focus/SOP customer automation webhooks\n"
+        "/api/admin/automation-conversion/tasks/run-due\n"
+        "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu\n",
+        encoding="utf-8",
+    )
+    compat_routes = (
+        "@router.api_route('/api/admin/automation-conversion/tasks/run-due', methods=['POST', 'OPTIONS'])\n"
+        "def tasks(): pass\n"
+        "@router.api_route('/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu', methods=['POST', 'OPTIONS'])\n"
+        "def send_via(): pass\n"
+        if not locked
+        else ""
+    )
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        f"{compat_routes}",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.options('/api/admin/automation-conversion/tasks/run-due')\n"
+        "def api_automation_workspace_tasks_run_due_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/tasks/run-due')\n"
+        "def api_plan_automation_workspace_tasks_run_due(): return execute_workspace_runtime_command()\n"
+        "@router.options('/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu')\n"
+        "def api_automation_workspace_execution_item_outbound_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu')\n"
+        "def api_plan_automation_workspace_execution_item_outbound(): return execute_workspace_runtime_command()\n",
+        encoding="utf-8",
+    )
+    runtime_module.write_text(
+        "PlanAutomationOperationTasksRunDueCommand PlanAutomationExecutionItemOutboundDispatchCommand\n"
+        "InMemoryAuditLedger InMemorySideEffectPlanRepository InMemoryExternalCallAttemptRepository CommandBus\n"
+        "next_automation_tasks_run_due_plan next_bazhuayu_dispatch_plan real_blocked\n"
+        "operation_tasks_executed bazhuayu_send_executed wecom_send_executed\n"
+        + ("run_due_operation_tasks\n" if not locked else ""),
+        encoding="utf-8",
+    )
+    registry_owner = "next_runtime_plan" if locked else "production_compat"
+    legacy_allowed = "false" if locked else "true"
+    manifest_behavior = "next_command" if locked else "legacy_forward"
+    lifecycle = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement = "locked" if locked else "validating"
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: automation_workspace_tasks_run_due_next_safe_mode\n"
+        "    path_pattern: /api/admin/automation-conversion/tasks/run-due\n"
+        "    methods: [POST, OPTIONS]\n"
+        f"    runtime_owner: {registry_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    legacy_source: \"\"\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        "  - route_id: automation_workspace_execution_item_bazhuayu_next_safe_mode\n"
+        "    path_pattern: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu\n"
+        "    methods: [POST, OPTIONS]\n"
+        f"    runtime_owner: {registry_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    legacy_source: \"\"\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/automation-conversion/tasks/run-due\n"
+        "    methods: [POST, OPTIONS]\n"
+        f"    current_runtime_owner: {registry_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        "  - route_pattern: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu\n"
+        "    methods: [POST, OPTIONS]\n"
+        f"    current_runtime_owner: {registry_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n",
+        encoding="utf-8",
+    )
+
+
+def test_automation_workspace_runtime_guard_flags_rollback_and_runtime_drift(tmp_path: Path) -> None:
+    _write_automation_workspace_runtime_guard_fixture(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_automation_workspace_runtime_next_safe_mode(tmp_path)}
+
+    assert "automation_workspace_production_compat_rollback" in codes
+    assert "automation_workspace_legacy_operation_task_runtime" in codes
+    assert "automation_workspace_registry_owner" in codes
+    assert "automation_workspace_registry_legacy_allowed" in codes
+    assert "automation_workspace_manifest_behavior" in codes
+    assert "automation_workspace_manifest_legacy_allowed" in codes
+
+
+def test_automation_workspace_runtime_guard_allows_next_safe_mode_locked(tmp_path: Path) -> None:
+    _write_automation_workspace_runtime_guard_fixture(tmp_path, locked=True)
+
+    assert check_automation_workspace_runtime_next_safe_mode(tmp_path) == []

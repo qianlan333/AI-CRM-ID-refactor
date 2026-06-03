@@ -291,10 +291,6 @@ AUTOMATION_CONVERSION_TIMER_MANIFEST_ROUTES = (
     "/api/admin/automation-conversion/reply-monitor*",
     "/api/admin/automation-conversion/jobs/run-due*",
 )
-AUTOMATION_CONVERSION_TIMER_OUT_OF_SCOPE_COMPAT_ROUTES = {
-    "/api/admin/automation-conversion/tasks/run-due",
-    "/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu",
-}
 AUTOMATION_CONVERSION_TIMER_DIRECT_EXTERNAL_MARKERS = {
     "run_reply_monitor_capture": "automation_timer_legacy_capture_runtime",
     "run_due_reply_monitor": "automation_timer_legacy_reply_runtime",
@@ -334,6 +330,57 @@ AUTOMATION_CONVERSION_TIMER_TRUE_DEFAULT_MARKERS = {
     "'wecom_send_executed': True": "automation_timer_send_true",
     "real_enabled default": "automation_timer_real_enabled_default",
     "default real_enabled": "automation_timer_real_enabled_default",
+}
+AUTOMATION_WORKSPACE_RUNTIME_ROUTES = {
+    "/api/admin/automation-conversion/tasks/run-due",
+    "/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu",
+}
+AUTOMATION_WORKSPACE_RUNTIME_API_ROUTES = {
+    "/api/admin/automation-conversion/tasks/run-due",
+    "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
+}
+AUTOMATION_WORKSPACE_RUNTIME_REGISTRY_RECORDS = {
+    "automation_workspace_tasks_run_due_next_safe_mode": "/api/admin/automation-conversion/tasks/run-due",
+    "automation_workspace_execution_item_bazhuayu_next_safe_mode": "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
+}
+AUTOMATION_WORKSPACE_RUNTIME_MANIFEST_ROUTES = (
+    "/api/admin/automation-conversion/tasks/run-due",
+    "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
+)
+AUTOMATION_WORKSPACE_RUNTIME_DIRECT_EXTERNAL_MARKERS = {
+    "run_due_operation_tasks": "automation_workspace_legacy_operation_task_runtime",
+    "send_conversion_execution_item_via_bazhuayu": "automation_workspace_legacy_outbound_runtime",
+    "AutomationConversionDispatchError": "automation_workspace_legacy_dispatch_error",
+    "WeComClient.from_app": "automation_workspace_wecom_client",
+    "OpenClaw": "automation_workspace_openclaw_direct_invoke",
+    "Bazhuayu": "automation_workspace_bazhuayu_direct_invoke",
+    "requests": "automation_workspace_direct_http_client",
+    "httpx": "automation_workspace_direct_http_client",
+    "access_token": "automation_workspace_token_exchange",
+}
+AUTOMATION_WORKSPACE_RUNTIME_TRUE_DEFAULT_MARKERS = {
+    "real_external_call_executed=True": "automation_workspace_real_external_true",
+    "real_external_call_executed = True": "automation_workspace_real_external_true",
+    '"real_external_call_executed": True': "automation_workspace_real_external_true",
+    "'real_external_call_executed': True": "automation_workspace_real_external_true",
+    "automation_runtime_executed=True": "automation_workspace_runtime_true",
+    "automation_runtime_executed = True": "automation_workspace_runtime_true",
+    '"automation_runtime_executed": True': "automation_workspace_runtime_true",
+    "'automation_runtime_executed': True": "automation_workspace_runtime_true",
+    "operation_tasks_executed=True": "automation_workspace_operation_tasks_true",
+    "operation_tasks_executed = True": "automation_workspace_operation_tasks_true",
+    '"operation_tasks_executed": True': "automation_workspace_operation_tasks_true",
+    "'operation_tasks_executed': True": "automation_workspace_operation_tasks_true",
+    "bazhuayu_send_executed=True": "automation_workspace_bazhuayu_true",
+    "bazhuayu_send_executed = True": "automation_workspace_bazhuayu_true",
+    '"bazhuayu_send_executed": True': "automation_workspace_bazhuayu_true",
+    "'bazhuayu_send_executed': True": "automation_workspace_bazhuayu_true",
+    "wecom_send_executed=True": "automation_workspace_send_true",
+    "wecom_send_executed = True": "automation_workspace_send_true",
+    '"wecom_send_executed": True': "automation_workspace_send_true",
+    "'wecom_send_executed': True": "automation_workspace_send_true",
+    "real_enabled default": "automation_workspace_real_enabled_default",
+    "default real_enabled": "automation_workspace_real_enabled_default",
 }
 CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_campaign_read_wecom_client",
@@ -2803,17 +2850,6 @@ def check_automation_conversion_timers_next_safe_mode(root: Path = ROOT) -> list
                         "Automation conversion timer routes are deletion_locked to the Next safe-mode planner.",
                     )
                 )
-        for route_path in AUTOMATION_CONVERSION_TIMER_OUT_OF_SCOPE_COMPAT_ROUTES:
-            if route_path not in route_methods:
-                violations.append(
-                    Violation(
-                        "automation_timer_out_of_scope_compat_missing",
-                        str(compat_path.relative_to(root)),
-                        route_path,
-                        "The timer closeout must not delete tasks run-due or send-via fallback routes.",
-                    )
-                )
-
     registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
     registry_by_id = {record.get("route_id"): record for record in registry_records}
     for route_id, route_path in AUTOMATION_CONVERSION_TIMER_REGISTRY_RECORDS.items():
@@ -2854,6 +2890,144 @@ def check_automation_conversion_timers_next_safe_mode(root: Path = ROOT) -> list
             violations.append(Violation("automation_timer_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
         if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
             violations.append(Violation("automation_timer_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    return violations
+
+
+def check_automation_workspace_runtime_next_safe_mode(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/automation_workspace_runtime_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("automation_workspace_inventory_missing", str(inventory_path.relative_to(root)), "missing workspace runtime route inventory"))
+    else:
+        text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix",
+            "PlanAutomationOperationTasksRunDueCommand",
+            "PlanAutomationExecutionItemBazhuayuDispatchCommand",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "adapter_mode=real_blocked",
+            "real_external_call_executed=false",
+            "automation_runtime_executed=false",
+            "operation_tasks_executed=false",
+            "bazhuayu_send_executed=false",
+            "wecom_send_executed=false",
+            "next_automation_tasks_run_due_plan",
+            "next_bazhuayu_dispatch_plan",
+            "member/manual/focus/SOP",
+            "customer automation webhooks",
+        ):
+            if phrase not in text:
+                violations.append(Violation("automation_workspace_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for route_path in AUTOMATION_WORKSPACE_RUNTIME_API_ROUTES:
+            if route_path not in text:
+                violations.append(Violation("automation_workspace_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    runtime_path = root / "aicrm_next/automation_engine/workspace_runtime.py"
+    if not runtime_path.exists():
+        violations.append(Violation("automation_workspace_module_missing", str(runtime_path.relative_to(root)), "missing workspace_runtime.py"))
+    else:
+        source = runtime_path.read_text(encoding="utf-8")
+        for marker in (
+            "PlanAutomationOperationTasksRunDueCommand",
+            "PlanAutomationExecutionItemOutboundDispatchCommand",
+            "InMemoryAuditLedger",
+            "InMemorySideEffectPlanRepository",
+            "InMemoryExternalCallAttemptRepository",
+            "CommandBus",
+            "next_automation_tasks_run_due_plan",
+            "next_bazhuayu_dispatch_plan",
+            "real_blocked",
+            "operation_tasks_executed",
+            "bazhuayu_send_executed",
+            "wecom_send_executed",
+        ):
+            if marker not in source:
+                violations.append(Violation("automation_workspace_module_marker_missing", str(runtime_path.relative_to(root)), marker))
+        for marker, code in {**AUTOMATION_WORKSPACE_RUNTIME_DIRECT_EXTERNAL_MARKERS, **AUTOMATION_WORKSPACE_RUNTIME_TRUE_DEFAULT_MARKERS}.items():
+            if marker in source:
+                violations.append(Violation(code, str(runtime_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/automation_engine/api.py"
+    if not api_path.exists():
+        violations.append(Violation("automation_workspace_api_missing", str(api_path.relative_to(root)), "missing automation api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in (
+            "api_plan_automation_workspace_tasks_run_due",
+            "api_plan_automation_workspace_execution_item_outbound",
+            "api_automation_workspace_tasks_run_due_options",
+            "api_automation_workspace_execution_item_outbound_options",
+            "execute_workspace_runtime_command",
+        ):
+            if marker not in api_source:
+                violations.append(Violation("automation_workspace_api_route_missing", str(api_path.relative_to(root)), marker))
+        sources = _decorated_route_function_sources(api_path)
+        for route_path in AUTOMATION_WORKSPACE_RUNTIME_API_ROUTES:
+            joined = "\n".join(sources.get(route_path, []))
+            if not joined:
+                violations.append(Violation("automation_workspace_api_route_missing", str(api_path.relative_to(root)), route_path))
+                continue
+            for marker, code in {**AUTOMATION_WORKSPACE_RUNTIME_DIRECT_EXTERNAL_MARKERS, **AUTOMATION_WORKSPACE_RUNTIME_TRUE_DEFAULT_MARKERS}.items():
+                if marker in joined:
+                    violations.append(Violation(code, str(api_path.relative_to(root)), f"{route_path}: {marker}"))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_methods = dict(_decorator_route_methods(compat_path))
+        for route_path in AUTOMATION_WORKSPACE_RUNTIME_ROUTES:
+            if route_path in route_methods:
+                violations.append(
+                    Violation(
+                        "automation_workspace_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={route_methods[route_path]}",
+                        "Automation workspace runtime routes are deletion_locked to the Next safe-mode planner.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id, route_path in AUTOMATION_WORKSPACE_RUNTIME_REGISTRY_RECORDS.items():
+        record = registry_by_id.get(route_id)
+        if not record:
+            violations.append(Violation("automation_workspace_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("path_pattern") != route_path or tuple(record.get("methods") or []) != ("POST", "OPTIONS"):
+            violations.append(Violation("automation_workspace_registry_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("automation_workspace_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_workspace_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("automation_workspace_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("external_side_effect_risk") != "high":
+            violations.append(Violation("automation_workspace_registry_side_effect_risk", route_id, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_workspace_registry_adapter_mode", route_id, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_workspace_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for route_path in AUTOMATION_WORKSPACE_RUNTIME_MANIFEST_ROUTES:
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, ("POST", "OPTIONS"))
+        if not record:
+            violations.append(Violation("automation_workspace_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("automation_workspace_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("automation_workspace_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_workspace_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("production_behavior") in {"legacy_forward", "scheduled_safe_mode", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("automation_workspace_manifest_legacy_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_workspace_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_workspace_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
 
     return violations
 
@@ -3136,6 +3310,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
         + check_cloud_orchestrator_run_due_next_safe_mode(ROOT)
         + check_automation_conversion_timers_next_safe_mode(ROOT)
+        + check_automation_workspace_runtime_next_safe_mode(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
