@@ -49,7 +49,23 @@ def test_product_create_update_enable_disable_delete_and_validation() -> None:
     assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable").json()["product"]["enabled"] is False
     assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable").json()["product"]["enabled"] is True
     deleted = client.delete(f"/api/admin/wechat-pay/products/{product['id']}").json()
-    assert deleted["soft_deleted"] is True
+    assert deleted["soft_deleted"] is False
+    assert client.get(f"/api/admin/wechat-pay/products/{product['id']}").status_code == 404
+    assert all(item["id"] != product["id"] for item in client.get("/api/admin/wechat-pay/products").json()["items"])
+
+
+def test_active_product_with_orders_must_be_disabled_before_delete() -> None:
+    client = make_client()
+
+    active_ordered = client.delete("/api/admin/wechat-pay/products/prod_001")
+    assert active_ordered.status_code == 400
+    assert "已有订单的商品不能删除" in active_ordered.json()["detail"]
+
+    assert client.post("/api/admin/wechat-pay/products/prod_001/disable").json()["product"]["enabled"] is False
+    disabled_ordered = client.delete("/api/admin/wechat-pay/products/prod_001")
+    assert disabled_ordered.status_code == 200
+    assert disabled_ordered.json()["soft_deleted"] is False
+    assert client.get("/api/admin/wechat-pay/products/prod_001").status_code == 404
 
 
 def test_product_completion_redirect_fields_flow_through_checkout_and_order_status() -> None:
