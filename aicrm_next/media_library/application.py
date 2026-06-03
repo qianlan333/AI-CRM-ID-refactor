@@ -42,6 +42,27 @@ def _media_adapter_summary(cloud_result: dict[str, Any] | None, wecom_result: di
     }
 
 
+def _side_effect_plan(*, operation: str, idempotency_key: str = "", reason: str = "local_repository_write_only") -> dict[str, Any]:
+    return {
+        "operation": operation,
+        "external_storage": "not_executed",
+        "wecom_media_upload": "not_executed",
+        "real_external_call": "not_executed",
+        "database_write": "executed",
+        "audit": "response_side_effect_plan",
+        "idempotency_key": idempotency_key,
+        "idempotency_required": False,
+        "idempotency_reason": reason,
+    }
+
+
+def _child_idempotency_key(idempotency_key: str | None, suffix: str) -> str | None:
+    key = str(idempotency_key or "").strip()
+    if not key:
+        return None
+    return f"{key}:{suffix}"
+
+
 def _looks_like_fake_media_id(media_id: str) -> bool:
     value = str(media_id or "").strip().lower()
     return value.startswith(("fake_", "staging_")) or value.startswith("fake://")
@@ -115,7 +136,13 @@ class UpsertMediaItemCommand:
         self._kind = kind
         self._repo = repo or build_media_library_repository()
 
-    def __call__(self, payload: dict[str, Any] | ImageUpsertRequest | AttachmentUpsertRequest | MiniprogramUpsertRequest, item_id: str | None = None) -> dict[str, Any]:
+    def __call__(
+        self,
+        payload: dict[str, Any] | ImageUpsertRequest | AttachmentUpsertRequest | MiniprogramUpsertRequest,
+        item_id: str | None = None,
+        *,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         data = payload.model_dump(by_alias=True, exclude_none=True) if hasattr(payload, "model_dump") else dict(payload)
         cloud_result: dict[str, Any] | None = None
         wecom_result: dict[str, Any] | None = None
@@ -128,8 +155,13 @@ class UpsertMediaItemCommand:
                     data_base64=data_base64,
                     file_name=file_name,
                     content_type=str(data.get("content_type") or _content_type_from_file_name(file_name)),
+                    idempotency_key=_child_idempotency_key(idempotency_key, "cloud"),
                 )
-                wecom_result = build_wecom_media_adapter().upload_image(data_base64=data_base64, file_name=file_name)
+                wecom_result = build_wecom_media_adapter().upload_image(
+                    data_base64=data_base64,
+                    file_name=file_name,
+                    idempotency_key=_child_idempotency_key(idempotency_key, "wecom"),
+                )
                 data = {
                     **data,
                     "storage_key": cloud_result.get("storage_key"),
@@ -142,8 +174,18 @@ class UpsertMediaItemCommand:
             data_base64 = str(data.get("data_base64") or "")
             if data_base64:
                 content_type = str(data.get("mime_type") or _content_type_from_file_name(file_name, "application/octet-stream"))
-                cloud_result = build_cloud_storage_adapter().put_base64_object(data_base64=data_base64, file_name=file_name, content_type=content_type)
-                wecom_result = build_wecom_media_adapter().upload_attachment(data_base64=data_base64, file_name=file_name, content_type=content_type)
+                cloud_result = build_cloud_storage_adapter().put_base64_object(
+                    data_base64=data_base64,
+                    file_name=file_name,
+                    content_type=content_type,
+                    idempotency_key=_child_idempotency_key(idempotency_key, "cloud"),
+                )
+                wecom_result = build_wecom_media_adapter().upload_attachment(
+                    data_base64=data_base64,
+                    file_name=file_name,
+                    content_type=content_type,
+                    idempotency_key=_child_idempotency_key(idempotency_key, "wecom"),
+                )
                 data = {
                     **data,
                     "storage_key": cloud_result.get("storage_key"),
@@ -160,6 +202,13 @@ class UpsertMediaItemCommand:
                 result["item"] = thumb_resolve["item"]
         if cloud_result or wecom_result:
             result["adapter_result"] = _media_adapter_summary(cloud_result, wecom_result)
+            result["side_effect_plan"] = _side_effect_plan(
+                operation=f"{self._kind}_upsert_adapter_plan",
+                idempotency_key=str(idempotency_key or ""),
+                reason="guarded_adapter_idempotency_key_used" if idempotency_key else "guarded_adapter_deterministic_key",
+            )
+        else:
+            result["side_effect_plan"] = _side_effect_plan(operation=f"{self._kind}_upsert")
         return result
 
 
@@ -169,7 +218,14 @@ class DeleteMediaItemCommand:
         self._repo = repo or build_media_library_repository()
 
     def __call__(self, item_id: str, *, force: bool = False) -> dict[str, Any]:
-        return self._repo.delete_item(self._kind, item_id, force=force)
+        result = self._repo.delete_item(self._kind, item_id, force=force)
+        return {
+            **result,
+            "side_effect_plan": _side_effect_plan(
+                operation=f"{self._kind}_delete",
+                reason="delete is a local repository mutation; external storage and WeCom media references are not deleted by this route",
+            ),
+        }
 
 
 def _validate_image_upload(*, file_bytes: bytes, file_name: str, content_type: str) -> str:
@@ -233,7 +289,15 @@ class UploadImageCommand:
                 "ai_metadata": {},
             },
         )
-        return {"ok": True, "item": item}
+        return {
+            "ok": True,
+            "item": item,
+            "source_status": "local_upload",
+            "side_effect_plan": _side_effect_plan(
+                operation="image_upload",
+                reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
+            ),
+        }
 
 
 class UploadAttachmentCommand:
@@ -263,7 +327,15 @@ class UploadAttachmentCommand:
                 "enabled": True,
             },
         )
-        return {"ok": True, "item": item}
+        return {
+            "ok": True,
+            "item": item,
+            "source_status": "local_upload",
+            "side_effect_plan": _side_effect_plan(
+                operation="attachment_upload",
+                reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
+            ),
+        }
 
 
 class TestResolveMiniprogramThumbCommand:
@@ -315,16 +387,18 @@ class ImportImageFromUrlCommand:
     def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
         self._repo = repo or build_media_library_repository()
 
-    def __call__(self, payload: ImageFromUrlRequest) -> dict[str, Any]:
+    def __call__(self, payload: ImageFromUrlRequest, *, idempotency_key: str | None = None) -> dict[str, Any]:
         name = payload.name or "外链图片样例"
         cloud_result = build_cloud_storage_adapter().put_remote_reference(
             source_url=payload.url,
             file_name="from-url.png",
             content_type="image/png",
+            idempotency_key=_child_idempotency_key(idempotency_key, "cloud"),
         )
         wecom_result = build_wecom_media_adapter().resolve_media_id(
             reference_url=str(cloud_result.get("reference_url") or payload.url),
             file_name="from-url.png",
+            idempotency_key=_child_idempotency_key(idempotency_key, "wecom"),
         )
         item = self._repo.save_item(
             "image",
@@ -345,22 +419,37 @@ class ImportImageFromUrlCommand:
                 "side_effect_safety": _side_effect_safety(),
             },
         )
-        return {"ok": True, "item": item, "source_status": "fake_import", "adapter_result": _media_adapter_summary(cloud_result, wecom_result)}
+        return {
+            "ok": True,
+            "item": item,
+            "source_status": "fake_import",
+            "adapter_result": _media_adapter_summary(cloud_result, wecom_result),
+            "side_effect_plan": _side_effect_plan(
+                operation="image_from_url",
+                idempotency_key=str(idempotency_key or ""),
+                reason="guarded adapters return fake/staging references in tests; production real calls remain blocked unless explicitly enabled",
+            ),
+        }
 
 
 class ImportImageFromBase64Command:
     def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
         self._repo = repo or build_media_library_repository()
 
-    def __call__(self, payload: ImageFromBase64Request) -> dict[str, Any]:
+    def __call__(self, payload: ImageFromBase64Request, *, idempotency_key: str | None = None) -> dict[str, Any]:
         content_type = _content_type_from_file_name(payload.file_name, "image/png")
         data_base64 = extract_base64_payload(payload.data_base64)
         cloud_result = build_cloud_storage_adapter().put_base64_object(
             data_base64=data_base64,
             file_name=payload.file_name,
             content_type=content_type,
+            idempotency_key=_child_idempotency_key(idempotency_key, "cloud"),
         )
-        wecom_result = build_wecom_media_adapter().upload_image(data_base64=data_base64, file_name=payload.file_name)
+        wecom_result = build_wecom_media_adapter().upload_image(
+            data_base64=data_base64,
+            file_name=payload.file_name,
+            idempotency_key=_child_idempotency_key(idempotency_key, "wecom"),
+        )
         item = self._repo.save_item(
             "image",
             {
@@ -379,4 +468,14 @@ class ImportImageFromBase64Command:
                 "side_effect_safety": _side_effect_safety(),
             },
         )
-        return {"ok": True, "item": item, "source_status": "fake_import", "adapter_result": _media_adapter_summary(cloud_result, wecom_result)}
+        return {
+            "ok": True,
+            "item": item,
+            "source_status": "fake_import",
+            "adapter_result": _media_adapter_summary(cloud_result, wecom_result),
+            "side_effect_plan": _side_effect_plan(
+                operation="image_from_base64",
+                idempotency_key=str(idempotency_key or ""),
+                reason="guarded adapters use the Idempotency-Key when provided; production real calls remain blocked unless explicitly enabled",
+            ),
+        }

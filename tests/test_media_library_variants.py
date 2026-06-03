@@ -31,7 +31,8 @@ def test_image_upload_returns_variant_urls_and_variant_endpoint_is_cacheable() -
 
     assert uploaded["thumb_160_url"].endswith("/variants/thumb_160")
     assert uploaded["thumb_320_url"].endswith("/variants/thumb_320")
-    assert uploaded["preview_url"].endswith("/variants/preview_720")
+    assert uploaded["preview_url"].endswith("/variants/mobile_1080")
+    assert uploaded["mobile_1080_url"].endswith("/variants/mobile_1080")
 
     listed = client.get("/api/admin/image-library", params={"enabled_only": "true"}).json()
     row = next(item for item in listed["items"] if item["id"] == uploaded["id"])

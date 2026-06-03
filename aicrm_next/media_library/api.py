@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
+from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -28,6 +30,51 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _adapter_mode() -> str:
+    storage = str(os.getenv("AICRM_NEXT_MEDIA_STORAGE_MODE", "fake") or "fake").strip().lower()
+    wecom = str(os.getenv("AICRM_NEXT_WECOM_MEDIA_MODE", "fake") or "fake").strip().lower()
+    if storage == wecom:
+        return storage
+    return f"storage:{storage},wecom:{wecom}"
+
+
+def _real_external_call_executed(payload: dict[str, Any]) -> bool:
+    adapter_result = payload.get("adapter_result") if isinstance(payload, dict) else None
+    if not isinstance(adapter_result, dict):
+        return False
+    for section in ("cloud_storage", "wecom_media"):
+        value = adapter_result.get(section)
+        if isinstance(value, dict) and bool(value.get("side_effect_executed")):
+            return True
+    safety = adapter_result.get("side_effect_safety")
+    if isinstance(safety, dict):
+        return bool(safety.get("side_effect_executed"))
+    return False
+
+
+def _with_contract(payload: dict[str, Any], *, source_status: str = "next_media_library") -> dict[str, Any]:
+    result = dict(payload)
+    result.setdefault("ok", True)
+    if isinstance(result.get("items"), list):
+        result.setdefault("count", len(result["items"]))
+    result.setdefault("source_status", source_status)
+    result.setdefault("route_owner", "ai_crm_next")
+    result.setdefault("fallback_used", False)
+    result.setdefault("real_external_call_executed", _real_external_call_executed(result))
+    result.setdefault("storage_adapter_mode", _adapter_mode())
+    result.setdefault("adapter_mode", _adapter_mode())
+    return result
+
+
+def _binary_headers() -> dict[str, str]:
+    return {
+        "X-AICRM-Route-Owner": "ai_crm_next",
+        "X-AICRM-Fallback-Used": "false",
+        "X-AICRM-Real-External-Call-Executed": "false",
+        "X-AICRM-Storage-Adapter-Mode": _adapter_mode(),
+    }
+
+
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -41,7 +88,11 @@ def _error_response(exc: Exception, status_code: int = 400, *, headers: dict[str
         status_code = 404
     elif isinstance(exc, ContractError):
         status_code = 400
-    return JSONResponse(status_code=status_code, content={"ok": False, "error": str(exc)}, headers=headers or {})
+    return JSONResponse(
+        status_code=status_code,
+        content=_with_contract({"ok": False, "error": str(exc)}, source_status="next_media_library_error"),
+        headers=headers or {},
+    )
 
 
 @router.get("/api/admin/image-library")
@@ -54,7 +105,7 @@ def list_images(
     tags: str = "",
     only_unlabeled: bool = False,
 ) -> dict:
-    return ListMediaItemsQuery("image")(
+    return _with_contract(ListMediaItemsQuery("image")(
         limit=limit,
         offset=offset,
         filters={
@@ -64,27 +115,27 @@ def list_images(
             "tags": tags,
             "only_unlabeled": only_unlabeled,
         },
-    )
+    ))
 
 
 @router.get("/api/admin/image-library/facets")
 def list_image_facets() -> dict:
-    return ListMediaFacetsQuery("image")()
+    return _with_contract(ListMediaFacetsQuery("image")())
 
 
 @router.post("/api/admin/image-library")
 def create_image(payload: ImageUpsertRequest) -> dict:
-    return UpsertMediaItemCommand("image")(payload)
+    return _with_contract(UpsertMediaItemCommand("image")(payload), source_status="local_repository_write")
 
 
 @router.post("/api/admin/image-library/from-url")
-def image_from_url(payload: ImageFromUrlRequest) -> dict:
-    return ImportImageFromUrlCommand()(payload)
+def image_from_url(payload: ImageFromUrlRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
+    return _with_contract(ImportImageFromUrlCommand()(payload, idempotency_key=idempotency_key), source_status="fake_import_visible")
 
 
 @router.post("/api/admin/image-library/from-base64")
-def image_from_base64(payload: ImageFromBase64Request) -> dict:
-    return ImportImageFromBase64Command()(payload)
+def image_from_base64(payload: ImageFromBase64Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
+    return _with_contract(ImportImageFromBase64Command()(payload, idempotency_key=idempotency_key), source_status="fake_import_visible")
 
 
 @router.post("/api/admin/image-library/upload")
@@ -97,7 +148,7 @@ async def upload_image(
 ) -> dict:
     try:
         content = await image.read()
-        return UploadImageCommand()(
+        return _with_contract(UploadImageCommand()(
             file_bytes=content,
             file_name=image.filename or "image.png",
             content_type=image.content_type or "application/octet-stream",
@@ -105,9 +156,9 @@ async def upload_image(
             description=description,
             tags=tags,
             category=category,
-        )
+        ), source_status="local_upload")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.get("/api/admin/image-library/{image_id}")
@@ -116,9 +167,9 @@ def get_image(image_id: str, include_data: bool = False, variant: str = "") -> d
         result = GetMediaItemQuery("image")(image_id, include_data=include_data)
         if variant:
             result["variant_url"] = f"/api/admin/image-library/{image_id}/variants/{variant}"
-        return result
+        return _with_contract(result)
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.get("/api/admin/image-library/{image_id}/thumbnail")
@@ -128,12 +179,19 @@ def get_image_thumbnail(
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
 ) -> Response:
     if size not in {160, 320, 720}:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "thumbnail size must be one of 160, 320, 720"})
+        return JSONResponse(
+            status_code=400,
+            content=_with_contract(
+                {"ok": False, "error": "thumbnail size must be one of 160, 320, 720"},
+                source_status="next_media_library_error",
+            ),
+        )
     try:
         result = GetImageThumbnailQuery()(image_id, size)
         thumbnail = result["thumbnail"]
         etag = str(thumbnail.get("etag") or "")
         headers = {
+            **_binary_headers(),
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": etag,
         }
@@ -151,6 +209,7 @@ def get_image_variant(image_id: str, variant_key: str, if_none_match: str | None
         variant = result["variant"]
         etag = str(variant.get("etag") or "")
         headers = {
+            **_binary_headers(),
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": etag,
         }
@@ -158,36 +217,36 @@ def get_image_variant(image_id: str, variant_key: str, if_none_match: str | None
             return Response(status_code=304, headers=headers)
         return Response(content=variant.get("bytes") or b"", media_type=str(variant.get("mime_type") or "image/png"), headers=headers)
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.put("/api/admin/image-library/{image_id}")
 def update_image(image_id: str, payload: ImageUpsertRequest) -> dict:
     try:
-        return UpsertMediaItemCommand("image")(payload, image_id)
+        return _with_contract(UpsertMediaItemCommand("image")(payload, image_id), source_status="local_repository_write")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.delete("/api/admin/image-library/{image_id}")
 def delete_image(image_id: str, force: bool = Query(False)):
     try:
-        result = DeleteMediaItemCommand("image")(image_id, force=force)
+        result = _with_contract(DeleteMediaItemCommand("image")(image_id, force=force), source_status="local_delete")
         if result.get("references") and result.get("ok") is False:
             return JSONResponse(status_code=409, content=result)
         return result
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.get("/api/admin/attachment-library")
 def list_attachments(limit: int = 100, offset: int = 0, enabled_only: bool = True, q: str = "") -> dict:
-    return ListMediaItemsQuery("attachment")(limit=limit, offset=offset, filters={"enabled_only": enabled_only, "q": q})
+    return _with_contract(ListMediaItemsQuery("attachment")(limit=limit, offset=offset, filters={"enabled_only": enabled_only, "q": q}))
 
 
 @router.post("/api/admin/attachment-library")
 def create_attachment(payload: AttachmentUpsertRequest) -> dict:
-    return UpsertMediaItemCommand("attachment")(payload)
+    return _with_contract(UpsertMediaItemCommand("attachment")(payload), source_status="local_repository_write")
 
 
 @router.post("/api/admin/attachment-library/upload")
@@ -198,44 +257,44 @@ async def upload_attachment(
 ) -> dict:
     try:
         content = await attachment.read()
-        return UploadAttachmentCommand()(
+        return _with_contract(UploadAttachmentCommand()(
             file_bytes=content,
             file_name=attachment.filename or "attachment.bin",
             content_type=attachment.content_type or "application/octet-stream",
             name=name,
             tags=tags,
-        )
+        ), source_status="local_upload")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.get("/api/admin/attachment-library/{attachment_id}")
 def get_attachment(attachment_id: str) -> dict:
     try:
-        return GetMediaItemQuery("attachment")(attachment_id)
+        return _with_contract(GetMediaItemQuery("attachment")(attachment_id))
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.put("/api/admin/attachment-library/{attachment_id}")
 def update_attachment(attachment_id: str, payload: AttachmentUpsertRequest) -> dict:
     try:
-        return UpsertMediaItemCommand("attachment")(payload, attachment_id)
+        return _with_contract(UpsertMediaItemCommand("attachment")(payload, attachment_id), source_status="local_repository_write")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.delete("/api/admin/attachment-library/{attachment_id}")
 def delete_attachment(attachment_id: str) -> dict:
     try:
-        return DeleteMediaItemCommand("attachment")(attachment_id)
+        return _with_contract(DeleteMediaItemCommand("attachment")(attachment_id), source_status="local_delete")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.get("/api/admin/miniprogram-library")
 def list_miniprograms(limit: int = 100, offset: int = 0, enabled_only: bool = True, q: str = "") -> dict:
-    return ListMediaItemsQuery("miniprogram")(limit=limit, offset=offset, filters={"enabled_only": enabled_only, "q": q})
+    return _with_contract(ListMediaItemsQuery("miniprogram")(limit=limit, offset=offset, filters={"enabled_only": enabled_only, "q": q}))
 
 
 @router.post("/api/admin/miniprogram-library")
@@ -248,7 +307,7 @@ def create_miniprogram(payload: MiniprogramUpsertRequest):
         return {"X-AICRM-Media-Library-Duration-Ms": str(duration_ms)}
 
     try:
-        result = UpsertMediaItemCommand("miniprogram")(payload)
+        result = _with_contract(UpsertMediaItemCommand("miniprogram")(payload), source_status="local_repository_write")
         return JSONResponse(content=result, headers=duration_headers())
     except Exception as exc:
         logger.exception("miniprogram library create failed")
@@ -258,30 +317,30 @@ def create_miniprogram(payload: MiniprogramUpsertRequest):
 @router.get("/api/admin/miniprogram-library/{item_id}")
 def get_miniprogram(item_id: str) -> dict:
     try:
-        return GetMediaItemQuery("miniprogram")(item_id)
+        return _with_contract(GetMediaItemQuery("miniprogram")(item_id))
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.put("/api/admin/miniprogram-library/{item_id}")
 def update_miniprogram(item_id: str, payload: MiniprogramUpsertRequest) -> dict:
     try:
-        return UpsertMediaItemCommand("miniprogram")(payload, item_id)
+        return _with_contract(UpsertMediaItemCommand("miniprogram")(payload, item_id), source_status="local_repository_write")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.delete("/api/admin/miniprogram-library/{item_id}")
 def delete_miniprogram(item_id: str) -> dict:
     try:
-        return DeleteMediaItemCommand("miniprogram")(item_id)
+        return _with_contract(DeleteMediaItemCommand("miniprogram")(item_id), source_status="local_delete")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
 
 
 @router.post("/api/admin/miniprogram-library/{item_id}/test-resolve")
 def test_resolve_miniprogram(item_id: str) -> dict:
     try:
-        return TestResolveMiniprogramThumbCommand()(item_id)
+        return _with_contract(TestResolveMiniprogramThumbCommand()(item_id), source_status="wecom_media_plan_or_cache")
     except Exception as exc:
-        _raise_http(exc)
+        return _error_response(exc)
