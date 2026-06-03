@@ -145,6 +145,7 @@ async def upload_image(
     description: str = Form(""),
     tags: str = Form(""),
     category: str = Form(""),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
     try:
         content = await image.read()
@@ -156,6 +157,7 @@ async def upload_image(
             description=description,
             tags=tags,
             category=category,
+            idempotency_key=idempotency_key,
         ), source_status="local_upload")
     except Exception as exc:
         return _error_response(exc)
@@ -254,6 +256,7 @@ async def upload_attachment(
     attachment: UploadFile = File(...),
     name: str = Form(""),
     tags: str = Form(""),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
     try:
         content = await attachment.read()
@@ -263,6 +266,7 @@ async def upload_attachment(
             content_type=attachment.content_type or "application/octet-stream",
             name=name,
             tags=tags,
+            idempotency_key=idempotency_key,
         ), source_status="local_upload")
     except Exception as exc:
         return _error_response(exc)

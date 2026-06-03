@@ -4,8 +4,6 @@ import os
 from copy import deepcopy
 from typing import Any, Protocol
 
-import requests
-
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -207,24 +205,20 @@ class InMemoryMediaLibraryRepository:
         return {**variant, "bytes": payload, "etag": '"' + str(variant.get("checksum") or "") + '"'}
 
     def get_image_thumbnail(self, image_id: str, size: int) -> dict[str, Any] | None:
-        variant = self.get_image_variant(image_id, THUMBNAIL_SIZE_TO_VARIANT.get(size, ""))
-        if variant and str(variant.get("mime_type") or "").split(";")[0] in {"image/png", "image/jpeg"}:
-            return variant
         item = self.get_item("image", image_id, include_data=True)
         if not item:
             return None
+        if item.get("source_url") and not str(item.get("data_base64") or ""):
+            raise ContractError("remote source fetch is disabled in Next media library")
+        variant = self.get_image_variant(image_id, THUMBNAIL_SIZE_TO_VARIANT.get(size, ""))
+        if variant and str(variant.get("mime_type") or "").split(";")[0] in {"image/png", "image/jpeg"}:
+            return variant
         data_base64 = str(item.get("data_base64") or "")
         mime_type = str(item.get("mime_type") or "image/png")
         if data_base64:
             data = decode_image_base64(data_base64)
         elif item.get("source_url"):
-            try:
-                response = requests.get(str(item.get("source_url")), timeout=10)
-                response.raise_for_status()
-                data = response.content
-                mime_type = response.headers.get("content-type", mime_type).split(";")[0] or mime_type
-            except Exception as exc:
-                raise ContractError("image source_url is unavailable") from exc
+            raise ContractError("remote source fetch is disabled in Next media library")
         else:
             data = b""
         return make_thumbnail_bytes(
@@ -336,7 +330,7 @@ class InMemoryMediaLibraryRepository:
             return {
                 "name": str(data.get("name") or title),
                 "title": title,
-                "appid": str(data.get("appid") or ""),
+                "appid": str(data.get("appid") or data.get("app_id") or ""),
                 "pagepath": str(pagepath or ""),
                 "page_path": str(pagepath or ""),
                 "thumb_image_id": data.get("thumb_image_id"),
@@ -372,6 +366,8 @@ class InMemoryMediaLibraryRepository:
                 out["ai_metadata"] = data.get("ai_metadata") if isinstance(data.get("ai_metadata"), dict) else {}
             return out
         if kind == "miniprogram":
+            if "app_id" in data and "appid" not in data:
+                data["appid"] = data.get("app_id")
             for key in ["name", "title", "appid"]:
                 if key in data:
                     out[key] = str(data.get(key) or "")

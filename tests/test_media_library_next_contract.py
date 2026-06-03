@@ -55,11 +55,13 @@ def test_upload_update_delete_routes_report_local_side_effect_plan() -> None:
         "/api/admin/image-library/upload",
         files={"image": ("contract.png", BytesIO(TINY_PNG), "image/png")},
         data={"name": "contract image"},
+        headers={"Idempotency-Key": "contract-upload-1"},
     ).json()
     assert_json_contract(image)
     assert image["source_status"] == "local_upload"
     assert image["side_effect_plan"]["external_storage"] == "not_executed"
     assert image["side_effect_plan"]["wecom_media_upload"] == "not_executed"
+    assert image["side_effect_plan"]["idempotency_key"] == "contract-upload-1"
 
     image_id = image["item"]["id"]
     updated = client.put(f"/api/admin/image-library/{image_id}", json={"name": "renamed"}).json()
@@ -98,6 +100,28 @@ def test_upload_update_delete_routes_report_local_side_effect_plan() -> None:
     assert_json_contract(mini_deleted)
 
 
+def test_miniprogram_create_accepts_app_id_and_preserves_thumb_media_id() -> None:
+    client = make_client()
+
+    mini = client.post(
+        "/api/admin/miniprogram-library",
+        json={
+            "name": "contract mini alias",
+            "app_id": "wx-contract-alias",
+            "page_path": "pages/contract/alias",
+            "title": "contract alias card",
+            "thumb_media_id": "test_thumb_media_id",
+            "resolve_thumb_media": False,
+        },
+    ).json()
+
+    assert_json_contract(mini)
+    assert mini["item"]["appid"] == "wx-contract-alias"
+    assert mini["item"]["page_path"] == "pages/contract/alias"
+    assert mini["item"]["thumb_media_id"] == "test_thumb_media_id"
+    assert mini["item"].get("thumb_image_id") in (None, "")
+
+
 def test_import_routes_accept_idempotency_and_do_not_execute_real_external_calls() -> None:
     client = make_client()
 
@@ -124,6 +148,19 @@ def test_import_routes_accept_idempotency_and_do_not_execute_real_external_calls
     assert from_base64["source_status"] == "fake_import"
     assert from_base64["adapter_result"]["cloud_storage"]["side_effect_executed"] is False
     assert from_base64["adapter_result"]["wecom_media"]["side_effect_executed"] is False
+
+    from_data_url = client.post(
+        "/api/admin/image-library/from-base64",
+        json={
+            "data_url": "data:image/png;base64," + base64.b64encode(TINY_PNG).decode("ascii"),
+            "file_name": "contract-data-url.png",
+            "name": "data url reference",
+        },
+        headers={"Idempotency-Key": "contract-data-url-1"},
+    ).json()
+    assert_json_contract(from_data_url)
+    assert from_data_url["source_status"] == "fake_import"
+    assert from_data_url["adapter_result"]["cloud_storage"]["idempotency_key"] == "contract-data-url-1:cloud"
 
 
 def test_thumbnail_and_variant_routes_are_binary_next_contract_surfaces() -> None:

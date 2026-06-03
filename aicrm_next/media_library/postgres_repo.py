@@ -5,8 +5,6 @@ import logging
 from datetime import datetime
 from typing import Any
 
-import requests
-
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .repo import MediaLibraryRepository, normalize_tags
@@ -167,13 +165,7 @@ class PostgresMediaLibraryRepository:
         if data_base64:
             data = decode_image_base64(data_base64)
         elif image.get("source_url"):
-            try:
-                response = requests.get(str(image.get("source_url")), timeout=10)
-                response.raise_for_status()
-                data = response.content
-                mime_type = response.headers.get("content-type", mime_type).split(";")[0] or mime_type
-            except Exception as exc:
-                raise ContractError("image source_url is unavailable") from exc
+            raise ContractError("remote source fetch is disabled in Next media library")
         else:
             data = b""
         return make_thumbnail_bytes(
@@ -439,10 +431,11 @@ class PostgresMediaLibraryRepository:
         pagepath = payload.get("pagepath") if payload.get("pagepath") is not None else payload.get("page_path")
         data = {
             "name": str(payload.get("name") or payload.get("title") or "").strip()[:200],
-            "appid": str(payload.get("appid") or "").strip()[:120],
+            "appid": str(payload.get("appid") or payload.get("app_id") or "").strip()[:120],
             "pagepath": str(pagepath or "").strip()[:500],
             "title": str(payload.get("title") or payload.get("name") or "").strip()[:200],
             "thumb_image_id": _coerce_optional_int(payload.get("thumb_image_id"), "thumb_image_id"),
+            "thumb_media_id": str(payload.get("thumb_media_id") or "").strip()[:255],
             "enabled": _bool(payload.get("enabled", True)),
         }
         if not item_id:
@@ -482,10 +475,10 @@ class PostgresMediaLibraryRepository:
                             INSERT INTO miniprogram_library
                                 (name, appid, pagepath, title, thumb_image_url, thumb_image_base64,
                                  thumb_image_id, thumb_media_id, thumb_media_id_expires_at, enabled)
-                            VALUES (%s, %s, %s, %s, '', '', %s, '', NULL, %s)
+                            VALUES (%s, %s, %s, %s, '', '', %s, %s, NULL, %s)
                             RETURNING id
                             """,
-                            (data["name"], data["appid"], data["pagepath"], data["title"], data["thumb_image_id"], data["enabled"]),
+                            (data["name"], data["appid"], data["pagepath"], data["title"], data["thumb_image_id"], data["thumb_media_id"], data["enabled"]),
                         )
                         row = cur.fetchone()
                     conn.commit()

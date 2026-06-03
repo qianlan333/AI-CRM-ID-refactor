@@ -269,6 +269,7 @@ class UploadImageCommand:
         description: str = "",
         tags: Any = None,
         category: str = "",
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         mime_type = _validate_image_upload(file_bytes=file_bytes, file_name=file_name, content_type=content_type)
         item = self._repo.save_item(
@@ -295,6 +296,7 @@ class UploadImageCommand:
             "source_status": "local_upload",
             "side_effect_plan": _side_effect_plan(
                 operation="image_upload",
+                idempotency_key=str(idempotency_key or ""),
                 reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
             ),
         }
@@ -304,7 +306,7 @@ class UploadAttachmentCommand:
     def __init__(self, repo: MediaLibraryRepository | None = None) -> None:
         self._repo = repo or build_media_library_repository()
 
-    def __call__(self, *, file_bytes: bytes, file_name: str, content_type: str, name: str = "", tags: Any = None) -> dict[str, Any]:
+    def __call__(self, *, file_bytes: bytes, file_name: str, content_type: str, name: str = "", tags: Any = None, idempotency_key: str | None = None) -> dict[str, Any]:
         if not file_bytes:
             raise ContractError("invalid_attachment: attachment file is empty")
         normalized_type = str(content_type or "application/octet-stream").split(";")[0].strip().lower()
@@ -333,6 +335,7 @@ class UploadAttachmentCommand:
             "source_status": "local_upload",
             "side_effect_plan": _side_effect_plan(
                 operation="attachment_upload",
+                idempotency_key=str(idempotency_key or ""),
                 reason="multipart upload writes the media library row and local/postgres payload only; no external storage or WeCom media upload is executed",
             ),
         }
