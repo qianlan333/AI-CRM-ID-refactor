@@ -173,6 +173,20 @@ routes:
     checker: tests/test_cloud_orchestrator_plan_recipients.py
     rollback_owner: aicrm_next.cloud_orchestrator
     notes: Next-native cloud plan list/detail/review APIs.
+  - route_id: cloud_orchestrator_media_upload_adapter
+    path_pattern: /api/admin/cloud-orchestrator/media/upload
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    runtime_owner: next_adapter
+    legacy_fallback_allowed: true
+    legacy_source: production_compat
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    checker: tests/test_cloud_orchestrator_media_upload_adapter.py
+    rollback_owner: aicrm_next.cloud_orchestrator
+    notes: Next media upload adapter is primary for Cloud Orchestrator image uploads; real WeCom media upload is blocked by default and legacy rollback is retained until validation.
   - route_id: media_library_admin_pages_family
     path_pattern: /admin/*-library
     methods: [GET]

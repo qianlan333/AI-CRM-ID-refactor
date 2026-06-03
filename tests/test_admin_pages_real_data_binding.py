@@ -971,7 +971,7 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
         assert response.json()["forwarded"] == f"{method}:{path.split('?', 1)[0]}:{path.split('?', 1)[1] if '?' in path else ''}"
 
 
-def test_admin_cloud_orchestrator_media_upload_route_forwards_to_legacy(monkeypatch):
+def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -999,9 +999,12 @@ def test_admin_cloud_orchestrator_media_upload_route_forwards_to_legacy(monkeypa
     )
 
     assert response.status_code == 200
-    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert response.json()["forwarded"] == "POST:/api/admin/cloud-orchestrator/media/upload:"
-    assert response.json()["media_id"] == "media-live-probe"
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert response.json()["source_status"] == "next_cloud_orchestrator_media_upload"
+    assert response.json()["fallback_used"] is False
+    assert response.json()["real_external_call_executed"] is False
+    assert response.json()["wecom_media_upload_executed"] is False
+    assert response.json()["media_id"].startswith("fake_media_")
 
 
 def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):

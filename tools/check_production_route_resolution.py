@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 
-NEXT_OWNED_BEHAVIORS = {"next_exact", "next_command", "guarded_preview", "fake_adapter", "readonly_facade"}
+NEXT_OWNED_BEHAVIORS = {"next_exact", "next_command", "next_adapter", "guarded_preview", "fake_adapter", "readonly_facade"}
 PRODUCTION_COMPAT_BEHAVIORS = {"legacy_forward", "scheduled_safe_mode"}
 
 RESOLUTION_SAMPLES = [

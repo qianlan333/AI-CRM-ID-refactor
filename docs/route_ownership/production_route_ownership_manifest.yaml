@@ -1070,15 +1070,18 @@ routes:
     notes: Campaign run-due timer route is safe-mode only.
   - route_pattern: /api/admin/cloud-orchestrator/media/upload
     methods: [POST, OPTIONS]
-    capability_owner: aicrm_next.ai_assist
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_adapter
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
     delete_ready: false
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
     checker: tools/check_production_route_resolution.py
-    notes: Legacy cloud-orchestrator media upload remains the production real WeCom media bridge until a Next live media adapter replaces it.
+    notes: Next Cloud Orchestrator media upload adapter is primary and returns legacy-compatible media_id; real WeCom media upload is blocked by default and production_compat rollback is retained until validation.
   - route_pattern: /api/admin/automation-conversion/programs*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

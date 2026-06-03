@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -27,10 +27,18 @@ from .application import (
     RejectCloudPlanRecipientCommand,
     UpdateCloudPlanRecipientMessageCommand,
 )
+from .media_upload import build_upload_command, diagnostics_payload
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+_MEDIA_UPLOAD_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-WeCom-Media-Upload-Executed": "false",
+}
 
 
 def _raise(exc: Exception) -> None:
@@ -39,6 +47,12 @@ def _raise(exc: Exception) -> None:
     if isinstance(exc, ValueError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _media_error(error: str, *, status_code: int = 400) -> JSONResponse:
+    payload = diagnostics_payload()
+    payload.update({"ok": False, "error": error})
+    return JSONResponse(payload, status_code=status_code, headers=_MEDIA_UPLOAD_HEADERS)
 
 
 async def _write_context(request: Request) -> tuple[dict[str, Any], str | None]:
@@ -74,6 +88,40 @@ def admin_cloud_plans(request: Request):
         }
     )
     return templates.TemplateResponse(request, "admin_console/cloud_plan_review.html", context)
+
+
+@router.options("/api/admin/cloud-orchestrator/media/upload")
+def api_cloud_orchestrator_media_upload_options() -> JSONResponse:
+    payload = diagnostics_payload()
+    payload.update({"allowed_methods": ["POST", "OPTIONS"]})
+    return JSONResponse(payload, headers=_MEDIA_UPLOAD_HEADERS)
+
+
+@router.post("/api/admin/cloud-orchestrator/media/upload")
+async def api_cloud_orchestrator_media_upload(
+    request: Request,
+    image: UploadFile | None = File(default=None),
+    idempotency_key: str = Header(default="", alias="Idempotency-Key"),
+) -> JSONResponse:
+    if image is None or not image.filename:
+        return _media_error("missing_image")
+    content_type = str(image.content_type or "").strip().lower()
+    if not content_type.startswith("image/"):
+        return _media_error("invalid_content_type")
+    file_bytes = await image.read()
+    operator = str(request.headers.get("X-AICRM-Actor") or "admin_ui").strip()
+    trace_id = str(request.headers.get("X-AICRM-Trace-Id") or "").strip()
+    command = build_upload_command(
+        idempotency_key=idempotency_key,
+        actor_id=operator,
+        actor_type="admin",
+        trace_id=trace_id,
+    )
+    try:
+        payload = command(file_name=image.filename, file_bytes=file_bytes, content_type=content_type)
+    except ValueError as exc:
+        return _media_error(str(exc))
+    return JSONResponse(payload, headers=_MEDIA_UPLOAD_HEADERS)
 
 
 @router.get(

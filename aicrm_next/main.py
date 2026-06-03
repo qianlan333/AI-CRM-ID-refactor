@@ -115,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(sidebar_jssdk_router)
     app.include_router(customer_tags_read_router)
     app.include_router(customer_tags_write_router)
+    app.include_router(cloud_orchestrator_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)
@@ -130,7 +131,6 @@ def create_app() -> FastAPI:
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
-    app.include_router(cloud_orchestrator_router)
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)
     app.include_router(owner_migration_router)
