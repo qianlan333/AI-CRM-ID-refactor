@@ -446,7 +446,12 @@ def delete_admin_product(product_id: int, *, operator: str = "") -> None:
     if not existing:
         raise WeChatPayProductError("商品不存在")
     product_code = _normalized_text(existing.get("product_code"))
-    if product_code and product_repo.count_orders_for_product_code(product_code) > 0:
+    product_status = _normalized_text(existing.get("status")) or PRODUCT_STATUS_DRAFT
+    if (
+        product_status == PRODUCT_STATUS_ACTIVE
+        and product_code
+        and product_repo.count_orders_for_product_code(product_code) > 0
+    ):
         raise WeChatPayProductError("已有订单的商品不能删除，请先下架")
     product_repo.delete_product(int(product_id))
     get_db().commit()
