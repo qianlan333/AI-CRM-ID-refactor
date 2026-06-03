@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import html
 import io
+import os
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
@@ -40,6 +41,7 @@ from .application import (
     UploadRadarPdfPartCommand,
 )
 from aicrm_next.media_library.application import UploadAttachmentCommand, UploadImageCommand
+from .domain import verify_radar_state
 from .dto import RadarLinkCreateRequest, RadarLinkUpdateRequest
 
 router = APIRouter()
@@ -101,6 +103,54 @@ def _redirect_with_viewer_cookie(url: str, token: str = "") -> RedirectResponse:
             path="/",
         )
     return response
+
+
+def _radar_oauth_return_url(state: str | None) -> str:
+    try:
+        context = verify_radar_state(state, secret_key=os.getenv("SECRET_KEY", "").strip())
+    except Exception:
+        return "/"
+    code = str(context.get("code") or "").strip()
+    return f"/r/{code}" if code else "/"
+
+
+def _radar_oauth_error_response(exc: Exception, *, state: str | None = None) -> HTMLResponse:
+    if isinstance(exc, RepositoryProviderError):
+        status_code = 503
+        message = "当前内容授权服务暂不可用，请稍后重试。"
+    elif isinstance(exc, NotFoundError):
+        status_code = 404
+        message = "当前内容不存在或已下线。"
+    else:
+        status_code = 400
+        message = "内容授权未完成，请重新打开链接。"
+    detail = str(exc)
+    if "production mode is not enabled" in detail:
+        message = "当前微信授权配置未完成，请联系管理员。"
+    return_url = html.escape(_radar_oauth_return_url(state), quote=True)
+    body = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内容授权未完成</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }}
+    main {{ width: min(100%, 420px); padding: 28px 22px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); }}
+    h1 {{ margin: 0 0 12px; font-size: 22px; line-height: 1.35; }}
+    p {{ margin: 0; color: #6b7280; font-size: 15px; line-height: 1.7; }}
+    a {{ display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; min-height: 44px; padding: 0 20px; border-radius: 999px; background: #2563eb; color: #fff; font-weight: 700; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>内容授权未完成</h1>
+    <p>{html.escape(message)}</p>
+    <a href="{return_url}">返回内容链接</a>
+  </main>
+</body>
+</html>"""
+    return HTMLResponse(body, status_code=status_code)
 
 
 @router.get("/api/admin/radar-links")
@@ -292,7 +342,7 @@ def radar_oauth_start(
     try:
         result = StartRadarOAuthQuery()(state=state, code=code, openid=openid, unionid=unionid, external_userid=external_userid)
     except Exception as exc:
-        _raise_http(exc)
+        return _radar_oauth_error_response(exc, state=state)
     return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))
 
 
@@ -632,5 +682,5 @@ def radar_oauth_callback(
             request_meta=_request_meta(request),
         )
     except Exception as exc:
-        _raise_http(exc)
+        return _radar_oauth_error_response(exc, state=state)
     return _redirect_with_viewer_cookie(str(result["redirect_url"]), str(result.get("viewer_session_token") or ""))

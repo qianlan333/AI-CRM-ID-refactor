@@ -220,7 +220,23 @@ def test_real_radar_oauth_requires_explicit_flag(client, monkeypatch):
     response = client.get(landing_response.headers["location"], follow_redirects=False)
 
     assert response.status_code == 400
-    assert "production mode is not enabled" in response.text
+    assert response.headers["content-type"].startswith("text/html")
+    assert "当前微信授权配置未完成，请联系管理员" in response.text
+    assert "production mode is not enabled" not in response.text
+    assert '{"ok":' not in response.text
+
+
+def test_radar_oauth_callback_error_returns_readable_html(client):
+    response = client.get(
+        "/api/h5/radar/oauth/callback?state=bad-state&code=fake-code",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("text/html")
+    assert "内容授权未完成" in response.text
+    assert '{"ok":' not in response.text
+    assert "state=bad-state" not in response.text
 
 
 def test_stats_returns_required_click_fields(client):

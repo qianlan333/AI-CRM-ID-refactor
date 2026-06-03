@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 import logging
 from typing import Any
 from urllib.parse import urlencode
@@ -54,6 +55,34 @@ def _payment_oauth_callback_url() -> str:
 def _payment_oauth_start_url(return_url: str) -> str:
     query = urlencode({"return_url": _safe_return_url(return_url)})
     return f"{url_for('api.h5_wechat_pay_oauth_start')}?{query}"
+
+
+def _wechat_pay_oauth_error_page(message: str, *, return_url: str = "/", status_code: int = 400):
+    safe_return_url = escape(_safe_return_url(return_url), quote=True)
+    safe_message = escape(message)
+    html = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>微信支付授权未完成</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }}
+    main {{ width: min(100%, 420px); padding: 28px 22px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); }}
+    h1 {{ margin: 0 0 12px; font-size: 22px; line-height: 1.35; }}
+    p {{ margin: 0; color: #6b7280; font-size: 15px; line-height: 1.7; }}
+    a {{ display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; min-height: 44px; padding: 0 20px; border-radius: 999px; background: #2563eb; color: #fff; font-weight: 700; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>微信支付授权未完成</h1>
+    <p>{safe_message}</p>
+    <a href="{safe_return_url}">返回商品页</a>
+  </main>
+</body>
+</html>"""
+    return html, status_code, {"Content-Type": "text/html; charset=utf-8"}
 
 
 def _wechat_pay_oauth_scope() -> str:
@@ -130,7 +159,7 @@ def h5_wechat_pay_product_page(product_code: str):
 
 def h5_wechat_pay_oauth_start():
     if not _wechat_oauth_is_configured():
-        return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
+        return _wechat_pay_oauth_error_page("当前微信授权配置未完成，请联系管理员。", status_code=501)
     return_url = _safe_return_url(request.args.get("return_url", "/"))
     authorize_url = _wechat_oauth_authorize_url(
         app_id=current_app.config["WECHAT_MP_APP_ID"],
@@ -143,12 +172,12 @@ def h5_wechat_pay_oauth_start():
 
 def h5_wechat_pay_oauth_callback():
     if not _wechat_oauth_is_configured():
-        return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
+        return _wechat_pay_oauth_error_page("当前微信授权配置未完成，请联系管理员。", status_code=501)
     code = _normalized_text(request.args.get("code"))
     state_payload = _decode_oauth_state(_normalized_text(request.args.get("state")))
     return_url = _safe_return_url(_normalized_text(state_payload.get("return_url")) or "/")
     if not code:
-        return jsonify({"ok": False, "error": "code is required"}), 400
+        return _wechat_pay_oauth_error_page("授权未完成，请重新进入商品页。", return_url=return_url, status_code=400)
     try:
         oauth_payload = exchange_wechat_oauth_code(
             app_id=current_app.config["WECHAT_MP_APP_ID"],
@@ -157,10 +186,10 @@ def h5_wechat_pay_oauth_callback():
         )
     except WeChatOAuthRequestError as exc:
         logger.exception("wechat pay oauth exchange failed return_url=%s", return_url)
-        return jsonify({"ok": False, "error": f"wechat_oauth_exchange_failed: {exc}"}), 502
+        return _wechat_pay_oauth_error_page("授权服务暂不可用，请稍后重试。", return_url=return_url, status_code=502)
     if oauth_payload.get("errcode") not in (None, 0):
         logger.warning("wechat pay oauth exchange returned error payload=%s", oauth_payload)
-        return jsonify({"ok": False, "error": "wechat_oauth_exchange_failed", "wechat_payload": oauth_payload}), 502
+        return _wechat_pay_oauth_error_page("授权服务暂不可用，请稍后重试。", return_url=return_url, status_code=502)
     openid = _normalized_text(oauth_payload.get("openid"))
     unionid = _normalized_text(oauth_payload.get("unionid"))
     access_token = _normalized_text(oauth_payload.get("access_token"))
