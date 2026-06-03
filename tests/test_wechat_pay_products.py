@@ -1099,6 +1099,8 @@ def test_checkout_template_uses_normalized_paid_status_only():
     assert 'order.status === "paid"' in source
     assert 'order.trade_state === "SUCCESS"' not in source
     assert 'order.status !== "paid" && order.trade_state !== "SUCCESS"' not in source
+    assert 'page_state.completion_action.type != "redirect"' in source
+    assert "page_state.completion_redirect.enabled" not in source
 
 
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):

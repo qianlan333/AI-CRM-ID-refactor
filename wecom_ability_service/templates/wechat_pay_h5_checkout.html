@@ -110,7 +110,7 @@
       <div class="success-tick">✓</div>
       <div class="success-title">支付成功</div>
       <div class="success-desc" id="successDesc">报名成功</div>
-      {% if not page_state.completion_redirect.enabled %}
+      {% if page_state.completion_action.type != "redirect" %}
       <button class="qr-reopen-button" id="showLeadQrButton" type="button">查看领取二维码</button>
       {% endif %}
     </section>

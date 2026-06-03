@@ -562,6 +562,7 @@ def build_checkout_page_state(
         raise WeChatPayOrderError("product_not_configured")
     identity_payload = dict(identity or {})
     paid_order = _existing_paid_order_for_product(product, identity_payload) if identity_payload else None
+    completion_redirect = get_completion_redirect_for_product_code(product["product_code"])
     return {
         "product": product,
         "identity_ready": bool(_normalized_text(identity_payload.get("openid"))),
@@ -572,6 +573,7 @@ def build_checkout_page_state(
         "require_mobile": bool(product.get("require_mobile")),
         "cta_text": _normalized_text(product.get("cta_text")) or "确认支付",
         "lead_plan_configured": bool(product.get("lead_plan_configured")),
-        "completion_redirect": get_completion_redirect_for_product_code(product["product_code"]),
+        "completion_redirect": completion_redirect,
+        "completion_action": completion_redirect.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
     }
