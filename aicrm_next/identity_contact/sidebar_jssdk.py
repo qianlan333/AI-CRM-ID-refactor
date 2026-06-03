@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 
 from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
+    SidebarJSSDKConfigError,
     SidebarJSSDKInputError,
     build_sidebar_jssdk_config,
 )
@@ -56,5 +57,18 @@ async def sidebar_jssdk_config(request: Request) -> Response:
                 "real_external_call_executed": False,
             },
             status_code=400,
+        )
+    except SidebarJSSDKConfigError as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": str(exc),
+                "source_status": "config_error",
+                "adapter_mode": "real_enabled",
+                "route_owner": "ai_crm_next",
+                "fallback_used": False,
+                "real_external_call_executed": bool(getattr(exc, "real_external_call_executed", False)),
+            },
+            status_code=502,
         )
     return JSONResponse(jsonable_encoder(payload), status_code=200)

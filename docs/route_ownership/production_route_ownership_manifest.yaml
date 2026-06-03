@@ -1603,7 +1603,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Sidebar JSSDK group 15 closeout removed legacy rollback; Next JSSDK adapter only; real signing is blocked by default; fallback_used=false; real_external_call_executed=false.
+    notes: Sidebar JSSDK group 15 closeout removed legacy rollback; Next JSSDK adapter only; real signing is blocked by default but supported under explicit real_enabled gate for sidebar identity resolution; fallback_used=false.
   - route_pattern: /api/sidebar/lead-pool/status
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine
