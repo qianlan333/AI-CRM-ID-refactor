@@ -8,7 +8,7 @@ from aicrm_next.platform_foundation.route_registry.service import get_route_regi
 ROUTE = "/api/sidebar/jssdk-config"
 
 
-def test_sidebar_jssdk_registry_entry_is_next_adapter_validating_with_rollback() -> None:
+def test_sidebar_jssdk_registry_entry_is_next_adapter_deletion_locked() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
@@ -17,12 +17,12 @@ def test_sidebar_jssdk_registry_entry_is_next_adapter_validating_with_rollback()
         assert entry is not None
         assert entry.capability_owner == "aicrm_next.identity_contact"
         assert entry.runtime_owner == "next_adapter"
-        assert entry.legacy_fallback_allowed is True
-        assert entry.legacy_source == "production_compat"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.legacy_source == ""
         assert entry.external_side_effect_risk == "high"
         assert entry.adapter_mode == "real_blocked"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
 
 
 def test_sidebar_jssdk_manifest_matches_group15_lifecycle() -> None:
@@ -33,13 +33,15 @@ def test_sidebar_jssdk_manifest_matches_group15_lifecycle() -> None:
 
     assert registry_record["methods"] == ["GET", "HEAD", "OPTIONS"]
     assert registry_record["runtime_owner"] == "next_adapter"
-    assert registry_record["legacy_fallback_allowed"] is True
-    assert registry_record["delete_status"] == "next_primary_with_legacy_rollback"
-    assert registry_record["replacement_status"] == "validating"
+    assert registry_record["legacy_fallback_allowed"] is False
+    assert registry_record["delete_status"] == "deletion_locked"
+    assert registry_record["replacement_status"] == "locked"
     assert registry_record["adapter_mode"] == "real_blocked"
     assert manifest_record["methods"] == ["GET", "HEAD", "OPTIONS"]
     assert manifest_record["current_runtime_owner"] == "next_adapter"
     assert manifest_record["production_behavior"] == "next_adapter"
-    assert manifest_record["legacy_fallback_allowed"] is True
-    assert manifest_record["delete_ready"] is False
+    assert manifest_record["legacy_fallback_allowed"] is False
+    assert manifest_record["delete_ready"] is True
     assert manifest_record["adapter_mode"] == "real_blocked"
+    assert manifest_record["delete_status"] == "deletion_locked"
+    assert manifest_record["replacement_status"] == "locked"

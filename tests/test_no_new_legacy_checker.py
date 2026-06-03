@@ -325,12 +325,14 @@ def test_wecom_tag_live_mutation_guard_flags_legacy_route_and_real_gateway_drift
 
 def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path: Path) -> None:
     inventory = tmp_path / "docs/architecture/sidebar_jssdk_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
     api = tmp_path / "aicrm_next/identity_contact/sidebar_jssdk.py"
     adapter = tmp_path / "aicrm_next/integration_gateway/wecom_jssdk_adapter.py"
     main = tmp_path / "aicrm_next/main.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     inventory.parent.mkdir(parents=True)
+    compat.parent.mkdir(parents=True)
     api.parent.mkdir(parents=True)
     adapter.parent.mkdir(parents=True)
     main.parent.mkdir(parents=True, exist_ok=True)
@@ -341,6 +343,14 @@ def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path
         "Frontend ↔ API ↔ Backend Contract Matrix\n"
         "/sidebar/bind-mobile sidebar_customer_workbench.html sidebar_workbench.js /api/sidebar/jssdk-config\n"
         "url debug agentid ok appId corpId timestamp nonceStr signature jsApiList source_status adapter_mode route_owner fallback_used real_external_call_executed\n",
+        encoding="utf-8",
+    )
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/sidebar/jssdk-config', methods=['GET', 'HEAD', 'OPTIONS'])\n"
+        "def legacy_jssdk():\n"
+        "    pass\n",
         encoding="utf-8",
     )
     api.write_text(
@@ -366,9 +376,10 @@ def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path
         "    methods: [GET, HEAD, OPTIONS]\n"
         "    runtime_owner: production_compat\n"
         "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
         "    adapter_mode: real_enabled\n"
-        "    delete_status: active\n"
-        "    replacement_status: not_started\n",
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -379,19 +390,28 @@ def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path
         "    production_behavior: legacy_forward\n"
         "    legacy_fallback_allowed: true\n"
         "    delete_ready: false\n"
-        "    adapter_mode: real_enabled\n",
+        "    adapter_mode: real_enabled\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
         encoding="utf-8",
     )
 
     codes = {violation.code for violation in check_sidebar_jssdk_next_adapter(tmp_path)}
 
+    assert "sidebar_jssdk_production_compat_route" in codes
     assert "sidebar_jssdk_legacy_forward" in codes
     assert "sidebar_jssdk_direct_http_client" in codes
     assert "sidebar_jssdk_router_order" in codes
     assert "sidebar_jssdk_registry_owner" in codes
+    assert "sidebar_jssdk_registry_legacy_allowed" in codes
+    assert "sidebar_jssdk_registry_legacy_source" in codes
     assert "sidebar_jssdk_registry_lifecycle" in codes
+    assert "sidebar_jssdk_registry_rollback_lifecycle" in codes
     assert "sidebar_jssdk_manifest_owner" in codes
     assert "sidebar_jssdk_manifest_behavior" in codes
+    assert "sidebar_jssdk_manifest_legacy_allowed" in codes
+    assert "sidebar_jssdk_manifest_delete_ready" in codes
+    assert "sidebar_jssdk_manifest_rollback_lifecycle" in codes
 
 
 def test_questionnaire_oauth_guard_flags_exact_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:
@@ -1301,7 +1321,7 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
-    compat.write_text('@router.api_route("/api/sidebar/jssdk-config", methods=["GET"])\ndef jssdk_route():\n    return {}\n', encoding="utf-8")
+    compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
     customer_api.write_text(
         '@router.get("/api/sidebar/profile")\n'
         "def sidebar_profile():\n"
@@ -1427,9 +1447,10 @@ def test_sidebar_readonly_closeout_guard_allows_locked_readonly_and_out_of_scope
         "    legacy_fallback_allowed: false\n"
         "    delete_ready: true\n"
         "  - route_pattern: /api/sidebar/jssdk-config\n"
-        "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: true\n"
-        "    delete_ready: false\n",
+        "    current_runtime_owner: next_adapter\n"
+        "    production_behavior: next_adapter\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_ready: true\n",
         encoding="utf-8",
     )
 

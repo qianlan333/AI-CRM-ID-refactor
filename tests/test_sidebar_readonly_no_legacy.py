@@ -42,7 +42,7 @@ def test_sidebar_readonly_routes_are_not_production_compat_forwards() -> None:
     ]:
         assert route not in source
 
-    assert "/api/sidebar/jssdk-config" in source
+    assert "/api/sidebar/jssdk-config" not in source
 
     for write_route in [
         "/api/sidebar/bind-mobile",
