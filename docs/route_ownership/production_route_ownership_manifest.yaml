@@ -333,25 +333,25 @@ routes:
   - route_pattern: /admin/wechat-pay/products
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Production product management uses the retained legacy Flask admin UI for the list entry point.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management list page is served by aicrm_next.commerce and reads the native commerce repository.
   - route_pattern: /admin/wechat-pay/products*
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Production product management uses the retained legacy Flask admin UI and product_service for create/edit/list/share while payment/provider side effects remain blocked separately.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management create/edit pages are served by aicrm_next.commerce; public product and payment pages keep their separate legacy_forward ownership.
   - route_pattern: /admin/wechat-pay/transactions
     methods: [GET]
     capability_owner: aicrm_next.commerce
@@ -368,34 +368,40 @@ routes:
     capability_owner: aicrm_next.media_library
     current_runtime_owner: frontend_compat
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
-    notes: Admin image library page is frontend_compat over Next APIs; page shell performs no external calls and legacy rollback remains available during group 16 validation.
+    notes: Admin image library page is frontend_compat over Next APIs; page shell performs no external calls and Media Library group 16 production_compat rollback is removed and locked.
   - route_pattern: /admin/miniprogram-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: frontend_compat
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
-    notes: Admin miniprogram library page is frontend_compat over Next APIs; thumbnail references go through image library routes and real WeCom media calls remain blocked.
+    notes: Admin miniprogram library page is frontend_compat over Next APIs; thumbnail references go through image library routes, production_compat rollback is removed, and real WeCom media calls remain blocked.
   - route_pattern: /admin/attachment-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: frontend_compat
     production_behavior: readonly_facade
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_media_library_next_contract.py
-    notes: Admin attachment library page is frontend_compat over Next APIs; page shell performs no external calls and upload commands return SideEffectPlan.
+    notes: Admin attachment library page is frontend_compat over Next APIs; page shell performs no external calls, production_compat rollback is removed, and upload commands return SideEffectPlan.
   - route_pattern: /api/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
@@ -1318,14 +1324,14 @@ routes:
   - route_pattern: /api/admin/wechat-pay/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Product management APIs forward to legacy Flask product_service so the admin page can create, edit, copy, publish, delete, and generate QR shares.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management list/create/update/delete/enable/disable/share APIs are owned by aicrm_next.commerce and write wechat_pay_products through the native Postgres repository; payment provider side effects remain adapter-guarded.
   - route_pattern: /api/admin/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
@@ -1452,45 +1458,53 @@ routes:
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Next media routes own broad image library list/read/metadata/thumbnail/variant surfaces; route contract exposes route_owner/fallback/adapter fields and no real external calls are executed by read routes.
+    notes: Next media routes own broad image library list/read/metadata/thumbnail/variant/upload/import/delete surfaces; production_compat rollback is removed, route contract exposes route_owner/fallback/adapter fields, and no real external storage or WeCom media upload is executed.
   - route_pattern: /api/admin/image-library/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: guarded_preview
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: medium
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Next multipart local image upload stores media library rows without cloud storage or WeCom media providers; response includes SideEffectPlan and real_external_call_executed=false.
+    notes: Next multipart local image upload stores media library rows without cloud storage or WeCom media providers; production_compat rollback is removed, response includes SideEffectPlan and real_external_call_executed=false.
   - route_pattern: /api/admin/attachment-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: medium
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Next attachment library routes own list/read/create/upload/update/delete surfaces; local writes return SideEffectPlan and real external storage/WeCom media upload remains blocked.
+    notes: Next attachment library routes own list/read/create/upload/update/delete surfaces; production_compat rollback is removed, local writes return SideEffectPlan, and real external storage/WeCom media upload remains blocked.
   - route_pattern: /api/admin/miniprogram-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Next miniprogram library routes own list/read/create/update/delete and guarded thumbnail resolve surfaces; real WeCom media upload remains blocked unless explicitly enabled.
+    notes: Next miniprogram library routes own list/read/create/update/delete and guarded thumbnail resolve surfaces; production_compat rollback is removed, real external storage is not used, and real WeCom media upload remains blocked unless explicitly enabled.
   - route_pattern: /sidebar/bind-mobile
     methods: [GET, HEAD]
     capability_owner: aicrm_next.frontend_compat

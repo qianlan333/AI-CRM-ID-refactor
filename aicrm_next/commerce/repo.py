@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
+import secrets
 from typing import Any, Protocol
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .domain import completion_redirect_projection, normalize_status, now_iso, validate_completion_redirect, validate_price_cents
+from .domain import validate_product_code
 
 
 class CommerceRepository(Protocol):
@@ -17,6 +21,10 @@ class CommerceRepository(Protocol):
     def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]: ...
     def set_product_enabled(self, product_id: str, enabled: bool) -> dict[str, Any]: ...
     def delete_product(self, product_id: str) -> dict[str, Any]: ...
+    def copy_product(self, product_id: str) -> dict[str, Any]: ...
+    def list_lead_channels(self) -> list[dict[str, Any]]: ...
+    def get_external_push_config(self, product_id: str) -> dict[str, Any]: ...
+    def save_external_push_config(self, product_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     def create_order(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_order(self, order_no: str) -> dict[str, Any] | None: ...
     def apply_notify(self, order_no: str, provider: str, status: str, transaction_id: str | None) -> dict[str, Any]: ...
@@ -35,6 +43,7 @@ def _seed_products() -> list[dict[str, Any]]:
             "price_cents": 9900,
             "currency": "CNY",
             "enabled": True,
+            "status": "active",
             "page_slug": "course-masked-001",
             "cover_image_id": "image_masked_001",
             "detail_image_ids": ["image_masked_001"],
@@ -42,6 +51,10 @@ def _seed_products() -> list[dict[str, Any]]:
             "buy_button_text": "立即购买",
             "completion_redirect_enabled": False,
             "completion_redirect_url": "",
+            "require_mobile": False,
+            "lead_program_id": None,
+            "lead_channel_id": None,
+            "slices": [],
             "created_at": ts,
             "updated_at": ts,
             "deleted": False,
@@ -54,6 +67,7 @@ def _seed_products() -> list[dict[str, Any]]:
             "price_cents": 19900,
             "currency": "CNY",
             "enabled": False,
+            "status": "disabled",
             "page_slug": "course-disabled-001",
             "cover_image_id": "image_masked_001",
             "detail_image_ids": [],
@@ -61,6 +75,10 @@ def _seed_products() -> list[dict[str, Any]]:
             "buy_button_text": "暂不可购买",
             "completion_redirect_enabled": False,
             "completion_redirect_url": "",
+            "require_mobile": True,
+            "lead_program_id": None,
+            "lead_channel_id": None,
+            "slices": [],
             "created_at": ts,
             "updated_at": ts,
             "deleted": False,
@@ -101,9 +119,10 @@ class InMemoryCommerceRepository:
     def __init__(self, products: list[dict[str, Any]] | None = None, orders: list[dict[str, Any]] | None = None) -> None:
         self._products = deepcopy(products if products is not None else _seed_products())
         self._orders = deepcopy(orders if orders is not None else _seed_orders())
+        self._external_push: dict[str, dict[str, Any]] = {}
 
     def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
-        rows = [deepcopy(item) for item in self._products if not item.get("deleted")]
+        rows = [self._serialize_product(item) for item in self._products if not item.get("deleted")]
         return {"items": rows[offset : offset + limit], "total": len(rows), "limit": limit, "offset": offset}
 
     def get_product(self, product_id: str) -> dict[str, Any] | None:
@@ -130,19 +149,20 @@ class InMemoryCommerceRepository:
             ),
         }
         now = now_iso()
-        code = str(payload["product_code"])
+        code = validate_product_code(str(payload["product_code"]))
+        payload = {**payload, "product_code": code}
         existing = self.get_product_by_code(code)
         if existing and existing["id"] != product_id:
             raise ContractError("product_code must be unique")
         if product_id:
             for index, item in enumerate(self._products):
                 if item["id"] == product_id and not item.get("deleted"):
-                    updated = {**item, **payload, "id": product_id, "updated_at": now}
+                    updated = {**item, **self._normalize_product_payload(payload), "id": product_id, "updated_at": now}
                     self._products[index] = updated
-                    return deepcopy(updated)
+                    return self._serialize_product(updated)
             raise NotFoundError("product not found")
         product = {
-            **payload,
+            **self._normalize_product_payload(payload),
             "id": f"prod_{len(self._products) + 1:03d}",
             "page_slug": payload.get("page_slug") or code,
             "created_at": now,
@@ -150,13 +170,14 @@ class InMemoryCommerceRepository:
             "deleted": False,
         }
         self._products.append(product)
-        return deepcopy(product)
+        return self._serialize_product(product)
 
     def set_product_enabled(self, product_id: str, enabled: bool) -> dict[str, Any]:
         product = self.get_product(product_id)
         if not product:
             raise NotFoundError("product not found")
         product["enabled"] = enabled
+        product["status"] = "active" if enabled else "disabled"
         return self.save_product(product, product_id)
 
     def delete_product(self, product_id: str) -> dict[str, Any]:
@@ -167,6 +188,35 @@ class InMemoryCommerceRepository:
                 item["updated_at"] = now_iso()
                 return {"ok": True, "deleted": True, "soft_deleted": True, "product_id": product_id}
         raise NotFoundError("product not found")
+
+    def copy_product(self, product_id: str) -> dict[str, Any]:
+        product = self.get_product(product_id)
+        if not product:
+            raise NotFoundError("product not found")
+        code = _generate_product_code()
+        payload = {
+            **product,
+            "product_code": code,
+            "title": f"{product.get('title') or product.get('name') or code} 副本",
+            "status": "draft",
+            "enabled": False,
+        }
+        return self.save_product(payload)
+
+    def list_lead_channels(self) -> list[dict[str, Any]]:
+        return [{"channel_id": 0, "channel_name": "不配置引流渠道码", "program_name": "", "qr_url": "", "selectable": True}]
+
+    def get_external_push_config(self, product_id: str) -> dict[str, Any]:
+        if not self.get_product(product_id):
+            raise NotFoundError("product not found")
+        return deepcopy(self._external_push.get(str(product_id)) or _empty_external_push_config())
+
+    def save_external_push_config(self, product_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_product(product_id):
+            raise NotFoundError("product not found")
+        config = _normalize_external_push_config(payload)
+        self._external_push[str(product_id)] = config
+        return deepcopy(config)
 
     def create_order(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = now_iso()
@@ -241,14 +291,628 @@ class InMemoryCommerceRepository:
     def _find_product(self, predicate) -> dict[str, Any] | None:
         for item in self._products:
             if predicate(item) and not item.get("deleted"):
-                return deepcopy(item)
+                return self._serialize_product(item)
         return None
+
+    def _normalize_product_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        status = _normalize_product_status(payload.get("status") or ("active" if payload.get("enabled", True) else "disabled"))
+        slices = _normalize_slices(payload.get("slices") or [])
+        return {
+            **payload,
+            "title": str(payload.get("title") or payload.get("name") or "").strip(),
+            "name": str(payload.get("title") or payload.get("name") or "").strip(),
+            "price_cents": int(payload.get("price_cents", payload.get("amount_total", 0)) or 0),
+            "amount_total": int(payload.get("price_cents", payload.get("amount_total", 0)) or 0),
+            "status": status,
+            "enabled": status == "active",
+            "buy_button_text": str(payload.get("buy_button_text") or payload.get("cta_text") or "立即购买").strip() or "立即购买",
+            "cta_text": str(payload.get("buy_button_text") or payload.get("cta_text") or "立即购买").strip() or "立即购买",
+            "require_mobile": bool(payload.get("require_mobile", False)),
+            "lead_program_id": _positive_int_or_none(payload.get("lead_program_id")),
+            "lead_channel_id": _positive_int_or_none(payload.get("lead_channel_id")),
+            "slices": slices,
+            "slice_count": len(slices),
+            **completion_redirect_projection(
+                payload.get("completion_redirect_enabled"),
+                payload.get("completion_redirect_url"),
+            ),
+        }
+
+    def _serialize_product(self, item: dict[str, Any]) -> dict[str, Any]:
+        title = str(item.get("title") or item.get("name") or "").strip()
+        price_cents = int(item.get("price_cents", item.get("amount_total", 0)) or 0)
+        status = _normalize_product_status(item.get("status") or ("active" if item.get("enabled") else "disabled"))
+        cta = str(item.get("buy_button_text") or item.get("cta_text") or "立即购买").strip() or "立即购买"
+        slices = _normalize_slices(item.get("slices") or [])
+        completion_redirect = completion_redirect_projection(
+            item.get("completion_redirect_enabled"),
+            item.get("completion_redirect_url"),
+        )
+        return {
+            **deepcopy(item),
+            "title": title,
+            "name": title,
+            "price_cents": price_cents,
+            "amount_total": price_cents,
+            "status": status,
+            "enabled": status == "active",
+            "buy_button_text": cta,
+            "cta_text": cta,
+            "require_mobile": bool(item.get("require_mobile", False)),
+            "lead_program_id": _positive_int_or_none(item.get("lead_program_id")),
+            "lead_channel_id": _positive_int_or_none(item.get("lead_channel_id")),
+            "slices": slices,
+            "slice_count": len(slices),
+            **completion_redirect,
+        }
+
+
+def _generate_product_code() -> str:
+    return "prd_" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "_" + secrets.token_hex(3)
+
+
+def _positive_int_or_none(value: Any) -> int | None:
+    try:
+        normalized = int(value or 0)
+    except (TypeError, ValueError):
+        normalized = 0
+    return normalized or None
+
+
+def _normalize_product_status(value: Any) -> str:
+    status = str(value or "draft").strip().lower()
+    if status in {"enabled", "published"}:
+        status = "active"
+    if status in {"paused", "inactive"}:
+        status = "disabled"
+    if status not in {"draft", "active", "disabled"}:
+        raise ContractError("unsupported product status")
+    return status
+
+
+def _normalize_slices(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    if len(value) > 10:
+        raise ContractError("product slices cannot exceed 10")
+    normalized: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            item = {"image_library_id": item}
+        image_id = _positive_int_or_none(item.get("image_library_id") or item.get("id"))
+        if not image_id or image_id in seen:
+            continue
+        seen.add(image_id)
+        normalized.append(
+            {
+                "id": str(item.get("id") or ""),
+                "image_library_id": image_id,
+                "sort_order": int(item.get("sort_order") or index + 1),
+                "name": str(item.get("name") or item.get("file_name") or f"切片 {index + 1}"),
+                "file_name": str(item.get("file_name") or ""),
+                "file_size": int(item.get("file_size") or 0),
+                "mime_type": str(item.get("mime_type") or "image/png"),
+                "enabled": bool(item.get("enabled", True)),
+            }
+        )
+    return normalized
+
+
+def _empty_external_push_config() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "webhook_url": "",
+        "push_type": "",
+        "expires_at_ts": None,
+        "day": None,
+        "frequency": None,
+        "remark": "",
+        "custom_params": {},
+        "has_secret": False,
+    }
+
+
+def _normalize_external_push_config(payload: dict[str, Any]) -> dict[str, Any]:
+    webhook_url = str(payload.get("webhook_url") or payload.get("external_push_url") or "").strip()
+    enabled = bool(payload.get("enabled"))
+    if enabled and not webhook_url:
+        raise ContractError("webhook_url is required when external push is enabled")
+    if webhook_url and not webhook_url.startswith("https://"):
+        raise ContractError("webhook_url must be an https URL")
+
+    def int_or_none(key: str) -> int | None:
+        value = payload.get(key)
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ContractError(f"{key} must be a number") from exc
+
+    custom_params = payload.get("custom_params")
+    if custom_params in (None, ""):
+        custom_params = {}
+    if isinstance(custom_params, list):
+        custom_params = {str(item.get("key") or ""): item.get("value", "") for item in custom_params if isinstance(item, dict)}
+    if not isinstance(custom_params, dict):
+        raise ContractError("custom_params must be an object")
+    if any(not str(key).strip() for key in custom_params):
+        raise ContractError("custom_params key cannot be empty")
+    return {
+        "enabled": enabled,
+        "webhook_url": webhook_url,
+        "push_type": str(payload.get("push_type") or payload.get("type") or payload.get("external_push_type") or "").strip(),
+        "expires_at_ts": int_or_none("expires_at_ts"),
+        "day": int_or_none("day"),
+        "frequency": int_or_none("frequency"),
+        "remark": str(payload.get("remark") or "").strip(),
+        "custom_params": custom_params,
+        "secret": str(payload.get("secret") or "").strip() if "secret" in payload else None,
+        "has_secret": bool(str(payload.get("secret") or "").strip()),
+    }
+
+
+def _jsonb(value: Any) -> Any:
+    import json
+
+    from psycopg.types.json import Jsonb
+
+    return Jsonb(value, dumps=lambda data: json.dumps(data, ensure_ascii=False, default=str))
+
+
+class PostgresCommerceRepository:
+    def __init__(self, database_url: str) -> None:
+        if not database_url:
+            raise ContractError("DATABASE_URL is required for production commerce repository")
+        self._database_url = database_url
+
+    def _connect(self):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(self._database_url, row_factory=dict_row)
+
+    def list_products(self, *, limit: int, offset: int) -> dict[str, Any]:
+        limit = max(1, min(int(limit or 50), 100))
+        offset = max(0, int(offset or 0))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT p.*, count(s.id) AS slice_count
+                    FROM wechat_pay_products p
+                    LEFT JOIN wechat_pay_product_page_slices s
+                      ON s.product_id = p.id AND s.enabled = TRUE
+                    GROUP BY p.id
+                    ORDER BY p.updated_at DESC, p.id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (limit, offset),
+                ).fetchall()
+                total_row = cur.execute("SELECT count(*) AS total FROM wechat_pay_products").fetchone() or {}
+        return {
+            "items": [self._serialize_product(row) for row in rows],
+            "total": int(total_row.get("total") or 0),
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def get_product(self, product_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM wechat_pay_products WHERE id::text = %s LIMIT 1",
+                (str(product_id),),
+            ).fetchone()
+            slices = self._list_product_slices(conn, str(product_id)) if row else []
+        return self._serialize_product(row, slices=slices) if row else None
+
+    def get_product_by_code(self, product_code: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM wechat_pay_products WHERE product_code = %s LIMIT 1",
+                (str(product_code),),
+            ).fetchone()
+        return self._serialize_product(row) if row else None
+
+    def get_product_by_slug(self, page_slug: str) -> dict[str, Any] | None:
+        return self.get_product_by_code(page_slug)
+
+    def save_product(self, payload: dict[str, Any], product_id: str | None = None) -> dict[str, Any]:
+        validate_price_cents(int(payload.get("price_cents", 0)))
+        normalized_redirect = validate_completion_redirect(
+            payload.get("completion_redirect_enabled"),
+            payload.get("completion_redirect_url"),
+        )
+        payload = {**payload, **normalized_redirect}
+        code = validate_product_code(str(payload["product_code"]))
+        status = _normalize_product_status(payload.get("status") or ("active" if payload.get("enabled", True) else "disabled"))
+        enabled = status == "active"
+        metadata = self._metadata_from_payload(payload)
+        lead_channel_id = _positive_int_or_none(payload.get("lead_channel_id"))
+        lead_program_id = _positive_int_or_none(payload.get("lead_program_id"))
+        params = {
+            "product_code": code,
+            "name": str(payload.get("title") or "").strip(),
+            "amount_total": int(payload.get("price_cents") or 0),
+            "currency": str(payload.get("currency") or "CNY").strip() or "CNY",
+            "status": status,
+            "enabled": enabled,
+            "cta_text": str(payload.get("buy_button_text") or "立即购买").strip() or "立即购买",
+            "require_mobile": bool(payload.get("require_mobile", False)),
+            "lead_program_id": lead_program_id,
+            "lead_channel_id": lead_channel_id,
+            "completion_redirect_enabled": bool(normalized_redirect["completion_redirect_enabled"]),
+            "completion_redirect_url": str(normalized_redirect["completion_redirect_url"] or ""),
+            "metadata_json": _jsonb(metadata),
+        }
+        with self._connect() as conn:
+            if lead_channel_id:
+                channel = conn.execute(
+                    """
+                    SELECT id, program_id, qr_url
+                    FROM automation_channel
+                    WHERE id = %s
+                    LIMIT 1
+                    """,
+                    (lead_channel_id,),
+                ).fetchone()
+                if not channel or not str(channel.get("qr_url") or "").strip():
+                    raise ContractError("selected lead channel is missing qr_url")
+                params["lead_program_id"] = int(channel.get("program_id") or 0) or lead_program_id
+            if product_id:
+                existing = conn.execute(
+                    "SELECT product_code FROM wechat_pay_products WHERE id::text = %s LIMIT 1",
+                    (str(product_id),),
+                ).fetchone()
+                if not existing:
+                    raise NotFoundError("product not found")
+                if str(existing.get("product_code") or "") != code:
+                    raise ContractError("product_code cannot be changed after create")
+                row = conn.execute(
+                    """
+                    UPDATE wechat_pay_products
+                    SET name = %(name)s,
+                        amount_total = %(amount_total)s,
+                        currency = %(currency)s,
+                        status = %(status)s,
+                        enabled = %(enabled)s,
+                        cta_text = %(cta_text)s,
+                        require_mobile = %(require_mobile)s,
+                        lead_program_id = %(lead_program_id)s,
+                        lead_channel_id = %(lead_channel_id)s,
+                        completion_redirect_enabled = %(completion_redirect_enabled)s,
+                        completion_redirect_url = %(completion_redirect_url)s,
+                        metadata_json = %(metadata_json)s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id::text = %(product_id)s
+                    RETURNING *
+                    """,
+                    {**params, "product_id": str(product_id)},
+                ).fetchone()
+                if "slices" in payload:
+                    self._replace_product_slices(conn, str(product_id), payload.get("slices") or [])
+                conn.commit()
+                return self._serialize_product(row, slices=self._list_product_slices(conn, str(product_id)))
+            duplicate = conn.execute(
+                "SELECT id FROM wechat_pay_products WHERE product_code = %s LIMIT 1",
+                (code,),
+            ).fetchone()
+            if duplicate:
+                raise ContractError("product_code must be unique")
+            row = conn.execute(
+                """
+                INSERT INTO wechat_pay_products (
+                    product_code,
+                    name,
+                    amount_total,
+                    currency,
+                    status,
+                    enabled,
+                    cta_text,
+                    require_mobile,
+                    lead_program_id,
+                    lead_channel_id,
+                    completion_redirect_enabled,
+                    completion_redirect_url,
+                    metadata_json,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %(product_code)s,
+                    %(name)s,
+                    %(amount_total)s,
+                    %(currency)s,
+                    %(status)s,
+                    %(enabled)s,
+                    %(cta_text)s,
+                    %(require_mobile)s,
+                    %(lead_program_id)s,
+                    %(lead_channel_id)s,
+                    %(completion_redirect_enabled)s,
+                    %(completion_redirect_url)s,
+                    %(metadata_json)s,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                RETURNING *
+                """,
+                params,
+            ).fetchone()
+            if "slices" in payload:
+                self._replace_product_slices(conn, str(row.get("id") or ""), payload.get("slices") or [])
+            slices = self._list_product_slices(conn, str(row.get("id") or ""))
+            conn.commit()
+        return self._serialize_product(row, slices=slices)
+
+    def set_product_enabled(self, product_id: str, enabled: bool) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                UPDATE wechat_pay_products
+                SET enabled = %s,
+                    status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id::text = %s
+                RETURNING *
+                """,
+                (bool(enabled), "active" if enabled else "disabled", str(product_id)),
+            ).fetchone()
+            conn.commit()
+        if not row:
+            raise NotFoundError("product not found")
+        return self._serialize_product(row)
+
+    def delete_product(self, product_id: str) -> dict[str, Any]:
+        result = self.set_product_enabled(product_id, False)
+        return {"ok": True, "deleted": True, "soft_deleted": True, "product_id": product_id, "product": result}
+
+    def copy_product(self, product_id: str) -> dict[str, Any]:
+        product = self.get_product(product_id)
+        if not product:
+            raise NotFoundError("product not found")
+        payload = {
+            **product,
+            "product_code": _generate_product_code(),
+            "title": f"{product.get('title') or product.get('name') or '商品'} 副本",
+            "status": "draft",
+            "enabled": False,
+            "slices": product.get("slices") or [],
+        }
+        return self.save_product(payload)
+
+    def list_lead_channels(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    c.id AS channel_id,
+                    c.channel_name,
+                    c.qr_url,
+                    c.status,
+                    c.program_id,
+                    p.name AS program_name
+                FROM automation_channel c
+                LEFT JOIN automation_program p ON p.id = c.program_id
+                ORDER BY c.updated_at DESC NULLS LAST, c.id DESC
+                LIMIT 200
+                """
+            ).fetchall()
+        return [
+            {"channel_id": 0, "channel_name": "不配置引流渠道码", "program_name": "", "qr_url": "", "selectable": True}
+        ] + [
+            {
+                "channel_id": int(row.get("channel_id") or 0),
+                "channel_name": str(row.get("channel_name") or f"渠道 {row.get('channel_id')}"),
+                "program_id": int(row.get("program_id") or 0) or None,
+                "program_name": str(row.get("program_name") or ""),
+                "qr_url": str(row.get("qr_url") or ""),
+                "status": str(row.get("status") or ""),
+                "selectable": bool(str(row.get("qr_url") or "").strip()),
+            }
+            for row in rows
+        ]
+
+    def get_external_push_config(self, product_id: str) -> dict[str, Any]:
+        if not self.get_product(product_id):
+            raise NotFoundError("product not found")
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM external_push_config
+                WHERE tenant_id = 'aicrm'
+                  AND target_type = 'product'
+                  AND target_id = %s
+                  AND event_type = 'transaction.paid'
+                LIMIT 1
+                """,
+                (str(product_id),),
+            ).fetchone()
+        return self._serialize_external_push(row)
+
+    def save_external_push_config(self, product_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_product(product_id):
+            raise NotFoundError("product not found")
+        config = _normalize_external_push_config(payload)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO external_push_config (
+                    tenant_id, target_type, target_id, event_type, enabled, webhook_url, push_type,
+                    expires_at_ts, day, frequency, remark, custom_params, secret, created_by, updated_by,
+                    created_at, updated_at
+                )
+                VALUES (
+                    'aicrm', 'product', %(target_id)s, 'transaction.paid', %(enabled)s, %(webhook_url)s, %(push_type)s,
+                    %(expires_at_ts)s, %(day)s, %(frequency)s, %(remark)s, %(custom_params)s, %(secret)s, 'next', 'next',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (tenant_id, target_type, target_id, event_type)
+                DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    webhook_url = EXCLUDED.webhook_url,
+                    push_type = EXCLUDED.push_type,
+                    expires_at_ts = EXCLUDED.expires_at_ts,
+                    day = EXCLUDED.day,
+                    frequency = EXCLUDED.frequency,
+                    remark = EXCLUDED.remark,
+                    custom_params = EXCLUDED.custom_params,
+                    secret = CASE WHEN EXCLUDED.secret = '' THEN external_push_config.secret ELSE EXCLUDED.secret END,
+                    updated_by = 'next',
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+                """,
+                {
+                    **config,
+                    "target_id": str(product_id),
+                    "custom_params": _jsonb(config.get("custom_params") or {}),
+                    "secret": config.get("secret") or "",
+                },
+            ).fetchone()
+            conn.commit()
+        return self._serialize_external_push(row)
+
+    def create_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise ContractError("checkout order writes are not available from the native commerce repository yet")
+
+    def get_order(self, order_no: str) -> dict[str, Any] | None:
+        return None
+
+    def apply_notify(self, order_no: str, provider: str, status: str, transaction_id: str | None) -> dict[str, Any]:
+        raise ContractError("payment notify writes are not available from the native commerce repository yet")
+
+    def list_transactions(self, provider: str, filters: dict[str, Any], *, limit: int, offset: int) -> dict[str, Any]:
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+    def request_refund(self, provider: str, order_no: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raise ContractError("refund writes are not available from the native commerce repository yet")
+
+    def _metadata_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "description": str(payload.get("description") or ""),
+            "page_slug": str(payload.get("page_slug") or payload.get("product_code") or ""),
+            "cover_image_id": payload.get("cover_image_id"),
+            "detail_image_ids": list(payload.get("detail_image_ids") or []),
+            "detail_sections": list(payload.get("detail_sections") or []),
+        }
+
+    def _serialize_product(self, row: dict[str, Any], *, slices: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        metadata = row.get("metadata_json") if isinstance(row.get("metadata_json"), dict) else {}
+        product_code = str(row.get("product_code") or "")
+        title = str(row.get("name") or "")
+        price_cents = int(row.get("amount_total") or 0)
+        cta = str(row.get("cta_text") or "立即购买")
+        status = str(row.get("status") or ("active" if row.get("enabled") else "disabled"))
+        slices = slices or []
+        completion_redirect = completion_redirect_projection(
+            row.get("completion_redirect_enabled"),
+            row.get("completion_redirect_url"),
+        )
+        return {
+            "id": str(row.get("id") or ""),
+            "product_code": product_code,
+            "title": title,
+            "name": title,
+            "description": str(metadata.get("description") or ""),
+            "price_cents": price_cents,
+            "amount_total": price_cents,
+            "currency": str(row.get("currency") or "CNY"),
+            "enabled": bool(row.get("enabled")),
+            "status": status,
+            "page_slug": str(metadata.get("page_slug") or product_code),
+            "cover_image_id": metadata.get("cover_image_id"),
+            "detail_image_ids": list(metadata.get("detail_image_ids") or []),
+            "detail_sections": list(metadata.get("detail_sections") or []),
+            "buy_button_text": cta,
+            "cta_text": cta,
+            "require_mobile": bool(row.get("require_mobile")),
+            "lead_program_id": _positive_int_or_none(row.get("lead_program_id")),
+            "lead_channel_id": _positive_int_or_none(row.get("lead_channel_id")),
+            "slices": slices,
+            "slice_count": int(row.get("slice_count") or len(slices)),
+            **completion_redirect,
+            "created_at": str(row.get("created_at") or ""),
+            "updated_at": str(row.get("updated_at") or ""),
+            "deleted": False,
+        }
+
+    def _list_product_slices(self, conn, product_id: str) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT
+                s.id,
+                s.product_id,
+                s.image_library_id,
+                s.sort_order,
+                s.enabled,
+                image.name,
+                image.file_name,
+                image.mime_type,
+                image.file_size
+            FROM wechat_pay_product_page_slices s
+            JOIN image_library image ON image.id = s.image_library_id
+            WHERE s.product_id::text = %s
+            ORDER BY s.sort_order ASC, s.id ASC
+            """,
+            (str(product_id),),
+        ).fetchall()
+        return [
+            {
+                "id": str(row.get("id") or ""),
+                "product_id": str(row.get("product_id") or ""),
+                "image_library_id": int(row.get("image_library_id") or 0),
+                "sort_order": int(row.get("sort_order") or 0),
+                "name": str(row.get("name") or row.get("file_name") or ""),
+                "file_name": str(row.get("file_name") or ""),
+                "mime_type": str(row.get("mime_type") or "image/png"),
+                "file_size": int(row.get("file_size") or 0),
+                "enabled": bool(row.get("enabled")),
+            }
+            for row in rows
+        ]
+
+    def _replace_product_slices(self, conn, product_id: str, slices: Any) -> None:
+        normalized = _normalize_slices(slices)
+        conn.execute("DELETE FROM wechat_pay_product_page_slices WHERE product_id::text = %s", (str(product_id),))
+        for index, item in enumerate(normalized):
+            conn.execute(
+                """
+                INSERT INTO wechat_pay_product_page_slices (
+                    product_id, image_library_id, sort_order, enabled, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (int(product_id), int(item["image_library_id"]), int(item.get("sort_order") or index + 1)),
+            )
+
+    def _serialize_external_push(self, row: dict[str, Any] | None) -> dict[str, Any]:
+        if not row:
+            return _empty_external_push_config()
+        params = row.get("custom_params") if isinstance(row.get("custom_params"), dict) else {}
+        return {
+            "enabled": bool(row.get("enabled")),
+            "webhook_url": str(row.get("webhook_url") or ""),
+            "push_type": str(row.get("push_type") or ""),
+            "expires_at_ts": row.get("expires_at_ts"),
+            "day": row.get("day"),
+            "frequency": row.get("frequency"),
+            "remark": str(row.get("remark") or ""),
+            "custom_params": params,
+            "has_secret": bool(str(row.get("secret") or "").strip()),
+        }
 
 
 _GLOBAL_REPO = InMemoryCommerceRepository()
 
 
 def build_commerce_repository() -> CommerceRepository:
+    if production_data_ready():
+        return assert_repository_allowed(
+            PostgresCommerceRepository(raw_database_url()),
+            capability_owner="commerce",
+        )
     return assert_repository_allowed(_GLOBAL_REPO, capability_owner="commerce")
 
 

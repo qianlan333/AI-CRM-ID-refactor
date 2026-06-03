@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -32,6 +35,7 @@ from .application import (
     UpsertProductCommand,
 )
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
+from .repo import build_commerce_repository
 
 router = APIRouter()
 _COMMERCE_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -45,6 +49,118 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _product_admin_context(
+    request: Request,
+    *,
+    page_title: str,
+    page_summary: str,
+    mode: str,
+    product: dict | None = None,
+) -> dict:
+    context = shell_context(
+        request=request,
+        page_title=page_title,
+        page_summary=page_summary,
+        active_endpoint="api.admin_wechat_pay_products_page",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "商品管理", "href": request.url_for("api.admin_wechat_pay_products_page")},
+    ]
+    if mode != "list":
+        context["breadcrumbs"].append({"label": "创建商品" if mode == "new" else "编辑商品"})
+    context.update(
+        {
+            "product_page_mode": mode,
+            "initial_product": jsonable_encoder(product or {}),
+            "initial_product_json": json.dumps(jsonable_encoder(product or {}), ensure_ascii=False),
+        }
+    )
+    return context
+
+
+def _share_payload(request: Request, product: dict) -> dict:
+    product_code = str(product.get("product_code") or "")
+    url = str(request.base_url).rstrip("/") + f"/p/{quote(product_code)}"
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'>"
+        "<rect width='256' height='256' fill='#ffffff'/>"
+        "<rect x='24' y='24' width='208' height='208' fill='none' stroke='#111827' stroke-width='12'/>"
+        "<text x='128' y='126' text-anchor='middle' font-size='20' font-family='monospace' fill='#111827'>"
+        "PRODUCT"
+        "</text>"
+        "<text x='128' y='158' text-anchor='middle' font-size='14' font-family='monospace' fill='#475569'>"
+        f"{product_code[:18]}"
+        "</text>"
+        "</svg>"
+    )
+    return {
+        "product_id": str(product.get("id") or ""),
+        "product_code": product_code,
+        "product_name": str(product.get("title") or ""),
+        "url": url,
+        "qr_data_url": "data:image/svg+xml;utf8," + quote(svg),
+    }
+
+
+@router.get("/admin/wechat-pay/products", response_class=HTMLResponse, name="api.admin_wechat_pay_products_page")
+def admin_wechat_pay_products_page(request: Request):
+    try:
+        payload = ListProductsQuery()(limit=100, offset=0)
+    except Exception as exc:
+        payload = {"ok": False, "items": [], "total": 0, "page_error": str(exc)}
+    context = _product_admin_context(
+        request,
+        page_title="微信支付商品管理",
+        page_summary="创建、编辑和上下架微信支付商品。",
+        mode="list",
+    )
+    products = payload.get("items") or []
+    context.update(
+        {
+            "initial_products": jsonable_encoder(products),
+            "initial_products_json": json.dumps(jsonable_encoder(products), ensure_ascii=False),
+            "product_total": int(payload.get("total") or len(products)),
+            "page_error": str(payload.get("page_error") or ""),
+        }
+    )
+    return templates.TemplateResponse(request, "wechat_products.html", context, status_code=200 if payload.get("ok", True) else 503)
+
+
+@router.get("/admin/wechat-pay/products/new", response_class=HTMLResponse, name="api.admin_wechat_pay_product_new_page")
+def admin_wechat_pay_product_new_page(request: Request):
+    context = _product_admin_context(
+        request,
+        page_title="创建微信支付商品",
+        page_summary="配置商品编码、名称、价格与上架状态。",
+        mode="new",
+    )
+    return templates.TemplateResponse(request, "wechat_products.html", context)
+
+
+@router.get("/admin/wechat-pay/products/{product_id}/edit", response_class=HTMLResponse, name="api.admin_wechat_pay_product_edit_page")
+def admin_wechat_pay_product_edit_page(request: Request, product_id: str):
+    try:
+        product = GetProductQuery()(product_id)["product"]
+    except Exception as exc:
+        context = _product_admin_context(
+            request,
+            page_title="商品不存在",
+            page_summary="当前没有找到这个商品。",
+            mode="edit",
+        )
+        context["page_error"] = str(exc)
+        return templates.TemplateResponse(request, "wechat_products.html", context, status_code=404)
+    context = _product_admin_context(
+        request,
+        page_title=f"编辑商品 {product.get('product_code')}",
+        page_summary="维护商品名称、价格与上架状态。",
+        mode="edit",
+        product=product,
+    )
+    return templates.TemplateResponse(request, "wechat_products.html", context)
 
 
 @router.get("/admin/wechat-pay/transactions", response_class=HTMLResponse, name="api.admin_wechat_pay_transactions_page")
@@ -152,7 +268,18 @@ async def request_wechat_admin_refund(order_id: str, request: Request) -> JSONRe
 
 @router.get("/api/admin/wechat-pay/products")
 def list_products(limit: int = 50, offset: int = 0) -> dict:
-    return ListProductsQuery()(limit=limit, offset=offset)
+    try:
+        return ListProductsQuery()(limit=limit, offset=offset)
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.get("/api/admin/wechat-pay/products/lead-channels")
+def list_product_lead_channels() -> dict:
+    try:
+        return {"ok": True, "items": build_commerce_repository().list_lead_channels()}
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/admin/wechat-pay/products/{product_id}")
@@ -161,6 +288,78 @@ def get_product(product_id: str) -> dict:
         return GetProductQuery()(product_id)
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/wechat-pay/products/{product_id}/share")
+def share_product(product_id: str, request: Request) -> dict:
+    try:
+        product = GetProductQuery()(product_id)["product"]
+    except Exception as exc:
+        _raise_http(exc)
+    return {"ok": True, "share": _share_payload(request, product)}
+
+
+@router.post("/api/admin/wechat-pay/products/{product_id}/copy")
+def copy_product(product_id: str) -> JSONResponse:
+    try:
+        product = build_commerce_repository().copy_product(product_id)
+    except Exception as exc:
+        _raise_http(exc)
+    return JSONResponse({"ok": True, "product": product}, status_code=201)
+
+
+@router.get("/api/admin/wechat-pay/products/{product_id}/external-push")
+def get_product_external_push(product_id: str) -> dict:
+    try:
+        return {"ok": True, "config": build_commerce_repository().get_external_push_config(product_id)}
+    except Exception as exc:
+        _raise_http(exc)
+
+
+@router.put("/api/admin/wechat-pay/products/{product_id}/external-push")
+async def save_product_external_push(product_id: str, request: Request) -> dict:
+    try:
+        payload = await request.json()
+        config = build_commerce_repository().save_external_push_config(product_id, payload if isinstance(payload, dict) else {})
+    except Exception as exc:
+        _raise_http(exc)
+    return {"ok": True, "config": config}
+
+
+@router.post("/api/admin/wechat-pay/products/{product_id}/external-push/test")
+def test_product_external_push(product_id: str) -> dict:
+    try:
+        repo = build_commerce_repository()
+        product = repo.get_product(product_id)
+        if not product:
+            raise NotFoundError("product not found")
+        config = repo.get_external_push_config(product_id)
+        if not config.get("webhook_url"):
+            raise ContractError("please save external push config first")
+    except Exception as exc:
+        _raise_http(exc)
+    return {
+        "ok": True,
+        "result": {
+            "delivery": {
+                "status": "preview",
+                "delivery_id": f"preview_product_{product_id}",
+                "request_url": config.get("webhook_url", ""),
+                "product_id": str(product.get("id") or product_id),
+                "side_effect_executed": False,
+            },
+            "payload_preview": {
+                "event": "external_push.test",
+                "product": {
+                    "id": str(product.get("id") or ""),
+                    "code": str(product.get("product_code") or ""),
+                    "name": str(product.get("title") or product.get("name") or ""),
+                },
+                "custom_params": config.get("custom_params") or {},
+            },
+        },
+        "side_effect_safety": {"side_effect_executed": False, "real_external_call_executed": False},
+    }
 
 
 @router.post("/api/admin/wechat-pay/products")

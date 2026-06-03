@@ -181,6 +181,49 @@ WECOM_TAG_LIVE_MUTATION_ROUTES = (
     ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command"),
 )
 WECOM_TAG_LIVE_MUTATION_EXACT_ROUTES = {route for route, _methods, _owner, _behavior in WECOM_TAG_LIVE_MUTATION_ROUTES}
+MEDIA_LIBRARY_PAGE_ROUTES = (
+    "/admin/image-library",
+    "/admin/attachment-library",
+    "/admin/miniprogram-library",
+)
+MEDIA_LIBRARY_API_PREFIXES = (
+    "/api/admin/image-library",
+    "/api/admin/attachment-library",
+    "/api/admin/miniprogram-library",
+)
+MEDIA_LIBRARY_REGISTRY_FAMILIES = (
+    ("media_library_admin_pages_family", "/admin/*-library", ("GET",), "frontend_compat over Next APIs", "none"),
+    ("media_library_image_read_family", "/api/admin/image-library*", ("GET",), "next_native", "local"),
+    ("media_library_image_command_family", "/api/admin/image-library*", ("POST", "PUT", "DELETE", "OPTIONS"), "next_storage_adapter", "local / fake / real_blocked"),
+    ("media_library_attachment_read_family", "/api/admin/attachment-library*", ("GET",), "next_native", "local"),
+    ("media_library_attachment_command_family", "/api/admin/attachment-library*", ("POST", "PUT", "DELETE", "OPTIONS"), "next_storage_adapter", "local / fake / real_blocked"),
+    ("media_library_miniprogram_read_family", "/api/admin/miniprogram-library*", ("GET",), "next_native", "local"),
+    ("media_library_miniprogram_command_family", "/api/admin/miniprogram-library*", ("POST", "PUT", "DELETE", "OPTIONS"), "next_storage_adapter", "local / fake / real_blocked"),
+)
+MEDIA_LIBRARY_MANIFEST_ROUTES = (
+    "/admin/image-library",
+    "/admin/attachment-library",
+    "/admin/miniprogram-library",
+    "/api/admin/image-library*",
+    "/api/admin/image-library/upload",
+    "/api/admin/attachment-library*",
+    "/api/admin/miniprogram-library*",
+)
+MEDIA_LIBRARY_DIRECT_EXTERNAL_MARKERS = {
+    "requests.get(": "media_library_direct_http_client",
+    "requests.post(": "media_library_direct_http_client",
+    "httpx.": "media_library_direct_http_client",
+    "boto3": "media_library_direct_storage_client",
+    "upload_media": "media_library_direct_wecom_media_upload",
+    "/media/upload": "media_library_direct_wecom_media_upload",
+    "access_token": "media_library_direct_wecom_media_upload",
+    "real_external_call_executed=True": "media_library_real_external_call_true",
+    "real_external_call_executed = True": "media_library_real_external_call_true",
+    '"real_external_call_executed": True': "media_library_real_external_call_true",
+    "'real_external_call_executed': True": "media_library_real_external_call_true",
+    "real_enabled default": "media_library_real_enabled_default",
+    "default real_enabled": "media_library_real_enabled_default",
+}
 
 
 @dataclass(frozen=True)
@@ -1743,6 +1786,109 @@ def _record_for_path_and_methods(records: list[dict], path_key: str, path: str, 
     return None
 
 
+def _is_media_library_route_path(route_path: str) -> bool:
+    return route_path in MEDIA_LIBRARY_PAGE_ROUTES or any(route_path.startswith(prefix) for prefix in MEDIA_LIBRARY_API_PREFIXES)
+
+
+def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/media_library_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("media_library_inventory_missing", str(inventory_path.relative_to(root)), "missing Media Library inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend ↔ API ↔ Backend Contract Matrix",
+            "production_compat rollback is removed",
+            "legacy_fallback_allowed",
+            "deletion_locked",
+            "real_external_call_executed=false",
+            "Real external object storage enablement.",
+            "Real WeCom media upload.",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("media_library_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path)) | set(_decorated_route_function_sources(compat_path))
+        for route_path in sorted(route_paths):
+            if _is_media_library_route_path(route_path):
+                violations.append(
+                    Violation(
+                        "media_library_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Media Library group 16 is deletion_locked to Next/front-end-compat-over-Next APIs; do not register production_compat rollback routes.",
+                    )
+                )
+
+    media_root = root / "aicrm_next/media_library"
+    if media_root.exists():
+        for path in media_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            rel = str(path.relative_to(root))
+            for marker, code in MEDIA_LIBRARY_DIRECT_EXTERNAL_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "Media Library closeout must keep real external storage, direct HTTP fetch, and real WeCom media upload blocked by default.",
+                        )
+                    )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id, path_pattern, methods, owner, adapter_mode in MEDIA_LIBRARY_REGISTRY_FAMILIES:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("media_library_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("path_pattern") != path_pattern or tuple(record.get("methods") or []) != methods:
+            violations.append(Violation("media_library_registry_route_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != owner:
+            violations.append(Violation("media_library_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("media_library_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("media_library_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("media_library_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+        if record.get("adapter_mode") != adapter_mode:
+            violations.append(Violation("media_library_registry_adapter_mode", route_id, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("media_library_registry_rollback_lifecycle", route_id, "delete_status=next_primary_with_legacy_rollback"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in MEDIA_LIBRARY_MANIFEST_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("media_library_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        expected_owner = "frontend_compat" if route_path in MEDIA_LIBRARY_PAGE_ROUTES else "next"
+        if record.get("current_runtime_owner") != expected_owner:
+            violations.append(Violation("media_library_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("media_library_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True:
+            violations.append(Violation("media_library_manifest_delete_ready", route_path, f"delete_ready={record.get('delete_ready')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("media_library_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("media_library_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        notes = str(record.get("notes") or "")
+        if route_path.startswith("/api/admin/") and ("real external" not in notes and "cloud storage" not in notes):
+            violations.append(Violation("media_library_manifest_no_real_storage_note", route_path, "notes must document no real external storage"))
+        if route_path.startswith("/api/admin/") and "WeCom media" not in notes:
+            violations.append(Violation("media_library_manifest_no_real_wecom_note", route_path, "notes must document no real WeCom media upload"))
+
+    return violations
+
+
 def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     inventory_path = root / "docs/architecture/wecom_tag_write_route_inventory.md"
@@ -2015,6 +2161,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_read_next_native(ROOT)
         + check_wecom_tag_write_next_commandbus(ROOT)
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
+        + check_media_library_closeout_lock(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

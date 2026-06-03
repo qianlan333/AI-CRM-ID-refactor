@@ -7,6 +7,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
     check_customer_read_model_legacy_deletion,
+    check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -43,6 +44,221 @@ def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
     tests.write_text("from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n", encoding="utf-8")
 
     assert scan_source_tree(tmp_path) == []
+
+
+def _write_media_library_docs(tmp_path: Path, *, locked: bool = True) -> None:
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory = tmp_path / "docs/architecture/media_library_route_inventory.md"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    legacy_allowed = "false" if locked else "true"
+    legacy_source = '""' if locked else "production_compat"
+    delete_status = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement_status = "locked" if locked else "validating"
+    page_owner = "frontend_compat over Next APIs" if locked else "production_compat"
+    read_owner = "next_native" if locked else "production_compat"
+    command_owner = "next_storage_adapter" if locked else "production_compat"
+    manifest_page_owner = "frontend_compat" if locked else "production_compat"
+    manifest_api_owner = "next" if locked else "production_compat"
+    manifest_behavior = "fake_adapter" if locked else "legacy_forward"
+    delete_ready = "true" if locked else "false"
+
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: media_library_admin_pages_family\n"
+        "    path_pattern: /admin/*-library\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {page_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: none\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_image_read_family\n"
+        "    path_pattern: /api/admin/image-library*\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {read_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_image_command_family\n"
+        "    path_pattern: /api/admin/image-library*\n"
+        "    methods: [POST, PUT, DELETE, OPTIONS]\n"
+        f"    runtime_owner: {command_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local / fake / real_blocked\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_attachment_read_family\n"
+        "    path_pattern: /api/admin/attachment-library*\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {read_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_attachment_command_family\n"
+        "    path_pattern: /api/admin/attachment-library*\n"
+        "    methods: [POST, PUT, DELETE, OPTIONS]\n"
+        f"    runtime_owner: {command_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local / fake / real_blocked\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_miniprogram_read_family\n"
+        "    path_pattern: /api/admin/miniprogram-library*\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {read_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "  - route_id: media_library_miniprogram_command_family\n"
+        "    path_pattern: /api/admin/miniprogram-library*\n"
+        "    methods: [POST, PUT, DELETE, OPTIONS]\n"
+        f"    runtime_owner: {command_owner}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: local / fake / real_blocked\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /admin/image-library\n"
+        "    methods: [GET]\n"
+        f"    current_runtime_owner: {manifest_page_owner}\n"
+        "    production_behavior: readonly_facade\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: page shell no external call\n"
+        "  - route_pattern: /admin/attachment-library\n"
+        "    methods: [GET]\n"
+        f"    current_runtime_owner: {manifest_page_owner}\n"
+        "    production_behavior: readonly_facade\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: page shell no external call\n"
+        "  - route_pattern: /admin/miniprogram-library\n"
+        "    methods: [GET]\n"
+        f"    current_runtime_owner: {manifest_page_owner}\n"
+        "    production_behavior: readonly_facade\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: page shell no external call\n"
+        "  - route_pattern: /api/admin/image-library*\n"
+        "    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]\n"
+        f"    current_runtime_owner: {manifest_api_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: no real external storage and no real WeCom media upload\n"
+        "  - route_pattern: /api/admin/image-library/upload\n"
+        "    methods: [POST, OPTIONS]\n"
+        f"    current_runtime_owner: {manifest_api_owner}\n"
+        "    production_behavior: guarded_preview\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: no real external storage and no real WeCom media upload\n"
+        "  - route_pattern: /api/admin/attachment-library*\n"
+        "    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]\n"
+        f"    current_runtime_owner: {manifest_api_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: no real external storage and no real WeCom media upload\n"
+        "  - route_pattern: /api/admin/miniprogram-library*\n"
+        "    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]\n"
+        f"    current_runtime_owner: {manifest_api_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        f"    delete_status: {delete_status}\n"
+        f"    replacement_status: {replacement_status}\n"
+        "    notes: no real external storage and no real WeCom media upload\n",
+        encoding="utf-8",
+    )
+    inventory.write_text(
+        "# Media Library Route Inventory\n\n"
+        "## Frontend ↔ API ↔ Backend Contract Matrix\n\n"
+        "Media Library production_compat rollback is removed; legacy_fallback_allowed=false; deletion_locked; "
+        "real_external_call_executed=false.\n\n"
+        "- Real external object storage enablement.\n"
+        "- Real WeCom media upload.\n",
+        encoding="utf-8",
+    )
+
+
+def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    media_api = tmp_path / "aicrm_next/media_library/api.py"
+    compat.parent.mkdir(parents=True)
+    media_api.parent.mkdir(parents=True)
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/admin/image-library/upload', methods=['POST'])\n"
+        "def legacy_image_upload(): pass\n",
+        encoding="utf-8",
+    )
+    media_api.write_text(
+        "import requests\n"
+        "def image_from_url():\n"
+        "    requests.get('https://example.invalid/test.png')\n"
+        "    return {'real_external_call_executed': True}\n",
+        encoding="utf-8",
+    )
+    _write_media_library_docs(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_media_library_closeout_lock(tmp_path)}
+
+    assert "media_library_production_compat_route" in codes
+    assert "media_library_direct_http_client" in codes
+    assert "media_library_real_external_call_true" in codes
+    assert "media_library_registry_legacy_allowed" in codes
+    assert "media_library_registry_legacy_source" in codes
+    assert "media_library_registry_lifecycle" in codes
+    assert "media_library_manifest_owner" in codes
+    assert "media_library_manifest_legacy_allowed" in codes
+    assert "media_library_manifest_legacy_forward" in codes
+    assert "media_library_manifest_lifecycle" in codes
+
+
+def test_media_library_guard_allows_locked_next_routes(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    media_api = tmp_path / "aicrm_next/media_library/api.py"
+    compat.parent.mkdir(parents=True)
+    media_api.parent.mkdir(parents=True)
+    compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
+    media_api.write_text(
+        "def list_images():\n"
+        "    return {'fallback_used': False, 'real_external_call_executed': False}\n",
+        encoding="utf-8",
+    )
+    _write_media_library_docs(tmp_path, locked=True)
+
+    assert check_media_library_closeout_lock(tmp_path) == []
 
 
 def test_questionnaire_h5_submit_guard_flags_legacy_route_and_lifecycle_drift(tmp_path: Path) -> None:

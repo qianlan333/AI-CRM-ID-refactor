@@ -69,14 +69,6 @@ async def legacy_admin_auth_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/admin/wechat-pay/products", methods=_ALL_METHODS)
-@router.api_route("/admin/wechat-pay/products/{path:path}", methods=_ALL_METHODS)
-@router.api_route("/api/admin/wechat-pay/products", methods=_ALL_METHODS)
-@router.api_route("/api/admin/wechat-pay/products/{path:path}", methods=_ALL_METHODS)
-async def legacy_wechat_pay_product_admin_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/p/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/pay/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)
