@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation
+from aicrm_next.customer_tags.mutation_commands import PlanQuestionnaireTagSideEffectCommand
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.command_bus.models import utcnow_iso
@@ -294,12 +296,19 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         submission=submission,
         computed_result=result,
     )
+    tag_side_effect = _plan_questionnaire_tag_side_effect(
+        command=command,
+        questionnaire=item,
+        submission=submission,
+        final_tags=final_tags,
+    )
     side_effect_plan = _create_submit_side_effect_plan(
         command=command,
         questionnaire=item,
         submission=submission,
         final_tags=final_tags,
         external_push_result=external_push_result,
+        tag_side_effect=tag_side_effect,
     )
     real_external_call_executed = bool(external_push_result.get("attempted"))
     return {
@@ -323,6 +332,10 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         "external_push": external_push_result,
         "real_external_call_executed": real_external_call_executed,
         "side_effect_plan": _plan_response(side_effect_plan),
+        "side_effects": {
+            "wecom_tag": tag_side_effect,
+            "external_push": external_push_result,
+        },
     }
 
 
@@ -425,6 +438,7 @@ def _create_submit_side_effect_plan(
     submission: dict[str, Any],
     final_tags: list[str],
     external_push_result: dict[str, Any],
+    tag_side_effect: dict[str, Any],
 ) -> SideEffectPlan:
     external_push_config = dict(questionnaire.get("external_push_config") or {})
     external_push_attempted = bool(external_push_result.get("attempted"))
@@ -445,6 +459,7 @@ def _create_submit_side_effect_plan(
                 "external_push_attempted": external_push_attempted,
                 "external_push_status": external_push_result.get("status") or "",
                 "external_push_log_id": (external_push_result.get("log") or {}).get("id") if isinstance(external_push_result.get("log"), dict) else None,
+                "questionnaire_tag_effect_type": tag_side_effect.get("effect_type") or "",
             },
             "planned_effects": [
                 effect
@@ -461,6 +476,46 @@ def _create_submit_side_effect_plan(
         risk_level="medium",
         requires_approval=not external_push_attempted,
         executed_at=utcnow_iso() if external_push_attempted else "",
+    )
+
+
+def _plan_questionnaire_tag_side_effect(
+    *,
+    command: Command,
+    questionnaire: dict[str, Any],
+    submission: dict[str, Any],
+    final_tags: list[str],
+) -> dict[str, Any]:
+    external_userid = str(submission.get("external_userid") or "").strip()
+    if not external_userid or not final_tags:
+        return {
+            "ok": True,
+            "source_status": "next_command",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "effect_type": "questionnaire.tag.apply",
+            "adapter_mode": "real_blocked",
+            "real_external_call_executed": False,
+            "wecom_api_called": False,
+            "skipped": True,
+            "reason": "missing_external_userid_or_tags",
+        }
+    return execute_wecom_tag_mutation(
+        PlanQuestionnaireTagSideEffectCommand(
+            idempotency_key=f"{command.idempotency_key or command.command_id}:questionnaire-tag-apply",
+            actor_id="questionnaire_h5_submit",
+            actor_type="system",
+            external_userid=external_userid,
+            tag_ids=final_tags,
+            source_route=command.context.source_route or "/api/h5/questionnaires/{slug}/submit",
+            source_context={
+                "source": "questionnaire_h5_submit",
+                "questionnaire_id": int(questionnaire["id"]),
+                "submission_id": submission.get("submission_id") or "",
+                "slug": questionnaire.get("slug") or "",
+            },
+            trace_id=command.context.trace_id,
+        )
     )
 
 

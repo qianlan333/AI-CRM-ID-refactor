@@ -26,6 +26,12 @@ from .commands import (
     WeComTagWriteCommand,
 )
 from .dto import DryRunTagRequest, LiveTagRequest, ValidateTagIdsRequest
+from .live_mutation import (
+    WeComTagMutationInputError,
+    execute_wecom_tag_mutation,
+    live_gate_status,
+)
+from .mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand, WeComTagMutationCommand
 from .read_model import TagCatalogUnavailable, build_tag_catalog_repository
 from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_enabled, production_environment
 
@@ -308,24 +314,61 @@ def dry_run_unmark_tags(payload: DryRunTagRequest) -> dict:
 
 @read_router.get("/api/admin/wecom/tags/live/gate")
 def list_wecom_tags_live_gate() -> dict:
-    return build_wecom_tag_application_service().list_wecom_tags_live()
+    return live_gate_status()
 
 
-@router.post("/api/admin/wecom/tags/live/mark")
-def mark_tags_live(payload: LiveTagRequest) -> dict:
-    return build_wecom_tag_application_service().mark_tags_live(
-        external_userid=payload.external_userid,
-        tag_ids=payload.tag_ids,
-        operator=payload.operator,
-        idempotency_key=payload.idempotency_key,
-    )
+@router.api_route("/api/admin/wecom/tags/live/mark", methods=["POST", "OPTIONS"])
+async def mark_tags_live(request: Request) -> Response:
+    return await _execute_live_mutation(request, PlanWeComTagMarkCommand)
 
 
-@router.post("/api/admin/wecom/tags/live/unmark")
-def unmark_tags_live(payload: LiveTagRequest) -> dict:
-    return build_wecom_tag_application_service().unmark_tags_live(
-        external_userid=payload.external_userid,
-        tag_ids=payload.tag_ids,
-        operator=payload.operator,
-        idempotency_key=payload.idempotency_key,
-    )
+@router.api_route("/api/admin/wecom/tags/live/unmark", methods=["POST", "OPTIONS"])
+async def unmark_tags_live(request: Request) -> Response:
+    return await _execute_live_mutation(request, PlanWeComTagUnmarkCommand)
+
+
+async def _execute_live_mutation(request: Request, command_type: type[WeComTagMutationCommand]) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204)
+    try:
+        body = await _json_body(request)
+        request_payload = LiveTagRequest(**body)
+        command = command_type(
+            idempotency_key=str(request.headers.get("Idempotency-Key") or request_payload.idempotency_key or "").strip(),
+            actor_id=str(body.get("actor_id") or request_payload.operator or request.headers.get("X-AICRM-Actor-Id") or "wecom_tag_operator"),
+            actor_type=str(body.get("actor_type") or request.headers.get("X-AICRM-Actor-Type") or "user"),
+            external_userid=request_payload.external_userid,
+            tag_ids=request_payload.tag_ids,
+            source_route=request.url.path,
+            source_context={
+                "source": "admin_wecom_tags_live_mutation",
+                "operator": request_payload.operator,
+            },
+            dry_run=_as_bool(body.get("dry_run")),
+            trace_id=str(body.get("trace_id") or request.headers.get("X-Request-Id") or uuid4().hex),
+        )
+        payload = execute_wecom_tag_mutation(command)
+        return JSONResponse(jsonable_encoder(payload), status_code=200)
+    except (WeComTagMutationInputError, WeComTagWriteInputError) as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": str(exc),
+                "error_code": _live_mutation_error_code(str(exc)),
+                "source_status": "next_command",
+                "route_owner": "ai_crm_next",
+                "fallback_used": False,
+                "adapter_mode": "real_blocked",
+                "real_external_call_executed": False,
+                "wecom_api_called": False,
+            },
+            status_code=400,
+        )
+
+
+def _live_mutation_error_code(message: str) -> str:
+    if "external_userid" in message:
+        return "external_userid_missing"
+    if "tag_ids" in message:
+        return "tag_ids_missing"
+    return "input_error"

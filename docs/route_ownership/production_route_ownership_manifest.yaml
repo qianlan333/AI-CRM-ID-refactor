@@ -852,15 +852,43 @@ routes:
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_exact
-    legacy_fallback_allowed: false
+    legacy_fallback_allowed: true
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: high
     delete_ready: false
-    checker: tests/test_wecom_tag_read_no_real_side_effects.py
+    checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
-    notes: Existing live WeCom tag adapter gate remains out of scope for group 12; no real call unless explicit live adapter flags approve it.
+    replacement_status: validating
+    notes: Group 14 live mutation gate is Next-owned and blocked by default; no real WeCom call, no compatibility facade, route_owner=ai_crm_next, fallback_used=false.
+  - route_pattern: /api/admin/wecom/tags/live/mark
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 14 live mark runs PlanWeComTagMarkCommand on Next CommandBus and records SideEffectPlan effect_type=wecom.tag.mark only; real_external_call_executed=false, wecom_api_called=false.
+  - route_pattern: /api/admin/wecom/tags/live/unmark
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 14 live unmark runs PlanWeComTagUnmarkCommand on Next CommandBus and records SideEffectPlan effect_type=wecom.tag.unmark only; real_external_call_executed=false, wecom_api_called=false.
   - route_pattern: /api/admin/wecom/tags*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
