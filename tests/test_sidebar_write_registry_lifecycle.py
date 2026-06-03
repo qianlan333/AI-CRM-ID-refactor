@@ -66,8 +66,8 @@ def test_sidebar_readonly_routes_stay_locked_and_jssdk_moves_to_group15_adapter(
     jssdk = service.find_route("/api/sidebar/jssdk-config", {"GET"})
     assert jssdk is not None
     assert jssdk.runtime_owner == "next_adapter"
-    assert jssdk.legacy_fallback_allowed is True
-    assert jssdk.delete_status == "next_primary_with_legacy_rollback"
-    assert jssdk.replacement_status == "validating"
+    assert jssdk.legacy_fallback_allowed is False
+    assert jssdk.delete_status == "deletion_locked"
+    assert jssdk.replacement_status == "locked"
     assert jssdk.adapter_mode == "real_blocked"
     assert "JSSDK" in jssdk.notes or "jssdk" in jssdk.notes

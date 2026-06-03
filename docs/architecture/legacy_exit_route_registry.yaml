@@ -1620,15 +1620,15 @@ routes:
     methods: [GET, HEAD, OPTIONS]
     capability_owner: aicrm_next.identity_contact
     runtime_owner: next_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_sidebar_jssdk_registry_lifecycle.py
-    rollback_owner: aicrm_next.production_compat
-    notes: Sidebar JSSDK group 15 moves config signing contract to Next adapter primary; fake local contract and production real_blocked contract are supported, real signing is not enabled, and production_compat rollback is retained for this validation group.
+    rollback_owner: ""
+    notes: Sidebar JSSDK group 15 closeout removed legacy rollback; Next JSSDK adapter only; fake local contract and production real_blocked contract are supported; real signing is blocked by default; fallback_used=false; real_external_call_executed=false.
   - route_id: sidebar_write_lead_pool_upsert_class_term_api
     path_pattern: /api/sidebar/lead-pool/upsert-class-term
     methods: [POST, OPTIONS]

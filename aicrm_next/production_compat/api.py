@@ -84,11 +84,6 @@ async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/sidebar/jssdk-config", methods=["GET", "HEAD", "OPTIONS"])
-async def legacy_sidebar_compat_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/api/customers/automation/activation-webhook", methods=["POST", "OPTIONS"])
 @router.api_route("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry", methods=["POST", "OPTIONS"])
 @router.api_route("/api/customers/automation/webhook-deliveries/retry-due", methods=["POST", "OPTIONS"])

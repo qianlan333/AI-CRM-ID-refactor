@@ -98,7 +98,7 @@ SIDEBAR_WRITE_ROUTES = (
     "/api/sidebar/v2/materials/send",
 )
 SIDEBAR_JSSDK_ROUTE = "/api/sidebar/jssdk-config"
-SIDEBAR_JSSDK_METHODS = ("GET", "OPTIONS")
+SIDEBAR_JSSDK_METHODS = ("GET", "HEAD", "OPTIONS")
 USER_OPS_READONLY_ROUTES = (
     "/api/admin/user-ops/overview",
     "/api/admin/user-ops/cards",
@@ -541,13 +541,17 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
 
     jssdk_record = manifest_by_path.get(SIDEBAR_JSSDK_ROUTE)
     if jssdk_record is not None:
-        if jssdk_record.get("production_behavior") not in {"legacy_forward", "next_adapter"} or jssdk_record.get("delete_ready") is True:
+        if (
+            jssdk_record.get("production_behavior") != "next_adapter"
+            or jssdk_record.get("delete_ready") is not True
+            or jssdk_record.get("legacy_fallback_allowed") is not False
+        ):
             violations.append(
                 Violation(
-                    "sidebar_jssdk_mislocked_by_write_closeout",
+                    "sidebar_jssdk_not_locked_by_group15_closeout",
                     SIDEBAR_JSSDK_ROUTE,
-                    f"production_behavior={jssdk_record.get('production_behavior')} delete_ready={jssdk_record.get('delete_ready')}",
-                    "Sidebar JSSDK signing must stay out of sidebar write deletion locking; group 15 may own it as a next_adapter validating route with rollback retained.",
+                    f"production_behavior={jssdk_record.get('production_behavior')} delete_ready={jssdk_record.get('delete_ready')} legacy_fallback_allowed={jssdk_record.get('legacy_fallback_allowed')}",
+                    "Sidebar JSSDK group 15 is deletion_locked on the Next adapter; production_compat rollback must not be restored.",
                 )
             )
 
@@ -603,6 +607,19 @@ def check_sidebar_readonly_closeout_lock(root: Path = ROOT) -> list[Violation]:
 
 def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path in _decorator_route_paths(compat_path):
+            if route_path == SIDEBAR_JSSDK_ROUTE:
+                violations.append(
+                    Violation(
+                        "sidebar_jssdk_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Remove /api/sidebar/jssdk-config from production_compat; the route is deletion_locked on the Next JSSDK adapter.",
+                    )
+                )
+
     inventory_path = root / "docs/architecture/sidebar_jssdk_route_inventory.md"
     if not inventory_path.exists():
         violations.append(Violation("sidebar_jssdk_inventory_missing", str(inventory_path.relative_to(root)), "missing inventory document"))
@@ -650,14 +667,33 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
         for forbidden, code in {
             "forward_to_legacy_flask": "sidebar_jssdk_legacy_forward",
             "legacy_flask_facade": "sidebar_jssdk_legacy_facade",
+            "production_compat": "sidebar_jssdk_production_compat_reference",
             "X-AICRM-Compatibility-Facade": "sidebar_jssdk_compatibility_facade",
             "requests.": "sidebar_jssdk_direct_http_client",
+            "requests": "sidebar_jssdk_direct_http_client",
             "httpx.": "sidebar_jssdk_direct_http_client",
+            "httpx": "sidebar_jssdk_direct_http_client",
+            "access_token": "sidebar_jssdk_real_signing_material",
+            "jsapi_ticket": "sidebar_jssdk_real_signing_material",
+            "getticket": "sidebar_jssdk_real_signing_material",
             '"real_external_call_executed": True': "sidebar_jssdk_real_external_call_true",
             "'real_external_call_executed': True": "sidebar_jssdk_real_external_call_true",
+            '"fallback_used": True': "sidebar_jssdk_fallback_used_true",
+            "'fallback_used': True": "sidebar_jssdk_fallback_used_true",
         }.items():
             if forbidden in source:
                 violations.append(Violation(code, str(path.relative_to(root)), forbidden))
+        normalized = " ".join(source.lower().split())
+        for marker in ("default real_enabled", "real_enabled default", "return 'real_enabled' # default", 'return "real_enabled" # default'):
+            if marker in normalized:
+                violations.append(
+                    Violation(
+                        "sidebar_jssdk_default_real_enabled",
+                        str(path.relative_to(root)),
+                        marker,
+                        "Sidebar JSSDK production default must stay real_blocked; real signing enablement is out of scope.",
+                    )
+                )
 
     if main_path.exists():
         main_text = main_path.read_text(encoding="utf-8")
@@ -680,10 +716,14 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
     else:
         if registry_record.get("runtime_owner") != "next_adapter":
             violations.append(Violation("sidebar_jssdk_registry_owner", SIDEBAR_JSSDK_ROUTE, f"runtime_owner={registry_record.get('runtime_owner')}"))
-        if registry_record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("sidebar_jssdk_registry_rollback_removed_too_early", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
-        if registry_record.get("delete_status") != "next_primary_with_legacy_rollback" or registry_record.get("replacement_status") != "validating":
+        if registry_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_jssdk_registry_legacy_allowed", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+        if registry_record.get("legacy_source") == "production_compat":
+            violations.append(Violation("sidebar_jssdk_registry_legacy_source", SIDEBAR_JSSDK_ROUTE, "legacy_source=production_compat"))
+        if registry_record.get("delete_status") != "deletion_locked" or registry_record.get("replacement_status") != "locked":
             violations.append(Violation("sidebar_jssdk_registry_lifecycle", SIDEBAR_JSSDK_ROUTE, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
+        if registry_record.get("delete_status") == "next_primary_with_legacy_rollback" or registry_record.get("replacement_status") == "validating":
+            violations.append(Violation("sidebar_jssdk_registry_rollback_lifecycle", SIDEBAR_JSSDK_ROUTE, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
         if registry_record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("sidebar_jssdk_registry_adapter_mode", SIDEBAR_JSSDK_ROUTE, f"adapter_mode={registry_record.get('adapter_mode')}"))
 
@@ -697,10 +737,16 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
             violations.append(Violation("sidebar_jssdk_manifest_owner", SIDEBAR_JSSDK_ROUTE, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
         if manifest_record.get("production_behavior") != "next_adapter":
             violations.append(Violation("sidebar_jssdk_manifest_behavior", SIDEBAR_JSSDK_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
-        if manifest_record.get("legacy_fallback_allowed") is not True:
-            violations.append(Violation("sidebar_jssdk_manifest_rollback_removed_too_early", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
-        if manifest_record.get("delete_ready") is not False:
+        if manifest_record.get("production_behavior") == "legacy_forward":
+            violations.append(Violation("sidebar_jssdk_manifest_legacy_forward", SIDEBAR_JSSDK_ROUTE, "production_behavior=legacy_forward"))
+        if manifest_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("sidebar_jssdk_manifest_legacy_allowed", SIDEBAR_JSSDK_ROUTE, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+        if manifest_record.get("delete_ready") is not True:
             violations.append(Violation("sidebar_jssdk_manifest_delete_ready", SIDEBAR_JSSDK_ROUTE, f"delete_ready={manifest_record.get('delete_ready')}"))
+        if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
+            violations.append(Violation("sidebar_jssdk_manifest_lifecycle", SIDEBAR_JSSDK_ROUTE, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
+        if manifest_record.get("delete_status") == "next_primary_with_legacy_rollback" or manifest_record.get("replacement_status") == "validating":
+            violations.append(Violation("sidebar_jssdk_manifest_rollback_lifecycle", SIDEBAR_JSSDK_ROUTE, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
         if manifest_record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("sidebar_jssdk_manifest_adapter_mode", SIDEBAR_JSSDK_ROUTE, f"adapter_mode={manifest_record.get('adapter_mode')}"))
 
