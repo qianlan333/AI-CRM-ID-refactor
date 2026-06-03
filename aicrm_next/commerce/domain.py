@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from aicrm_next.shared.errors import ContractError
 
+PRODUCT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,80}$")
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def validate_product_code(value: str) -> str:
+    product_code = str(value or "").strip()
+    if not PRODUCT_CODE_PATTERN.fullmatch(product_code):
+        raise ContractError("product_code must be 3-80 characters of letters, numbers, underscore, or hyphen")
+    return product_code
 
 
 def validate_price_cents(value: int) -> int:

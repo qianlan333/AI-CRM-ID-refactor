@@ -52,6 +52,36 @@ def test_product_create_update_enable_disable_delete_and_validation() -> None:
     assert deleted["soft_deleted"] is True
 
 
+def test_product_create_accepts_product_code_aliases_in_next_native_contract() -> None:
+    client = make_client()
+    payload = {
+        "product": {"code": "custom_course_2026"},
+        "title": "自定义编码商品",
+        "description": "fixture",
+        "price_cents": 29900,
+    }
+
+    created = client.post("/api/admin/wechat-pay/products", json=payload)
+    assert created.status_code == 200
+    product = created.json()["product"]
+    assert product["product_code"] == "custom_course_2026"
+    assert product["page_slug"] == "custom_course_2026"
+
+    public_payload = client.get("/api/products/custom_course_2026").json()
+    assert public_payload["product"]["product_code"] == "custom_course_2026"
+
+    duplicate = client.post("/api/admin/wechat-pay/products", json=payload)
+    assert duplicate.status_code == 400
+    assert "product_code must be unique" in duplicate.json()["detail"]
+
+    invalid = client.post(
+        "/api/admin/wechat-pay/products",
+        json={**payload, "product": {"code": "bad code"}},
+    )
+    assert invalid.status_code == 400
+    assert "product_code must be 3-80 characters" in invalid.json()["detail"]
+
+
 def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> None:
     client = make_client()
     seeded_detail = client.get("/admin/wechat-pay/transactions/order_masked_001")
