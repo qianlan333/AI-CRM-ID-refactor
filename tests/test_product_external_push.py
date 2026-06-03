@@ -290,7 +290,7 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
             "id": "wm_product_push",
             "openid": "open***push",
             "unionid": "unionid_product_push",
-            "phone": "138****0000",
+            "phone": "13800000000",
         },
     }
     assert delivery["request_body"]["event"] == "transaction.paid"
@@ -321,6 +321,22 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     assert failed_delivery["response_status"] == 500
     assert len(failed_delivery["response_body"].encode("utf-8")) <= external_push_service.MAX_BODY_BYTES
     assert failed_delivery["next_retry_at"]
+    assert failed_delivery["request_body"]["phone_number"] == "138****0000"
+    assert failed_delivery["request_body"]["buyer"]["phone"] == "138****0000"
+    assert failed_delivery["request_body"]["buyer"]["unionid"] == "unio***push"
+
+    retried_payloads = []
+
+    def capture_retry_success_post(*args, **kwargs):
+        retried_payloads.append(json.loads(kwargs["data"].decode("utf-8")))
+        return _response(200, '{"ok":true}')
+
+    monkeypatch.setattr(external_push_service.requests, "post", capture_retry_success_post)
+    retried = external_push_service.send_webhook_delivery(failed_delivery["delivery_id"])
+    assert retried["ok"] is True
+    assert retried_payloads[0]["phone_number"] == "13800000000"
+    assert retried_payloads[0]["buyer"]["phone"] == "13800000000"
+    assert retried_payloads[0]["buyer"]["unionid"] == "unionid_product_push"
 
     product_disabled = _create_product(name="停用外推商品")
     order_disabled = _insert_order(product_disabled, out_trade_no="WXP_PUSH_DISABLED")

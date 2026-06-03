@@ -271,7 +271,7 @@ def build_external_push_payload(
             "id": _normalized_text(order.get("external_userid") or order.get("userid_snapshot") or order.get("respondent_key")),
             "openid": _mask_openid(order.get("payer_openid")),
             "unionid": _normalized_text(order.get("unionid")),
-            "phone": _mask_phone(order.get("mobile_snapshot")),
+            "phone": _normalized_text(order.get("mobile_snapshot")),
         },
     }
 
@@ -296,12 +296,25 @@ def _send_http_post(url: str, *, raw_body: str, headers: dict[str, str], timeout
 
 def _attempt_delivery(delivery: dict[str, Any], *, config: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
     delivery_id = _normalized_text(delivery.get("delivery_id"))
-    request_payload = payload if payload is not None else delivery.get("request_body")
+    event_type = _normalized_text(delivery.get("event_type")) or EVENT_TRANSACTION_PAID
+    request_payload = payload
+    if request_payload is None and event_type == EVENT_TRANSACTION_PAID:
+        order = wechat_pay_repo.get_admin_order_by_id(int(delivery.get("order_id") or 0)) or {}
+        product = product_repo.get_product_by_id(int(delivery.get("product_id") or 0)) or _product_for_order(order)
+        request_payload = build_external_push_payload(
+            event_type,
+            order,
+            product,
+            config,
+            delivery_id=delivery_id,
+        )
+    if request_payload is None:
+        request_payload = delivery.get("request_body")
     if not isinstance(request_payload, dict) or not request_payload:
         order = wechat_pay_repo.get_admin_order_by_id(int(delivery.get("order_id") or 0)) or {}
         product = product_repo.get_product_by_id(int(delivery.get("product_id") or 0)) or _product_for_order(order)
         request_payload = build_external_push_payload(
-            _normalized_text(delivery.get("event_type")) or EVENT_TRANSACTION_PAID,
+            event_type,
             order,
             product,
             config,
