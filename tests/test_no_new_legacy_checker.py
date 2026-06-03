@@ -1246,9 +1246,15 @@ def _write_wecom_tag_read_docs(
     tmp_path: Path,
     *,
     registry_owner: str = "next_native",
-    registry_legacy_allowed: str = "true",
+    registry_legacy_allowed: str = "false",
+    registry_legacy_source: str = '""',
+    registry_delete_status: str = "deletion_locked",
+    registry_replacement_status: str = "locked",
     manifest_owner: str = "next",
     manifest_behavior: str = "next_exact",
+    manifest_legacy_allowed: str = "false",
+    manifest_delete_status: str = "deletion_locked",
+    manifest_replacement_status: str = "locked",
     family_lifecycle: str = "active",
 ) -> None:
     inventory = tmp_path / "docs/architecture/wecom_tag_read_route_inventory.md"
@@ -1258,10 +1264,13 @@ def _write_wecom_tag_read_docs(
     manifest.parent.mkdir(parents=True, exist_ok=True)
     inventory.write_text(
         "/api/admin/wecom/tags\n"
+        "/api/admin/wecom/tags/{tag_id}\n"
         "/api/admin/wecom/tag-groups\n"
+        "/api/admin/wecom/tag-groups/{group_id}\n"
         "/api/admin/wecom/tags*\n"
         "/api/admin/wecom/tag-groups*\n"
         "/api/sidebar/signup-tags/status\n"
+        "Frontend API Backend Contract Matrix\n"
         "Write Out Of Scope\n"
         "External Side Effects Out Of Scope\n"
         "No separate sidebar tag catalog selector\n",
@@ -1272,19 +1281,35 @@ def _write_wecom_tag_read_docs(
         "  - path_pattern: /api/admin/wecom/tags\n"
         f"    runtime_owner: {registry_owner}\n"
         f"    legacy_fallback_allowed: {registry_legacy_allowed}\n"
-        "    legacy_source: production_compat\n"
+        f"    legacy_source: {registry_legacy_source}\n"
         "    external_side_effect_risk: none\n"
         "    adapter_mode: none\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {registry_replacement_status}\n"
+        "  - path_pattern: /api/admin/wecom/tags/{tag_id}\n"
+        f"    runtime_owner: {registry_owner}\n"
+        f"    legacy_fallback_allowed: {registry_legacy_allowed}\n"
+        f"    legacy_source: {registry_legacy_source}\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {registry_replacement_status}\n"
         "  - path_pattern: /api/admin/wecom/tag-groups\n"
         f"    runtime_owner: {registry_owner}\n"
         f"    legacy_fallback_allowed: {registry_legacy_allowed}\n"
-        "    legacy_source: production_compat\n"
+        f"    legacy_source: {registry_legacy_source}\n"
         "    external_side_effect_risk: none\n"
         "    adapter_mode: none\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n",
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {registry_replacement_status}\n"
+        "  - path_pattern: /api/admin/wecom/tag-groups/{group_id}\n"
+        f"    runtime_owner: {registry_owner}\n"
+        f"    legacy_fallback_allowed: {registry_legacy_allowed}\n"
+        f"    legacy_source: {registry_legacy_source}\n"
+        "    external_side_effect_risk: none\n"
+        "    adapter_mode: none\n"
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {registry_replacement_status}\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -1292,17 +1317,31 @@ def _write_wecom_tag_read_docs(
         "  - route_pattern: /api/admin/wecom/tags\n"
         f"    current_runtime_owner: {manifest_owner}\n"
         f"    production_behavior: {manifest_behavior}\n"
-        "    legacy_fallback_allowed: true\n"
+        f"    legacy_fallback_allowed: {manifest_legacy_allowed}\n"
         "    external_side_effect_risk: none\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        f"    delete_status: {manifest_delete_status}\n"
+        f"    replacement_status: {manifest_replacement_status}\n"
+        "  - route_pattern: /api/admin/wecom/tags/{tag_id}\n"
+        f"    current_runtime_owner: {manifest_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {manifest_legacy_allowed}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {manifest_delete_status}\n"
+        f"    replacement_status: {manifest_replacement_status}\n"
         "  - route_pattern: /api/admin/wecom/tag-groups\n"
         f"    current_runtime_owner: {manifest_owner}\n"
         f"    production_behavior: {manifest_behavior}\n"
-        "    legacy_fallback_allowed: true\n"
+        f"    legacy_fallback_allowed: {manifest_legacy_allowed}\n"
         "    external_side_effect_risk: none\n"
-        "    delete_status: next_primary_with_legacy_rollback\n"
-        "    replacement_status: validating\n"
+        f"    delete_status: {manifest_delete_status}\n"
+        f"    replacement_status: {manifest_replacement_status}\n"
+        "  - route_pattern: /api/admin/wecom/tag-groups/{group_id}\n"
+        f"    current_runtime_owner: {manifest_owner}\n"
+        f"    production_behavior: {manifest_behavior}\n"
+        f"    legacy_fallback_allowed: {manifest_legacy_allowed}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {manifest_delete_status}\n"
+        f"    replacement_status: {manifest_replacement_status}\n"
         "  - route_pattern: /api/admin/wecom/tags*\n"
         "    current_runtime_owner: production_compat\n"
         "    production_behavior: legacy_forward\n"
@@ -1330,9 +1369,15 @@ def test_wecom_tag_read_guard_flags_legacy_forward_and_lifecycle_drift(tmp_path:
         "@read_router.get('/api/admin/wecom/tags')\n"
         "def list_admin_wecom_tags_read_model():\n"
         "    return forward_to_legacy_flask()\n"
+        "@read_router.get('/api/admin/wecom/tags/{tag_id}')\n"
+        "def get_admin_wecom_tag_read_model():\n"
+        "    return {'sync_executed': True}\n"
         "@read_router.get('/api/admin/wecom/tag-groups')\n"
         "def list_admin_wecom_tag_groups_read_model():\n"
         "    return {'real_external_call_executed': True}\n"
+        "@read_router.get('/api/admin/wecom/tag-groups/{group_id}')\n"
+        "def get_admin_wecom_tag_group_read_model():\n"
+        "    return {}\n"
         "def _read_catalog_payload():\n"
         "    return {'fallback_used': True}\n"
         "def _production_unavailable():\n"
@@ -1348,10 +1393,24 @@ def test_wecom_tag_read_guard_flags_legacy_forward_and_lifecycle_drift(tmp_path:
     _write_wecom_tag_read_docs(
         tmp_path,
         registry_owner="production_compat",
-        registry_legacy_allowed="false",
+        registry_legacy_allowed="true",
+        registry_legacy_source="production_compat",
+        registry_delete_status="next_primary_with_legacy_rollback",
+        registry_replacement_status="validating",
         manifest_owner="production_compat",
         manifest_behavior="legacy_forward",
+        manifest_legacy_allowed="true",
+        manifest_delete_status="next_primary_with_legacy_rollback",
+        manifest_replacement_status="validating",
         family_lifecycle="deletion_locked",
+    )
+    production_compat = tmp_path / "aicrm_next/production_compat/api.py"
+    production_compat.parent.mkdir(parents=True, exist_ok=True)
+    production_compat.write_text(
+        "_WRITE_FALLBACK_METHODS = ['GET', 'POST']\n"
+        "@router.api_route('/api/admin/wecom/tags', methods=_ALL_METHODS)\n"
+        "async def legacy_admin_wecom_tag_routes(): pass\n",
+        encoding="utf-8",
     )
 
     codes = {violation.code for violation in check_wecom_tag_read_next_native(tmp_path)}
@@ -1359,13 +1418,20 @@ def test_wecom_tag_read_guard_flags_legacy_forward_and_lifecycle_drift(tmp_path:
     assert "wecom_tag_read_legacy_forward" in codes
     assert "wecom_tag_read_fallback_used_true" in codes
     assert "wecom_tag_read_real_external_call_true" in codes
+    assert "wecom_tag_read_sync_executed_true" in codes
     assert "wecom_tag_read_direct_http_client" in codes
     assert "wecom_tag_read_production_success_claimed" in codes
     assert "wecom_tag_read_router_order" in codes
+    assert "wecom_tag_read_production_compat_write_methods_include_read" in codes
+    assert "wecom_tag_read_production_compat_read_route" in codes
     assert "wecom_tag_read_registry_owner" in codes
-    assert "wecom_tag_read_registry_rollback_missing" in codes
+    assert "wecom_tag_read_registry_rollback_allowed" in codes
+    assert "wecom_tag_read_registry_legacy_source" in codes
+    assert "wecom_tag_read_registry_lifecycle" in codes
     assert "wecom_tag_read_manifest_owner" in codes
     assert "wecom_tag_read_manifest_behavior" in codes
+    assert "wecom_tag_read_manifest_rollback_allowed" in codes
+    assert "wecom_tag_read_manifest_lifecycle" in codes
     assert "wecom_tag_family_manifest_mislocked" in codes
 
 
@@ -1380,16 +1446,30 @@ def test_wecom_tag_read_guard_allows_next_read_primary_with_out_of_scope_familie
         '@read_router.get("/api/admin/wecom/tags")\n'
         "def list_admin_wecom_tags_read_model():\n"
         "    return _read_catalog_payload()\n"
+        '@read_router.get("/api/admin/wecom/tags/{tag_id}")\n'
+        "def get_admin_wecom_tag_read_model():\n"
+        "    return _read_catalog_payload()\n"
         '@read_router.get("/api/admin/wecom/tag-groups")\n'
         "def list_admin_wecom_tag_groups_read_model():\n"
         "    return _read_catalog_payload()\n"
+        '@read_router.get("/api/admin/wecom/tag-groups/{group_id}")\n'
+        "def get_admin_wecom_tag_group_read_model():\n"
+        "    return _read_catalog_payload()\n"
         "def _read_catalog_payload():\n"
-        "    return {'fallback_used': False, 'real_external_call_executed': False}\n"
+        "    return {'fallback_used': False, 'real_external_call_executed': False, 'sync_executed': False}\n"
         "def _production_unavailable():\n"
         "    return {'source_status': 'production_unavailable'}\n",
         encoding="utf-8",
     )
     read_model.write_text("class PostgresTagCatalogRepository: pass\n", encoding="utf-8")
+    production_compat = tmp_path / "aicrm_next/production_compat/api.py"
+    production_compat.parent.mkdir(parents=True, exist_ok=True)
+    production_compat.write_text(
+        "_WRITE_FALLBACK_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']\n"
+        "@router.api_route('/api/admin/wecom/tags', methods=_WRITE_FALLBACK_METHODS)\n"
+        "@router.api_route('/api/admin/wecom/tag-groups', methods=_WRITE_FALLBACK_METHODS)\n",
+        encoding="utf-8",
+    )
     main.write_text(
         "app.include_router(customer_tags_read_router)\n"
         "app.include_router(production_compat_router)\n",

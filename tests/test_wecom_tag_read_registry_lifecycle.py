@@ -18,7 +18,7 @@ WRITE_FAMILIES = {
 }
 
 
-def test_wecom_tag_read_registry_entries_are_validating_next_native() -> None:
+def test_wecom_tag_read_registry_entries_are_deletion_locked_next_native() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
@@ -27,11 +27,11 @@ def test_wecom_tag_read_registry_entries_are_validating_next_native() -> None:
         assert entry is not None
         assert entry.capability_owner == "aicrm_next.customer_tags"
         assert entry.runtime_owner == "next_native"
-        assert entry.legacy_fallback_allowed is True
+        assert entry.legacy_fallback_allowed is False
         assert entry.external_side_effect_risk == "none"
         assert entry.adapter_mode == "none"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
 
 
 def test_wecom_tag_write_and_sync_families_remain_out_of_scope() -> None:
@@ -67,10 +67,32 @@ def test_wecom_tag_read_route_registry_yaml_matches_lifecycle() -> None:
 
     for route in READ_ROUTES:
         assert by_route[route]["runtime_owner"] == "next_native"
-        assert by_route[route]["delete_status"] == "next_primary_with_legacy_rollback"
-        assert by_route[route]["replacement_status"] == "validating"
+        assert by_route[route]["legacy_fallback_allowed"] is False
+        assert by_route[route]["legacy_source"] == ""
+        assert by_route[route]["delete_status"] == "deletion_locked"
+        assert by_route[route]["replacement_status"] == "locked"
 
     for route in WRITE_FAMILIES:
         assert by_route[route]["runtime_owner"] == "production_compat"
+        assert by_route[route]["delete_status"] == "active"
+        assert by_route[route]["replacement_status"] == "not_started"
+
+
+def test_wecom_tag_read_production_manifest_locks_read_routes_only() -> None:
+    manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
+    by_route = {record["route_pattern"]: record for record in manifest["routes"]}
+
+    for route in READ_ROUTES:
+        assert by_route[route]["current_runtime_owner"] == "next"
+        assert by_route[route]["production_behavior"] == "next_exact"
+        assert by_route[route]["legacy_fallback_allowed"] is False
+        assert by_route[route]["delete_ready"] is True
+        assert by_route[route]["delete_status"] == "deletion_locked"
+        assert by_route[route]["replacement_status"] == "locked"
+
+    for route in WRITE_FAMILIES:
+        assert by_route[route]["current_runtime_owner"] == "production_compat"
+        assert by_route[route]["production_behavior"] == "legacy_forward"
+        assert by_route[route]["legacy_fallback_allowed"] is True
         assert by_route[route]["delete_status"] == "active"
         assert by_route[route]["replacement_status"] == "not_started"

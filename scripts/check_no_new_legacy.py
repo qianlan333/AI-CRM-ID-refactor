@@ -158,7 +158,9 @@ AUTH_WECOM_WILDCARD_REGISTRY_ROUTES = (
 )
 WECOM_TAG_READ_ROUTES = (
     "/api/admin/wecom/tags",
+    "/api/admin/wecom/tags/{tag_id}",
     "/api/admin/wecom/tag-groups",
+    "/api/admin/wecom/tag-groups/{group_id}",
 )
 WECOM_TAG_FAMILY_ROUTES = (
     "/api/admin/wecom/tags*",
@@ -304,7 +306,11 @@ def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     compat_path = root / "aicrm_next/production_compat/api.py"
     for route_path in _decorator_route_paths(compat_path):
-        entry = service.find_route(route_path, None)
+        registry_lookup_path = {
+            "/api/admin/wecom/tags": "/api/admin/wecom/tags*",
+            "/api/admin/wecom/tag-groups": "/api/admin/wecom/tag-groups*",
+        }.get(route_path, route_path)
+        entry = service.find_route(registry_lookup_path, None)
         if not entry:
             violations.append(Violation("production_compat_route_not_registered", str(compat_path.relative_to(root)), route_path))
             continue
@@ -1402,6 +1408,7 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
     api_path = root / "aicrm_next/customer_tags/api.py"
     read_model_path = root / "aicrm_next/customer_tags/read_model.py"
     main_path = root / "aicrm_next/main.py"
+    production_compat_path = root / "aicrm_next/production_compat/api.py"
     if not api_path.exists():
         violations.append(Violation("wecom_tag_read_api_missing", str(api_path.relative_to(root)), "missing customer_tags api"))
     else:
@@ -1415,7 +1422,9 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
             api_path,
             {
                 "list_admin_wecom_tags_read_model",
+                "get_admin_wecom_tag_read_model",
                 "list_admin_wecom_tag_groups_read_model",
+                "get_admin_wecom_tag_group_read_model",
                 "_read_catalog_payload",
                 "_production_unavailable",
             },
@@ -1429,6 +1438,8 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
                 "'fallback_used': True": "wecom_tag_read_fallback_used_true",
                 '"real_external_call_executed": True': "wecom_tag_read_real_external_call_true",
                 "'real_external_call_executed': True": "wecom_tag_read_real_external_call_true",
+                '"sync_executed": True': "wecom_tag_read_sync_executed_true",
+                "'sync_executed': True": "wecom_tag_read_sync_executed_true",
                 "requests.": "wecom_tag_read_direct_http_client",
                 "httpx.": "wecom_tag_read_direct_http_client",
                 "list_wecom_tags_live": "wecom_tag_read_real_wecom_sync",
@@ -1469,6 +1480,40 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
                     "customer_tags_read_router must be included before production_compat_router",
                 )
             )
+    if production_compat_path.exists():
+        compat_text = production_compat_path.read_text(encoding="utf-8")
+        write_methods_line = next(
+            (line for line in compat_text.splitlines() if line.strip().startswith("_WRITE_FALLBACK_METHODS")),
+            "",
+        )
+        if "GET" in write_methods_line or "HEAD" in write_methods_line:
+            violations.append(
+                Violation(
+                    "wecom_tag_read_production_compat_write_methods_include_read",
+                    str(production_compat_path.relative_to(root)),
+                    write_methods_line.strip(),
+                    "Keep WeCom tag production_compat fallback limited to write/sync methods; read routes are locked to Next.",
+                )
+            )
+        for line in compat_text.splitlines():
+            if (
+                "@router.api_route(" in line
+                and (
+                    '"/api/admin/wecom/tags' in line
+                    or "'/api/admin/wecom/tags" in line
+                    or '"/api/admin/wecom/tag-groups' in line
+                    or "'/api/admin/wecom/tag-groups" in line
+                )
+                and ("_ALL_METHODS" in line or '"GET"' in line or "'GET'" in line or '"HEAD"' in line or "'HEAD'" in line)
+            ):
+                violations.append(
+                    Violation(
+                        "wecom_tag_read_production_compat_read_route",
+                        str(production_compat_path.relative_to(root)),
+                        line.strip(),
+                        "Do not register WeCom tag read routes in production_compat; keep only write/sync fallback methods.",
+                    )
+                )
 
     registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
     registry_by_path = {record.get("path_pattern"): record for record in registry_records}
@@ -1482,13 +1527,15 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
         else:
             if record.get("runtime_owner") != "next_native":
                 violations.append(Violation("wecom_tag_read_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
-            if record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("wecom_tag_read_registry_rollback_missing", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("wecom_tag_read_registry_rollback_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+            if record.get("legacy_source") not in {"", None}:
+                violations.append(Violation("wecom_tag_read_registry_legacy_source", route_path, f"legacy_source={record.get('legacy_source')}"))
             if record.get("external_side_effect_risk") != "none":
                 violations.append(Violation("wecom_tag_read_registry_side_effect_risk", route_path, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
             if record.get("adapter_mode") not in {"none", ""}:
                 violations.append(Violation("wecom_tag_read_registry_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-            if record.get("delete_status") != "next_primary_with_legacy_rollback" or record.get("replacement_status") != "validating":
+            if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
                 violations.append(Violation("wecom_tag_read_registry_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
         manifest_record = manifest_by_path.get(route_path)
         if manifest_record is None:
@@ -1498,11 +1545,15 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
                 violations.append(Violation("wecom_tag_read_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
             if manifest_record.get("production_behavior") != "next_exact":
                 violations.append(Violation("wecom_tag_read_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
-            if manifest_record.get("legacy_fallback_allowed") is not True:
-                violations.append(Violation("wecom_tag_read_manifest_rollback_missing", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("wecom_tag_read_manifest_rollback_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
             if manifest_record.get("external_side_effect_risk") != "none":
                 violations.append(Violation("wecom_tag_read_manifest_side_effect_risk", route_path, f"external_side_effect_risk={manifest_record.get('external_side_effect_risk')}"))
-            if manifest_record.get("delete_status") != "next_primary_with_legacy_rollback" or manifest_record.get("replacement_status") != "validating":
+            if manifest_record.get("production_behavior") == "legacy_forward":
+                violations.append(Violation("wecom_tag_read_manifest_behavior", route_path, "production_behavior=legacy_forward"))
+            if manifest_record.get("current_runtime_owner") == "production_compat":
+                violations.append(Violation("wecom_tag_read_manifest_owner", route_path, "current_runtime_owner=production_compat"))
+            if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
                 violations.append(Violation("wecom_tag_read_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     for route_path in WECOM_TAG_FAMILY_ROUTES:
