@@ -796,57 +796,57 @@ routes:
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Group 13 tag create route resolves to Next CommandBus before production_compat; local projection and SideEffectPlan only, real WeCom side effects blocked.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Group 13 closeout locked tag create on Next CommandBus only; production_compat rollback removed; local projection and SideEffectPlan only, real WeCom side effects blocked.
   - route_pattern: /api/admin/wecom/tags/{tag_id}
     methods: [PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Group 13 tag update/delete routes resolve to Next CommandBus before production_compat; local projection and SideEffectPlan only.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Group 13 closeout locked tag update/delete on Next CommandBus only; production_compat rollback removed; local projection and SideEffectPlan only.
   - route_pattern: /api/admin/wecom/tags/sync
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Group 13 tag sync route resolves to Next CommandBus before production_compat and records a blocked SideEffectPlan only.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Group 13 closeout locked tag sync on Next CommandBus only; production_compat rollback removed; records a blocked SideEffectPlan only.
   - route_pattern: /api/admin/wecom/tags/sync-due
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Historical sync-due write entrypoint resolves to the blocked Next CommandBus sync plan.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Historical sync-due write entrypoint is locked on the blocked Next CommandBus sync plan; production_compat rollback removed.
   - route_pattern: /api/admin/wecom/tags/live/gate
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -864,17 +864,17 @@ routes:
   - route_pattern: /api/admin/wecom/tags*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: validating
-    notes: Group 13 exact tag CRUD and sync routes are Next CommandBus primary; this wildcard remains guarded production_compat rollback for fake-stub write, live mark/unmark, and other subpaths.
+    replacement_status: not_started
+    notes: Production_compat rollback removed after Group 13 closeout. This wildcard now documents remaining Next auxiliary/out-of-scope tag subpaths such as fake-stub write, live mark/unmark, and other follow-up surfaces.
   - route_pattern: /api/admin/wecom/tag-groups
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -908,43 +908,43 @@ routes:
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Group 13 tag group create route resolves to Next CommandBus before production_compat; local projection and SideEffectPlan only.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Group 13 closeout locked tag group create on Next CommandBus only; production_compat rollback removed; local projection and SideEffectPlan only.
   - route_pattern: /api/admin/wecom/tag-groups/{group_id}
     methods: [PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     current_runtime_owner: next
     production_behavior: next_command
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: high
-    delete_ready: false
+    delete_ready: true
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
-    notes: Group 13 tag group update/delete routes resolve to Next CommandBus before production_compat; local projection and SideEffectPlan only.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Group 13 closeout locked tag group update/delete on Next CommandBus only; production_compat rollback removed; local projection and SideEffectPlan only.
   - route_pattern: /api/admin/wecom/tag-groups*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: validating
-    notes: Group 13 exact tag group CRUD routes are Next CommandBus primary; this wildcard remains guarded production_compat rollback for other tag-group subpaths.
+    replacement_status: not_started
+    notes: Production_compat rollback removed after Group 13 closeout. Exact tag group CRUD is locked on Next CommandBus; this wildcard only documents future auxiliary tag-group subpaths if added.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

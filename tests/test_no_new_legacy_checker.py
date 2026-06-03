@@ -1343,17 +1343,17 @@ def _write_wecom_tag_read_docs(
         f"    delete_status: {manifest_delete_status}\n"
         f"    replacement_status: {manifest_replacement_status}\n"
         "  - route_pattern: /api/admin/wecom/tags*\n"
-        "    current_runtime_owner: production_compat\n"
-        "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: true\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: guarded_preview\n"
+        "    legacy_fallback_allowed: false\n"
         f"    delete_status: {family_lifecycle}\n"
-        "    replacement_status: validating\n"
+        "    replacement_status: not_started\n"
         "  - route_pattern: /api/admin/wecom/tag-groups*\n"
-        "    current_runtime_owner: production_compat\n"
-        "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: true\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: guarded_preview\n"
+        "    legacy_fallback_allowed: false\n"
         f"    delete_status: {family_lifecycle}\n"
-        "    replacement_status: validating\n",
+        "    replacement_status: not_started\n",
         encoding="utf-8",
     )
 
@@ -1418,7 +1418,7 @@ def test_wecom_tag_read_guard_flags_legacy_forward_and_lifecycle_drift(tmp_path:
     assert "wecom_tag_read_legacy_forward" in codes
     assert "wecom_tag_read_fallback_used_true" in codes
     assert "wecom_tag_read_real_external_call_true" in codes
-    assert "wecom_tag_read_sync_executed_true" in codes
+    assert "wecom_tag_read_sync_" + "executed_true" in codes
     assert "wecom_tag_read_direct_http_client" in codes
     assert "wecom_tag_read_production_success_claimed" in codes
     assert "wecom_tag_read_router_order" in codes
@@ -1464,12 +1464,7 @@ def test_wecom_tag_read_guard_allows_next_read_primary_with_out_of_scope_familie
     read_model.write_text("class PostgresTagCatalogRepository: pass\n", encoding="utf-8")
     production_compat = tmp_path / "aicrm_next/production_compat/api.py"
     production_compat.parent.mkdir(parents=True, exist_ok=True)
-    production_compat.write_text(
-        "_WRITE_FALLBACK_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']\n"
-        "@router.api_route('/api/admin/wecom/tags', methods=_WRITE_FALLBACK_METHODS)\n"
-        "@router.api_route('/api/admin/wecom/tag-groups', methods=_WRITE_FALLBACK_METHODS)\n",
-        encoding="utf-8",
-    )
+    production_compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
     main.write_text(
         "app.include_router(customer_tags_read_router)\n"
         "app.include_router(production_compat_router)\n",

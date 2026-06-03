@@ -22,7 +22,7 @@ ROLLBACK_FAMILIES = {
 }
 
 
-def test_wecom_tag_write_registry_entries_are_next_command_with_rollback() -> None:
+def test_wecom_tag_write_registry_entries_are_deletion_locked_next_command() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
@@ -31,25 +31,25 @@ def test_wecom_tag_write_registry_entries_are_next_command_with_rollback() -> No
         assert entry is not None
         assert entry.capability_owner == "aicrm_next.customer_tags"
         assert entry.runtime_owner == "next_command"
-        assert entry.legacy_fallback_allowed is True
-        assert entry.legacy_source == "production_compat"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.legacy_source == ""
         assert entry.external_side_effect_risk == "high"
         assert entry.adapter_mode == "real_blocked"
-        assert entry.delete_status == "next_primary_with_legacy_rollback"
-        assert entry.replacement_status == "validating"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
 
 
-def test_wecom_tag_write_rollback_families_remain_active() -> None:
+def test_wecom_tag_auxiliary_families_are_next_owned_out_of_scope() -> None:
     get_route_registry_service.cache_clear()
     service = get_route_registry_service()
 
     for route in ROLLBACK_FAMILIES:
         entry = service.find_route(route, {"POST"})
         assert entry is not None
-        assert entry.runtime_owner == "production_compat"
-        assert entry.legacy_fallback_allowed is True
+        assert entry.runtime_owner == "next_native"
+        assert entry.legacy_fallback_allowed is False
         assert entry.delete_status == "active"
-        assert entry.replacement_status == "validating"
+        assert entry.replacement_status == "not_started"
 
 
 def test_wecom_tag_write_yaml_registry_and_manifest_lifecycle() -> None:
@@ -71,11 +71,13 @@ def test_wecom_tag_write_yaml_registry_and_manifest_lifecycle() -> None:
         registry_record = registry_by_route[route]
         manifest_record = manifest_by_route[route]
         assert registry_record["runtime_owner"] == "next_command"
-        assert registry_record["legacy_fallback_allowed"] is True
-        assert registry_record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert registry_record["replacement_status"] == "validating"
+        assert registry_record["legacy_fallback_allowed"] is False
+        assert registry_record["legacy_source"] == ""
+        assert registry_record["delete_status"] == "deletion_locked"
+        assert registry_record["replacement_status"] == "locked"
         assert manifest_record["current_runtime_owner"] == "next"
         assert manifest_record["production_behavior"] == "next_command"
-        assert manifest_record["legacy_fallback_allowed"] is True
-        assert manifest_record["delete_status"] == "next_primary_with_legacy_rollback"
-        assert manifest_record["replacement_status"] == "validating"
+        assert manifest_record["legacy_fallback_allowed"] is False
+        assert manifest_record["delete_ready"] is True
+        assert manifest_record["delete_status"] == "deletion_locked"
+        assert manifest_record["replacement_status"] == "locked"
