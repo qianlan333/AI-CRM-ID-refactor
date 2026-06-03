@@ -178,15 +178,15 @@ routes:
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
     runtime_owner: next_adapter
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_cloud_orchestrator_media_upload_adapter.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Next media upload adapter is primary for Cloud Orchestrator image uploads; real WeCom media upload is blocked by default and legacy rollback is retained until validation.
+    notes: Legacy rollback removed; Next guarded media upload adapter only for Cloud Orchestrator image uploads; real WeCom media upload is blocked by default and wecom_media_upload_executed=false.
   - route_id: media_library_admin_pages_family
     path_pattern: /admin/*-library
     methods: [GET]

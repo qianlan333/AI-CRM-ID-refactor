@@ -44,11 +44,6 @@ async def legacy_cloud_orchestrator_campaign_routes(request: Request) -> Respons
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/admin/cloud-orchestrator/media/upload", methods=["POST", "OPTIONS"])
-async def legacy_cloud_orchestrator_media_upload_route(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/admin/hxc-dashboard", methods=_ALL_METHODS)
 @router.api_route("/admin/hxc-send-config", methods=_ALL_METHODS)
 @router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)

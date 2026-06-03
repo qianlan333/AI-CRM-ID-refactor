@@ -6,6 +6,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
+    check_cloud_orchestrator_media_upload_closeout_lock,
     check_customer_read_model_legacy_deletion,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
@@ -44,6 +45,96 @@ def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
     tests.write_text("from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n", encoding="utf-8")
 
     assert scan_source_tree(tmp_path) == []
+
+
+def _write_cloud_media_upload_docs(
+    tmp_path: Path,
+    *,
+    locked: bool = True,
+    include_production_compat_route: bool = False,
+) -> None:
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory = tmp_path / "docs/architecture/cloud_orchestrator_media_upload_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    cloud_api = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    compat.parent.mkdir(parents=True, exist_ok=True)
+    cloud_api.parent.mkdir(parents=True, exist_ok=True)
+
+    legacy_allowed = "false" if locked else "true"
+    legacy_source = '""' if locked else "production_compat"
+    registry_delete_status = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement_status = "locked" if locked else "validating"
+    delete_ready = "true" if locked else "false"
+
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: cloud_orchestrator_media_upload_adapter\n"
+        "    path_pattern: /api/admin/cloud-orchestrator/media/upload\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    runtime_owner: next_adapter\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    legacy_source: {legacy_source}\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {replacement_status}\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/cloud-orchestrator/media/upload\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_adapter\n"
+        f"    legacy_fallback_allowed: {legacy_allowed}\n"
+        f"    delete_ready: {delete_ready}\n"
+        "    adapter_mode: real_blocked\n"
+        f"    delete_status: {registry_delete_status}\n"
+        f"    replacement_status: {replacement_status}\n",
+        encoding="utf-8",
+    )
+    inventory.write_text(
+        "Frontend ↔ API ↔ Backend Contract Matrix\n"
+        "Deletion Closeout Status Matrix\n"
+        "production_compat rollback removed\n"
+        "Next adapter only\n"
+        "legacy_fallback_allowed=false\n"
+        "deletion_locked\n"
+        "real_external_call_executed=false\n"
+        "wecom_media_upload_executed=false\n",
+        encoding="utf-8",
+    )
+    if include_production_compat_route:
+        compat.write_text(
+            "from fastapi import APIRouter\n"
+            "router = APIRouter()\n"
+            '@router.api_route("/api/admin/cloud-orchestrator/media/upload", methods=["POST", "OPTIONS"])\n'
+            "async def legacy_route(request):\n"
+            "    return None\n",
+            encoding="utf-8",
+        )
+    else:
+        compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
+    cloud_api.write_text("def route():\n    return {'real_external_call_executed': False}\n", encoding="utf-8")
+
+
+def test_cloud_orchestrator_media_upload_closeout_guard_passes_current_repo() -> None:
+    assert check_cloud_orchestrator_media_upload_closeout_lock() == []
+
+
+def test_cloud_orchestrator_media_upload_closeout_guard_blocks_rollback(tmp_path: Path) -> None:
+    _write_cloud_media_upload_docs(tmp_path, locked=False, include_production_compat_route=True)
+
+    violations = check_cloud_orchestrator_media_upload_closeout_lock(tmp_path)
+    codes = {violation.code for violation in violations}
+
+    assert "cloud_media_upload_production_compat_route" in codes
+    assert "cloud_media_upload_registry_legacy_allowed" in codes
+    assert "cloud_media_upload_registry_rollback_lifecycle" in codes
+    assert "cloud_media_upload_manifest_legacy_allowed" in codes
+    assert "cloud_media_upload_manifest_rollback_lifecycle" in codes
 
 
 def _write_media_library_docs(tmp_path: Path, *, locked: bool = True) -> None:

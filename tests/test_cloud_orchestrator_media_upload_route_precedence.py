@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+from scripts.check_no_new_legacy import _decorator_route_paths
 from tools import check_production_route_resolution as checker
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_COMPAT = ROOT / "aicrm_next/production_compat/api.py"
 
 
 def test_cloud_orchestrator_media_upload_resolves_to_next_before_production_compat(monkeypatch):
@@ -37,3 +44,7 @@ def test_cloud_orchestrator_media_upload_does_not_call_legacy_forward(monkeypatc
     assert response.status_code == 200
     assert response.json()["source_status"] == "next_cloud_orchestrator_media_upload"
     assert "X-AICRM-Compatibility-Facade" not in response.headers
+
+
+def test_cloud_orchestrator_media_upload_is_removed_from_production_compat():
+    assert "/api/admin/cloud-orchestrator/media/upload" not in _decorator_route_paths(PRODUCTION_COMPAT)

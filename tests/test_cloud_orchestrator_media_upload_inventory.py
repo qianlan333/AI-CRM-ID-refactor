@@ -12,6 +12,8 @@ def test_cloud_orchestrator_media_upload_inventory_exists_and_has_matrix():
 
     assert "Frontend ↔ API ↔ Backend Contract Matrix" in source
     assert "| 页面入口 | 前端模板/JS | 动作 | API | Method | Payload | Handler | Adapter/Command | SideEffectPlan | Smoke |" in source
+    assert "Deletion Closeout Status Matrix" in source
+    assert "| 页面入口 | 前端模板/JS | 动作 | API | Handler | Adapter/Command | SideEffectPlan | closeout 状态 | Smoke |" in source
 
 
 def test_cloud_orchestrator_media_upload_inventory_covers_frontend_callers():
@@ -26,6 +28,10 @@ def test_cloud_orchestrator_media_upload_inventory_covers_frontend_callers():
         "/api/admin/cloud-orchestrator/media/upload",
         "API-only/deprecated",
         "plan/step image upload",
+        "Next adapter only",
+        "production_compat rollback removed",
+        "legacy_fallback_allowed=false",
+        "deletion_locked",
     ]:
         assert marker in source
 
