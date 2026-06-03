@@ -170,6 +170,23 @@ def test_wechat_pay_admin_product_filter(app, client):
     assert [item["product_code"] for item in payload["items"]] == ["vip_course"]
 
 
+def test_wechat_pay_admin_product_filter_accepts_current_code_for_aliased_orders(app, client):
+    _login_admin(client)
+    _insert_order(
+        out_trade_no="WXP_ALIAS_PRODUCT",
+        product_code="prd_20260518095708_9f77db",
+        product_name="黄小璨首月体验",
+        transaction_id="420000ALIASPRODUCT",
+    )
+
+    response = client.get("/api/admin/wechat-pay/orders?product_code=subscription_trial_month&limit=20")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert [item["product_code"] for item in payload["items"]] == ["subscription_trial_month"]
+
+
 def test_wechat_pay_admin_status_mapping(app):
     _insert_order(out_trade_no="WXP_PENDING", status="paying")
     _insert_order(out_trade_no="WXP_PAID", status="paid", trade_state="SUCCESS", transaction_id="4200000001")
@@ -316,6 +333,42 @@ def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fie
     assert "420000EXPORT,13800138000,unionid_export,会员课程,vip_course,99.00,待支付" in csv_text
 
 
+def test_wechat_pay_admin_export_uses_current_code_for_aliased_product(app, client):
+    token = _login_admin(client)
+    _insert_order(
+        out_trade_no="WXP_ALIAS_EXPORT",
+        product_code="prd_20260601055439_3c4f56",
+        product_name="黄小璨月度会员私教版",
+        transaction_id="420000ALIASEXPORT",
+        mobile_snapshot="13681984146",
+        unionid="unionid_alias_export",
+        amount_total=6900,
+        created_at="2026-06-03T16:55:42+08:00",
+    )
+
+    response = client.post(
+        "/api/admin/wechat-pay/order-exports",
+        json={
+            "admin_action_token": token,
+            "filters": {
+                "product_code": "premium_monthly_trial",
+                "created_from": "2026-06-01T00:00",
+                "created_to": "2026-06-30T23:59",
+            },
+            "scope": "filtered",
+            "format": "csv",
+            "limit": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    job_id = response.get_json()["job"]["job_id"]
+    download = client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
+    csv_text = download.data.decode("utf-8-sig")
+    assert "prd_20260601055439_3c4f56" not in csv_text
+    assert "420000ALIASEXPORT,13681984146,unionid_alias_export,黄小璨月度会员私教版,premium_monthly_trial,69.00,待支付" in csv_text
+
+
 def test_next_wechat_pay_export_csv_uses_required_fields(monkeypatch):
     def fake_list_orders(filters, *, limit, offset):
         return {
@@ -342,6 +395,25 @@ def test_next_wechat_pay_export_csv_uses_required_fields(monkeypatch):
     assert "客户身份" not in csv_text
     assert csv_text.splitlines()[0] == "订单创建时间,微信单号,手机号,unionid,商品名称,商品编码,金额,状态"
     assert "420000NEXTEXPORT,13800138001,unionid_next_export,会员课程,vip_course,99.00,已支付" in csv_text
+
+
+def test_next_wechat_pay_present_order_uses_current_code_for_alias():
+    presented = admin_transactions._present_order(
+        {
+            "id": 1,
+            "created_at": "2026-06-03 19:17:21",
+            "transaction_id": "420000NEXTALIAS",
+            "mobile_snapshot": "18108191098",
+            "unionid": "unionid_next_alias",
+            "product_name": "黄小璨首月体验",
+            "product_code": "prd_20260518095708_9f77db",
+            "amount_total": 990,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        }
+    )
+
+    assert presented["product_code"] == "subscription_trial_month"
 
 
 def test_wechat_pay_admin_list_does_not_return_refund_action(app, client):

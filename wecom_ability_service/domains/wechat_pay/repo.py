@@ -5,6 +5,8 @@ import binascii
 import json
 from typing import Any
 
+from aicrm_next.commerce.product_code_aliases import product_code_filter_values
+
 from ...db import get_db
 from ...infra.json_utils import json_dumps
 
@@ -358,8 +360,9 @@ def _order_query_where(filters: dict[str, Any], params: list[Any]) -> list[str]:
         clauses.append("created_at <= ?::timestamptz")
         params.append(created_to)
     if product_code:
-        clauses.append("product_code = ?")
-        params.append(product_code)
+        filter_values = product_code_filter_values(product_code)
+        clauses.append(f"product_code IN ({', '.join(['?'] * len(filter_values))})")
+        params.extend(filter_values)
     if mobile:
         clauses.append("mobile_snapshot ILIKE ?")
         params.append(f"%{mobile}%")

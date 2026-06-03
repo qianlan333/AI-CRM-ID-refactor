@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from flask import current_app
 
+from aicrm_next.commerce.product_code_aliases import canonical_product_code
+
 from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ...infra.text_encoding import repair_utf8_mojibake
@@ -118,7 +120,7 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
     if not active_refunding and include_refund and int(order.get("id") or 0) > 0:
         active_refunding = max(0, repo.sum_active_refund_amount(int(order.get("id") or 0)))
     refundable = max(0, amount_total - refunded - active_refunding)
-    product_code = _normalized_text(order.get("product_code"))
+    product_code = canonical_product_code(order.get("product_code"))
     product_name = _normalized_text(order.get("product_name")) or product_code
     presented = {
         "id": int(order.get("id") or 0),
@@ -200,7 +202,7 @@ def list_product_options() -> list[dict[str, Any]]:
         name = _normalized_text(product.get("name")) or code
         options[code] = {"product_code": code, "product_name": name, "label": name}
     for product in repo.list_products_from_orders():
-        code = _normalized_text(product.get("product_code"))
+        code = canonical_product_code(product.get("product_code"))
         if not code or code in options:
             continue
         name = _normalized_text(product.get("product_name")) or code

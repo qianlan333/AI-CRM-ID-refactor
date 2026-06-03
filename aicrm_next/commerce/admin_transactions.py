@@ -12,6 +12,7 @@ from aicrm_next.shared.runtime import database_mode
 
 from .repo import build_commerce_repository
 from .application import GetTransactionQuery, ListProductsQuery, ListTransactionsQuery
+from .product_code_aliases import canonical_product_code, product_code_filter_values
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
 ALLOWED_LIMITS = {20, 50, 100}
@@ -148,7 +149,7 @@ def _present_order(row: dict[str, Any]) -> dict[str, Any]:
     userid = str(row.get("userid_snapshot") or "").strip()
     external_userid = str(row.get("external_userid") or "").strip()
     unionid = str(row.get("unionid") or "").strip()
-    product_code = str(row.get("product_code") or "").strip()
+    product_code = canonical_product_code(row.get("product_code"))
     product_name = str(row.get("product_name") or row.get("product_title") or product_code).strip()
     transaction_id = str(row.get("transaction_id") or "").strip()
     return {
@@ -185,7 +186,7 @@ def _fixture_orders(filters: dict[str, str], *, limit: int, offset: int) -> dict
     payload = ListTransactionsQuery("wechat")(
         {
             "payment_status": status_filter if status_filter in {"pending", "paid", "failed"} else "",
-            "product_code": filters.get("product_code"),
+            "product_code": "",
             "mobile": filters.get("mobile"),
             "external_userid": filters.get("identity"),
             "date_from": filters.get("created_from"),
@@ -195,6 +196,9 @@ def _fixture_orders(filters: dict[str, str], *, limit: int, offset: int) -> dict
         offset=offset,
     )
     rows = payload.get("items", [])
+    product_codes = set(product_code_filter_values(filters.get("product_code")))
+    if product_codes:
+        rows = [row for row in rows if str(row.get("product_code") or "").strip() in product_codes]
     if filters.get("transaction_id"):
         rows = [row for row in rows if filters["transaction_id"] in str(row.get("transaction_id") or "")]
     items = [_present_order(row) for row in rows]
@@ -242,8 +246,9 @@ def _postgres_orders(filters: dict[str, str], *, limit: int, offset: int) -> dic
     where = ["1 = 1"]
     params: list[Any] = []
     if filters.get("product_code"):
-        where.append("product_code = %s")
-        params.append(filters["product_code"])
+        filter_values = product_code_filter_values(filters["product_code"])
+        where.append(f"product_code IN ({', '.join(['%s'] * len(filter_values))})")
+        params.extend(filter_values)
     if filters.get("mobile"):
         where.append("COALESCE(mobile_snapshot, '') ILIKE %s")
         params.append(f"%{filters['mobile']}%")
