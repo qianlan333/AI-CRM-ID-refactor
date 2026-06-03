@@ -9,7 +9,7 @@ import aicrm_next.integration_gateway.wecom_jssdk_adapter as adapter
 from aicrm_next.main import create_app
 
 
-def test_sidebar_jssdk_sources_do_not_fetch_real_signing_material() -> None:
+def test_sidebar_jssdk_sources_do_not_reintroduce_legacy_fallback() -> None:
     sources = "\n".join(
         [
             inspect.getsource(api.sidebar_jssdk_config),
@@ -26,8 +26,6 @@ def test_sidebar_jssdk_sources_do_not_fetch_real_signing_material() -> None:
         "httpx.",
         "client.get(",
         "client.post(",
-        '"real_external_call_executed": True',
-        "'real_external_call_executed': True",
     ]:
         assert marker not in sources
 

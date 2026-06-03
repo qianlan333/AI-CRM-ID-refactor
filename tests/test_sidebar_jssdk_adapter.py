@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+from urllib.parse import parse_qs, urlparse
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.integration_gateway.wecom_jssdk_adapter import (
@@ -52,6 +55,46 @@ def test_production_default_is_real_blocked_without_real_call(monkeypatch) -> No
     assert list_sidebar_jssdk_attempts()[0]["event_type"] == "sidebar.jssdk.blocked"
 
 
+def test_real_enabled_adapter_fetches_wecom_signing_material(monkeypatch) -> None:
+    monkeypatch.setenv("WECOM_CORP_ID", "ww-test")
+    monkeypatch.setenv("WECOM_AGENT_ID", "1000002")
+    monkeypatch.setenv("WECOM_SECRET", "secret")
+    reset_sidebar_jssdk_attempts()
+    calls: list[str] = []
+
+    def fake_get_json(url: str, *, timeout: int) -> dict:
+        calls.append(url)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if parsed.path == "/cgi-bin/gettoken":
+            assert params["corpid"] == ["ww-test"]
+            assert params["corpsecret"] == ["secret"]
+            return {"errcode": 0, "access_token": "token-1", "expires_in": 7200}
+        if parsed.path == "/cgi-bin/get_jsapi_ticket":
+            assert params["access_token"] == ["token-1"]
+            return {"errcode": 0, "ticket": "corp-ticket", "expires_in": 7200}
+        if parsed.path == "/cgi-bin/ticket/get":
+            assert params["access_token"] == ["token-1"]
+            assert params["type"] == ["agent_config"]
+            return {"errcode": 0, "ticket": "agent-ticket", "expires_in": 7200}
+        raise AssertionError(f"unexpected url: {url}")
+
+    payload = build_sidebar_jssdk_config(
+        url="https://www.youcangogogo.com/sidebar/bind-mobile",
+        adapter_mode="real_enabled",
+        http_get_json=fake_get_json,
+    )
+
+    assert payload["adapter_mode"] == "real_enabled"
+    assert payload["real_external_call_executed"] is True
+    assert payload["external_call_blocked"] is False
+    assert payload["fallback_used"] is False
+    assert len(calls) == 3
+    assert _expected_signature(payload["config"], "corp-ticket") == payload["config"]["signature"]
+    assert _expected_signature(payload["agent_config"], "agent-ticket") == payload["agent_config"]["signature"]
+    assert list_sidebar_jssdk_attempts()[0]["event_type"] == "sidebar.jssdk.success"
+
+
 def test_jssdk_api_get_head_and_options_are_next_owned(monkeypatch) -> None:
     monkeypatch.setenv("SECRET_KEY", "sidebar-jssdk-api")
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -81,3 +124,15 @@ def test_jssdk_url_validation_accepts_relative_and_rejects_non_http() -> None:
         assert "http(s)" in str(exc)
     else:
         raise AssertionError("expected invalid URL to fail")
+
+
+def _expected_signature(config: dict, ticket: str) -> str:
+    plain = "&".join(
+        [
+            f"jsapi_ticket={ticket}",
+            f"noncestr={config['nonceStr']}",
+            f"timestamp={config['timestamp']}",
+            f"url={config['url']}",
+        ]
+    )
+    return hashlib.sha1(plain.encode("utf-8")).hexdigest()

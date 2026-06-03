@@ -673,11 +673,6 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
             "requests": "sidebar_jssdk_direct_http_client",
             "httpx.": "sidebar_jssdk_direct_http_client",
             "httpx": "sidebar_jssdk_direct_http_client",
-            "access_token": "sidebar_jssdk_real_signing_material",
-            "jsapi_ticket": "sidebar_jssdk_real_signing_material",
-            "getticket": "sidebar_jssdk_real_signing_material",
-            '"real_external_call_executed": True': "sidebar_jssdk_real_external_call_true",
-            "'real_external_call_executed': True": "sidebar_jssdk_real_external_call_true",
             '"fallback_used": True': "sidebar_jssdk_fallback_used_true",
             "'fallback_used': True": "sidebar_jssdk_fallback_used_true",
         }.items():
@@ -691,7 +686,7 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
                         "sidebar_jssdk_default_real_enabled",
                         str(path.relative_to(root)),
                         marker,
-                        "Sidebar JSSDK production default must stay real_blocked; real signing enablement is out of scope.",
+                        "Sidebar JSSDK production default must stay real_blocked; real signing requires the explicit real_enabled gate.",
                     )
                 )
 

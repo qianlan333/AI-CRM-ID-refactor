@@ -1628,7 +1628,7 @@ routes:
     replacement_status: locked
     checker: tests/test_sidebar_jssdk_registry_lifecycle.py
     rollback_owner: ""
-    notes: Sidebar JSSDK group 15 closeout removed legacy rollback; Next JSSDK adapter only; fake local contract and production real_blocked contract are supported; real signing is blocked by default; fallback_used=false; real_external_call_executed=false.
+    notes: Sidebar JSSDK group 15 closeout removed legacy rollback; Next JSSDK adapter only; fake local contract and production real_blocked contract are supported with real_external_call_executed=false; real signing is blocked by default but available under explicit real_enabled gate for sidebar identity resolution; fallback_used=false.
   - route_id: sidebar_write_lead_pool_upsert_class_term_api
     path_pattern: /api/sidebar/lead-pool/upsert-class-term
     methods: [POST, OPTIONS]
