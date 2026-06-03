@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from aicrm_next.commerce import admin_transactions
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth.auth_runtime import (
     ADMIN_CONSOLE_ACTION_TOKEN_SESSION_KEY,
@@ -39,6 +40,7 @@ def _insert_order(
     transaction_id: str = "",
     refunded_amount_total: int = 0,
     mobile_snapshot: str = "13800000000",
+    unionid: str = "unionid_test",
     external_userid: str = "wm_test",
     userid_snapshot: str = "zhangsan",
     payer_name_snapshot: str = "张三",
@@ -52,6 +54,7 @@ def _insert_order(
             "description": product_name or product_code,
             "amount_total": amount_total,
             "payer_openid": "op_test",
+            "unionid": unionid,
             "external_userid": external_userid,
             "userid_snapshot": userid_snapshot,
             "mobile_snapshot": mobile_snapshot,
@@ -102,12 +105,12 @@ def test_wechat_pay_admin_transaction_template_hides_internal_filter_copy():
         encoding="utf-8"
     )
 
-    assert "商品编码" not in source
     assert "mobile_snapshot / mobile" not in source
     assert "userid / external_userid" not in source
     assert "placeholder=\"transaction_id\"" not in source
     assert "row.product_code" not in source
     assert "{{ product.product_name }} / {{ product.product_code }}" not in source
+    assert "导出文件包含订单创建时间、微信单号、手机号、unionid、商品名称、商品编码、金额和状态。" in source
 
 
 def test_wechat_pay_admin_present_order_uses_operator_product_label():
@@ -274,9 +277,17 @@ def test_wechat_pay_admin_displays_created_at_in_beijing_time(app):
     assert payload["items"][0]["created_at"] == "2026-05-18 19:27:51"
 
 
-def test_wechat_pay_admin_export_job_saves_filters_json(app, client):
+def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fields(app, client):
     token = _login_admin(client)
-    _insert_order(out_trade_no="WXP_EXPORT", product_code="vip_course", product_name="会员课程")
+    _insert_order(
+        out_trade_no="WXP_EXPORT",
+        product_code="vip_course",
+        product_name="会员课程",
+        transaction_id="420000EXPORT",
+        mobile_snapshot="13800138000",
+        unionid="unionid_export",
+        created_at="2026-05-18T12:00:00+08:00",
+    )
 
     response = client.post(
         "/api/admin/wechat-pay/order-exports",
@@ -297,6 +308,40 @@ def test_wechat_pay_admin_export_job_saves_filters_json(app, client):
     ).fetchone()
     assert row["filters_json"]["product_code"] == "vip_course"
     assert row["status"] == "succeeded"
+
+    download = client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
+    csv_text = download.data.decode("utf-8-sig")
+    assert "客户身份" not in csv_text
+    assert csv_text.splitlines()[0] == "订单创建时间,微信单号,手机号,unionid,商品名称,商品编码,金额,状态"
+    assert "420000EXPORT,13800138000,unionid_export,会员课程,vip_course,99.00,待支付" in csv_text
+
+
+def test_next_wechat_pay_export_csv_uses_required_fields(monkeypatch):
+    def fake_list_orders(filters, *, limit, offset):
+        return {
+            "items": [
+                {
+                    "created_at": "2026-05-18 19:27:51",
+                    "transaction_id": "420000NEXTEXPORT",
+                    "mobile": "13800138001",
+                    "unionid": "unionid_next_export",
+                    "userid": "zhangsan",
+                    "external_userid": "wm_next",
+                    "product_name": "会员课程",
+                    "product_code": "vip_course",
+                    "amount_yuan": "99.00",
+                    "status_label": "已支付",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(admin_transactions, "list_wechat_admin_orders", fake_list_orders)
+
+    csv_text = admin_transactions.export_orders_csv({"product_code": "vip_course"})
+
+    assert "客户身份" not in csv_text
+    assert csv_text.splitlines()[0] == "订单创建时间,微信单号,手机号,unionid,商品名称,商品编码,金额,状态"
+    assert "420000NEXTEXPORT,13800138001,unionid_next_export,会员课程,vip_course,99.00,已支付" in csv_text
 
 
 def test_wechat_pay_admin_list_does_not_return_refund_action(app, client):

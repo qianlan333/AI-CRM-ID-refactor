@@ -147,6 +147,7 @@ def _present_order(row: dict[str, Any]) -> dict[str, Any]:
     mobile = str(row.get("mobile_snapshot") or row.get("buyer_mobile") or "").strip()
     userid = str(row.get("userid_snapshot") or "").strip()
     external_userid = str(row.get("external_userid") or "").strip()
+    unionid = str(row.get("unionid") or "").strip()
     product_code = str(row.get("product_code") or "").strip()
     product_name = str(row.get("product_name") or row.get("product_title") or product_code).strip()
     transaction_id = str(row.get("transaction_id") or "").strip()
@@ -158,6 +159,7 @@ def _present_order(row: dict[str, Any]) -> dict[str, Any]:
         "has_transaction_id": bool(transaction_id),
         "payer_name": payer_name or "未记录付款人",
         "mobile": mobile,
+        "unionid": unionid,
         "userid": userid,
         "external_userid": external_userid,
         "product_code": product_code,
@@ -219,7 +221,7 @@ def _int_value(value: Any) -> int:
 def _postgres_order_select() -> str:
     return """
         id, out_trade_no, transaction_id, payer_name_snapshot, mobile_snapshot, userid_snapshot,
-        external_userid, respondent_key, product_name, product_code, amount_total, currency,
+        external_userid, unionid, respondent_key, product_name, product_code, amount_total, currency,
         status, trade_state, refund_status, refunded_amount_total, created_at,
         (
             SELECT COALESCE(SUM(r.refund_amount_total), 0)
@@ -464,16 +466,16 @@ def export_orders_csv(filters: dict[str, Any] | None) -> str:
     payload = list_wechat_admin_orders(filters, limit=100, offset=0)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["订单创建时间", "微信单号", "付款人", "客户身份", "商品", "金额", "状态"])
+    writer.writerow(["订单创建时间", "微信单号", "手机号", "unionid", "商品名称", "商品编码", "金额", "状态"])
     for item in payload["items"]:
-        identity = item.get("userid") or item.get("external_userid") or ""
         writer.writerow(
             [
                 item.get("created_at", ""),
                 item.get("transaction_id", ""),
-                item.get("payer_name", ""),
-                identity,
+                item.get("mobile", ""),
+                item.get("unionid", ""),
                 item.get("product_name", ""),
+                item.get("product_code", ""),
                 item.get("amount_yuan", ""),
                 item.get("status_label", ""),
             ]
