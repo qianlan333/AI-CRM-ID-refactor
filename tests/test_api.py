@@ -1681,7 +1681,7 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "重置当前" in text
     assert "题型" in text
     assert "手工填写" in text or "tag_id" in text
-    assert "企微标签加载失败" in text
+    assert "当前未获取到企微标签，可手工填写 tag_id" in text
     assert "多维测评" in text
     assert "添加多维测评模板" in text
     assert "测评维度" in text

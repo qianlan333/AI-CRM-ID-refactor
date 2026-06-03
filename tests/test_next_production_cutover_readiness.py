@@ -164,6 +164,57 @@ def test_legacy_flask_facade_forwards_request_cookies(monkeypatch):
     assert response.json()["session"] == "signed-session"
 
 
+def test_legacy_flask_facade_rewrites_questionnaire_enable_to_legacy_disable(monkeypatch):
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "http://testserver")
+    legacy_app = Flask(__name__)
+    received = {}
+
+    @legacy_app.post("/api/admin/questionnaires/<int:questionnaire_id>/disable")
+    def legacy_disable(questionnaire_id: int):
+        received["questionnaire_id"] = questionnaire_id
+        received["payload"] = flask_request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "questionnaire": {"id": questionnaire_id, "is_disabled": received["payload"].get("is_disabled")}})
+
+    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", lambda: legacy_app)
+    app = FastAPI()
+
+    @app.post("/api/admin/questionnaires/{questionnaire_id}/enable")
+    async def enable(request: Request) -> Response:
+        return await legacy_flask_facade.forward_to_legacy_flask(request)
+
+    response = TestClient(app).post("/api/admin/questionnaires/42/enable", json={})
+
+    assert response.status_code == 200
+    assert received == {"questionnaire_id": 42, "payload": {"is_disabled": False}}
+    assert response.json()["questionnaire"]["is_disabled"] is False
+
+
+def test_legacy_flask_facade_rewrites_questionnaire_patch_update_to_legacy_put(monkeypatch):
+    monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "http://testserver")
+    legacy_app = Flask(__name__)
+    received = {}
+
+    @legacy_app.put("/api/admin/questionnaires/<int:questionnaire_id>")
+    def legacy_update(questionnaire_id: int):
+        received["method"] = flask_request.method
+        received["questionnaire_id"] = questionnaire_id
+        received["payload"] = flask_request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "questionnaire": {"id": questionnaire_id, **received["payload"]}})
+
+    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", lambda: legacy_app)
+    app = FastAPI()
+
+    @app.patch("/api/admin/questionnaires/{questionnaire_id}")
+    async def update(request: Request) -> Response:
+        return await legacy_flask_facade.forward_to_legacy_flask(request)
+
+    response = TestClient(app).patch("/api/admin/questionnaires/42", json={"title": "生产更新"})
+
+    assert response.status_code == 200
+    assert received == {"method": "PUT", "questionnaire_id": 42, "payload": {"title": "生产更新"}}
+    assert response.json()["questionnaire"]["title"] == "生产更新"
+
+
 def test_cutover_checker_contract(monkeypatch):
     monkeypatch.setattr(
         cutover_checker,

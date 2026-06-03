@@ -38,15 +38,15 @@ Responses include:
 
 ## Production Boundary
 
-When production data is ready but the questionnaire admin write model is not production-ready, routes return controlled `production_unavailable`. Fixture data is not used as production data.
+When production data is ready but the questionnaire admin Postgres write model is not production-ready, create/update/enable/disable/delete routes forward through the `legacy_flask_facade` so production admin edits keep using the proven legacy Flask persistence path. Fixture data is not used as production data.
 
-The admin write legacy rollback has been removed and locked in the route registry and production ownership manifest. The active Next handler does not use `X-AICRM-Compatibility-Facade` and does not forward these admin write requests to the legacy Flask facade.
+The active Next handler still owns the route surface and uses the Next CommandBus in fixture/local mode. Production fallback is limited to admin persistence commands; duplicate/publish/export preview remain guarded Next commands and may still return controlled `production_unavailable` until their production write model is completed.
 
 ## Deletion Closeout
 
-Admin write routes are locked to `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`.
+Admin write routes are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=true`, `delete_status=active_fallback`, and `replacement_status=production_fallback` until the Postgres questionnaire write repository is production-ready.
 
-No production_compat admin write fallback is registered. H5 submit/diagnostics and OAuth/auth remain out of scope and are not deletion locked by this closeout.
+No production_compat admin write wildcard is registered; fallback stays inside the explicit integration gateway boundary. H5 submit/diagnostics and OAuth/auth remain out of scope and are not changed by this closeout.
 
 ## Out Of Scope
 

@@ -25,6 +25,16 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
     assert "SELECT " not in channel_pages
 
 
+def test_questionnaire_tag_selector_treats_degraded_empty_catalog_as_warning() -> None:
+    questionnaire = Path("aicrm_next/frontend_compat/templates/admin_questionnaires.html").read_text(encoding="utf-8")
+
+    assert "data.degraded || !state.availableTags.length" in questionnaire
+    assert "data.page_error || '当前未获取到企微标签，可手工填写 tag_id'" in questionnaire
+    assert "tagCatalogMessageEl.className = 'inline-alert warning'" in questionnaire
+    assert "tagCatalogMessageEl.className = 'inline-alert error'" in questionnaire
+    assert "extractErrorMessage(data)" in questionnaire
+
+
 def test_sidebar_signup_tags_status_is_not_a_tag_catalog_selector() -> None:
     inventory = Path("docs/architecture/wecom_tag_read_route_inventory.md").read_text(encoding="utf-8")
 

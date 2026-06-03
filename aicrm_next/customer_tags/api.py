@@ -85,9 +85,9 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
     return JSONResponse(
         jsonable_encoder(
             {
-                "ok": False,
+                "ok": True,
                 "degraded": True,
-                "error": "WeCom tag catalog read model is unavailable.",
+                "error": "",
                 "error_code": "production_unavailable",
                 "source_status": "production_unavailable",
                 "read_model_status": "unavailable",
@@ -96,7 +96,7 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
                 "real_external_call_executed": False,
                 "sync_executed": False,
                 "fixture_used": False,
-                "page_error": str(exc),
+                "page_error": "当前未获取到企微标签，可手工填写 tag_id",
                 "groups": [],
                 "tags": [],
                 "items": [],
@@ -105,7 +105,7 @@ def _production_unavailable(exc: Exception) -> JSONResponse:
                 "tag_limit": 1000,
             }
         ),
-        status_code=503,
+        status_code=200,
     )
 
 

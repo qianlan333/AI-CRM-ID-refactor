@@ -682,15 +682,15 @@ routes:
     methods: [POST, PUT, PATCH, DELETE]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_command
-    legacy_fallback_allowed: false
-    legacy_source: ""
+    legacy_fallback_allowed: true
+    legacy_source: legacy_flask_facade
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: deletion_locked
-    replacement_status: locked
+    delete_status: active_fallback
+    replacement_status: production_fallback
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; covers create/update/delete/duplicate/publish/enable/disable/export preview commands with AuditLedger and SideEffectPlan only; no real external calls; real_external_call_executed=false.
+    notes: Questionnaire admin write uses Next CommandBus in fixture/local; production_data_ready create/update/enable/disable/delete forwards through legacy_flask_facade to restore real questionnaire persistence while Postgres write model remains unavailable; duplicate/publish/export preview remain guarded Next commands; real_external_call_executed=false for Next command responses.
   - route_id: questionnaire_admin_export_audit_next_commandbus
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/export
     methods: [GET]
