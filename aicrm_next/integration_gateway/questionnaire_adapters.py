@@ -577,7 +577,31 @@ class QuestionnaireSubmitSideEffectGateway:
                 target={"questionnaire_id": questionnaire_id, "submission_id": submission_id, "external_userid": external_userid, "tag_ids": tag_ids},
                 result={"skipped": True, "reason": "missing_external_userid_or_tags"},
             )
-        return self._tag_adapter.mark_external_contact_tags(external_userid=external_userid, tag_ids=tag_ids, questionnaire_id=questionnaire_id, submission_id=submission_id)
+        from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation
+        from aicrm_next.customer_tags.mutation_commands import PlanQuestionnaireTagSideEffectCommand
+
+        command = PlanQuestionnaireTagSideEffectCommand(
+            idempotency_key=make_idempotency_key(
+                operation="questionnaire.tag.apply",
+                payload={
+                    "questionnaire_id": questionnaire_id,
+                    "submission_id": submission_id,
+                    "external_userid": external_userid,
+                    "tag_ids": sorted(tag_ids),
+                },
+            ),
+            actor_id="questionnaire_submit_pipeline",
+            actor_type="system",
+            external_userid=external_userid,
+            tag_ids=tag_ids,
+            source_route="/api/h5/questionnaires/{slug}/submit",
+            source_context={
+                "source": "questionnaire_submit_pipeline",
+                "questionnaire_id": questionnaire_id,
+                "submission_id": submission_id,
+            },
+        )
+        return execute_wecom_tag_mutation(command)
 
     def emit_external_push(self, *, questionnaire_id: int | str, submission_id: str, webhook_url: str | None, payload_summary: dict[str, Any]) -> Json:
         if not webhook_url:
@@ -647,7 +671,7 @@ class QuestionnaireSubmitSideEffectGateway:
     def side_effect_safety(self) -> dict[str, Any]:
         return {
             "wechat_oauth_mode": build_wechat_oauth_adapter().mode,
-            "wecom_tag_mode": self._tag_adapter.mode,
+            "wecom_tag_mode": "next_plan",
             "questionnaire_external_push_mode": self._push_adapter.mode,
             "real_oauth_executed": False,
             "real_wecom_tag_executed": False,

@@ -1,6 +1,6 @@
 # WeCom Tag Read Route Inventory
 
-Scope: Legacy Exit group 12 moves WeCom tag and tag-group read surfaces to a Next-native tag catalog read model and locks the read legacy rollback after validation. Group 13 later deleted the exact write/sync production_compat rollback and locked those exact routes on Next CommandBus. Real WeCom sync/mutation, customer/questionnaire tag mutation, payment, storage, OpenClaw, and automation runtime remain out of scope unless separately noted.
+Scope: Legacy Exit group 12 moves WeCom tag and tag-group read surfaces to a Next-native tag catalog read model and locks the read legacy rollback after validation. Group 13 later deleted the exact write/sync production_compat rollback and locked those exact routes on Next CommandBus. Group 14 moves live mark/unmark plus customer/questionnaire tag mutation to Next CommandBus SideEffectPlan only. Real WeCom execution, payment, storage, OpenClaw, and automation runtime remain out of scope unless separately noted.
 
 | route | method | caller | current owner | expected owner | read/write | data source | external side effect risk | replacement decision | delete decision | test coverage |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -8,9 +8,9 @@ Scope: Legacy Exit group 12 moves WeCom tag and tag-group read surfaces to a Nex
 | `/api/admin/wecom/tags/{tag_id}` | `GET` | Optional direct tag detail read | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | read | Same tag catalog read model | none | Exact Next detail filter over catalog; no legacy rollback | `deletion_locked` | `tests/test_wecom_tag_read_next_native.py` |
 | `/api/admin/wecom/tag-groups` | `GET` | WeCom tag management page group endpoint; smoke and selector-compatible group catalog | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | read | Same tag catalog read model | none | Exact Next read route before production_compat; return groups as first-class items; no legacy rollback | `deletion_locked` | `tests/test_wecom_tag_read_next_native.py`, `tests/test_wecom_tag_read_registry_lifecycle.py` |
 | `/api/admin/wecom/tag-groups/{group_id}` | `GET` | Optional direct tag-group detail read | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | read | Same tag catalog read model | none | Exact Next group detail filter over catalog; no legacy rollback | `deletion_locked` | `tests/test_wecom_tag_read_next_native.py` |
-| `/api/admin/wecom/tags/live/gate` | `GET` | Existing live adapter gate check | `aicrm_next.customer_tags` | out of scope | gated external adapter read | explicit live adapter gate | high | Not handled in group 12; remains blocked unless explicit live flags are set | active; not deletion_locked | `tests/test_wecom_tag_read_no_real_side_effects.py` |
+| `/api/admin/wecom/tags/live/gate` | `GET` | Existing live adapter gate check | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | live mutation gate | Next blocked gate | high | Group 14 validating boundary; returns `next_live_gate`, `adapter_mode=real_blocked`, no real WeCom call | active; validating | `tests/test_wecom_tag_live_mutation_commands.py`, `tests/test_wecom_tag_live_mutation_registry_lifecycle.py` |
 | `/api/sidebar/signup-tags/status` | `GET` | Sidebar signup status surface | `aicrm_next.customer_read_model` | unchanged | read | customer read model status, not tag catalog selector | none | Not a tag catalog selector; no route change in this group | already locked by sidebar readonly group | `tests/test_sidebar_readonly_next_native.py` |
-| `/api/admin/wecom/tags*` | `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` | fake-stub write, live mark/unmark, and future auxiliary subpaths | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | auxiliary write/gated side effects | Next auxiliary routes or existing adapter gates | high | Exact CRUD/sync rollback removed in group 13; auxiliary live/fake subpaths remain out of scope | active; not deletion_locked | `tests/test_wecom_tag_read_inventory.py`, `tests/test_wecom_tag_read_registry_lifecycle.py` |
+| `/api/admin/wecom/tags*` | `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` | fake-stub write, live mark/unmark, and future auxiliary subpaths | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | auxiliary write/gated side effects | Next auxiliary routes or existing adapter gates | high | Exact live mark/unmark are now group 14 Next CommandBus plan-only; remaining fake-stub/future auxiliary subpaths are active and not deletion_locked | active; not deletion_locked | `tests/test_wecom_tag_live_mutation_registry_lifecycle.py`, `tests/test_wecom_tag_read_registry_lifecycle.py` |
 | `/api/admin/wecom/tag-groups*` | `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` | future auxiliary tag-group subpaths | `aicrm_next.customer_tags` | `aicrm_next.customer_tags` | auxiliary write | no production_compat fallback | high | Exact tag-group CRUD rollback removed in group 13 | active; not deletion_locked | `tests/test_wecom_tag_read_inventory.py`, `tests/test_wecom_tag_read_registry_lifecycle.py` |
 
 ## A. Read Routes
@@ -41,9 +41,9 @@ Scope: Legacy Exit group 12 moves WeCom tag and tag-group read surfaces to a Nex
 ## D. Write Out Of Scope
 
 - Exact tag create/update/delete, tag-group create/update/delete, and sync endpoints were locked to Next CommandBus in group 13 and no longer have production_compat rollback.
-- Fake-stub writes, live mark/unmark, customer mutation, and questionnaire tag mutation remain out of scope for the read closeout and the write rollback deletion.
+- Fake-stub writes remain outside the read closeout. Live mark/unmark, customer assignment, and questionnaire tag mutation are covered by `docs/architecture/wecom_tag_live_mutation_route_inventory.md` as group 14 plan-only CommandBus boundaries.
 - Manifest wildcard families `/api/admin/wecom/tags*` and `/api/admin/wecom/tag-groups*` now document Next auxiliary/out-of-scope subpaths rather than production_compat fallback.
 
 ## E. External Side Effects Out Of Scope
 
-- This group does not call WeCom, does not sync tags, does not mutate customer tags, and does not execute questionnaire tag side effects.
+- Group 12 does not call WeCom, does not sync tags, and does not mutate customer tags. Group 14 plans customer/questionnaire tag mutation without executing real WeCom.
