@@ -260,6 +260,66 @@ def test_product_admin_restores_lead_external_push_copy_and_slice_contracts() ->
     assert copied_product["slice_count"] == 1
 
 
+def test_postgres_lead_channels_use_qrcode_assets_and_program_name() -> None:
+    from aicrm_next.commerce.repo import PostgresCommerceRepository
+
+    captured_sql: list[str] = []
+
+    class FakeResult:
+        def fetchall(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "channel_id": 11,
+                    "channel_name": "二维码资产渠道",
+                    "program_id": 7,
+                    "program_name": "9.9已付费引流方案",
+                    "qr_url": "https://example.com/asset-qr.png",
+                    "status": "active",
+                },
+                {
+                    "channel_id": 12,
+                    "channel_name": "未生成二维码渠道",
+                    "program_id": None,
+                    "program_name": None,
+                    "qr_url": "",
+                    "status": "active",
+                },
+            ]
+
+    class FakeConnection:
+        def __enter__(self) -> "FakeConnection":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+            return None
+
+        def execute(self, sql: str, params: object | None = None) -> FakeResult:
+            captured_sql.append(sql)
+            return FakeResult()
+
+    repository = PostgresCommerceRepository("postgres://fixture")
+    repository._connect = lambda: FakeConnection()  # type: ignore[method-assign]
+
+    items = repository.list_lead_channels()
+
+    assert items[0] == {
+        "channel_id": 0,
+        "channel_name": "不配置引流渠道码",
+        "program_name": "",
+        "qr_url": "",
+        "selectable": True,
+    }
+    assert items[1]["channel_name"] == "二维码资产渠道"
+    assert items[1]["program_name"] == "9.9已付费引流方案"
+    assert items[1]["qr_url"] == "https://example.com/asset-qr.png"
+    assert items[1]["selectable"] is True
+    assert items[2]["channel_name"] == "未生成二维码渠道"
+    assert items[2]["selectable"] is False
+    assert "automation_channel_qrcode_asset" in captured_sql[0]
+    assert "p.program_name AS program_name" in captured_sql[0]
+    assert "p.name AS program_name" not in captured_sql[0]
+
+
 def test_product_share_route_is_next_native() -> None:
     client = make_client()
     item = client.get("/api/admin/wechat-pay/products").json()["items"][0]
