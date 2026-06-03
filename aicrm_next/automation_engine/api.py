@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
@@ -75,6 +77,18 @@ from .programs import (
     update_automation_program_operation_task,
     update_automation_program_operation_task_send_strategy,
 )
+from .timers import (
+    AutomationTimerInputError,
+    PlanAutomationJobsRunDueCommand,
+    PlanReplyMonitorCaptureCommand,
+    PlanReplyMonitorRunDueCommand,
+    PreviewAutomationJobsRunDueCommand,
+    diagnostics_payload as timer_diagnostics_payload,
+    execute_automation_timer_command,
+    normalize_batch_size as normalize_timer_batch_size,
+    normalize_job_codes,
+    normalize_limit as normalize_timer_limit,
+)
 from .dto import (
     ActivationWebhookRequest,
     AgentMaterialsUpdateRequest,
@@ -112,6 +126,14 @@ from .group_ops.api import router as group_ops_router
 router = APIRouter()
 router.include_router(group_ops_router)
 
+_TIMER_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
+}
+
 
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
@@ -124,6 +146,187 @@ def _raise_http(exc: Exception) -> None:
 def _json_result(payload: dict) -> JSONResponse:
     status_code = int(payload.get("status_code") or 200)
     return JSONResponse(payload, status_code=status_code)
+
+
+def _timer_error(error: str, *, source_status: str, status_code: int = 400) -> JSONResponse:
+    payload = timer_diagnostics_payload(source_status)
+    payload.update(
+        {
+            "ok": False,
+            "error": error,
+            "planned_count": 0,
+            "processed_count": 0,
+            "captured_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "candidate_count": 0,
+            "candidates": [],
+            "job_codes": [],
+            "estimated_actions": {
+                "planned_action_count": 0,
+                "runtime_execution_count": 0,
+                "external_call_count": 0,
+                "blocked_external_call_count": 0,
+            },
+        }
+    )
+    return JSONResponse(payload, status_code=status_code, headers=_TIMER_HEADERS)
+
+
+def _bool_payload(value: Any, *, default: bool) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+async def _timer_payload(request: Request) -> dict[str, Any]:
+    if request.headers.get("content-type", "").lower().startswith("application/json"):
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise AutomationTimerInputError("payload must be valid JSON") from exc
+    else:
+        body = await request.body()
+        payload = {} if not body else await request.json()
+    if payload is None:
+        merged: dict[str, Any] = {}
+    elif isinstance(payload, dict):
+        merged = dict(payload)
+    else:
+        raise AutomationTimerInputError("payload must be an object")
+    for key in ("limit", "batch_size", "jobs", "job_codes", "dry_run"):
+        if key not in merged and key in request.query_params:
+            merged[key] = request.query_params.get(key)
+    return merged
+
+
+def _timer_actor(request: Request, payload: dict[str, Any]) -> str:
+    return str(payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor") or "timer").strip()
+
+
+def _timer_common(request: Request, payload: dict[str, Any], source_route: str, *, default_limit: int) -> dict[str, Any]:
+    limit = normalize_timer_limit(payload.get("limit"), default=default_limit)
+    return {
+        "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+        "actor_id": _timer_actor(request, payload),
+        "actor_type": str(payload.get("actor_type") or "timer").strip(),
+        "limit": limit,
+        "batch_size": normalize_timer_batch_size(payload.get("batch_size"), default=limit),
+        "job_codes": normalize_job_codes(payload.get("job_codes"), payload.get("jobs")),
+        "dry_run": _bool_payload(payload.get("dry_run"), default=True),
+        "source_route": source_route,
+        "trace_id": str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip(),
+    }
+
+
+def _timer_response(command, *, source_status: str) -> JSONResponse:
+    try:
+        payload = execute_automation_timer_command(command)
+    except AutomationTimerInputError as exc:
+        return _timer_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    except Exception as exc:
+        return _timer_error(str(exc) or "timer_unavailable", source_status=source_status, status_code=503)
+    return JSONResponse(payload, headers=_TIMER_HEADERS)
+
+
+@router.options("/api/admin/automation-conversion/reply-monitor/capture")
+def api_automation_conversion_reply_monitor_capture_options() -> JSONResponse:
+    return JSONResponse(timer_diagnostics_payload("next_reply_monitor_capture_plan"), headers=_TIMER_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/reply-monitor/capture")
+async def api_plan_automation_conversion_reply_monitor_capture(request: Request) -> JSONResponse:
+    source_status = "next_reply_monitor_capture_plan"
+    try:
+        payload = await _timer_payload(request)
+        command = PlanReplyMonitorCaptureCommand(
+            **_timer_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/reply-monitor/capture",
+                default_limit=500,
+            )
+        )
+    except AutomationTimerInputError as exc:
+        return _timer_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _timer_response(command, source_status=source_status)
+
+
+@router.options("/api/admin/automation-conversion/reply-monitor/run-due")
+def api_automation_conversion_reply_monitor_run_due_options() -> JSONResponse:
+    return JSONResponse(timer_diagnostics_payload("next_reply_monitor_run_due_plan"), headers=_TIMER_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/reply-monitor/run-due")
+async def api_plan_automation_conversion_reply_monitor_run_due(request: Request) -> JSONResponse:
+    source_status = "next_reply_monitor_run_due_plan"
+    try:
+        payload = await _timer_payload(request)
+        command = PlanReplyMonitorRunDueCommand(
+            **_timer_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/reply-monitor/run-due",
+                default_limit=20,
+            )
+        )
+    except AutomationTimerInputError as exc:
+        return _timer_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _timer_response(command, source_status=source_status)
+
+
+@router.options("/api/admin/automation-conversion/jobs/run-due/preview")
+def api_automation_conversion_jobs_run_due_preview_options() -> JSONResponse:
+    return JSONResponse(timer_diagnostics_payload("next_jobs_run_due_preview"), headers=_TIMER_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/jobs/run-due/preview")
+async def api_preview_automation_conversion_jobs_run_due(request: Request) -> JSONResponse:
+    source_status = "next_jobs_run_due_preview"
+    try:
+        payload = await _timer_payload(request)
+        command = PreviewAutomationJobsRunDueCommand(
+            **_timer_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/jobs/run-due/preview",
+                default_limit=100,
+            )
+        )
+    except AutomationTimerInputError as exc:
+        return _timer_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _timer_response(command, source_status=source_status)
+
+
+@router.options("/api/admin/automation-conversion/jobs/run-due")
+def api_automation_conversion_jobs_run_due_options() -> JSONResponse:
+    return JSONResponse(timer_diagnostics_payload("next_jobs_run_due_plan"), headers=_TIMER_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/jobs/run-due")
+async def api_plan_automation_conversion_jobs_run_due(request: Request) -> JSONResponse:
+    source_status = "next_jobs_run_due_plan"
+    try:
+        payload = await _timer_payload(request)
+        command = PlanAutomationJobsRunDueCommand(
+            **_timer_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/jobs/run-due",
+                default_limit=100,
+            )
+        )
+    except AutomationTimerInputError as exc:
+        return _timer_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _timer_response(command, source_status=source_status)
 
 
 @router.get("/api/admin/automation-conversion/contract")

@@ -1881,6 +1881,34 @@ routes:
     checker: tests/test_sidebar_write_registry_lifecycle.py
     rollback_owner: aicrm_next.sidebar_write
     notes: Sidebar write group 5 deletion closeout removed legacy production_compat rollback; Next CommandBus is the only route owner; material send remains SideEffectPlan only with adapter real_blocked and real_external_call_executed=false; JSSDK remains separate out-of-scope group.
+  - route_id: automation_conversion_reply_monitor_timer_next_safe_mode
+    path_pattern: /api/admin/automation-conversion/reply-monitor*
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_conversion_timer_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Reply monitor capture/run-due is Next safe-mode planning only; no real capture, no reply runtime, no real send; source_status values are next_reply_monitor_capture_plan and next_reply_monitor_run_due_plan.
+  - route_id: automation_conversion_jobs_run_due_timer_next_safe_mode
+    path_pattern: /api/admin/automation-conversion/jobs/run-due*
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_conversion_timer_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Automation jobs run-due/preview is Next safe-mode planning only; no registered job runtime and no real side effects; source_status values are next_jobs_run_due_preview and next_jobs_run_due_plan.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

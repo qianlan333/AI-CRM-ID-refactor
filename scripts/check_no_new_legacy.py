@@ -277,6 +277,64 @@ CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_DIRECT_EXTERNAL_MARKERS = {
     "real_enabled default": "cloud_campaign_run_due_real_enabled_default",
     "default real_enabled": "cloud_campaign_run_due_real_enabled_default",
 }
+AUTOMATION_CONVERSION_TIMER_ROUTES = {
+    "/api/admin/automation-conversion/reply-monitor/run-due",
+    "/api/admin/automation-conversion/reply-monitor/capture",
+    "/api/admin/automation-conversion/jobs/run-due",
+    "/api/admin/automation-conversion/jobs/run-due/preview",
+}
+AUTOMATION_CONVERSION_TIMER_REGISTRY_RECORDS = {
+    "automation_conversion_reply_monitor_timer_next_safe_mode": "/api/admin/automation-conversion/reply-monitor*",
+    "automation_conversion_jobs_run_due_timer_next_safe_mode": "/api/admin/automation-conversion/jobs/run-due*",
+}
+AUTOMATION_CONVERSION_TIMER_MANIFEST_ROUTES = (
+    "/api/admin/automation-conversion/reply-monitor*",
+    "/api/admin/automation-conversion/jobs/run-due*",
+)
+AUTOMATION_CONVERSION_TIMER_OUT_OF_SCOPE_COMPAT_ROUTES = {
+    "/api/admin/automation-conversion/tasks/run-due",
+    "/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu",
+}
+AUTOMATION_CONVERSION_TIMER_DIRECT_EXTERNAL_MARKERS = {
+    "run_reply_monitor_capture": "automation_timer_legacy_capture_runtime",
+    "run_due_reply_monitor": "automation_timer_legacy_reply_runtime",
+    "run_registered_due_jobs": "automation_timer_legacy_jobs_runtime",
+    "WeComClient.from_app": "automation_timer_wecom_client",
+    "send_message": "automation_timer_direct_send_message",
+    "OpenClaw": "automation_timer_openclaw_direct_invoke",
+    "Bazhuayu": "automation_timer_bazhuayu_direct_invoke",
+    "requests": "automation_timer_direct_http_client",
+    "httpx": "automation_timer_direct_http_client",
+    "access_token": "automation_timer_token_exchange",
+}
+AUTOMATION_CONVERSION_TIMER_TRUE_DEFAULT_MARKERS = {
+    "real_external_call_executed=True": "automation_timer_real_external_true",
+    "real_external_call_executed = True": "automation_timer_real_external_true",
+    '"real_external_call_executed": True': "automation_timer_real_external_true",
+    "'real_external_call_executed': True": "automation_timer_real_external_true",
+    "automation_runtime_executed=True": "automation_timer_runtime_true",
+    "automation_runtime_executed = True": "automation_timer_runtime_true",
+    '"automation_runtime_executed": True': "automation_timer_runtime_true",
+    "'automation_runtime_executed': True": "automation_timer_runtime_true",
+    "reply_monitor_capture_executed=True": "automation_timer_capture_true",
+    "reply_monitor_capture_executed = True": "automation_timer_capture_true",
+    '"reply_monitor_capture_executed": True': "automation_timer_capture_true",
+    "'reply_monitor_capture_executed': True": "automation_timer_capture_true",
+    "reply_monitor_run_due_executed=True": "automation_timer_reply_true",
+    "reply_monitor_run_due_executed = True": "automation_timer_reply_true",
+    '"reply_monitor_run_due_executed": True': "automation_timer_reply_true",
+    "'reply_monitor_run_due_executed': True": "automation_timer_reply_true",
+    "jobs_run_due_executed=True": "automation_timer_jobs_true",
+    "jobs_run_due_executed = True": "automation_timer_jobs_true",
+    '"jobs_run_due_executed": True': "automation_timer_jobs_true",
+    "'jobs_run_due_executed': True": "automation_timer_jobs_true",
+    "wecom_send_executed=True": "automation_timer_send_true",
+    "wecom_send_executed = True": "automation_timer_send_true",
+    '"wecom_send_executed": True': "automation_timer_send_true",
+    "'wecom_send_executed': True": "automation_timer_send_true",
+    "real_enabled default": "automation_timer_real_enabled_default",
+    "default real_enabled": "automation_timer_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_campaign_read_wecom_client",
     "send_message": "cloud_campaign_read_send_message",
@@ -476,7 +534,7 @@ def _decorated_route_function_sources(path: Path) -> dict[str, list[str]]:
             if not isinstance(decorator, ast.Call):
                 continue
             attr = decorator.func
-            if not isinstance(attr, ast.Attribute) or attr.attr not in {"get", "api_route"}:
+            if not isinstance(attr, ast.Attribute) or attr.attr not in {"get", "post", "put", "patch", "delete", "options", "head", "api_route"}:
                 continue
             if not decorator.args:
                 continue
@@ -2647,6 +2705,159 @@ def check_cloud_orchestrator_run_due_next_safe_mode(root: Path = ROOT) -> list[V
     return violations
 
 
+def check_automation_conversion_timers_next_safe_mode(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/automation_conversion_timer_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("automation_timer_inventory_missing", str(inventory_path.relative_to(root)), "missing timer route inventory"))
+    else:
+        text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix",
+            "PlanReplyMonitorCaptureCommand",
+            "PlanReplyMonitorRunDueCommand",
+            "PreviewAutomationJobsRunDueCommand",
+            "PlanAutomationJobsRunDueCommand",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "adapter_mode=real_blocked",
+            "real_external_call_executed=false",
+            "automation_runtime_executed=false",
+            "wecom_send_executed=false",
+            "next_reply_monitor_capture_plan",
+            "next_reply_monitor_run_due_plan",
+            "next_jobs_run_due_preview",
+            "next_jobs_run_due_plan",
+            "/api/admin/automation-conversion/tasks/run-due",
+            "send-via-bazhuayu",
+        ):
+            if phrase not in text:
+                violations.append(Violation("automation_timer_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for route_path in AUTOMATION_CONVERSION_TIMER_ROUTES:
+            if route_path not in text:
+                violations.append(Violation("automation_timer_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    timer_path = root / "aicrm_next/automation_engine/timers.py"
+    if not timer_path.exists():
+        violations.append(Violation("automation_timer_module_missing", str(timer_path.relative_to(root)), "missing timers.py"))
+    else:
+        source = timer_path.read_text(encoding="utf-8")
+        for marker in (
+            "PlanReplyMonitorCaptureCommand",
+            "PlanReplyMonitorRunDueCommand",
+            "PreviewAutomationJobsRunDueCommand",
+            "PlanAutomationJobsRunDueCommand",
+            "InMemoryAuditLedger",
+            "InMemorySideEffectPlanRepository",
+            "InMemoryExternalCallAttemptRepository",
+            "CommandBus",
+            "next_reply_monitor_capture_plan",
+            "next_reply_monitor_run_due_plan",
+            "next_jobs_run_due_preview",
+            "next_jobs_run_due_plan",
+            "real_blocked",
+            "automation_runtime_executed",
+            "wecom_send_executed",
+        ):
+            if marker not in source:
+                violations.append(Violation("automation_timer_module_marker_missing", str(timer_path.relative_to(root)), marker))
+        for marker, code in {**AUTOMATION_CONVERSION_TIMER_DIRECT_EXTERNAL_MARKERS, **AUTOMATION_CONVERSION_TIMER_TRUE_DEFAULT_MARKERS}.items():
+            if marker in source:
+                violations.append(Violation(code, str(timer_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/automation_engine/api.py"
+    if not api_path.exists():
+        violations.append(Violation("automation_timer_api_missing", str(api_path.relative_to(root)), "missing automation api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in (
+            "api_plan_automation_conversion_reply_monitor_capture",
+            "api_plan_automation_conversion_reply_monitor_run_due",
+            "api_preview_automation_conversion_jobs_run_due",
+            "api_plan_automation_conversion_jobs_run_due",
+            "execute_automation_timer_command",
+        ):
+            if marker not in api_source:
+                violations.append(Violation("automation_timer_api_route_missing", str(api_path.relative_to(root)), marker))
+        sources = _decorated_route_function_sources(api_path)
+        for route_path in AUTOMATION_CONVERSION_TIMER_ROUTES:
+            joined = "\n".join(sources.get(route_path, []))
+            if not joined:
+                violations.append(Violation("automation_timer_api_route_missing", str(api_path.relative_to(root)), route_path))
+                continue
+            for marker, code in {**AUTOMATION_CONVERSION_TIMER_DIRECT_EXTERNAL_MARKERS, **AUTOMATION_CONVERSION_TIMER_TRUE_DEFAULT_MARKERS}.items():
+                if marker in joined:
+                    violations.append(Violation(code, str(api_path.relative_to(root)), f"{route_path}: {marker}"))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_methods = dict(_decorator_route_methods(compat_path))
+        for route_path in AUTOMATION_CONVERSION_TIMER_ROUTES:
+            if route_path in route_methods:
+                violations.append(
+                    Violation(
+                        "automation_timer_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={route_methods[route_path]}",
+                        "Automation conversion timer routes are deletion_locked to the Next safe-mode planner.",
+                    )
+                )
+        for route_path in AUTOMATION_CONVERSION_TIMER_OUT_OF_SCOPE_COMPAT_ROUTES:
+            if route_path not in route_methods:
+                violations.append(
+                    Violation(
+                        "automation_timer_out_of_scope_compat_missing",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "The timer closeout must not delete tasks run-due or send-via fallback routes.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id, route_path in AUTOMATION_CONVERSION_TIMER_REGISTRY_RECORDS.items():
+        record = registry_by_id.get(route_id)
+        if not record:
+            violations.append(Violation("automation_timer_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("path_pattern") != route_path or tuple(record.get("methods") or []) != ("POST", "OPTIONS"):
+            violations.append(Violation("automation_timer_registry_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("automation_timer_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_timer_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("automation_timer_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("external_side_effect_risk") != "high":
+            violations.append(Violation("automation_timer_registry_side_effect_risk", route_id, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_timer_registry_adapter_mode", route_id, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_timer_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for route_path in AUTOMATION_CONVERSION_TIMER_MANIFEST_ROUTES:
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, ("POST", "OPTIONS"))
+        if not record:
+            violations.append(Violation("automation_timer_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("automation_timer_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("automation_timer_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_timer_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("production_behavior") in {"legacy_forward", "scheduled_safe_mode", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("automation_timer_manifest_legacy_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_timer_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_timer_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    return violations
+
+
 def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     inventory_path = root / "docs/architecture/wecom_tag_write_route_inventory.md"
@@ -2924,6 +3135,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
         + check_cloud_orchestrator_run_due_next_safe_mode(ROOT)
+        + check_automation_conversion_timers_next_safe_mode(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:
