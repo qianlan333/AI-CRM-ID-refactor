@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from html import escape
 import json
 import logging
 from typing import Any
@@ -130,6 +131,43 @@ def _require_wechat_browser_api():
     if _is_wechat_browser():
         return None
     return jsonify({"ok": False, "error": "please_open_in_wechat"}), 403
+
+
+def _oauth_browser_error_page(
+    *,
+    title: str,
+    message: str,
+    return_url: str = "/",
+    button_label: str = "返回",
+    status_code: int = 400,
+):
+    safe_return_url = escape(str(return_url or "/"), quote=True)
+    safe_title = escape(str(title or "授权未完成"))
+    safe_message = escape(str(message or "授权未完成，请重新进入页面。"))
+    safe_button_label = escape(str(button_label or "返回"))
+    html = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }}
+    main {{ width: min(100%, 420px); padding: 28px 22px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); }}
+    h1 {{ margin: 0 0 12px; font-size: 22px; line-height: 1.35; }}
+    p {{ margin: 0; color: #6b7280; font-size: 15px; line-height: 1.7; }}
+    a {{ display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; min-height: 44px; padding: 0 20px; border-radius: 999px; background: #2563eb; color: #fff; font-weight: 700; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{safe_title}</h1>
+    <p>{safe_message}</p>
+    <a href="{safe_return_url}">{safe_button_label}</a>
+  </main>
+</body>
+</html>"""
+    return html, status_code, {"Content-Type": "text/html; charset=utf-8"}
 
 
 def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, Any] | None = None) -> str:

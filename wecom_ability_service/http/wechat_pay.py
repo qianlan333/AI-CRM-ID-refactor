@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from html import escape
 import logging
 from typing import Any
 from urllib.parse import urlencode
@@ -25,6 +24,7 @@ from .questionnaire_support import (
     _encode_oauth_state,
     _external_base_url,
     _mask_identity_value,
+    _oauth_browser_error_page,
     _questionnaire_request_meta,
     _is_wechat_browser,
     _require_wechat_browser_api,
@@ -58,31 +58,13 @@ def _payment_oauth_start_url(return_url: str) -> str:
 
 
 def _wechat_pay_oauth_error_page(message: str, *, return_url: str = "/", status_code: int = 400):
-    safe_return_url = escape(_safe_return_url(return_url), quote=True)
-    safe_message = escape(message)
-    html = f"""<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>微信支付授权未完成</title>
-  <style>
-    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f6f7fb; color: #1f2937; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }}
-    main {{ width: min(100%, 420px); padding: 28px 22px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); }}
-    h1 {{ margin: 0 0 12px; font-size: 22px; line-height: 1.35; }}
-    p {{ margin: 0; color: #6b7280; font-size: 15px; line-height: 1.7; }}
-    a {{ display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; min-height: 44px; padding: 0 20px; border-radius: 999px; background: #2563eb; color: #fff; font-weight: 700; text-decoration: none; }}
-  </style>
-</head>
-<body>
-  <main>
-    <h1>微信支付授权未完成</h1>
-    <p>{safe_message}</p>
-    <a href="{safe_return_url}">返回商品页</a>
-  </main>
-</body>
-</html>"""
-    return html, status_code, {"Content-Type": "text/html; charset=utf-8"}
+    return _oauth_browser_error_page(
+        title="微信支付授权未完成",
+        message=message,
+        return_url=_safe_return_url(return_url),
+        button_label="返回商品页",
+        status_code=status_code,
+    )
 
 
 def _wechat_pay_oauth_scope() -> str:
