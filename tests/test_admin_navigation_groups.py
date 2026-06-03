@@ -20,7 +20,9 @@ def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
     assert [item["label"] for item in operations] == TARGET_NAV_GROUPS[0][1]
     assert operations_by_key["group_ops"] == "群运营计划"
     assert operations_by_key["user_ops_funnel"] == "漏斗 / 数据看板"
+    assert "owner_migration" not in operations_by_key
     assert {item["key"]: item["label"] for item in groups[3]["items"]}["jobs"] == "同步任务配置 / 同步任务"
+    assert [item["key"] for item in groups[3]["items"]] == ["jobs", "owner_migration", "config", "api_docs"]
     trade_group = groups[1]
     assert trade_group["active"] is True
     assert [item["key"] for item in trade_group["items"]] == ["wechat_pay_transactions", "wechat_pay_products"]
@@ -62,6 +64,7 @@ def test_automation_admin_navigation_includes_material_and_product_entries(monke
         "cloud_orchestrator",
         "customers",
         "user_ops_funnel",
+        "radar_links",
     ]
     material_group = groups[1]
     assert material_group["active"] is True
@@ -85,6 +88,7 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_console_customers": "/admin/customers",
         "admin_hxc_dashboard_workspace": "/admin/user-ops",
         "admin_console_questionnaires": "/admin/questionnaires",
+        "admin_radar_links": "/admin/radar-links",
         "admin_wecom_tags_page": "/admin/wecom-tags",
         "admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
         "admin_wechat_pay_products_page": "/admin/wechat-pay/products",
@@ -92,6 +96,7 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_miniprogram_library_workspace": "/admin/miniprogram-library",
         "admin_attachment_library_workspace": "/admin/attachment-library",
         "admin_console_jobs": "/admin/jobs",
+        "admin_owner_migration_page": "/admin/owner-migration",
         "admin_config_home": "/admin/config",
         "admin_console_api_docs": "/admin/api-docs",
     }.items():
@@ -124,8 +129,17 @@ def test_admin_base_template_renders_grouped_navigation():
     assert "AI 助手" in html
     assert "客户激活 / 客户列表" in html
     assert "漏斗 / 数据看板" in html
+    assert "内容雷达" in html
     assert "企微标签管理" in html
     assert "同步任务配置 / 同步任务" in html
+    assert "负责人迁移" in html
+    operations_section = html.split('<div class="admin-nav-section-title">运营</div>', 1)[1].split(
+        '<div class="admin-nav-section-title">交易</div>',
+        1,
+    )[0]
+    config_section = html.split('<div class="admin-nav-section-title">配置及后台</div>', 1)[1]
+    assert "负责人迁移" not in operations_section
+    assert "负责人迁移" in config_section
     assert "图片素材库" in html
     assert "小程序素材库" in html
     assert "附件素材库" in html
@@ -147,7 +161,9 @@ def test_legacy_admin_navigation_resolves_retired_next_owned_links(monkeypatch):
     assert links["api.admin_group_ops_ui"] == "/admin/automation-conversion/group-ops/ui"
     assert links["api.admin_console_customers"] == "/admin/customers"
     assert links["api.admin_console_questionnaires"] == "/admin/questionnaires"
+    assert links["api.admin_radar_links"] == "/admin/radar-links"
     assert links["api.admin_console_jobs"] == "/admin/jobs"
+    assert links["api.admin_owner_migration_page"] == "/admin/owner-migration"
 
 
 def test_legacy_admin_navigation_user_ops_keeps_target_operation_group(monkeypatch):
@@ -157,3 +173,25 @@ def test_legacy_admin_navigation_user_ops_keeps_target_operation_group(monkeypat
 
     assert [item["label"] for item in groups[0]["items"]] == TARGET_NAV_GROUPS[0][1]
     assert {item["key"]: item["active"] for item in groups[0]["items"]}["user_ops_funnel"] is True
+
+
+def test_legacy_admin_navigation_user_ops_keeps_owner_migration_visible_in_config(monkeypatch):
+    monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["super_admin"])
+
+    groups = admin_dashboard_service.list_admin_navigation("user_ops_funnel")
+
+    operations_group = next(group for group in groups if group["title"] == "运营")
+    config_group = next(group for group in groups if group["title"] == "配置及后台")
+    assert {item["key"]: item["active"] for item in operations_group["items"]}["user_ops_funnel"] is True
+    assert [item["key"] for item in config_group["items"]] == ["jobs", "owner_migration", "config", "api_docs"]
+    assert {item["key"]: item["active"] for item in config_group["items"]}["owner_migration"] is False
+
+
+def test_legacy_admin_navigation_owner_migration_marks_config_group_active(monkeypatch):
+    monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["super_admin"])
+
+    groups = admin_dashboard_service.list_admin_navigation("owner_migration")
+
+    config_group = next(group for group in groups if group["title"] == "配置及后台")
+    assert config_group["active"] is True
+    assert {item["key"]: item["active"] for item in config_group["items"]}["owner_migration"] is True
