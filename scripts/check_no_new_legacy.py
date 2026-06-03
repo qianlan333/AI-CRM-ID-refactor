@@ -2158,7 +2158,7 @@ def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> l
             "legacy_fallback_allowed=false",
             "deletion_locked",
             "legacy fallback removed",
-            "Next CommandBus validating",
+            "write controls locked on Next CommandBus",
             "No real WeCom send",
             "No automation runtime",
         ):
@@ -2278,8 +2278,10 @@ def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> l
     else:
         if write_record.get("runtime_owner") != "next_command":
             violations.append(Violation("cloud_campaign_write_registry_owner", "cloud_orchestrator_campaigns_write_legacy_family", f"runtime_owner={write_record.get('runtime_owner')}"))
-        if write_record.get("delete_status") == "deletion_locked" or write_record.get("replacement_status") == "locked":
-            violations.append(Violation("cloud_campaign_write_registry_mislocked", "cloud_orchestrator_campaigns_write_legacy_family", f"delete_status={write_record.get('delete_status')} replacement_status={write_record.get('replacement_status')}"))
+        if write_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_write_registry_legacy_allowed", "cloud_orchestrator_campaigns_write_legacy_family", f"legacy_fallback_allowed={write_record.get('legacy_fallback_allowed')}"))
+        if write_record.get("delete_status") != "deletion_locked" or write_record.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_write_registry_lifecycle", "cloud_orchestrator_campaigns_write_legacy_family", f"delete_status={write_record.get('delete_status')} replacement_status={write_record.get('replacement_status')}"))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     read_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, ("GET",))
@@ -2320,8 +2322,10 @@ def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> l
     else:
         if write_manifest.get("current_runtime_owner") != "next_command":
             violations.append(Violation("cloud_campaign_write_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"current_runtime_owner={write_manifest.get('current_runtime_owner')}"))
-        if write_manifest.get("delete_status") == "deletion_locked" or write_manifest.get("replacement_status") == "locked":
-            violations.append(Violation("cloud_campaign_write_manifest_mislocked", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"delete_status={write_manifest.get('delete_status')} replacement_status={write_manifest.get('replacement_status')}"))
+        if write_manifest.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_write_manifest_legacy_allowed", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"legacy_fallback_allowed={write_manifest.get('legacy_fallback_allowed')}"))
+        if write_manifest.get("delete_status") != "deletion_locked" or write_manifest.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_write_manifest_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE, f"delete_status={write_manifest.get('delete_status')} replacement_status={write_manifest.get('replacement_status')}"))
 
     return violations
 
@@ -2346,6 +2350,10 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
             "UpdateCloudCampaignStepCommand",
             "DeleteCloudCampaignStepCommand",
             "SideEffectPlan",
+            "Deletion Closeout Status Matrix",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "legacy fallback removed",
             "adapter_mode=real_blocked",
             "run-due",
             "out-of-scope",
@@ -2399,6 +2407,22 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
             if marker in source:
                 violations.append(Violation(code, str(write_path.relative_to(root)), marker))
 
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, methods in _decorator_route_methods(compat_path):
+            if route_path in {
+                "/api/admin/cloud-orchestrator/campaigns",
+                "/api/admin/cloud-orchestrator/campaigns/{path:path}",
+            } and set(methods) & set(CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_METHODS):
+                violations.append(
+                    Violation(
+                        "cloud_campaign_write_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={methods}",
+                        "Campaign write controls are deletion_locked on Next CommandBus; keep only run-due/preview production_compat timer routes.",
+                    )
+                )
+
     api_path = root / "aicrm_next/cloud_orchestrator/api.py"
     if api_path.exists():
         api_source = api_path.read_text(encoding="utf-8")
@@ -2425,9 +2449,11 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
     else:
         if write_record.get("runtime_owner") != "next_command":
             violations.append(Violation("cloud_campaign_write_registry_owner", "cloud_orchestrator_campaigns_write_legacy_family", f"runtime_owner={write_record.get('runtime_owner')}"))
-        if write_record.get("legacy_fallback_allowed") is not True:
+        if write_record.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("cloud_campaign_write_registry_legacy_allowed", "cloud_orchestrator_campaigns_write_legacy_family", f"legacy_fallback_allowed={write_record.get('legacy_fallback_allowed')}"))
-        if write_record.get("delete_status") != "next_primary_with_legacy_rollback" or write_record.get("replacement_status") != "validating":
+        if write_record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("cloud_campaign_write_registry_legacy_source", "cloud_orchestrator_campaigns_write_legacy_family", f"legacy_source={write_record.get('legacy_source')}"))
+        if write_record.get("delete_status") != "deletion_locked" or write_record.get("replacement_status") != "locked":
             violations.append(Violation("cloud_campaign_write_registry_lifecycle", "cloud_orchestrator_campaigns_write_legacy_family", f"delete_status={write_record.get('delete_status')} replacement_status={write_record.get('replacement_status')}"))
         if write_record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("cloud_campaign_write_registry_adapter_mode", "cloud_orchestrator_campaigns_write_legacy_family", f"adapter_mode={write_record.get('adapter_mode')}"))
@@ -2443,9 +2469,11 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
             violations.append(Violation("cloud_campaign_write_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"current_runtime_owner={write_manifest.get('current_runtime_owner')}"))
         if write_manifest.get("production_behavior") != "next_command":
             violations.append(Violation("cloud_campaign_write_manifest_behavior", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"production_behavior={write_manifest.get('production_behavior')}"))
-        if write_manifest.get("legacy_fallback_allowed") is not True:
+        if write_manifest.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("cloud_campaign_write_manifest_legacy_allowed", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"legacy_fallback_allowed={write_manifest.get('legacy_fallback_allowed')}"))
-        if write_manifest.get("delete_status") != "next_primary_with_legacy_rollback" or write_manifest.get("replacement_status") != "validating":
+        if write_manifest.get("delete_ready") is not True:
+            violations.append(Violation("cloud_campaign_write_manifest_delete_ready", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"delete_ready={write_manifest.get('delete_ready')}"))
+        if write_manifest.get("delete_status") != "deletion_locked" or write_manifest.get("replacement_status") != "locked":
             violations.append(Violation("cloud_campaign_write_manifest_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"delete_status={write_manifest.get('delete_status')} replacement_status={write_manifest.get('replacement_status')}"))
         if write_manifest.get("adapter_mode") != "real_blocked":
             violations.append(Violation("cloud_campaign_write_manifest_adapter_mode", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"adapter_mode={write_manifest.get('adapter_mode')}"))

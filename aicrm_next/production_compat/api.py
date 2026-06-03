@@ -10,7 +10,6 @@ router = APIRouter()
 wildcard_router = APIRouter()
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-_CAMPAIGN_WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
 @router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
@@ -36,12 +35,6 @@ async def automation_member_detail_route(request: Request) -> Response:
 @router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due/preview", methods=["POST", "OPTIONS"])
 async def legacy_production_compat_timer_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
-@router.api_route("/api/admin/cloud-orchestrator/campaigns", methods=_CAMPAIGN_WRITE_METHODS)
-@router.api_route("/api/admin/cloud-orchestrator/campaigns/{path:path}", methods=_CAMPAIGN_WRITE_METHODS)
-async def legacy_cloud_orchestrator_campaign_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 

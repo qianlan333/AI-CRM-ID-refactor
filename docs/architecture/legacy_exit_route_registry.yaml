@@ -164,15 +164,15 @@ routes:
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
     runtime_owner: next_command
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_cloud_orchestrator_campaign_write_commands.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation use Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback retained for this validation group; start/batch-start adapter_mode real_blocked with no real WeCom send and no automation runtime. run-due remains out of scope and is not deletion_locked.
+    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send and no automation runtime. run-due remains out of scope and is not deletion_locked.
   - route_id: cloud_orchestrator_admin_family
     path_pattern: /admin/cloud-orchestrator*
     methods: [GET]

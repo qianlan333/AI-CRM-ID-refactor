@@ -52,4 +52,8 @@ def test_campaign_write_inventory_covers_controls_steps_and_runtime_boundaries()
     assert "real_external_call_executed=false" in text
     assert "campaign_execute_executed=false" in text
     assert "wecom_send_executed=false" in text
+    assert "Deletion Closeout Status Matrix" in text
+    assert "legacy_fallback_allowed=false" in text
+    assert "deletion_locked" in text
+    assert "legacy fallback removed" in text
     assert "run-due remains production_compat/out-of-scope" in text

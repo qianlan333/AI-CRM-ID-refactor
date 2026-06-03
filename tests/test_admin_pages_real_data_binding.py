@@ -924,7 +924,7 @@ def test_admin_wecom_tag_read_routes_stay_next_native(monkeypatch):
         assert payload["real_external_call_executed"] is False
 
 
-def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch):
+def test_admin_cloud_orchestrator_campaign_write_routes_do_not_forward_to_legacy(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -947,28 +947,31 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
     monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
-    cases = [
+    next_cases = [
         ("GET", "/api/admin/cloud-orchestrator/campaigns?review_status=pending_review"),
-        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_probe"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/approve"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/start"),
+        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/approve"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/start"),
         ("POST", "/api/admin/cloud-orchestrator/campaigns/batch-start"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/pause"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/reject"),
-        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_probe"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/run-due"),
-        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_probe/members"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps"),
-        ("PATCH", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
-        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
-        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/pause"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/reject"),
+        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture"),
+        ("GET", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/members"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/steps"),
+        ("PATCH", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/steps/1"),
+        ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/steps/1"),
+        ("DELETE", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/steps/1"),
     ]
 
-    for method, path in cases:
+    for method, path in next_cases:
         response = client.request(method, path, json={"content_text": "updated"})
-        assert response.status_code == 200, (method, path, response.text)
-        assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-        assert response.json()["forwarded"] == f"{method}:{path.split('?', 1)[0]}:{path.split('?', 1)[1] if '?' in path else ''}"
+        assert response.status_code != 500, (method, path, response.text)
+        assert "X-AICRM-Compatibility-Facade" not in response.headers
+
+    run_due = client.post("/api/admin/cloud-orchestrator/campaigns/run-due", json={})
+    assert run_due.status_code == 200
+    assert run_due.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert run_due.json()["forwarded"] == "POST:/api/admin/cloud-orchestrator/campaigns/run-due:"
 
 
 def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypatch):

@@ -14,23 +14,24 @@ def _records(path: Path, key: str = "routes") -> list[dict]:
     return list((yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get(key) or [])
 
 
-def test_campaign_write_registry_is_next_commandbus_validating_with_rollback():
+def test_campaign_write_registry_is_next_commandbus_locked_without_rollback():
     record = next(item for item in _records(REGISTRY) if item.get("route_id") == "cloud_orchestrator_campaigns_write_legacy_family")
 
     assert record["path_pattern"] == "/api/admin/cloud-orchestrator/campaigns*"
     assert record["methods"] == ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     assert record["runtime_owner"] == "next_command"
-    assert record["legacy_fallback_allowed"] is True
-    assert record["legacy_source"] == "production_compat"
+    assert record["legacy_fallback_allowed"] is False
+    assert record["legacy_source"] == ""
     assert record["external_side_effect_risk"] == "high"
     assert record["adapter_mode"] == "real_blocked"
-    assert record["delete_status"] == "next_primary_with_legacy_rollback"
-    assert record["replacement_status"] == "validating"
+    assert record["delete_status"] == "deletion_locked"
+    assert record["replacement_status"] == "locked"
     assert "Next CommandBus" in record["notes"]
+    assert "production_compat rollback removed" in record["notes"]
     assert "run-due remains out of scope" in record["notes"]
 
 
-def test_campaign_write_manifest_is_next_command_validating_with_rollback():
+def test_campaign_write_manifest_is_next_command_locked_without_rollback():
     record = next(
         item
         for item in _records(MANIFEST)
@@ -40,11 +41,13 @@ def test_campaign_write_manifest_is_next_command_validating_with_rollback():
 
     assert record["current_runtime_owner"] == "next_command"
     assert record["production_behavior"] == "next_command"
-    assert record["legacy_fallback_allowed"] is True
+    assert record["legacy_fallback_allowed"] is False
     assert record["external_side_effect_risk"] == "real_blocked"
     assert record["adapter_mode"] == "real_blocked"
-    assert record["delete_status"] == "next_primary_with_legacy_rollback"
-    assert record["replacement_status"] == "validating"
+    assert record["delete_ready"] is True
+    assert record["delete_status"] == "deletion_locked"
+    assert record["replacement_status"] == "locked"
+    assert "production_compat rollback removed" in record["notes"]
     assert "no real WeCom send" in record["notes"]
     assert "no campaign execute" in record["notes"]
 

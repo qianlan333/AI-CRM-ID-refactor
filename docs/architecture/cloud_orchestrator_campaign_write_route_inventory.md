@@ -1,6 +1,6 @@
 # Cloud Orchestrator Campaign Write Controls Route Inventory
 
-Legacy Exit group 19 moves Cloud Orchestrator campaign write controls to Next CommandBus while retaining legacy rollback for validation. This group does not run run-due, does not execute campaigns, does not send WeCom messages, and does not run the automation runtime.
+Legacy Exit group 19 moves Cloud Orchestrator campaign write controls to Next CommandBus and closes the production_compat rollback after validation. This group does not run run-due, does not execute campaigns, does not send WeCom messages, and does not run the automation runtime.
 
 ## Frontend API CommandBus Contract Matrix
 
@@ -16,8 +16,18 @@ Legacy Exit group 19 moves Cloud Orchestrator campaign write controls to Next Co
 | `/admin/cloud-orchestrator/campaigns` | inline JS step add | add step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps` | POST | `api_add_cloud_campaign_step` | `AddCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
 | `/admin/cloud-orchestrator/campaigns` | inline JS step editor | update step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | POST/PATCH | `api_update_cloud_campaign_step` | `UpdateCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
 | `/admin/cloud-orchestrator/campaigns` | inline JS step delete | delete step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | DELETE | `api_delete_cloud_campaign_step` | `DeleteCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
-| timer / job runner | no page caller in this group | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `aicrm_next.production_compat.api.api_cloud_campaigns_run_due` | out-of-scope | runtime/send risk remains blocked by timer safe-mode | out-of-scope; no UI caller | not executed |
-| timer / preview | no page caller in this group | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `aicrm_next.production_compat.api.api_cloud_campaigns_run_due_preview` | out-of-scope | preview/noop path only | out-of-scope; no UI caller | not executed |
+| timer / job runner | no page caller in this group | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | out-of-scope | runtime/send risk remains blocked by timer safe-mode | out-of-scope; no UI caller | not executed |
+| timer / preview | no page caller in this group | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | out-of-scope | preview/noop path only | out-of-scope; no UI caller | not executed |
+
+## Deletion Closeout Status Matrix
+
+| Surface | Routes | Owner after closeout | production_compat rollback | Registry / Manifest | External side effects |
+| --- | --- | --- | --- | --- | --- |
+| approve/reject/start/pause/delete | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/approve`, `/reject`, `/start`, `/pause`, DELETE `/api/admin/cloud-orchestrator/campaigns/{campaign_code}` | `next_command` | legacy fallback removed | `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, `replacement_status=locked` | no real WeCom send; no automation runtime; start only creates `SideEffectPlan` |
+| batch-start | `/api/admin/cloud-orchestrator/campaigns/batch-start` | `next_command` | legacy fallback removed | `legacy_fallback_allowed=false`, `deletion_locked`, `locked` | `adapter_mode=real_blocked`, `campaign_execute_executed=false`, `wecom_send_executed=false` |
+| step mutation | POST `/steps`, PATCH/POST/DELETE `/steps/{step_index}` | `next_command` | legacy fallback removed | `legacy_fallback_allowed=false`, `deletion_locked`, `locked` | local projection/AuditLedger only; no HTTP client |
+| read/workspace | GET `/admin/cloud-orchestrator/campaigns`, GET `/api/admin/cloud-orchestrator/campaigns*` | locked Next read/workspace | already removed | `deletion_locked`, `locked` | none |
+| run-due / preview | `/api/admin/cloud-orchestrator/campaigns/run-due`, `/run-due/preview` | production_compat safe-mode/out-of-scope | retained only for timer scope | not deletion_locked | not executed in this group |
 
 ## Command Contract
 
@@ -72,4 +82,4 @@ Approve, reject, pause, delete, and step mutation update the local/fixture comma
 
 ## Registry Lifecycle
 
-Campaign write controls are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=true`, `delete_status=next_primary_with_legacy_rollback`, and `replacement_status=validating`. Campaign read remains `deletion_locked`. run-due remains production_compat/out-of-scope and is not deletion_locked.
+Campaign write controls are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. The legacy fallback removed state is intentional after validation. Campaign read remains `deletion_locked`. run-due remains production_compat/out-of-scope and is not deletion_locked.

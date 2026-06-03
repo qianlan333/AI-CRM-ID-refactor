@@ -46,17 +46,18 @@ def test_campaign_page_registry_is_locked_over_next_read_apis():
     assert "write controls call Next CommandBus" in record["notes"]
 
 
-def test_campaign_write_registry_stays_out_of_scope_active():
+def test_campaign_write_registry_is_locked_on_next_commandbus():
     record = next(item for item in _records(REGISTRY) if item.get("route_id") == "cloud_orchestrator_campaigns_write_legacy_family")
 
     assert record["methods"] == ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     assert record["runtime_owner"] == "next_command"
-    assert record["legacy_fallback_allowed"] is True
-    assert record["legacy_source"] == "production_compat"
-    assert record["delete_status"] == "next_primary_with_legacy_rollback"
-    assert record["replacement_status"] == "validating"
+    assert record["legacy_fallback_allowed"] is False
+    assert record["legacy_source"] == ""
+    assert record["delete_status"] == "deletion_locked"
+    assert record["replacement_status"] == "locked"
     assert record["adapter_mode"] == "real_blocked"
     assert "Next CommandBus" in record["notes"]
+    assert "production_compat rollback removed" in record["notes"]
     assert "run-due remains out of scope" in record["notes"]
 
 
@@ -76,9 +77,10 @@ def test_campaign_manifest_read_write_and_run_due_states():
 
     assert write["current_runtime_owner"] == "next_command"
     assert write["production_behavior"] == "next_command"
-    assert write["legacy_fallback_allowed"] is True
-    assert write["delete_status"] == "next_primary_with_legacy_rollback"
-    assert write["replacement_status"] == "validating"
+    assert write["legacy_fallback_allowed"] is False
+    assert write["delete_ready"] is True
+    assert write["delete_status"] == "deletion_locked"
+    assert write["replacement_status"] == "locked"
     assert write["adapter_mode"] == "real_blocked"
 
     assert run_due["current_runtime_owner"] == "production_compat"

@@ -156,6 +156,13 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
     delete_status = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
     replacement_status = "locked" if locked else "validating"
     delete_ready = "true" if locked else "false"
+    write_owner = "next_command" if locked else "production_compat"
+    write_legacy_allowed = "false" if locked else "true"
+    write_legacy_source = '""' if locked else "production_compat"
+    write_delete_ready = "true" if locked else "false"
+    write_delete_status = "deletion_locked" if locked else "active"
+    write_replacement_status = "locked" if locked else "not_started"
+    write_behavior = "next_command" if locked else "legacy_forward"
 
     registry.write_text(
         "routes:\n"
@@ -182,13 +189,13 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
         "  - route_id: cloud_orchestrator_campaigns_write_legacy_family\n"
         "    path_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
         "    methods: [POST, PUT, PATCH, DELETE, OPTIONS]\n"
-        "    runtime_owner: production_compat\n"
-        "    legacy_fallback_allowed: true\n"
-        "    legacy_source: production_compat\n"
+        f"    runtime_owner: {write_owner}\n"
+        f"    legacy_fallback_allowed: {write_legacy_allowed}\n"
+        f"    legacy_source: {write_legacy_source}\n"
         "    external_side_effect_risk: high\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: active\n"
-        "    replacement_status: not_started\n",
+        f"    delete_status: {write_delete_status}\n"
+        f"    replacement_status: {write_replacement_status}\n",
         encoding="utf-8",
     )
     manifest.write_text(
@@ -215,14 +222,14 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
         f"    replacement_status: {replacement_status}\n"
         "  - route_pattern: /api/admin/cloud-orchestrator/campaigns*\n"
         "    methods: [POST, PUT, PATCH, DELETE, OPTIONS]\n"
-        "    current_runtime_owner: production_compat\n"
-        "    production_behavior: legacy_forward\n"
-        "    legacy_fallback_allowed: true\n"
+        f"    current_runtime_owner: {write_owner}\n"
+        f"    production_behavior: {write_behavior}\n"
+        f"    legacy_fallback_allowed: {write_legacy_allowed}\n"
         "    external_side_effect_risk: real_blocked\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_ready: false\n"
-        "    delete_status: active\n"
-        "    replacement_status: not_started\n",
+        f"    delete_ready: {write_delete_ready}\n"
+        f"    delete_status: {write_delete_status}\n"
+        f"    replacement_status: {write_replacement_status}\n",
         encoding="utf-8",
     )
     inventory.write_text(
@@ -231,7 +238,7 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
         "legacy_fallback_allowed=false\n"
         "deletion_locked\n"
         "legacy fallback removed\n"
-        "write controls disabled/out-of-scope\n"
+        "write controls locked on Next CommandBus\n"
         "No real WeCom send\n"
         "No automation runtime\n"
         "/api/admin/cloud-orchestrator/campaigns\n"
