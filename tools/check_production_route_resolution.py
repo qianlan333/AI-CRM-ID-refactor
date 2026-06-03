@@ -53,6 +53,7 @@ RESOLUTION_SAMPLES = [
     ("GET", "/admin/wechat-pay/products"),
     ("GET", "/admin/wechat-pay/products/new"),
     ("GET", "/api/admin/wechat-pay/products"),
+    ("POST", "/api/admin/wechat-pay/products"),
     ("GET", "/api/admin/wechat-pay/products/1"),
     ("GET", "/api/admin/wechat-pay/products/1/share"),
     ("GET", "/p/prd_20260518095708_9f77db"),
@@ -173,7 +174,7 @@ def first_matching_route(routes: list[dict[str, Any]], *, method: str, path: str
     scope = {"type": "http", "method": method.upper(), "path": path, "root_path": "", "headers": []}
     for route in routes:
         match, _ = route["_route"].matches(scope)
-        if match != Match.NONE:
+        if match == Match.FULL:
             return route
     return None
 

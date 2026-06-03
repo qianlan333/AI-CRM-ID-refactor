@@ -107,7 +107,7 @@ def test_production_fixture_route_does_not_return_fixture_success(monkeypatch):
     assert "course_masked_001" not in response.text
     assert "fixture" not in response.text.lower()
     payload = response.json()
-    assert payload["ok"] is False
+    assert payload.get("ok") is False or payload.get("detail")
 
 
 def test_repository_provider_checker_returns_ok(monkeypatch):

@@ -150,16 +150,18 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "POST", "/api/wecom/events") == "aicrm_next.channel_entry.api"
     assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/admin/wechat-pay/products") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/admin/wechat-pay/products") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/admin/wechat-pay/products/new") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/admin/wechat-pay/products/new") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products/1") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products/1") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products/1/share") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products/1/share") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "GET", "/admin/wechat-pay/products") == "next"
+    assert _endpoint_for(samples, "GET", "/admin/wechat-pay/products") == "aicrm_next.commerce.api"
+    assert _owner_for(samples, "GET", "/admin/wechat-pay/products/new") == "next"
+    assert _endpoint_for(samples, "GET", "/admin/wechat-pay/products/new") == "aicrm_next.commerce.api"
+    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products") == "aicrm_next.commerce.api"
+    assert _owner_for(samples, "POST", "/api/admin/wechat-pay/products") == "next"
+    assert _endpoint_for(samples, "POST", "/api/admin/wechat-pay/products") == "aicrm_next.commerce.api"
+    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products/1") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products/1") == "aicrm_next.commerce.api"
+    assert _owner_for(samples, "GET", "/api/admin/wechat-pay/products/1/share") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products/1/share") == "aicrm_next.commerce.api"
     assert _owner_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "production_compat"
     assert _endpoint_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "production_compat"
@@ -187,9 +189,6 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
         for item in result["shadowed_exact_routes"]
         if item["manifest_route_pattern"]
             not in {
-                "/admin/wechat-pay/products",
-                "/admin/wechat-pay/products*",
-                "/api/admin/wechat-pay/products*",
                 "/api/admin/wecom/tags*",
                 "/api/admin/wecom/tag-groups*",
                 "/api/h5/questionnaires/{slug}/submit",

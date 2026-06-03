@@ -1,0 +1,269 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .product-admin {
+    display: grid;
+    gap: 18px;
+  }
+
+  .product-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .product-meta {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .product-table {
+    min-width: 880px;
+  }
+
+  .product-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .product-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .product-pill.is-active {
+    background: #e7f8ee;
+    color: #0f7a43;
+  }
+
+  .product-form {
+    display: grid;
+    gap: 16px;
+    max-width: 760px;
+  }
+
+  .product-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
+
+  .product-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .product-field label {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .product-field input,
+  .product-field select,
+  .product-field textarea {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fffdf8;
+    color: var(--text);
+    font: inherit;
+  }
+
+  .product-field textarea {
+    min-height: 108px;
+    resize: vertical;
+  }
+
+  .product-field--wide {
+    grid-column: 1 / -1;
+  }
+
+  .product-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .product-toast {
+    min-height: 22px;
+    color: var(--muted);
+    font-weight: 800;
+  }
+
+  .product-error {
+    color: #b91c1c;
+    font-weight: 800;
+  }
+
+  @media (max-width: 760px) {
+    .product-toolbar,
+    .product-field-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .product-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="product-admin" data-product-page-mode="{{ product_page_mode }}">
+  {% if page_error %}
+  <section class="admin-card">
+    <div class="product-error">{{ page_error }}</div>
+  </section>
+  {% endif %}
+
+  {% if product_page_mode == "list" %}
+  <section class="admin-card">
+    <div class="product-toolbar">
+      <div class="product-meta">共 {{ product_total }} 个商品</div>
+      <a class="admin-button admin-button--primary" href="/admin/wechat-pay/products/new">创建商品</a>
+    </div>
+    <div class="admin-table-wrap" style="margin-top:14px;">
+      <table class="admin-table product-table">
+        <thead>
+          <tr>
+            <th>商品编码</th>
+            <th>商品名称</th>
+            <th>价格</th>
+            <th>状态</th>
+            <th>更新时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="productRows">
+          {% for product in initial_products %}
+          <tr>
+            <td class="product-mono">{{ product.product_code }}</td>
+            <td>{{ product.title }}</td>
+            <td>{{ "%.2f"|format((product.price_cents or 0) / 100) }} {{ product.currency or "CNY" }}</td>
+            <td><span class="product-pill {% if product.enabled %}is-active{% endif %}">{{ "已上架" if product.enabled else "已下架" }}</span></td>
+            <td>{{ product.updated_at }}</td>
+            <td><a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products/{{ product.id }}/edit">编辑</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% else %}
+  <section class="admin-card">
+    <form class="product-form" id="productForm">
+      <div class="product-field-grid">
+        <div class="product-field">
+          <label for="productCode">商品编码</label>
+          <input id="productCode" name="productCode" class="product-mono" required minlength="3" maxlength="80" autocomplete="off" {% if product_page_mode == "edit" %}readonly{% endif %}>
+        </div>
+        <div class="product-field">
+          <label for="productTitle">商品名称</label>
+          <input id="productTitle" name="title" required autocomplete="off">
+        </div>
+        <div class="product-field">
+          <label for="productPrice">价格</label>
+          <input id="productPrice" name="price" type="number" min="0" step="0.01" required>
+        </div>
+        <div class="product-field">
+          <label for="productEnabled">状态</label>
+          <select id="productEnabled" name="enabled">
+            <option value="true">已上架</option>
+            <option value="false">已下架</option>
+          </select>
+        </div>
+        <div class="product-field">
+          <label for="buyButtonText">按钮文案</label>
+          <input id="buyButtonText" name="buyButtonText" autocomplete="off">
+        </div>
+        <div class="product-field product-field--wide">
+          <label for="productDescription">描述</label>
+          <textarea id="productDescription" name="description"></textarea>
+        </div>
+      </div>
+      <div class="product-actions">
+        <button class="admin-button admin-button--primary" type="submit">保存</button>
+        <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products">返回列表</a>
+        <span class="product-toast" id="productToast"></span>
+      </div>
+    </form>
+  </section>
+  {% endif %}
+</div>
+
+<script>
+(() => {
+  const mode = {{ product_page_mode|tojson }};
+  const initialProduct = {{ initial_product_json|safe }};
+  const form = document.getElementById("productForm");
+  const toast = document.getElementById("productToast");
+
+  function moneyToCents(value) {
+    const amount = Number.parseFloat(String(value || "0"));
+    if (!Number.isFinite(amount) || amount < 0) return 0;
+    return Math.round(amount * 100);
+  }
+
+  function fillForm(product) {
+    if (!form) return;
+    document.getElementById("productCode").value = product.product_code || "";
+    document.getElementById("productTitle").value = product.title || "";
+    document.getElementById("productPrice").value = ((product.price_cents || 0) / 100).toFixed(2);
+    document.getElementById("productEnabled").value = product.enabled === false ? "false" : "true";
+    document.getElementById("buyButtonText").value = product.buy_button_text || "立即购买";
+    document.getElementById("productDescription").value = product.description || "";
+  }
+
+  fillForm(initialProduct);
+
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    toast.textContent = "保存中";
+    const productId = initialProduct.id || "";
+    const body = {
+      product: { code: document.getElementById("productCode").value.trim() },
+      title: document.getElementById("productTitle").value.trim(),
+      description: document.getElementById("productDescription").value.trim(),
+      price_cents: moneyToCents(document.getElementById("productPrice").value),
+      enabled: document.getElementById("productEnabled").value === "true",
+      buy_button_text: document.getElementById("buyButtonText").value.trim() || "立即购买"
+    };
+    const response = await fetch(
+      mode === "edit" ? `/api/admin/wechat-pay/products/${encodeURIComponent(productId)}` : "/api/admin/wechat-pay/products",
+      {
+        method: mode === "edit" ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      toast.textContent = payload.detail || payload.error || "保存失败";
+      return;
+    }
+    toast.textContent = "已保存";
+    if (mode !== "edit") {
+      window.location.href = "/admin/wechat-pay/products";
+    }
+  });
+})();
+</script>
+{% endblock %}

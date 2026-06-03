@@ -333,25 +333,25 @@ routes:
   - route_pattern: /admin/wechat-pay/products
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Production product management uses the retained legacy Flask admin UI for the list entry point.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management list page is served by aicrm_next.commerce and reads the native commerce repository.
   - route_pattern: /admin/wechat-pay/products*
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
+    external_side_effect_risk: none
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Production product management uses the retained legacy Flask admin UI and product_service for create/edit/list/share while payment/provider side effects remain blocked separately.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management create/edit pages are served by aicrm_next.commerce; public product and payment pages keep their separate legacy_forward ownership.
   - route_pattern: /admin/wechat-pay/transactions
     methods: [GET]
     capability_owner: aicrm_next.commerce
@@ -1318,14 +1318,14 @@ routes:
   - route_pattern: /api/admin/wechat-pay/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Product management APIs forward to legacy Flask product_service so the admin page can create, edit, copy, publish, delete, and generate QR shares.
+    checker: tools/check_production_route_resolution.py
+    notes: Product management list/create/update/delete/enable/disable/share APIs are owned by aicrm_next.commerce and write wechat_pay_products through the native Postgres repository; payment provider side effects remain adapter-guarded.
   - route_pattern: /api/admin/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

@@ -82,6 +82,41 @@ def test_product_create_accepts_product_code_aliases_in_next_native_contract() -
     assert "product_code must be 3-80 characters" in invalid.json()["detail"]
 
 
+def test_product_admin_pages_are_next_native_and_submit_product_code_alias() -> None:
+    client = make_client()
+
+    list_page = client.get("/admin/wechat-pay/products")
+    assert list_page.status_code == 200
+    assert "course_masked_001" in list_page.text
+    assert "/admin/wechat-pay/products/new" in list_page.text
+
+    new_page = client.get("/admin/wechat-pay/products/new")
+    assert new_page.status_code == 200
+    assert 'id="productCode"' in new_page.text
+    assert "product: { code:" in new_page.text
+    assert 'mode === "edit" ? "PUT" : "POST"' in new_page.text
+
+    created = client.post(
+        "/api/admin/wechat-pay/products",
+        json={"product": {"code": "admin_page_code_2026"}, "title": "后台创建商品", "price_cents": 12800},
+    ).json()["product"]
+    edit_page = client.get(f"/admin/wechat-pay/products/{created['id']}/edit")
+    assert edit_page.status_code == 200
+    assert "admin_page_code_2026" in edit_page.text
+    assert "readonly" in edit_page.text
+
+
+def test_product_share_route_is_next_native() -> None:
+    client = make_client()
+    item = client.get("/api/admin/wechat-pay/products").json()["items"][0]
+
+    payload = client.get(f"/api/admin/wechat-pay/products/{item['id']}/share").json()
+
+    assert payload["ok"] is True
+    assert f"/p/{item['product_code']}" in payload["share"]["url"]
+    assert payload["share"]["qr_data_url"].startswith("data:image/svg+xml")
+
+
 def test_checkout_orders_notify_and_transactions_are_fake_and_idempotent() -> None:
     client = make_client()
     seeded_detail = client.get("/admin/wechat-pay/transactions/order_masked_001")
