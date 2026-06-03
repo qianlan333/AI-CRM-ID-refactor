@@ -50,6 +50,14 @@ from .campaigns_write import (
     execute_cloud_campaign_command,
 )
 from .media_upload import build_upload_command, diagnostics_payload
+from .run_due import (
+    CloudCampaignRunDueInputError,
+    PlanCloudCampaignRunDueCommand,
+    PreviewCloudCampaignRunDueCommand,
+    diagnostics_payload as run_due_diagnostics_payload,
+    execute_cloud_campaign_run_due_command,
+    normalize_batch_size,
+)
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
@@ -71,6 +79,14 @@ _CAMPAIGN_WRITE_HEADERS = {
     "X-AICRM-Fallback-Used": "false",
     "X-AICRM-Real-External-Call-Executed": "false",
     "X-AICRM-Campaign-Execute-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
+}
+_RUN_DUE_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Campaign-Runtime-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
     "X-AICRM-WeCom-Send-Executed": "false",
 }
 
@@ -173,6 +189,74 @@ def _campaign_write_response(command) -> JSONResponse:
     except Exception as exc:
         return _campaign_write_error(str(exc) or "campaign_command_unavailable", status_code=503)
     return JSONResponse(payload, headers=_CAMPAIGN_WRITE_HEADERS)
+
+
+def _run_due_error(error: str, *, status_code: int = 400) -> JSONResponse:
+    payload = run_due_diagnostics_payload()
+    payload.update(
+        {
+            "ok": False,
+            "error": error,
+            "source_status": "next_run_due_plan",
+            "processed_count": 0,
+            "planned_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "candidate_count": 0,
+            "candidates": [],
+        }
+    )
+    return JSONResponse(payload, status_code=status_code, headers=_RUN_DUE_HEADERS)
+
+
+def _bool_payload(value: Any, *, default: bool) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+async def _run_due_payload(request: Request) -> dict[str, Any]:
+    payload = await _request_payload(request)
+    merged = dict(payload or {})
+    for key in ("batch_size", "dry_run", "force_plan", "now"):
+        if key not in merged and key in request.query_params:
+            merged[key] = request.query_params.get(key)
+    return merged
+
+
+def _run_due_actor(request: Request, payload: dict[str, Any]) -> str:
+    return str(payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor") or "timer").strip()
+
+
+def _run_due_common(request: Request, payload: dict[str, Any], source_route: str) -> dict[str, Any]:
+    return {
+        "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+        "actor_id": _run_due_actor(request, payload),
+        "actor_type": str(payload.get("actor_type") or "timer").strip(),
+        "batch_size": normalize_batch_size(payload.get("batch_size")),
+        "dry_run": _bool_payload(payload.get("dry_run"), default=True),
+        "source_route": source_route,
+        "trace_id": str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip(),
+        "now": str(payload.get("now") or "").strip(),
+    }
+
+
+def _run_due_response(command) -> JSONResponse:
+    try:
+        payload = execute_cloud_campaign_run_due_command(command)
+    except CloudCampaignRunDueInputError as exc:
+        return _run_due_error(str(exc) or "input_error", status_code=400)
+    except Exception as exc:
+        return _run_due_error(str(exc) or "run_due_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_RUN_DUE_HEADERS)
 
 
 @router.get(
@@ -316,6 +400,53 @@ def api_list_cloud_campaign_steps(campaign_code: str) -> JSONResponse:
     except Exception as exc:
         return _campaign_read_error(str(exc) or "campaign_steps_unavailable", status_code=503)
     return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.options("/api/admin/cloud-orchestrator/campaigns/run-due")
+def api_cloud_campaign_run_due_options() -> JSONResponse:
+    payload = run_due_diagnostics_payload()
+    payload["source_status"] = "next_run_due_plan"
+    return JSONResponse(payload, headers=_RUN_DUE_HEADERS)
+
+
+@router.options("/api/admin/cloud-orchestrator/campaigns/run-due/preview")
+def api_cloud_campaign_run_due_preview_options() -> JSONResponse:
+    payload = run_due_diagnostics_payload()
+    payload["source_status"] = "next_run_due_preview"
+    return JSONResponse(payload, headers=_RUN_DUE_HEADERS)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/run-due/preview")
+async def api_preview_cloud_campaign_run_due(request: Request) -> JSONResponse:
+    try:
+        payload = await _run_due_payload(request)
+        command = PreviewCloudCampaignRunDueCommand(
+            **_run_due_common(
+                request,
+                payload,
+                "/api/admin/cloud-orchestrator/campaigns/run-due/preview",
+            )
+        )
+    except CloudCampaignRunDueInputError as exc:
+        return _run_due_error(str(exc) or "input_error", status_code=400)
+    return _run_due_response(command)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns/run-due")
+async def api_plan_cloud_campaign_run_due(request: Request) -> JSONResponse:
+    try:
+        payload = await _run_due_payload(request)
+        command = PlanCloudCampaignRunDueCommand(
+            force_plan=_bool_payload(payload.get("force_plan"), default=True),
+            **_run_due_common(
+                request,
+                payload,
+                "/api/admin/cloud-orchestrator/campaigns/run-due",
+            ),
+        )
+    except CloudCampaignRunDueInputError as exc:
+        return _run_due_error(str(exc) or "input_error", status_code=400)
+    return _run_due_response(command)
 
 
 @router.post("/api/admin/cloud-orchestrator/campaigns/batch-start")

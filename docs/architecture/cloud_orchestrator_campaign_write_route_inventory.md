@@ -16,8 +16,8 @@ Legacy Exit group 19 moves Cloud Orchestrator campaign write controls to Next Co
 | `/admin/cloud-orchestrator/campaigns` | inline JS step add | add step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps` | POST | `api_add_cloud_campaign_step` | `AddCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
 | `/admin/cloud-orchestrator/campaigns` | inline JS step editor | update step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | POST/PATCH | `api_update_cloud_campaign_step` | `UpdateCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
 | `/admin/cloud-orchestrator/campaigns` | inline JS step delete | delete step | `/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}` | DELETE | `api_delete_cloud_campaign_step` | `DeleteCloudCampaignStepCommand` | none | enabled when campaign editable | API 200, audit recorded |
-| timer / job runner | no page caller in this group | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | out-of-scope | runtime/send risk remains blocked by timer safe-mode | out-of-scope; no UI caller | not executed |
-| timer / preview | no page caller in this group | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` | out-of-scope | preview/noop path only | out-of-scope; no UI caller | not executed |
+| timer / job runner | no page caller; API-only / timer-only | run due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due` | POST | `api_plan_cloud_campaign_run_due` | `PlanCloudCampaignRunDueCommand` | SideEffectPlan / AuditLedger / ExternalCallAttempt blocked record only | separately locked by run-due group; no UI caller | API 200 |
+| timer / preview | no page caller; API-only / timer-only | preview due campaign delivery | `/api/admin/cloud-orchestrator/campaigns/run-due/preview` | POST | `api_preview_cloud_campaign_run_due` | `PreviewCloudCampaignRunDueCommand` | due candidates / estimated actions only | separately locked by run-due group; no UI caller | API 200 |
 
 ## Deletion Closeout Status Matrix
 
@@ -27,7 +27,7 @@ Legacy Exit group 19 moves Cloud Orchestrator campaign write controls to Next Co
 | batch-start | `/api/admin/cloud-orchestrator/campaigns/batch-start` | `next_command` | legacy fallback removed | `legacy_fallback_allowed=false`, `deletion_locked`, `locked` | `adapter_mode=real_blocked`, `campaign_execute_executed=false`, `wecom_send_executed=false` |
 | step mutation | POST `/steps`, PATCH/POST/DELETE `/steps/{step_index}` | `next_command` | legacy fallback removed | `legacy_fallback_allowed=false`, `deletion_locked`, `locked` | local projection/AuditLedger only; no HTTP client |
 | read/workspace | GET `/admin/cloud-orchestrator/campaigns`, GET `/api/admin/cloud-orchestrator/campaigns*` | locked Next read/workspace | already removed | `deletion_locked`, `locked` | none |
-| run-due / preview | `/api/admin/cloud-orchestrator/campaigns/run-due`, `/run-due/preview` | production_compat safe-mode/out-of-scope | retained only for timer scope | not deletion_locked | not executed in this group |
+| run-due / preview | `/api/admin/cloud-orchestrator/campaigns/run-due`, `/run-due/preview` | Next safe-mode planner | production_compat rollback removed | deletion_locked | preview/run-due/OPTIONS smoke |
 
 ## Command Contract
 
@@ -82,4 +82,4 @@ Approve, reject, pause, delete, and step mutation update the local/fixture comma
 
 ## Registry Lifecycle
 
-Campaign write controls are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. The legacy fallback removed state is intentional after validation. Campaign read remains `deletion_locked`. run-due remains production_compat/out-of-scope and is not deletion_locked.
+Campaign write controls are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. The legacy fallback removed state is intentional after validation. Campaign read remains `deletion_locked`. run-due and preview are now separately deletion_locked on the Next safe-mode planner.

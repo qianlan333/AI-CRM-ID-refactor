@@ -245,6 +245,38 @@ CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTES = (
     "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps",
     "/api/admin/cloud-orchestrator/campaigns/{campaign_code}/steps/{step_index}",
 )
+CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE = "/api/admin/cloud-orchestrator/campaigns/run-due*"
+CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_EXACT_ROUTES = {
+    "/api/admin/cloud-orchestrator/campaigns/run-due",
+    "/api/admin/cloud-orchestrator/campaigns/run-due/preview",
+}
+CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_DIRECT_EXTERNAL_MARKERS = {
+    "process_due_campaign_members": "cloud_campaign_run_due_legacy_scheduler",
+    "WeComClient.from_app": "cloud_campaign_run_due_wecom_client",
+    "send_message": "cloud_campaign_run_due_direct_send_message",
+    "dispatch_wecom_task": "cloud_campaign_run_due_dispatch_wecom_task",
+    "requests.": "cloud_campaign_run_due_direct_http_client",
+    "httpx": "cloud_campaign_run_due_direct_http_client",
+    "access_token": "cloud_campaign_run_due_token_exchange",
+    "real_external_call_executed=True": "cloud_campaign_run_due_real_external_true",
+    "real_external_call_executed = True": "cloud_campaign_run_due_real_external_true",
+    '"real_external_call_executed": True': "cloud_campaign_run_due_real_external_true",
+    "'real_external_call_executed': True": "cloud_campaign_run_due_real_external_true",
+    "campaign_runtime_executed=True": "cloud_campaign_run_due_runtime_true",
+    "campaign_runtime_executed = True": "cloud_campaign_run_due_runtime_true",
+    '"campaign_runtime_executed": True': "cloud_campaign_run_due_runtime_true",
+    "'campaign_runtime_executed': True": "cloud_campaign_run_due_runtime_true",
+    "automation_runtime_executed=True": "cloud_campaign_run_due_automation_runtime_true",
+    "automation_runtime_executed = True": "cloud_campaign_run_due_automation_runtime_true",
+    '"automation_runtime_executed": True': "cloud_campaign_run_due_automation_runtime_true",
+    "'automation_runtime_executed': True": "cloud_campaign_run_due_automation_runtime_true",
+    "wecom_send_executed=True": "cloud_campaign_run_due_send_true",
+    "wecom_send_executed = True": "cloud_campaign_run_due_send_true",
+    '"wecom_send_executed": True': "cloud_campaign_run_due_send_true",
+    "'wecom_send_executed': True": "cloud_campaign_run_due_send_true",
+    "real_enabled default": "cloud_campaign_run_due_real_enabled_default",
+    "default real_enabled": "cloud_campaign_run_due_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_campaign_read_wecom_client",
     "send_message": "cloud_campaign_read_send_message",
@@ -2356,7 +2388,7 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
             "legacy fallback removed",
             "adapter_mode=real_blocked",
             "run-due",
-            "out-of-scope",
+            "separately deletion_locked",
             "real WeCom send",
             "automation runtime",
         ):
@@ -2457,8 +2489,8 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
             violations.append(Violation("cloud_campaign_write_registry_lifecycle", "cloud_orchestrator_campaigns_write_legacy_family", f"delete_status={write_record.get('delete_status')} replacement_status={write_record.get('replacement_status')}"))
         if write_record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("cloud_campaign_write_registry_adapter_mode", "cloud_orchestrator_campaigns_write_legacy_family", f"adapter_mode={write_record.get('adapter_mode')}"))
-        if "run-due remains out of scope" not in str(write_record.get("notes") or ""):
-            violations.append(Violation("cloud_campaign_write_registry_run_due_boundary", "cloud_orchestrator_campaigns_write_legacy_family", "run-due boundary missing"))
+        if "run-due is separately deletion_locked" not in str(write_record.get("notes") or ""):
+            violations.append(Violation("cloud_campaign_write_registry_run_due_boundary", "cloud_orchestrator_campaigns_write_legacy_family", "run-due locked boundary missing"))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     write_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_METHODS)
@@ -2478,13 +2510,139 @@ def check_cloud_orchestrator_campaign_write_next_commandbus(root: Path = ROOT) -
         if write_manifest.get("adapter_mode") != "real_blocked":
             violations.append(Violation("cloud_campaign_write_manifest_adapter_mode", CLOUD_ORCHESTRATOR_CAMPAIGN_WRITE_ROUTE, f"adapter_mode={write_manifest.get('adapter_mode')}"))
 
-    run_due_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", "/api/admin/cloud-orchestrator/campaigns/run-due*", ("POST", "OPTIONS"))
-    if run_due_manifest and (
-        run_due_manifest.get("current_runtime_owner") != "production_compat"
-        or run_due_manifest.get("delete_status") == "deletion_locked"
-        or run_due_manifest.get("replacement_status") == "locked"
-    ):
-        violations.append(Violation("cloud_campaign_write_run_due_misclassified", "docs/route_ownership/production_route_ownership_manifest.yaml", str(run_due_manifest)))
+    run_due_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, ("POST", "OPTIONS"))
+    if not run_due_manifest:
+        violations.append(Violation("cloud_campaign_write_run_due_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE))
+    elif run_due_manifest.get("current_runtime_owner") != "next_runtime_plan" or run_due_manifest.get("delete_status") != "deletion_locked":
+        violations.append(Violation("cloud_campaign_write_run_due_not_locked", "docs/route_ownership/production_route_ownership_manifest.yaml", str(run_due_manifest)))
+
+    return violations
+
+
+def check_cloud_orchestrator_run_due_next_safe_mode(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/cloud_orchestrator_run_due_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("cloud_campaign_run_due_inventory_missing", str(inventory_path.relative_to(root)), "missing run-due route inventory"))
+    else:
+        text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix",
+            "PreviewCloudCampaignRunDueCommand",
+            "PlanCloudCampaignRunDueCommand",
+            "SideEffectPlan",
+            "AuditLedger",
+            "ExternalCallAttempt",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "production_compat rollback removed",
+            "adapter_mode=real_blocked",
+            "real_external_call_executed=false",
+            "campaign_runtime_executed=false",
+            "automation_runtime_executed=false",
+            "wecom_send_executed=false",
+            "automation-conversion/jobs/run-due",
+            "out-of-scope",
+        ):
+            if phrase not in text:
+                violations.append(Violation("cloud_campaign_run_due_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for route_path in CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_EXACT_ROUTES:
+            if route_path not in text:
+                violations.append(Violation("cloud_campaign_run_due_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    run_due_path = root / "aicrm_next/cloud_orchestrator/run_due.py"
+    if not run_due_path.exists():
+        violations.append(Violation("cloud_campaign_run_due_module_missing", str(run_due_path.relative_to(root)), "missing run_due.py"))
+    else:
+        source = run_due_path.read_text(encoding="utf-8")
+        for marker in (
+            "PreviewCloudCampaignRunDueCommand",
+            "PlanCloudCampaignRunDueCommand",
+            "InMemoryAuditLedger",
+            "InMemorySideEffectPlanRepository",
+            "InMemoryExternalCallAttemptRepository",
+            "CommandBus",
+            "cloud_orchestrator.campaign.run_due",
+            "next_run_due_preview",
+            "next_run_due_plan",
+            "real_blocked",
+            "campaign_runtime_executed",
+            "automation_runtime_executed",
+            "wecom_send_executed",
+        ):
+            if marker not in source:
+                violations.append(Violation("cloud_campaign_run_due_module_marker_missing", str(run_due_path.relative_to(root)), marker))
+        for marker, code in CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_DIRECT_EXTERNAL_MARKERS.items():
+            if marker in source:
+                violations.append(Violation(code, str(run_due_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/cloud_orchestrator/api.py"
+    if not api_path.exists():
+        violations.append(Violation("cloud_campaign_run_due_api_missing", str(api_path.relative_to(root)), "missing cloud_orchestrator api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in (
+            "api_plan_cloud_campaign_run_due",
+            "api_preview_cloud_campaign_run_due",
+            "api_cloud_campaign_run_due_options",
+            "api_cloud_campaign_run_due_preview_options",
+            "execute_cloud_campaign_run_due_command",
+        ):
+            if marker not in api_source:
+                violations.append(Violation("cloud_campaign_run_due_api_route_missing", str(api_path.relative_to(root)), marker))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, methods in _decorator_route_methods(compat_path):
+            if route_path in CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_EXACT_ROUTES and set(methods) & {"POST", "OPTIONS"}:
+                violations.append(
+                    Violation(
+                        "cloud_campaign_run_due_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={methods}",
+                        "Cloud campaign run-due/preview rollback is deletion_locked to Next safe-mode planner.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    registry_record = registry_by_id.get("cloud_orchestrator_campaigns_run_due_safe_timer")
+    if not registry_record:
+        violations.append(Violation("cloud_campaign_run_due_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", "cloud_orchestrator_campaigns_run_due_safe_timer"))
+    else:
+        if registry_record.get("path_pattern") != CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE or tuple(registry_record.get("methods") or []) != ("POST", "OPTIONS"):
+            violations.append(Violation("cloud_campaign_run_due_registry_shape", "cloud_orchestrator_campaigns_run_due_safe_timer", f"path_pattern={registry_record.get('path_pattern')} methods={registry_record.get('methods')}"))
+        if registry_record.get("runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("cloud_campaign_run_due_registry_owner", "cloud_orchestrator_campaigns_run_due_safe_timer", f"runtime_owner={registry_record.get('runtime_owner')}"))
+        if registry_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_run_due_registry_legacy_allowed", "cloud_orchestrator_campaigns_run_due_safe_timer", f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+        if registry_record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("cloud_campaign_run_due_registry_legacy_source", "cloud_orchestrator_campaigns_run_due_safe_timer", f"legacy_source={registry_record.get('legacy_source')}"))
+        if registry_record.get("external_side_effect_risk") != "high":
+            violations.append(Violation("cloud_campaign_run_due_registry_side_effect_risk", "cloud_orchestrator_campaigns_run_due_safe_timer", f"external_side_effect_risk={registry_record.get('external_side_effect_risk')}"))
+        if registry_record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("cloud_campaign_run_due_registry_adapter_mode", "cloud_orchestrator_campaigns_run_due_safe_timer", f"adapter_mode={registry_record.get('adapter_mode')}"))
+        if registry_record.get("delete_status") != "deletion_locked" or registry_record.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_run_due_registry_lifecycle", "cloud_orchestrator_campaigns_run_due_safe_timer", f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_record = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, ("POST", "OPTIONS"))
+    if not manifest_record:
+        violations.append(Violation("cloud_campaign_run_due_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE))
+    else:
+        if manifest_record.get("current_runtime_owner") != "next_runtime_plan":
+            violations.append(Violation("cloud_campaign_run_due_manifest_owner", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+        if manifest_record.get("production_behavior") != "next_command":
+            violations.append(Violation("cloud_campaign_run_due_manifest_behavior", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
+        if manifest_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("cloud_campaign_run_due_manifest_legacy_allowed", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+        if manifest_record.get("production_behavior") in {"legacy_forward", "scheduled_safe_mode", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("cloud_campaign_run_due_manifest_legacy_behavior", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
+        if manifest_record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("cloud_campaign_run_due_manifest_adapter_mode", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"adapter_mode={manifest_record.get('adapter_mode')}"))
+        if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
+            violations.append(Violation("cloud_campaign_run_due_manifest_lifecycle", CLOUD_ORCHESTRATOR_CAMPAIGN_RUN_DUE_ROUTE, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     return violations
 
@@ -2765,6 +2923,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
+        + check_cloud_orchestrator_run_due_next_safe_mode(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

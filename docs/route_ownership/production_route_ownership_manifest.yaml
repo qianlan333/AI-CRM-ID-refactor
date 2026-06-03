@@ -1060,14 +1060,17 @@ routes:
   - route_pattern: /api/admin/cloud-orchestrator/campaigns/run-due*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.ai_assist
-    current_runtime_owner: production_compat
-    production_behavior: scheduled_safe_mode
-    legacy_fallback_allowed: true
+    current_runtime_owner: next_runtime_plan
+    production_behavior: next_command
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tools/check_next_timer_route_readiness.py
-    notes: Campaign run-due timer route is safe-mode only.
+    notes: Legacy rollback removed; Cloud campaign run-due and preview are locked to Next safe-mode planner only; adapter_mode=real_blocked, no real send/runtime, real_external_call_executed=false, campaign_runtime_executed=false, automation_runtime_executed=false, wecom_send_executed=false.
   - route_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1109,7 +1112,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due remains out of scope and is not deletion_locked.
+    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner.
   - route_pattern: /api/admin/cloud-orchestrator/media/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
