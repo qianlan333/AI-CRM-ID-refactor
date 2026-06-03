@@ -791,6 +791,62 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     notes: Optional tag detail read is served from the Next tag catalog read model with read legacy rollback removed and locked; write/sync subpaths remain out of scope.
+  - route_pattern: /api/admin/wecom/tags
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 13 tag create route resolves to Next CommandBus before production_compat; local projection and SideEffectPlan only, real WeCom side effects blocked.
+  - route_pattern: /api/admin/wecom/tags/{tag_id}
+    methods: [PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 13 tag update/delete routes resolve to Next CommandBus before production_compat; local projection and SideEffectPlan only.
+  - route_pattern: /api/admin/wecom/tags/sync
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 13 tag sync route resolves to Next CommandBus before production_compat and records a blocked SideEffectPlan only.
+  - route_pattern: /api/admin/wecom/tags/sync-due
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Historical sync-due write entrypoint resolves to the blocked Next CommandBus sync plan.
   - route_pattern: /api/admin/wecom/tags/live/gate
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -817,8 +873,8 @@ routes:
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
-    notes: WeCom tag write, sync, fake-stub write, and live mark/unmark subpaths remain out of scope for group 12 and keep guarded production_compat rollback.
+    replacement_status: validating
+    notes: Group 13 exact tag CRUD and sync routes are Next CommandBus primary; this wildcard remains guarded production_compat rollback for fake-stub write, live mark/unmark, and other subpaths.
   - route_pattern: /api/admin/wecom/tag-groups
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
@@ -847,6 +903,34 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     notes: Optional tag group detail read is served from the Next tag catalog read model with read legacy rollback removed and locked; CRUD remains out of scope.
+  - route_pattern: /api/admin/wecom/tag-groups
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 13 tag group create route resolves to Next CommandBus before production_compat; local projection and SideEffectPlan only.
+  - route_pattern: /api/admin/wecom/tag-groups/{group_id}
+    methods: [PUT, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.customer_tags
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: false
+    checker: tests/test_wecom_tag_write_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: next_primary_with_legacy_rollback
+    replacement_status: validating
+    notes: Group 13 tag group update/delete routes resolve to Next CommandBus before production_compat; local projection and SideEffectPlan only.
   - route_pattern: /api/admin/wecom/tag-groups*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.customer_tags
@@ -859,8 +943,8 @@ routes:
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
     delete_status: active
-    replacement_status: not_started
-    notes: WeCom tag group CRUD remains legacy-forwarded with the same guarded admin tag-management contract; group 12 only replaces GET read paths.
+    replacement_status: validating
+    notes: Group 13 exact tag group CRUD routes are Next CommandBus primary; this wildcard remains guarded production_compat rollback for other tag-group subpaths.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

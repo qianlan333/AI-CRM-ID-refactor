@@ -46,6 +46,10 @@
     return root.dataset.apiGroups || "/api/admin/wecom/tag-groups";
   }
 
+  function apiSync() {
+    return root.dataset.apiSync || "/api/admin/wecom/tags/sync";
+  }
+
   function escapeHtml(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
@@ -85,13 +89,27 @@
     return text || fallback;
   }
 
-  async function requestJson(url, options, fallback) {
+  function idempotencyKey(action) {
+    return `wecom-tags-${action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function writeOptions(method, body, action) {
+    const options = {
+      method,
+      headers: { "Idempotency-Key": idempotencyKey(action) },
+    };
+    if (body !== undefined) options.body = JSON.stringify(body);
+    return options;
+  }
+
+  async function requestJson(url, options = {}, fallback) {
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     let response;
     try {
       response = await fetch(url, {
         credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         ...options,
+        headers,
       });
     } catch (_error) {
       throw new Error(fallback);
@@ -277,6 +295,19 @@
     }
   }
 
+  async function syncTags() {
+    setBusy(true);
+    try {
+      await requestJson(apiSync(), writeOptions("POST", { source: "admin_wecom_tags" }, "sync"), "企微标签同步失败，请稍后重试。");
+      await loadTags("企微标签同步成功");
+    } catch (error) {
+      setFeedback(friendlyError(error, "企微标签同步失败，请稍后重试。"), "error");
+    } finally {
+      setBusy(false);
+      render();
+    }
+  }
+
   function setBusy(isBusy) {
     state.busy = Boolean(isBusy);
     root.querySelectorAll("button").forEach((button) => {
@@ -384,13 +415,10 @@
     try {
       if (kind === "create-group") {
         const groupName = normalized(formData.get("group_name"));
-        await requestJson(apiGroups(), {
-          method: "POST",
-          body: JSON.stringify({
+        await requestJson(apiGroups(), writeOptions("POST", {
             group_name: groupName,
             first_tag_name: normalized(formData.get("first_tag_name")),
-          }),
-        }, "标签组创建失败，请检查名称是否重复或企微接口权限。");
+          }, "create-group"), "标签组创建失败，请检查名称是否重复或企微接口权限。");
         closeModal();
         await refreshAndSelect((group) => normalized(group.group_name) === groupName);
         setFeedback("标签组创建成功", "success");
@@ -399,14 +427,11 @@
         const group = state.groups.find((item) => groupKey(item) === normalized(formData.get("group_key")));
         if (!group) throw new Error("必须选择标签组");
         if (!normalized(group.group_id)) throw new Error("当前标签组缺少 group_id，无法执行该操作，请先同步企微标签。");
-        await requestJson(apiTags(), {
-          method: "POST",
-          body: JSON.stringify({
+        await requestJson(apiTags(), writeOptions("POST", {
             group_id: group.group_id,
             group_name: group.group_name,
             tag_name: normalized(formData.get("tag_name")),
-          }),
-        }, "标签创建失败，请检查名称是否重复或企微接口权限。");
+          }, "create-tag"), "标签创建失败，请检查名称是否重复或企微接口权限。");
         closeModal();
         state.selectedGroupKey = groupKey(group);
         await refreshAndSelect((item) => normalized(item.group_id) === normalized(group.group_id));
@@ -416,20 +441,14 @@
         const group = selectedGroup();
         if (!group || !normalized(group.group_id)) throw new Error("当前标签组缺少 group_id，无法执行该操作，请先同步企微标签。");
         const groupName = normalized(formData.get("group_name"));
-        await requestJson(`${apiGroups()}/${encodeURIComponent(group.group_id)}`, {
-          method: "PUT",
-          body: JSON.stringify({ group_name: groupName }),
-        }, "标签组更新失败，请检查企微接口权限或名称是否重复。");
+        await requestJson(`${apiGroups()}/${encodeURIComponent(group.group_id)}`, writeOptions("PUT", { group_name: groupName }, "edit-group"), "标签组更新失败，请检查企微接口权限或名称是否重复。");
         closeModal();
         await refreshAndSelect((item) => normalized(item.group_id) === normalized(group.group_id) || normalized(item.group_name) === groupName);
         setFeedback("标签组已更新", "success");
       }
       if (kind === "edit-tag") {
         const tagId = normalized(form.dataset.tagId);
-        await requestJson(`${apiTags()}/${encodeURIComponent(tagId)}`, {
-          method: "PUT",
-          body: JSON.stringify({ tag_name: normalized(formData.get("tag_name")) }),
-        }, "标签更新失败，请检查名称是否重复或企微接口权限。");
+        await requestJson(`${apiTags()}/${encodeURIComponent(tagId)}`, writeOptions("PUT", { tag_name: normalized(formData.get("tag_name")) }, "edit-tag"), "标签更新失败，请检查名称是否重复或企微接口权限。");
         closeModal();
         await loadTags("");
         setFeedback("标签已更新", "success");
@@ -452,7 +471,7 @@
     if (!window.confirm("确认删除这个标签组吗？删除后该组下标签也会被删除，且不可恢复。")) return;
     setBusy(true);
     try {
-      await requestJson(`${apiGroups()}/${encodeURIComponent(group.group_id)}`, { method: "DELETE" }, "标签组删除失败，请稍后重试。");
+      await requestJson(`${apiGroups()}/${encodeURIComponent(group.group_id)}`, writeOptions("DELETE", undefined, "delete-group"), "标签组删除失败，请稍后重试。");
       await loadTags("");
       setFeedback("标签组已删除", "success");
     } catch (error) {
@@ -472,7 +491,7 @@
     if (!window.confirm("确认删除这个标签吗？删除后不可恢复。")) return;
     setBusy(true);
     try {
-      await requestJson(`${apiTags()}/${encodeURIComponent(id)}`, { method: "DELETE" }, "标签删除失败，请稍后重试。");
+      await requestJson(`${apiTags()}/${encodeURIComponent(id)}`, writeOptions("DELETE", undefined, "delete-tag"), "标签删除失败，请稍后重试。");
       await loadTags("");
       setFeedback("标签已删除", "success");
     } catch (error) {
@@ -497,7 +516,7 @@
     if (target.dataset.tagCopy !== undefined) copyTagId(target.dataset.tagCopy);
     if (target.dataset.tagEdit !== undefined) openEditTagModal(target.dataset.tagEdit);
     if (target.dataset.tagDelete !== undefined) deleteTag(target.dataset.tagDelete);
-    if (action === "sync") loadTags("企微标签同步成功");
+    if (action === "sync") syncTags();
     if (action === "create-group") openCreateGroupModal();
     if (action === "create-tag") openCreateTagModal();
     if (action === "edit-group") openEditGroupModal();

@@ -23,6 +23,8 @@ from .cloud_orchestrator.api import router as cloud_orchestrator_router
 from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from .customer_tags.api import read_router as customer_tags_read_router
 from .customer_tags.api import router as customer_tags_router
+from .customer_tags.api import write_router as customer_tags_write_router
+from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
@@ -71,6 +73,7 @@ def create_app() -> FastAPI:
         reset_cloud_plan_fixture_state()
         reset_sidebar_write_fixture_state()
         reset_questionnaire_admin_write_fixture_state()
+        reset_wecom_tag_write_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -105,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(hxc_dashboard_router)
     app.include_router(sidebar_write_router)
     app.include_router(customer_tags_read_router)
+    app.include_router(customer_tags_write_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_router)
     app.include_router(customer_router)
