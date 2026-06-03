@@ -67,12 +67,13 @@ def test_campaign_read_write_and_media_upload_locked_state_does_not_regress():
         assert record["replacement_status"] == "locked"
 
 
-def test_automation_timer_manifest_remains_out_of_scope_production_compat():
+def test_automation_timer_manifest_is_now_next_safe_mode_locked():
     records = _records(MANIFEST)
     automation = next(item for item in records if item.get("route_pattern") == "/api/admin/automation-conversion/jobs/run-due*")
 
-    assert automation["current_runtime_owner"] == "production_compat"
-    assert automation["production_behavior"] == "scheduled_safe_mode"
-    assert automation["legacy_fallback_allowed"] is True
-    assert automation["delete_ready"] is False
-    assert automation.get("delete_status") != "deletion_locked"
+    assert automation["current_runtime_owner"] == "next_runtime_plan"
+    assert automation["production_behavior"] == "next_command"
+    assert automation["legacy_fallback_allowed"] is False
+    assert automation["delete_ready"] is True
+    assert automation["delete_status"] == "deletion_locked"
+    assert automation["replacement_status"] == "locked"

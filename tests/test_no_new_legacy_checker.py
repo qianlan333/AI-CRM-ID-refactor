@@ -6,6 +6,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
+    check_automation_conversion_timers_next_safe_mode,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
@@ -2150,3 +2151,138 @@ def test_wecom_tag_read_guard_allows_next_read_primary_with_out_of_scope_familie
     _write_wecom_tag_read_docs(tmp_path)
 
     assert check_wecom_tag_read_next_native(tmp_path) == []
+
+
+def _write_automation_timer_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
+    inventory = tmp_path / "docs/architecture/automation_conversion_timer_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/automation_engine/api.py"
+    timer_module = tmp_path / "aicrm_next/automation_engine/timers.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory.parent.mkdir(parents=True)
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    inventory.write_text(
+        "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix\n"
+        "PlanReplyMonitorCaptureCommand PlanReplyMonitorRunDueCommand PreviewAutomationJobsRunDueCommand PlanAutomationJobsRunDueCommand\n"
+        "legacy_fallback_allowed=false deletion_locked adapter_mode=real_blocked real_external_call_executed=false automation_runtime_executed=false wecom_send_executed=false\n"
+        "next_reply_monitor_capture_plan next_reply_monitor_run_due_plan next_jobs_run_due_preview next_jobs_run_due_plan\n"
+        "/api/admin/automation-conversion/reply-monitor/capture\n"
+        "/api/admin/automation-conversion/reply-monitor/run-due\n"
+        "/api/admin/automation-conversion/jobs/run-due/preview\n"
+        "/api/admin/automation-conversion/jobs/run-due\n"
+        "/api/admin/automation-conversion/tasks/run-due send-via-bazhuayu\n",
+        encoding="utf-8",
+    )
+    compat_routes = (
+        "@router.api_route('/api/admin/automation-conversion/reply-monitor/capture', methods=['POST'])\n"
+        "def rollback(): pass\n"
+        if not locked
+        else ""
+    )
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        f"{compat_routes}"
+        "@router.api_route('/api/admin/automation-conversion/tasks/run-due', methods=['POST', 'OPTIONS'])\n"
+        "def tasks(): pass\n"
+        "@router.api_route('/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu', methods=['POST', 'OPTIONS'])\n"
+        "def send_via(): pass\n",
+        encoding="utf-8",
+    )
+    api.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.post('/api/admin/automation-conversion/reply-monitor/capture')\n"
+        "def api_plan_automation_conversion_reply_monitor_capture(): return execute_automation_timer_command()\n"
+        "@router.post('/api/admin/automation-conversion/reply-monitor/run-due')\n"
+        "def api_plan_automation_conversion_reply_monitor_run_due(): return execute_automation_timer_command()\n"
+        "@router.post('/api/admin/automation-conversion/jobs/run-due/preview')\n"
+        "def api_preview_automation_conversion_jobs_run_due(): return execute_automation_timer_command()\n"
+        "@router.post('/api/admin/automation-conversion/jobs/run-due')\n"
+        "def api_plan_automation_conversion_jobs_run_due(): return execute_automation_timer_command()\n",
+        encoding="utf-8",
+    )
+    timer_module.write_text(
+        "PlanReplyMonitorCaptureCommand PlanReplyMonitorRunDueCommand PreviewAutomationJobsRunDueCommand PlanAutomationJobsRunDueCommand\n"
+        "InMemoryAuditLedger InMemorySideEffectPlanRepository InMemoryExternalCallAttemptRepository CommandBus\n"
+        "next_reply_monitor_capture_plan next_reply_monitor_run_due_plan next_jobs_run_due_preview next_jobs_run_due_plan\n"
+        "real_blocked automation_runtime_executed wecom_send_executed\n"
+        + ("run_reply_monitor_capture\n" if not locked else ""),
+        encoding="utf-8",
+    )
+    registry_owner = "next_runtime_plan" if locked else "production_compat"
+    registry_legacy = "false" if locked else "true"
+    manifest_behavior = "next_command" if locked else "scheduled_safe_mode"
+    manifest_delete_ready = "true" if locked else "false"
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: automation_conversion_reply_monitor_timer_next_safe_mode\n"
+        "    path_pattern: /api/admin/automation-conversion/reply-monitor*\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    runtime_owner: " + registry_owner + "\n"
+        "    legacy_fallback_allowed: " + registry_legacy + "\n"
+        "    legacy_source: \"\"\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - route_id: automation_conversion_jobs_run_due_timer_next_safe_mode\n"
+        "    path_pattern: /api/admin/automation-conversion/jobs/run-due*\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    runtime_owner: " + registry_owner + "\n"
+        "    legacy_fallback_allowed: " + registry_legacy + "\n"
+        "    legacy_source: \"\"\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/automation-conversion/reply-monitor*\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    current_runtime_owner: " + registry_owner + "\n"
+        "    production_behavior: " + manifest_behavior + "\n"
+        "    legacy_fallback_allowed: " + registry_legacy + "\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_ready: " + manifest_delete_ready + "\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - route_pattern: /api/admin/automation-conversion/jobs/run-due*\n"
+        "    methods: [POST, OPTIONS]\n"
+        "    current_runtime_owner: " + registry_owner + "\n"
+        "    production_behavior: " + manifest_behavior + "\n"
+        "    legacy_fallback_allowed: " + registry_legacy + "\n"
+        "    external_side_effect_risk: high\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_ready: " + manifest_delete_ready + "\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n",
+        encoding="utf-8",
+    )
+
+
+def test_automation_timer_guard_flags_rollback_and_runtime_drift(tmp_path: Path) -> None:
+    _write_automation_timer_guard_fixture(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_automation_conversion_timers_next_safe_mode(tmp_path)}
+
+    assert "automation_timer_production_compat_rollback" in codes
+    assert "automation_timer_legacy_capture_runtime" in codes
+    assert "automation_timer_registry_owner" in codes
+    assert "automation_timer_registry_legacy_allowed" in codes
+    assert "automation_timer_manifest_behavior" in codes
+    assert "automation_timer_manifest_legacy_allowed" in codes
+
+
+def test_automation_timer_guard_allows_next_safe_mode_locked(tmp_path: Path) -> None:
+    _write_automation_timer_guard_fixture(tmp_path, locked=True)
+
+    assert check_automation_conversion_timers_next_safe_mode(tmp_path) == []

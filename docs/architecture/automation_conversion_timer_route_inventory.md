@@ -1,0 +1,29 @@
+# Automation Conversion Timer Route Inventory
+
+This inventory locks the reply monitor and registered jobs timer family to Next safe-mode planning. The legacy Flask handlers remain documented as historical sources only; the Next routes below do not invoke `run_reply_monitor_capture`, `run_due_reply_monitor`, or `run_registered_due_jobs`.
+
+## Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix
+
+| Caller | API | CommandBus | SideEffectPlan |
+| --- | --- | --- | --- |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/reply-monitor/capture` | `automation_conversion.reply_monitor.capture.plan` via `PlanReplyMonitorCaptureCommand`; idempotency key supported; JSON/query `limit`, `batch_size`, `dry_run` supported; invalid limit returns 400 | `effect_type=automation_conversion.reply_monitor.capture`; `adapter_mode=real_blocked`; `status=blocked`; no external capture; no legacy runtime; `source_status=next_reply_monitor_capture_plan`; `reply_monitor_capture_executed=false` |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/reply-monitor/capture` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/reply-monitor/run-due` | `automation_conversion.reply_monitor.run_due.plan` via `PlanReplyMonitorRunDueCommand`; idempotency key supported; JSON/query `limit`, `batch_size`, `dry_run` supported; invalid limit returns 400 | `effect_type=automation_conversion.reply_monitor.run_due`; `adapter_mode=real_blocked`; `status=blocked`; no reply runtime; no real send; `source_status=next_reply_monitor_run_due_plan`; `reply_monitor_run_due_executed=false`; `wecom_send_executed=false` |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/reply-monitor/run-due` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/jobs/run-due/preview` | `automation_conversion.jobs.run_due.preview` via `PreviewAutomationJobsRunDueCommand`; idempotency key supported; JSON/query `jobs`, `job_codes`, `limit`, `batch_size`, `dry_run` supported; invalid inputs return 400 | Preview-only response with `source_status=next_jobs_run_due_preview`, `candidates`, `job_codes`, and `estimated_actions`; no writes; no runtime execution; no SideEffectPlan is executed |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/jobs/run-due/preview` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/jobs/run-due` | `automation_conversion.jobs.run_due.plan` via `PlanAutomationJobsRunDueCommand`; idempotency key supported; JSON/query `jobs`, `job_codes`, `limit`, `batch_size`, `dry_run` supported; invalid inputs return 400 | `effect_type=automation_conversion.jobs.run_due`; `adapter_mode=real_blocked`; `status=blocked`; no registered jobs runtime; `source_status=next_jobs_run_due_plan`; `jobs_run_due_executed=false` |
+| Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/jobs/run-due` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
+
+## Explicit Out Of Scope Routes
+
+| Caller | API | CommandBus | SideEffectPlan |
+| --- | --- | --- | --- |
+| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/tasks/run-due` | Out of scope for this timer cutover; remains in `production_compat` | Existing legacy-forward behavior remains inventoried and unchanged |
+| Existing production workspace callers | POST/OPTIONS `/api/admin/automation-conversion/execution-items/{execution_item_id:int}/send-via-bazhuayu` | Out of scope for this timer cutover; remains in `production_compat` | Existing legacy-forward behavior remains inventoried and unchanged |
+
+## Deletion Lock
+
+- The four timer routes are registered as Next-owned before `production_compat`.
+- `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked` are required in both lifecycle files.
+- Safe-mode responses must keep `real_external_call_executed=false`, `automation_runtime_executed=false`, `wecom_send_executed=false`, and the route-specific execution flags false.
