@@ -175,10 +175,11 @@ WECOM_TAG_WRITE_ROUTES = (
     ("/api/admin/wecom/tag-groups/{group_id}", ("PUT", "PATCH", "DELETE", "OPTIONS")),
 )
 WECOM_TAG_LIVE_MUTATION_ROUTES = (
-    ("/api/admin/wecom/tags/live/gate", ("GET",), "next_native", "next_exact", "active"),
-    ("/api/admin/wecom/tags/live/mark", ("POST", "OPTIONS"), "next_command", "next_command", "next_primary_with_legacy_rollback"),
-    ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command", "next_primary_with_legacy_rollback"),
+    ("/api/admin/wecom/tags/live/gate", ("GET",), "next_native", "next_exact"),
+    ("/api/admin/wecom/tags/live/mark", ("POST", "OPTIONS"), "next_command", "next_command"),
+    ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command"),
 )
+WECOM_TAG_LIVE_MUTATION_EXACT_ROUTES = {route for route, _methods, _owner, _behavior in WECOM_TAG_LIVE_MUTATION_ROUTES}
 
 
 @dataclass(frozen=True)
@@ -1726,7 +1727,7 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
         violations.append(Violation("wecom_tag_live_mutation_inventory_missing", str(inventory_path.relative_to(root)), "missing inventory document"))
     else:
         inventory_text = inventory_path.read_text(encoding="utf-8")
-        for route_path, _methods, _owner, _behavior, _status in WECOM_TAG_LIVE_MUTATION_ROUTES:
+        for route_path, _methods, _owner, _behavior in WECOM_TAG_LIVE_MUTATION_ROUTES:
             if route_path not in inventory_text:
                 violations.append(Violation("wecom_tag_live_mutation_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
         for phrase in (
@@ -1746,6 +1747,20 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
     live_mutation_path = root / "aicrm_next/customer_tags/live_mutation.py"
     commands_path = root / "aicrm_next/customer_tags/mutation_commands.py"
     questionnaire_path = root / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    compat_path = root / "aicrm_next/production_compat/api.py"
+
+    if compat_path.exists():
+        route_paths = set(_decorator_route_paths(compat_path))
+        route_paths.update(_decorated_route_function_sources(compat_path).keys())
+        for route_path in sorted(route_paths & WECOM_TAG_LIVE_MUTATION_EXACT_ROUTES):
+            violations.append(
+                Violation(
+                    "wecom_tag_live_mutation_production_compat_route",
+                    str(compat_path.relative_to(root)),
+                    route_path,
+                    "WeCom live mutation routes are deletion_locked to Next and must not be reintroduced in production_compat.",
+                )
+            )
 
     for path, markers in [
         (api_path, ("mark_tags_live", "unmark_tags_live", "execute_wecom_tag_mutation", "live_gate_status")),
@@ -1779,6 +1794,11 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
             "httpx.": "wecom_tag_live_mutation_direct_http_client",
             "WeComTagLiveGateway": "wecom_tag_live_mutation_real_wecom_gateway",
             "build_wecom_tag_live_gateway": "wecom_tag_live_mutation_real_wecom_gateway",
+            "access_token": "wecom_tag_live_mutation_real_wecom_token",
+            "externalcontact": "wecom_tag_live_mutation_real_wecom_api",
+            "mark_external_contact_tags": "wecom_tag_live_mutation_real_wecom_mutation",
+            "real_enabled=True": "wecom_tag_live_mutation_real_enabled_default",
+            "real_enabled = True": "wecom_tag_live_mutation_real_enabled_default",
         }.items():
             if forbidden in source:
                 violations.append(Violation(code, str(path.relative_to(root)), forbidden))
@@ -1788,20 +1808,24 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     manifest_by_route = {(record.get("route_pattern"), tuple(record.get("methods") or [])): record for record in manifest_records}
 
-    for route_path, methods, owner, behavior, delete_status in WECOM_TAG_LIVE_MUTATION_ROUTES:
+    for route_path, methods, owner, behavior in WECOM_TAG_LIVE_MUTATION_ROUTES:
         registry_record = registry_by_route.get((route_path, methods))
         if registry_record is None:
             violations.append(Violation("wecom_tag_live_mutation_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
         else:
             if registry_record.get("runtime_owner") != owner:
                 violations.append(Violation("wecom_tag_live_mutation_registry_owner", route_path, f"runtime_owner={registry_record.get('runtime_owner')}"))
-            if registry_record.get("legacy_fallback_allowed") is not True:
+            if registry_record.get("legacy_fallback_allowed") is not False:
                 violations.append(Violation("wecom_tag_live_mutation_registry_rollback_allowed", route_path, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+            if registry_record.get("runtime_owner") in {"production_compat", "legacy_forward"}:
+                violations.append(Violation("wecom_tag_live_mutation_registry_legacy_owner", route_path, f"runtime_owner={registry_record.get('runtime_owner')}"))
             if registry_record.get("external_side_effect_risk") != "high":
                 violations.append(Violation("wecom_tag_live_mutation_registry_side_effect_risk", route_path, f"external_side_effect_risk={registry_record.get('external_side_effect_risk')}"))
             if registry_record.get("adapter_mode") != "real_blocked":
                 violations.append(Violation("wecom_tag_live_mutation_registry_adapter_mode", route_path, f"adapter_mode={registry_record.get('adapter_mode')}"))
-            if registry_record.get("delete_status") != delete_status or registry_record.get("replacement_status") != "validating":
+            if registry_record.get("delete_status") in {"next_primary_with_legacy_rollback", "active"}:
+                violations.append(Violation("wecom_tag_live_mutation_registry_rollback_lifecycle", route_path, f"delete_status={registry_record.get('delete_status')}"))
+            if registry_record.get("delete_status") != "deletion_locked" or registry_record.get("replacement_status") != "locked":
                 violations.append(Violation("wecom_tag_live_mutation_registry_lifecycle", route_path, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
 
         manifest_record = manifest_by_route.get((route_path, methods))
@@ -1812,11 +1836,15 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
                 violations.append(Violation("wecom_tag_live_mutation_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
             if manifest_record.get("production_behavior") != behavior:
                 violations.append(Violation("wecom_tag_live_mutation_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
-            if manifest_record.get("legacy_fallback_allowed") is not True:
+            if manifest_record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+                violations.append(Violation("wecom_tag_live_mutation_manifest_legacy_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not False:
                 violations.append(Violation("wecom_tag_live_mutation_manifest_rollback_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
             if manifest_record.get("adapter_mode") != "real_blocked":
                 violations.append(Violation("wecom_tag_live_mutation_manifest_adapter_mode", route_path, f"adapter_mode={manifest_record.get('adapter_mode')}"))
-            if manifest_record.get("delete_status") != delete_status or manifest_record.get("replacement_status") != "validating":
+            if manifest_record.get("delete_status") in {"next_primary_with_legacy_rollback", "active"}:
+                violations.append(Violation("wecom_tag_live_mutation_manifest_rollback_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')}"))
+            if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
                 violations.append(Violation("wecom_tag_live_mutation_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     return violations

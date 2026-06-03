@@ -1265,48 +1265,48 @@ routes:
     checker: tests/test_wecom_tag_read_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
     notes: Optional tag detail read over the Next tag catalog with read legacy rollback removed and locked; write/sync subpaths remain out of scope.
-  - route_id: wecom_tag_live_gate_out_of_scope
+  - route_id: wecom_tag_live_gate_next_native_locked
     path_pattern: /api/admin/wecom/tags/live/gate
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_native
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Group 14 live mutation gate is Next-owned and always blocked by default; no real WeCom call, no compatibility facade, route_owner=ai_crm_next, fallback_used=false.
+    notes: Group 14 closeout locks the live mutation gate to Next-native blocked diagnostics only; no real WeCom call, no compatibility facade, route_owner=ai_crm_next, fallback_used=false.
   - route_id: wecom_tag_live_mark_next_command
     path_pattern: /api/admin/wecom/tags/live/mark
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_command
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Group 14 moves live mark to Next CommandBus PlanWeComTagMarkCommand; SideEffectPlan effect_type=wecom.tag.mark only; no real WeCom call and no production_compat decorator is added.
+    notes: Group 14 closeout locks live mark to Next CommandBus PlanWeComTagMarkCommand; SideEffectPlan effect_type=wecom.tag.mark only; no real WeCom call, no production_compat decorator, and no legacy rollback.
   - route_id: wecom_tag_live_unmark_next_command
     path_pattern: /api/admin/wecom/tags/live/unmark
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
     runtime_owner: next_command
-    legacy_fallback_allowed: true
-    legacy_source: production_route_ownership_manifest
+    legacy_fallback_allowed: false
+    legacy_source: ""
     external_side_effect_risk: high
     adapter_mode: real_blocked
-    delete_status: next_primary_with_legacy_rollback
-    replacement_status: validating
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_wecom_tag_live_mutation_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Group 14 moves live unmark to Next CommandBus PlanWeComTagUnmarkCommand; SideEffectPlan effect_type=wecom.tag.unmark only; no real WeCom call and no production_compat decorator is added.
+    notes: Group 14 closeout locks live unmark to Next CommandBus PlanWeComTagUnmarkCommand; SideEffectPlan effect_type=wecom.tag.unmark only; no real WeCom call, no production_compat decorator, and no legacy rollback.
   - route_id: wecom_tag_group_read_detail_api
     path_pattern: /api/admin/wecom/tag-groups/{group_id}
     methods: [GET]
