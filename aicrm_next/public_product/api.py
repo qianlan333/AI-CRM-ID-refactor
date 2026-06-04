@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from urllib.parse import quote
 
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from aicrm_next.commerce.product_code_aliases import canonical_product_code
 from aicrm_next.shared.errors import NotFoundError
 
 from .service import (
@@ -24,6 +27,18 @@ from .service import (
 router = APIRouter()
 
 
+def _public_product_alias_redirect(request: Request, path: str) -> Response | None:
+    canonical = canonical_product_code(path)
+    if not canonical or canonical == path:
+        return None
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        url=f"/p/{quote(canonical)}{query}",
+        status_code=302,
+        headers={**route_headers(), "X-AICRM-Compatibility-Facade": "product_code_alias_redirect"},
+    )
+
+
 @router.options("/p/{path:path}", name="api.public_product_page_options")
 def public_product_page_options(path: str) -> JSONResponse:
     return JSONResponse(diagnostics_payload(f"/p/{path}", allowed_methods=["GET", "HEAD", "OPTIONS"]), headers=route_headers())
@@ -31,6 +46,9 @@ def public_product_page_options(path: str) -> JSONResponse:
 
 @router.api_route("/p/{path:path}", methods=["GET", "HEAD"], response_class=HTMLResponse, name="api.public_product_page")
 def public_product_page(request: Request, path: str) -> Response:
+    redirect = _public_product_alias_redirect(request, path)
+    if redirect is not None:
+        return redirect
     try:
         product = get_public_product(path)
     except NotFoundError:
