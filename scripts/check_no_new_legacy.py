@@ -49,6 +49,7 @@ LEGACY_IMPORT_ALLOWLIST = {
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
+    Path("aicrm_next/public_product/h5_wechat_pay.py"),
     Path("aicrm_next/automation_engine/audience_transition/repository.py"),
     Path("aicrm_next/automation_engine/audience_transition/integration_gateway.py"),
     Path("aicrm_next/automation_engine/audience_transition/application.py"),
@@ -327,6 +328,10 @@ PUBLIC_PRODUCT_PAY_DIRECT_MARKERS = {
     "create_h5_order": "public_product_payment_request",
     "create_wap_order": "public_product_payment_request",
     "create_order(": "public_product_order_create",
+}
+PUBLIC_PRODUCT_PAY_DIRECT_MARKER_ALLOWLIST = {
+    Path("aicrm_next/public_product/api.py"): {"create_jsapi_order"},
+    Path("aicrm_next/public_product/h5_wechat_pay.py"): {"WeChatPay", "access_token", "create_jsapi_order"},
 }
 PUBLIC_PRODUCT_PAY_TRUE_MARKERS = {
     '"fallback_used": True': "public_product_fallback_true",
@@ -2822,8 +2827,8 @@ def check_public_product_pay_closeout_lock(root: Path = ROOT) -> list[Violation]
             "wildcard_router rollback removed",
             "legacy_fallback_allowed=false",
             "deletion_locked",
-            "Do not process real payment",
-            "Do not change payment/admin/h5/checkout/orders",
+            "Next-owned H5 WeChat Pay may create JSAPI orders",
+            "Do not change admin/alipay/checkout/orders/provider ownership",
         ):
             if phrase not in inventory_text:
                 violations.append(Violation("public_product_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
@@ -2855,8 +2860,12 @@ def check_public_product_pay_closeout_lock(root: Path = ROOT) -> list[Violation]
     if public_root.exists():
         for path in public_root.rglob("*.py"):
             text = path.read_text(encoding="utf-8")
-            rel = str(path.relative_to(root))
+            rel_path = path.relative_to(root)
+            rel = str(rel_path)
+            allowed_markers = PUBLIC_PRODUCT_PAY_DIRECT_MARKER_ALLOWLIST.get(rel_path, set())
             for marker, code in PUBLIC_PRODUCT_PAY_DIRECT_MARKERS.items():
+                if marker in allowed_markers:
+                    continue
                 if marker in text:
                     violations.append(
                         Violation(

@@ -25,7 +25,7 @@ def test_public_product_pay_inventory_covers_required_boundaries() -> None:
         "wildcard_router rollback removed",
         "legacy_fallback_allowed=false",
         "deletion_locked",
-        "Do not process real payment",
-        "Do not change payment/admin/h5/checkout/orders",
+        "Next-owned H5 WeChat Pay may create JSAPI orders",
+        "Do not change admin/alipay/checkout/orders/provider ownership",
     ]:
         assert boundary in text
