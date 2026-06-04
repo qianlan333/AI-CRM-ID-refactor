@@ -176,6 +176,12 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
         if not page_state.get("identity_ready")
         else f'<button id="payButton" class="pay-action" type="button" {"disabled" if not page_state.get("enabled") else ""}>{escape(str(page_state.get("cta_text") or "确认支付"))}</button>'
     )
+    completion_action = page_state.get("completion_action") if isinstance(page_state.get("completion_action"), dict) else {}
+    qr_button_html = (
+        ""
+        if completion_action.get("type") == "redirect"
+        else '<button class="qr-reopen-button" id="showLeadQrButton" type="button">查看领取二维码</button>'
+    )
     state_message = "当前支付暂未启用。" if not page_state.get("enabled") else ("需要先完成微信授权。" if not page_state.get("identity_ready") else "已就绪。")
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -206,8 +212,18 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
       <div class="success-tick">✓</div>
       <div class="success-title">支付成功</div>
       <div class="success-desc" id="successDesc">报名成功</div>
+      {qr_button_html}
     </section>
   </main>
+
+  <div class="qr-modal" id="leadQrModal" aria-hidden="true">
+    <div class="qr-panel">
+      <div class="modal-title">报名成功</div>
+      <div class="modal-desc">扫码添加企微领取后续资料</div>
+      <img class="qr-img" id="leadQrImage" alt="">
+      <button class="close-button" id="closeQrButton" type="button">关闭</button>
+    </div>
+  </div>
   {_pay_page_script(state_json)}
 </body>
 </html>"""
@@ -365,17 +381,41 @@ def _pay_page_styles() -> str:
     .state-line.error { color: var(--red); }
     .state-line.success { color: var(--green); }
     .error-text { font-size: 12px; color: var(--red); margin-top: 6px; min-height: 18px; }
-    .pay-action, .button-link {
+    .pay-action, .button-link, .qr-reopen-button {
       width: 100%; height: 52px; border: 0; border-radius: 8px; background: var(--blue); color: #fff;
       font: inherit; font-weight: 950; margin-top: 12px; cursor: pointer; text-decoration: none;
       display: inline-flex; align-items: center; justify-content: center;
     }
+    .qr-reopen-button {
+      display: none; height: 46px; background: #edf3ff; color: var(--blue);
+      border: 1px solid #cddcff; box-shadow: none; font-weight: 900;
+    }
+    .qr-reopen-button.show { display: inline-flex; }
     .pay-action[disabled] { opacity: .55; cursor: default; }
     .success-box { display: none; text-align: center; padding-top: 6px; margin-top: 14px; }
     .success-box.show { display: block; }
     .success-tick { width: 66px; height: 66px; border-radius: 50%; background: var(--green-bg); color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; margin: 18px auto; }
     .success-title { font-size: 22px; font-weight: 950; }
     .success-desc { color: var(--muted); margin: 8px 0 0; }
+    .qr-modal {
+      position: fixed; inset: 0; background: rgba(16, 32, 58, .48); backdrop-filter: blur(4px);
+      z-index: 40; display: none; align-items: center; justify-content: center; padding: 22px;
+    }
+    .qr-modal.show { display: flex; }
+    .qr-panel {
+      width: min(100%, 360px); border-radius: 8px; background: #fff; padding: 26px 22px;
+      text-align: center; box-shadow: 0 20px 60px rgba(16, 32, 58, .25);
+    }
+    .qr-img {
+      width: min(258px, 100%); aspect-ratio: 1; margin: 18px auto; border-radius: 8px;
+      border: 1px solid #dae4f3; padding: 12px; object-fit: contain; display: block; background: #fff;
+    }
+    .modal-title { font-size: 24px; font-weight: 950; }
+    .modal-desc { color: var(--muted); font-size: 15px; }
+    .close-button {
+      width: 100%; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff;
+      font: inherit; font-weight: 900; margin-top: 14px; cursor: pointer;
+    }
   </style>"""
 
 
@@ -390,7 +430,12 @@ def _pay_page_script(state_json: str) -> str:
       const checkoutCard = document.getElementById("checkoutCard");
       const successBox = document.getElementById("successBox");
       const successDesc = document.getElementById("successDesc");
+      const leadQrModal = document.getElementById("leadQrModal");
+      const leadQrImage = document.getElementById("leadQrImage");
+      const showLeadQrButton = document.getElementById("showLeadQrButton");
+      const closeQrButton = document.getElementById("closeQrButton");
       let activeOrderNo = "";
+      let paidOrder = state.paid_order || null;
 
       function setState(message, type) {{
         if (!stateLine) return;
@@ -493,11 +538,38 @@ def _pay_page_script(state_json: str) -> str:
         if (action && action.type === "redirect" && actionUrl && isSafeRedirectUrl(actionUrl)) {{
           return {{ type: "redirect", redirect_url: actionUrl }};
         }}
+        const configured = order && order.completion_redirect ? order.completion_redirect : {{}};
+        const fallbackUrl = String((configured && configured.url) || (order && order.completion_redirect_url) || "");
+        const fallbackEnabled = Boolean((configured && configured.enabled) || (order && order.completion_redirect_enabled));
+        if (fallbackEnabled && fallbackUrl && isSafeRedirectUrl(fallbackUrl)) {{
+          return {{ type: "redirect", redirect_url: fallbackUrl }};
+        }}
         return {{ type: "default", redirect_url: "" }};
       }}
 
-      function showPaid(order) {{
-        const completionAction = completionActionFromOrder(order || {{}});
+      function leadQrFromOrder(order) {{
+        if (completionActionFromOrder(order).type === "redirect") return {{}};
+        const leadQr = order && order.lead_qr ? order.lead_qr : {{}};
+        return leadQr && leadQr.qr_url ? leadQr : {{}};
+      }}
+
+      function showLeadQr(order) {{
+        const leadQr = leadQrFromOrder(order);
+        if (!leadQr.qr_url || !leadQrModal || !leadQrImage) return;
+        leadQrImage.src = leadQr.qr_url;
+        leadQrModal.classList.add("show");
+        leadQrModal.setAttribute("aria-hidden", "false");
+      }}
+
+      function syncLeadQrButton(order) {{
+        if (!showLeadQrButton) return;
+        showLeadQrButton.classList.toggle("show", Boolean(leadQrFromOrder(order).qr_url));
+      }}
+
+      function showPaid(order, options) {{
+        const autoShowQr = !options || options.autoShowQr !== false;
+        paidOrder = order || paidOrder || {{}};
+        const completionAction = completionActionFromOrder(paidOrder);
         if (completionAction.type === "redirect" && completionAction.redirect_url) {{
           setState("报名成功，正在跳转...", "success");
           window.location.href = completionAction.redirect_url;
@@ -508,6 +580,12 @@ def _pay_page_script(state_json: str) -> str:
         if (successDesc) {{
           successDesc.textContent = "已购买 " + state.product.name + "，支付金额 ¥" + (Number(state.product.amount_total || 0) / 100).toFixed(2) + "。";
         }}
+        syncLeadQrButton(paidOrder);
+        if (autoShowQr) showLeadQr(paidOrder);
+      }}
+
+      if (state.paid_order) {{
+        showPaid(state.paid_order, {{ autoShowQr: false }});
       }}
 
       if (payButton) {{
@@ -535,6 +613,9 @@ def _pay_page_script(state_json: str) -> str:
             }}
             setState("支付成功", "success");
             showPaid(order);
+            if (order.success_url && !(order.lead_qr && order.lead_qr.qr_url)) {{
+              window.location.href = order.success_url;
+            }}
           }} catch (err) {{
             setState(err.message || "支付失败，请稍后重试", "error");
             payButton.disabled = false;
@@ -545,6 +626,18 @@ def _pay_page_script(state_json: str) -> str:
       if (mobileInput) {{
         mobileInput.addEventListener("input", function () {{
           if (mobileError) mobileError.textContent = "";
+        }});
+      }}
+      if (closeQrButton) {{
+        closeQrButton.addEventListener("click", function () {{
+          if (!leadQrModal) return;
+          leadQrModal.classList.remove("show");
+          leadQrModal.setAttribute("aria-hidden", "true");
+        }});
+      }}
+      if (showLeadQrButton) {{
+        showLeadQrButton.addEventListener("click", function () {{
+          showLeadQr(paidOrder || {{}});
         }});
       }}
     }})();
