@@ -34,6 +34,7 @@ from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
+from .hxc_dashboard.safe_mode import reset_hxc_safe_mode_fixture_state
 from .identity_contact.api import router as identity_router
 from .identity_contact.sidebar_jssdk import router as sidebar_jssdk_router
 from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
         reset_media_library_fixture_state()
         reset_admin_jobs_fixture_state()
         reset_hxc_dashboard_fixture_state()
+        reset_hxc_safe_mode_fixture_state()
         reset_radar_links_fixture_state()
         reset_cloud_plan_fixture_state()
         reset_campaign_read_fixture_state()

@@ -225,6 +225,62 @@ MEDIA_LIBRARY_DIRECT_EXTERNAL_MARKERS = {
     "real_enabled default": "media_library_real_enabled_default",
     "default real_enabled": "media_library_real_enabled_default",
 }
+HXC_DASHBOARD_PAGE_ROUTES = (
+    "/admin/hxc-dashboard",
+    "/admin/hxc-send-config",
+)
+HXC_DASHBOARD_API_ROUTES = (
+    "/api/admin/hxc-dashboard",
+    "/api/admin/hxc-dashboard/refresh",
+    "/api/admin/hxc-dashboard/refresh-directory",
+    "/api/admin/hxc-dashboard/send-config",
+    "/api/admin/hxc-dashboard/send-config/{sender_userid}",
+    "/api/admin/hxc-dashboard/broadcast",
+    "/api/admin/hxc-dashboard/{unknown_path}",
+)
+HXC_DASHBOARD_PRODUCTION_COMPAT_ROUTES = (
+    "/admin/hxc-dashboard",
+    "/admin/hxc-send-config",
+    "/api/admin/hxc-dashboard",
+    "/api/admin/hxc-dashboard/{path:path}",
+)
+HXC_DASHBOARD_REGISTRY_RECORDS = (
+    "hxc_dashboard_admin_api_family",
+    "hxc_dashboard_admin_pages_family",
+    "hxc_dashboard_refresh_next_command",
+    "hxc_dashboard_directory_sync_next_command",
+    "hxc_dashboard_send_config_next_read",
+    "hxc_dashboard_send_config_next_command",
+    "hxc_dashboard_broadcast_next_command",
+)
+HXC_DASHBOARD_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "hxc_dashboard_legacy_facade",
+    "wecom_ability_service": "hxc_dashboard_legacy_import",
+    "refresh_hxc_dashboard_snapshot": "hxc_dashboard_legacy_refresh",
+    "sync_admin_wecom_directory_members": "hxc_dashboard_legacy_directory_sync",
+    "broadcast_to_filtered_users": "hxc_dashboard_legacy_broadcast",
+    "requests.": "hxc_dashboard_direct_http_client",
+    "httpx": "hxc_dashboard_direct_http_client",
+    "OpenClaw": "hxc_dashboard_direct_openclaw_client",
+    "WeComClient": "hxc_dashboard_direct_wecom_client",
+    "access_token": "hxc_dashboard_direct_access_token",
+}
+HXC_DASHBOARD_TRUE_MARKERS = {
+    '"fallback_used": True': "hxc_dashboard_fallback_true",
+    "'fallback_used': True": "hxc_dashboard_fallback_true",
+    '"real_external_call_executed": True': "hxc_dashboard_real_external_call_true",
+    "'real_external_call_executed': True": "hxc_dashboard_real_external_call_true",
+    '"hxc_refresh_executed": True': "hxc_dashboard_refresh_true",
+    "'hxc_refresh_executed': True": "hxc_dashboard_refresh_true",
+    '"directory_sync_executed": True': "hxc_dashboard_directory_sync_true",
+    "'directory_sync_executed': True": "hxc_dashboard_directory_sync_true",
+    '"hxc_broadcast_executed": True': "hxc_dashboard_broadcast_true",
+    "'hxc_broadcast_executed': True": "hxc_dashboard_broadcast_true",
+    '"wecom_send_executed": True': "hxc_dashboard_wecom_send_true",
+    "'wecom_send_executed': True": "hxc_dashboard_wecom_send_true",
+    '"wecom_api_called": True': "hxc_dashboard_wecom_api_true",
+    "'wecom_api_called': True": "hxc_dashboard_wecom_api_true",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2229,6 +2285,127 @@ def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_hxc_dashboard_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/hxc_dashboard_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("hxc_dashboard_inventory_missing", str(inventory_path.relative_to(root)), "missing HXC dashboard inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend <-> API <-> Backend Contract Matrix",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "refresh_hxc_dashboard_snapshot",
+            "sync_admin_wecom_directory_members",
+            "broadcast_to_filtered_users",
+            "real_external_call_executed=false",
+            "No real HXC broadcast.",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("hxc_dashboard_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, _methods in _decorator_route_methods(compat_path):
+            if route_path in HXC_DASHBOARD_PRODUCTION_COMPAT_ROUTES or route_path.startswith("/api/admin/hxc-dashboard"):
+                violations.append(
+                    Violation(
+                        "hxc_dashboard_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "HXC dashboard production_compat fallback is deletion_locked; serve it from aicrm_next.hxc_dashboard only.",
+                    )
+                )
+
+    hxc_root = root / "aicrm_next/hxc_dashboard"
+    if hxc_root.exists():
+        for path in hxc_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            rel = str(path.relative_to(root))
+            for marker, code in HXC_DASHBOARD_DIRECT_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "HXC dashboard Next closeout must not import legacy Flask, call legacy HXC helpers, or execute real HTTP/WeCom/OpenClaw clients.",
+                        )
+                    )
+            for marker, code in HXC_DASHBOARD_TRUE_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "HXC dashboard Next closeout must keep fallback and real side-effect execution flags false.",
+                        )
+                    )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in HXC_DASHBOARD_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("hxc_dashboard_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("hxc_dashboard_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("hxc_dashboard_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("hxc_dashboard_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("hxc_dashboard_registry_owner", route_id, "runtime_owner=production_compat"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+
+    def _manifest_record(route_path: str, method: str) -> dict | None:
+        for record in manifest_records:
+            if record.get("route_pattern") != route_path:
+                continue
+            methods = {str(item).upper() for item in record.get("methods") or []}
+            if method.upper() in methods:
+                return record
+        return None
+
+    for route_path in HXC_DASHBOARD_PAGE_ROUTES:
+        record = _manifest_record(route_path, "GET")
+        if record is None:
+            violations.append(Violation("hxc_dashboard_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next" or record.get("production_behavior") != "next_exact":
+            violations.append(Violation("hxc_dashboard_manifest_owner", route_path, f"owner={record.get('current_runtime_owner')} behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("hxc_dashboard_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("hxc_dashboard_manifest_lifecycle", route_path, str(record)))
+
+    read_routes = {
+        "/api/admin/hxc-dashboard",
+        "/api/admin/hxc-dashboard/send-config",
+        "/api/admin/hxc-dashboard/{unknown_path}",
+    }
+    for route_path in HXC_DASHBOARD_API_ROUTES:
+        method = "DELETE" if route_path.endswith("{sender_userid}") else "GET" if route_path in read_routes else "POST"
+        record = _manifest_record(route_path, method)
+        if record is None:
+            violations.append(Violation("hxc_dashboard_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", f"{method} {route_path}"))
+            continue
+        if record.get("current_runtime_owner") != "next":
+            violations.append(Violation("hxc_dashboard_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("hxc_dashboard_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("hxc_dashboard_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("hxc_dashboard_manifest_lifecycle", route_path, str(record)))
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -3718,6 +3895,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_write_next_commandbus(ROOT)
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
         + check_media_library_closeout_lock(ROOT)
+        + check_hxc_dashboard_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)

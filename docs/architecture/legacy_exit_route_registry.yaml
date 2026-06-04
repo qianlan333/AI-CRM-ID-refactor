@@ -107,30 +107,100 @@ routes:
     path_pattern: /api/admin/hxc-dashboard*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.hxc_dashboard
-    runtime_owner: production_compat
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_hxc_dashboard.py
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: local / real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_registry_lifecycle.py
     rollback_owner: aicrm_next.hxc_dashboard
-    notes: HXC dashboard APIs include Next reads and retained production_compat fallback.
+    notes: HXC dashboard API family is locked to Next. Reads are local safe-mode read models; refresh, directory sync, and legacy broadcast create blocked side-effect plans only; production_compat fallback is deleted.
   - route_id: hxc_dashboard_admin_pages_family
     path_pattern: /admin/hxc*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    methods: [GET]
     capability_owner: aicrm_next.hxc_dashboard
-    runtime_owner: production_compat
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_hxc_dashboard.py
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_registry_lifecycle.py
     rollback_owner: aicrm_next.hxc_dashboard
-    notes: HXC dashboard pages retain legacy fallback while Next page parity continues.
+    notes: /admin/hxc-dashboard and /admin/hxc-send-config are served before production_compat; no legacy page fallback remains.
+  - route_id: hxc_dashboard_refresh_next_command
+    path_pattern: /api/admin/hxc-dashboard/refresh
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_api_contract.py
+    rollback_owner: aicrm_next.hxc_dashboard
+    notes: Replaces legacy refresh_hxc_dashboard_snapshot with a Next blocked SideEffectPlan and ExternalCallAttempt.
+  - route_id: hxc_dashboard_directory_sync_next_command
+    path_pattern: /api/admin/hxc-dashboard/refresh-directory
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_api_contract.py
+    rollback_owner: aicrm_next.hxc_dashboard
+    notes: Replaces legacy sync_admin_wecom_directory_members with a Next blocked SideEffectPlan and ExternalCallAttempt.
+  - route_id: hxc_dashboard_send_config_next_read
+    path_pattern: /api/admin/hxc-dashboard/send-config
+    methods: [GET]
+    capability_owner: aicrm_next.hxc_dashboard
+    runtime_owner: next_read_model
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: local
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_send_config.py
+    rollback_owner: aicrm_next.hxc_dashboard
+    notes: Send-config read is served from the Next safe-mode local directory/config model.
+  - route_id: hxc_dashboard_send_config_next_command
+    path_pattern: /api/admin/hxc-dashboard/send-config*
+    methods: [POST, DELETE, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: low
+    adapter_mode: local
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_send_config.py
+    rollback_owner: aicrm_next.hxc_dashboard
+    notes: Send-config mutations are local safe-mode commands and never call WeCom or legacy Flask.
+  - route_id: hxc_dashboard_broadcast_next_command
+    path_pattern: /api/admin/hxc-dashboard/broadcast
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_broadcast_plan.py
+    rollback_owner: aicrm_next.hxc_dashboard
+    notes: Replaces legacy broadcast_to_filtered_users with a plan-only command; no WeCom send is executed.
   - route_id: cloud_orchestrator_campaigns_read_family
     path_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [GET]

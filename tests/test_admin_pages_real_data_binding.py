@@ -1011,7 +1011,7 @@ def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypat
     assert response.json()["media_id"].startswith("fake_wecom_media_")
 
 
-def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):
+def test_admin_hxc_dashboard_routes_are_next_owned_when_production_facade_is_enabled(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -1038,12 +1038,19 @@ def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):
     send_config_response = client.get("/api/admin/hxc-dashboard/send-config")
 
     assert page_response.status_code == 200
-    assert page_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert page_response.json()["forwarded"] == "GET:/admin/hxc-dashboard:"
+    assert page_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in page_response.headers
+    assert "用户激活漏斗看板" in page_response.text
     assert refresh_response.status_code == 200
-    assert refresh_response.json()["forwarded"] == "POST:/api/admin/hxc-dashboard/refresh:"
+    assert refresh_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in refresh_response.headers
+    assert refresh_response.json()["source_status"] == "next_hxc_refresh_plan"
+    assert refresh_response.json()["fallback_used"] is False
     assert send_config_response.status_code == 200
-    assert send_config_response.json()["forwarded"] == "GET:/api/admin/hxc-dashboard/send-config:"
+    assert send_config_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in send_config_response.headers
+    assert send_config_response.json()["source_status"] == "next_hxc_send_config"
+    assert send_config_response.json()["fallback_used"] is False
 
 
 def test_real_data_binding_checker_returns_ok():
