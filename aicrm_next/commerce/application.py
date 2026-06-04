@@ -34,6 +34,9 @@ def _payment_side_effect_safety() -> dict[str, Any]:
         "real_payment_provider_called": False,
         "real_external_call_executed": False,
         "payment_request_executed": False,
+        "payment_notify_executed": False,
+        "payment_return_executed": False,
+        "provider_signature_verified": False,
         "order_create_executed": False,
         "fallback_used": False,
         "side_effect_executed": False,
@@ -348,6 +351,11 @@ class NotifyPaymentCommand:
             transaction_id=order.get("transaction_id") or "",
             payment_status=order["payment_status"],
         )
+        side_effect_safety = {
+            **_payment_side_effect_safety(),
+            "payment_notify_executed": "local_only",
+            "provider_signature_verified": False,
+        }
         return {
             "ok": True,
             "order_no": order["order_no"],
@@ -355,8 +363,14 @@ class NotifyPaymentCommand:
             "payment_status": order["payment_status"],
             "transaction_id": order.get("transaction_id") or "",
             "source_status": "fake_signature_not_verified",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "payment_notify_executed": "local_only",
+            "real_payment_notify_executed": False,
+            "provider_signature_verified": False,
             "event_stub": {"would_emit": "payment_status_changed", "external_side_effect": False},
-            "side_effect_safety": _payment_side_effect_safety(),
+            "side_effect_safety": side_effect_safety,
             "adapter_contract": {"notify": gateway_result, "order_status_update": status_preview},
         }
 
@@ -378,6 +392,10 @@ class PaymentReturnCommand:
         if not context_result["ok"]:
             raise ContractError(context_result["error_message"] or context_result["error_code"])
         order = self._repo.get_order(order_no) if order_no else None
+        side_effect_safety = {
+            **_payment_side_effect_safety(),
+            "payment_return_executed": "fake",
+        }
         return {
             "ok": True,
             "source_status": "fake_return_no_order" if not order_no else "fake_return_received",
@@ -385,7 +403,12 @@ class PaymentReturnCommand:
             "payment_provider": "alipay",
             "payment_status": status,
             "transaction_id": (order or {}).get("transaction_id", ""),
-            "side_effect_safety": _payment_side_effect_safety(),
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "payment_return_executed": "fake",
+            "provider_signature_verified": False,
+            "side_effect_safety": side_effect_safety,
             "adapter_contract": {"return": gateway_result, "return_page_context": context_result},
         }
 

@@ -109,6 +109,68 @@ def _checkout_order_error_payload(
     )
 
 
+def _provider_payment_headers(*, notify_executed: str = "false", return_executed: str = "false") -> dict[str, str]:
+    return {
+        "X-AICRM-Route-Owner": "ai_crm_next",
+        "X-AICRM-Fallback-Used": "false",
+        "X-AICRM-Real-External-Call-Executed": "false",
+        "X-AICRM-Real-Payment-Notify-Executed": "false",
+        "X-AICRM-Provider-Signature-Verified": "false",
+        "X-AICRM-Payment-Notify-Executed": notify_executed,
+        "X-AICRM-Payment-Return-Executed": return_executed,
+    }
+
+
+def _provider_payment_side_effects(*, notify_executed: str | bool = False, return_executed: str | bool = False) -> dict:
+    return {
+        "fallback_used": False,
+        "real_external_call_executed": False,
+        "real_payment_notify_executed": False,
+        "real_wechat_pay_executed": False,
+        "real_alipay_executed": False,
+        "provider_signature_verified": False,
+        "payment_notify_executed": notify_executed,
+        "payment_return_executed": return_executed,
+    }
+
+
+def _provider_payment_options_payload(route: str, methods: list[str], *, source_status: str) -> dict:
+    return {
+        "ok": True,
+        "route": route,
+        "methods": methods,
+        "source_status": source_status,
+        "route_owner": "ai_crm_next",
+        "adapter_mode": "fake/real_blocked",
+        **_provider_payment_side_effects(),
+    }
+
+
+def _provider_payment_error_payload(
+    *,
+    error_code: str,
+    message: str,
+    method: str,
+    path: str,
+    source_status: str,
+    status_code: int,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error_code": error_code,
+            "message": message,
+            "method": method.upper(),
+            "path": path,
+            "source_status": source_status,
+            "route_owner": "ai_crm_next",
+            **_provider_payment_side_effects(),
+        },
+        status_code=status_code,
+        headers=_provider_payment_headers(),
+    )
+
+
 def _product_admin_context(
     request: Request,
     *,
@@ -575,27 +637,72 @@ def order_unknown_child(order_no: str, path: str, request: Request) -> JSONRespo
 
 
 @router.post("/api/wechat-pay/notify")
-def wechat_notify(payload: PaymentNotifyRequest) -> dict:
+def wechat_notify(payload: PaymentNotifyRequest) -> JSONResponse:
     try:
-        return NotifyPaymentCommand("wechat")(payload)
+        result = NotifyPaymentCommand("wechat")(payload)
+        return JSONResponse(result, headers=_provider_payment_headers(notify_executed="local_only"))
     except Exception as exc:
         _raise_http(exc)
 
 
 @router.post("/api/alipay/notify")
-def alipay_notify(payload: PaymentNotifyRequest) -> dict:
+def alipay_notify(payload: PaymentNotifyRequest) -> JSONResponse:
     try:
-        return NotifyPaymentCommand("alipay")(payload)
+        result = NotifyPaymentCommand("alipay")(payload)
+        return JSONResponse(result, headers=_provider_payment_headers(notify_executed="local_only"))
     except Exception as exc:
         _raise_http(exc)
 
 
 @router.get("/api/alipay/return")
-def alipay_return(order_no: str = "", status: str = "paid") -> dict:
+def alipay_return(order_no: str = "", status: str = "paid") -> JSONResponse:
     try:
-        return PaymentReturnCommand()(order_no=order_no, status=status)
+        result = PaymentReturnCommand()(order_no=order_no, status=status)
+        return JSONResponse(result, headers=_provider_payment_headers(return_executed="fake"))
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.options("/api/wechat-pay/notify")
+def wechat_notify_options() -> JSONResponse:
+    payload = _provider_payment_options_payload("/api/wechat-pay/notify", ["POST", "OPTIONS"], source_status="next_payment_notify")
+    return JSONResponse(payload, headers=_provider_payment_headers())
+
+
+@router.options("/api/alipay/notify")
+def alipay_notify_options() -> JSONResponse:
+    payload = _provider_payment_options_payload("/api/alipay/notify", ["POST", "OPTIONS"], source_status="next_payment_notify")
+    return JSONResponse(payload, headers=_provider_payment_headers())
+
+
+@router.options("/api/alipay/return")
+def alipay_return_options() -> JSONResponse:
+    payload = _provider_payment_options_payload("/api/alipay/return", ["GET", "OPTIONS"], source_status="next_payment_return")
+    return JSONResponse(payload, headers=_provider_payment_headers())
+
+
+@router.api_route("/api/wechat-pay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+def wechat_pay_unknown(path: str, request: Request) -> JSONResponse:
+    return _provider_payment_error_payload(
+        error_code="provider_payment_path_removed",
+        message="unknown WeChat Pay provider path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/wechat-pay/{path}",
+        source_status="next_payment_provider_not_found",
+        status_code=410,
+    )
+
+
+@router.api_route("/api/alipay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+def alipay_unknown(path: str, request: Request) -> JSONResponse:
+    return _provider_payment_error_payload(
+        error_code="provider_payment_path_removed",
+        message="unknown Alipay provider path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/alipay/{path}",
+        source_status="next_payment_provider_not_found",
+        status_code=410,
+    )
 
 
 def _transaction_filters(

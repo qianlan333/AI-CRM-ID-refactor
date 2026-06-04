@@ -52,7 +52,7 @@ def test_checkout_orders_manifest_records_are_locked_and_out_of_scope_retained()
     assert orders["delete_status"] == "deletion_locked"
     assert orders["replacement_status"] == "locked"
 
-    for route in ["/api/wechat-pay*", "/api/alipay*", "/api/admin/wechat-pay*", "/api/admin/alipay*", "/api/h5/wechat-pay*", "/api/h5/alipay*"]:
+    for route in ["/api/admin/wechat-pay*", "/api/admin/alipay*", "/api/h5/wechat-pay*", "/api/h5/alipay*"]:
         record = records[route]
         assert record["legacy_fallback_allowed"] is True
         assert record["delete_ready"] is False

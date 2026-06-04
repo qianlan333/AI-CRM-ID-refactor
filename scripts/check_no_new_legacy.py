@@ -383,6 +383,50 @@ CHECKOUT_ORDERS_TRUE_MARKERS = {
     "real_enabled default": "checkout_orders_real_enabled_default",
     "default real_enabled": "checkout_orders_real_enabled_default",
 }
+PROVIDER_PAYMENT_COMPAT_ROUTES = ("/api/wechat-pay/{path:path}", "/api/alipay/{path:path}")
+PROVIDER_PAYMENT_REGISTRY_RECORDS = (
+    "wechat_pay_notify_next_payment_notify",
+    "alipay_notify_next_payment_notify",
+    "alipay_return_next_payment_return",
+    "wechat_pay_unknown_next_not_found",
+    "alipay_unknown_next_not_found",
+)
+PROVIDER_PAYMENT_MANIFEST_ROUTES = ("/api/wechat-pay*", "/api/alipay*")
+PROVIDER_PAYMENT_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "provider_payment_legacy_forward",
+    "legacy_flask_facade": "provider_payment_legacy_facade",
+    "requests.": "provider_payment_direct_http_client",
+    "httpx.": "provider_payment_direct_http_client",
+    "access_token": "provider_payment_access_token_marker",
+    "raw WeChatPay": "provider_payment_raw_wechatpay_client",
+    "raw Alipay": "provider_payment_raw_alipay_client",
+}
+PROVIDER_PAYMENT_TRUE_MARKERS = {
+    '"fallback_used": True': "provider_payment_fallback_true",
+    "'fallback_used': True": "provider_payment_fallback_true",
+    '"real_external_call_executed": True': "provider_payment_real_external_call_true",
+    "'real_external_call_executed': True": "provider_payment_real_external_call_true",
+    "real_external_call_executed=True": "provider_payment_real_external_call_true",
+    "real_external_call_executed = True": "provider_payment_real_external_call_true",
+    '"real_payment_notify_executed": True': "provider_payment_real_notify_true",
+    "'real_payment_notify_executed': True": "provider_payment_real_notify_true",
+    "real_payment_notify_executed=True": "provider_payment_real_notify_true",
+    "real_payment_notify_executed = True": "provider_payment_real_notify_true",
+    '"real_wechat_pay_executed": True': "provider_payment_real_wechat_pay_true",
+    "'real_wechat_pay_executed': True": "provider_payment_real_wechat_pay_true",
+    "real_wechat_pay_executed=True": "provider_payment_real_wechat_pay_true",
+    "real_wechat_pay_executed = True": "provider_payment_real_wechat_pay_true",
+    '"real_alipay_executed": True': "provider_payment_real_alipay_true",
+    "'real_alipay_executed': True": "provider_payment_real_alipay_true",
+    "real_alipay_executed=True": "provider_payment_real_alipay_true",
+    "real_alipay_executed = True": "provider_payment_real_alipay_true",
+    '"provider_signature_verified": True': "provider_payment_signature_verified_true",
+    "'provider_signature_verified': True": "provider_payment_signature_verified_true",
+    "provider_signature_verified=True": "provider_payment_signature_verified_true",
+    "provider_signature_verified = True": "provider_payment_signature_verified_true",
+    "real_enabled default": "provider_payment_real_enabled_default",
+    "default real_enabled": "provider_payment_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2812,6 +2856,109 @@ def check_checkout_orders_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_provider_payment_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/provider_payment_notify_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("provider_payment_inventory_missing", str(inventory_path.relative_to(root)), "missing provider payment notify/return inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Provider Callback <-> API <-> Backend <-> Payment Adapter Matrix",
+            "/api/wechat-pay/notify",
+            "/api/alipay/notify",
+            "/api/alipay/return",
+            "/api/wechat-pay/{unknown_path}",
+            "/api/alipay/{unknown_path}",
+            "provider_signature_verified=false",
+            "real_payment_notify_executed=false",
+            "real_external_call_executed=false",
+            "production_compat wildcard removed",
+            "Admin payment",
+            "H5 payment",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("provider_payment_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, _methods in _decorator_route_methods(compat_path):
+            if route_path in PROVIDER_PAYMENT_COMPAT_ROUTES:
+                violations.append(
+                    Violation(
+                        "provider_payment_production_compat_wildcard",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Public provider payment wildcard rollback is deletion_locked to Next; keep admin/h5 payment wildcards out of scope.",
+                    )
+                )
+
+    commerce_paths = [
+        root / "aicrm_next/commerce/api.py",
+        root / "aicrm_next/commerce/application.py",
+    ]
+    for path in commerce_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(root))
+        for marker, code in PROVIDER_PAYMENT_DIRECT_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Provider payment Next closeout must not call legacy facades, direct HTTP clients, raw payment clients, or access-token paths.",
+                    )
+                )
+        for marker, code in PROVIDER_PAYMENT_TRUE_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Provider payment Next closeout must keep fallback, real external, real provider, and signature verification flags false.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in PROVIDER_PAYMENT_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("provider_payment_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("provider_payment_registry_owner", route_id, "runtime_owner=production_compat"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("provider_payment_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("provider_payment_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("provider_payment_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in PROVIDER_PAYMENT_MANIFEST_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("provider_payment_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") not in {"next", "next_payment_notify", "next_payment_return"}:
+            violations.append(Violation("provider_payment_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("provider_payment_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("provider_payment_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("provider_payment_manifest_lifecycle", route_path, str(record)))
+
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -4305,6 +4452,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_admin_auth_login_closeout_lock(ROOT)
         + check_public_product_pay_closeout_lock(ROOT)
         + check_checkout_orders_closeout_lock(ROOT)
+        + check_provider_payment_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
