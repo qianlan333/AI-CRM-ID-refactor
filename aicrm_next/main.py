@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
+from .admin_auth.api import router as admin_auth_router
+from .admin_auth import reset_admin_auth_fixture_state
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.api import router as automation_router
@@ -85,6 +87,7 @@ def create_app() -> FastAPI:
         reset_campaign_read_fixture_state()
         reset_campaign_write_fixture_state()
         reset_sidebar_write_fixture_state()
+        reset_admin_auth_fixture_state()
         reset_questionnaire_admin_write_fixture_state()
         reset_wecom_tag_write_fixture_state()
         reset_wecom_tag_live_mutation_fixture_state()
@@ -117,6 +120,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(platform_router)
+    app.include_router(admin_auth_router)
     app.include_router(common_operation_members_router)
     app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)

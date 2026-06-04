@@ -979,6 +979,34 @@ routes:
     delete_status: active
     replacement_status: not_started
     notes: Production_compat rollback removed after Group 13 closeout. Exact tag group CRUD is locked on Next CommandBus; this wildcard only documents future auxiliary tag-group subpaths if added.
+  - route_pattern: /login
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.admin_auth
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_auth_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin login route is Next-owned; production_compat rollback removed; break-glass local auth only; WeCom SSO is a link to existing blocked /auth/wecom/start and no real token exchange is enabled.
+  - route_pattern: /logout
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.admin_auth
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_auth_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin logout route is Next-owned; clears Next admin session cookie and redirects to /login; production_compat rollback removed.
   - route_pattern: /auth/wecom*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire

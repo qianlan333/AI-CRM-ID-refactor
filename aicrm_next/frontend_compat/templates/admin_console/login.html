@@ -132,6 +132,21 @@
         <strong>当前未启用</strong>
         <span>如需应急入口，请配置 <code>ADMIN_BREAK_GLASS_LOGIN_ENABLED</code>、<code>ADMIN_BREAK_GLASS_USERNAME</code>、<code>ADMIN_BREAK_GLASS_PASSWORD_HASH</code>；日常仍应使用企业微信登录。</span>
       </div>
+      <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_login') }}">
+        <input type="hidden" name="next" value="{{ next_path }}">
+        <input type="hidden" name="login_type" value="break_glass">
+        <label>
+          <span>应急账号</span>
+          <input type="text" name="username" placeholder="应急用户名" disabled>
+        </label>
+        <label>
+          <span>应急密码</span>
+          <input type="password" name="password" placeholder="应急密码" disabled>
+        </label>
+        <div class="admin-form-actions">
+          <button class="admin-button admin-button--secondary" type="submit" disabled>应急入口未启用</button>
+        </div>
+      </form>
     </section>
     {% endif %}
   </main>

@@ -21,6 +21,17 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     result = checker.run_check()
     samples = result["resolution_samples"]
 
+    for method, path in (
+        ("GET", "/login"),
+        ("POST", "/login"),
+        ("OPTIONS", "/login"),
+        ("GET", "/logout"),
+        ("OPTIONS", "/logout"),
+    ):
+        assert _owner_for(samples, method, path) == "next"
+        assert _endpoint_for(samples, method, path) == "aicrm_next.admin_auth.api"
+    assert _owner_for(samples, "GET", "/auth/wecom/start") == "next"
+    assert _endpoint_for(samples, "GET", "/auth/wecom/start") == "aicrm_next.auth_wecom.api"
     assert _owner_for(samples, "GET", "/api/customers") == "next"
     assert _endpoint_for(samples, "GET", "/api/customers") == "aicrm_next.customer_read_model.api"
     assert _owner_for(samples, "GET", "/api/messages/wx_ext_001/recent") == "next"

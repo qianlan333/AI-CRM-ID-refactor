@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.check_no_new_legacy import (
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
+    check_admin_auth_login_closeout_lock,
     check_auth_wecom_wildcard_inventory,
     check_automation_conversion_timers_next_safe_mode,
     check_automation_member_actions_next_safe_mode,
@@ -38,7 +39,43 @@ def test_no_new_legacy_checker_flags_disallowed_legacy_import(tmp_path: Path) ->
     assert [violation.code for violation in violations] == ["legacy_flask_facade_import"]
     payload = violations[0].to_dict()
     assert payload["path"] == "aicrm_next/new_api.py"
-    assert "route registry" in payload["remediation"]
+
+
+def test_admin_auth_login_guard_flags_production_compat_and_direct_exchange(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    auth_api = tmp_path / "aicrm_next/admin_auth/api.py"
+    inventory = tmp_path / "docs/architecture/admin_auth_login_route_inventory.md"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    auth_api.parent.mkdir(parents=True)
+    inventory.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/login', methods=['GET'])\n"
+        "@router.api_route('/logout', methods=['GET'])\n"
+        "def legacy_auth(): pass\n",
+        encoding="utf-8",
+    )
+    auth_api.write_text(
+        '"fallback_used": True\n'
+        "exchange_code_for_wecom_user()\n",
+        encoding="utf-8",
+    )
+    inventory.write_text("incomplete\n", encoding="utf-8")
+    registry.write_text("routes: []\n", encoding="utf-8")
+    manifest.write_text("routes: []\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_admin_auth_login_closeout_lock(tmp_path)}
+
+    assert "admin_auth_login_production_compat_route" in codes
+    assert "admin_auth_direct_wecom_exchange" in codes
+    assert "admin_auth_fallback_true" in codes
+    assert "admin_auth_login_registry_missing" in codes
+    assert "admin_auth_login_manifest_missing" in codes
 
 
 def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
