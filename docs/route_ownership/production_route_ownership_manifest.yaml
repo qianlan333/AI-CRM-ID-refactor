@@ -2019,17 +2019,136 @@ routes:
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
     notes: Next-native channel entry repair; welcome resend is not faked when WelcomeCode is unavailable.
-  - route_pattern: /api/admin/hxc-dashboard*
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+  - route_pattern: /admin/hxc-dashboard
+    methods: [GET]
     capability_owner: aicrm_next.hxc_dashboard
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: HXC dashboard API production_compat fallback remains documented while Next-native reads continue to be migrated.
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_pages.py
+    notes: HXC dashboard page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed.
+  - route_pattern: /admin/hxc-send-config
+    methods: [GET]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_pages.py
+    notes: HXC send-config page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed.
+  - route_pattern: /api/admin/hxc-dashboard
+    methods: [GET]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_api_contract.py
+    notes: Next safe-mode dashboard read model; no production_compat fallback and no real external side effect.
+  - route_pattern: /api/admin/hxc-dashboard/refresh
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_api_contract.py
+    notes: Legacy refresh_hxc_dashboard_snapshot removed; Next creates blocked SideEffectPlan/ExternalCallAttempt and hxc_refresh_executed=false.
+  - route_pattern: /api/admin/hxc-dashboard/refresh-directory
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_api_contract.py
+    notes: Legacy sync_admin_wecom_directory_members removed; Next creates blocked SideEffectPlan/ExternalCallAttempt and directory_sync_executed=false.
+  - route_pattern: /api/admin/hxc-dashboard/send-config
+    methods: [GET]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_send_config.py
+    notes: Next safe-mode send-config read model; no production_compat fallback and no real external side effect.
+  - route_pattern: /api/admin/hxc-dashboard/send-config
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_send_config.py
+    notes: Next local safe-mode send-config upsert; no production_compat fallback and no WeCom or legacy call.
+  - route_pattern: /api/admin/hxc-dashboard/send-config/{sender_userid}
+    methods: [DELETE, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_send_config.py
+    notes: Next local safe-mode send-config delete; no production_compat fallback and no WeCom or legacy call.
+  - route_pattern: /api/admin/hxc-dashboard/broadcast
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_broadcast_plan.py
+    notes: Legacy broadcast_to_filtered_users removed; Next creates blocked SideEffectPlan/ExternalCallAttempt and hxc_broadcast_executed=false.
+  - route_pattern: /api/admin/hxc-dashboard/{unknown_path}
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.hxc_dashboard
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_hxc_dashboard_route_precedence.py
+    notes: Unknown HXC dashboard API paths return controlled Next 404; no production_compat fallback.
   - route_pattern: /mcp
     methods: [GET, POST]
     capability_owner: aicrm_next.integration_gateway

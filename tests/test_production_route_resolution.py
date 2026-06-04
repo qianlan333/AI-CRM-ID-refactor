@@ -134,6 +134,20 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/retry-due") == "aicrm_next.automation_engine.api"
     assert _owner_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "next"
     assert _endpoint_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "aicrm_next.automation_engine.api"
+    for method, path in (
+        ("GET", "/admin/hxc-dashboard"),
+        ("GET", "/admin/hxc-send-config"),
+        ("GET", "/api/admin/hxc-dashboard"),
+        ("POST", "/api/admin/hxc-dashboard/refresh"),
+        ("POST", "/api/admin/hxc-dashboard/refresh-directory"),
+        ("GET", "/api/admin/hxc-dashboard/send-config"),
+        ("POST", "/api/admin/hxc-dashboard/send-config"),
+        ("DELETE", "/api/admin/hxc-dashboard/send-config/hxc_sender_fixture"),
+        ("POST", "/api/admin/hxc-dashboard/broadcast"),
+        ("GET", "/api/admin/hxc-dashboard/unknown"),
+    ):
+        assert _owner_for(samples, method, path) == "next"
+        assert _endpoint_for(samples, method, path) == "aicrm_next.hxc_dashboard.api"
     assert _owner_for(samples, "GET", "/api/admin/automation-conversion/member") == "next"
     assert _endpoint_for(samples, "GET", "/api/admin/automation-conversion/member") == "aicrm_next.automation_engine.api"
     for member_action_path in (
@@ -247,10 +261,5 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
                 "/pay/{product_code}",
                 "/api/products*",
         }
-        and item["path"]
-            not in {
-                "/admin/hxc-dashboard",
-                "/admin/hxc-send-config",
-            }
     ]
     assert unexpected_shadowed == []
