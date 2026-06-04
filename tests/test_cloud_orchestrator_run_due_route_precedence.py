@@ -28,8 +28,8 @@ def test_run_due_exact_routes_win_over_production_compat():
 
     assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "next"
     assert _endpoint_for(samples, "POST", "/api/admin/cloud-orchestrator/campaigns/run-due") == "aicrm_next.cloud_orchestrator.api"
-    assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "production_compat"
-    assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "next"
+    assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.automation_engine.api"
 
 
 def test_options_routes_are_next_diagnostics(monkeypatch):

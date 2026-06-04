@@ -1232,6 +1232,20 @@ routes:
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     notes: Post-Phase 7 exact-route cleanup retry removed the selected task-groups production_compat fallback hooks after owner approval, shadow compare, rollback rehearsal, route ownership proof, and exact-entry proof. Rollback restores the two task-groups production_compat decorators only; runtime deletion remains disallowed.
+  - route_pattern: /api/admin/automation-conversion/tasks/run-due
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next_runtime_plan
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Legacy rollback removed; tasks run-due is locked to Next safe-mode plan only; no real operation task runtime, no real external calls, operation_tasks_executed=false, automation_runtime_executed=false.
   - route_pattern: /api/admin/automation-conversion/tasks*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1287,6 +1301,20 @@ routes:
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     notes: Program execution workspace APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next_runtime_plan
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Legacy rollback removed; execution item send-via-bazhuayu is locked to Next safe-mode plan only; no real Bazhuayu dispatch, no real WeCom send, bazhuayu_send_executed=false, wecom_send_executed=false.
   - route_pattern: /api/admin/automation-conversion/execution-items*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

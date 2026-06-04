@@ -1909,6 +1909,34 @@ routes:
     checker: tests/test_automation_conversion_timer_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
     notes: Automation jobs run-due/preview is Next safe-mode planning only; no registered job runtime and no real side effects; source_status values are next_jobs_run_due_preview and next_jobs_run_due_plan.
+  - route_id: automation_workspace_tasks_run_due_next_safe_mode
+    path_pattern: /api/admin/automation-conversion/tasks/run-due
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Legacy rollback removed; safe-mode Next plan only; no real operation task runtime; source_status=next_automation_tasks_run_due_plan.
+  - route_id: automation_workspace_execution_item_bazhuayu_next_safe_mode
+    path_pattern: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Legacy rollback removed; safe-mode Next plan only; no real Bazhuayu dispatch; source_status=next_bazhuayu_dispatch_plan.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

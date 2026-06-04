@@ -89,6 +89,15 @@ from .timers import (
     normalize_job_codes,
     normalize_limit as normalize_timer_limit,
 )
+from .workspace_runtime import (
+    AutomationWorkspaceRuntimeInputError,
+    PlanAutomationExecutionItemOutboundDispatchCommand,
+    PlanAutomationOperationTasksRunDueCommand,
+    diagnostics_payload as workspace_runtime_diagnostics_payload,
+    execute_workspace_runtime_command,
+    normalize_execution_item_id,
+    normalize_program_id,
+)
 from .dto import (
     ActivationWebhookRequest,
     AgentMaterialsUpdateRequest,
@@ -131,6 +140,15 @@ _TIMER_HEADERS = {
     "X-AICRM-Fallback-Used": "false",
     "X-AICRM-Real-External-Call-Executed": "false",
     "X-AICRM-Automation-Runtime-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
+}
+_WORKSPACE_RUNTIME_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
+    "X-AICRM-Operation-Tasks-Executed": "false",
+    "X-AICRM-bazhuayu-Send-Executed": "false",
     "X-AICRM-WeCom-Send-Executed": "false",
 }
 
@@ -235,6 +253,130 @@ def _timer_response(command, *, source_status: str) -> JSONResponse:
     except Exception as exc:
         return _timer_error(str(exc) or "timer_unavailable", source_status=source_status, status_code=503)
     return JSONResponse(payload, headers=_TIMER_HEADERS)
+
+
+def _workspace_runtime_error(error: str, *, source_status: str, status_code: int = 400) -> JSONResponse:
+    payload = workspace_runtime_diagnostics_payload(source_status)
+    payload.update(
+        {
+            "ok": False,
+            "error": error,
+            "status": "input_error" if status_code == 400 else "error",
+            "planned_count": 0,
+            "processed_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "candidate_count": 0,
+            "candidates": [],
+            "estimated_actions": {
+                "planned_action_count": 0,
+                "runtime_execution_count": 0,
+                "outbound_dispatch_count": 0,
+                "blocked_external_call_count": 0,
+            },
+        }
+    )
+    return JSONResponse(payload, status_code=status_code, headers=_WORKSPACE_RUNTIME_HEADERS)
+
+
+async def _workspace_runtime_payload(request: Request) -> dict[str, Any]:
+    if request.headers.get("content-type", "").lower().startswith("application/json"):
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise AutomationWorkspaceRuntimeInputError("payload must be valid JSON") from exc
+    else:
+        body = await request.body()
+        payload = {} if not body else await request.json()
+    if payload is None:
+        merged: dict[str, Any] = {}
+    elif isinstance(payload, dict):
+        merged = dict(payload)
+    else:
+        raise AutomationWorkspaceRuntimeInputError("payload must be an object")
+    for key in ("program_id", "dry_run"):
+        if key not in merged and key in request.query_params:
+            merged[key] = request.query_params.get(key)
+    return merged
+
+
+def _workspace_runtime_actor(request: Request, payload: dict[str, Any]) -> str:
+    return str(payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor") or "workspace_runtime").strip()
+
+
+def _workspace_runtime_common(request: Request, payload: dict[str, Any], source_route: str) -> dict[str, Any]:
+    return {
+        "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+        "actor_id": _workspace_runtime_actor(request, payload),
+        "actor_type": str(payload.get("actor_type") or "timer").strip(),
+        "program_id": normalize_program_id(payload.get("program_id")),
+        "dry_run": _bool_payload(payload.get("dry_run"), default=True),
+        "source_route": source_route,
+        "trace_id": str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip(),
+    }
+
+
+def _workspace_runtime_response(command, *, source_status: str) -> JSONResponse:
+    try:
+        payload = execute_workspace_runtime_command(command)
+    except AutomationWorkspaceRuntimeInputError as exc:
+        return _workspace_runtime_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    except Exception as exc:
+        return _workspace_runtime_error(str(exc) or "workspace_runtime_unavailable", source_status=source_status, status_code=503)
+    return JSONResponse(payload, headers=_WORKSPACE_RUNTIME_HEADERS)
+
+
+@router.options("/api/admin/automation-conversion/tasks/run-due")
+def api_automation_workspace_tasks_run_due_options() -> JSONResponse:
+    return JSONResponse(workspace_runtime_diagnostics_payload("next_automation_tasks_run_due_plan"), headers=_WORKSPACE_RUNTIME_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/tasks/run-due")
+async def api_plan_automation_workspace_tasks_run_due(request: Request) -> JSONResponse:
+    source_status = "next_automation_tasks_run_due_plan"
+    try:
+        payload = await _workspace_runtime_payload(request)
+        command = PlanAutomationOperationTasksRunDueCommand(
+            **_workspace_runtime_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/tasks/run-due",
+            )
+        )
+    except AutomationWorkspaceRuntimeInputError as exc:
+        return _workspace_runtime_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _workspace_runtime_response(command, source_status=source_status)
+
+
+@router.options("/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu")
+def api_automation_workspace_execution_item_outbound_options(execution_item_id: int) -> JSONResponse:
+    source_status = "next_bazhuayu_dispatch_plan"
+    try:
+        normalize_execution_item_id(execution_item_id)
+    except AutomationWorkspaceRuntimeInputError as exc:
+        return _workspace_runtime_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    payload = workspace_runtime_diagnostics_payload(source_status)
+    payload["execution_item_id"] = int(execution_item_id)
+    return JSONResponse(payload, headers=_WORKSPACE_RUNTIME_HEADERS)
+
+
+@router.post("/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu")
+async def api_plan_automation_workspace_execution_item_outbound(execution_item_id: int, request: Request) -> JSONResponse:
+    source_status = "next_bazhuayu_dispatch_plan"
+    try:
+        payload = await _workspace_runtime_payload(request)
+        command = PlanAutomationExecutionItemOutboundDispatchCommand(
+            execution_item_id=normalize_execution_item_id(execution_item_id),
+            **_workspace_runtime_common(
+                request,
+                payload,
+                "/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
+            ),
+        )
+    except AutomationWorkspaceRuntimeInputError as exc:
+        return _workspace_runtime_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _workspace_runtime_response(command, source_status=source_status)
 
 
 @router.options("/api/admin/automation-conversion/reply-monitor/capture")

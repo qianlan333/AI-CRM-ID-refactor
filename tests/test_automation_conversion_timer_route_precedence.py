@@ -41,5 +41,5 @@ def test_route_resolution_samples_show_timer_next_and_workspace_fallback():
     assert endpoint("POST", "/api/admin/automation-conversion/jobs/run-due/preview") == "aicrm_next.automation_engine.api"
     assert owner("POST", "/api/admin/automation-conversion/jobs/run-due") == "next"
     assert endpoint("POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.automation_engine.api"
-    assert owner("POST", "/api/admin/automation-conversion/tasks/run-due") == "production_compat"
-    assert endpoint("POST", "/api/admin/automation-conversion/tasks/run-due") == "aicrm_next.production_compat.api"
+    assert owner("POST", "/api/admin/automation-conversion/tasks/run-due") == "next"
+    assert endpoint("POST", "/api/admin/automation-conversion/tasks/run-due") == "aicrm_next.automation_engine.api"
