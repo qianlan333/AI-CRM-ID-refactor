@@ -60,7 +60,7 @@ These routes were auto-discovered from the FastAPI app after #1040/#1042. They a
 | Owner migration | `/admin/owner-migration` | `aicrm_next.owner_migration` | Active; Next-owned. |
 | Channels | `/admin/channels`, `/admin/channels/new`, `/admin/channels/{channel_id}/edit` | `aicrm_next.frontend_compat` over `aicrm_next.automation_engine` APIs | Active; channel API URLs are validated by static URL alignment. |
 | Automation conversion | `/admin/automation-conversion`, `/admin/automation-conversion/programs/{program_id}/setup`, `/admin/automation-conversion/group-ops/ui` | `aicrm_next.frontend_compat` over `aicrm_next.automation_engine` APIs | Active/deferred by sub-surface; URL alignment is checked and side effects remain planned/blocked. |
-| Cloud orchestrator shell | `/admin/cloud-orchestrator`, `/admin/cloud-orchestrator/observability` | `aicrm_next.frontend_compat` | Active shell; observability/audit JSON APIs are documented deferred below. |
+| Cloud orchestrator shell | `/admin/cloud-orchestrator`, `/admin/cloud-orchestrator/observability` | `aicrm_next.frontend_compat` | Active shell; observability/audit JSON APIs are closed by `docs/architecture/post_legacy_deferred_api_cleanup_inventory.md`. |
 | Admin config/runtime/API docs | `/admin/config`, `/admin/runtime-config`, `/admin/api-docs` | `aicrm_next.frontend_compat` | Active support/admin surfaces; no production_compat router involvement. |
 | Questionnaire external push logs | `/admin/questionnaires/external-push-logs`, `/admin/questionnaires/{questionnaire_id}/external-push-logs` | `aicrm_next.frontend_compat` | Active historical admin surface; real external push remains gated. |
 | Radar links | `/admin/radar-links`, `/admin/radar-links/new`, `/admin/radar-links/{link_id}/edit`, `/admin/radar-links/{link_id}/detail` | `aicrm_next.frontend_compat` over `aicrm_next.radar_links` APIs | Active; export/events URLs resolve to Next routes. |
@@ -84,25 +84,29 @@ These routes were auto-discovered from the FastAPI app after #1040/#1042. They a
 | WeCom tag live mutation | POST | `/api/admin/wecom/tags/live/mark` | `aicrm_next.customer_tags` | 200/400 controlled | real-blocked by default |
 | Media libraries | GET | `/api/admin/image-library`, `/api/admin/attachment-library`, `/api/admin/miniprogram-library` | `aicrm_next.media_library` | 200 | local/fake storage by default |
 | Cloud campaigns | GET/POST | `/api/admin/cloud-orchestrator/campaigns`, `/api/admin/cloud-orchestrator/campaigns/run-due/preview`, `/api/admin/cloud-orchestrator/campaigns/run-due` | `aicrm_next.cloud_orchestrator` | 200 | preview/planned side effects only by default |
+| Cloud observability | GET | `/api/admin/cloud-orchestrator/audit`, `/api/admin/cloud-orchestrator/observability` | `aicrm_next.post_legacy_deferred` | 200 | local read-only contract; no external observability service |
 | Automation timer/member actions | POST | `/api/admin/automation-conversion/jobs/run-due/preview`, `/api/admin/automation-conversion/member/put-in-pool` | `aicrm_next.automation_engine` | 200 | planned/blocked side effects by default |
 | Customer activation webhook | POST | `/api/customers/automation/activation-webhook` | `aicrm_next.automation_engine` | 200/400 controlled | real external call blocked by default |
 | HXC dashboard | GET/POST | `/api/admin/hxc-dashboard`, `/api/admin/hxc-dashboard/refresh` | `aicrm_next.hxc_dashboard` | 200 | blocked side-effect plan by default |
+| Class-user export | GET/POST | `/api/admin/class-user-management/export` | `aicrm_next.post_legacy_deferred` | 200 | local CSV export; no external storage |
+| WeCom customer acquisition links | GET/POST/PATCH/DELETE | `/api/admin/wecom-customer-acquisition-links`, `/api/admin/wecom-customer-acquisition-links/{link_id}`, `/api/admin/wecom-customer-acquisition-links/{link_id}/{action}` | `aicrm_next.post_legacy_deferred` | 200/404/410 controlled | safe-mode local fixture; real WeCom blocked |
 | Checkout | POST | `/api/checkout/wechat` | `aicrm_next.commerce` | 200 | fake checkout/no real payment by default |
 | Order read | GET | `/api/orders/smoke` | `aicrm_next.commerce` | 404 controlled | none |
 | Provider notify | POST | `/api/wechat-pay/notify` | `aicrm_next.commerce` | 200/400/422 controlled | no legacy forward |
 | Payment unknown admin/H5 | GET | `/api/admin/wechat-pay/unknown-child`, `/api/h5/wechat-pay/unknown-child` | `aicrm_next.commerce` | 410 controlled | no legacy forward |
 
-## Explicit Deferred/Historical Frontend URL References
+## Deferred API Closeout References
 
-These strings may still appear in historical templates or non-core admin workspaces. They are not `production_compat`, and they must remain documented until removed or implemented by a Next-owned PR.
+The PR #1043 deferred frontend API references are no longer whitelisted. They are implemented as Next-owned controlled contracts and tracked in `docs/architecture/post_legacy_deferred_api_cleanup_inventory.md`.
 
 | URL or prefix | Status | Required future action |
 | --- | --- | --- |
-| `/api/admin/class-user-management/export` | deprecated_historical | Replace or remove the old operations export button before enabling the workspace as production-critical. |
-| `/api/admin/cloud-orchestrator/audit` | deferred_unregistered_api | Add a Next-owned audit API or remove the page call from the observability workspace. |
-| `/api/admin/cloud-orchestrator/observability` | deferred_unregistered_api | Add a Next-owned observability API or remove the page call from the observability workspace. |
-| `/api/admin/wecom-customer-acquisition-links` | deferred_unregistered_workspace | Add a Next-owned acquisition links API family before treating that page as active. |
-| `/api/admin/wecom-customer-acquisition-links/` | deferred_unregistered_workspace | Dynamic child actions under the same workspace remain deferred. |
+| `/api/admin/class-user-management/export` | closed_next_export | Covered by local CSV export route; keep no external storage default. |
+| `/api/admin/cloud-orchestrator/audit` | closed_next_cloud_observability | Covered by read-only empty/degraded-safe audit contract. |
+| `/api/admin/cloud-orchestrator/observability` | closed_next_cloud_observability | Covered by read-only local observability contract. |
+| `/api/admin/wecom-customer-acquisition-links` | closed_next_wecom_customer_acquisition | Covered by safe-mode read/create API with real WeCom blocked. |
+| `/api/admin/wecom-customer-acquisition-links/{link_id}` | closed_next_wecom_customer_acquisition | Covered by safe-mode detail/update/delete API. |
+| `/api/admin/wecom-customer-acquisition-links/{link_id}/{action}` | closed_next_wecom_customer_acquisition | Covered by safe-mode enable/disable/sync plan-only API; unknown action is controlled 410. |
 
 ## Final Acceptance Baseline
 
@@ -111,5 +115,6 @@ These strings may still appear in historical templates or non-core admin workspa
 - Unknown owner count: 0.
 - Undocumented route count: 0.
 - Deleted-but-still-registered count: 0.
+- Deferred frontend API whitelist count: 0.
 - Representative smoke responses: no `X-AICRM-Compatibility-Facade`.
 - Normal JSON contracts: `route_owner=ai_crm_next`, `fallback_used=false`, and `real_external_call_executed=false` when those fields are present.

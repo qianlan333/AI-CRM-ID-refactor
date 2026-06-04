@@ -72,7 +72,7 @@ def test_post_legacy_inventory_document_has_required_matrices() -> None:
     assert "## Admin Page Matrix" in text
     assert "## Public/H5 Page Matrix" in text
     assert "## API Contract Matrix" in text
-    assert "## Explicit Deferred/Historical Frontend URL References" in text
+    assert "## Deferred API Closeout References" in text
     assert "production_compat" in text
     assert "X-AICRM-Compatibility-Facade" in text
     assert "fallback_used=true" in text
@@ -93,6 +93,8 @@ def test_post_legacy_inventory_lists_all_baseline_cases() -> None:
     for pattern in DEFERRED_FRONTEND_API_PATTERNS:
         if pattern not in text:
             missing.append(pattern)
+
+    assert "Deferred frontend API whitelist count: 0" in text
 
     assert missing == []
 

@@ -2221,3 +2221,87 @@ routes:
     delete_ready: false
     checker: tools/check_production_route_resolution.py
     notes: MCP is owned by the aicrm_next.integration_gateway adapter boundary; openclaw_service is not an owner and must not be reintroduced.
+  - route_pattern: /api/admin/class-user-management/export
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    current_runtime_owner: next
+    production_behavior: next_export
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Post-Legacy deferred closeout for the operations page export button. Returns local CSV only, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, external_storage_executed=false.
+  - route_pattern: /api/admin/cloud-orchestrator/audit
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_cloud_observability
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Post-Legacy deferred closeout for the Cloud Observability page. Read-only audit API returns empty/degraded-safe contract when no audit store is configured; no real external observability service.
+  - route_pattern: /api/admin/cloud-orchestrator/observability
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_cloud_observability
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Post-Legacy deferred closeout for Cloud observability summary metrics. Returns local empty metrics and health without legacy fallback or external service calls.
+  - route_pattern: /api/admin/wecom-customer-acquisition-links
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    current_runtime_owner: next_command
+    production_behavior: next_wecom_customer_acquisition
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Post-Legacy deferred closeout for WeCom customer acquisition link management. Read/create is safe-mode local and plan-only; wecom_api_called=false.
+  - route_pattern: /api/admin/wecom-customer-acquisition-links/{link_id}
+    methods: [GET, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    current_runtime_owner: next_command
+    production_behavior: next_wecom_customer_acquisition
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Safe-mode local detail/update/disable for WeCom customer acquisition links; no real WeCom API calls and no production_compat fallback.
+  - route_pattern: /api/admin/wecom-customer-acquisition-links/{link_id}/{action}
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    current_runtime_owner: next_command
+    production_behavior: next_wecom_customer_acquisition
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    notes: Safe-mode enable/disable/sync action route for WeCom customer acquisition links; unknown actions return controlled 410, wecom_api_called=false.
