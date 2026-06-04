@@ -14,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
+from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -211,6 +212,7 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
 def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, Any]:
     identity = _identity_from_request(request)
     code = _normalized_text(product.get("product_code"))
+    paid_order = _existing_paid_order_for_checkout(product, identity) if identity.get("openid") else None
     return {
         "product": {
             "product_code": code,
@@ -226,7 +228,7 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
         "require_mobile": bool(product.get("require_mobile")),
         "cta_text": _normalized_text(product.get("buy_button_text")) or "确认支付",
         "completion_action": product.get("completion_action") or {"type": "default", "redirect_url": ""},
-        "paid_order": None,
+        "paid_order": paid_order,
         "price_display": format_price(product),
     }
 
@@ -417,6 +419,63 @@ def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     return _resolve_lead_channel_qr(conn, channel_id=channel_id, program_id=program_id)
 
 
+def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
+    product_codes = product_code_filter_values(product.get("product_code"))
+    identity_clauses: list[str] = []
+    params: list[Any] = list(product_codes)
+    openid = _normalized_text(identity.get("openid"))
+    if openid:
+        identity_clauses.append("payer_openid = %s")
+        params.append(openid)
+    unionid = _normalized_text(identity.get("unionid"))
+    if unionid:
+        identity_clauses.append("unionid = %s")
+        params.append(unionid)
+    external_userid = _normalized_text(identity.get("external_userid"))
+    if external_userid:
+        identity_clauses.append("external_userid = %s")
+        params.append(external_userid)
+    if not product_codes or not identity_clauses:
+        return None
+    product_placeholders = ", ".join(["%s"] * len(product_codes))
+    row = conn.execute(
+        f"""
+        SELECT *
+        FROM wechat_pay_orders
+        WHERE product_code IN ({product_placeholders})
+          AND (status = 'paid' OR trade_state = 'SUCCESS')
+          AND NOT (
+            COALESCE(refund_status, '') = 'full_refunded'
+            OR (amount_total > 0 AND COALESCE(refunded_amount_total, 0) >= amount_total)
+          )
+          AND ({" OR ".join(identity_clauses)})
+        ORDER BY paid_at DESC NULLS LAST, updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+        LIMIT 1
+        """,
+        tuple(params),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _paid_order_payload_for_product_identity(conn: Any, *, product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
+    order = _paid_order_for_product_identity(conn, product=product, identity=identity)
+    if not order:
+        return None
+    completion_redirect = _completion_redirect_from_product(product)
+    lead_qr = {} if completion_redirect.get("completion_redirect", {}).get("enabled") else _lead_qr_for_product_code(conn, _normalized_text(product.get("product_code")))
+    return _order_payload(order, completion_redirect=completion_redirect, lead_qr=lead_qr)
+
+
+def _existing_paid_order_for_checkout(product: dict[str, Any], identity: dict[str, str]) -> dict[str, Any] | None:
+    if not production_data_ready():
+        return None
+    try:
+        with _connect() as conn:
+            return _paid_order_payload_for_product_identity(conn, product=product, identity=identity)
+    except Exception:
+        return None
+
+
 def _order_payload(
     row: dict[str, Any],
     *,
@@ -603,8 +662,11 @@ def create_jsapi_order_response(request: Request, payload: dict[str, Any]) -> JS
         "attach": json.dumps({"product_code": product["product_code"], "client_order_ref": _normalized_text(payload.get("client_order_ref"))}, ensure_ascii=False, separators=(",", ":"))[:128],
     }
     try:
-        client = WeChatPayClient(config)
         with _connect() as conn:
+            existing_paid_order = _paid_order_payload_for_product_identity(conn, product=product, identity=identity)
+            if existing_paid_order:
+                return JSONResponse({"ok": True, "already_paid": True, "order": existing_paid_order}, headers=route_headers())
+            client = WeChatPayClient(config)
             _insert_order(conn, product=product, identity=identity, mobile=mobile, out_trade_no=out_trade_no)
             response_payload = client.create_jsapi_transaction(transaction_payload)
             prepay_id = _normalized_text(response_payload.get("prepay_id"))
