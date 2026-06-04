@@ -668,12 +668,12 @@ routes:
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
+    delete_ready: true
     checker: tools/check_production_route_resolution.py
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: validating
-    notes: Public questionnaire read routes are Next exact; exact submit and diagnostics POSTs are Next CommandBus primary in group 9 with legacy rollback retained; OAuth session identity remains separate and out of scope.
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public questionnaire read routes are Next guarded preview with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary in group 9; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
   - route_pattern: /api/h5/questionnaires/{slug}/submit
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.questionnaire

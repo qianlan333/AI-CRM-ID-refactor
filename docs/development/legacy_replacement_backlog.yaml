@@ -523,14 +523,14 @@ entries:
     replacement_category: "external_side_effect"
     priority: "P2"
     daily_business_critical: true
-    business_continuity_requirement: "During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects."
+    business_continuity_requirement: "Final cleanup frozen: keep the Next guarded preview owner locked, do not restore production compatibility fallback, and do not enable real external calls without an explicit gated adapter PR."
     replacement_owner: "aicrm_next.questionnaire"
-    replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
-    fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
+    replacement_strategy: "Keep the Next guarded preview contract and require a future explicit gated adapter PR for real OAuth/token exchange or other external side effects."
+    fallback_required_until: "No legacy fallback is allowed; production_compat runtime is removed."
     rollback_path: "Do not restore production compatibility runtime; rollback requires an explicit gated adapter PR."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    delete_condition: "Already deletion-locked; rollback must be a Next-native fix, not restoring legacy fallback."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Public questionnaire read routes are Next exact; submit and diagnostics POSTs forward to legacy Flask so OAuth session identity and production submit behavior are preserved."
+    notes: "Public questionnaire read routes are Next guarded preview with production_compat removed; submit and diagnostics POSTs remain governed by their Next command contracts."
   - id: "LRB-025"
     route_pattern: "/api/h5/questionnaires/{slug}/submit"
     methods: ["POST", "OPTIONS"]

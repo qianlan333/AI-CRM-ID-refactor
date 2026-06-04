@@ -28,6 +28,13 @@ def test_final_route_registry_counters_are_zero(monkeypatch) -> None:
     assert report["legacy_fallback_routes"] == []
     assert report["unknown_owner_routes"] == []
     assert report["deleted_but_still_registered_routes"] == []
+    assert report["undocumented_routes_count"] == 0
+    assert report["unknown_owner_count"] == 0
+    assert report["deleted_but_still_registered_count"] == 0
+    assert report["production_compat_route_count"] == 0
+    assert report["production_compat_catch_all_count"] == 0
+    assert report["legacy_fallback_routes_count"] == 0
+    assert report["wildcard_legacy_forward_count"] == 0
 
 
 def test_representative_next_routes_do_not_emit_compatibility_facade(monkeypatch) -> None:
@@ -47,4 +54,3 @@ def test_representative_next_routes_do_not_emit_compatibility_facade(monkeypatch
         response = client.get(path)
         assert response.status_code < 500
         assert "X-AICRM-Compatibility-Facade" not in response.headers
-

@@ -4635,10 +4635,22 @@ def check_final_legacy_exit_cleanup(root: Path = ROOT) -> list[Violation]:
         route = str(record.get("path_pattern") or record.get("route_id") or "<unknown>")
         if record.get("legacy_fallback_allowed") is True:
             violations.append(Violation("final_cleanup_registry_legacy_fallback_allowed", route, "legacy_fallback_allowed=true"))
+        if record.get("legacy_source") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("final_cleanup_registry_legacy_source", route, f"legacy_source={record.get('legacy_source')}"))
         if record.get("runtime_owner") in {"production_compat", "legacy_forward"}:
             violations.append(Violation("final_cleanup_registry_legacy_owner", route, f"runtime_owner={record.get('runtime_owner')}"))
         if record.get("delete_status") == "next_primary_with_legacy_rollback":
             violations.append(Violation("final_cleanup_registry_rollback_lifecycle", route, f"delete_status={record.get('delete_status')}"))
+        if record.get("legacy_source") in {"production_compat", "legacy_forward"} and (
+            record.get("delete_status") == "active" or record.get("replacement_status") == "not_started"
+        ):
+            violations.append(
+                Violation(
+                    "final_cleanup_registry_unlocked_legacy_source",
+                    route,
+                    f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}",
+                )
+            )
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     for record in manifest_records:
@@ -4649,13 +4661,26 @@ def check_final_legacy_exit_cleanup(root: Path = ROOT) -> list[Violation]:
             violations.append(Violation("final_cleanup_manifest_legacy_owner", route, f"current_runtime_owner={record.get('current_runtime_owner')}"))
         if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
             violations.append(Violation("final_cleanup_manifest_legacy_behavior", route, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"} and (
+            record.get("delete_status") == "active" or record.get("replacement_status") == "not_started"
+        ):
+            violations.append(
+                Violation(
+                    "final_cleanup_manifest_unlocked_legacy_behavior",
+                    route,
+                    f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}",
+                )
+            )
 
     route_report = build_route_check_report(strict=True)
     final_counts = {
-        "undocumented_routes_count": len(route_report["undocumented_routes"]),
-        "legacy_fallback_routes_count": len(route_report["legacy_fallback_routes"]),
-        "unknown_owner_routes_count": len(route_report["unknown_owner_routes"]),
-        "deleted_but_still_registered_routes_count": len(route_report["deleted_but_still_registered_routes"]),
+        "undocumented_routes_count": route_report["undocumented_routes_count"],
+        "unknown_owner_count": route_report["unknown_owner_count"],
+        "deleted_but_still_registered_count": route_report["deleted_but_still_registered_count"],
+        "production_compat_route_count": route_report["production_compat_route_count"],
+        "production_compat_catch_all_count": route_report["production_compat_catch_all_count"],
+        "legacy_fallback_routes_count": route_report["legacy_fallback_routes_count"],
+        "wildcard_legacy_forward_count": route_report["wildcard_legacy_forward_count"],
     }
     for count_name, count in final_counts.items():
         if count != 0:

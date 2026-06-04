@@ -32,4 +32,5 @@ def test_api_docs_router_sources_do_not_include_production_compat() -> None:
 
     assert COMPAT_ROUTER not in source
     assert COMPAT_WILDCARD_ROUTER not in source
-
+    assert "production_compat.api" not in source
+    assert "legacy_proxy" not in source

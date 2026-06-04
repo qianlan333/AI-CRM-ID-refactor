@@ -40,6 +40,15 @@ class RouteCheckResult:
     unknown_owner_routes: list[dict[str, Any]]
     delete_ready_routes: list[dict[str, Any]]
     deleted_but_still_registered_routes: list[dict[str, Any]]
+    production_compat_routes: list[dict[str, Any]]
+    production_compat_route_count: int
+    production_compat_catch_all_count: int
+    legacy_fallback_routes_count: int
+    wildcard_legacy_forward_count: int
+    undocumented_routes_count: int
+    unknown_owner_count: int
+    unknown_owner_routes_count: int
+    deleted_but_still_registered_count: int
 
     @classmethod
     def from_report(cls, report: dict[str, Any]) -> "RouteCheckResult":
@@ -57,6 +66,15 @@ class RouteCheckResult:
             unknown_owner_routes=list(report["unknown_owner_routes"]),
             delete_ready_routes=list(report["delete_ready_routes"]),
             deleted_but_still_registered_routes=list(report["deleted_but_still_registered_routes"]),
+            production_compat_routes=list(report["production_compat_routes"]),
+            production_compat_route_count=int(report["production_compat_route_count"]),
+            production_compat_catch_all_count=int(report["production_compat_catch_all_count"]),
+            legacy_fallback_routes_count=int(report["legacy_fallback_routes_count"]),
+            wildcard_legacy_forward_count=int(report["wildcard_legacy_forward_count"]),
+            undocumented_routes_count=int(report["undocumented_routes_count"]),
+            unknown_owner_count=int(report["unknown_owner_count"]),
+            unknown_owner_routes_count=int(report["unknown_owner_routes_count"]),
+            deleted_but_still_registered_count=int(report["deleted_but_still_registered_count"]),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -150,11 +168,14 @@ def build_route_check_report(
     registered_deleted: list[dict[str, Any]] = []
     legacy_fallback: list[dict[str, Any]] = []
     wildcard_routes: list[dict[str, Any]] = []
+    production_compat_routes: list[dict[str, Any]] = []
 
     for route in routes:
         entry = registry_service.find_route(route.path, set(route.methods))
         if route.is_wildcard:
             wildcard_routes.append(route.to_dict())
+        if route.is_legacy_forward:
+            production_compat_routes.append(route.to_dict())
         if not entry:
             undocumented.append(route.to_dict())
             continue
@@ -193,6 +214,17 @@ def build_route_check_report(
     if wildcard_routes:
         warnings.extend(f"wildcard_route:{item['methods']} {item['path']}" for item in wildcard_routes)
 
+    final_counts = {
+        "production_compat_route_count": len(production_compat_routes),
+        "production_compat_catch_all_count": len([route for route in production_compat_routes if route["is_wildcard"]]),
+        "legacy_fallback_routes_count": len(legacy_fallback),
+        "wildcard_legacy_forward_count": len([route for route in production_compat_routes if route["is_wildcard"]]),
+        "undocumented_routes_count": len(undocumented),
+        "unknown_owner_count": len(unknown_owner),
+        "unknown_owner_routes_count": len(unknown_owner),
+        "deleted_but_still_registered_count": len(registered_deleted),
+    }
+
     return {
         "ok": not blockers if strict else True,
         "mode": "strict" if strict else "warn",
@@ -204,7 +236,9 @@ def build_route_check_report(
         "missing_runtime_routes": missing_runtime,
         "legacy_fallback_routes": legacy_fallback,
         "wildcard_routes": wildcard_routes,
+        "production_compat_routes": production_compat_routes,
         "unknown_owner_routes": unknown_owner,
         "delete_" + "ready_routes": routes_ready_for_deletion,
         "deleted_but_still_registered_routes": registered_deleted,
+        **final_counts,
     }

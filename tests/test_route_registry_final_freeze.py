@@ -32,6 +32,7 @@ def test_final_closeout_records_are_locked() -> None:
         "frontend_compat_auth_pages",
         "frontend_compat_logout_pages",
         "public_product_page_next_landing",
+        "questionnaire_public_h5_out_of_scope",
         "checkout_wechat_next_checkout",
         "wechat_pay_notify_next_payment_notify",
         "admin_wechat_pay_wildcard_final_closeout",
@@ -41,3 +42,13 @@ def test_final_closeout_records_are_locked() -> None:
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
 
+
+def test_public_h5_questionnaire_manifest_is_final_locked() -> None:
+    manifest = {record["route_pattern"]: record for record in _records("docs/route_ownership/production_route_ownership_manifest.yaml")}
+    record = manifest["/api/h5/questionnaires*"]
+
+    assert record["legacy_fallback_allowed"] is False
+    assert record["production_behavior"] == "guarded_preview"
+    assert record["delete_ready"] is True
+    assert record["delete_status"] == "deletion_locked"
+    assert record["replacement_status"] == "locked"

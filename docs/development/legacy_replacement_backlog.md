@@ -158,7 +158,7 @@ Status: Final cleanup frozen. Historical planning entries are archived; restorin
 - `LRB-021` `/api/messages/{external_userid}/recent`: `P1` / `phase_4_internal_write` / `readonly` / owner `aicrm_next.customer_read_model`
 - `LRB-022` `/api/messages*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.message_archive` / deleted locked
 - `LRB-023` `/api/admin/questionnaires*`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.questionnaire`
-- `LRB-024` `/api/h5/questionnaires*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.questionnaire`
+- `LRB-024` `/api/h5/questionnaires*`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.questionnaire` / deletion locked
 - `LRB-025` `/api/h5/questionnaires/{slug}/submit`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.questionnaire`
 - `LRB-026` `/api/h5/questionnaires/{slug}/client-diagnostics`: `P1` / `phase_4_internal_write` / `internal_write` / owner `aicrm_next.questionnaire`
 - `LRB-027` `/s/{slug}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.questionnaire`

@@ -26,6 +26,7 @@ from scripts.check_no_new_legacy import (
     check_sidebar_jssdk_next_adapter,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
+    check_final_legacy_exit_cleanup,
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
@@ -198,6 +199,38 @@ def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
     tests.write_text("from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n", encoding="utf-8")
 
     assert scan_source_tree(tmp_path) == []
+
+
+def test_final_cleanup_guard_flags_reintroduced_production_compat_source(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    main = tmp_path / "aicrm_next/main.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    main.parent.mkdir(parents=True, exist_ok=True)
+    registry.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\nwildcard_router = APIRouter()\n", encoding="utf-8")
+    main.write_text("from fastapi import FastAPI\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: public_h5_regression\n"
+        "    path_pattern: /api/h5/questionnaires*\n"
+        "    methods: [GET]\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: production_compat\n"
+        "    delete_status: active\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text("routes: []\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_exit_cleanup(tmp_path)}
+
+    assert "final_cleanup_registry_legacy_source" in codes
+    assert "final_cleanup_registry_unlocked_legacy_source" in codes
 
 
 def _write_cloud_media_upload_docs(

@@ -106,7 +106,6 @@ _AUTH_LABEL_MD = {
     "public": "公开访问",
     "bearer": "Bearer Token",
     "signature": "签名 / Webhook Token",
-    "legacy_proxy": "兼容代理",
 }
 
 
@@ -157,11 +156,6 @@ def _normalize_path(path: str) -> str:
 
 def _path_for_route(route: APIRoute) -> str:
     return _normalize_path(str(getattr(route, "path_format", None) or route.path))
-
-
-def _is_legacy_proxy(route: APIRoute) -> bool:
-    module = getattr(route.endpoint, "__module__", "")
-    return module.endswith("production_compat.api")
 
 
 def _should_document(path: str) -> bool:
@@ -425,12 +419,6 @@ def _summary_for(method: str, path: str, route: APIRoute) -> str:
 
 
 def _auth_for(method: str, path: str, route: APIRoute) -> str:
-    if _is_legacy_proxy(route):
-        if path in {"/login", "/logout"}:
-            return "public" if path == "/login" else "session"
-        if "callback" in path or "notify" in path or "webhook" in path or path.startswith("/api/wecom/events"):
-            return "signature"
-        return "legacy_proxy"
     if path in {"/health", "/api/system/health", "/login"} or path.startswith("/auth/wecom/"):
         return "public"
     if path == "/logout":
