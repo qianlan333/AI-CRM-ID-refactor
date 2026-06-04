@@ -57,36 +57,12 @@ def sidebar_marketing_status(*, external_userid: str) -> dict[str, Any]:
 
 def sidebar_v2_workbench_readonly(*, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
     sidebar_v2 = _legacy_import_module(".domains.sidebar_v2")
-    sidebar_v2_service = _legacy_import_module(".domains.sidebar_v2.service")
 
-    normalized_external_userid = _text(external_userid)
-    normalized_owner = _text(owner_userid)
     with _legacy_app().app_context():
-        context = sidebar_v2_service._context(normalized_external_userid)
-        binding = dict(context.get("binding") or {}) or sidebar_v2_service._binding_status(
-            normalized_external_userid,
-            normalized_owner,
+        return sidebar_v2.get_sidebar_workbench(
+            external_userid=_text(external_userid),
+            owner_userid=_text(owner_userid),
         )
-        customer = sidebar_v2_service._customer_payload(
-            context,
-            binding,
-            normalized_external_userid,
-            normalized_owner,
-        )
-        questionnaires = sidebar_v2.get_questionnaires(external_userid=normalized_external_userid)["questionnaires"]
-        sidebar_context = dict((context.get("customer") or {}).get("sidebar_context") or {})
-        workflow_title = (
-            _text(sidebar_context.get("workflow_title"))
-            or _text(sidebar_context.get("sop_title"))
-            or _text(sidebar_context.get("program_name"))
-            or sidebar_v2_service.repo.get_workflow_title_for_customer(normalized_external_userid)
-        )
-        return {
-            "customer": customer,
-            "workflow": {"title": workflow_title},
-            "profile": sidebar_v2_service._profile_payload(normalized_external_userid, context, questionnaires),
-            "modules": list(sidebar_v2_service.MODULES),
-        }
 
 
 def sidebar_v2_questionnaires(*, external_userid: str) -> dict[str, Any]:
@@ -134,22 +110,10 @@ def sidebar_v2_products(*, external_userid: str) -> dict[str, Any]:
 
 
 def sidebar_v2_orders_readonly(*, external_userid: str) -> dict[str, Any]:
-    sidebar_v2_service = _legacy_import_module(".domains.sidebar_v2.service")
+    sidebar_v2 = _legacy_import_module(".domains.sidebar_v2")
 
-    normalized_external_userid = _text(external_userid)
     with _legacy_app().app_context():
-        context = sidebar_v2_service._context(normalized_external_userid)
-        binding = dict(context.get("binding") or {}) or sidebar_v2_service._binding_status(
-            normalized_external_userid,
-            "",
-        )
-        customer = sidebar_v2_service._customer_payload(context, binding, normalized_external_userid, "")
-        rows = sidebar_v2_service.repo.list_customer_wechat_pay_orders(
-            external_userid=normalized_external_userid,
-            mobile=_text(customer.get("mobile")),
-            limit=20,
-        )
-        return {"orders": [sidebar_v2_service._order_item(dict(item)) for item in rows]}
+        return sidebar_v2.get_orders(external_userid=_text(external_userid))
 
 
 def signup_conversion_batch_list(*, limit: int = 20, cursor: str = "") -> list[dict[str, Any]]:

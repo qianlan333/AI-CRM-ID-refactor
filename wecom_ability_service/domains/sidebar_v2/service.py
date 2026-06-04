@@ -18,6 +18,7 @@ from ...domains.admin_console.customer_profile_service import (
     get_customer_questionnaire_answers_payload,
 )
 from ...domains.automation_conversion import private_message_dispatch
+from ...domains.questionnaire import backfill_questionnaire_submissions_for_mobile_binding
 from ...domains.wechat_pay import product_service as wechat_pay_product_service
 from . import repo
 
@@ -164,6 +165,27 @@ def _ensure_wechat_pay_order_mobile_binding(
     return dict(result or binding)
 
 
+def _backfill_questionnaire_submissions_for_customer(customer: dict[str, Any]) -> dict[str, Any]:
+    external_userid = _text(customer.get("external_userid"))
+    mobile = _text(customer.get("mobile"))
+    if not external_userid or not mobile:
+        return {"ok": False, "reason": "external_userid_or_mobile_missing", "updated_count": 0}
+    try:
+        return backfill_questionnaire_submissions_for_mobile_binding(
+            external_userid=external_userid,
+            mobile=mobile,
+            follow_user_userid=_text(customer.get("owner_userid")),
+        )
+    except Exception as exc:
+        logger.warning(
+            "sidebar v2 skipped questionnaire mobile backfill external_userid=%s mobile=%s reason=%s",
+            external_userid,
+            mobile,
+            exc,
+        )
+        return {"ok": False, "reason": "backfill_failed", "updated_count": 0}
+
+
 def _answer_profile_fallback(questionnaires: list[dict[str, Any]]) -> dict[str, str]:
     fields = {"source": "", "industry": "", "industry_description": "", "needs_blockers_followup": ""}
     for questionnaire in questionnaires:
@@ -221,6 +243,7 @@ def get_sidebar_workbench(*, external_userid: str, owner_userid: str = "") -> di
         binding=binding,
     )
     customer = _customer_payload(context, binding, normalized_external_userid, normalized_owner)
+    _backfill_questionnaire_submissions_for_customer(customer)
     questionnaires = get_questionnaires(external_userid=normalized_external_userid)["questionnaires"]
     sidebar_context = dict((context.get("customer") or {}).get("sidebar_context") or {})
     workflow_title = (
@@ -305,6 +328,10 @@ def get_questionnaires(*, external_userid: str) -> dict[str, Any]:
     normalized_external_userid = _text(external_userid)
     if not normalized_external_userid:
         raise ValueError("external_userid is required")
+    context = _context(normalized_external_userid)
+    binding = dict(context.get("binding") or {}) or _binding_status(normalized_external_userid, "")
+    customer = _customer_payload(context, binding, normalized_external_userid, "")
+    _backfill_questionnaire_submissions_for_customer(customer)
     try:
         payload = get_customer_questionnaire_answers_payload(external_userid=normalized_external_userid)
     except LookupError:
@@ -564,6 +591,7 @@ def get_orders(*, external_userid: str) -> dict[str, Any]:
         binding=binding,
     )
     customer = _customer_payload(context, binding, normalized_external_userid, "")
+    _backfill_questionnaire_submissions_for_customer(customer)
     rows = repo.list_customer_wechat_pay_orders(
         external_userid=normalized_external_userid,
         mobile=_text(customer.get("mobile")),
