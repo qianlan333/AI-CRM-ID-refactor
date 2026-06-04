@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import pytest
+
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion.admission_service import admit_channel_contact_to_program
 from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
+from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+    run_audience_entered_operation_tasks,
+)
+from wecom_ability_service.domains.automation_conversion.questionnaire_bridge_service import (
+    sync_questionnaire_submission_audience_transition,
+)
+from wecom_ability_service.domains.questionnaire.service import submit_questionnaire
 
 from aicrm_next.automation_engine.programs import create_automation_program_operation_task
 from automation_channel_admission_helpers import (
     create_channel,
+    create_choice_questionnaire,
     create_program,
     disabled_entry_rule,
     save_audience_entry_rule,
@@ -81,6 +91,30 @@ def _execution_count(task_id: int, audience_entry_id: int) -> int:
         "task_id = ? AND execution_id = ?",
         (int(task_id), f"actask-event-{int(task_id)}-{int(audience_entry_id)}"),
     )
+
+
+def _execution_item_count(task_id: int, audience_entry_id: int) -> int:
+    return table_count(
+        "automation_operation_task_execution_item",
+        "task_id = ? AND audience_entry_id = ?",
+        (int(task_id), int(audience_entry_id)),
+    )
+
+
+def _current_entry(external_contact_id: str) -> dict:
+    row = get_db().execute(
+        """
+        SELECT e.id, e.audience_code, e.entry_reason, e.entry_source, m.questionnaire_status, m.current_pool
+        FROM automation_member_audience_entry e
+        JOIN automation_member m ON m.id = e.member_id
+        WHERE m.external_contact_id = ?
+          AND e.is_current = TRUE
+        ORDER BY e.id DESC
+        LIMIT 1
+        """,
+        (external_contact_id,),
+    ).fetchone()
+    return dict(row or {})
 
 
 def test_next_program_admission_triggers_audience_entered_operation_task(app):
@@ -160,10 +194,10 @@ def test_next_program_admission_does_not_trigger_unmatched_audience_task(app):
                 "status": "active",
                 "trigger_type": "audience_entered",
                 "send_time": "10:00",
-                "target_stage_code": "questionnaire_review",
-                "target_audience_code": "pending_questionnaire",
+                "target_stage_code": "operating",
+                "target_audience_code": "operating",
                 "audience_day_offset": 1,
-                "behavior_filter": "none",
+                "behavior_filter": "gte_10",
                 "content_mode": "unified",
                 "unified_content_json": {"content_text": "unmatched content"},
             },
@@ -234,3 +268,206 @@ def test_next_program_admission_realtime_hook_does_not_trigger_scheduled_daily_t
         assert result["realtime_operation_tasks_enqueued_count"] == 0
         assert table_count("automation_operation_task_execution", "task_id = ?", (int(task["id"]),)) == 0
         assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 0
+
+
+def test_next_program_admission_realtime_hook_does_not_trigger_inactive_task(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_admission_inactive_guard")
+        task = _create_audience_entered_task(program_id, name="Next inactive realtime", status="paused")
+
+        result = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_admission_inactive",
+            trigger_time=T1,
+        )
+
+        assert result["admission_status"] == "accepted"
+        assert result["realtime_task_hook"]["ok"] is True
+        assert result["realtime_operation_tasks_ran"] == 0
+        assert result["realtime_operation_tasks_enqueued_count"] == 0
+        assert table_count("automation_operation_task_execution", "task_id = ?", (int(task["id"]),)) == 0
+        assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 0
+
+
+def test_questionnaire_submit_moves_pending_entry_to_operating_and_triggers_audience_entered_task(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_questionnaire_submit")
+        questionnaire = create_choice_questionnaire("next_rt_questionnaire_submit_q")
+        task = _create_audience_entered_task(program_id, name="Next questionnaire realtime")
+        save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": True, "selected_questionnaire_id": questionnaire["id"]},
+                "conversion_review": {"enabled": False},
+            },
+        )
+
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_questionnaire_001",
+            trigger_time=T1,
+        )
+        pending_entry = _current_entry("wm_next_rt_questionnaire_001")
+
+        assert admitted["admission_status"] == "waiting"
+        assert admitted["audience_code"] == "pending_questionnaire"
+        assert admitted["entry_reason"] == "questionnaire_review_pending"
+        assert admitted["realtime_operation_tasks_enqueued_count"] == 0
+        assert pending_entry["audience_code"] == "pending_questionnaire"
+        assert pending_entry["entry_reason"] == "questionnaire_review_pending"
+        assert _job_count(task["id"], pending_entry["id"]) == 0
+
+        submit_result = submit_questionnaire(
+            questionnaire["slug"],
+            {
+                "external_userid": "wm_next_rt_questionnaire_001",
+                "answers": {str(questionnaire["question_id"]): questionnaire["option_a_id"]},
+            },
+            request_meta={},
+        )
+        operating_entry = _current_entry("wm_next_rt_questionnaire_001")
+
+        assert submit_result["success"] is True
+        assert table_count("questionnaire_submissions", "questionnaire_id = ?", (int(questionnaire["id"]),)) == 1
+        assert operating_entry["questionnaire_status"] == "submitted"
+        assert operating_entry["current_pool"] == "operating"
+        assert operating_entry["audience_code"] == "operating"
+        assert operating_entry["entry_reason"] == "audience_entry_rule_passed"
+        assert _execution_count(task["id"], operating_entry["id"]) == 1
+        assert _execution_item_count(task["id"], operating_entry["id"]) == 1
+        assert _job_count(task["id"], operating_entry["id"]) == 1
+
+        job = get_db().execute(
+            """
+            SELECT source_type, content_payload
+            FROM broadcast_jobs
+            WHERE source_id = ?
+            LIMIT 1
+            """,
+            (f"{int(task['id'])}:audience_entered:{int(operating_entry['id'])}",),
+        ).fetchone()
+        assert job
+        assert job["source_type"] == "operation_task"
+        assert job["content_payload"]["trigger_type"] == "audience_entered"
+
+        submission = get_db().execute(
+            "SELECT id FROM questionnaire_submissions WHERE questionnaire_id = ? LIMIT 1",
+            (int(questionnaire["id"]),),
+        ).fetchone()
+        repeated = sync_questionnaire_submission_audience_transition(
+            external_contact_id="wm_next_rt_questionnaire_001",
+            questionnaire_id=int(questionnaire["id"]),
+            submission_id=int(submission["id"]),
+            operator_id="pytest_repeat",
+        )
+        assert repeated["ok"] is True
+        assert _execution_count(task["id"], operating_entry["id"]) == 1
+        assert _execution_item_count(task["id"], operating_entry["id"]) == 1
+        assert _job_count(task["id"], operating_entry["id"]) == 1
+
+
+def test_questionnaire_submit_bridge_reports_source_channel_missing_without_enqueue(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_questionnaire_missing_channel")
+        questionnaire = create_choice_questionnaire("next_rt_questionnaire_missing_channel_q")
+        task = _create_audience_entered_task(program_id, name="Next questionnaire missing channel")
+        save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": True, "selected_questionnaire_id": questionnaire["id"]},
+                "conversion_review": {"enabled": False},
+            },
+        )
+        admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_questionnaire_002",
+            trigger_time=T1,
+        )
+        get_db().execute(
+            "UPDATE automation_member SET source_channel_id = NULL WHERE external_contact_id = ?",
+            ("wm_next_rt_questionnaire_002",),
+        )
+        get_db().commit()
+        submit_questionnaire(
+            questionnaire["slug"],
+            {
+                "external_userid": "wm_next_rt_questionnaire_002",
+                "answers": {str(questionnaire["question_id"]): questionnaire["option_a_id"]},
+            },
+            request_meta={},
+        )
+        operating_entry = _current_entry("wm_next_rt_questionnaire_002")
+
+        assert operating_entry["audience_code"] == "operating"
+        assert operating_entry["entry_reason"] == "audience_entry_rule_passed"
+        assert _execution_count(task["id"], operating_entry["id"]) == 0
+        assert _execution_item_count(task["id"], operating_entry["id"]) == 0
+        assert _job_count(task["id"], operating_entry["id"]) == 0
+
+        repeated = sync_questionnaire_submission_audience_transition(
+            external_contact_id="wm_next_rt_questionnaire_002",
+            questionnaire_id=int(questionnaire["id"]),
+            operator_id="pytest_missing_channel",
+        )
+        assert repeated["ok"] is True
+        assert repeated["reason"] == "source_channel_missing"
+        assert repeated["realtime_task_hook"]["realtime_operation_tasks_reason"] == "source_channel_missing"
+
+
+def test_questionnaire_submit_bridge_reports_missing_audience_entry(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_missing_audience_entry")
+        admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_missing_entry",
+            trigger_time=T1,
+        )
+        member = get_db().execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ? LIMIT 1",
+            ("wm_next_rt_missing_entry",),
+        ).fetchone()
+        get_db().execute(
+            "DELETE FROM automation_member_audience_entry WHERE member_id = ?",
+            (int(member["id"]),),
+        )
+        get_db().commit()
+
+        result = run_audience_entered_operation_tasks(
+            member_id=int(member["id"]),
+            audience_code="operating",
+            audience_entry_id=999991,
+            operator_id="pytest_missing_entry",
+        )
+
+        assert result["ok"] is True
+        assert result["reason"] == "audience_entry_not_found"
+
+
+def test_active_agent_operation_task_requires_agent_code_at_save_time(app):
+    with app.app_context():
+        program_id, _, _ = _setup_admission_case("next_rt_agent_code_guard")
+
+        with pytest.raises(ValueError, match="agent_code"):
+            create_automation_program_operation_task(
+                program_id,
+                {
+                    "task_name": "Agent without code",
+                    "status": "active",
+                    "trigger_type": "audience_entered",
+                    "target_stage_code": "operating",
+                    "target_audience_code": "operating",
+                    "content_mode": "agent",
+                    "agent_config_json": {},
+                },
+                operator_id="pytest",
+            )

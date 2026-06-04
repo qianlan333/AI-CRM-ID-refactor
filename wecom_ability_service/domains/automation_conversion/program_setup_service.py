@@ -17,7 +17,7 @@ from .program_service import (
     get_default_automation_program_id,
     update_automation_program_status,
 )
-from .service import _normalized_text, get_settings_payload
+from .service import _json_loads, _normalized_text, get_settings_payload
 from .workflow_definitions import (
     AUDIENCE_CONVERTED,
     AUDIENCE_OPERATING,
@@ -1326,18 +1326,32 @@ def _audience_rule_check_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _program_id_from_member(member: dict[str, Any]) -> int:
     source_channel_id = int(member.get("source_channel_id") or 0)
-    if source_channel_id <= 0:
+    if source_channel_id > 0:
+        row = get_db().execute(
+            "SELECT program_id FROM automation_channel WHERE id = ? LIMIT 1",
+            (source_channel_id,),
+        ).fetchone()
+        if row:
+            try:
+                return int(row["program_id"] or 0)
+            except (KeyError, TypeError, ValueError):
+                return 0
+    member_id = int(member.get("id") or 0)
+    if member_id <= 0:
         return 0
     row = get_db().execute(
-        "SELECT program_id FROM automation_channel WHERE id = ? LIMIT 1",
-        (source_channel_id,),
+        """
+        SELECT source_snapshot_json
+        FROM automation_member_audience_entry
+        WHERE member_id = ?
+          AND is_current = TRUE
+        ORDER BY entered_at DESC NULLS LAST, id DESC
+        LIMIT 1
+        """,
+        (member_id,),
     ).fetchone()
-    if not row:
-        return 0
-    try:
-        return int(row["program_id"] or 0)
-    except (KeyError, TypeError, ValueError):
-        return 0
+    snapshot = _json_loads((row or {}).get("source_snapshot_json"), default={}) if row else {}
+    return int((snapshot or {}).get("program_id") or 0)
 
 
 def _member_has_paid_product(member: dict[str, Any], product_id: Any) -> bool:

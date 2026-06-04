@@ -108,6 +108,7 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
             "orchestration_service.py",
             "program_service.py",
             "program_setup_service.py",
+            "questionnaire_bridge_service.py",
             "reply_monitor_service.py",
             "router_dispatch_service.py",
             "signup_conversion_service.py",

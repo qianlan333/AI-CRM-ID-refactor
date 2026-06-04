@@ -25,6 +25,7 @@ def _normalise_trigger_result(event: AudienceTransitionEvent, result: dict[str, 
             "realtime_operation_tasks_enqueued_count": int(result.get("enqueued_count") or 0),
             "realtime_operation_tasks_results": results,
             "realtime_operation_tasks_error": "" if result.get("ok", True) else str(result.get("error") or result.get("reason") or ""),
+            "realtime_operation_tasks_reason": str(result.get("reason") or ""),
         }
     )
     return payload
@@ -38,6 +39,7 @@ def trigger_realtime_operation_tasks_for_event(
     if not event.is_complete():
         payload = base_realtime_result(event)
         payload["realtime_operation_tasks_error"] = "audience_transition_event_incomplete"
+        payload["realtime_operation_tasks_reason"] = "audience_transition_event_incomplete"
         return payload
     try:
         result = (gateway or OperationTaskRealtimeTriggerGateway()).trigger(event)
@@ -69,9 +71,11 @@ def handle_committed_audience_transition(
         _safe_rollback()
         payload = base_realtime_result(None)
         payload["realtime_operation_tasks_error"] = str(exc)
+        payload["realtime_operation_tasks_reason"] = "audience_transition_event_build_failed"
         return payload
     if not event:
         payload = base_realtime_result(None)
         payload["realtime_operation_tasks_error"] = "audience_transition_event_not_found"
+        payload["realtime_operation_tasks_reason"] = "audience_transition_event_not_found"
         return payload
     return trigger_realtime_operation_tasks_for_event(event, gateway=gateway)

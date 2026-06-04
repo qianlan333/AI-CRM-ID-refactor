@@ -30,5 +30,6 @@ def base_realtime_result(event: AudienceTransitionEvent | None = None) -> dict[s
         "realtime_operation_tasks_enqueued_count": 0,
         "realtime_operation_tasks_results": [],
         "realtime_operation_tasks_error": "",
+        "realtime_operation_tasks_reason": "",
     }
     return payload

@@ -466,6 +466,7 @@ def _realtime_operation_task_hook(
             "realtime_operation_tasks_enqueued_count": 0,
             "realtime_operation_tasks_results": [],
             "realtime_operation_tasks_error": str(exc),
+            "realtime_operation_tasks_reason": "realtime_hook_exception",
         }
     payload = dict(hook or {})
     payload["ok"] = not bool(_normalized_text(payload.get("realtime_operation_tasks_error")))
@@ -482,6 +483,7 @@ def _with_realtime_operation_task_hook(result: dict[str, Any], hook: dict[str, A
         "realtime_operation_tasks_enqueued_count",
         "realtime_operation_tasks_results",
         "realtime_operation_tasks_error",
+        "realtime_operation_tasks_reason",
     ):
         payload[key] = hook.get(key)
     payload["realtime_task_hook"] = dict(hook or {})
