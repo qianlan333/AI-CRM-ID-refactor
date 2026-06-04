@@ -16,6 +16,7 @@ from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
+    check_public_product_pay_closeout_lock,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
     check_questionnaire_h5_submit_next_commandbus,
@@ -76,6 +77,45 @@ def test_admin_auth_login_guard_flags_production_compat_and_direct_exchange(tmp_
     assert "admin_auth_fallback_true" in codes
     assert "admin_auth_login_registry_missing" in codes
     assert "admin_auth_login_manifest_missing" in codes
+
+
+def test_public_product_guard_flags_public_fallback_and_payment_execution(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    public_api = tmp_path / "aicrm_next/public_product/api.py"
+    inventory = tmp_path / "docs/architecture/public_product_pay_route_inventory.md"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    public_api.parent.mkdir(parents=True)
+    inventory.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "wildcard_router = APIRouter()\n"
+        '@router.api_route("/p/{path:path}", methods=["GET"])\n'
+        '@wildcard_router.api_route("/api/products/{path:path}", methods=["GET"])\n'
+        "def legacy_public(): pass\n",
+        encoding="utf-8",
+    )
+    public_api.write_text(
+        '"payment_request_executed": True\n'
+        "create_jsapi_order()\n",
+        encoding="utf-8",
+    )
+    inventory.write_text("incomplete\n", encoding="utf-8")
+    registry.write_text("routes: []\n", encoding="utf-8")
+    manifest.write_text("routes: []\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_public_product_pay_closeout_lock(tmp_path)}
+
+    assert "public_product_production_compat_route" in codes
+    assert "public_product_wildcard_production_compat_route" in codes
+    assert "public_product_payment_request" in codes
+    assert "public_product_payment_request_true" in codes
+    assert "public_product_registry_missing" in codes
+    assert "public_product_manifest_missing" in codes
 
 
 def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:

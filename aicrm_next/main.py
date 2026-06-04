@@ -48,6 +48,7 @@ from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
+from .public_product.api import router as public_product_router
 from .production_compat.api import router as production_compat_router
 from .production_compat.api import wildcard_router as production_compat_wildcard_router
 from .questionnaire.api import router as questionnaire_router
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
     app.include_router(hxc_dashboard_router)
+    app.include_router(public_product_router)
     app.include_router(sidebar_write_router)
     app.include_router(sidebar_jssdk_router)
     app.include_router(customer_tags_read_router)
