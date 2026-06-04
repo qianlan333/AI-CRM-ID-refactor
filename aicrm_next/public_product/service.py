@@ -599,6 +599,11 @@ def _pay_page_script(state_json: str) -> str:
               payButton.disabled = false;
               return;
             }}
+            if (payload.already_paid || (payload.order && payload.order.status === "paid")) {{
+              setState("已报名，正在打开报名成功页...", "success");
+              showPaid(payload.order || {{}});
+              return;
+            }}
             activeOrderNo = payload.order.out_trade_no;
             setState("等待微信支付确认...");
             const payResult = await invokeBridge(payload.pay_params);
