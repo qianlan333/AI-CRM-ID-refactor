@@ -80,7 +80,7 @@ def _write_cloud_media_upload_docs(
         "    runtime_owner: next_adapter\n"
         f"    legacy_fallback_allowed: {legacy_allowed}\n"
         f"    legacy_source: {legacy_source}\n"
-        "    adapter_mode: real_blocked\n"
+        "    adapter_mode: production\n"
         f"    delete_status: {registry_delete_status}\n"
         f"    replacement_status: {replacement_status}\n",
         encoding="utf-8",
@@ -90,10 +90,10 @@ def _write_cloud_media_upload_docs(
         "  - route_pattern: /api/admin/cloud-orchestrator/media/upload\n"
         "    methods: [POST, OPTIONS]\n"
         "    current_runtime_owner: next\n"
-        "    production_behavior: next_adapter\n"
+        "    production_behavior: next_adapter_real_upload\n"
         f"    legacy_fallback_allowed: {legacy_allowed}\n"
         f"    delete_ready: {delete_ready}\n"
-        "    adapter_mode: real_blocked\n"
+        "    adapter_mode: production\n"
         f"    delete_status: {registry_delete_status}\n"
         f"    replacement_status: {replacement_status}\n",
         encoding="utf-8",
@@ -105,8 +105,8 @@ def _write_cloud_media_upload_docs(
         "Next adapter only\n"
         "legacy_fallback_allowed=false\n"
         "deletion_locked\n"
-        "real_external_call_executed=false\n"
-        "wecom_media_upload_executed=false\n",
+        "real_external_call_executed=true\n"
+        "wecom_media_upload_executed=true\n",
         encoding="utf-8",
     )
     if include_production_compat_route:

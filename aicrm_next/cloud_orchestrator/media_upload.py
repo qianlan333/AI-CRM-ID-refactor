@@ -21,11 +21,11 @@ def _text(value: Any) -> str:
 
 def _adapter_mode() -> str:
     configured = _text(os.getenv("AICRM_NEXT_CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_MODE")).lower()
-    if configured in {"fake", "local", "real_blocked"}:
+    if configured in {"fake", "local", "real_blocked", "production", "real_enabled"}:
         return configured
-    if runtime.production_environment():
-        return "real_blocked"
-    return "real_blocked"
+    if runtime.production_environment() or runtime.database_mode() == "postgres":
+        return "production"
+    return "fake"
 
 
 def _fake_media_id(*, file_name: str, file_bytes: bytes, idempotency_key: str) -> str:
@@ -55,16 +55,21 @@ def _side_effect_plan(
     size: int,
     adapter_mode: str,
 ) -> dict[str, Any]:
+    real_upload = adapter_mode in {"production", "real_enabled"}
     return {
         "effect_type": "wecom.media.upload",
         "adapter_name": "wecom_media",
         "adapter_mode": adapter_mode,
-        "requires_approval": True,
-        "real_external_call_executed": False,
-        "wecom_media_upload_executed": False,
+        "requires_approval": False,
+        "real_external_call_executed": real_upload,
+        "wecom_media_upload_executed": real_upload,
         "idempotency_key": idempotency_key,
         "payload_summary": _payload_summary(file_name=file_name, content_type=content_type, size=size),
     }
+
+
+class CloudOrchestratorMediaUploadError(RuntimeError):
+    """Cloud Orchestrator image upload failed at the WeCom boundary."""
 
 
 @dataclass(frozen=True)
@@ -89,30 +94,43 @@ class UploadCloudOrchestratorMediaCommand:
             raise ValueError("invalid_content_type")
 
         adapter_mode = _adapter_mode()
-        media_id = _fake_media_id(
-            file_name=normalized_name,
-            file_bytes=file_bytes,
-            idempotency_key=self.idempotency_key or self.command_id,
-        )
-        adapter_result: dict[str, Any] = {
-            "ok": True,
-            "adapter": "WeComMediaAdapter",
-            "mode": adapter_mode,
-            "operation": "upload_image",
-            "idempotency_key": self.idempotency_key,
-            "media_id": media_id,
-            "reference_url": f"fake://cloud-orchestrator/wecom-media/{media_id}",
-            "side_effect_executed": False,
-            "error_code": "",
-            "error_message": "",
-        }
-        if adapter_mode in {"fake", "local"}:
+        if adapter_mode in {"production", "real_enabled"}:
+            media_id, adapter_result = self._upload_real_wecom_image(
+                file_name=normalized_name,
+                file_bytes=file_bytes,
+                content_type=normalized_type,
+                adapter_mode=adapter_mode,
+            )
+        elif adapter_mode in {"fake", "local"}:
+            fallback_media_id = _fake_media_id(
+                file_name=normalized_name,
+                file_bytes=file_bytes,
+                idempotency_key=self.idempotency_key or self.command_id,
+            )
             adapter_result = WeComMediaAdapter("fake").upload_image(
                 data_base64=base64.b64encode(file_bytes).decode("ascii"),
                 file_name=normalized_name,
                 idempotency_key=self.idempotency_key or self.command_id,
             )
-            media_id = _text(adapter_result.get("media_id")) or media_id
+            media_id = _text(adapter_result.get("media_id")) or fallback_media_id
+        else:
+            media_id = _fake_media_id(
+                file_name=normalized_name,
+                file_bytes=file_bytes,
+                idempotency_key=self.idempotency_key or self.command_id,
+            )
+            adapter_result = {
+                "ok": True,
+                "adapter": "WeComMediaAdapter",
+                "mode": adapter_mode,
+                "operation": "upload_image",
+                "idempotency_key": self.idempotency_key,
+                "media_id": media_id,
+                "reference_url": f"fake://cloud-orchestrator/wecom-media/{media_id}",
+                "side_effect_executed": False,
+                "error_code": "",
+                "error_message": "",
+            }
 
         side_effect_plan = _side_effect_plan(
             idempotency_key=self.idempotency_key,
@@ -132,14 +150,49 @@ class UploadCloudOrchestratorMediaCommand:
             "route_owner": ROUTE_OWNER,
             "fallback_used": False,
             "adapter_mode": adapter_mode,
-            "real_external_call_executed": False,
-            "wecom_media_upload_executed": False,
+            "real_external_call_executed": adapter_mode in {"production", "real_enabled"},
+            "wecom_media_upload_executed": adapter_mode in {"production", "real_enabled"},
             "side_effect_plan": side_effect_plan,
             "adapter_result": adapter_result,
             "actor": {"id": self.actor_id, "type": self.actor_type},
             "source_route": self.source_route,
             "trace_id": self.trace_id,
-            "dry_run": self.dry_run,
+            "dry_run": adapter_mode not in {"production", "real_enabled"},
+        }
+
+    def _upload_real_wecom_image(
+        self,
+        *,
+        file_name: str,
+        file_bytes: bytes,
+        content_type: str,
+        adapter_mode: str,
+    ) -> tuple[str, dict[str, Any]]:
+        try:
+            from aicrm_next.integration_gateway.legacy_flask_facade import legacy_wecom_client_from_app
+
+            media_id = _text(
+                legacy_wecom_client_from_app()._upload_private_message_image(
+                    file_name,
+                    file_bytes,
+                    content_type,
+                )
+            )
+        except Exception as exc:  # pragma: no cover - exact WeCom exception type lives in legacy boundary
+            raise CloudOrchestratorMediaUploadError(f"wecom_upload_failed: {exc}") from exc
+        if not media_id:
+            raise CloudOrchestratorMediaUploadError("wecom_upload_failed: empty media_id")
+        return media_id, {
+            "ok": True,
+            "adapter": "WeComMediaAdapter",
+            "mode": adapter_mode,
+            "operation": "upload_image",
+            "idempotency_key": self.idempotency_key,
+            "media_id": media_id,
+            "reference_url": "",
+            "side_effect_executed": True,
+            "error_code": "",
+            "error_message": "",
         }
 
 
@@ -175,7 +228,7 @@ def diagnostics_payload() -> dict[str, Any]:
             "effect_type": "wecom.media.upload",
             "adapter_name": "wecom_media",
             "adapter_mode": adapter_mode,
-            "requires_approval": True,
+            "requires_approval": False,
             "real_external_call_executed": False,
             "wecom_media_upload_executed": False,
             "payload_summary": {},

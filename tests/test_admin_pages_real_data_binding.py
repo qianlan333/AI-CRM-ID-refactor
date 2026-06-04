@@ -981,6 +981,7 @@ def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypat
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    monkeypatch.setenv("AICRM_NEXT_CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_MODE", "fake")
 
     async def fake_forward(request):
         from fastapi.responses import JSONResponse
@@ -1007,7 +1008,7 @@ def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypat
     assert response.json()["fallback_used"] is False
     assert response.json()["real_external_call_executed"] is False
     assert response.json()["wecom_media_upload_executed"] is False
-    assert response.json()["media_id"].startswith("fake_media_")
+    assert response.json()["media_id"].startswith("fake_wecom_media_")
 
 
 def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):

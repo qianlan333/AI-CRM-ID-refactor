@@ -4,6 +4,7 @@ import base64
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.cloud_orchestrator.media_upload import build_upload_command
 from aicrm_next.main import create_app
 
 
@@ -19,7 +20,19 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def test_cloud_orchestrator_media_upload_returns_legacy_and_next_contract(monkeypatch):
+def test_cloud_orchestrator_media_upload_returns_real_wecom_media_id(monkeypatch):
+    uploaded: dict[str, object] = {}
+
+    class FakeClient:
+        def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+            uploaded.update({"file_name": file_name, "file_bytes": file_bytes, "content_type": content_type})
+            return "media-real-cloud-001"
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FakeClient(),
+    )
+
     response = _client(monkeypatch).post(
         "/api/admin/cloud-orchestrator/media/upload",
         headers={"Idempotency-Key": "cloud-media-upload-test-001"},
@@ -28,9 +41,11 @@ def test_cloud_orchestrator_media_upload_returns_legacy_and_next_contract(monkey
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert response.headers["X-AICRM-Real-External-Call-Executed"] == "true"
+    assert response.headers["X-AICRM-WeCom-Media-Upload-Executed"] == "true"
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["media_id"].startswith("fake_media_")
+    assert payload["media_id"] == "media-real-cloud-001"
     assert payload["file_name"] == "probe.png"
     assert payload["content_type"] == "image/png"
     assert payload["size"] == len(PNG_BYTES)
@@ -38,12 +53,43 @@ def test_cloud_orchestrator_media_upload_returns_legacy_and_next_contract(monkey
     assert payload["source_status"] == "next_cloud_orchestrator_media_upload"
     assert payload["route_owner"] == "ai_crm_next"
     assert payload["fallback_used"] is False
-    assert payload["adapter_mode"] == "real_blocked"
-    assert payload["real_external_call_executed"] is False
-    assert payload["wecom_media_upload_executed"] is False
+    assert payload["adapter_mode"] == "production"
+    assert payload["real_external_call_executed"] is True
+    assert payload["wecom_media_upload_executed"] is True
+    assert payload["dry_run"] is False
     assert payload["side_effect_plan"]["effect_type"] == "wecom.media.upload"
-    assert payload["side_effect_plan"]["requires_approval"] is True
-    assert payload["side_effect_plan"]["adapter_mode"] == "real_blocked"
+    assert payload["side_effect_plan"]["requires_approval"] is False
+    assert payload["side_effect_plan"]["adapter_mode"] == "production"
+    assert payload["adapter_result"]["side_effect_executed"] is True
+    assert uploaded == {"file_name": "probe.png", "file_bytes": PNG_BYTES, "content_type": "image/png"}
+
+
+def test_cloud_orchestrator_media_upload_postgres_mode_defaults_to_real_upload(monkeypatch):
+    monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.delenv("AICRM_NEXT_CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_MODE", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:5432/aicrm")
+
+    class FakeClient:
+        def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+            return "media-real-postgres-default"
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FakeClient(),
+    )
+
+    payload = build_upload_command(idempotency_key="postgres-default")(
+        file_name="probe.png",
+        file_bytes=PNG_BYTES,
+        content_type="image/png",
+    )
+
+    assert payload["adapter_mode"] == "production"
+    assert payload["media_id"] == "media-real-postgres-default"
+    assert payload["dry_run"] is False
 
 
 def test_cloud_orchestrator_media_upload_fake_mode_returns_usable_media_id(monkeypatch):
@@ -61,6 +107,26 @@ def test_cloud_orchestrator_media_upload_fake_mode_returns_usable_media_id(monke
     assert payload["adapter_mode"] == "fake"
     assert payload["media_id"].startswith("fake_wecom_media_")
     assert payload["adapter_result"]["side_effect_executed"] is False
+
+
+def test_cloud_orchestrator_media_upload_wecom_failure_is_controlled_502(monkeypatch):
+    class FailingClient:
+        def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+            raise RuntimeError("token expired")
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        lambda: FailingClient(),
+    )
+
+    response = _client(monkeypatch).post(
+        "/api/admin/cloud-orchestrator/media/upload",
+        files={"image": ("probe.png", PNG_BYTES, "image/png")},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["ok"] is False
+    assert "wecom_upload_failed" in response.json()["error"]
 
 
 def test_cloud_orchestrator_media_upload_options_is_next_diagnostics(monkeypatch):

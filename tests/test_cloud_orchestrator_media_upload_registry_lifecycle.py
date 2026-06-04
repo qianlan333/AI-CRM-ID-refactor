@@ -23,11 +23,11 @@ def test_cloud_orchestrator_media_upload_registry_is_next_adapter_locked():
     assert record["legacy_fallback_allowed"] is False
     assert record["legacy_source"] == ""
     assert record["external_side_effect_risk"] == "high"
-    assert record["adapter_mode"] == "real_blocked"
+    assert record["adapter_mode"] == "production"
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
     assert "Legacy rollback removed" in record["notes"]
-    assert "real WeCom media upload is blocked" in record["notes"]
+    assert "wecom_media_upload_executed=true" in record["notes"]
 
 
 def test_cloud_orchestrator_media_upload_manifest_is_next_adapter_locked():
@@ -37,11 +37,12 @@ def test_cloud_orchestrator_media_upload_manifest_is_next_adapter_locked():
     assert record["methods"] == ["POST", "OPTIONS"]
     assert record["capability_owner"] == "aicrm_next.cloud_orchestrator"
     assert record["current_runtime_owner"] == "next"
-    assert record["production_behavior"] == "next_adapter"
+    assert record["production_behavior"] == "next_adapter_real_upload"
     assert record["legacy_fallback_allowed"] is False
     assert record["external_side_effect_risk"] == "high"
-    assert record["adapter_mode"] == "real_blocked"
+    assert record["adapter_mode"] == "production"
     assert record["delete_ready"] is True
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
     assert "Legacy rollback removed" in record["notes"]
+    assert "wecom_media_upload_executed=true" in record["notes"]

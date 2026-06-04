@@ -39,6 +39,7 @@ LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/automation_engine/group_ops/action_port.py"),
     Path("aicrm_next/automation_engine/group_ops/domain.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
+    Path("aicrm_next/cloud_orchestrator/media_upload.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
@@ -355,21 +356,10 @@ CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
 }
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_media_upload_wecom_client",
-    "_upload_private_message_image": "cloud_media_upload_private_image_upload",
     "upload_cloud_orchestrator_image": "cloud_media_upload_legacy_helper",
     "access_token": "cloud_media_upload_access_token",
     "requests.": "cloud_media_upload_direct_http_client",
     "httpx": "cloud_media_upload_direct_http_client",
-    "real_external_call_executed=True": "cloud_media_upload_real_external_call_true",
-    "real_external_call_executed = True": "cloud_media_upload_real_external_call_true",
-    '"real_external_call_executed": True': "cloud_media_upload_real_external_call_true",
-    "'real_external_call_executed': True": "cloud_media_upload_real_external_call_true",
-    "wecom_media_upload_executed=True": "cloud_media_upload_wecom_upload_true",
-    "wecom_media_upload_executed = True": "cloud_media_upload_wecom_upload_true",
-    '"wecom_media_upload_executed": True': "cloud_media_upload_wecom_upload_true",
-    "'wecom_media_upload_executed': True": "cloud_media_upload_wecom_upload_true",
-    "real_enabled default": "cloud_media_upload_real_enabled_default",
-    "default real_enabled": "cloud_media_upload_real_enabled_default",
 }
 
 
@@ -2109,8 +2099,8 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
             "Next adapter only",
             "legacy_fallback_allowed=false",
             "deletion_locked",
-            "real_external_call_executed=false",
-            "wecom_media_upload_executed=false",
+            "real_external_call_executed=true",
+            "wecom_media_upload_executed=true",
         ):
             if phrase not in inventory_text:
                 violations.append(
@@ -2157,7 +2147,7 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
                             code,
                             rel,
                             marker,
-                            "Cloud Orchestrator media upload closeout must keep real WeCom media upload and direct HTTP clients blocked by default.",
+                            "Cloud Orchestrator media upload must only use the approved WeCom media gateway boundary and must not use direct HTTP clients.",
                         )
                     )
 
@@ -2192,7 +2182,7 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
             violations.append(Violation("cloud_media_upload_registry_rollback_lifecycle", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"delete_status={registry_record.get('delete_status')}"))
         if registry_record.get("delete_status") != "deletion_locked" or registry_record.get("replacement_status") != "locked":
             violations.append(Violation("cloud_media_upload_registry_lifecycle", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
-        if registry_record.get("adapter_mode") != "real_blocked":
+        if registry_record.get("adapter_mode") not in {"production", "real_enabled"}:
             violations.append(Violation("cloud_media_upload_registry_adapter_mode", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"adapter_mode={registry_record.get('adapter_mode')}"))
 
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
@@ -2211,7 +2201,7 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
             violations.append(Violation("cloud_media_upload_manifest_owner", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
         if manifest_record.get("current_runtime_owner") == "production_compat":
             violations.append(Violation("cloud_media_upload_manifest_production_compat_owner", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, "current_runtime_owner=production_compat"))
-        if manifest_record.get("production_behavior") != "next_adapter":
+        if manifest_record.get("production_behavior") not in {"next_adapter", "next_adapter_real_upload"}:
             violations.append(Violation("cloud_media_upload_manifest_behavior", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
         if manifest_record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
             violations.append(Violation("cloud_media_upload_manifest_legacy_behavior", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"production_behavior={manifest_record.get('production_behavior')}"))
@@ -2223,7 +2213,7 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
             violations.append(Violation("cloud_media_upload_manifest_rollback_lifecycle", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"delete_status={manifest_record.get('delete_status')}"))
         if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
             violations.append(Violation("cloud_media_upload_manifest_lifecycle", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
-        if manifest_record.get("adapter_mode") != "real_blocked":
+        if manifest_record.get("adapter_mode") not in {"production", "real_enabled"}:
             violations.append(Violation("cloud_media_upload_manifest_adapter_mode", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, f"adapter_mode={manifest_record.get('adapter_mode')}"))
 
     return violations

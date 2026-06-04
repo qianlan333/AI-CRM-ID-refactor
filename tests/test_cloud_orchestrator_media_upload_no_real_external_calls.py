@@ -11,16 +11,17 @@ def _source() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in CLOUD_ROOT.rglob("*.py"))
 
 
-def test_cloud_orchestrator_media_upload_does_not_use_legacy_wecom_uploader():
+def test_cloud_orchestrator_media_upload_uses_approved_wecom_gateway_boundary():
     source = _source()
-    forbidden = [
+    forbidden_direct_access = [
         "WeComClient" + ".from_app",
-        "_upload" + "_private_message_image",
         "upload" + "_cloud_orchestrator_image",
         "access" + "_token",
     ]
 
-    for marker in forbidden:
+    assert "legacy_wecom_client_from_app" in source
+    assert "_upload" + "_private_message_image" in source
+    for marker in forbidden_direct_access:
         assert marker not in source
 
 
@@ -31,7 +32,7 @@ def test_cloud_orchestrator_media_upload_does_not_use_direct_http_clients():
     assert "http" + "x" not in source
 
 
-def test_cloud_orchestrator_media_upload_never_marks_real_calls_true_by_default():
+def test_cloud_orchestrator_media_upload_marks_real_call_only_in_upload_path():
     source = _source()
 
     assert "real_external_call_executed" in source

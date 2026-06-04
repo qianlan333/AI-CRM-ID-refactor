@@ -49,7 +49,7 @@ from .campaigns_write import (
     UpdateCloudCampaignStepCommand,
     execute_cloud_campaign_command,
 )
-from .media_upload import build_upload_command, diagnostics_payload
+from .media_upload import CloudOrchestratorMediaUploadError, build_upload_command, diagnostics_payload
 from .run_due import (
     CloudCampaignRunDueInputError,
     PlanCloudCampaignRunDueCommand,
@@ -103,6 +103,13 @@ def _media_error(error: str, *, status_code: int = 400) -> JSONResponse:
     payload = diagnostics_payload()
     payload.update({"ok": False, "error": error})
     return JSONResponse(payload, status_code=status_code, headers=_MEDIA_UPLOAD_HEADERS)
+
+
+def _media_upload_headers(payload: dict[str, Any]) -> dict[str, str]:
+    headers = dict(_MEDIA_UPLOAD_HEADERS)
+    headers["X-AICRM-Real-External-Call-Executed"] = "true" if payload.get("real_external_call_executed") else "false"
+    headers["X-AICRM-WeCom-Media-Upload-Executed"] = "true" if payload.get("wecom_media_upload_executed") else "false"
+    return headers
 
 
 def _campaign_read_error(error: str, *, status_code: int = 404) -> JSONResponse:
@@ -348,7 +355,9 @@ async def api_cloud_orchestrator_media_upload(
         payload = command(file_name=image.filename, file_bytes=file_bytes, content_type=content_type)
     except ValueError as exc:
         return _media_error(str(exc))
-    return JSONResponse(payload, headers=_MEDIA_UPLOAD_HEADERS)
+    except CloudOrchestratorMediaUploadError as exc:
+        return _media_error(str(exc), status_code=502)
+    return JSONResponse(payload, headers=_media_upload_headers(payload))
 
 
 @router.get("/api/admin/cloud-orchestrator/campaigns")
