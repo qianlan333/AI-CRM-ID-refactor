@@ -70,6 +70,17 @@ Automation jobs payload:
 --data '{"operator":"aicrm-automation-jobs-run-due","jobs":["sop","conversion_workflow"],"scheduled_safe_mode":true}'
 ```
 
+Operation-task coverage is opt-in until bounded execution has been approved:
+
+```bash
+AUTOMATION_CONVERSION_DUE_JOBS=operation_task python3 scripts/run_automation_conversion_due_jobs.py
+```
+
+This script selection must still point at the approved internal/script execution path. The Next
+`/api/admin/automation-conversion/jobs/run-due` route is plan-only and must report
+`jobs_run_due_executed=false`, `operation_tasks_executed=0`, `actual_enqueued_count=0`,
+and `blocked_reason=next_plan_only_route` when probed directly.
+
 Campaign payload:
 
 ```bash

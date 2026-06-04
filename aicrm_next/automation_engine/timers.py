@@ -262,11 +262,14 @@ def _handle_jobs_preview(command: Command) -> dict[str, Any]:
         "job_codes": [item["job_code"] for item in candidates],
         "estimated_actions": _estimated_actions(candidates),
         "planned_count": 0,
+        "actual_enqueued_count": 0,
         "processed_count": 0,
         "sent_count": 0,
         "failed_count": 0,
         "skipped_count": len(candidates),
         "jobs_run_due_executed": False,
+        "operation_tasks_executed": 0,
+        "blocked_reason": "next_plan_only_route",
     }
 
 
@@ -305,10 +308,13 @@ def _planned_payload(
         "candidate_count": len(candidates),
         "estimated_actions": _estimated_actions(candidates),
         "planned_count": len(candidates),
+        "actual_enqueued_count": 0,
         "processed_count": 0,
         "sent_count": 0,
         "failed_count": 0,
         "skipped_count": len(candidates),
+        "operation_tasks_executed": 0,
+        "blocked_reason": "next_plan_only_route",
         "side_effect_plan": _plan_response(plan),
         "external_call_attempt": attempt.to_dict(),
     }

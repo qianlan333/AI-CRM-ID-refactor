@@ -833,7 +833,9 @@ async def api_plan_automation_conversion_jobs_run_due(request: Request) -> JSONR
     source_status = "next_jobs_run_due_plan"
     try:
         payload = await _timer_payload(request)
-        command = PlanAutomationJobsRunDueCommand(
+        command_cls = PreviewAutomationJobsRunDueCommand if bool(payload.get("preview")) else PlanAutomationJobsRunDueCommand
+        source_status = "next_jobs_run_due_preview" if bool(payload.get("preview")) else source_status
+        command = command_cls(
             **_timer_common(
                 request,
                 payload,

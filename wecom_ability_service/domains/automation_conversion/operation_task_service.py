@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ...db import get_db
+from aicrm_next.automation_engine.operation_task_contract import (
+    agent_runtime_diagnostics,
+    has_send_body as contract_has_send_body,
+    publishable_diagnostics,
+    validate_publishable_task,
+)
 from ..broadcast_jobs import repo as broadcast_queue_repo
 from ..broadcast_jobs import service as broadcast_queue
 from . import operation_task_repo as repo
@@ -261,18 +267,7 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
 def _validate_publishable_task(task: dict[str, Any]) -> None:
     if _text(task.get("status")) != "active":
         return
-    mode = _text(task.get("content_mode")) or "unified"
-    if mode == "unified" and not _text((task.get("unified_content_json") or {}).get("content_text")):
-        raise ValueError("统一内容不能为空")
-    if mode == "agent" and not _text((task.get("agent_config_json") or {}).get("agent_code")):
-        raise ValueError("请选择 Agent")
-    if mode in {"behavior_layered", "profile_layered"}:
-        contents = list(task.get("segment_contents_json") or [])
-        if not contents:
-            raise ValueError("请先填写分层话术")
-        missing = [item for item in contents if not _text(item.get("content_text"))]
-        if missing:
-            raise ValueError("每个分层都需要填写话术")
+    validate_publishable_task(task)
 
 
 def list_task_groups(program_id: int) -> dict[str, Any]:
@@ -435,25 +430,115 @@ def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> 
     return result
 
 
+PREVIEW_REASON_KEYS = (
+    "source_channel_missing",
+    "program_channel_not_matched",
+    "audience_code_not_matched",
+    "entry_reason_not_matched",
+    "day_offset_not_due",
+    "behavior_filter_not_matched",
+    "profile_segment_not_matched",
+    "content_missing",
+    "external_contact_id_missing",
+)
+
+
+def _preview_all_current_entries(program_id: int) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for audience_code in sorted(AUDIENCE_CODES):
+        entries.extend(repo.list_current_audience_entries(audience_code, program_id=int(program_id)))
+    by_id: dict[int, dict[str, Any]] = {}
+    for entry in entries:
+        by_id[int(entry.get("id") or 0)] = entry
+    return list(by_id.values())
+
+
+def _preview_content_ready(task: dict[str, Any], entry: dict[str, Any]) -> tuple[bool, str]:
+    member = dict(entry.get("member") or {})
+    mode = _text(task.get("content_mode")) or "unified"
+    if mode == "agent":
+        diag = agent_runtime_diagnostics(task)
+        return bool(diag.get("expected_send_body_present")), "agent"
+    segment_key, content_text, content = _render_for_member(task, member, request_id="preview")
+    return _content_has_send_body(content_text, content), segment_key
+
+
+def _preview_entries(task: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    current_time = now or _now()
+    program_id = int(task.get("program_id") or 0)
+    program_channel_ids = _program_channel_ids(program_id)
+    stage_filter = resolve_stage_target_filter(
+        program_id,
+        _text(task.get("target_stage_code")),
+        fallback_audience_code=_text(task.get("target_audience_code")),
+    )
+    behavior_filter = _text(task.get("behavior_filter")) or "none"
+    profile_template_id = task.get("profile_segment_template_id")
+    filtered_out_counts = {key: 0 for key in PREVIEW_REASON_KEYS}
+    segment_counts: dict[str, int] = {}
+    target_entries: list[dict[str, Any]] = []
+
+    for entry in _preview_all_current_entries(program_id):
+        member = dict(entry.get("member") or {})
+        reasons: list[str] = []
+        if _int(member.get("source_channel_id"), minimum=0) <= 0:
+            reasons.append("source_channel_missing")
+        elif not _member_in_program_channels(member, program_channel_ids):
+            reasons.append("program_channel_not_matched")
+        if _text(entry.get("audience_code")) != stage_filter["audience_code"]:
+            reasons.append("audience_code_not_matched")
+        if stage_filter["entry_reason"] and _text(entry.get("entry_reason")) != stage_filter["entry_reason"]:
+            reasons.append("entry_reason_not_matched")
+        if _text(task.get("trigger_type")) != "audience_entered" and not _entry_due(
+            entry,
+            day_offset=_int(task.get("audience_day_offset"), default=1, minimum=1),
+            now=current_time,
+        ):
+            reasons.append("day_offset_not_due")
+        if behavior_filter != "none" and _behavior_key(member) != behavior_filter:
+            reasons.append("behavior_filter_not_matched")
+        if _text(task.get("content_mode")) == "profile_layered" and not _profile_key(member, profile_template_id):
+            reasons.append("profile_segment_not_matched")
+        content_ready, segment_key = _preview_content_ready(task, entry)
+        if not content_ready:
+            reasons.append("content_missing")
+        if not _text(member.get("external_contact_id")):
+            reasons.append("external_contact_id_missing")
+
+        if reasons:
+            for reason in dict.fromkeys(reasons):
+                filtered_out_counts[reason] += 1
+            continue
+        target_entries.append(entry)
+        if segment_key:
+            segment_counts[segment_key] = segment_counts.get(segment_key, 0) + 1
+
+    return {
+        "entries": target_entries,
+        "segment_counts": segment_counts,
+        "filtered_out_counts": {key: value for key, value in filtered_out_counts.items() if value},
+        "reasons": [key for key, value in filtered_out_counts.items() if value],
+    }
+
+
 def preview_operation_task_audience(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     task = _normalize_task_payload(
         {"task_name": payload.get("task_name") or "预览任务", **dict(payload or {})},
         program_id=int(program_id),
         operator_id="preview",
     )
-    entries = _candidate_entries(task)
-    segment_counts: dict[str, int] = {}
-    if task["content_mode"] == "behavior_layered":
-        for entry in entries:
-            key = _behavior_key(dict(entry.get("member") or {}))
-            if key:
-                segment_counts[key] = segment_counts.get(key, 0) + 1
-    elif task["content_mode"] == "profile_layered":
-        for entry in entries:
-            key = _profile_key(dict(entry.get("member") or {}), task.get("profile_segment_template_id"))
-            if key:
-                segment_counts[key] = segment_counts.get(key, 0) + 1
-    return {"preview": {"target_count": len(entries), "segment_counts": segment_counts}}
+    diagnostics = publishable_diagnostics(task)
+    preview = _preview_entries(task)
+    return {
+        "preview": {
+            "target_count": len(preview["entries"]),
+            "segment_counts": preview["segment_counts"],
+            "filtered_out_counts": preview["filtered_out_counts"],
+            "reasons": preview["reasons"],
+            "content_diagnostics": diagnostics,
+            "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if task["content_mode"] == "agent" else {},
+        }
+    }
 
 
 def _segment_content(task: dict[str, Any], segment_key: str) -> dict[str, Any]:
@@ -561,13 +646,7 @@ def _content_attachment_library_ids(content: dict[str, Any]) -> list[int]:
 
 
 def _content_has_send_body(content_text: str, content: dict[str, Any]) -> bool:
-    return bool(
-        _text(content_text)
-        or [_text(item) for item in list(content.get("image_media_ids") or []) if _text(item)]
-        or [_int(item, minimum=1) for item in list(content.get("image_library_ids") or []) if _int(item, minimum=0) > 0]
-        or _content_miniprogram_library_ids(content)
-        or _content_attachment_library_ids(content)
-    )
+    return contract_has_send_body(content, content_text=content_text)
 
 
 def _program_channel_ids(program_id: int) -> set[int]:

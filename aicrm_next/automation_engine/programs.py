@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import Engine, create_engine, text
 
+from aicrm_next.automation_engine.operation_task_contract import (
+    BEHAVIOR_FILTERS,
+    CONTENT_MODES,
+    TASK_STATUSES,
+    TRIGGER_TYPES,
+    agent_runtime_diagnostics,
+    has_send_body,
+    publishable_diagnostics,
+    validate_publishable_task,
+)
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 
@@ -247,6 +257,7 @@ def _fixture_setup_payload(program_id: int, *, step: str = "basic") -> dict[str,
             segmentation={},
             audience_rules=list(DEFAULT_AUDIENCE_ENTRY_RULES),
             active_task_count=0,
+            operation_task_contract=_operation_task_runtime_contract([]),
         ),
     }
 
@@ -697,6 +708,67 @@ def _publish_item(label: str, passed: bool, message: str, fix_step: str) -> dict
     }
 
 
+def _operation_task_runtime_contract(tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    active_tasks = [dict(item or {}) for item in list(tasks or []) if _clean_text(item.get("status")) == "active"]
+    diagnostics: list[dict[str, Any]] = []
+    executable_ok = True
+    trigger_ok = True
+    target_ok = True
+    schedule_ok = True
+    previewable_ok = True
+
+    for task in active_tasks:
+        task_id = int(task.get("id") or 0)
+        trigger_type = _clean_text(task.get("trigger_type"))
+        target_stage_code = _clean_text(task.get("target_stage_code") or task.get("target_audience_code"))
+        target_audience_code = _clean_text(task.get("target_audience_code"))
+        send_time = _clean_text(task.get("send_time"))
+        content = publishable_diagnostics(task)
+        task_trigger_ok = trigger_type in TRIGGER_TYPES
+        task_target_ok = bool(target_stage_code or target_audience_code)
+        task_schedule_ok = trigger_type != "scheduled_daily" or bool(send_time)
+        task_previewable_ok = task_target_ok and bool(target_audience_code or target_stage_code)
+        executable_ok = executable_ok and bool(content.get("ok"))
+        trigger_ok = trigger_ok and task_trigger_ok
+        target_ok = target_ok and task_target_ok
+        schedule_ok = schedule_ok and task_schedule_ok
+        previewable_ok = previewable_ok and task_previewable_ok
+        diagnostics.append(
+            {
+                "task_id": task_id,
+                "task_name": _clean_text(task.get("task_name")) or f"任务 {task_id}",
+                "trigger_type": trigger_type,
+                "target_stage_code": target_stage_code,
+                "target_audience_code": target_audience_code,
+                "send_time": send_time,
+                "executable_content": content,
+                "trigger_configured": task_trigger_ok,
+                "target_configured": task_target_ok,
+                "schedule_covered": task_schedule_ok,
+                "previewable": task_previewable_ok,
+            }
+        )
+
+    return {
+        "active_count": len(active_tasks),
+        "executable_ok": bool(active_tasks) and executable_ok,
+        "trigger_ok": bool(active_tasks) and trigger_ok,
+        "target_ok": bool(active_tasks) and target_ok,
+        "schedule_ok": bool(active_tasks) and schedule_ok,
+        "previewable_ok": bool(active_tasks) and previewable_ok,
+        "diagnostics": diagnostics,
+        "runtime_requirements": {
+            "audience_transition_hook_required": any(
+                item.get("trigger_type") == "audience_entered" for item in diagnostics
+            ),
+            "operation_task_due_runner_required": any(
+                item.get("trigger_type") == "scheduled_daily" for item in diagnostics
+            ),
+            "broadcast_queue_worker_required": bool(active_tasks),
+        },
+    }
+
+
 def _publish_check_from_parts(
     program: dict[str, Any],
     *,
@@ -705,16 +777,29 @@ def _publish_check_from_parts(
     segmentation: dict[str, Any],
     audience_rules: list[dict[str, Any]],
     active_task_count: int,
+    operation_task_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     archived = _clean_text(program.get("status")) == "archived"
     is_default = _clean_text(program.get("program_code")) == "signup_conversion_v1"
+    contract = dict(operation_task_contract or {})
+    has_active_task = int(contract.get("active_count") if contract else active_task_count or 0) > 0
+    executable_ok = bool(contract.get("executable_ok")) if contract else has_active_task
+    trigger_ok = bool(contract.get("trigger_ok")) if contract else has_active_task
+    target_ok = bool(contract.get("target_ok")) if contract else has_active_task
+    schedule_ok = bool(contract.get("schedule_ok")) if contract else has_active_task
+    previewable_ok = bool(contract.get("previewable_ok")) if contract else has_active_task
     entry_ok = bool(program) and not archived and (is_default or has_config) and has_entry
     full_ok = (
         entry_ok
         and bool(segmentation.get("questionnaire_id"))
         and _has_segmentation(segmentation)
         and bool(audience_rules)
-        and int(active_task_count or 0) > 0
+        and has_active_task
+        and executable_ok
+        and trigger_ok
+        and target_ok
+        and schedule_ok
+        and previewable_ok
     )
     return {
         "entry": {
@@ -735,8 +820,13 @@ def _publish_check_from_parts(
                 _publish_item("已绑定问卷", bool(segmentation.get("questionnaire_id")), "请选择当前方案使用的问卷", "segmentation"),
                 _publish_item("已配置分层策略", _has_segmentation(segmentation), "请配置普通问卷规则或总分分层", "segmentation"),
                 _publish_item("入池规则完整", bool(audience_rules), "请保存入池规则", "entry-rule"),
-                _publish_item("存在启用中的运营任务", int(active_task_count or 0) > 0, "请至少启用一个运营任务", "operations"),
+                _publish_item("存在启用中的运营任务", has_active_task, "请至少启用一个运营任务", "operations"),
+                _publish_item("启用任务具备可执行内容", executable_ok, "请补齐启用任务的统一内容、分层内容或 Agent fallback/素材", "operations"),
+                _publish_item("启用任务具备触发方式和目标阶段", trigger_ok and target_ok, "请补齐任务触发方式和目标阶段", "operations"),
+                _publish_item("定时任务具备调度覆盖", schedule_ok, "请为定时任务配置发送时间，并确认 due runner 覆盖 operation_task", "operations"),
+                _publish_item("任务人群预览可诊断", previewable_ok, "请配置目标阶段/人群后刷新命中人数", "operations"),
             ],
+            "operation_task_contract": contract,
         },
     }
 
@@ -953,17 +1043,17 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
     content = dict(existing.get("operation_content") or {})
     content.update(payload.get("operation_content") if isinstance(payload.get("operation_content"), dict) else {})
     content_mode = _clean_text(payload.get("content_mode") or content.get("content_mode") or existing.get("content_mode")) or "unified"
-    if content_mode not in {"unified", "profile_layered", "behavior_layered", "agent"}:
-        content_mode = "unified"
+    if content_mode not in CONTENT_MODES:
+        raise ValueError("发送策略不正确")
     status = _clean_text(payload.get("status") or existing.get("status")) or "draft"
-    if status not in {"draft", "active", "paused", "archived"}:
-        status = "draft"
+    if status not in TASK_STATUSES:
+        raise ValueError("运营任务状态不正确")
     trigger_type = _clean_text(payload.get("trigger_type") or existing.get("trigger_type")) or "scheduled_daily"
-    if trigger_type not in {"scheduled_daily", "audience_entered"}:
-        trigger_type = "scheduled_daily"
+    if trigger_type not in TRIGGER_TYPES:
+        raise ValueError("触发方式不正确")
     behavior_filter = _clean_text(payload.get("behavior_filter") or existing.get("behavior_filter")) or "none"
-    if behavior_filter not in {"none", "lt_2", "between_2_9", "gte_10"}:
-        behavior_filter = "none"
+    if behavior_filter not in BEHAVIOR_FILTERS:
+        raise ValueError("行为过滤不正确")
     target_stage_code = _clean_text(payload.get("target_stage_code") or existing.get("target_stage_code"))
     target_audience_code = _clean_text(payload.get("target_audience_code") or existing.get("target_audience_code")) or "operating"
     if target_stage_code in {"operating", "converted", "pending_questionnaire"}:
@@ -999,17 +1089,7 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
 def _validate_operation_task_payload(task: dict[str, Any]) -> None:
     if _clean_text(task.get("status")) != "active":
         return
-    mode = _clean_text(task.get("content_mode")) or "unified"
-    if mode == "unified" and not _clean_text((task.get("unified_content_json") or {}).get("content_text")):
-        raise ValueError("统一内容不能为空")
-    if mode == "agent" and not _clean_text((task.get("agent_config_json") or {}).get("agent_code")):
-        raise ValueError("agent 模式必须提供 agent_code")
-    if mode in {"behavior_layered", "profile_layered"}:
-        contents = list(task.get("segment_contents_json") or [])
-        if not contents:
-            raise ValueError("请先填写分层话术")
-        if any(not _clean_text(item.get("content_text")) for item in contents):
-            raise ValueError("每个分层都需要填写话术")
+    validate_publishable_task(task)
 
 
 def _fixture_operation_payload(program_id: int) -> dict[str, Any]:
@@ -1082,6 +1162,7 @@ class PostgresAutomationProgramRepository:
             segmentation=segmentation_payload,
             audience_rules=list(audience.get("rules") or []),
             active_task_count=int(operations.get("active_count") or 0),
+            operation_task_contract=_operation_task_runtime_contract(list(operations.get("tasks") or [])),
         )
         return {
             "program": program,
@@ -2559,13 +2640,185 @@ def set_automation_program_operation_task_status(program_id: int, task_id: int, 
     return update_automation_program_operation_task(int(program_id), int(task_id), {"status": _clean_text(status)}, operator_id=operator_id)
 
 
+PREVIEW_REASON_KEYS = (
+    "source_channel_missing",
+    "program_channel_not_matched",
+    "audience_code_not_matched",
+    "entry_reason_not_matched",
+    "day_offset_not_due",
+    "behavior_filter_not_matched",
+    "profile_segment_not_matched",
+    "content_missing",
+    "external_contact_id_missing",
+)
+
+
+STAGE_PREVIEW_ENTRY_REASON = {
+    "order_review": "order_review_pending",
+    "questionnaire_review": "questionnaire_review_pending",
+    "operating": "audience_entry_rule_passed",
+    "converted": "conversion_product_paid",
+}
+
+
+def _preview_required_entry_reason(task: dict[str, Any]) -> str:
+    return STAGE_PREVIEW_ENTRY_REASON.get(_clean_text(task.get("target_stage_code")), "")
+
+
+def _preview_content_ready(task: dict[str, Any], member: dict[str, Any]) -> tuple[bool, str]:
+    mode = _clean_text(task.get("content_mode")) or "unified"
+    if mode == "agent":
+        return bool(agent_runtime_diagnostics(task).get("expected_send_body_present")), "agent"
+    if mode == "behavior_layered":
+        key = _clean_text(member.get("behavior_tier_key"))
+        for item in list(task.get("segment_contents_json") or []):
+            if _clean_text((item or {}).get("segment_key")) == key:
+                return has_send_body(dict(item or {})), key
+        return False, key
+    if mode == "profile_layered":
+        key = _clean_text(member.get("profile_segment_key"))
+        for item in list(task.get("segment_contents_json") or []):
+            if _clean_text((item or {}).get("segment_key")) == key:
+                return has_send_body(dict(item or {})), key
+        return False, key
+    return has_send_body(dict(task.get("unified_content_json") or {})), "unified"
+
+
+def _preview_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    raw = _clean_text(value)
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _preview_day_offset_due(task: dict[str, Any], row: dict[str, Any]) -> bool:
+    if _clean_text(task.get("trigger_type")) == "audience_entered":
+        return True
+    entered_at = _preview_datetime(row.get("entered_at"))
+    if entered_at is None:
+        return False
+    local_tz = timezone(timedelta(hours=8))
+    entered_date = entered_at.astimezone(local_tz).date() if entered_at.tzinfo else entered_at.date()
+    current_date = datetime.now(local_tz).date()
+    offset = max(int(task.get("audience_day_offset") or 1), 1)
+    return current_date >= entered_date + timedelta(days=offset - 1)
+
+
+def _preview_candidates_next(program_id: int, task: dict[str, Any]) -> dict[str, Any]:
+    if not production_data_ready():
+        diagnostics = publishable_diagnostics(task)
+        return {
+            "target_count": 0,
+            "segment_counts": {},
+            "filtered_out_counts": {},
+            "reasons": [],
+            "content_diagnostics": diagnostics,
+            "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if task["content_mode"] == "agent" else {},
+            "blocked_reason": "production_data_not_ready",
+        }
+    database_url = raw_database_url()
+    if not database_url:
+        raise AutomationProgramDataUnavailable("DATABASE_URL is required for operation task audience preview")
+    engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+    with engine.connect() as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                text(
+                    """
+                    SELECT
+                        e.id AS audience_entry_id,
+                        e.audience_code,
+                        e.entry_reason,
+                        e.entered_at,
+                        m.id AS member_id,
+                        m.external_contact_id,
+                        m.source_channel_id,
+                        m.behavior_tier_key,
+                        m.profile_segment_key,
+                        c.program_id AS channel_program_id
+                    FROM automation_member_audience_entry e
+                    JOIN automation_member m ON m.id = e.member_id
+                    LEFT JOIN automation_channel c ON c.id = m.source_channel_id
+                    WHERE e.is_current = TRUE
+                    """
+                ),
+                {"program_id": int(program_id)},
+            ).mappings()
+        ]
+    filtered_out_counts = {key: 0 for key in PREVIEW_REASON_KEYS}
+    segment_counts: dict[str, int] = {}
+    target_count = 0
+    required_reason = _preview_required_entry_reason(task)
+    behavior_filter = _clean_text(task.get("behavior_filter")) or "none"
+    for row in rows:
+        reasons: list[str] = []
+        if not int(row.get("source_channel_id") or 0):
+            reasons.append("source_channel_missing")
+        elif int(row.get("channel_program_id") or 0) != int(program_id):
+            reasons.append("program_channel_not_matched")
+        if _clean_text(row.get("audience_code")) != _clean_text(task.get("target_audience_code")):
+            reasons.append("audience_code_not_matched")
+        if required_reason and _clean_text(row.get("entry_reason")) != required_reason:
+            reasons.append("entry_reason_not_matched")
+        if not _preview_day_offset_due(task, row):
+            reasons.append("day_offset_not_due")
+        if behavior_filter != "none" and _clean_text(row.get("behavior_tier_key")) != behavior_filter:
+            reasons.append("behavior_filter_not_matched")
+        if _clean_text(task.get("content_mode")) == "profile_layered" and not _clean_text(row.get("profile_segment_key")):
+            reasons.append("profile_segment_not_matched")
+        content_ready, segment_key = _preview_content_ready(task, row)
+        if not content_ready:
+            reasons.append("content_missing")
+        if not _clean_text(row.get("external_contact_id")):
+            reasons.append("external_contact_id_missing")
+        if reasons:
+            for reason in dict.fromkeys(reasons):
+                filtered_out_counts[reason] += 1
+            continue
+        target_count += 1
+        if segment_key:
+            segment_counts[segment_key] = segment_counts.get(segment_key, 0) + 1
+    diagnostics = publishable_diagnostics(task)
+    return {
+        "target_count": target_count,
+        "segment_counts": segment_counts,
+        "filtered_out_counts": {key: value for key, value in filtered_out_counts.items() if value},
+        "reasons": [key for key, value in filtered_out_counts.items() if value],
+        "content_diagnostics": diagnostics,
+        "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if task["content_mode"] == "agent" else {},
+    }
+
+
 def preview_automation_program_operation_task_audience(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-    del payload
+    normalized = _normalize_operation_task_payload(
+        {"task_name": dict(payload or {}).get("task_name") or "预览任务", **dict(payload or {})},
+        program_id=int(program_id),
+    )
+    try:
+        preview = _preview_candidates_next(int(program_id), normalized)
+    except Exception as exc:
+        if production_data_ready():
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+        diagnostics = publishable_diagnostics(normalized)
+        preview = {
+            "target_count": 0,
+            "segment_counts": {},
+            "filtered_out_counts": {},
+            "reasons": [],
+            "content_diagnostics": diagnostics,
+            "blocked_reason": str(exc),
+        }
     return {
         "ok": True,
         "route_owner": "ai_crm_next",
         "source_status": "next_postgres" if production_data_ready() else "next_fixture",
-        "preview": {"target_count": 0, "segment_counts": {}},
+        "preview": preview,
     }
 
 
