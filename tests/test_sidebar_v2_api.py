@@ -453,6 +453,123 @@ def test_sidebar_v2_workbench_binds_unbound_mobile_from_paid_wechat_pay_order(cl
         }
 
 
+def test_sidebar_v2_workbench_backfills_orphan_questionnaire_submissions_from_paid_order(client, app, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
+    with app.app_context():
+        _seed_contact("wm_pay_questionnaire_orphan")
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "corp_sidebar",
+                "wm_pay_questionnaire_orphan",
+                "union_pay_questionnaire_orphan",
+                "openid_pay_questionnaire_orphan",
+                "owner_current",
+                "月朗",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO wechat_pay_orders (
+                out_trade_no, product_code, product_name, amount_total, currency,
+                payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
+                transaction_id, paid_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
+            """,
+            (
+                "WXP_BIND_ORPHAN_QUESTIONNAIRE",
+                "prd_sidebar_active",
+                "黄小璨首月体验",
+                990,
+                "CNY",
+                "openid_pay_questionnaire_orphan",
+                "",
+                "",
+                "13166662679",
+                "paid",
+                "SUCCESS",
+                "4200003053202606043919108042",
+                "2026-06-04 05:58:40+00",
+                "2026-06-04 05:58:30+00",
+            ),
+        )
+        questionnaire_id = db.execute(
+            """
+            INSERT INTO questionnaires (slug, name, title)
+            VALUES (?, ?, ?)
+            RETURNING id
+            """,
+            ("orphan-binding-v1", "孤儿提交补偿问卷", "孤儿提交补偿问卷"),
+        ).fetchone()["id"]
+        submission_id = db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, external_userid, follow_user_userid, matched_by,
+                mobile_snapshot, submitted_at
+            ) VALUES (?, '', '', '', ?, ?::timestamptz)
+            RETURNING id
+            """,
+            (questionnaire_id, "131 6666 2679", "2026-06-04 05:00:21+00"),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO questionnaire_submission_answers (
+                submission_id, question_id, question_type, question_title_snapshot,
+                selected_option_texts_snapshot, text_value
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                submission_id,
+                1,
+                "textarea",
+                "主要需求",
+                json.dumps([], ensure_ascii=False),
+                "想了解首月体验",
+            ),
+        )
+        db.commit()
+
+    workbench = client.get(
+        "/api/sidebar/v2/workbench",
+        query_string={"external_userid": "wm_pay_questionnaire_orphan"},
+    )
+    assert workbench.status_code == 200
+    assert workbench.get_json()["customer"]["is_bound"] is True
+    assert workbench.get_json()["customer"]["mobile"] == "13166662679"
+
+    questionnaires = client.get(
+        "/api/sidebar/v2/questionnaires",
+        query_string={"external_userid": "wm_pay_questionnaire_orphan"},
+    )
+    assert questionnaires.status_code == 200
+    questionnaire = questionnaires.get_json()["questionnaires"][0]
+    assert questionnaire["title"] == "孤儿提交补偿问卷"
+    assert questionnaire["answers"] == [{"question": "主要需求", "answer": "想了解首月体验"}]
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT external_userid, follow_user_userid, matched_by
+            FROM questionnaire_submissions
+            WHERE id = ?
+            """,
+            (submission_id,),
+        ).fetchone()
+        assert dict(row) == {
+            "external_userid": "wm_pay_questionnaire_orphan",
+            "follow_user_userid": "owner_current",
+            "matched_by": "mobile",
+        }
+
+
 def test_sidebar_v2_order_mobile_binding_skips_ambiguous_paid_order_mobiles(client, app, monkeypatch):
     def fail_if_called(mobile: str) -> str:
         raise AssertionError(f"unexpected bind for {mobile}")

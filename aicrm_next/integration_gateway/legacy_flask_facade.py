@@ -154,6 +154,7 @@ def legacy_questionnaire_session_identity(cookies: Mapping[str, str]) -> dict[st
     return {
         "openid": str(identity.get("openid") or "").strip(),
         "unionid": str(identity.get("unionid") or "").strip(),
+        "external_userid": str(identity.get("external_userid") or "").strip(),
         "respondent_key": str(identity.get("respondent_key") or "").strip(),
     }
 
