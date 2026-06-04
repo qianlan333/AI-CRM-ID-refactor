@@ -17,24 +17,16 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def test_public_product_module_has_no_legacy_or_payment_execution_markers() -> None:
+def test_public_product_module_has_no_legacy_facade_markers() -> None:
     source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "aicrm_next/public_product").glob("*.py"))
 
     for forbidden in [
         "forward_to_legacy_flask",
         "legacy_flask_facade",
-        "WeChatPay",
         "Alipay",
-        "requests.",
         "httpx",
-        "access_token",
-        "create_jsapi_order",
         "create_h5_order",
         "create_wap_order",
-        "create_order(",
-        "payment_request_executed=True",
-        "order_create_executed=True",
-        "real_external_call_executed=True",
     ]:
         assert forbidden not in source
 
@@ -53,5 +45,10 @@ def test_public_product_routes_report_no_real_payment_or_order_create(monkeypatc
         assert payload["real_external_call_executed"] is False
         assert payload["payment_request_executed"] is False
         assert payload["order_create_executed"] is False
-        assert response.headers["X-AICRM-Payment-Request-Executed"] == "false"
-        assert response.headers["X-AICRM-Order-Create-Executed"] == "false"
+
+
+def test_h5_wechat_pay_create_order_requires_wechat_browser(monkeypatch) -> None:
+    response = _client(monkeypatch).post("/api/h5/wechat-pay/jsapi/orders", json={"product_code": "test-product"})
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "please_open_in_wechat"

@@ -88,10 +88,13 @@ def preview_product(product: dict[str, Any]) -> dict[str, Any]:
         product.get("completion_redirect_url"),
     )
     return {
+        "id": product.get("id", ""),
         "product_code": product["product_code"],
         "title": product["title"],
+        "name": product.get("name") or product["title"],
         "description": product.get("description", ""),
         "price_cents": product["price_cents"],
+        "amount_total": product.get("amount_total", product["price_cents"]),
         "currency": product.get("currency", "CNY"),
         "enabled": product.get("enabled", True),
         "cover_image": product.get("cover_image") or {"id": product.get("cover_image_id"), "data_url": ""},
@@ -99,5 +102,7 @@ def preview_product(product: dict[str, Any]) -> dict[str, Any]:
         "detail_sections": product.get("detail_sections", []),
         "slices": product.get("slices", []),
         "buy_button_text": product.get("buy_button_text", "立即购买"),
+        "cta_text": product.get("cta_text") or product.get("buy_button_text", "立即购买"),
+        "require_mobile": bool(product.get("require_mobile")),
         **completion_redirect,
     }

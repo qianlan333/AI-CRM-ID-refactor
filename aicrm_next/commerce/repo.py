@@ -603,7 +603,8 @@ class PostgresCommerceRepository:
                 "SELECT * FROM wechat_pay_products WHERE product_code = %s LIMIT 1",
                 (str(product_code),),
             ).fetchone()
-        return self._serialize_product(row) if row else None
+            slices = self._list_product_slices(conn, str(row.get("id"))) if row else []
+        return self._serialize_product(row, slices=slices) if row else None
 
     def get_product_by_slug(self, page_slug: str) -> dict[str, Any] | None:
         return self.get_product_by_code(page_slug)

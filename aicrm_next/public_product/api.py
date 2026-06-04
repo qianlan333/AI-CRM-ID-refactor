@@ -8,6 +8,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from aicrm_next.commerce.product_code_aliases import canonical_product_code
 from aicrm_next.shared.errors import NotFoundError
 
+from .h5_wechat_pay import (
+    checkout_page_state,
+    create_jsapi_order_response,
+    notify_response,
+    order_status_response,
+    payment_oauth_callback,
+    payment_oauth_start,
+)
 from .service import (
     blocked_action_payload,
     diagnostics_payload,
@@ -67,7 +75,42 @@ def public_pay_landing(request: Request, path: str) -> Response:
         product = get_public_product(path)
     except NotFoundError:
         return HTMLResponse(render_not_found_page(path), status_code=404, headers=route_headers())
-    return HTMLResponse(render_pay_landing(product), headers=route_headers())
+    return HTMLResponse(render_pay_landing(product, checkout_page_state(product, request)), headers=route_headers())
+
+
+@router.get("/api/h5/wechat-pay/oauth/start", name="api.h5_wechat_pay_oauth_start")
+def h5_wechat_pay_oauth_start(request: Request):
+    return payment_oauth_start(request)
+
+
+@router.get("/api/h5/wechat-pay/oauth/callback", name="api.h5_wechat_pay_oauth_callback")
+def h5_wechat_pay_oauth_callback(request: Request):
+    return payment_oauth_callback(request)
+
+
+@router.get("/api/h5/wechat-pay/products/{path:path}", name="api.h5_wechat_pay_product")
+def h5_wechat_pay_product(path: str) -> JSONResponse:
+    try:
+        product = get_public_product(path)
+    except NotFoundError:
+        return JSONResponse(product_not_found_payload(path), status_code=404, headers=route_headers())
+    return JSONResponse({"ok": True, "product": product}, headers=route_headers())
+
+
+@router.post("/api/h5/wechat-pay/jsapi/orders", name="api.h5_wechat_pay_create_jsapi_order")
+async def h5_wechat_pay_create_jsapi_order(request: Request) -> JSONResponse:
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    return create_jsapi_order_response(request, payload if isinstance(payload, dict) else {})
+
+
+@router.get("/api/h5/wechat-pay/orders/{out_trade_no}", name="api.h5_wechat_pay_order_status")
+def h5_wechat_pay_order_status(out_trade_no: str, request: Request) -> JSONResponse:
+    return order_status_response(out_trade_no, request)
+
+
+@router.post("/api/h5/wechat-pay/notify", name="api.h5_wechat_pay_notify")
+async def h5_wechat_pay_notify(request: Request) -> JSONResponse:
+    return await notify_response(request)
 
 
 @router.options("/api/products/{path:path}", name="api.public_product_api_options")

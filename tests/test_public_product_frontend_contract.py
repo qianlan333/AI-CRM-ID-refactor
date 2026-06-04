@@ -12,27 +12,24 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def test_public_product_frontend_contains_expected_display_and_blocked_cta(monkeypatch) -> None:
+def test_public_product_frontend_contains_detail_images_only_and_wechat_pay_cta(monkeypatch) -> None:
     product = _client(monkeypatch).get("/p/test-product")
     pay = _client(monkeypatch).get("/pay/test-product")
 
     assert 'data-route-owner="ai_crm_next"' in product.text
     assert 'data-fallback-used="false"' in product.text
-    assert 'data-payment-request-executed="false"' in product.text
-    assert 'data-order-create-executed="false"' in product.text
-    assert 'class="hero-panel"' in product.text
     assert 'class="sticky-buy"' in product.text
-    assert 'class="detail-card"' in product.text
-    assert "商品编码" in product.text
-    assert "价格" in product.text
-    assert "状态" in product.text
     assert "/pay/test-product" in product.text
+    assert 'class="hero-panel"' not in product.text
+    assert 'class="detail-card"' not in product.text
+    assert "当前页面只展示商品信息" not in product.text
 
     assert 'data-route-owner="ai_crm_next"' in pay.text
-    assert 'class="hero-panel pay-panel"' in pay.text
-    assert "支付暂不可用" in pay.text
-    assert "不会创建订单" in pay.text
-    assert "不会调用微信支付或支付宝" in pay.text
+    assert "确认报名信息" in pay.text
+    assert "/api/h5/wechat-pay/jsapi/orders" in pay.text
+    assert "WeixinJSBridge.invoke" in pay.text
+    assert "支付暂不可用" not in pay.text
+    assert "不会创建订单" not in pay.text
 
 
 def test_public_product_frontend_restores_slice_image_layout() -> None:
@@ -62,5 +59,6 @@ def test_public_product_frontend_restores_slice_image_layout() -> None:
     assert 'class="slice-img"' in html
     assert "data:image/png;base64,YWFhYWFh" in html
     assert '<section class="hero-panel">' not in html
+    assert 'class="detail-card"' not in html
     assert 'class="sticky-buy"' in html
     assert "立即报名" in html
