@@ -22,7 +22,17 @@ from aicrm_next.platform_foundation.route_registry.checker import build_route_ch
 
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 
-NEXT_OWNED_BEHAVIORS = {"next_exact", "next_command", "next_adapter", "guarded_preview", "fake_adapter", "readonly_facade"}
+NEXT_OWNED_BEHAVIORS = {
+    "next_exact",
+    "next_command",
+    "next_adapter",
+    "guarded_preview",
+    "fake_adapter",
+    "readonly_facade",
+    "next_export",
+    "next_cloud_observability",
+    "next_wecom_customer_acquisition",
+}
 PRODUCTION_COMPAT_BEHAVIORS = {"legacy_forward", "scheduled_safe_mode"}
 
 RESOLUTION_SAMPLES = [
@@ -144,6 +154,11 @@ RESOLUTION_SAMPLES = [
     ("POST", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/start"),
     ("PATCH", "/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/steps/0"),
     ("POST", "/api/admin/cloud-orchestrator/campaigns/run-due"),
+    ("GET", "/api/admin/cloud-orchestrator/audit"),
+    ("GET", "/api/admin/cloud-orchestrator/observability"),
+    ("GET", "/api/admin/class-user-management/export"),
+    ("GET", "/api/admin/wecom-customer-acquisition-links"),
+    ("POST", "/api/admin/wecom-customer-acquisition-links"),
     ("POST", "/api/admin/automation-conversion/reply-monitor/capture"),
     ("POST", "/api/admin/automation-conversion/reply-monitor/run-due"),
     ("POST", "/api/admin/automation-conversion/jobs/run-due/preview"),

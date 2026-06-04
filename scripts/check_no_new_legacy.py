@@ -449,6 +449,38 @@ PAYMENT_WILDCARD_FINAL_MANIFEST_ROUTES = (
     "/api/h5/wechat-pay*",
     "/api/h5/alipay*",
 )
+POST_LEGACY_DEFERRED_ROUTES = {
+    "/api/admin/class-user-management/export": {
+        "manifest_behavior": "next_export",
+        "registry_owner": "next_native",
+        "manifest_owner": "next",
+    },
+    "/api/admin/cloud-orchestrator/audit": {
+        "manifest_behavior": "next_cloud_observability",
+        "registry_owner": "next_native",
+        "manifest_owner": "next",
+    },
+    "/api/admin/cloud-orchestrator/observability": {
+        "manifest_behavior": "next_cloud_observability",
+        "registry_owner": "next_native",
+        "manifest_owner": "next",
+    },
+    "/api/admin/wecom-customer-acquisition-links": {
+        "manifest_behavior": "next_wecom_customer_acquisition",
+        "registry_owner": "next_command",
+        "manifest_owner": "next_command",
+    },
+    "/api/admin/wecom-customer-acquisition-links/{link_id}": {
+        "manifest_behavior": "next_wecom_customer_acquisition",
+        "registry_owner": "next_command",
+        "manifest_owner": "next_command",
+    },
+    "/api/admin/wecom-customer-acquisition-links/{link_id}/{action}": {
+        "manifest_behavior": "next_wecom_customer_acquisition",
+        "registry_owner": "next_command",
+        "manifest_owner": "next_command",
+    },
+}
 PAYMENT_WILDCARD_FINAL_DIRECT_MARKERS = {
     "forward_to_legacy_flask": "payment_wildcard_final_legacy_forward",
     "legacy_flask_facade": "payment_wildcard_final_legacy_facade",
@@ -4696,6 +4728,159 @@ def check_final_legacy_exit_cleanup(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_post_legacy_deferred_api_cleanup(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    baseline_path = root / "tests/post_legacy_baseline.py"
+    if not baseline_path.exists():
+        violations.append(
+            Violation(
+                "post_legacy_deferred_baseline_missing",
+                str(baseline_path.relative_to(root)),
+                "missing baseline file",
+            )
+        )
+    else:
+        baseline_text = baseline_path.read_text(encoding="utf-8")
+        if "DEFERRED_FRONTEND_API_PATTERNS: tuple[str, ...] = ()" not in baseline_text:
+            violations.append(
+                Violation(
+                    "post_legacy_deferred_patterns_not_empty",
+                    str(baseline_path.relative_to(root)),
+                    "DEFERRED_FRONTEND_API_PATTERNS must stay empty",
+                    "Post-Legacy deferred API cleanup forbids reintroducing a frontend/API gray-area whitelist.",
+                )
+            )
+
+    inventory_path = root / "docs/architecture/post_legacy_deferred_api_cleanup_inventory.md"
+    if not inventory_path.exists():
+        violations.append(
+            Violation(
+                "post_legacy_deferred_inventory_missing",
+                str(inventory_path.relative_to(root)),
+                "missing deferred API cleanup inventory",
+            )
+        )
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for route_path in POST_LEGACY_DEFERRED_ROUTES:
+            if route_path not in inventory_text:
+                violations.append(
+                    Violation(
+                        "post_legacy_deferred_inventory_route_missing",
+                        str(inventory_path.relative_to(root)),
+                        route_path,
+                    )
+                )
+        for phrase in (
+            "DEFERRED_FRONTEND_API_PATTERNS` is empty",
+            "real WeCom blocked",
+            "external_storage_executed=false",
+            "wecom_api_called=false",
+        ):
+            if phrase not in inventory_text:
+                violations.append(
+                    Violation(
+                        "post_legacy_deferred_inventory_guardrail_missing",
+                        str(inventory_path.relative_to(root)),
+                        phrase,
+                    )
+                )
+
+    api_path = root / "aicrm_next/post_legacy_deferred/api.py"
+    if not api_path.exists():
+        violations.append(
+            Violation(
+                "post_legacy_deferred_api_missing",
+                str(api_path.relative_to(root)),
+                "missing Next-owned deferred closeout API module",
+            )
+        )
+    else:
+        api_text = api_path.read_text(encoding="utf-8")
+        for marker, code in {
+            "requests.": "post_legacy_deferred_direct_requests_client",
+            "httpx.": "post_legacy_deferred_direct_httpx_client",
+            "urlopen(": "post_legacy_deferred_direct_urlopen_client",
+            "create_contact_way": "post_legacy_deferred_wecom_contact_way",
+            "dispatch_wecom_task": "post_legacy_deferred_wecom_dispatch",
+            "external_storage_executed = True": "post_legacy_deferred_external_storage_true",
+            "wecom_api_called = True": "post_legacy_deferred_wecom_api_true",
+            "real_external_call_executed = True": "post_legacy_deferred_real_external_true",
+            '"external_storage_executed": True': "post_legacy_deferred_external_storage_true",
+            '"wecom_api_called": True': "post_legacy_deferred_wecom_api_true",
+            '"real_external_call_executed": True': "post_legacy_deferred_real_external_true",
+        }.items():
+            if marker in api_text:
+                violations.append(
+                    Violation(
+                        code,
+                        str(api_path.relative_to(root)),
+                        marker,
+                        "Deferred API closeout routes must remain local, safe-mode, and no-real-external by default.",
+                    )
+                )
+        for route_path in POST_LEGACY_DEFERRED_ROUTES:
+            if route_path not in api_text:
+                violations.append(
+                    Violation(
+                        "post_legacy_deferred_api_route_missing",
+                        str(api_path.relative_to(root)),
+                        route_path,
+                    )
+                )
+
+    registry_records = {record.get("path_pattern"): record for record in _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")}
+    manifest_records = {record.get("route_pattern"): record for record in _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")}
+    for route_path, expected in POST_LEGACY_DEFERRED_ROUTES.items():
+        registry_record = registry_records.get(route_path)
+        manifest_record = manifest_records.get(route_path)
+        if not registry_record:
+            violations.append(Violation("post_legacy_deferred_registry_missing", route_path, "missing registry record"))
+        else:
+            if registry_record.get("runtime_owner") != expected["registry_owner"]:
+                violations.append(Violation("post_legacy_deferred_registry_owner", route_path, f"runtime_owner={registry_record.get('runtime_owner')}"))
+            if registry_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("post_legacy_deferred_registry_legacy_allowed", route_path, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+            if registry_record.get("delete_status") not in {"deletion_locked", "post_legacy_locked"} or registry_record.get("replacement_status") != "locked":
+                violations.append(
+                    Violation(
+                        "post_legacy_deferred_registry_lifecycle",
+                        route_path,
+                        f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}",
+                    )
+                )
+        if not manifest_record:
+            violations.append(Violation("post_legacy_deferred_manifest_missing", route_path, "missing production manifest record"))
+        else:
+            if manifest_record.get("current_runtime_owner") != expected["manifest_owner"]:
+                violations.append(Violation("post_legacy_deferred_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+            if manifest_record.get("production_behavior") != expected["manifest_behavior"]:
+                violations.append(Violation("post_legacy_deferred_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("post_legacy_deferred_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("delete_status") not in {"deletion_locked", "post_legacy_locked"} or manifest_record.get("replacement_status") != "locked":
+                violations.append(
+                    Violation(
+                        "post_legacy_deferred_manifest_lifecycle",
+                        route_path,
+                        f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}",
+                    )
+                )
+
+    route_report = build_route_check_report(strict=True)
+    if route_report["production_compat_route_count"] != 0:
+        violations.append(
+            Violation(
+                "post_legacy_deferred_production_compat_runtime_count",
+                "runtime",
+                f"production_compat_route_count={route_report['production_compat_route_count']}",
+            )
+        )
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -4729,6 +4914,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_automation_member_actions_next_safe_mode(ROOT)
         + check_customer_automation_webhook_next_safe_mode(ROOT)
         + check_final_legacy_exit_cleanup(ROOT)
+        + check_post_legacy_deferred_api_cleanup(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

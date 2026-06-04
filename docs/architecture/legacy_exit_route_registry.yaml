@@ -2413,6 +2413,90 @@ routes:
     checker: tests/test_payment_wildcard_final_registry_lifecycle.py
     rollback_owner: ""
     notes: Final production_compat wildcard rollback removed; legacy H5 Alipay paths are controlled 410 and public checkout/order/provider APIs are the replacement.
+  - route_id: post_legacy_class_user_management_export
+    path_pattern: /api/admin/class-user-management/export
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.post_legacy_deferred
+    notes: Post-Legacy deferred closeout; local CSV export only, external_storage_executed=false, no production_compat fallback.
+  - route_id: post_legacy_cloud_orchestrator_audit
+    path_pattern: /api/admin/cloud-orchestrator/audit
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.cloud_orchestrator
+    notes: Post-Legacy deferred closeout; read-only empty/degraded-safe audit contract, no external observability service and no legacy fallback.
+  - route_id: post_legacy_cloud_orchestrator_observability
+    path_pattern: /api/admin/cloud-orchestrator/observability
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.cloud_orchestrator
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.cloud_orchestrator
+    notes: Post-Legacy deferred closeout; read-only local observability contract with empty metrics when no store is configured.
+  - route_id: post_legacy_wecom_customer_acquisition_links_read_write
+    path_pattern: /api/admin/wecom-customer-acquisition-links
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.post_legacy_deferred
+    notes: Post-Legacy deferred closeout; safe-mode local WeCom customer acquisition link read/create, wecom_api_called=false.
+  - route_id: post_legacy_wecom_customer_acquisition_links_detail
+    path_pattern: /api/admin/wecom-customer-acquisition-links/{link_id}
+    methods: [GET, PATCH, DELETE, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.post_legacy_deferred
+    notes: Post-Legacy deferred closeout; safe-mode local detail/update/disable, no real WeCom API.
+  - route_id: post_legacy_wecom_customer_acquisition_links_actions
+    path_pattern: /api/admin/wecom-customer-acquisition-links/{link_id}/{action}
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.post_legacy_deferred
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_post_legacy_deferred_api_routes.py
+    rollback_owner: aicrm_next.post_legacy_deferred
+    notes: Post-Legacy deferred closeout for enable/disable/sync and controlled 410 for unknown actions; wecom_api_called=false.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

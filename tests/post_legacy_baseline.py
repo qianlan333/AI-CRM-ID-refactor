@@ -117,6 +117,8 @@ API_CONTRACT_CASES: tuple[ApiCase, ...] = (
     ApiCase("attachment_library_read", "GET", "/api/admin/attachment-library", "aicrm_next.media_library", (200,)),
     ApiCase("miniprogram_library_read", "GET", "/api/admin/miniprogram-library", "aicrm_next.media_library", (200,)),
     ApiCase("cloud_campaigns_read", "GET", "/api/admin/cloud-orchestrator/campaigns", "aicrm_next.cloud_orchestrator", (200,)),
+    ApiCase("cloud_audit_read", "GET", "/api/admin/cloud-orchestrator/audit", "aicrm_next.post_legacy_deferred", (200,)),
+    ApiCase("cloud_observability_read", "GET", "/api/admin/cloud-orchestrator/observability", "aicrm_next.post_legacy_deferred", (200,)),
     ApiCase(
         "cloud_campaigns_run_due_preview",
         "POST",
@@ -159,6 +161,16 @@ API_CONTRACT_CASES: tuple[ApiCase, ...] = (
     ),
     ApiCase("hxc_dashboard_read", "GET", "/api/admin/hxc-dashboard", "aicrm_next.hxc_dashboard", (200,)),
     ApiCase("hxc_dashboard_refresh", "POST", "/api/admin/hxc-dashboard/refresh", "aicrm_next.hxc_dashboard", (200,), json={}),
+    ApiCase("class_user_management_export", "GET", "/api/admin/class-user-management/export", "aicrm_next.post_legacy_deferred", (200,)),
+    ApiCase("wecom_customer_acquisition_links_read", "GET", "/api/admin/wecom-customer-acquisition-links", "aicrm_next.post_legacy_deferred", (200,)),
+    ApiCase(
+        "wecom_customer_acquisition_links_create",
+        "POST",
+        "/api/admin/wecom-customer-acquisition-links",
+        "aicrm_next.post_legacy_deferred",
+        (200,),
+        json={"name": "Post Legacy Baseline", "description": "safe-mode only"},
+    ),
     ApiCase("public_product_api", "GET", "/api/products/test-product", "aicrm_next.public_product", (200,)),
     ApiCase(
         "checkout_wechat_fake",
@@ -179,13 +191,7 @@ API_CONTRACT_CASES: tuple[ApiCase, ...] = (
     ApiCase("h5_payment_unknown_closed", "GET", "/api/h5/wechat-pay/unknown-child", "aicrm_next.commerce", (410,)),
 )
 
-DEFERRED_FRONTEND_API_PATTERNS: tuple[str, ...] = (
-    "/api/admin/class-user-management/export",
-    "/api/admin/cloud-orchestrator/audit",
-    "/api/admin/cloud-orchestrator/observability",
-    "/api/admin/wecom-customer-acquisition-links",
-    "/api/admin/wecom-customer-acquisition-links/",
-)
+DEFERRED_FRONTEND_API_PATTERNS: tuple[str, ...] = ()
 
 
 def baseline_env(monkeypatch) -> None:
