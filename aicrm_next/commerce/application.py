@@ -32,6 +32,10 @@ def _payment_side_effect_safety() -> dict[str, Any]:
         "real_alipay_executed": False,
         "real_payment_notify_executed": False,
         "real_payment_provider_called": False,
+        "real_external_call_executed": False,
+        "payment_request_executed": False,
+        "order_create_executed": False,
+        "fallback_used": False,
         "side_effect_executed": False,
     }
 
@@ -251,12 +255,24 @@ class CheckoutCommand:
         if not checkout_result["ok"]:
             raise ContractError(checkout_result["error_message"] or checkout_result["error_code"])
         checkout_payload = checkout_result["result"]
+        side_effect_safety = {
+            **_payment_side_effect_safety(),
+            "order_create_executed": "local_only",
+        }
+        adapter_mode = str(checkout_result.get("mode") or checkout_payload.get("mode") or self._provider)
         return {
             "ok": True,
             "order_no": order["order_no"],
             "payment_provider": self._provider,
             "amount_cents": amount,
             "payment_status": order["payment_status"],
+            "route_owner": "ai_crm_next",
+            "source_status": "next_checkout",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "payment_request_executed": False,
+            "order_create_executed": "local_only",
+            "adapter_mode": adapter_mode,
             **completion_redirect_projection(
                 product.get("completion_redirect_enabled"),
                 product.get("completion_redirect_url"),
@@ -271,7 +287,7 @@ class CheckoutCommand:
                 "source_status": "fake",
             },
             "fake_payment": True,
-            "side_effect_safety": _payment_side_effect_safety(),
+            "side_effect_safety": side_effect_safety,
             "adapter_contract": {"checkout": checkout_result},
         }
 
@@ -284,7 +300,15 @@ class GetOrderQuery:
         order = self._repo.get_order(order_no)
         if not order:
             raise NotFoundError("order not found")
-        return {"ok": True, "order": order, "payment_status": order["payment_status"]}
+        return {
+            "ok": True,
+            "order": order,
+            "payment_status": order["payment_status"],
+            "source_status": "next_order_read",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
 
 
 class NotifyPaymentCommand:

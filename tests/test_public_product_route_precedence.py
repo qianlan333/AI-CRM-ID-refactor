@@ -34,9 +34,9 @@ def test_public_product_routes_precede_production_compat_when_facade_enabled(mon
         route = _first_match(app, method=method, path=path)
         assert route.endpoint.__module__ == "aicrm_next.public_product.api"
 
-    assert _first_match(app, method="GET", path="/api/checkout/smoke").endpoint.__module__ == "aicrm_next.production_compat.api"
+    assert _first_match(app, method="GET", path="/api/checkout/smoke").endpoint.__module__ == "aicrm_next.commerce.api"
     assert _first_match(app, method="GET", path="/api/orders/smoke").endpoint.__module__ == "aicrm_next.commerce.api"
-    assert _first_match(app, method="GET", path="/api/orders/smoke/legacy-child").endpoint.__module__ == "aicrm_next.production_compat.api"
+    assert _first_match(app, method="GET", path="/api/orders/smoke/legacy-child").endpoint.__module__ == "aicrm_next.commerce.api"
 
 
 def test_public_product_production_compat_source_has_no_public_product_decorators() -> None:

@@ -2203,6 +2203,90 @@ routes:
     checker: tests/test_public_product_registry_lifecycle.py
     rollback_owner: aicrm_next.public_product
     notes: Public product API is Next-owned; known product paths return display contract, unknown paths return controlled 404/410, payment/order write actions are blocked.
+  - route_id: checkout_wechat_next_checkout
+    path_pattern: /api/checkout/wechat
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_checkout
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; checkout creates local/fake orders only and never executes a real payment request.
+  - route_id: checkout_alipay_next_checkout
+    path_pattern: /api/checkout/alipay
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_checkout
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; checkout creates local/fake orders only and never executes a real payment request.
+  - route_id: orders_public_read_next_order_read
+    path_pattern: /api/orders/{order_no}
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_order_read
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; order read is a Next local repository read with fallback_used=false.
+  - route_id: orders_public_status_next_order_read
+    path_pattern: /api/orders/{order_no}/status
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_order_read
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; status polling is a Next local repository read with fallback_used=false.
+  - route_id: checkout_unknown_next_blocked
+    path_pattern: /api/checkout/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_blocked
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Unknown checkout child paths return controlled 410 from Next and never fallback to production_compat.
+  - route_id: orders_unknown_child_next_not_found
+    path_pattern: /api/orders/{order_no}/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_not_found
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Unknown order child paths return controlled 410 from Next and never fallback to production_compat.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model
