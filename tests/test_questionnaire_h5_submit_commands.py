@@ -79,6 +79,37 @@ def test_h5_submit_supports_anonymous_identity(client: TestClient) -> None:
     assert body["result"]["score"] == 0
 
 
+def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import aicrm_next.questionnaire.api as questionnaire_api
+
+    monkeypatch.setattr(
+        questionnaire_api,
+        "questionnaire_h5_identity_from_cookies",
+        lambda cookies: {
+            "openid": "openid-cookie-001",
+            "unionid": "unionid-cookie-001",
+            "respondent_key": "unionid-cookie-001",
+            "external_userid": "wm_cookie_identity_001",
+        },
+    )
+
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={"answers": {"q_activation": "not_activated"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_next_command(body, "questionnaire.h5.submit")
+    assert body["identity"]["anonymous"] is False
+    assert body["identity"]["openid"] == "openid-cookie-001"
+    assert body["identity"]["unionid"] == "unionid-cookie-001"
+    assert body["external_userid"] == "wm_cookie_identity_001"
+
+
 def test_h5_submit_validates_required_answers(client: TestClient) -> None:
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",
