@@ -285,6 +285,20 @@ def _h5_identity_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return identity
 
 
+def _h5_submit_identity_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    identity = {
+        key: value
+        for key, value in _questionnaire_session_identity_from_request(request).items()
+        if key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS and value
+    }
+    for key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS:
+        value = str(request.query_params.get(key) or "").strip()
+        if value:
+            identity[key] = value
+    identity.update(_h5_identity_payload(payload))
+    return identity
+
+
 def _h5_source_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
     source = dict(payload.get("source") or {}) if isinstance(payload.get("source"), dict) else {}
     for key in ["source_channel", "campaign_id", "staff_id"]:
@@ -301,7 +315,7 @@ async def _execute_h5_submit(request: Request, slug: str) -> Response:
         command = QuestionnaireH5SubmitCommand(
             questionnaire_slug=slug,
             answers=dict(payload.get("answers") or {}),
-            identity=_h5_identity_payload(payload),
+            identity=_h5_submit_identity_payload(payload, request),
             source=_h5_source_payload(payload, request),
             command_id=str(payload.get("command_id") or uuid4().hex),
             idempotency_key=str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
