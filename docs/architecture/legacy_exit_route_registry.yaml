@@ -2287,6 +2287,76 @@ routes:
     checker: tests/test_checkout_orders_registry_lifecycle.py
     rollback_owner: ""
     notes: Unknown order child paths return controlled 410 from Next and never fallback to production_compat.
+  - route_id: wechat_pay_notify_next_payment_notify
+    path_pattern: /api/wechat-pay/notify
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_payment_notify
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; no real signature verification, no real provider call, and notify records fake/local status only.
+  - route_id: alipay_notify_next_payment_notify
+    path_pattern: /api/alipay/notify
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_payment_notify
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; no real signature verification, no real provider call, and notify records fake/local status only.
+  - route_id: alipay_return_next_payment_return
+    path_pattern: /api/alipay/return
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_payment_return
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Legacy rollback removed; return preview is fake/blocked and does not call Alipay.
+  - route_id: wechat_pay_unknown_next_not_found
+    path_pattern: /api/wechat-pay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_not_found
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Unknown public WeChat Pay provider child paths return controlled 410 from Next and never fallback to production_compat.
+  - route_id: alipay_unknown_next_not_found
+    path_pattern: /api/alipay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_not_found
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Unknown public Alipay provider child paths return controlled 410 from Next and never fallback to production_compat.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

@@ -270,6 +270,17 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
         assert _endpoint_for(samples, method, path) == "aicrm_next.commerce.api"
     assert _owner_for(samples, "GET", "/api/orders/smoke") == "next"
     assert _endpoint_for(samples, "GET", "/api/orders/smoke") == "aicrm_next.commerce.api"
+    for method, path in (
+        ("POST", "/api/wechat-pay/notify"),
+        ("OPTIONS", "/api/wechat-pay/notify"),
+        ("GET", "/api/wechat-pay/unknown-child"),
+        ("POST", "/api/alipay/notify"),
+        ("GET", "/api/alipay/return"),
+        ("OPTIONS", "/api/alipay/return"),
+        ("GET", "/api/alipay/unknown-child"),
+    ):
+        assert _owner_for(samples, method, path) == "next"
+        assert _endpoint_for(samples, method, path) == "aicrm_next.commerce.api"
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "next"

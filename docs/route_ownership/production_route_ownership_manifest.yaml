@@ -1660,23 +1660,29 @@ routes:
     capability_owner: aicrm_next.commerce
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: WeChat Pay notify/fallback route family; real provider calls blocked.
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public WeChat Pay provider notify path is Next-owned; unknown child paths return controlled 410, no real signature verification, no real provider call, and production_compat rollback is removed.
   - route_pattern: /api/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Alipay notify/return/fallback route family; real provider calls blocked.
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_provider_payment_registry_lifecycle.py
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public Alipay notify/return paths are Next-owned; unknown child paths return controlled 410, no real signature verification, no real provider call, and production_compat rollback is removed.
   - route_pattern: /api/h5/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

@@ -15,7 +15,7 @@ Legacy Exit Group 27 closes the public product and pay landing rollback for `/p/
 | unknown child path | bad URL/manual probes | controlled not found | `/api/products/{unknown}` | GET/HEAD | `public_product_api` | product lookup only | none | locked | 404 controlled |
 | production_compat exact rollback | legacy fallback | removed | `/p/*`, `/pay/*`, `/api/products/*` | all | removed from `router` | none | production_compat rollback removed | grep clean |
 | production_compat wildcard rollback | broad fallback | removed | `/p/*`, `/pay/*`, `/api/products/*` | all | removed from `wildcard_router` | none | wildcard_router rollback removed | grep clean |
-| payment/admin/h5/checkout/orders | out-of-scope | retained fallback or existing owner | `/api/admin/wechat-pay/*`, `/api/admin/alipay/*`, `/api/h5/wechat-pay/*`, `/api/h5/alipay/*`, `/api/orders/*`, `/api/checkout/*`, `/api/wechat-pay/*`, `/api/alipay/*` | all | current owners unchanged | guarded/blocked by separate groups | out-of-scope, do not mark locked in this group | smoke checkout/orders still reach retained family |
+| payment/admin/h5/checkout/orders/provider | out-of-scope | later groups own payment APIs | `/api/admin/wechat-pay/*`, `/api/admin/alipay/*`, `/api/h5/wechat-pay/*`, `/api/h5/alipay/*`, `/api/orders/*`, `/api/checkout/*`, `/api/wechat-pay/*`, `/api/alipay/*` | all | later group owners unchanged | guarded/blocked by separate groups | checkout/orders locked in group 28; public provider notify/return locked in group 29; admin/h5 remain out-of-scope | smoke admin/h5 still reach retained family |
 
 ## Boundary Decisions
 
@@ -25,4 +25,4 @@ Legacy Exit Group 27 closes the public product and pay landing rollback for `/p/
 - Known child APIs in this group: detail by slug/code, list, blocked checkout/payment/order child path, unknown path.
 - Lead channel and completion redirect fields may be present in the product projection but this group does not execute redirects, channel admission, payment, order creation, webhook, or callback behavior.
 - Do not process real payment, real order create, real WeChat Pay, real Alipay, or payment webhook in this group.
-- Do not change payment/admin/h5/checkout/orders wildcard ownership in this group.
+- Do not change payment/admin/h5/checkout/orders/provider wildcard ownership in this group; later groups 28 and 29 close checkout/orders and public provider notify/return, while admin/h5 remain out-of-scope.
