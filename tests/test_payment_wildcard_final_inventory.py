@@ -24,6 +24,8 @@ def test_admin_h5_payment_wildcard_inventory_covers_final_closeout_matrix() -> N
         "unknown child path",
         "production_compat wildcard removed",
         "final no legacy fallback",
+        "admin WeChat refund exact route is the explicit exception",
+        "real_refund_executed=true",
         "real_refund_executed=false",
         "real_external_call_executed=false",
     ]:
