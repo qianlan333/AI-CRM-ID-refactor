@@ -25,6 +25,7 @@ class QuestionnaireRepository(Protocol):
     def delete_questionnaire(self, questionnaire_id: int) -> bool: ...
     def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_submission(self, submission_id: str) -> dict[str, Any] | None: ...
+    def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None: ...
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def export_submissions(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def get_app_setting(self, key: str) -> str | None: ...
@@ -37,6 +38,21 @@ def _now() -> str:
 
 def _text(value: Any) -> str:
     return "" if value is None else str(value)
+
+
+def _identity_lookup_values(identity: dict[str, Any] | None) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for field in ("external_userid", "unionid", "openid", "respondent_key", "mobile"):
+        value = _text((identity or {}).get(field)).strip()
+        if not value:
+            continue
+        pair = (field, value)
+        if pair in seen:
+            continue
+        seen.add(pair)
+        values.append(pair)
+    return values
 
 
 def _timestamp(value: Any) -> str:
@@ -367,6 +383,21 @@ class InMemoryQuestionnaireRepository:
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         for item in self._submissions:
             if item.get("submission_id") == submission_id:
+                return deepcopy(item)
+        return None
+
+    def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None:
+        candidates = _identity_lookup_values(identity)
+        if not candidates:
+            return None
+        for item in reversed(self._submissions):
+            if int(item.get("questionnaire_id") or 0) != int(questionnaire_id):
+                continue
+            respondent_identity = item.get("respondent_identity") if isinstance(item.get("respondent_identity"), dict) else {}
+            if any(
+                _text(item.get(field) or respondent_identity.get(field) or (item.get("mobile_snapshot") if field == "mobile" else "")) == value
+                for field, value in candidates
+            ):
                 return deepcopy(item)
         return None
 
@@ -814,6 +845,40 @@ class PostgresQuestionnaireReadRepository:
             "created_at": _timestamp(row.get("submitted_at")),
             "submitted_at": _timestamp(row.get("submitted_at")),
             "answer_snapshots": answer_snapshots,
+        }
+
+    def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None:
+        candidates = _identity_lookup_values(identity)
+        if not candidates:
+            return None
+        clauses: list[str] = []
+        params: list[Any] = [int(questionnaire_id)]
+        for field, value in candidates:
+            column = "mobile_snapshot" if field == "mobile" else field
+            clauses.append(f"{column} = %s")
+            params.append(value)
+        with self._connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT id, questionnaire_id, respondent_key, openid, unionid, external_userid,
+                       mobile_snapshot, total_score, final_tags, result_token, redirect_url_snapshot,
+                       submitted_at
+                FROM questionnaire_submissions
+                WHERE questionnaire_id = %s AND ({" OR ".join(clauses)})
+                ORDER BY submitted_at DESC, id DESC
+                LIMIT 1
+                """,
+                tuple(params),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            **dict(row),
+            "submission_id": str(row.get("id")),
+            "mobile": _text(row.get("mobile_snapshot")),
+            "score": float(row.get("total_score") or 0),
+            "final_tags": _json_list(row.get("final_tags")),
+            "submitted_at": _timestamp(row.get("submitted_at")),
         }
 
     def latest_submission(self, questionnaire_id: int) -> dict[str, Any] | None:
