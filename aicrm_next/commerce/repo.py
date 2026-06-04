@@ -471,10 +471,22 @@ def _normalize_slices(value: Any) -> list[dict[str, Any]]:
                 "file_name": str(item.get("file_name") or ""),
                 "file_size": int(item.get("file_size") or 0),
                 "mime_type": str(item.get("mime_type") or "image/png"),
+                "image_url": str(item.get("image_url") or item.get("data_url") or item.get("source_url") or ""),
                 "enabled": bool(item.get("enabled", True)),
             }
         )
     return normalized
+
+
+def _image_public_url(row: dict[str, Any]) -> str:
+    source_url = str(row.get("source_url") or "").strip()
+    if source_url:
+        return source_url
+    data_base64 = str(row.get("data_base64") or "").strip()
+    if not data_base64:
+        return ""
+    mime_type = str(row.get("mime_type") or "image/png").strip() or "image/png"
+    return f"data:{mime_type};base64,{data_base64}"
 
 
 def _empty_external_push_config() -> dict[str, Any]:
@@ -984,6 +996,9 @@ class PostgresCommerceRepository:
                 s.enabled,
                 image.name,
                 image.file_name,
+                image.source,
+                image.source_url,
+                image.data_base64,
                 image.mime_type,
                 image.file_size
             FROM wechat_pay_product_page_slices s
@@ -1003,6 +1018,7 @@ class PostgresCommerceRepository:
                 "file_name": str(row.get("file_name") or ""),
                 "mime_type": str(row.get("mime_type") or "image/png"),
                 "file_size": int(row.get("file_size") or 0),
+                "image_url": _image_public_url(row),
                 "enabled": bool(row.get("enabled")),
             }
             for row in rows

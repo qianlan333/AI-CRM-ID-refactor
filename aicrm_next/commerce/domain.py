@@ -96,6 +96,8 @@ def preview_product(product: dict[str, Any]) -> dict[str, Any]:
         "enabled": product.get("enabled", True),
         "cover_image": product.get("cover_image") or {"id": product.get("cover_image_id"), "data_url": ""},
         "detail_images": product.get("detail_images", []),
+        "detail_sections": product.get("detail_sections", []),
+        "slices": product.get("slices", []),
         "buy_button_text": product.get("buy_button_text", "立即购买"),
         **completion_redirect,
     }
