@@ -32,13 +32,6 @@ async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/customers/automation/activation-webhook", methods=["POST", "OPTIONS"])
-@router.api_route("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry", methods=["POST", "OPTIONS"])
-@router.api_route("/api/customers/automation/webhook-deliveries/retry-due", methods=["POST", "OPTIONS"])
-async def legacy_customer_automation_compat_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @wildcard_router.api_route("/api/admin/wechat-pay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/alipay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/h5/wechat-pay/{path:path}", methods=_ALL_METHODS)

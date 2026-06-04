@@ -115,6 +115,18 @@ from .member_actions import (
     normalize_identity as normalize_member_action_identity,
     read_automation_member_detail,
 )
+from .customer_webhooks import (
+    ApplyCustomerActivationWebhookCommand,
+    CustomerAutomationWebhookInputError,
+    PlanCustomerWebhookDeliveryRetryCommand,
+    PlanCustomerWebhookDeliveryRetryDueCommand,
+    diagnostics_payload as customer_webhook_diagnostics_payload,
+    execute_customer_webhook_command,
+    normalize_actor as normalize_customer_webhook_actor,
+    normalize_delivery_id,
+    normalize_limit as normalize_customer_webhook_limit,
+    normalize_mobile,
+)
 from .dto import (
     ActivationWebhookRequest,
     AgentMaterialsUpdateRequest,
@@ -174,6 +186,14 @@ _MEMBER_ACTION_HEADERS = {
     "X-AICRM-Real-External-Call-Executed": "false",
     "X-AICRM-Automation-Runtime-Executed": "false",
     "X-AICRM-OpenClaw-Push-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
+}
+_CUSTOMER_WEBHOOK_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Outbound-Webhook-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
     "X-AICRM-WeCom-Send-Executed": "false",
 }
 
@@ -414,6 +434,147 @@ def _member_action_response(command: AutomationMemberActionCommand) -> JSONRespo
     except Exception as exc:
         return _member_action_error(str(exc) or "automation_member_action_unavailable", status_code=503)
     return JSONResponse(payload, headers=_MEMBER_ACTION_HEADERS)
+
+
+def _customer_webhook_error(error: str, *, source_status: str, status_code: int = 400) -> JSONResponse:
+    payload = customer_webhook_diagnostics_payload(source_status)
+    payload.update(
+        {
+            "ok": False,
+            "error": error,
+            "status": "input_error" if status_code == 400 else "error",
+            "planned_count": 0,
+            "processed_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "candidate_count": 0,
+            "candidates": [],
+            "estimated_actions": {
+                "planned_action_count": 0,
+                "external_call_count": 0,
+                "blocked_external_call_count": 0,
+                "local_projection_count": 0,
+            },
+        }
+    )
+    return JSONResponse(payload, status_code=status_code, headers=_CUSTOMER_WEBHOOK_HEADERS)
+
+
+async def _customer_webhook_payload(request: Request) -> dict[str, Any]:
+    if request.headers.get("content-type", "").lower().startswith("application/json"):
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise CustomerAutomationWebhookInputError("payload must be valid JSON") from exc
+    else:
+        body = await request.body()
+        payload = {} if not body else await request.json()
+    if payload is None:
+        merged: dict[str, Any] = {}
+    elif isinstance(payload, dict):
+        merged = dict(payload)
+    else:
+        raise CustomerAutomationWebhookInputError("payload must be an object")
+    for key in ("mobile", "phone", "activated_at", "source", "limit", "dry_run"):
+        if key not in merged and key in request.query_params:
+            merged[key] = request.query_params.get(key)
+    return merged
+
+
+def _customer_webhook_common(request: Request, payload: dict[str, Any], source_route: str) -> dict[str, Any]:
+    return {
+        "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+        "actor_id": normalize_customer_webhook_actor(
+            payload.get("operator_id") or payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor")
+        ),
+        "actor_type": str(payload.get("actor_type") or "system").strip(),
+        "source_route": source_route,
+        "trace_id": str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip(),
+        "dry_run": _bool_payload(payload.get("dry_run"), default=True),
+    }
+
+
+def _customer_webhook_response(command, *, source_status: str) -> JSONResponse:
+    try:
+        payload = execute_customer_webhook_command(command)
+    except CustomerAutomationWebhookInputError as exc:
+        return _customer_webhook_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    except Exception as exc:
+        return _customer_webhook_error(str(exc) or "customer_automation_webhook_unavailable", source_status=source_status, status_code=503)
+    return JSONResponse(payload, headers=_CUSTOMER_WEBHOOK_HEADERS)
+
+
+@router.options("/api/customers/automation/activation-webhook")
+def api_customer_automation_activation_webhook_options() -> JSONResponse:
+    return JSONResponse(
+        customer_webhook_diagnostics_payload("next_customer_activation_webhook"),
+        headers=_CUSTOMER_WEBHOOK_HEADERS,
+    )
+
+
+@router.post("/api/customers/automation/activation-webhook")
+async def api_customer_automation_activation_webhook(request: Request) -> JSONResponse:
+    source_status = "next_customer_activation_webhook"
+    try:
+        payload = await _customer_webhook_payload(request)
+        command = ApplyCustomerActivationWebhookCommand(
+            **_customer_webhook_common(request, payload, "/api/customers/automation/activation-webhook"),
+            mobile=normalize_mobile(payload.get("mobile") or payload.get("phone")),
+            activated_at=str(payload.get("activated_at") or "").strip(),
+            source=str(payload.get("source") or "").strip(),
+            raw_payload=payload,
+        )
+    except CustomerAutomationWebhookInputError as exc:
+        return _customer_webhook_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _customer_webhook_response(command, source_status=source_status)
+
+
+@router.options("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry")
+def api_customer_automation_webhook_delivery_retry_options(delivery_id: int) -> JSONResponse:
+    payload = customer_webhook_diagnostics_payload("next_customer_webhook_retry_plan")
+    payload["delivery_id"] = delivery_id
+    return JSONResponse(payload, headers=_CUSTOMER_WEBHOOK_HEADERS)
+
+
+@router.post("/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry")
+async def api_plan_customer_automation_webhook_delivery_retry(delivery_id: int, request: Request) -> JSONResponse:
+    source_status = "next_customer_webhook_retry_plan"
+    try:
+        payload = await _customer_webhook_payload(request)
+        command = PlanCustomerWebhookDeliveryRetryCommand(
+            **_customer_webhook_common(
+                request,
+                payload,
+                f"/api/customers/automation/webhook-deliveries/{delivery_id}/retry",
+            ),
+            delivery_id=normalize_delivery_id(delivery_id),
+        )
+    except CustomerAutomationWebhookInputError as exc:
+        return _customer_webhook_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _customer_webhook_response(command, source_status=source_status)
+
+
+@router.options("/api/customers/automation/webhook-deliveries/retry-due")
+def api_customer_automation_webhook_delivery_retry_due_options() -> JSONResponse:
+    return JSONResponse(
+        customer_webhook_diagnostics_payload("next_customer_webhook_retry_due_plan"),
+        headers=_CUSTOMER_WEBHOOK_HEADERS,
+    )
+
+
+@router.post("/api/customers/automation/webhook-deliveries/retry-due")
+async def api_plan_customer_automation_webhook_delivery_retry_due(request: Request) -> JSONResponse:
+    source_status = "next_customer_webhook_retry_due_plan"
+    try:
+        payload = await _customer_webhook_payload(request)
+        command = PlanCustomerWebhookDeliveryRetryDueCommand(
+            **_customer_webhook_common(request, payload, "/api/customers/automation/webhook-deliveries/retry-due"),
+            limit=normalize_customer_webhook_limit(payload.get("limit"), default=20),
+        )
+    except CustomerAutomationWebhookInputError as exc:
+        return _customer_webhook_error(str(exc) or "input_error", source_status=source_status, status_code=400)
+    return _customer_webhook_response(command, source_status=source_status)
 
 
 @router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])

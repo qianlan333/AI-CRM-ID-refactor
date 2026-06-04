@@ -126,6 +126,12 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/customers/automation/signup-conversion/batches/1") == "aicrm_next.automation_engine.api"
     assert _owner_for(samples, "GET", "/api/customers/automation/webhook-deliveries") == "next"
     assert _endpoint_for(samples, "GET", "/api/customers/automation/webhook-deliveries") == "aicrm_next.automation_engine.api"
+    assert _owner_for(samples, "POST", "/api/customers/automation/activation-webhook") == "next"
+    assert _endpoint_for(samples, "POST", "/api/customers/automation/activation-webhook") == "aicrm_next.automation_engine.api"
+    assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "next"
+    assert _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "aicrm_next.automation_engine.api"
+    assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/retry-due") == "next"
+    assert _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/retry-due") == "aicrm_next.automation_engine.api"
     assert _owner_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "next"
     assert _endpoint_for(samples, "GET", "/api/admin/automation-conversion/agents/options") == "aicrm_next.automation_engine.api"
     assert _owner_for(samples, "GET", "/api/admin/automation-conversion/member") == "next"
@@ -219,11 +225,8 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "next"
     assert _endpoint_for(samples, "GET", "/api/sidebar/jssdk-config") == "aicrm_next.identity_contact.sidebar_jssdk"
-    assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "production_compat"
-    assert (
-        _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry")
-        == "aicrm_next.production_compat.api"
-    )
+    assert _owner_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "next"
+    assert _endpoint_for(samples, "POST", "/api/customers/automation/webhook-deliveries/1/retry") == "aicrm_next.automation_engine.api"
 
 
 def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():

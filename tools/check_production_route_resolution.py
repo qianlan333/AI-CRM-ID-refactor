@@ -118,7 +118,10 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/h5/wechat-pay/legacy-probe"),
     ("GET", "/api/customers/automation/signup-conversion/batches"),
     ("GET", "/api/customers/automation/signup-conversion/batches/1"),
+    ("POST", "/api/customers/automation/activation-webhook"),
     ("GET", "/api/customers/automation/webhook-deliveries"),
+    ("POST", "/api/customers/automation/webhook-deliveries/1/retry"),
+    ("POST", "/api/customers/automation/webhook-deliveries/retry-due"),
     ("GET", "/sidebar/bind-mobile"),
     ("GET", "/api/sidebar/contact-binding-status"),
     ("GET", "/api/sidebar/customer-context"),
@@ -132,7 +135,6 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/admin/customers/profile/tags"),
     ("POST", "/api/sidebar/bind-mobile"),
     ("POST", "/api/sidebar/v2/materials/send"),
-    ("POST", "/api/customers/automation/webhook-deliveries/1/retry"),
 ]
 
 

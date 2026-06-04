@@ -2049,6 +2049,48 @@ routes:
     checker: tests/test_automation_member_actions_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
     notes: Next CommandBus safe-mode plan only; SideEffectPlan adapter_name=openclaw requires approval; openclaw_push_executed=false.
+  - route_id: customer_automation_activation_webhook_next_command
+    path_pattern: /api/customers/automation/activation-webhook
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: local
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_customer_automation_webhook_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Legacy production_compat fallback removed; Next CommandBus records audit and local SideEffectPlan only; source_status=next_customer_activation_webhook.
+  - route_id: customer_automation_webhook_delivery_retry_next_safe_mode
+    path_pattern: /api/customers/automation/webhook-deliveries/{delivery_id}/retry
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_customer_automation_webhook_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Legacy production_compat fallback removed; Next CommandBus creates SideEffectPlan and blocked ExternalCallAttempt; source_status=next_customer_webhook_retry_plan.
+  - route_id: customer_automation_webhook_delivery_retry_due_next_safe_mode
+    path_pattern: /api/customers/automation/webhook-deliveries/retry-due
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_runtime_plan
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_customer_automation_webhook_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Legacy production_compat fallback removed; Next CommandBus creates SideEffectPlan and blocked ExternalCallAttempt; source_status=next_customer_webhook_retry_due_plan.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model
