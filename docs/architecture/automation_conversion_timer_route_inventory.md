@@ -15,6 +15,13 @@ This inventory locks the reply monitor and registered jobs timer family to Next 
 | Scheduler, admin smoke, or operator with POST/OPTIONS | POST `/api/admin/automation-conversion/jobs/run-due` | `automation_conversion.jobs.run_due.plan` via `PlanAutomationJobsRunDueCommand`; idempotency key supported; JSON/query `jobs`, `job_codes`, `limit`, `batch_size`, `dry_run` supported; invalid inputs return 400 | `effect_type=automation_conversion.jobs.run_due`; `adapter_mode=real_blocked`; `status=blocked`; no registered jobs runtime; `source_status=next_jobs_run_due_plan`; `jobs_run_due_executed=false` |
 | Scheduler, admin smoke, or operator with POST/OPTIONS | OPTIONS `/api/admin/automation-conversion/jobs/run-due` | No command execution; diagnostics only | Diagnostics declare `allowed_methods=[POST, OPTIONS]`, `route_owner=ai_crm_next`, `fallback_used=false`, and all execution flags false |
 
+## Operation Task Runtime Contract
+
+- Next `/api/admin/automation-conversion/jobs/run-due` is a planning route only. Even when `jobs=["operation_task"]`, it must return `jobs_run_due_executed=false`, `operation_tasks_executed=0`, `actual_enqueued_count=0`, and `blocked_reason=next_plan_only_route`.
+- The actual operation-task due runner remains `wecom_ability_service.domains.automation_conversion.due_jobs_service.run_registered_due_jobs(job_codes=["operation_task"])`, reached only through an approved internal/script execution path.
+- `scripts/run_automation_conversion_due_jobs.py` can select `AUTOMATION_CONVERSION_DUE_JOBS=operation_task`, but the default scheduled set stays `sop,conversion_workflow` until the runbook allowlist and worker coverage are explicitly approved.
+- `scripts/run_broadcast_queue_worker.py` is the separate consumer for `broadcast_jobs.source_type=operation_task`; timer success must not be treated as send success unless the worker dispatch result is observed.
+
 ## Adjacent Workspace Routes
 
 | Caller | API | CommandBus | SideEffectPlan |

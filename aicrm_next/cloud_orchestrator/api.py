@@ -445,14 +445,14 @@ async def api_preview_cloud_campaign_run_due(request: Request) -> JSONResponse:
 async def api_plan_cloud_campaign_run_due(request: Request) -> JSONResponse:
     try:
         payload = await _run_due_payload(request)
-        command = PlanCloudCampaignRunDueCommand(
-            force_plan=_bool_payload(payload.get("force_plan"), default=True),
-            **_run_due_common(
-                request,
-                payload,
-                "/api/admin/cloud-orchestrator/campaigns/run-due",
-            ),
-        )
+        common = _run_due_common(request, payload, "/api/admin/cloud-orchestrator/campaigns/run-due")
+        if _bool_payload(payload.get("preview"), default=False):
+            command = PreviewCloudCampaignRunDueCommand(**common)
+        else:
+            command = PlanCloudCampaignRunDueCommand(
+                force_plan=_bool_payload(payload.get("force_plan"), default=True),
+                **common,
+            )
     except CloudCampaignRunDueInputError as exc:
         return _run_due_error(str(exc) or "input_error", status_code=400)
     return _run_due_response(command)

@@ -51,6 +51,17 @@
       audience: { pending_questionnaire: "待填问卷", operating: "运营中", converted: "已转化" },
     };
     const VALID_MODES = new Set(["unified", "profile_layered", "behavior_layered", "agent"]);
+    const REASON_LABELS = {
+      source_channel_missing: "缺少来源渠道",
+      program_channel_not_matched: "来源渠道不属于当前方案",
+      audience_code_not_matched: "目标人群不匹配",
+      entry_reason_not_matched: "入池原因不匹配",
+      day_offset_not_due: "触达日期未到",
+      behavior_filter_not_matched: "行为分层不匹配",
+      profile_segment_not_matched: "画像分层不匹配",
+      content_missing: "发送内容缺失",
+      external_contact_id_missing: "企微客户 ID 缺失",
+    };
     const normalizeContentMode = (mode) => (VALID_MODES.has(String(mode || "")) ? String(mode) : "unified");
     const dom = {
       groupFilter: root.querySelector("[data-group-filter]"),
@@ -62,6 +73,7 @@
       feedback: root.querySelector("[data-task-feedback]"),
       listFeedback: root.querySelector("[data-task-list-feedback]"),
       previewTotal: root.querySelector("[data-preview-total]"),
+      previewReasons: root.querySelector("[data-preview-reasons]"),
       strategyPanel: root.querySelector("[data-strategy-panel]"),
     };
     const escapeHtml = (value) =>
@@ -455,6 +467,7 @@
       if (!state.currentTask) return;
       state.preview = {};
       dom.previewTotal.textContent = "-";
+      if (dom.previewReasons) dom.previewReasons.textContent = "";
       const previewUrl = endpoints.taskPreviewAudienceBase || `${withId(endpoints.taskBase, currentId())}/preview-audience`;
       const data = await requestJson(withId(previewUrl, currentId()), {
         method: "POST",
@@ -462,6 +475,12 @@
       });
       state.preview = data.preview || {};
       dom.previewTotal.textContent = state.preview.target_count ?? state.preview.total ?? 0;
+      const filtered = state.preview.filtered_out_counts || {};
+      const reasonText = Object.keys(filtered)
+        .filter((key) => Number(filtered[key] || 0) > 0)
+        .map((key) => `${REASON_LABELS[key] || key} ${Number(filtered[key] || 0)}`)
+        .join("；");
+      if (dom.previewReasons) dom.previewReasons.textContent = reasonText ? `未命中：${reasonText}` : "";
       showFeedback(dom.feedback, "命中人群已刷新", true);
     }
 
@@ -572,9 +591,17 @@
         state.agentLoadStatus === "error" || state.agentLoadStatus === "empty"
           ? `<div class="op-task-feedback" style="display:block">${escapeHtml(state.agentLoadMessage)}</div>`
           : "";
+      const hasMaterial = []
+        .concat(agentConfig.image_library_ids || [], agentConfig.miniprogram_library_ids || [], agentConfig.attachment_library_ids || [])
+        .filter(Boolean).length > 0;
+      const hasFallback = Boolean(String(agentConfig.fallback_content || agentConfig.requirement || "").trim() || String((state.currentTask || {}).description || "").trim());
+      const agentWarnings = [];
+      if (!String(agentConfig.agent_code || "").trim()) agentWarnings.push("请选择智能体");
+      if (!hasFallback && !hasMaterial) agentWarnings.push("缺少 fallback、requirement、description 或素材");
       return `
         <label class="op-task-field"><span>智能体</span><select data-agent-select>${options}</select></label>
         ${statusMessage}
+        ${agentWarnings.length ? `<div class="op-task-feedback" style="display:block">${escapeHtml(agentWarnings.join("；"))}</div>` : ""}
         <div class="op-task-strategy-head">
           <div><h4>Agent 个性化素材</h4><div class="op-task-muted">${escapeHtml(contentSummary(agentConfig, true))}</div></div>
           <button class="op-task-button is-soft" type="button" data-config-agent-materials>配置素材</button>

@@ -142,17 +142,49 @@ def _json(response) -> dict[str, Any]:
 def _noop_payload_ok(payload: dict[str, Any], *, expected_preview: bool | None = None) -> bool:
     if payload.get("ok") is not True:
         return False
-    if payload.get("side_effect_executed") is not False:
+    if payload.get("side_effect_executed", False) is not False:
         return False
-    if payload.get("legacy_forwarded") is not False:
+    if payload.get("legacy_forwarded", False) is not False:
         return False
     if payload.get("route_owner") != "ai_crm_next":
         return False
-    if payload.get("compatibility_facade") != "legacy_flask_facade":
+    if payload.get("compatibility_facade", "legacy_flask_facade") != "legacy_flask_facade":
         return False
-    if expected_preview is not None and payload.get("preview") is not expected_preview:
+    if payload.get("real_external_call_executed") is not False:
         return False
+    if payload.get("automation_runtime_executed") is not False:
+        return False
+    if payload.get("wecom_send_executed") is not False:
+        return False
+    if expected_preview is not None:
+        preview_flag = payload.get("preview")
+        if preview_flag is None:
+            preview_flag = payload.get("timer_status") == "preview_only" or payload.get("run_due_status") == "preview_only" or str(payload.get("source_status") or "").endswith("_preview")
+        if preview_flag is not expected_preview:
+            return False
     return True
+
+
+def _operation_task_plan_only_ok(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("jobs_run_due_executed") is False
+        and int(payload.get("operation_tasks_executed") or 0) == 0
+        and int(payload.get("actual_enqueued_count") or 0) == 0
+        and payload.get("blocked_reason") == "next_plan_only_route"
+    )
+
+
+def _plan_only_blocked_ok(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("real_external_call_executed") is False
+        and payload.get("automation_runtime_executed") is False
+        and payload.get("wecom_send_executed") is False
+        and (
+            payload.get("timer_status") == "planned_blocked"
+            or payload.get("run_due_status") == "planned_blocked"
+            or payload.get("blocked_reason") == "next_plan_only_route"
+        )
+    )
 
 
 def _git_modified_files() -> list[str]:
@@ -195,6 +227,7 @@ def run_check() -> dict[str, Any]:
         sentinel_before = _read_db_sentinel()
 
         jobs_dry_run = client.post(ACTIVE_JOBS_ROUTE, json={"dry_run": True, "jobs": ["sop", "conversion_workflow"]}, headers=headers)
+        jobs_operation_task_plan = client.post(ACTIVE_JOBS_ROUTE, json={"dry_run": True, "jobs": ["operation_task"]}, headers=headers)
         jobs_preview = client.post(ACTIVE_JOBS_ROUTE, json={"preview": True, "jobs": ["sop", "conversion_workflow"]}, headers=headers)
         jobs_preview_endpoint = client.post(ACTIVE_JOBS_PREVIEW_ROUTE, json={"jobs": ["sop", "conversion_workflow"]}, headers=headers)
         jobs_without_allowlist = client.post(
@@ -214,6 +247,7 @@ def run_check() -> dict[str, Any]:
     timer_status = _timer_enablement_status()
     responses = {
         "jobs_dry_run": {"status": jobs_dry_run.status_code, "payload": _json(jobs_dry_run)},
+        "jobs_operation_task_plan": {"status": jobs_operation_task_plan.status_code, "payload": _json(jobs_operation_task_plan)},
         "jobs_preview": {"status": jobs_preview.status_code, "payload": _json(jobs_preview)},
         "jobs_preview_endpoint": {"status": jobs_preview_endpoint.status_code, "payload": _json(jobs_preview_endpoint)},
         "jobs_without_allowlist": {"status": jobs_without_allowlist.status_code, "payload": _json(jobs_without_allowlist)},
@@ -227,16 +261,28 @@ def run_check() -> dict[str, Any]:
     for key in ("jobs_dry_run", "campaign_dry_run"):
         if responses[key]["status"] != 200 or not _noop_payload_ok(responses[key]["payload"]):
             blockers.append(f"{key}_not_noop")
+    if (
+        responses["jobs_operation_task_plan"]["status"] != 200
+        or not _noop_payload_ok(responses["jobs_operation_task_plan"]["payload"])
+        or not _operation_task_plan_only_ok(responses["jobs_operation_task_plan"]["payload"])
+    ):
+        blockers.append("operation_task_plan_route_not_blocked")
     for key in ("jobs_preview", "jobs_preview_endpoint", "campaign_preview", "campaign_preview_endpoint"):
         if responses[key]["status"] != 200 or not _noop_payload_ok(responses[key]["payload"], expected_preview=True):
             blockers.append(f"{key}_not_preview_noop")
-    if responses["jobs_without_allowlist"]["status"] not in {400, 409}:
+    jobs_without_allowlist_rejected = responses["jobs_without_allowlist"]["status"] in {400, 409} or _plan_only_blocked_ok(
+        responses["jobs_without_allowlist"]["payload"]
+    )
+    campaign_without_allowlist_rejected = responses["campaign_without_allowlist"]["status"] in {400, 409} or _plan_only_blocked_ok(
+        responses["campaign_without_allowlist"]["payload"]
+    )
+    if not jobs_without_allowlist_rejected:
         blockers.append("jobs_without_allowlist_not_rejected")
-    if responses["jobs_without_allowlist"]["payload"].get("error_code") != "automation_run_due_allowlist_required":
+    if responses["jobs_without_allowlist"]["status"] in {400, 409} and responses["jobs_without_allowlist"]["payload"].get("error_code") != "automation_run_due_allowlist_required":
         blockers.append("jobs_without_allowlist_missing_error_code")
-    if responses["campaign_without_allowlist"]["status"] not in {400, 409}:
+    if not campaign_without_allowlist_rejected:
         blockers.append("campaign_without_allowlist_not_rejected")
-    if responses["campaign_without_allowlist"]["payload"].get("error_code") != "campaign_run_due_allowlist_required":
+    if responses["campaign_without_allowlist"]["status"] in {400, 409} and responses["campaign_without_allowlist"]["payload"].get("error_code") != "campaign_run_due_allowlist_required":
         blockers.append("campaign_without_allowlist_missing_error_code")
     if not db_sentinel["ok"]:
         blockers.append("db_sentinel_changed_or_unavailable")
@@ -254,6 +300,7 @@ def run_check() -> dict[str, Any]:
             _noop_payload_ok(responses[key]["payload"], expected_preview=True)
             for key in ("jobs_preview", "jobs_preview_endpoint", "campaign_preview", "campaign_preview_endpoint")
         ),
+        "operation_task_plan_only": "operation_task_plan_route_not_blocked" not in blockers,
         "true_execution_without_allowlist_rejected": "jobs_without_allowlist_not_rejected" not in blockers
         and "campaign_without_allowlist_not_rejected" not in blockers,
         "bounded_execution_parameters": {
