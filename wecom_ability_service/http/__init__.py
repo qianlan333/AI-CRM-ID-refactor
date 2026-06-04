@@ -29,7 +29,6 @@ from .admin_wecom_tags import register_routes as register_admin_wecom_tags_route
 from .common_operation_members import register_routes as register_common_operation_members_routes
 from .wecom_customer_acquisition import register_routes as register_wecom_customer_acquisition_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
-from .cloud_orchestrator_endpoint import register_routes as register_cloud_orchestrator_routes
 from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
@@ -103,13 +102,6 @@ HTTP_ROUTE_MODULES = {
     "admin_wecom_tags": "wecom_ability_service.http.admin_wecom_tags",
     "common_operation_members": "wecom_ability_service.http.common_operation_members",
     "wecom_customer_acquisition": "wecom_ability_service.http.wecom_customer_acquisition",
-    "cloud_orchestrator": "wecom_ability_service.http.cloud_orchestrator_endpoint",
-    "cloud_orchestrator_campaigns": "wecom_ability_service.http.cloud_orchestrator_campaigns",
-    "cloud_orchestrator_campaign_details": "wecom_ability_service.http.cloud_orchestrator_campaign_details",
-    "cloud_orchestrator_media": "wecom_ability_service.http.cloud_orchestrator_media",
-    "cloud_orchestrator_pages": "wecom_ability_service.http.cloud_orchestrator_pages",
-    "cloud_orchestrator_plans": "wecom_ability_service.http.cloud_orchestrator_plans",
-    "cloud_orchestrator_segments": "wecom_ability_service.http.cloud_orchestrator_segments",
     "public_questionnaire_oauth": "wecom_ability_service.http.public_questionnaire_oauth",
     "public_questionnaire_diagnostics": "wecom_ability_service.http.public_questionnaire_diagnostics",
     "image_library_upload": "wecom_ability_service.http.image_library_upload",
@@ -168,13 +160,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_alipay_pay.py for /admin/alipay/transactions* and /api/admin/alipay* transaction reads and exports",
         "admin_wechat_pay.py for /admin/wechat-pay/transactions* and /api/admin/wechat-pay* transaction management",
         "wecom_customer_acquisition.py for /api/admin/wecom-customer-acquisition-links* and /admin/wecom-customer-acquisition-links/ui",
-        "cloud_orchestrator_endpoint.py for /admin/cloud-orchestrator* and /api/admin/cloud-orchestrator* route aggregation",
-        "cloud_orchestrator_campaigns.py for Cloud Orchestrator campaign JSON handlers registered by cloud_orchestrator_endpoint.py",
-        "cloud_orchestrator_campaign_details.py for Cloud Orchestrator campaign member and step handlers registered by cloud_orchestrator_endpoint.py",
-        "cloud_orchestrator_pages.py for Cloud Orchestrator admin page render handlers registered by cloud_orchestrator_endpoint.py",
-        "cloud_orchestrator_media.py for Cloud Orchestrator media upload handlers registered by cloud_orchestrator_endpoint.py",
-        "cloud_orchestrator_plans.py for Cloud Orchestrator plan, audit, and observability handlers registered by cloud_orchestrator_endpoint.py",
-        "cloud_orchestrator_segments.py for Cloud Orchestrator segment handlers registered by cloud_orchestrator_endpoint.py",
+        "retired Cloud Orchestrator legacy HTTP handlers; current owner is aicrm_next.cloud_orchestrator and retained domain tests do not use Flask HTTP handlers",
         "alipay_pay.py for Alipay WAP checkout, order status, return display, and notify callbacks",
         "wechat_pay.py for WeChat-internal H5 JSAPI checkout, order status, OAuth, and notify callbacks",
     ),
@@ -223,7 +209,6 @@ HTTP_ROUTE_REGISTRARS = (
     ("wecom_customer_acquisition", register_wecom_customer_acquisition_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("automation_conversion", register_automation_conversion_routes),
-    ("cloud_orchestrator", register_cloud_orchestrator_routes),
     ("customer_automation", register_customer_automation_routes),
     ("public_questionnaires", register_public_questionnaire_routes),
     ("public_questionnaire_diagnostics", register_public_questionnaire_diagnostics_routes),

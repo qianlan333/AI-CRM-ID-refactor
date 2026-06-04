@@ -518,16 +518,23 @@ POST_LEGACY_DEVELOPMENT_DOCS = {
         "keep_temporarily_historical",
         "wecom_ability_service/http/admin_hxc_dashboard.py",
         "wecom_ability_service/http/admin_auth_routes.py",
+        "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
+        "wecom_ability_service/http/cloud_orchestrator_media.py",
+        "wecom_ability_service/http/cloud_orchestrator_endpoint.py",
     ),
 }
 POST_LEGACY_DELETED_HTTP_MODULES = {
     "admin_hxc_dashboard": Path("wecom_ability_service/http/admin_hxc_dashboard.py"),
     "admin_auth_routes": Path("wecom_ability_service/http/admin_auth_routes.py"),
-}
-POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES = {
     "cloud_orchestrator_campaigns": Path("wecom_ability_service/http/cloud_orchestrator_campaigns.py"),
+    "cloud_orchestrator_campaign_details": Path("wecom_ability_service/http/cloud_orchestrator_campaign_details.py"),
     "cloud_orchestrator_media": Path("wecom_ability_service/http/cloud_orchestrator_media.py"),
     "cloud_orchestrator_endpoint": Path("wecom_ability_service/http/cloud_orchestrator_endpoint.py"),
+    "cloud_orchestrator_pages": Path("wecom_ability_service/http/cloud_orchestrator_pages.py"),
+    "cloud_orchestrator_plans": Path("wecom_ability_service/http/cloud_orchestrator_plans.py"),
+    "cloud_orchestrator_segments": Path("wecom_ability_service/http/cloud_orchestrator_segments.py"),
+}
+POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES = {
     "automation_conversion": Path("wecom_ability_service/http/automation_conversion.py"),
     "automation_conversion_runtime_api": Path("wecom_ability_service/http/automation_conversion_runtime_api.py"),
     "automation_conversion_task_runtime": Path("wecom_ability_service/http/automation_conversion_task_runtime.py"),

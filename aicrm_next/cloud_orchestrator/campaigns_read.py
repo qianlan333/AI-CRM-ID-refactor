@@ -29,6 +29,10 @@ def _json(value: Any, *, default: Any) -> Any:
     return loaded
 
 
+def _json_value(value: Any) -> Any:
+    return json.loads(json.dumps(value, default=str, ensure_ascii=False))
+
+
 def _limit(value: Any, *, default: int, maximum: int) -> int:
     try:
         parsed = int(value)
@@ -67,18 +71,18 @@ def _campaign_view(row: dict[str, Any]) -> dict[str, Any]:
         "display_name": _text(row.get("display_name")) or _text(row.get("campaign_code")),
         "intent": _text(row.get("intent")),
         "anchor_mode": _text(row.get("anchor_mode")),
-        "anchor_date": row.get("anchor_date") or "",
+        "anchor_date": _json_value(row.get("anchor_date") or ""),
         "review_status": _text(row.get("review_status")) or "draft",
         "run_status": _text(row.get("run_status")) or "draft",
         "created_by_agent": _text(row.get("created_by_agent")),
         "owner_userid": _text(row.get("owner_userid")),
         "trace_id": _text(row.get("trace_id")),
-        "started_at": row.get("started_at") or "",
-        "finished_at": row.get("finished_at") or "",
-        "created_at": row.get("created_at") or "",
-        "updated_at": row.get("updated_at") or "",
+        "started_at": _json_value(row.get("started_at") or ""),
+        "finished_at": _json_value(row.get("finished_at") or ""),
+        "created_at": _json_value(row.get("created_at") or ""),
+        "updated_at": _json_value(row.get("updated_at") or ""),
         "metadata": metadata if isinstance(metadata, dict) else {},
-        "metadata_json": row.get("metadata_json") or {},
+        "metadata_json": _json_value(row.get("metadata_json") or {}),
         "group_code": _text((metadata or {}).get("group_code")) if isinstance(metadata, dict) else "",
         "group_label": _text((metadata or {}).get("group_label")) if isinstance(metadata, dict) else "",
         "segment_count": int(row.get("segment_count") or 0),
@@ -107,12 +111,12 @@ def _member_view(row: dict[str, Any]) -> dict[str, Any]:
         "status": _text(row.get("status")) or "pending",
         "stop_reason": _text(row.get("stop_reason")),
         "current_step_index": int(row.get("current_step_index") or -1),
-        "next_due_at": row.get("next_due_at") or "",
-        "last_step_sent_at": row.get("last_step_sent_at") or "",
+        "next_due_at": _json_value(row.get("next_due_at") or ""),
+        "last_step_sent_at": _json_value(row.get("last_step_sent_at") or ""),
         "last_error_text": _text(row.get("last_error_text")),
         "retry_count": int(row.get("retry_count") or 0),
-        "anchor_date": row.get("anchor_date") or "",
-        "joined_at": row.get("joined_at") or "",
+        "anchor_date": _json_value(row.get("anchor_date") or ""),
+        "joined_at": _json_value(row.get("joined_at") or ""),
         "segment_label": _text(row.get("segment_label")),
         "segment_priority": int(row.get("segment_priority") or 0),
         "segment_name": _text(row.get("segment_name")),

@@ -107,11 +107,7 @@ def test_http_controllers_do_not_add_requests_dependency():
     )
 
 
-HTTP_DIRECT_SQL_ALLOWLIST = {
-    # cloud_orchestrator_endpoint uses inline SQL for admin dashboard stats;
-    # to be migrated to repo layer in a future refactor.
-    "wecom_ability_service/http/cloud_orchestrator_endpoint.py",
-}
+HTTP_DIRECT_SQL_ALLOWLIST = set()
 
 
 def test_http_controllers_do_not_execute_sql_directly():

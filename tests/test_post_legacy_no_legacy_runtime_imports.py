@@ -25,6 +25,13 @@ def test_deleted_legacy_handlers_are_not_imported_by_runtime_tools_or_scripts() 
     deleted_modules = [
         "wecom_ability_service.http.admin_hxc_dashboard",
         "wecom_ability_service.http.admin_auth_routes",
+        "wecom_ability_service.http.cloud_orchestrator_endpoint",
+        "wecom_ability_service.http.cloud_orchestrator_campaigns",
+        "wecom_ability_service.http.cloud_orchestrator_campaign_details",
+        "wecom_ability_service.http.cloud_orchestrator_media",
+        "wecom_ability_service.http.cloud_orchestrator_pages",
+        "wecom_ability_service.http.cloud_orchestrator_plans",
+        "wecom_ability_service.http.cloud_orchestrator_segments",
     ]
     roots = [ROOT / "aicrm_next", ROOT / "scripts", ROOT / "tools"]
     matches: list[str] = []

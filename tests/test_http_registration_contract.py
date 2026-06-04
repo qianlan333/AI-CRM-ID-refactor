@@ -246,26 +246,37 @@ def test_automation_conversion_support_helpers_stay_layered():
         assert not (http_dir / retired_helper).exists()
 
 
-def test_cloud_orchestrator_controller_stays_a_route_aggregator():
-    source_path = ROOT / "wecom_ability_service" / "http" / "cloud_orchestrator_endpoint.py"
-    source = source_path.read_text(encoding="utf-8")
-    parsed = ast.parse(source)
+def test_cloud_orchestrator_legacy_http_handlers_are_retired_from_flask_registry():
+    from aicrm_next.main import create_app as create_next_app
+    from wecom_ability_service import create_app
 
-    assert len(source.splitlines()) <= 220
+    for file_name in (
+        "cloud_orchestrator_endpoint.py",
+        "cloud_orchestrator_campaigns.py",
+        "cloud_orchestrator_campaign_details.py",
+        "cloud_orchestrator_media.py",
+        "cloud_orchestrator_pages.py",
+        "cloud_orchestrator_plans.py",
+        "cloud_orchestrator_segments.py",
+    ):
+        assert not (ROOT / "wecom_ability_service" / "http" / file_name).exists()
 
-    forbidden_imports = {
-        "flask",
-        "wecom_ability_service.domains",
-        "wecom_ability_service.db",
-        "wecom_ability_service.wecom_client",
-    }
-    for node in ast.walk(parsed):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                assert not any(alias.name == target or alias.name.startswith(f"{target}.") for target in forbidden_imports)
-        if isinstance(node, ast.ImportFrom):
-            module_name = node.module or ""
-            assert not any(module_name == target or module_name.startswith(f"{target}.") for target in forbidden_imports)
+    legacy_app = create_app({"TESTING": True})
+    legacy_routes = {rule.rule for rule in legacy_app.url_map.iter_rules()}
+    for route in legacy_routes:
+        assert not route.startswith("/admin/cloud-orchestrator")
+        assert not route.startswith("/api/admin/cloud-orchestrator")
+
+    next_routes = {}
+    for route in create_next_app().routes:
+        route_path = getattr(route, "path", "")
+        if route_path:
+            next_routes.setdefault(route_path, getattr(getattr(route, "endpoint", None), "__module__", ""))
+    assert next_routes["/admin/cloud-orchestrator/campaigns"] == "aicrm_next.cloud_orchestrator.api"
+    assert next_routes["/api/admin/cloud-orchestrator/campaigns"] == "aicrm_next.cloud_orchestrator.api"
+    assert next_routes["/api/admin/cloud-orchestrator/campaigns/run-due/preview"] == "aicrm_next.cloud_orchestrator.api"
+    assert next_routes["/api/admin/cloud-orchestrator/media/upload"] == "aicrm_next.cloud_orchestrator.api"
+    assert next_routes["/api/admin/cloud-orchestrator/observability"] == "aicrm_next.post_legacy_deferred.api"
 
 
 def test_admin_api_docs_controller_stays_a_page_adapter():
@@ -590,7 +601,7 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             assert route_modules[route] == expected_module
 
 
-def test_cloud_orchestrator_split_route_modules_stay_owned_by_child_controllers():
+def test_cloud_orchestrator_split_route_modules_are_removed_from_legacy_registry():
     from wecom_ability_service import create_app
 
     app = create_app({"TESTING": True})
@@ -599,52 +610,18 @@ def test_cloud_orchestrator_split_route_modules_stay_owned_by_child_controllers(
         for rule in app.url_map.iter_rules()
     }
 
-    expected_by_module = {
-        "cloud_orchestrator_pages": {
-            "/admin/cloud-orchestrator",
-            "/admin/cloud-orchestrator/observability",
-            "/admin/cloud-orchestrator/campaigns",
-            "/admin/cloud-orchestrator/integration",
-        },
-        "cloud_orchestrator_media": {
-            "/api/admin/cloud-orchestrator/media/upload",
-        },
-        "cloud_orchestrator_plans": {
-            "/api/admin/cloud-orchestrator/plans",
-            "/api/admin/cloud-orchestrator/plans/<plan_id>",
-            "/api/admin/cloud-orchestrator/plans/<plan_id>/simulate",
-            "/api/admin/cloud-orchestrator/plans/<plan_id>/approve",
-            "/api/admin/cloud-orchestrator/plans/<plan_id>/commit",
-            "/api/admin/cloud-orchestrator/plans/<plan_id>/reject",
-            "/api/admin/cloud-orchestrator/audit",
-            "/api/admin/cloud-orchestrator/observability",
-        },
-        "cloud_orchestrator_segments": {
-            "/api/admin/cloud-orchestrator/segments",
-            "/api/admin/cloud-orchestrator/segments/<segment_code>",
-            "/api/admin/cloud-orchestrator/segments/<segment_code>/preview",
-        },
-        "cloud_orchestrator_campaigns": {
-            "/api/admin/cloud-orchestrator/campaigns",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/approve",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/start",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/pause",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/reject",
-            "/api/admin/cloud-orchestrator/campaigns/batch-start",
-            "/api/admin/cloud-orchestrator/campaigns/run-due",
-        },
-        "cloud_orchestrator_campaign_details": {
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps/<step_index>",
-            "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/members",
-        },
+    retired_modules = {
+        "wecom_ability_service.http.cloud_orchestrator_pages",
+        "wecom_ability_service.http.cloud_orchestrator_media",
+        "wecom_ability_service.http.cloud_orchestrator_plans",
+        "wecom_ability_service.http.cloud_orchestrator_segments",
+        "wecom_ability_service.http.cloud_orchestrator_campaigns",
+        "wecom_ability_service.http.cloud_orchestrator_campaign_details",
+        "wecom_ability_service.http.cloud_orchestrator_endpoint",
     }
-
-    for module_name, expected_routes in expected_by_module.items():
-        expected_module = f"wecom_ability_service.http.{module_name}"
-        for route in expected_routes:
-            assert route_modules[route] == expected_module
+    assert not retired_modules.intersection(route_modules.values())
+    assert not any(route.startswith("/admin/cloud-orchestrator") for route in route_modules)
+    assert not any(route.startswith("/api/admin/cloud-orchestrator") for route in route_modules)
 
 
 def test_legacy_media_library_routes_are_retired_after_d1():
