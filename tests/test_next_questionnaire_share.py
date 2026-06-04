@@ -131,6 +131,28 @@ def test_next_public_questionnaire_page_redirects_already_submitted_user(monkeyp
     assert response.headers["location"] == "https://example.com/done"
 
 
+def test_next_public_questionnaire_page_redirects_local_already_submitted_identity(monkeypatch):
+    response = _client(monkeypatch).get(
+        "/s/hxc-activation-v1",
+        params={"external_userid": "external_user_masked_fixture"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/s/hxc-activation-v1/submitted"
+
+
+def test_next_public_questionnaire_api_returns_local_already_submitted(monkeypatch):
+    response = _client(monkeypatch).get(
+        "/api/h5/questionnaires/hxc-activation-v1",
+        params={"external_userid": "external_user_masked_fixture"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "already_submitted"
+    assert response.json()["redirect_url"] == "/s/hxc-activation-v1/submitted"
+
+
 def test_questionnaire_admin_page_renders_share_modal(monkeypatch):
     response = _client(monkeypatch).get("/admin/questionnaires")
 

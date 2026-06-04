@@ -27,6 +27,7 @@ from .admin_write import (
     execute_questionnaire_admin_write,
 )
 from .h5_write import (
+    QuestionnaireH5AlreadySubmittedError,
     QuestionnaireClientDiagnosticsCommand,
     QuestionnaireH5SubmitCommand,
     QuestionnaireH5WriteInputError,
@@ -38,6 +39,7 @@ from .h5_write import (
 from .application import (
     CompleteWechatOAuthCallbackCommand,
     GetPublicQuestionnaireQuery,
+    GetPublicQuestionnaireSubmissionStatusQuery,
     GetQuestionnaireDetailQuery,
     GetQuestionnairePreflightQuery,
     GetQuestionnaireShareQuery,
@@ -286,15 +288,7 @@ def _h5_identity_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _h5_submit_identity_payload(payload: dict[str, Any], request: Request) -> dict[str, Any]:
-    identity = {
-        key: value
-        for key, value in _questionnaire_session_identity_from_request(request).items()
-        if key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS and value
-    }
-    for key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS:
-        value = str(request.query_params.get(key) or "").strip()
-        if value:
-            identity[key] = value
+    identity = _questionnaire_identity_from_request(request)
     identity.update(_h5_identity_payload(payload))
     return identity
 
@@ -329,6 +323,8 @@ async def _execute_h5_submit(request: Request, slug: str) -> Response:
         return JSONResponse(jsonable_encoder(response), status_code=200)
     except QuestionnaireH5WriteInputError as exc:
         return _h5_write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
+    except QuestionnaireH5AlreadySubmittedError as exc:
+        return _h5_write_error(str(exc), status_code=409, source_status="already_submitted", write_model_status="already_submitted")
     except QuestionnaireH5WriteNotFoundError as exc:
         return _h5_write_error(str(exc), status_code=404, source_status="not_found", write_model_status="not_found")
     except QuestionnaireH5WriteProductionUnavailableError as exc:
@@ -455,6 +451,16 @@ def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> 
 
 def _questionnaire_session_identity_from_request(request: Request) -> dict[str, str]:
     return legacy_questionnaire_session_identity(request.cookies) or questionnaire_h5_identity_from_cookies(request.cookies)
+
+
+def _questionnaire_identity_from_request(request: Request) -> dict[str, str]:
+    identity = {
+        key: value
+        for key, value in _questionnaire_session_identity_from_request(request).items()
+        if key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS and value
+    }
+    identity.update(_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS))
+    return identity
 
 
 def _questionnaire_share_url(request: Request, questionnaire: dict[str, Any]) -> str:
@@ -620,6 +626,17 @@ def public_get_questionnaire(request: Request, slug: str) -> dict:
                     status_code=409,
                 )
             return _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
+        submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
+        if submission_status.get("submitted"):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "already_submitted",
+                    "message": "已经提交过该问卷",
+                    "redirect_url": submission_status.get("redirect_url") or submission_status.get("submitted_url"),
+                },
+                status_code=409,
+            )
         return GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
@@ -817,6 +834,13 @@ def public_questionnaire_h5_page(request: Request, slug: str):
             )
         except LegacyQuestionnaireDataUnavailable:
             submission_status = {}
+        if submission_status.get("submitted"):
+            redirect_url = str(
+                submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
+            ).strip()
+            return RedirectResponse(redirect_url, status_code=302)
+    else:
+        submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
         if submission_status.get("submitted"):
             redirect_url = str(
                 submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"

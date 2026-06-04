@@ -110,6 +110,26 @@ def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(
     assert body["external_userid"] == "wm_cookie_identity_001"
 
 
+def test_h5_submit_rejects_repeated_identity(client: TestClient) -> None:
+    payload = {
+        "answers": {"q_activation": "activated"},
+        "identity": {
+            "external_userid": "wm_repeat_001",
+            "openid": "openid-repeat-001",
+            "unionid": "unionid-repeat-001",
+        },
+    }
+    first = client.post("/api/h5/questionnaires/hxc-activation-v1/submit", json=payload)
+    assert first.status_code == 200
+
+    second = client.post("/api/h5/questionnaires/hxc-activation-v1/submit", json=payload)
+    assert second.status_code == 409
+    body = second.json()
+    assert body["error"] == "already_submitted"
+    assert body["source_status"] == "already_submitted"
+    assert body["write_model_status"] == "already_submitted"
+
+
 def test_h5_submit_validates_required_answers(client: TestClient) -> None:
     response = client.post(
         "/api/h5/questionnaires/hxc-activation-v1/submit",

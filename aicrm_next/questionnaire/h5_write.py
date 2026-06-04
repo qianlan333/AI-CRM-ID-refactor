@@ -33,6 +33,10 @@ class QuestionnaireH5WriteProductionUnavailableError(RuntimeError):
     pass
 
 
+class QuestionnaireH5AlreadySubmittedError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class QuestionnaireH5SubmitCommand:
     questionnaire_slug: str
@@ -156,6 +160,8 @@ def _execute_platform_command(
     if result.status == "failed":
         error = result.error or "questionnaire h5 command failed"
         normalized_error = error.lower()
+        if "already_submitted" in normalized_error:
+            raise QuestionnaireH5AlreadySubmittedError("already_submitted")
         if "questionnaire not found" in normalized_error or "questionnaire disabled" in normalized_error:
             raise QuestionnaireH5WriteNotFoundError(error)
         if "production" in normalized_error or "database_url" in normalized_error or "psycopg" in normalized_error or "connection" in normalized_error:
@@ -252,6 +258,15 @@ def _handle_submit(command: Command) -> dict[str, Any]:
                 unionid=identity_payload.get("unionid"),
             )
         )
+        resolved_identity = {
+            **identity_payload,
+            "person_id": identity.person_id if identity else None,
+            "external_userid": (identity.external_userid if identity else identity_payload.get("external_userid")) or "",
+            "mobile": (identity.mobile if identity else identity_payload.get("mobile")) or "",
+            "binding_status": identity.binding_status if identity else "unresolved",
+        }
+        if repo.find_submission_for_identity(int(item["id"]), resolved_identity):
+            raise ContractError("already_submitted")
         score, final_tags = score_and_tags(item, answers)
         result = {
             "score": score,
@@ -262,18 +277,19 @@ def _handle_submit(command: Command) -> dict[str, Any]:
             {
                 "questionnaire_id": int(item["id"]),
                 "slug": item["slug"],
-                "external_userid": (identity.external_userid if identity else identity_payload.get("external_userid")) or "",
+                "respondent_key": identity_payload.get("respondent_key") or "",
+                "external_userid": resolved_identity.get("external_userid") or "",
                 "openid": identity_payload.get("openid") or "",
                 "unionid": identity_payload.get("unionid") or "",
-                "mobile": (identity.mobile if identity else identity_payload.get("mobile")) or "",
+                "mobile": resolved_identity.get("mobile") or "",
                 "answers": answers,
                 "answers_json": answers,
                 "result_json": result,
                 "source_json": source_payload,
                 "diagnostics_json": {},
                 "respondent_identity": identity_payload,
-                "person_id": identity.person_id if identity else None,
-                "binding_status": identity.binding_status if identity else "unresolved",
+                "person_id": resolved_identity.get("person_id"),
+                "binding_status": resolved_identity.get("binding_status") or "unresolved",
                 "score": score,
                 "final_tags": final_tags,
                 "status": "submitted",

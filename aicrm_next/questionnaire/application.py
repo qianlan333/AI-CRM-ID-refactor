@@ -318,6 +318,33 @@ class GetPublicQuestionnaireQuery:
     __call__ = execute
 
 
+class GetPublicQuestionnaireSubmissionStatusQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo or build_questionnaire_repository()
+
+    def execute(self, slug: str, *, identity: dict[str, Any] | None = None) -> dict[str, Any]:
+        item = self._repo.get_questionnaire_by_slug(slug)
+        if not item:
+            raise NotFoundError("questionnaire not found")
+        if not bool(item.get("enabled", True)):
+            raise NotFoundError("questionnaire disabled")
+        submission = self._repo.find_submission_for_identity(int(item["id"]), dict(identity or {}))
+        normalized_slug = str(item.get("slug") or slug or "").strip()
+        redirect_url = str(item.get("redirect_url") or "").strip()
+        return {
+            "ok": True,
+            "submitted": bool(submission),
+            "questionnaire_id": int(item["id"]),
+            "slug": normalized_slug,
+            "submission": submission,
+            "redirect_url": redirect_url,
+            "submitted_url": f"/s/{normalized_slug}/submitted",
+            **_read_meta(self._repo),
+        }
+
+    __call__ = execute
+
+
 class SubmitQuestionnaireCommand:
     def __init__(
         self,
