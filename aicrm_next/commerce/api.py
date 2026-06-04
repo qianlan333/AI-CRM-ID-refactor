@@ -171,36 +171,57 @@ def _provider_payment_error_payload(
     )
 
 
-def _payment_final_headers(*, real_refund_executed: str = "false") -> dict[str, str]:
+def _bool_header(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _payment_final_headers(*, real_external_call_executed: bool = False, real_refund_executed: bool = False) -> dict[str, str]:
     return {
         "X-AICRM-Route-Owner": "ai_crm_next",
         "X-AICRM-Fallback-Used": "false",
-        "X-AICRM-Real-External-Call-Executed": "false",
+        "X-AICRM-Real-External-Call-Executed": _bool_header(real_external_call_executed),
         "X-AICRM-Payment-Request-Executed": "false",
         "X-AICRM-Real-WeChat-Pay-Executed": "false",
         "X-AICRM-Real-Alipay-Executed": "false",
         "X-AICRM-Provider-Signature-Verified": "false",
-        "X-AICRM-Real-Refund-Executed": real_refund_executed,
+        "X-AICRM-Real-Refund-Executed": _bool_header(real_refund_executed),
     }
 
 
-def _payment_final_side_effects(*, source_status: str = "next_payment_admin") -> dict:
+def _payment_final_side_effects(
+    *,
+    source_status: str = "next_payment_admin",
+    real_external_call_executed: bool = False,
+    real_refund_executed: bool = False,
+) -> dict:
     return {
         "route_owner": "ai_crm_next",
         "fallback_used": False,
-        "real_external_call_executed": False,
+        "real_external_call_executed": real_external_call_executed,
         "payment_request_executed": False,
         "real_wechat_pay_executed": False,
         "real_alipay_executed": False,
         "provider_signature_verified": False,
-        "real_refund_executed": False,
+        "real_refund_executed": real_refund_executed,
         "source_status": source_status,
     }
 
 
-def _payment_final_payload(payload: dict, *, source_status: str = "next_payment_admin") -> dict:
+def _payment_final_payload(
+    payload: dict,
+    *,
+    source_status: str = "next_payment_admin",
+    real_external_call_executed: bool = False,
+    real_refund_executed: bool = False,
+) -> dict:
     result = dict(payload)
-    result.update(_payment_final_side_effects(source_status=source_status))
+    result.update(
+        _payment_final_side_effects(
+            source_status=source_status,
+            real_external_call_executed=real_external_call_executed,
+            real_refund_executed=real_refund_executed,
+        )
+    )
     return result
 
 
@@ -480,7 +501,18 @@ async def request_wechat_admin_refund(order_id: str, request: Request) -> JSONRe
         result = create_wechat_refund_request(order_id, payload if isinstance(payload, dict) else {})
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
-    return JSONResponse(_payment_final_payload(result), headers=_payment_final_headers())
+    provider_refund_executed = bool((result.get("refund") or {}).get("provider_refund_executed"))
+    return JSONResponse(
+        _payment_final_payload(
+            result,
+            real_external_call_executed=provider_refund_executed,
+            real_refund_executed=provider_refund_executed,
+        ),
+        headers=_payment_final_headers(
+            real_external_call_executed=provider_refund_executed,
+            real_refund_executed=provider_refund_executed,
+        ),
+    )
 
 
 @router.get("/api/admin/wechat-pay/products")

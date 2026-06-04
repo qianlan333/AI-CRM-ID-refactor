@@ -1,6 +1,6 @@
 # Admin/H5 Payment Wildcard Closeout Inventory
 
-Legacy Exit group 30 closes the final production compatibility payment wildcard families. The final state is Next-owned exact APIs plus controlled Next 410 responses for deprecated or unknown children. No route in this inventory falls back to `production_compat`, no route calls a real provider, no route performs real signature verification, and no route executes a real refund.
+Legacy Exit group 30 closes the final production compatibility payment wildcard families. The final state is Next-owned exact APIs plus controlled Next 410 responses for deprecated or unknown children. No route in this inventory falls back to `production_compat`, and no route performs real signature verification. Public/deprecated/unknown payment routes still do not create real payment requests; the admin WeChat refund exact route is the explicit exception that calls the WeChat Pay refund provider.
 
 ## Route <-> Caller <-> Backend <-> Decision Matrix
 
@@ -12,7 +12,7 @@ Legacy Exit group 30 closes the final production compatibility payment wildcard 
 | `/api/admin/wechat-pay/{path:path}` | `products/lead-channels` | Next product edit JS | GET | `/api/admin/wechat-pay/products/lead-channels` | keep exact Next route | `list_product_lead_channels` | local read only | frontend contract test |
 | `/api/admin/wechat-pay/{path:path}` | `products/lead-plans` | historical legacy admin product API | GET | none | deprecated controlled 410; replacement `products/lead-channels` | `deprecated_product_lead_plans` | none | docs contract test |
 | `/api/admin/wechat-pay/{path:path}` | `orders` | Next transaction admin page JS | GET | `/api/admin/wechat-pay/orders` | keep exact Next route | `list_wechat_admin_order_page` | local read only | `GET /api/admin/wechat-pay/orders` |
-| `/api/admin/wechat-pay/{path:path}` | `orders/{order_id}/refunds` | Next transaction detail page | POST | `/api/admin/wechat-pay/orders/{order_id}/refunds` | keep exact guarded route | `request_wechat_admin_refund` | local refund request only; `real_refund_executed=false` | refund no-real test |
+| `/api/admin/wechat-pay/{path:path}` | `orders/{order_id}/refunds` | Next transaction detail page | POST | `/api/admin/wechat-pay/orders/{order_id}/refunds` | keep exact guarded route | `request_wechat_admin_refund` | inserts local refund request, calls WeChat Pay refund API, updates refund/order state; success response sets `real_refund_executed=true` | refund provider tests |
 | `/api/admin/wechat-pay/{path:path}` | `order-exports` | Next transaction admin page JS | POST | `/api/admin/wechat-pay/order-exports` | keep exact CSV export | `export_wechat_admin_orders` | local read/export only | contract test |
 | `/api/admin/wechat-pay/{path:path}` | `order-exports/{job_id}` / `download` | historical legacy job export link | GET | none | deprecated controlled 410; replacement `order-exports` | `deprecated_wechat_admin_order_export_job` | none | docs contract test |
 | `/api/admin/wechat-pay/{path:path}` | `transactions` / `transactions/{order_no}` | Next transaction API / smoke | GET | exact Next routes | keep exact Next route | `list_wechat_transactions` / `get_wechat_transaction` | local read only | `GET /api/admin/wechat-pay/transactions` |
@@ -26,7 +26,7 @@ Legacy Exit group 30 closes the final production compatibility payment wildcard 
 
 ## Contract Notes
 
-- Admin exact APIs return `route_owner=ai_crm_next`, `fallback_used=false`, `real_external_call_executed=false`, `payment_request_executed=false`, `provider_signature_verified=false`, and `real_refund_executed=false` in JSON responses or response headers.
+- Admin exact APIs return `route_owner=ai_crm_next`, `fallback_used=false`, `payment_request_executed=false`, and `provider_signature_verified=false` in JSON responses or response headers. The WeChat refund exact route sets `real_external_call_executed=true` and `real_refund_executed=true` only after the provider refund call succeeds; all non-refund admin reads/writes and controlled 410 routes keep `real_external_call_executed=false` and `real_refund_executed=false`.
 - H5 legacy paths are intentionally closed with controlled 410 responses. They no longer create payment requests, verify provider signatures, or update orders through legacy Flask.
 - Unknown child path responses are controlled by Next and include `route_owner=ai_crm_next`, `fallback_used=false`, and `adapter_mode=real_blocked`.
 - production_compat wildcard removed: `/api/admin/wechat-pay/{path:path}`, `/api/admin/alipay/{path:path}`, `/api/h5/wechat-pay/{path:path}`, and `/api/h5/alipay/{path:path}`.

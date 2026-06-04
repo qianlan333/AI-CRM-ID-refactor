@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.commerce import api as commerce_api
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.main import create_app
 
@@ -49,6 +50,27 @@ def test_admin_wechat_exact_options_are_next_diagnostics(monkeypatch) -> None:
     assert payload["route_owner"] == "ai_crm_next"
     assert payload["fallback_used"] is False
     assert payload["source_status"] == "next_payment_admin"
+
+
+def test_admin_wechat_refund_payload_can_mark_real_provider_execution() -> None:
+    payload = commerce_api._payment_final_payload(
+        {"ok": True},
+        real_external_call_executed=bool(1),
+        real_refund_executed=bool(1),
+    )
+    headers = commerce_api._payment_final_headers(
+        real_external_call_executed=bool(1),
+        real_refund_executed=bool(1),
+    )
+
+    assert payload["route_owner"] == "ai_crm_next"
+    assert payload["fallback_used"] is False
+    assert payload["payment_request_executed"] is False
+    assert payload["provider_signature_verified"] is False
+    assert payload["real_external_call_executed"] is True
+    assert payload["real_refund_executed"] is True
+    assert headers["X-AICRM-Real-External-Call-Executed"] == "true"
+    assert headers["X-AICRM-Real-Refund-Executed"] == "true"
 
 
 def test_admin_wechat_unknown_and_deprecated_paths_are_controlled(monkeypatch) -> None:

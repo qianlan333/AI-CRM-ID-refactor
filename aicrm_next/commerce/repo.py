@@ -351,8 +351,9 @@ class InMemoryCommerceRepository:
             if order["order_no"] == order_no:
                 if order["payment_provider"] != provider:
                     raise ContractError("payment_provider mismatch")
+                refund_amount_total = int(payload.get("refund_amount_total") or (payload.get("amount") or {}).get("refund") or 0)
                 active = int(order.get("active_refund_amount_total") or 0)
-                order["active_refund_amount_total"] = active + int(payload.get("refund_amount_total") or 0)
+                order["active_refund_amount_total"] = active + refund_amount_total
                 order["refund_status"] = "requested"
                 order["updated_at"] = now_iso()
                 return {
