@@ -2667,14 +2667,24 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     apply_questionnaire_mobile_binding(submission)
     apply_questionnaire_submission_tags_to_scrm(submission["id"])
     try:
-        from ..automation_conversion.service import sync_member_from_questionnaire_submission
+        from ..automation_conversion.questionnaire_bridge_service import (
+            sync_questionnaire_submission_audience_transition,
+        )
 
-        sync_member_from_questionnaire_submission(
+        audience_transition_sync = sync_questionnaire_submission_audience_transition(
             external_contact_id=str(submission.get("external_userid") or "").strip(),
             phone=str(submission.get("mobile_snapshot") or "").strip(),
             questionnaire_id=int(questionnaire.get("id") or 0),
+            submission_id=int(submission.get("id") or 0),
             operator_id="questionnaire_submit",
         )
+        if not audience_transition_sync.get("ok", True):
+            questionnaire_logger.warning(
+                "automation conversion audience transition sync returned failure submission_id=%s reason=%s error=%s",
+                submission.get("id"),
+                audience_transition_sync.get("reason"),
+                audience_transition_sync.get("error", ""),
+            )
     except Exception:
         questionnaire_logger.exception(
             "automation conversion sync failed after questionnaire submit submission_id=%s",

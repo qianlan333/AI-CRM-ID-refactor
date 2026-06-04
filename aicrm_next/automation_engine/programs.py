@@ -962,7 +962,7 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
     group_value = payload.get("group_id")
     if group_value is None and existing:
         group_value = existing.get("group_id")
-    return {
+    normalized = {
         "program_id": int(program_id),
         "group_id": int(group_value or 0) or None,
         "task_name": _clean_text(payload.get("task_name") or existing.get("task_name")) or "新运营任务",
@@ -981,6 +981,24 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
         "segment_contents_json": list(payload.get("segment_contents_json") or content.get("segment_contents_json") or existing.get("segment_contents_json") or []),
         "agent_config_json": dict(payload.get("agent_config_json") or content.get("agent_config_json") or existing.get("agent_config_json") or {}),
     }
+    _validate_operation_task_payload(normalized)
+    return normalized
+
+
+def _validate_operation_task_payload(task: dict[str, Any]) -> None:
+    if _clean_text(task.get("status")) != "active":
+        return
+    mode = _clean_text(task.get("content_mode")) or "unified"
+    if mode == "unified" and not _clean_text((task.get("unified_content_json") or {}).get("content_text")):
+        raise ValueError("统一内容不能为空")
+    if mode == "agent" and not _clean_text((task.get("agent_config_json") or {}).get("agent_code")):
+        raise ValueError("agent 模式必须提供 agent_code")
+    if mode in {"behavior_layered", "profile_layered"}:
+        contents = list(task.get("segment_contents_json") or [])
+        if not contents:
+            raise ValueError("请先填写分层话术")
+        if any(not _clean_text(item.get("content_text")) for item in contents):
+            raise ValueError("每个分层都需要填写话术")
 
 
 def _fixture_operation_payload(program_id: int) -> dict[str, Any]:
@@ -2472,6 +2490,8 @@ def create_automation_program_operation_task(program_id: int, payload: dict[str,
     if production_data_ready():
         try:
             return _build_postgres_repository().create_operation_task(int(program_id), payload, operator_id=operator_id)
+        except ValueError:
+            raise
         except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
             raise AutomationProgramDataUnavailable(str(exc)) from exc
     global _FIXTURE_OPERATION_TASK_ID
@@ -2495,6 +2515,8 @@ def update_automation_program_operation_task(program_id: int, task_id: int, payl
     if production_data_ready():
         try:
             return _build_postgres_repository().update_operation_task(int(program_id), int(task_id), payload, operator_id=operator_id)
+        except ValueError:
+            raise
         except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
             raise AutomationProgramDataUnavailable(str(exc)) from exc
     for index, task in enumerate(_FIXTURE_OPERATION_TASKS):
