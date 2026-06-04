@@ -50,6 +50,7 @@ from .setup_wizard import register_routes as register_setup_wizard_routes
 from .system_health import register_routes as register_system_health_routes
 from .tags import register_routes as register_tag_routes
 from .tasks import register_routes as register_task_routes
+from .internal_auth import register_routes as register_internal_auth_routes
 
 HTTP_CONTROLLER_RULES = (
     "controller only parses request input, validates/coerces primitives, delegates to services/runtime helpers, and builds responses",
@@ -197,6 +198,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("identity", register_identity_routes),
     ("ops", register_ops_routes),
     ("settings", register_settings_routes),
+    ("internal_auth", register_internal_auth_routes),
     ("admin_console", register_admin_console_routes),
     ("admin_api_docs", register_admin_api_docs_routes),
     ("admin_broadcast_jobs", register_admin_broadcast_jobs_routes),
