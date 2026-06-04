@@ -23,6 +23,9 @@ def test_public_pay_landing_renders_wechat_jsapi_checkout(monkeypatch) -> None:
     assert "/api/h5/wechat-pay/jsapi/orders" in response.text
     assert "/api/h5/wechat-pay/orders/{out_trade_no}" in response.text
     assert "WeixinJSBridge.invoke" in response.text
+    assert 'id="leadQrModal"' in response.text
+    assert 'id="showLeadQrButton"' in response.text
+    assert "leadQrFromOrder" in response.text
     assert "支付/下单动作已受控阻断" not in response.text
 
 

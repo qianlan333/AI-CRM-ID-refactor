@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from aicrm_next.commerce.domain import safe_completion_redirect_url
+from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -297,21 +297,164 @@ def _safe_success_url(value: Any) -> str:
     return ""
 
 
-def _order_payload(row: dict[str, Any]) -> dict[str, Any]:
-    completion_url = safe_completion_redirect_url(row.get("completion_redirect_url"))
-    completion_enabled = bool(row.get("completion_redirect_enabled")) and bool(completion_url)
+def _is_order_fully_refunded(row: dict[str, Any]) -> bool:
+    amount_total = int(row.get("amount_total") or 0)
+    refunded_amount_total = int(row.get("refunded_amount_total") or 0)
+    return _normalized_text(row.get("refund_status")) == "full_refunded" or (
+        amount_total > 0 and refunded_amount_total >= amount_total
+    )
+
+
+def _is_order_effectively_paid(row: dict[str, Any]) -> bool:
+    if _is_order_fully_refunded(row):
+        return False
+    return _normalized_text(row.get("status")) == "paid" or _normalized_text(row.get("trade_state")) == "SUCCESS"
+
+
+def _completion_redirect_from_product(product: dict[str, Any]) -> dict[str, Any]:
+    return completion_redirect_projection(
+        product.get("completion_redirect_enabled"),
+        product.get("completion_redirect_url"),
+    )
+
+
+def _completion_redirect_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT completion_redirect_enabled, completion_redirect_url
+        FROM wechat_pay_products
+        WHERE product_code = %s
+        LIMIT 1
+        """,
+        (_normalized_text(product_code),),
+    ).fetchone()
+    if not row:
+        return completion_redirect_projection(False, "")
+    return completion_redirect_projection(row.get("completion_redirect_enabled"), row.get("completion_redirect_url"))
+
+
+def _lead_qr_payload(row: dict[str, Any] | None) -> dict[str, Any]:
+    row = dict(row or {})
+    qr_url = _normalized_text(row.get("qr_url"))
+    if not qr_url:
+        return {}
     return {
+        "channel_id": int(row.get("channel_id") or 0),
+        "channel_name": _normalized_text(row.get("channel_name")),
+        "qr_url": qr_url,
+        "status": _normalized_text(row.get("status")),
+    }
+
+
+def _resolve_lead_channel_qr(conn: Any, *, channel_id: int | None = None, program_id: int | None = None) -> dict[str, Any]:
+    if channel_id:
+        row = conn.execute(
+            """
+            SELECT
+                c.id AS channel_id,
+                c.channel_name,
+                COALESCE(NULLIF(active_asset.qr_url, ''), NULLIF(c.qr_url, ''), '') AS qr_url,
+                c.status
+            FROM automation_channel c
+            LEFT JOIN LATERAL (
+                SELECT qa.qr_url
+                FROM automation_channel_qrcode_asset qa
+                WHERE qa.channel_id = c.id
+                  AND qa.status = 'active'
+                  AND NULLIF(qa.qr_url, '') IS NOT NULL
+                ORDER BY qa.generated_at DESC, qa.id DESC
+                LIMIT 1
+            ) active_asset ON TRUE
+            WHERE c.id = %s
+            LIMIT 1
+            """,
+            (int(channel_id),),
+        ).fetchone()
+        return _lead_qr_payload(row)
+    if program_id:
+        row = conn.execute(
+            """
+            SELECT
+                c.id AS channel_id,
+                c.channel_name,
+                COALESCE(NULLIF(active_asset.qr_url, ''), NULLIF(c.qr_url, ''), '') AS qr_url,
+                c.status
+            FROM automation_channel c
+            LEFT JOIN LATERAL (
+                SELECT qa.qr_url
+                FROM automation_channel_qrcode_asset qa
+                WHERE qa.channel_id = c.id
+                  AND qa.status = 'active'
+                  AND NULLIF(qa.qr_url, '') IS NOT NULL
+                ORDER BY qa.generated_at DESC, qa.id DESC
+                LIMIT 1
+            ) active_asset ON TRUE
+            WHERE c.program_id = %s
+              AND c.status IN ('active', 'configured')
+            ORDER BY c.updated_at DESC NULLS LAST, c.id DESC
+            LIMIT 1
+            """,
+            (int(program_id),),
+        ).fetchone()
+        return _lead_qr_payload(row)
+    return {}
+
+
+def _lead_qr_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
+    product = conn.execute(
+        """
+        SELECT lead_channel_id, lead_program_id
+        FROM wechat_pay_products
+        WHERE product_code = %s
+        LIMIT 1
+        """,
+        (_normalized_text(product_code),),
+    ).fetchone()
+    if not product:
+        return {}
+    channel_id = int(product.get("lead_channel_id") or 0) or None
+    program_id = int(product.get("lead_program_id") or 0) or None
+    return _resolve_lead_channel_qr(conn, channel_id=channel_id, program_id=program_id)
+
+
+def _order_payload(
+    row: dict[str, Any],
+    *,
+    completion_redirect: dict[str, Any] | None = None,
+    lead_qr: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    effective_completion = completion_redirect or completion_redirect_projection(
+        row.get("completion_redirect_enabled"),
+        row.get("completion_redirect_url"),
+    )
+    completion = dict(effective_completion.get("completion_redirect") or {})
+    completion_url = safe_completion_redirect_url(completion.get("url") or effective_completion.get("completion_redirect_url"))
+    completion_enabled = bool(completion.get("enabled")) and bool(completion_url)
+    status = _normalized_text(row.get("status"))
+    if _is_order_fully_refunded(row):
+        status = "full_refunded"
+    payload = {
         "out_trade_no": _normalized_text(row.get("out_trade_no")),
         "product_code": _normalized_text(row.get("product_code")),
         "product_name": _normalized_text(row.get("product_name")),
         "amount_total": int(row.get("amount_total") or 0),
         "currency": _normalized_text(row.get("currency")) or "CNY",
-        "status": _normalized_text(row.get("status")),
+        "status": status,
         "trade_state": _normalized_text(row.get("trade_state")),
+        "refund_status": _normalized_text(row.get("refund_status")),
+        "refunded_amount_total": int(row.get("refunded_amount_total") or 0),
         "success_url": _safe_success_url(row.get("success_url")),
+        "paid_at": _normalized_text(row.get("paid_at")),
+        "created_at": _normalized_text(row.get("created_at")),
+        "completion_redirect_enabled": bool(effective_completion.get("completion_redirect_enabled")),
+        "completion_redirect_url": completion_url,
         "completion_redirect": {"enabled": completion_enabled, "url": completion_url if completion_enabled else ""},
         "completion_action": {"type": "redirect", "redirect_url": completion_url} if completion_enabled else {"type": "default", "redirect_url": ""},
     }
+    if _is_order_effectively_paid(row) and not completion_enabled and lead_qr and lead_qr.get("qr_url"):
+        payload["lead_qr"] = lead_qr
+        payload["completion_action"] = {"type": "lead_qr", "redirect_url": ""}
+    return payload
 
 
 def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str], mobile: str, out_trade_no: str) -> dict[str, Any]:
@@ -469,8 +612,12 @@ def create_jsapi_order_response(request: Request, payload: dict[str, Any]) -> JS
                 raise WeChatPayClientError("missing prepay_id from WeChat Pay")
             order = _update_payment_request(conn, out_trade_no, prepay_id=prepay_id, request_payload=transaction_payload, response_payload=response_payload)
             pay_params = client.build_jsapi_pay_params(prepay_id)
+            completion_redirect = _completion_redirect_from_product(product)
             conn.commit()
-        return JSONResponse({"ok": True, "order": _order_payload(order), "pay_params": pay_params}, headers=route_headers())
+        return JSONResponse(
+            {"ok": True, "order": _order_payload(order, completion_redirect=completion_redirect), "pay_params": pay_params},
+            headers=route_headers(),
+        )
     except Exception as exc:
         try:
             with _connect() as conn:
@@ -496,7 +643,14 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
                 conn.commit()
             except Exception:
                 pass
-    return JSONResponse({"ok": True, "order": _order_payload(dict(order))}, headers=route_headers())
+        order_payload = dict(order)
+        product_code = _normalized_text(order_payload.get("product_code"))
+        completion_redirect = _completion_redirect_for_product_code(conn, product_code)
+        lead_qr = {} if completion_redirect.get("completion_redirect", {}).get("enabled") else _lead_qr_for_product_code(conn, product_code)
+    return JSONResponse(
+        {"ok": True, "order": _order_payload(order_payload, completion_redirect=completion_redirect, lead_qr=lead_qr)},
+        headers=route_headers(),
+    )
 
 
 async def notify_response(request: Request) -> JSONResponse:
