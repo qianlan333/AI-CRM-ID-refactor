@@ -171,6 +171,72 @@ def _provider_payment_error_payload(
     )
 
 
+def _payment_final_headers(*, real_refund_executed: str = "false") -> dict[str, str]:
+    return {
+        "X-AICRM-Route-Owner": "ai_crm_next",
+        "X-AICRM-Fallback-Used": "false",
+        "X-AICRM-Real-External-Call-Executed": "false",
+        "X-AICRM-Payment-Request-Executed": "false",
+        "X-AICRM-Real-WeChat-Pay-Executed": "false",
+        "X-AICRM-Real-Alipay-Executed": "false",
+        "X-AICRM-Provider-Signature-Verified": "false",
+        "X-AICRM-Real-Refund-Executed": real_refund_executed,
+    }
+
+
+def _payment_final_side_effects(*, source_status: str = "next_payment_admin") -> dict:
+    return {
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "real_external_call_executed": False,
+        "payment_request_executed": False,
+        "real_wechat_pay_executed": False,
+        "real_alipay_executed": False,
+        "provider_signature_verified": False,
+        "real_refund_executed": False,
+        "source_status": source_status,
+    }
+
+
+def _payment_final_payload(payload: dict, *, source_status: str = "next_payment_admin") -> dict:
+    result = dict(payload)
+    result.update(_payment_final_side_effects(source_status=source_status))
+    return result
+
+
+def _payment_final_blocked_payload(
+    *,
+    error_code: str,
+    message: str,
+    method: str,
+    path: str,
+    source_status: str,
+    status_code: int = 410,
+    replacement: str = "",
+) -> JSONResponse:
+    body = {
+        "ok": False,
+        "error_code": error_code,
+        "message": message,
+        "method": method.upper(),
+        "path": path,
+        "replacement": replacement,
+        "adapter_mode": "real_blocked",
+        **_payment_final_side_effects(source_status=source_status),
+    }
+    return JSONResponse(body, status_code=status_code, headers=_payment_final_headers())
+
+
+def _payment_final_options_payload(route: str, methods: list[str], *, source_status: str) -> dict:
+    return {
+        "ok": True,
+        "route": route,
+        "methods": methods,
+        "adapter_mode": "real_blocked",
+        **_payment_final_side_effects(source_status=source_status),
+    }
+
+
 def _product_admin_context(
     request: Request,
     *,
@@ -350,18 +416,20 @@ def list_wechat_admin_order_page(
     limit: int = 20,
     offset: int = 0,
 ) -> dict:
-    return list_wechat_admin_orders(
-        {
-            "mobile": mobile,
-            "identity": identity,
-            "transaction_id": transaction_id,
-            "product_code": product_code,
-            "created_from": created_from,
-            "created_to": created_to,
-            "status": status,
-        },
-        limit=limit,
-        offset=offset,
+    return _payment_final_payload(
+        list_wechat_admin_orders(
+            {
+                "mobile": mobile,
+                "identity": identity,
+                "transaction_id": transaction_id,
+                "product_code": product_code,
+                "created_from": created_from,
+                "created_to": created_to,
+                "status": status,
+            },
+            limit=limit,
+            offset=offset,
+        )
     )
 
 
@@ -372,7 +440,36 @@ async def export_wechat_admin_orders(request: Request) -> Response:
     return Response(
         csv_text,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="wechat-pay-orders.csv"'},
+        headers={
+            **_payment_final_headers(),
+            "Content-Disposition": 'attachment; filename="wechat-pay-orders.csv"',
+        },
+    )
+
+
+@router.get("/api/admin/wechat-pay/order-exports/{job_id}")
+@router.get("/api/admin/wechat-pay/order-exports/{job_id}/download")
+def deprecated_wechat_admin_order_export_job(job_id: str, request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_wechat_pay_export_job_removed",
+        message="legacy export job download path is removed; use POST /api/admin/wechat-pay/order-exports for immediate CSV export",
+        method=request.method,
+        path=f"/api/admin/wechat-pay/order-exports/{job_id}" + ("/download" if request.url.path.endswith("/download") else ""),
+        source_status="next_payment_admin_deprecated",
+        replacement="/api/admin/wechat-pay/order-exports",
+    )
+
+
+@router.get("/api/admin/wechat-pay/orders/{order_id}/external-push-deliveries")
+@router.post("/api/admin/wechat-pay/orders/{order_id}/external-push-deliveries/{delivery_id}/retry")
+def deprecated_wechat_order_external_push_delivery(order_id: str, request: Request, delivery_id: str | None = None) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_wechat_pay_external_push_delivery_removed",
+        message="legacy order external-push delivery controls are removed from this payment wildcard closeout",
+        method=request.method,
+        path=request.url.path,
+        source_status="next_payment_admin_deprecated",
+        replacement="/api/admin/wechat-pay/orders",
     )
 
 
@@ -382,14 +479,14 @@ async def request_wechat_admin_refund(order_id: str, request: Request) -> JSONRe
     try:
         result = create_wechat_refund_request(order_id, payload if isinstance(payload, dict) else {})
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-    return JSONResponse(result)
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
+    return JSONResponse(_payment_final_payload(result), headers=_payment_final_headers())
 
 
 @router.get("/api/admin/wechat-pay/products")
 def list_products(limit: int = 50, offset: int = 0) -> dict:
     try:
-        return ListProductsQuery()(limit=limit, offset=offset)
+        return _payment_final_payload(ListProductsQuery()(limit=limit, offset=offset))
     except Exception as exc:
         _raise_http(exc)
 
@@ -397,15 +494,27 @@ def list_products(limit: int = 50, offset: int = 0) -> dict:
 @router.get("/api/admin/wechat-pay/products/lead-channels")
 def list_product_lead_channels() -> dict:
     try:
-        return {"ok": True, "items": build_commerce_repository().list_lead_channels()}
+        return _payment_final_payload({"ok": True, "items": build_commerce_repository().list_lead_channels()})
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/wechat-pay/products/lead-plans")
+def deprecated_product_lead_plans(request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_wechat_pay_lead_plans_removed",
+        message="legacy lead-plans path is removed; use lead-channels for commerce product binding",
+        method=request.method,
+        path="/api/admin/wechat-pay/products/lead-plans",
+        source_status="next_payment_admin_deprecated",
+        replacement="/api/admin/wechat-pay/products/lead-channels",
+    )
 
 
 @router.get("/api/admin/wechat-pay/products/{product_id}")
 def get_product(product_id: str) -> dict:
     try:
-        return GetProductQuery()(product_id)
+        return _payment_final_payload(GetProductQuery()(product_id))
     except Exception as exc:
         _raise_http(exc)
 
@@ -416,7 +525,7 @@ def share_product(product_id: str, request: Request) -> dict:
         product = GetProductQuery()(product_id)["product"]
     except Exception as exc:
         _raise_http(exc)
-    return {"ok": True, "share": _share_payload(request, product)}
+    return _payment_final_payload({"ok": True, "share": _share_payload(request, product)})
 
 
 @router.post("/api/admin/wechat-pay/products/{product_id}/copy")
@@ -425,13 +534,13 @@ def copy_product(product_id: str) -> JSONResponse:
         product = build_commerce_repository().copy_product(product_id)
     except Exception as exc:
         _raise_http(exc)
-    return JSONResponse({"ok": True, "product": product}, status_code=201)
+    return JSONResponse(_payment_final_payload({"ok": True, "product": product}), status_code=201, headers=_payment_final_headers())
 
 
 @router.get("/api/admin/wechat-pay/products/{product_id}/external-push")
 def get_product_external_push(product_id: str) -> dict:
     try:
-        return {"ok": True, "config": build_commerce_repository().get_external_push_config(product_id)}
+        return _payment_final_payload({"ok": True, "config": build_commerce_repository().get_external_push_config(product_id)})
     except Exception as exc:
         _raise_http(exc)
 
@@ -443,7 +552,7 @@ async def save_product_external_push(product_id: str, request: Request) -> dict:
         config = build_commerce_repository().save_external_push_config(product_id, payload if isinstance(payload, dict) else {})
     except Exception as exc:
         _raise_http(exc)
-    return {"ok": True, "config": config}
+    return _payment_final_payload({"ok": True, "config": config})
 
 
 @router.post("/api/admin/wechat-pay/products/{product_id}/external-push/test")
@@ -458,34 +567,36 @@ def test_product_external_push(product_id: str) -> dict:
             raise ContractError("please save external push config first")
     except Exception as exc:
         _raise_http(exc)
-    return {
-        "ok": True,
-        "result": {
-            "delivery": {
-                "status": "preview",
-                "delivery_id": f"preview_product_{product_id}",
-                "request_url": config.get("webhook_url", ""),
-                "product_id": str(product.get("id") or product_id),
-                "side_effect_executed": False,
-            },
-            "payload_preview": {
-                "event": "external_push.test",
-                "product": {
-                    "id": str(product.get("id") or ""),
-                    "code": str(product.get("product_code") or ""),
-                    "name": str(product.get("title") or product.get("name") or ""),
+    return _payment_final_payload(
+        {
+            "ok": True,
+            "result": {
+                "delivery": {
+                    "status": "preview",
+                    "delivery_id": f"preview_product_{product_id}",
+                    "request_url": config.get("webhook_url", ""),
+                    "product_id": str(product.get("id") or product_id),
+                    "side_effect_executed": False,
                 },
-                "custom_params": config.get("custom_params") or {},
+                "payload_preview": {
+                    "event": "external_push.test",
+                    "product": {
+                        "id": str(product.get("id") or ""),
+                        "code": str(product.get("product_code") or ""),
+                        "name": str(product.get("title") or product.get("name") or ""),
+                    },
+                    "custom_params": config.get("custom_params") or {},
+                },
             },
-        },
-        "side_effect_safety": {"side_effect_executed": False, "real_external_call_executed": False},
-    }
+            "side_effect_safety": {"side_effect_executed": False, "real_external_call_executed": False},
+        }
+    )
 
 
 @router.post("/api/admin/wechat-pay/products")
 def create_product(payload: ProductUpsertRequest) -> dict:
     try:
-        return UpsertProductCommand()(payload)
+        return _payment_final_payload(UpsertProductCommand()(payload))
     except Exception as exc:
         _raise_http(exc)
 
@@ -493,7 +604,7 @@ def create_product(payload: ProductUpsertRequest) -> dict:
 @router.put("/api/admin/wechat-pay/products/{product_id}")
 def update_product(product_id: str, payload: ProductUpsertRequest) -> dict:
     try:
-        return UpsertProductCommand()(payload, product_id)
+        return _payment_final_payload(UpsertProductCommand()(payload, product_id))
     except Exception as exc:
         _raise_http(exc)
 
@@ -501,7 +612,7 @@ def update_product(product_id: str, payload: ProductUpsertRequest) -> dict:
 @router.post("/api/admin/wechat-pay/products/{product_id}/enable")
 def enable_product(product_id: str) -> dict:
     try:
-        return SetProductEnabledCommand()(product_id, enabled=True)
+        return _payment_final_payload(SetProductEnabledCommand()(product_id, enabled=True))
     except Exception as exc:
         _raise_http(exc)
 
@@ -509,7 +620,7 @@ def enable_product(product_id: str) -> dict:
 @router.post("/api/admin/wechat-pay/products/{product_id}/disable")
 def disable_product(product_id: str) -> dict:
     try:
-        return SetProductEnabledCommand()(product_id, enabled=False)
+        return _payment_final_payload(SetProductEnabledCommand()(product_id, enabled=False))
     except Exception as exc:
         _raise_http(exc)
 
@@ -517,7 +628,7 @@ def disable_product(product_id: str) -> dict:
 @router.delete("/api/admin/wechat-pay/products/{product_id}")
 def delete_product(product_id: str) -> dict:
     try:
-        return DeleteProductCommand()(product_id)
+        return _payment_final_payload(DeleteProductCommand()(product_id))
     except Exception as exc:
         _raise_http(exc)
 
@@ -734,19 +845,42 @@ def list_wechat_transactions(
     limit: int = 50,
     offset: int = 0,
 ) -> dict:
-    return ListTransactionsQuery("wechat")(
-        _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
-        limit=limit,
-        offset=offset,
+    return _payment_final_payload(
+        ListTransactionsQuery("wechat")(
+            _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
+            limit=limit,
+            offset=offset,
+        )
     )
 
 
 @router.get("/api/admin/wechat-pay/transactions/{order_no}")
 def get_wechat_transaction(order_no: str) -> dict:
     try:
-        return GetTransactionQuery("wechat")(order_no)
+        return _payment_final_payload(GetTransactionQuery("wechat")(order_no))
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.options("/api/admin/wechat-pay/{path:path}")
+def admin_wechat_pay_options(path: str) -> JSONResponse:
+    payload = _payment_final_options_payload(
+        f"/api/admin/wechat-pay/{path}",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        source_status="next_payment_admin",
+    )
+    return JSONResponse(payload, headers=_payment_final_headers())
+
+
+@router.api_route("/api/admin/wechat-pay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
+def admin_wechat_pay_unknown(path: str, request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_wechat_pay_path_removed",
+        message="unknown admin WeChat Pay path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/admin/wechat-pay/{path}",
+        source_status="next_payment_admin_not_found",
+    )
 
 
 @router.get("/api/admin/alipay/transactions")
@@ -760,16 +894,96 @@ def list_alipay_transactions(
     limit: int = 50,
     offset: int = 0,
 ) -> dict:
-    return ListTransactionsQuery("alipay")(
-        _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
-        limit=limit,
-        offset=offset,
+    return _payment_final_payload(
+        ListTransactionsQuery("alipay")(
+            _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
+            limit=limit,
+            offset=offset,
+        )
     )
 
 
 @router.get("/api/admin/alipay/transactions/{order_no}")
 def get_alipay_transaction(order_no: str) -> dict:
     try:
-        return GetTransactionQuery("alipay")(order_no)
+        return _payment_final_payload(GetTransactionQuery("alipay")(order_no))
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/alipay/orders")
+@router.get("/api/admin/alipay/order-export.csv")
+def deprecated_admin_alipay_paths(request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_alipay_path_removed",
+        message="legacy Alipay admin order/export path is removed; use Next transaction APIs",
+        method=request.method,
+        path=request.url.path,
+        source_status="next_payment_admin_deprecated",
+        replacement="/api/admin/alipay/transactions",
+    )
+
+
+@router.options("/api/admin/alipay/{path:path}")
+def admin_alipay_options(path: str) -> JSONResponse:
+    payload = _payment_final_options_payload(
+        f"/api/admin/alipay/{path}",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        source_status="next_payment_admin",
+    )
+    return JSONResponse(payload, headers=_payment_final_headers())
+
+
+@router.api_route("/api/admin/alipay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
+def admin_alipay_unknown(path: str, request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="admin_alipay_path_removed",
+        message="unknown admin Alipay path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/admin/alipay/{path}",
+        source_status="next_payment_admin_not_found",
+    )
+
+
+@router.options("/api/h5/wechat-pay/{path:path}")
+def h5_wechat_pay_options(path: str) -> JSONResponse:
+    payload = _payment_final_options_payload(
+        f"/api/h5/wechat-pay/{path}",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        source_status="next_h5_payment_blocked",
+    )
+    return JSONResponse(payload, headers=_payment_final_headers())
+
+
+@router.api_route("/api/h5/wechat-pay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
+def h5_wechat_pay_unknown(path: str, request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="h5_wechat_pay_path_removed",
+        message="legacy H5 WeChat Pay path is closed in Next; use public checkout/order/provider APIs",
+        method=request.method,
+        path=f"/api/h5/wechat-pay/{path}",
+        source_status="next_h5_payment_blocked",
+        replacement="/api/checkout/wechat",
+    )
+
+
+@router.options("/api/h5/alipay/{path:path}")
+def h5_alipay_options(path: str) -> JSONResponse:
+    payload = _payment_final_options_payload(
+        f"/api/h5/alipay/{path}",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        source_status="next_h5_payment_blocked",
+    )
+    return JSONResponse(payload, headers=_payment_final_headers())
+
+
+@router.api_route("/api/h5/alipay/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
+def h5_alipay_unknown(path: str, request: Request) -> JSONResponse:
+    return _payment_final_blocked_payload(
+        error_code="h5_alipay_path_removed",
+        message="legacy H5 Alipay path is closed in Next; use public checkout/order/provider APIs",
+        method=request.method,
+        path=f"/api/h5/alipay/{path}",
+        source_status="next_h5_payment_blocked",
+        replacement="/api/checkout/alipay",
+    )

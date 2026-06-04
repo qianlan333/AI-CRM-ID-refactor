@@ -16,6 +16,7 @@ from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
+    check_payment_wildcard_final_closeout_lock,
     check_public_product_pay_closeout_lock,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -77,6 +78,76 @@ def test_admin_auth_login_guard_flags_production_compat_and_direct_exchange(tmp_
     assert "admin_auth_fallback_true" in codes
     assert "admin_auth_login_registry_missing" in codes
     assert "admin_auth_login_manifest_missing" in codes
+
+
+def test_payment_wildcard_final_guard_flags_final_fallback_and_real_markers(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    commerce_api = tmp_path / "aicrm_next/commerce/api.py"
+    commerce_app = tmp_path / "aicrm_next/commerce/application.py"
+    inventory = tmp_path / "docs/architecture/admin_h5_payment_wildcard_closeout_inventory.md"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    compat.parent.mkdir(parents=True)
+    commerce_api.parent.mkdir(parents=True)
+    inventory.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+
+    compat.write_text(
+        "from fastapi import APIRouter\n"
+        "from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/admin/wechat-pay/{path:path}', methods=['GET'])\n"
+        "def legacy_payment(): return forward_to_legacy_flask()\n",
+        encoding="utf-8",
+    )
+    commerce_api.write_text(
+        '"fallback_used": True\n'
+        '"real_external_call_executed": True\n'
+        '"payment_request_executed": True\n'
+        '"provider_signature_verified": True\n'
+        '"real_refund_executed": True\n',
+        encoding="utf-8",
+    )
+    commerce_app.write_text("requests.post('https://pay.example.invalid')\n", encoding="utf-8")
+    inventory.write_text("incomplete\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: admin_wechat_pay_wildcard_final_closeout\n"
+        "    path_pattern: /api/admin/wechat-pay/{path:path}\n"
+        "    runtime_owner: production_compat\n"
+        "    legacy_fallback_allowed: true\n"
+        "    legacy_source: production_compat\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/wechat-pay*\n"
+        "    current_runtime_owner: production_compat\n"
+        "    production_behavior: legacy_forward\n"
+        "    legacy_fallback_allowed: true\n"
+        "    delete_ready: false\n"
+        "    delete_status: next_primary_with_legacy_rollback\n"
+        "    replacement_status: validating\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_payment_wildcard_final_closeout_lock(tmp_path)}
+
+    assert "payment_wildcard_final_inventory_boundary_missing" in codes
+    assert "payment_wildcard_final_production_compat_facade" in codes
+    assert "payment_wildcard_final_production_compat_route" in codes
+    assert "payment_wildcard_final_fallback_true" in codes
+    assert "payment_wildcard_final_real_external_call_true" in codes
+    assert "payment_wildcard_final_payment_request_true" in codes
+    assert "payment_wildcard_final_signature_verified_true" in codes
+    assert "payment_wildcard_final_real_refund_true" in codes
+    assert "payment_wildcard_final_direct_http_client" in codes
+    assert "payment_wildcard_final_registry_owner" in codes
+    assert "payment_wildcard_final_registry_legacy_allowed" in codes
+    assert "payment_wildcard_final_manifest_owner" in codes
+    assert "payment_wildcard_final_manifest_legacy_forward" in codes
 
 
 def test_public_product_guard_flags_public_fallback_and_payment_execution(tmp_path: Path) -> None:

@@ -39,7 +39,7 @@ def test_provider_payment_routes_precede_production_compat_when_facade_enabled(m
 
     for path in ["/api/admin/wechat-pay/smoke", "/api/admin/alipay/smoke", "/api/h5/wechat-pay/smoke", "/api/h5/alipay/smoke"]:
         route = _first_match(app, method="GET", path=path)
-        assert route.endpoint.__module__ == "aicrm_next.production_compat.api"
+        assert route.endpoint.__module__ == "aicrm_next.commerce.api"
 
 
 def test_production_compat_source_has_no_public_provider_payment_wildcards() -> None:
@@ -47,10 +47,10 @@ def test_production_compat_source_has_no_public_provider_payment_wildcards() -> 
 
     assert "/api/wechat-pay/{path:path}" not in text
     assert "/api/alipay/{path:path}" not in text
-    for retained in [
+    for removed in [
         "/api/admin/wechat-pay/{path:path}",
         "/api/admin/alipay/{path:path}",
         "/api/h5/wechat-pay/{path:path}",
         "/api/h5/alipay/{path:path}",
     ]:
-        assert retained in text
+        assert removed not in text

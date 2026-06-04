@@ -41,7 +41,7 @@ def test_checkout_orders_routes_precede_production_compat_when_facade_enabled(mo
 
     for path in ["/api/admin/wechat-pay/smoke", "/api/h5/wechat-pay/smoke"]:
         route = _first_match(app, method="GET", path=path)
-        assert route.endpoint.__module__ == "aicrm_next.production_compat.api"
+        assert route.endpoint.__module__ == "aicrm_next.commerce.api"
 
 
 def test_production_compat_source_has_no_checkout_order_wildcards() -> None:
@@ -49,10 +49,10 @@ def test_production_compat_source_has_no_checkout_order_wildcards() -> None:
 
     assert "/api/checkout/{path:path}" not in text
     assert "/api/orders/{path:path}" not in text
-    for retained in [
+    for removed in [
         "/api/admin/wechat-pay/{path:path}",
         "/api/admin/alipay/{path:path}",
         "/api/h5/wechat-pay/{path:path}",
         "/api/h5/alipay/{path:path}",
     ]:
-        assert retained in text
+        assert removed not in text

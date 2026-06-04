@@ -2357,6 +2357,62 @@ routes:
     checker: tests/test_provider_payment_registry_lifecycle.py
     rollback_owner: ""
     notes: Unknown public Alipay provider child paths return controlled 410 from Next and never fallback to production_compat.
+  - route_id: admin_wechat_pay_wildcard_final_closeout
+    path_pattern: /api/admin/wechat-pay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_payment_admin
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Final production_compat wildcard rollback removed; known admin WeChat Pay paths are exact Next routes and unknown/deprecated children return controlled 410 with no real payment or refund execution.
+  - route_id: admin_alipay_wildcard_final_closeout
+    path_pattern: /api/admin/alipay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_payment_admin
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Final production_compat wildcard rollback removed; known admin Alipay transaction paths are exact Next routes and unknown/deprecated children return controlled 410 with no real provider call.
+  - route_id: h5_wechat_pay_wildcard_final_closeout
+    path_pattern: /api/h5/wechat-pay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_h5_payment_blocked
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Final production_compat wildcard rollback removed; legacy H5 WeChat Pay paths are controlled 410 and public checkout/order/provider APIs are the replacement.
+  - route_id: h5_alipay_wildcard_final_closeout
+    path_pattern: /api/h5/alipay/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    runtime_owner: next_h5_payment_blocked
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    rollback_owner: ""
+    notes: Final production_compat wildcard rollback removed; legacy H5 Alipay paths are controlled 410 and public checkout/order/provider APIs are the replacement.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model
