@@ -425,6 +425,67 @@ AUTOMATION_MEMBER_TRUE_DEFAULT_MARKERS = {
     "real_enabled default": "automation_member_real_enabled_default",
     "default real_enabled": "automation_member_real_enabled_default",
 }
+CUSTOMER_AUTOMATION_WEBHOOK_COMPAT_ROUTES = {
+    "/api/customers/automation/activation-webhook",
+    "/api/customers/automation/webhook-deliveries/{delivery_id:int}/retry",
+    "/api/customers/automation/webhook-deliveries/retry-due",
+}
+CUSTOMER_AUTOMATION_WEBHOOK_API_ROUTES = {
+    "/api/customers/automation/activation-webhook": "next_customer_activation_webhook",
+    "/api/customers/automation/webhook-deliveries/{delivery_id}/retry": "next_customer_webhook_retry_plan",
+    "/api/customers/automation/webhook-deliveries/retry-due": "next_customer_webhook_retry_due_plan",
+}
+CUSTOMER_AUTOMATION_WEBHOOK_REGISTRY_RECORDS = {
+    "customer_automation_activation_webhook_next_command": (
+        "/api/customers/automation/activation-webhook",
+        "next_command",
+        "medium",
+        "local",
+    ),
+    "customer_automation_webhook_delivery_retry_next_safe_mode": (
+        "/api/customers/automation/webhook-deliveries/{delivery_id}/retry",
+        "next_runtime_plan",
+        "high",
+        "real_blocked",
+    ),
+    "customer_automation_webhook_delivery_retry_due_next_safe_mode": (
+        "/api/customers/automation/webhook-deliveries/retry-due",
+        "next_runtime_plan",
+        "high",
+        "real_blocked",
+    ),
+}
+CUSTOMER_AUTOMATION_WEBHOOK_DIRECT_MARKERS = {
+    "wecom_ability_service": "customer_automation_webhook_legacy_service_import",
+    "legacy_customer_automation_compat_routes": "customer_automation_webhook_legacy_compat_route",
+    "ApplyActivationWebhookCommand": "customer_automation_webhook_legacy_activation_command",
+    "RetryOutboundWebhookDeliveryCommand": "customer_automation_webhook_legacy_retry_command",
+    "RunDueOutboundWebhookRetriesCommand": "customer_automation_webhook_legacy_retry_due_command",
+    "send_outbound_webhook": "customer_automation_webhook_direct_outbound_send",
+    "requests.": "customer_automation_webhook_direct_http_client",
+    "httpx.": "customer_automation_webhook_direct_http_client",
+    "access_token": "customer_automation_webhook_token_exchange",
+}
+CUSTOMER_AUTOMATION_WEBHOOK_TRUE_DEFAULT_MARKERS = {
+    "real_external_call_executed=True": "customer_automation_webhook_real_external_true",
+    "real_external_call_executed = True": "customer_automation_webhook_real_external_true",
+    '"real_external_call_executed": True': "customer_automation_webhook_real_external_true",
+    "'real_external_call_executed': True": "customer_automation_webhook_real_external_true",
+    "outbound_webhook_executed=True": "customer_automation_webhook_outbound_true",
+    "outbound_webhook_executed = True": "customer_automation_webhook_outbound_true",
+    '"outbound_webhook_executed": True': "customer_automation_webhook_outbound_true",
+    "'outbound_webhook_executed': True": "customer_automation_webhook_outbound_true",
+    "automation_runtime_executed=True": "customer_automation_webhook_runtime_true",
+    "automation_runtime_executed = True": "customer_automation_webhook_runtime_true",
+    '"automation_runtime_executed": True': "customer_automation_webhook_runtime_true",
+    "'automation_runtime_executed': True": "customer_automation_webhook_runtime_true",
+    "wecom_send_executed=True": "customer_automation_webhook_send_true",
+    "wecom_send_executed = True": "customer_automation_webhook_send_true",
+    '"wecom_send_executed": True': "customer_automation_webhook_send_true",
+    "'wecom_send_executed': True": "customer_automation_webhook_send_true",
+    "real_enabled default": "customer_automation_webhook_real_enabled_default",
+    "default real_enabled": "customer_automation_webhook_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_campaign_read_wecom_client",
     "send_message": "cloud_campaign_read_send_message",
@@ -3240,6 +3301,150 @@ def check_automation_member_actions_next_safe_mode(root: Path = ROOT) -> list[Vi
     return violations
 
 
+def check_customer_automation_webhook_next_safe_mode(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/customer_automation_webhook_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("customer_automation_webhook_inventory_missing", str(inventory_path.relative_to(root)), "missing customer automation webhook inventory"))
+    else:
+        text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix",
+            "ApplyCustomerActivationWebhookCommand",
+            "PlanCustomerWebhookDeliveryRetryCommand",
+            "PlanCustomerWebhookDeliveryRetryDueCommand",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "adapter_mode=local",
+            "adapter_mode=real_blocked",
+            "real_external_call_executed=false",
+            "outbound_webhook_executed=false",
+            "next_customer_activation_webhook",
+            "next_customer_webhook_retry_plan",
+            "next_customer_webhook_retry_due_plan",
+        ):
+            if phrase not in text:
+                violations.append(Violation("customer_automation_webhook_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for route_path in CUSTOMER_AUTOMATION_WEBHOOK_API_ROUTES:
+            if route_path not in text:
+                violations.append(Violation("customer_automation_webhook_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_methods = dict(_decorator_route_methods(compat_path))
+        for route_path in CUSTOMER_AUTOMATION_WEBHOOK_COMPAT_ROUTES:
+            if route_path in route_methods:
+                violations.append(
+                    Violation(
+                        "customer_automation_webhook_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={route_methods[route_path]}",
+                        "Customer automation webhook writes are deletion_locked to Next safe-mode routes.",
+                    )
+                )
+
+    module_path = root / "aicrm_next/automation_engine/customer_webhooks.py"
+    if not module_path.exists():
+        violations.append(Violation("customer_automation_webhook_module_missing", str(module_path.relative_to(root)), "missing customer_webhooks.py"))
+    else:
+        source = module_path.read_text(encoding="utf-8")
+        for marker in (
+            "ApplyCustomerActivationWebhookCommand",
+            "PlanCustomerWebhookDeliveryRetryCommand",
+            "PlanCustomerWebhookDeliveryRetryDueCommand",
+            "InMemoryAuditLedger",
+            "InMemorySideEffectPlanRepository",
+            "InMemoryExternalCallAttemptRepository",
+            "CommandBus",
+            "next_customer_activation_webhook",
+            "next_customer_webhook_retry_plan",
+            "next_customer_webhook_retry_due_plan",
+            "real_blocked",
+            "outbound_webhook_executed",
+        ):
+            if marker not in source:
+                violations.append(Violation("customer_automation_webhook_module_marker_missing", str(module_path.relative_to(root)), marker))
+        for marker, code in {**CUSTOMER_AUTOMATION_WEBHOOK_DIRECT_MARKERS, **CUSTOMER_AUTOMATION_WEBHOOK_TRUE_DEFAULT_MARKERS}.items():
+            if marker in source:
+                violations.append(Violation(code, str(module_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/automation_engine/api.py"
+    if not api_path.exists():
+        violations.append(Violation("customer_automation_webhook_api_missing", str(api_path.relative_to(root)), "missing automation api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in (
+            "api_customer_automation_activation_webhook",
+            "api_plan_customer_automation_webhook_delivery_retry",
+            "api_plan_customer_automation_webhook_delivery_retry_due",
+            "execute_customer_webhook_command",
+        ):
+            if marker not in api_source:
+                violations.append(Violation("customer_automation_webhook_api_route_missing", str(api_path.relative_to(root)), marker))
+        sources = _decorated_route_function_sources(api_path)
+        for route_path, source_status in CUSTOMER_AUTOMATION_WEBHOOK_API_ROUTES.items():
+            api_route_path = route_path.replace("{delivery_id}", "{delivery_id:int}")
+            joined = "\n".join(sources.get(api_route_path, sources.get(route_path, [])))
+            if not joined:
+                violations.append(Violation("customer_automation_webhook_api_route_missing", str(api_path.relative_to(root)), route_path))
+                continue
+            if source_status not in joined:
+                violations.append(Violation("customer_automation_webhook_api_source_status_missing", str(api_path.relative_to(root)), f"{route_path}: {source_status}"))
+            for marker, code in {**CUSTOMER_AUTOMATION_WEBHOOK_DIRECT_MARKERS, **CUSTOMER_AUTOMATION_WEBHOOK_TRUE_DEFAULT_MARKERS}.items():
+                if marker in joined:
+                    violations.append(Violation(code, str(api_path.relative_to(root)), f"{route_path}: {marker}"))
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id, (route_path, expected_owner, expected_risk, expected_adapter) in CUSTOMER_AUTOMATION_WEBHOOK_REGISTRY_RECORDS.items():
+        record = registry_by_id.get(route_id)
+        if not record:
+            violations.append(Violation("customer_automation_webhook_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("path_pattern") != route_path or tuple(record.get("methods") or []) != ("POST", "OPTIONS"):
+            violations.append(Violation("customer_automation_webhook_registry_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != expected_owner:
+            violations.append(Violation("customer_automation_webhook_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("customer_automation_webhook_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("customer_automation_webhook_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("external_side_effect_risk") != expected_risk:
+            violations.append(Violation("customer_automation_webhook_registry_side_effect_risk", route_id, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("adapter_mode") != expected_adapter:
+            violations.append(Violation("customer_automation_webhook_registry_adapter_mode", route_id, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("customer_automation_webhook_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for route_path, (_source_status, expected_owner, expected_risk, expected_adapter) in {
+        "/api/customers/automation/activation-webhook": ("next_customer_activation_webhook", "next_command", "medium", "local"),
+        "/api/customers/automation/webhook-deliveries/{delivery_id}/retry": ("next_customer_webhook_retry_plan", "next_runtime_plan", "high", "real_blocked"),
+        "/api/customers/automation/webhook-deliveries/retry-due": ("next_customer_webhook_retry_due_plan", "next_runtime_plan", "high", "real_blocked"),
+    }.items():
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, ("POST", "OPTIONS"))
+        if not record:
+            violations.append(Violation("customer_automation_webhook_manifest_missing", route_path, "POST/OPTIONS"))
+            continue
+        if record.get("current_runtime_owner") != expected_owner:
+            violations.append(Violation("customer_automation_webhook_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("customer_automation_webhook_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("customer_automation_webhook_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("customer_automation_webhook_manifest_legacy_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("external_side_effect_risk") != expected_risk:
+            violations.append(Violation("customer_automation_webhook_manifest_side_effect_risk", route_path, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("adapter_mode") != expected_adapter:
+            violations.append(Violation("customer_automation_webhook_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("customer_automation_webhook_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    return violations
+
+
 def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     inventory_path = root / "docs/architecture/wecom_tag_write_route_inventory.md"
@@ -3520,6 +3725,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_automation_conversion_timers_next_safe_mode(ROOT)
         + check_automation_workspace_runtime_next_safe_mode(ROOT)
         + check_automation_member_actions_next_safe_mode(ROOT)
+        + check_customer_automation_webhook_next_safe_mode(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

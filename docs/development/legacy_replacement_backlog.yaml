@@ -1151,11 +1151,14 @@ entries:
     route_pattern: "/api/customers/automation/activation-webhook"
     methods: ["POST", "OPTIONS"]
     capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
+    current_runtime_owner: "next_command"
+    production_behavior: "next_command"
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: "real_blocked"
+    external_side_effect_risk: "medium"
+    adapter_mode: "local"
+    delete_status: "deletion_locked"
+    replacement_status: "locked"
     checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
@@ -1165,10 +1168,10 @@ entries:
     replacement_owner: "aicrm_next.automation_engine"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Narrow production_compat fallback retained for the legacy plural customer automation webhook path; no new real external behavior is enabled."
+    notes: "Legacy production_compat fallback removed; Next CommandBus records audit and local SideEffectPlan only; customer_automation_applied=local_only and real_external_call_executed=false."
   - id: "LRB-054"
     route_pattern: "/api/customers/automation/webhook-deliveries"
     methods: ["GET", "HEAD"]
@@ -1190,16 +1193,19 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "dry-run or preview smoke", "allowlist and audit guard check", "legacy fallback rollback check"]
-    notes: "Next owns webhook delivery list reads; retry and run-due writes remain narrow production_compat fallbacks."
+    notes: "Next owns webhook delivery list reads; retry and run-due writes are locked separately to Next safe-mode plans."
   - id: "LRB-055"
     route_pattern: "/api/customers/automation/webhook-deliveries/{delivery_id}/retry"
     methods: ["POST", "OPTIONS"]
     capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
+    current_runtime_owner: "next_runtime_plan"
+    production_behavior: "next_command"
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: "real_blocked"
+    external_side_effect_risk: "high"
+    adapter_mode: "real_blocked"
+    delete_status: "deletion_locked"
+    replacement_status: "locked"
     checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
@@ -1209,19 +1215,22 @@ entries:
     replacement_owner: "aicrm_next.automation_engine"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Narrow production_compat fallback retained for legacy webhook delivery retry writes only."
+    notes: "Legacy production_compat fallback removed; Next CommandBus emits SideEffectPlan and blocked ExternalCallAttempt only; outbound_webhook_executed=false."
   - id: "LRB-056"
     route_pattern: "/api/customers/automation/webhook-deliveries/retry-due"
     methods: ["POST", "OPTIONS"]
     capability_owner: "aicrm_next.automation_engine"
-    current_runtime_owner: "production_compat"
-    production_behavior: "legacy_forward"
-    legacy_fallback_allowed: true
+    current_runtime_owner: "next_runtime_plan"
+    production_behavior: "next_command"
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: "real_blocked"
+    external_side_effect_risk: "high"
+    adapter_mode: "real_blocked"
+    delete_status: "deletion_locked"
+    replacement_status: "locked"
     checker: "tools/check_production_route_resolution.py"
     replacement_phase: "phase_5_external_adapter"
     replacement_category: "external_side_effect"
@@ -1231,10 +1240,10 @@ entries:
     replacement_owner: "aicrm_next.automation_engine"
     replacement_strategy: "Define a Next adapter contract, keep real external calls blocked, and use fake/staging-disabled checks before any live enablement."
     fallback_required_until: "Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete."
-    rollback_path: "Keep or restore the manifest-owned legacy fallback / production_compat path; revert the replacement PR if parity or smoke fails."
-    delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action; keep manifest owner current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "legacy fallback rollback check"]
-    notes: "Narrow production_compat fallback retained for legacy due webhook retry writes only."
+    notes: "Legacy production_compat fallback removed; Next CommandBus emits SideEffectPlan and blocked ExternalCallAttempt only; due retry runtime and outbound webhook execution remain false."
   - id: "LRB-057"
     route_pattern: "/api/admin/wechat-pay/products*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
