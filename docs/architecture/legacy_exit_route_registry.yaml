@@ -1937,6 +1937,118 @@ routes:
     checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
     notes: Legacy rollback removed; safe-mode Next plan only; no real Bazhuayu dispatch; source_status=next_bazhuayu_dispatch_plan.
+  - route_id: automation_member_detail_next_read_model
+    path_pattern: /api/admin/automation-conversion/member
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_read_model
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Member detail legacy facade removed; Next read model returns controlled empty/degraded detail without fallback.
+  - route_id: automation_member_put_in_pool_next_command
+    path_pattern: /api/admin/automation-conversion/member/put-in-pool
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_remove_from_pool_next_command
+    path_pattern: /api/admin/automation-conversion/member/remove-from-pool
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_set_focus_next_command
+    path_pattern: /api/admin/automation-conversion/member/set-focus
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_set_normal_next_command
+    path_pattern: /api/admin/automation-conversion/member/set-normal
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_mark_won_next_command
+    path_pattern: /api/admin/automation-conversion/member/mark-won
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_unmark_won_next_command
+    path_pattern: /api/admin/automation-conversion/member/unmark-won
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; no member mutation and no external call.
+  - route_id: automation_member_push_openclaw_next_command
+    path_pattern: /api/admin/automation-conversion/member/push-openclaw
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: high
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_member_actions_registry_lifecycle.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Next CommandBus safe-mode plan only; SideEffectPlan adapter_name=openclaw requires approval; openclaw_push_executed=false.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

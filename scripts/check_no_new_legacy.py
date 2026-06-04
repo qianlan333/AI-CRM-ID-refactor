@@ -382,6 +382,48 @@ AUTOMATION_WORKSPACE_RUNTIME_TRUE_DEFAULT_MARKERS = {
     "real_enabled default": "automation_workspace_real_enabled_default",
     "default real_enabled": "automation_workspace_real_enabled_default",
 }
+AUTOMATION_MEMBER_DETAIL_ROUTE = "/api/admin/automation-conversion/member"
+AUTOMATION_MEMBER_WILDCARD_ROUTE = "/api/admin/automation-conversion/member/{path:path}"
+AUTOMATION_MEMBER_ACTION_ROUTES = {
+    "automation_member_put_in_pool_next_command": "/api/admin/automation-conversion/member/put-in-pool",
+    "automation_member_remove_from_pool_next_command": "/api/admin/automation-conversion/member/remove-from-pool",
+    "automation_member_set_focus_next_command": "/api/admin/automation-conversion/member/set-focus",
+    "automation_member_set_normal_next_command": "/api/admin/automation-conversion/member/set-normal",
+    "automation_member_mark_won_next_command": "/api/admin/automation-conversion/member/mark-won",
+    "automation_member_unmark_won_next_command": "/api/admin/automation-conversion/member/unmark-won",
+    "automation_member_push_openclaw_next_command": "/api/admin/automation-conversion/member/push-openclaw",
+}
+AUTOMATION_MEMBER_API_ROUTES = (
+    AUTOMATION_MEMBER_DETAIL_ROUTE,
+    *AUTOMATION_MEMBER_ACTION_ROUTES.values(),
+)
+AUTOMATION_MEMBER_DIRECT_MARKERS = {
+    "wecom_ability_service": "automation_member_legacy_service_import",
+    "legacy_automation_facade": "automation_member_legacy_facade",
+    "get_automation_member_detail_from_legacy": "automation_member_legacy_detail",
+    "send_outbound_webhook": "automation_member_openclaw_direct_invoke",
+    "PushMemberContextToOpenClawCommand": "automation_member_openclaw_direct_invoke",
+    "OpenClawWebhookAdapter": "automation_member_openclaw_direct_invoke",
+    "requests": "automation_member_direct_http_client",
+    "httpx": "automation_member_direct_http_client",
+    "access_token": "automation_member_token_exchange",
+}
+AUTOMATION_MEMBER_TRUE_DEFAULT_MARKERS = {
+    "real_external_call_executed=True": "automation_member_real_external_true",
+    "real_external_call_executed = True": "automation_member_real_external_true",
+    '"real_external_call_executed": True': "automation_member_real_external_true",
+    "'real_external_call_executed': True": "automation_member_real_external_true",
+    "openclaw_push_executed=True": "automation_member_openclaw_true",
+    "openclaw_push_executed = True": "automation_member_openclaw_true",
+    '"openclaw_push_executed": True': "automation_member_openclaw_true",
+    "'openclaw_push_executed': True": "automation_member_openclaw_true",
+    "automation_runtime_executed=True": "automation_member_runtime_true",
+    "automation_runtime_executed = True": "automation_member_runtime_true",
+    '"automation_runtime_executed": True': "automation_member_runtime_true",
+    "'automation_runtime_executed': True": "automation_member_runtime_true",
+    "real_enabled default": "automation_member_real_enabled_default",
+    "default real_enabled": "automation_member_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_CAMPAIGN_DIRECT_EXTERNAL_MARKERS = {
     "WeComClient.from_app": "cloud_campaign_read_wecom_client",
     "send_message": "cloud_campaign_read_send_message",
@@ -3032,6 +3074,182 @@ def check_automation_workspace_runtime_next_safe_mode(root: Path = ROOT) -> list
     return violations
 
 
+def check_automation_member_actions_next_safe_mode(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/automation_member_actions_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("automation_member_inventory_missing", str(inventory_path.relative_to(root)), "missing member actions inventory"))
+    else:
+        text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend ↔ API ↔ Backend Contract Matrix",
+            "GetAutomationMemberDetailQuery",
+            "PutAutomationMemberInPoolCommand",
+            "RemoveAutomationMemberFromPoolCommand",
+            "SetAutomationMemberFocusCommand",
+            "SetAutomationMemberNormalCommand",
+            "MarkAutomationMemberWonCommand",
+            "UnmarkAutomationMemberWonCommand",
+            "PlanAutomationMemberOpenClawPushCommand",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "adapter_mode=real_blocked",
+            "real_external_call_executed=false",
+            "automation_runtime_executed=false",
+            "openclaw_push_executed=false",
+            "stage manual-send",
+            "focus-send-batches",
+            "SOP",
+            "customer automation webhook",
+        ):
+            if phrase not in text:
+                violations.append(Violation("automation_member_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for route_path in AUTOMATION_MEMBER_API_ROUTES:
+            if route_path not in text:
+                violations.append(Violation("automation_member_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        route_methods = dict(_decorator_route_methods(compat_path))
+        for route_path in (AUTOMATION_MEMBER_DETAIL_ROUTE, AUTOMATION_MEMBER_WILDCARD_ROUTE):
+            if route_path in route_methods:
+                violations.append(
+                    Violation(
+                        "automation_member_production_compat_rollback",
+                        str(compat_path.relative_to(root)),
+                        f"{route_path} methods={route_methods[route_path]}",
+                        "Automation member detail/actions are deletion_locked to Next read-model and commands.",
+                    )
+                )
+
+    module_path = root / "aicrm_next/automation_engine/member_actions.py"
+    if not module_path.exists():
+        violations.append(Violation("automation_member_module_missing", str(module_path.relative_to(root)), "missing member_actions.py"))
+    else:
+        source = module_path.read_text(encoding="utf-8")
+        for marker in (
+            "GetAutomationMemberDetailQuery",
+            "PutAutomationMemberInPoolCommand",
+            "RemoveAutomationMemberFromPoolCommand",
+            "SetAutomationMemberFocusCommand",
+            "SetAutomationMemberNormalCommand",
+            "MarkAutomationMemberWonCommand",
+            "UnmarkAutomationMemberWonCommand",
+            "PlanAutomationMemberOpenClawPushCommand",
+            "InMemoryAuditLedger",
+            "InMemorySideEffectPlanRepository",
+            "InMemoryExternalCallAttemptRepository",
+            "CommandBus",
+            "next_automation_member_read",
+            "next_command",
+            "real_blocked",
+            "openclaw_push_executed",
+        ):
+            if marker not in source:
+                violations.append(Violation("automation_member_module_marker_missing", str(module_path.relative_to(root)), marker))
+        for marker, code in {**AUTOMATION_MEMBER_DIRECT_MARKERS, **AUTOMATION_MEMBER_TRUE_DEFAULT_MARKERS}.items():
+            if marker in source:
+                violations.append(Violation(code, str(module_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/automation_engine/api.py"
+    if not api_path.exists():
+        violations.append(Violation("automation_member_api_missing", str(api_path.relative_to(root)), "missing automation api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in (
+            "api_automation_member_detail",
+            "api_plan_automation_member_put_in_pool",
+            "api_plan_automation_member_remove_from_pool",
+            "api_plan_automation_member_set_focus",
+            "api_plan_automation_member_set_normal",
+            "api_plan_automation_member_mark_won",
+            "api_plan_automation_member_unmark_won",
+            "api_plan_automation_member_push_openclaw",
+            "execute_member_action_command",
+            "read_automation_member_detail",
+        ):
+            if marker not in api_source:
+                violations.append(Violation("automation_member_api_route_missing", str(api_path.relative_to(root)), marker))
+        sources = _decorated_route_function_sources(api_path)
+        for route_path in AUTOMATION_MEMBER_API_ROUTES:
+            joined = "\n".join(sources.get(route_path, []))
+            if not joined:
+                violations.append(Violation("automation_member_api_route_missing", str(api_path.relative_to(root)), route_path))
+                continue
+            for marker, code in {**AUTOMATION_MEMBER_DIRECT_MARKERS, **AUTOMATION_MEMBER_TRUE_DEFAULT_MARKERS}.items():
+                if marker in joined:
+                    violations.append(Violation(code, str(api_path.relative_to(root)), f"{route_path}: {marker}"))
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    detail_record = registry_by_id.get("automation_member_detail_next_read_model")
+    if not detail_record:
+        violations.append(Violation("automation_member_registry_missing", "automation_member_detail_next_read_model", AUTOMATION_MEMBER_DETAIL_ROUTE))
+    else:
+        if detail_record.get("path_pattern") != AUTOMATION_MEMBER_DETAIL_ROUTE or tuple(detail_record.get("methods") or []) != ("GET", "HEAD"):
+            violations.append(Violation("automation_member_registry_shape", "automation_member_detail_next_read_model", f"path_pattern={detail_record.get('path_pattern')} methods={detail_record.get('methods')}"))
+        if detail_record.get("runtime_owner") != "next_read_model":
+            violations.append(Violation("automation_member_registry_owner", "automation_member_detail_next_read_model", f"runtime_owner={detail_record.get('runtime_owner')}"))
+        if detail_record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_member_registry_legacy_allowed", "automation_member_detail_next_read_model", f"legacy_fallback_allowed={detail_record.get('legacy_fallback_allowed')}"))
+        if detail_record.get("external_side_effect_risk") != "none":
+            violations.append(Violation("automation_member_registry_side_effect_risk", "automation_member_detail_next_read_model", f"external_side_effect_risk={detail_record.get('external_side_effect_risk')}"))
+        if detail_record.get("delete_status") != "deletion_locked" or detail_record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_member_registry_lifecycle", "automation_member_detail_next_read_model", f"delete_status={detail_record.get('delete_status')} replacement_status={detail_record.get('replacement_status')}"))
+    for route_id, route_path in AUTOMATION_MEMBER_ACTION_ROUTES.items():
+        record = registry_by_id.get(route_id)
+        if not record:
+            violations.append(Violation("automation_member_registry_missing", route_id, route_path))
+            continue
+        if record.get("path_pattern") != route_path or tuple(record.get("methods") or []) != ("POST", "OPTIONS"):
+            violations.append(Violation("automation_member_registry_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != "next_command":
+            violations.append(Violation("automation_member_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_member_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        expected_risk = "high" if route_id == "automation_member_push_openclaw_next_command" else "medium"
+        if record.get("external_side_effect_risk") != expected_risk:
+            violations.append(Violation("automation_member_registry_side_effect_risk", route_id, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_member_registry_adapter_mode", route_id, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_member_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    detail_manifest = _record_for_path_and_methods(manifest_records, "route_pattern", AUTOMATION_MEMBER_DETAIL_ROUTE, ("GET", "HEAD"))
+    if not detail_manifest:
+        violations.append(Violation("automation_member_manifest_missing", AUTOMATION_MEMBER_DETAIL_ROUTE, "GET/HEAD"))
+    else:
+        if detail_manifest.get("current_runtime_owner") != "next_read_model":
+            violations.append(Violation("automation_member_manifest_owner", AUTOMATION_MEMBER_DETAIL_ROUTE, f"current_runtime_owner={detail_manifest.get('current_runtime_owner')}"))
+        if detail_manifest.get("production_behavior") != "next_exact":
+            violations.append(Violation("automation_member_manifest_behavior", AUTOMATION_MEMBER_DETAIL_ROUTE, f"production_behavior={detail_manifest.get('production_behavior')}"))
+        if detail_manifest.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_member_manifest_legacy_allowed", AUTOMATION_MEMBER_DETAIL_ROUTE, f"legacy_fallback_allowed={detail_manifest.get('legacy_fallback_allowed')}"))
+        if detail_manifest.get("delete_status") != "deletion_locked" or detail_manifest.get("replacement_status") != "locked":
+            violations.append(Violation("automation_member_manifest_lifecycle", AUTOMATION_MEMBER_DETAIL_ROUTE, f"delete_status={detail_manifest.get('delete_status')} replacement_status={detail_manifest.get('replacement_status')}"))
+    for route_path in AUTOMATION_MEMBER_ACTION_ROUTES.values():
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, ("POST", "OPTIONS"))
+        if not record:
+            violations.append(Violation("automation_member_manifest_missing", route_path, "POST/OPTIONS"))
+            continue
+        if record.get("current_runtime_owner") != "next_command":
+            violations.append(Violation("automation_member_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_command":
+            violations.append(Violation("automation_member_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_member_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("automation_member_manifest_legacy_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("adapter_mode") != "real_blocked":
+            violations.append(Violation("automation_member_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_member_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    return violations
+
+
 def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     inventory_path = root / "docs/architecture/wecom_tag_write_route_inventory.md"
@@ -3311,6 +3529,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_cloud_orchestrator_run_due_next_safe_mode(ROOT)
         + check_automation_conversion_timers_next_safe_mode(ROOT)
         + check_automation_workspace_runtime_next_safe_mode(ROOT)
+        + check_automation_member_actions_next_safe_mode(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

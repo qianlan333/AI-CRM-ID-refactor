@@ -98,6 +98,23 @@ from .workspace_runtime import (
     normalize_execution_item_id,
     normalize_program_id,
 )
+from .member_actions import (
+    AutomationMemberActionCommand,
+    AutomationMemberActionInputError,
+    GetAutomationMemberDetailQuery as GetAutomationMemberSafeDetailQuery,
+    MarkAutomationMemberWonCommand,
+    PlanAutomationMemberOpenClawPushCommand,
+    PutAutomationMemberInPoolCommand,
+    RemoveAutomationMemberFromPoolCommand,
+    SetAutomationMemberFocusCommand,
+    SetAutomationMemberNormalCommand,
+    UnmarkAutomationMemberWonCommand,
+    diagnostics_payload as member_action_diagnostics_payload,
+    execute_member_action_command,
+    normalize_actor as normalize_member_action_actor,
+    normalize_identity as normalize_member_action_identity,
+    read_automation_member_detail,
+)
 from .dto import (
     ActivationWebhookRequest,
     AgentMaterialsUpdateRequest,
@@ -149,6 +166,14 @@ _WORKSPACE_RUNTIME_HEADERS = {
     "X-AICRM-Automation-Runtime-Executed": "false",
     "X-AICRM-Operation-Tasks-Executed": "false",
     "X-AICRM-bazhuayu-Send-Executed": "false",
+    "X-AICRM-WeCom-Send-Executed": "false",
+}
+_MEMBER_ACTION_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+    "X-AICRM-Automation-Runtime-Executed": "false",
+    "X-AICRM-OpenClaw-Push-Executed": "false",
     "X-AICRM-WeCom-Send-Executed": "false",
 }
 
@@ -325,6 +350,195 @@ def _workspace_runtime_response(command, *, source_status: str) -> JSONResponse:
     except Exception as exc:
         return _workspace_runtime_error(str(exc) or "workspace_runtime_unavailable", source_status=source_status, status_code=503)
     return JSONResponse(payload, headers=_WORKSPACE_RUNTIME_HEADERS)
+
+
+def _member_action_error(error: str, *, source_status: str = "next_command", status_code: int = 400) -> JSONResponse:
+    payload = member_action_diagnostics_payload(source_status)
+    payload.update(
+        {
+            "ok": False,
+            "error": error,
+            "status": "input_error" if status_code == 400 else "error",
+            "planned_count": 0,
+            "processed_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+        }
+    )
+    return JSONResponse(payload, status_code=status_code, headers=_MEMBER_ACTION_HEADERS)
+
+
+async def _member_action_payload(request: Request) -> dict[str, Any]:
+    if request.headers.get("content-type", "").lower().startswith("application/json"):
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise AutomationMemberActionInputError("payload must be valid JSON") from exc
+    else:
+        body = await request.body()
+        payload = {} if not body else await request.json()
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise AutomationMemberActionInputError("payload must be an object")
+    return dict(payload)
+
+
+def _member_action_common(
+    request: Request,
+    payload: dict[str, Any],
+    source_route: str,
+) -> dict[str, Any]:
+    identity = normalize_member_action_identity(
+        external_contact_id=payload.get("external_contact_id") or payload.get("external_userid"),
+        phone=payload.get("phone") or payload.get("mobile"),
+    )
+    return {
+        "idempotency_key": str(request.headers.get("Idempotency-Key") or payload.get("idempotency_key") or "").strip(),
+        "actor_id": normalize_member_action_actor(payload.get("operator_id") or payload.get("operator") or payload.get("actor_id") or request.headers.get("X-AICRM-Actor")),
+        "actor_type": str(payload.get("actor_type") or "user").strip(),
+        "external_contact_id": identity["external_contact_id"],
+        "phone": identity["phone"],
+        "source_route": source_route,
+        "trace_id": str(request.headers.get("X-AICRM-Trace-Id") or payload.get("trace_id") or "").strip(),
+        "dry_run": _bool_payload(payload.get("dry_run"), default=True),
+    }
+
+
+def _member_action_response(command: AutomationMemberActionCommand) -> JSONResponse:
+    try:
+        payload = execute_member_action_command(command)
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error", status_code=400)
+    except Exception as exc:
+        return _member_action_error(str(exc) or "automation_member_action_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_MEMBER_ACTION_HEADERS)
+
+
+@router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
+def api_automation_member_detail(external_contact_id: str = "", phone: str = "") -> JSONResponse:
+    try:
+        payload = read_automation_member_detail(
+            GetAutomationMemberSafeDetailQuery(
+                external_contact_id=external_contact_id,
+                phone=phone,
+            )
+        )
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error", source_status="next_automation_member_read", status_code=400)
+    except Exception as exc:
+        return _member_action_error(str(exc) or "automation_member_read_unavailable", source_status="production_unavailable", status_code=503)
+    return JSONResponse(payload, headers=_MEMBER_ACTION_HEADERS)
+
+
+def _member_action_options() -> JSONResponse:
+    return JSONResponse(member_action_diagnostics_payload("next_command"), headers=_MEMBER_ACTION_HEADERS)
+
+
+@router.options("/api/admin/automation-conversion/member/put-in-pool")
+def api_automation_member_put_in_pool_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/put-in-pool")
+async def api_plan_automation_member_put_in_pool(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = PutAutomationMemberInPoolCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/put-in-pool"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/remove-from-pool")
+def api_automation_member_remove_from_pool_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/remove-from-pool")
+async def api_plan_automation_member_remove_from_pool(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = RemoveAutomationMemberFromPoolCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/remove-from-pool"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/set-focus")
+def api_automation_member_set_focus_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/set-focus")
+async def api_plan_automation_member_set_focus(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = SetAutomationMemberFocusCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/set-focus"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/set-normal")
+def api_automation_member_set_normal_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/set-normal")
+async def api_plan_automation_member_set_normal(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = SetAutomationMemberNormalCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/set-normal"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/mark-won")
+def api_automation_member_mark_won_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/mark-won")
+async def api_plan_automation_member_mark_won(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = MarkAutomationMemberWonCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/mark-won"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/unmark-won")
+def api_automation_member_unmark_won_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/unmark-won")
+async def api_plan_automation_member_unmark_won(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = UnmarkAutomationMemberWonCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/unmark-won"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
+
+
+@router.options("/api/admin/automation-conversion/member/push-openclaw")
+def api_automation_member_push_openclaw_options() -> JSONResponse:
+    return _member_action_options()
+
+
+@router.post("/api/admin/automation-conversion/member/push-openclaw")
+async def api_plan_automation_member_push_openclaw(request: Request) -> JSONResponse:
+    try:
+        payload = await _member_action_payload(request)
+        command = PlanAutomationMemberOpenClawPushCommand(**_member_action_common(request, payload, "/api/admin/automation-conversion/member/push-openclaw"))
+    except AutomationMemberActionInputError as exc:
+        return _member_action_error(str(exc) or "input_error")
+    return _member_action_response(command)
 
 
 @router.options("/api/admin/automation-conversion/tasks/run-due")
