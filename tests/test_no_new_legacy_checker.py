@@ -174,7 +174,7 @@ def test_public_product_guard_flags_public_fallback_and_payment_execution(tmp_pa
     )
     public_api.write_text(
         '"payment_request_executed": True\n'
-        "create_jsapi_order()\n",
+        "create_wap_order()\n",
         encoding="utf-8",
     )
     inventory.write_text("incomplete\n", encoding="utf-8")
@@ -189,6 +189,27 @@ def test_public_product_guard_flags_public_fallback_and_payment_execution(tmp_pa
     assert "public_product_payment_request_true" in codes
     assert "public_product_registry_missing" in codes
     assert "public_product_manifest_missing" in codes
+
+
+def test_public_product_guard_allows_next_h5_wechat_pay_markers(tmp_path: Path) -> None:
+    h5_pay = tmp_path / "aicrm_next/public_product/h5_wechat_pay.py"
+    h5_pay.parent.mkdir(parents=True)
+    h5_pay.write_text(
+        "from wecom_ability_service.infra.wechat_oauth import exchange_wechat_oauth_code\n"
+        "from aicrm_next.commerce.wechat_pay_client import WeChatPayClient\n"
+        "def create_jsapi_order_response():\n"
+        "    access_token = ''\n"
+        "    return WeChatPayClient, access_token\n",
+        encoding="utf-8",
+    )
+
+    source_codes = {violation.code for violation in scan_source_tree(tmp_path)}
+    closeout_codes = {violation.code for violation in check_public_product_pay_closeout_lock(tmp_path)}
+
+    assert "wecom_ability_service_import" not in source_codes
+    assert "public_product_direct_wechat_pay" not in closeout_codes
+    assert "public_product_access_token_marker" not in closeout_codes
+    assert "public_product_payment_request" not in closeout_codes
 
 
 def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
