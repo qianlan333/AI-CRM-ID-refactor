@@ -9,11 +9,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from aicrm_next.shared.runtime import database_mode
-from wecom_ability_service.domains.wechat_pay.client import WeChatPayClient, WeChatPayClientConfig
 
 from .repo import build_commerce_repository
 from .application import GetTransactionQuery, ListProductsQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, product_code_filter_values
+from .wechat_pay_client import WeChatPayClient, WeChatPayClientConfig
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
 ALLOWED_LIMITS = {20, 50, 100}
