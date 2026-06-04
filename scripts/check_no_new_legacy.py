@@ -427,6 +427,63 @@ PROVIDER_PAYMENT_TRUE_MARKERS = {
     "real_enabled default": "provider_payment_real_enabled_default",
     "default real_enabled": "provider_payment_real_enabled_default",
 }
+PAYMENT_WILDCARD_FINAL_COMPAT_ROUTES = (
+    "/api/admin/wechat-pay/{path:path}",
+    "/api/admin/alipay/{path:path}",
+    "/api/h5/wechat-pay/{path:path}",
+    "/api/h5/alipay/{path:path}",
+)
+PAYMENT_WILDCARD_FINAL_REGISTRY_RECORDS = (
+    "admin_wechat_pay_wildcard_final_closeout",
+    "admin_alipay_wildcard_final_closeout",
+    "h5_wechat_pay_wildcard_final_closeout",
+    "h5_alipay_wildcard_final_closeout",
+)
+PAYMENT_WILDCARD_FINAL_MANIFEST_ROUTES = (
+    "/api/admin/wechat-pay*",
+    "/api/admin/alipay*",
+    "/api/h5/wechat-pay*",
+    "/api/h5/alipay*",
+)
+PAYMENT_WILDCARD_FINAL_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "payment_wildcard_final_legacy_forward",
+    "legacy_flask_facade": "payment_wildcard_final_legacy_facade",
+    "requests.": "payment_wildcard_final_direct_http_client",
+    "httpx.": "payment_wildcard_final_direct_http_client",
+    "access_token": "payment_wildcard_final_access_token_marker",
+    "raw WeChatPay": "payment_wildcard_final_raw_wechatpay_client",
+    "raw Alipay": "payment_wildcard_final_raw_alipay_client",
+}
+PAYMENT_WILDCARD_FINAL_TRUE_MARKERS = {
+    '"fallback_used": True': "payment_wildcard_final_fallback_true",
+    "'fallback_used': True": "payment_wildcard_final_fallback_true",
+    '"real_external_call_executed": True': "payment_wildcard_final_real_external_call_true",
+    "'real_external_call_executed': True": "payment_wildcard_final_real_external_call_true",
+    "real_external_call_executed=True": "payment_wildcard_final_real_external_call_true",
+    "real_external_call_executed = True": "payment_wildcard_final_real_external_call_true",
+    '"payment_request_executed": True': "payment_wildcard_final_payment_request_true",
+    "'payment_request_executed': True": "payment_wildcard_final_payment_request_true",
+    "payment_request_executed=True": "payment_wildcard_final_payment_request_true",
+    "payment_request_executed = True": "payment_wildcard_final_payment_request_true",
+    '"real_wechat_pay_executed": True': "payment_wildcard_final_real_wechat_pay_true",
+    "'real_wechat_pay_executed': True": "payment_wildcard_final_real_wechat_pay_true",
+    "real_wechat_pay_executed=True": "payment_wildcard_final_real_wechat_pay_true",
+    "real_wechat_pay_executed = True": "payment_wildcard_final_real_wechat_pay_true",
+    '"real_alipay_executed": True': "payment_wildcard_final_real_alipay_true",
+    "'real_alipay_executed': True": "payment_wildcard_final_real_alipay_true",
+    "real_alipay_executed=True": "payment_wildcard_final_real_alipay_true",
+    "real_alipay_executed = True": "payment_wildcard_final_real_alipay_true",
+    '"provider_signature_verified": True': "payment_wildcard_final_signature_verified_true",
+    "'provider_signature_verified': True": "payment_wildcard_final_signature_verified_true",
+    "provider_signature_verified=True": "payment_wildcard_final_signature_verified_true",
+    "provider_signature_verified = True": "payment_wildcard_final_signature_verified_true",
+    '"real_refund_executed": True': "payment_wildcard_final_real_refund_true",
+    "'real_refund_executed': True": "payment_wildcard_final_real_refund_true",
+    "real_refund_executed=True": "payment_wildcard_final_real_refund_true",
+    "real_refund_executed = True": "payment_wildcard_final_real_refund_true",
+    "real_enabled default": "payment_wildcard_final_real_enabled_default",
+    "default real_enabled": "payment_wildcard_final_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2959,6 +3016,109 @@ def check_provider_payment_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_payment_wildcard_final_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/admin_h5_payment_wildcard_closeout_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("payment_wildcard_final_inventory_missing", str(inventory_path.relative_to(root)), "missing admin/h5 payment wildcard closeout inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Route <-> Caller <-> Backend <-> Decision Matrix",
+            "/api/admin/wechat-pay/{path:path}",
+            "/api/admin/alipay/{path:path}",
+            "/api/h5/wechat-pay/{path:path}",
+            "/api/h5/alipay/{path:path}",
+            "unknown child path",
+            "production_compat wildcard removed",
+            "final no legacy fallback",
+            "real_refund_executed=false",
+            "real_external_call_executed=false",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("payment_wildcard_final_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        compat_text = compat_path.read_text(encoding="utf-8")
+        if "forward_to_legacy_flask" in compat_text or "legacy_flask_facade" in compat_text:
+            violations.append(Violation("payment_wildcard_final_production_compat_facade", str(compat_path.relative_to(root)), "legacy facade reference"))
+        for route_path, _methods in _decorator_route_methods(compat_path):
+            violations.append(
+                Violation(
+                    "payment_wildcard_final_production_compat_route",
+                    str(compat_path.relative_to(root)),
+                    route_path,
+                    "Final payment wildcard closeout leaves production_compat with no API routes.",
+                )
+            )
+
+    commerce_paths = [
+        root / "aicrm_next/commerce/api.py",
+        root / "aicrm_next/commerce/application.py",
+    ]
+    for path in commerce_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(root))
+        for marker, code in PAYMENT_WILDCARD_FINAL_DIRECT_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Final payment wildcard closeout must not call legacy facades, direct HTTP clients, raw payment clients, or access-token paths.",
+                    )
+                )
+        for marker, code in PAYMENT_WILDCARD_FINAL_TRUE_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Final payment wildcard closeout must keep fallback, real external, payment request, provider, signature, and refund execution flags false.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in PAYMENT_WILDCARD_FINAL_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("payment_wildcard_final_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("payment_wildcard_final_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("payment_wildcard_final_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("payment_wildcard_final_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("payment_wildcard_final_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in PAYMENT_WILDCARD_FINAL_MANIFEST_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("payment_wildcard_final_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("payment_wildcard_final_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("payment_wildcard_final_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("payment_wildcard_final_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("payment_wildcard_final_manifest_lifecycle", route_path, str(record)))
+
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -4453,6 +4613,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_public_product_pay_closeout_lock(ROOT)
         + check_checkout_orders_closeout_lock(ROOT)
         + check_provider_payment_closeout_lock(ROOT)
+        + check_payment_wildcard_final_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)

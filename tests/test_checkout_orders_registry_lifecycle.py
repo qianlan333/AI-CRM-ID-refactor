@@ -32,7 +32,7 @@ def test_checkout_orders_registry_records_are_locked() -> None:
         assert record["replacement_status"] == "locked"
 
 
-def test_checkout_orders_manifest_records_are_locked_and_out_of_scope_retained() -> None:
+def test_checkout_orders_manifest_records_are_locked() -> None:
     records = {record["route_pattern"]: record for record in _records("docs/route_ownership/production_route_ownership_manifest.yaml")}
 
     checkout = records["/api/checkout*"]
@@ -54,5 +54,7 @@ def test_checkout_orders_manifest_records_are_locked_and_out_of_scope_retained()
 
     for route in ["/api/admin/wechat-pay*", "/api/admin/alipay*", "/api/h5/wechat-pay*", "/api/h5/alipay*"]:
         record = records[route]
-        assert record["legacy_fallback_allowed"] is True
-        assert record["delete_ready"] is False
+        assert record["legacy_fallback_allowed"] is False
+        assert record["delete_ready"] is True
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"

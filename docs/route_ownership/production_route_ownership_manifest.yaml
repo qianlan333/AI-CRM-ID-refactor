@@ -1566,25 +1566,31 @@ routes:
   - route_pattern: /api/admin/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: next
+    current_runtime_owner: next_payment_admin
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
+    external_side_effect_risk: high
+    delete_ready: true
     checker: tools/check_production_route_resolution.py
-    notes: Next exact product/transaction routes plus production_compat fallback; real payment provider calls blocked.
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Final production_compat wildcard rollback removed; known admin WeChat Pay paths are exact Next routes, unknown/deprecated children return controlled 410, and real payment/refund/provider calls are blocked.
   - route_pattern: /api/admin/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: next
+    current_runtime_owner: next_payment_admin
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
+    external_side_effect_risk: high
+    delete_ready: true
     checker: tools/check_production_route_resolution.py
-    notes: Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked.
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Final production_compat wildcard rollback removed; known admin Alipay transaction paths are exact Next routes, unknown/deprecated children return controlled 410, and real provider calls are blocked.
   - route_pattern: /api/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.public_product
@@ -1686,25 +1692,31 @@ routes:
   - route_pattern: /api/h5/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next_h5_payment_blocked
+    production_behavior: next_blocked
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Legacy H5 WeChat Pay production_compat fallback; real provider calls still blocked.
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Final production_compat wildcard rollback removed; legacy H5 WeChat Pay paths return controlled 410 and public checkout/order/provider APIs are the replacement.
   - route_pattern: /api/h5/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    current_runtime_owner: next_h5_payment_blocked
+    production_behavior: next_blocked
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Legacy H5 Alipay production_compat fallback; real provider calls still blocked.
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_payment_wildcard_final_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Final production_compat wildcard rollback removed; legacy H5 Alipay paths return controlled 410 and public checkout/order/provider APIs are the replacement.
   - route_pattern: /api/admin/image-library*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.media_library
