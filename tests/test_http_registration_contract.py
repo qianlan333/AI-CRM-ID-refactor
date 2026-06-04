@@ -436,7 +436,7 @@ def test_public_questionnaire_oauth_routes_stay_in_child_controller():
         assert route_modules[route] == expected_diagnostics_module
 
 
-def test_admin_auth_login_routes_stay_in_child_controller():
+def test_admin_auth_login_routes_are_pruned_from_legacy_flask_registry():
     from wecom_ability_service import create_app
 
     internal_auth_source = (ROOT / "wecom_ability_service" / "http" / "internal_auth.py").read_text(encoding="utf-8")
@@ -451,11 +451,7 @@ def test_admin_auth_login_routes_stay_in_child_controller():
     assert "def exchange_code_for_wecom_user(" not in internal_auth_source
 
     app = create_app({"TESTING": True})
-    route_modules = {
-        rule.rule: getattr(app.view_functions[rule.endpoint], "__module__", "")
-        for rule in app.url_map.iter_rules()
-    }
-    expected_module = "wecom_ability_service.http.admin_auth_routes"
+    route_modules = {rule.rule for rule in app.url_map.iter_rules()}
 
     for route in {
         "/login",
@@ -463,7 +459,7 @@ def test_admin_auth_login_routes_stay_in_child_controller():
         "/auth/wecom/start",
         "/auth/wecom/callback",
     }:
-        assert route_modules[route] == expected_module
+        assert route not in route_modules
 
 
 def test_admin_broadcast_job_routes_stay_in_child_controller():
