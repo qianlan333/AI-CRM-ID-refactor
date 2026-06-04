@@ -7,6 +7,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_READONLY_ROUTES,
     check_auth_wecom_wildcard_inventory,
     check_automation_conversion_timers_next_safe_mode,
+    check_automation_member_actions_next_safe_mode,
     check_automation_workspace_runtime_next_safe_mode,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_campaign_read_closeout_lock,
@@ -2419,3 +2420,172 @@ def test_automation_workspace_runtime_guard_allows_next_safe_mode_locked(tmp_pat
     _write_automation_workspace_runtime_guard_fixture(tmp_path, locked=True)
 
     assert check_automation_workspace_runtime_next_safe_mode(tmp_path) == []
+
+
+def _write_automation_member_actions_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
+    inventory = tmp_path / "docs/architecture/automation_member_actions_route_inventory.md"
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    api = tmp_path / "aicrm_next/automation_engine/api.py"
+    module = tmp_path / "aicrm_next/automation_engine/member_actions.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    inventory.parent.mkdir(parents=True)
+    compat.parent.mkdir(parents=True)
+    api.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    action_routes = [
+        "/api/admin/automation-conversion/member/put-in-pool",
+        "/api/admin/automation-conversion/member/remove-from-pool",
+        "/api/admin/automation-conversion/member/set-focus",
+        "/api/admin/automation-conversion/member/set-normal",
+        "/api/admin/automation-conversion/member/mark-won",
+        "/api/admin/automation-conversion/member/unmark-won",
+        "/api/admin/automation-conversion/member/push-openclaw",
+    ]
+    inventory.write_text(
+        "Frontend ↔ API ↔ Backend Contract Matrix\n"
+        "GetAutomationMemberDetailQuery PutAutomationMemberInPoolCommand RemoveAutomationMemberFromPoolCommand\n"
+        "SetAutomationMemberFocusCommand SetAutomationMemberNormalCommand MarkAutomationMemberWonCommand\n"
+        "UnmarkAutomationMemberWonCommand PlanAutomationMemberOpenClawPushCommand\n"
+        "legacy_fallback_allowed=false deletion_locked adapter_mode=real_blocked\n"
+        "real_external_call_executed=false automation_runtime_executed=false openclaw_push_executed=false\n"
+        "stage manual-send focus-send-batches SOP customer automation webhook\n"
+        "/api/admin/automation-conversion/member\n"
+        + "\n".join(action_routes)
+        + "\n",
+        encoding="utf-8",
+    )
+    compat_routes = (
+        "@router.api_route('/api/admin/automation-conversion/member', methods=['GET', 'HEAD'])\n"
+        "def detail(): pass\n"
+        "@router.api_route('/api/admin/automation-conversion/member/{path:path}', methods=['GET', 'POST', 'OPTIONS'])\n"
+        "def wildcard(): pass\n"
+        if not locked
+        else ""
+    )
+    compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n" + compat_routes, encoding="utf-8")
+    api.write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.api_route('/api/admin/automation-conversion/member', methods=['GET', 'HEAD'])\n"
+        "def api_automation_member_detail(): return read_automation_member_detail()\n"
+        "@router.options('/api/admin/automation-conversion/member/put-in-pool')\n"
+        "def api_automation_member_put_in_pool_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/put-in-pool')\n"
+        "def api_plan_automation_member_put_in_pool(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/remove-from-pool')\n"
+        "def api_automation_member_remove_from_pool_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/remove-from-pool')\n"
+        "def api_plan_automation_member_remove_from_pool(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/set-focus')\n"
+        "def api_automation_member_set_focus_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/set-focus')\n"
+        "def api_plan_automation_member_set_focus(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/set-normal')\n"
+        "def api_automation_member_set_normal_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/set-normal')\n"
+        "def api_plan_automation_member_set_normal(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/mark-won')\n"
+        "def api_automation_member_mark_won_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/mark-won')\n"
+        "def api_plan_automation_member_mark_won(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/unmark-won')\n"
+        "def api_automation_member_unmark_won_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/unmark-won')\n"
+        "def api_plan_automation_member_unmark_won(): return execute_member_action_command()\n"
+        "@router.options('/api/admin/automation-conversion/member/push-openclaw')\n"
+        "def api_automation_member_push_openclaw_options(): return {}\n"
+        "@router.post('/api/admin/automation-conversion/member/push-openclaw')\n"
+        "def api_plan_automation_member_push_openclaw(): return execute_member_action_command()\n",
+        encoding="utf-8",
+    )
+    module.write_text(
+        "GetAutomationMemberDetailQuery PutAutomationMemberInPoolCommand RemoveAutomationMemberFromPoolCommand\n"
+        "SetAutomationMemberFocusCommand SetAutomationMemberNormalCommand MarkAutomationMemberWonCommand\n"
+        "UnmarkAutomationMemberWonCommand PlanAutomationMemberOpenClawPushCommand\n"
+        "InMemoryAuditLedger InMemorySideEffectPlanRepository InMemoryExternalCallAttemptRepository CommandBus\n"
+        "next_automation_member_read next_command real_blocked openclaw_push_executed\n"
+        + ("legacy_automation_facade\n" if not locked else ""),
+        encoding="utf-8",
+    )
+    owner = "next_read_model" if locked else "production_compat"
+    command_owner = "next_command" if locked else "production_compat"
+    fallback = "false" if locked else "true"
+    behavior = "next_command" if locked else "legacy_forward"
+    lifecycle = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement = "locked" if locked else "validating"
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: automation_member_detail_next_read_model\n"
+        "    path_pattern: /api/admin/automation-conversion/member\n"
+        "    methods: [GET, HEAD]\n"
+        f"    runtime_owner: {owner}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        + "".join(
+            "  - route_id: " + route_id + "\n"
+            "    path_pattern: " + route + "\n"
+            "    methods: [POST, OPTIONS]\n"
+            f"    runtime_owner: {command_owner}\n"
+            f"    legacy_fallback_allowed: {fallback}\n"
+            f"    external_side_effect_risk: {'high' if route_id == 'automation_member_push_openclaw_next_command' else 'medium'}\n"
+            "    adapter_mode: real_blocked\n"
+            f"    delete_status: {lifecycle}\n"
+            f"    replacement_status: {replacement}\n"
+            for route_id, route in {
+                "automation_member_put_in_pool_next_command": "/api/admin/automation-conversion/member/put-in-pool",
+                "automation_member_remove_from_pool_next_command": "/api/admin/automation-conversion/member/remove-from-pool",
+                "automation_member_set_focus_next_command": "/api/admin/automation-conversion/member/set-focus",
+                "automation_member_set_normal_next_command": "/api/admin/automation-conversion/member/set-normal",
+                "automation_member_mark_won_next_command": "/api/admin/automation-conversion/member/mark-won",
+                "automation_member_unmark_won_next_command": "/api/admin/automation-conversion/member/unmark-won",
+                "automation_member_push_openclaw_next_command": "/api/admin/automation-conversion/member/push-openclaw",
+            }.items()
+        ),
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/automation-conversion/member\n"
+        "    methods: [GET, HEAD]\n"
+        f"    current_runtime_owner: {owner}\n"
+        f"    production_behavior: {'next_exact' if locked else 'legacy_forward'}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        + "".join(
+            "  - route_pattern: " + route + "\n"
+            "    methods: [POST, OPTIONS]\n"
+            f"    current_runtime_owner: {command_owner}\n"
+            f"    production_behavior: {behavior}\n"
+            f"    legacy_fallback_allowed: {fallback}\n"
+            "    adapter_mode: real_blocked\n"
+            f"    delete_status: {lifecycle}\n"
+            f"    replacement_status: {replacement}\n"
+            for route in action_routes
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_automation_member_actions_guard_flags_rollback_and_legacy_drift(tmp_path: Path) -> None:
+    _write_automation_member_actions_guard_fixture(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_automation_member_actions_next_safe_mode(tmp_path)}
+
+    assert "automation_member_production_compat_rollback" in codes
+    assert "automation_member_legacy_facade" in codes
+    assert "automation_member_registry_owner" in codes
+    assert "automation_member_registry_legacy_allowed" in codes
+    assert "automation_member_manifest_behavior" in codes
+    assert "automation_member_manifest_legacy_allowed" in codes
+
+
+def test_automation_member_actions_guard_allows_next_safe_mode_locked(tmp_path: Path) -> None:
+    _write_automation_member_actions_guard_fixture(tmp_path, locked=True)
+
+    assert check_automation_member_actions_next_safe_mode(tmp_path) == []

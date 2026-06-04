@@ -14,6 +14,7 @@ from .automation_engine.api import router as automation_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
+from .automation_engine.member_actions import reset_member_actions_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
 from .auth_wecom.api import router as auth_wecom_router
 from .commerce.api import router as commerce_router
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
         reset_questionnaire_fixture_state()
         reset_questionnaire_h5_write_fixture_state()
         reset_automation_fixture_state()
+        reset_member_actions_fixture_state()
         reset_group_ops_fixture_state()
         reset_commerce_fixture_state()
         reset_media_library_fixture_state()

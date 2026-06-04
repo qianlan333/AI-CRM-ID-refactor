@@ -1,31 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
-from aicrm_next.integration_gateway.legacy_automation_facade import get_automation_member_detail_from_legacy
 from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
 
 router = APIRouter()
 wildcard_router = APIRouter()
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-
-
-@router.api_route("/api/admin/automation-conversion/member", methods=["GET", "HEAD"])
-async def automation_member_detail_route(request: Request) -> Response:
-    external_contact_id = str(request.query_params.get("external_contact_id") or "").strip()
-    phone = str(request.query_params.get("phone") or "").strip()
-    payload = get_automation_member_detail_from_legacy(external_contact_id=external_contact_id, phone=phone)
-    status_code = 200 if payload.get("ok") else 400
-    return JSONResponse(
-        payload,
-        status_code=status_code,
-        headers={
-            "X-AICRM-Route-Owner": "ai_crm_next",
-            "X-AICRM-Compatibility-Facade": "legacy_automation_facade",
-        },
-    )
 
 
 @router.api_route("/admin/hxc-dashboard", methods=_ALL_METHODS)
@@ -69,6 +52,5 @@ async def legacy_customer_automation_compat_routes(request: Request) -> Response
 @wildcard_router.api_route("/api/alipay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
-@wildcard_router.api_route("/api/admin/automation-conversion/member/{path:path}", methods=_ALL_METHODS)
 async def legacy_production_compat_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
