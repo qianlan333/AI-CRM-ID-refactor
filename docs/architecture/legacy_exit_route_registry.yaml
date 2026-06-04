@@ -223,12 +223,12 @@ routes:
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: high
-    adapter_mode: real_blocked
+    adapter_mode: production
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_cloud_orchestrator_media_upload_adapter.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Legacy rollback removed; Next guarded media upload adapter only for Cloud Orchestrator image uploads; real WeCom media upload is blocked by default and wecom_media_upload_executed=false.
+    notes: Legacy rollback removed; Next media upload adapter owns Cloud Orchestrator image uploads; production uses the approved WeCom client gateway to return a real temporary image media_id and reports wecom_media_upload_executed=true.
   - route_id: media_library_admin_pages_family
     path_pattern: /admin/*-library
     methods: [GET]

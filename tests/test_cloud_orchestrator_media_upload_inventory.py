@@ -36,11 +36,11 @@ def test_cloud_orchestrator_media_upload_inventory_covers_frontend_callers():
         assert marker in source
 
 
-def test_cloud_orchestrator_media_upload_inventory_documents_no_real_side_effects():
+def test_cloud_orchestrator_media_upload_inventory_documents_media_upload_boundary():
     source = INVENTORY.read_text(encoding="utf-8")
 
-    assert "real_external_call_executed=false" in source
-    assert "wecom_media_upload_executed=false" in source
-    assert "does not execute real WeCom media upload" in source
+    assert "real_external_call_executed=true" in source
+    assert "wecom_media_upload_executed=true" in source
+    assert "real WeCom temporary image media upload" in source
     assert "campaign execute" in source
     assert "Sidebar material real send" in source
