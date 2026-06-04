@@ -18,12 +18,10 @@ def test_public_product_page_renders_next_display_contract(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert response.headers["X-AICRM-Fallback-Used"] == "false"
-    assert response.headers["X-AICRM-Payment-Request-Executed"] == "false"
-    assert response.headers["X-AICRM-Order-Create-Executed"] == "false"
     assert "测试商品" in response.text
-    assert "CNY 129.00" in response.text
     assert "/pay/test-product" in response.text
-    assert "不创建订单" in response.text
+    assert "不创建订单" not in response.text
+    assert "商品编码" not in response.text
     assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 

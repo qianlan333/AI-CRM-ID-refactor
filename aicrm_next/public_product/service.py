@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+import json
 from typing import Any
 
 from aicrm_next.commerce.domain import preview_product
@@ -131,50 +132,25 @@ def product_not_found_payload(path: Any) -> dict[str, Any]:
 def render_product_page(product: dict[str, Any]) -> str:
     title = escape(str(product.get("title") or "商品详情"))
     description = escape(str(product.get("description") or ""))
-    price = format_price(product)
-    status = "可查看" if product.get("enabled", True) else "不可购买"
-    cta = escape(str(product.get("buy_button_text") or "查看商品"))
+    cta = escape(str(product.get("buy_button_text") or product.get("cta_text") or "立即报名"))
     product_code = escape(str(product.get("product_code") or ""))
     media = _render_detail_media(product)
-    sections = _render_detail_sections(product)
-    fallback = (
-        f"""
-      <section class="hero-panel">
-        <div class="eyebrow">黄小璨 · 首月体验</div>
-        <h1>{title}</h1>
-        <p class="summary">{description or "面向新用户的轻量体验权益。"}</p>
-        <dl class="product-specs">
-          <div><dt>商品编码</dt><dd>{product_code}</dd></div>
-          <div><dt>价格</dt><dd>{price}</dd></div>
-          <div><dt>状态</dt><dd>{status}</dd></div>
-        </dl>
-      </section>
-"""
-        if not media
-        else ""
-    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>{title} · 商品详情</title>
-  {_page_styles()}
+  {_product_page_styles()}
 </head>
 <body class="product-body">
-  <main class="product-page" data-route-owner="ai_crm_next" data-fallback-used="false" data-payment-request-executed="false" data-order-create-executed="false">
+  <main class="product-page" data-route-owner="ai_crm_next" data-fallback-used="false">
     {media}
-    {fallback}
-    {sections}
-    <section class="safety-note">
-      <strong>当前页面只展示商品信息</strong>
-      <span>不创建订单，不发起真实支付。</span>
-    </section>
   </main>
   <nav class="sticky-buy" aria-label="商品操作">
     <div>
       <div class="sticky-title">{title}</div>
-      <div class="sticky-price"><small>{escape(str(product.get("currency") or "CNY"))}</small>{_price_amount(product)}</div>
+      <div class="sticky-price"><small>¥</small>{_price_amount(product)}</div>
     </div>
     <a class="cta" href="/pay/{product_code}">{cta}</a>
   </nav>
@@ -182,36 +158,57 @@ def render_product_page(product: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_pay_landing(product: dict[str, Any]) -> str:
+def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> str:
     title = escape(str(product.get("title") or "支付入口"))
-    price = format_price(product)
-    product_code = escape(str(product.get("product_code") or ""))
-    cta = escape(str(product.get("buy_button_text") or "立即报名"))
+    state_json = json.dumps(page_state, ensure_ascii=False).replace("</", "<\\/")
+    require_mobile_html = (
+        """
+      <div class="pay-mobile" id="mobileBlock">
+        <label class="pay-label" for="mobileInput">手机号</label>
+        <input id="mobileInput" inputmode="numeric" maxlength="11" placeholder="请输入手机号">
+        <div class="error-text" id="mobileError"></div>
+      </div>"""
+        if page_state.get("require_mobile")
+        else ""
+    )
+    action_html = (
+        f'<a class="button-link" href="{escape(str(page_state.get("oauth_start_url") or ""), quote=True)}">微信授权</a>'
+        if not page_state.get("identity_ready")
+        else f'<button id="payButton" class="pay-action" type="button" {"disabled" if not page_state.get("enabled") else ""}>{escape(str(page_state.get("cta_text") or "确认支付"))}</button>'
+    )
+    state_message = "当前支付暂未启用。" if not page_state.get("enabled") else ("需要先完成微信授权。" if not page_state.get("identity_ready") else "已就绪。")
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>{title} · 支付入口</title>
-  {_page_styles()}
+  {_pay_page_styles()}
 </head>
 <body class="product-body">
-  <main class="product-page pay-page" data-route-owner="ai_crm_next" data-fallback-used="false" data-payment-request-executed="false" data-order-create-executed="false">
-    <section class="hero-panel pay-panel">
-      <div class="eyebrow">支付落地页</div>
-      <h1>{title}</h1>
-      <p class="summary">支付/下单动作已受控阻断，本页不会创建订单，也不会调用微信支付或支付宝。</p>
-      <dl class="product-specs">
-        <div><dt>商品编码</dt><dd>{product_code}</dd></div>
-        <div><dt>价格</dt><dd>{price}</dd></div>
-      </dl>
-      <div class="pay-actions">
-        <a class="secondary-link" href="/p/{product_code}">返回商品详情</a>
-        <button class="disabled-pay" type="button" disabled>{cta} · 支付暂不可用</button>
+  <main class="pay-page" data-route-owner="ai_crm_next" data-fallback-used="false">
+    <section class="pay-card" id="checkoutCard">
+      <div class="pay-title">确认报名信息</div>
+      <div class="pay-row">
+        <span class="pay-label">购买商品</span>
+        <span class="pay-value">{title}</span>
       </div>
-      <p class="quiet">不会创建订单，不会调用微信支付或支付宝。</p>
+      <div class="pay-row">
+        <span class="pay-label">支付金额</span>
+        <span class="pay-value">¥{_price_amount(product)}</span>
+      </div>
+      {require_mobile_html}
+      <div id="payState" class="state-line">{state_message}</div>
+      {action_html}
+    </section>
+
+    <section class="pay-card success-box" id="successBox">
+      <div class="success-tick">✓</div>
+      <div class="success-title">支付成功</div>
+      <div class="success-desc" id="successDesc">报名成功</div>
     </section>
   </main>
+  {_pay_page_script(state_json)}
 </body>
 </html>"""
 
@@ -305,6 +302,253 @@ def format_price(product: dict[str, Any]) -> str:
     cents = int(product.get("price_cents") or 0)
     currency = str(product.get("currency") or "CNY").strip() or "CNY"
     return f"{currency} {cents / 100:.2f}"
+
+
+def _product_page_styles() -> str:
+    return """<style>
+    :root { --text: #10203a; --line: #e4eaf4; --cta: #f4b345; --cta-deep: #d88700; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #fff; color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; }
+    .product-page { width: min(100%, 750px); min-height: 100vh; margin: 0 auto; background: #fff; padding-bottom: 88px; }
+    .detail-media { background: #fff; }
+    .slice-img { width: 100%; display: block; background: #fff; }
+    .sticky-buy {
+      position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 20;
+      width: min(100%, 750px); padding: 10px 14px 12px; background: rgba(255, 253, 248, .96);
+      backdrop-filter: blur(12px); border-top: 1px solid rgba(236, 217, 184, .86);
+      box-shadow: 0 -10px 34px rgba(26, 32, 48, .12);
+      display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 12px; align-items: center;
+    }
+    .sticky-title { font-size: 12px; font-weight: 900; color: #5a5146; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sticky-price { font-size: 22px; font-weight: 950; color: #c56e00; letter-spacing: 0; }
+    .sticky-price small { font-size: 12px; margin-right: 2px; }
+    .cta {
+      height: 52px; border: 0; border-radius: 999px; background: var(--cta); color: #2a1c07;
+      font-weight: 950; font-size: 15px; box-shadow: 0 8px 18px rgba(244, 179, 69, .34);
+      display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+  </style>"""
+
+
+def _pay_page_styles() -> str:
+    return """<style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fe;
+      --panel: #ffffff;
+      --line: #e4eaf4;
+      --text: #10203a;
+      --muted: #687891;
+      --blue: #2f6df6;
+      --green: #128a45;
+      --green-bg: #e9f8ef;
+      --red: #e23030;
+      --shadow: 0 18px 50px rgba(23, 42, 76, .08);
+    }
+    * { box-sizing: border-box; }
+    body.product-body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    .pay-page { width: min(100%, 520px); min-height: 100vh; margin: 0 auto; padding: 72px 18px 110px; }
+    .pay-card { border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: var(--shadow); padding: 20px; }
+    .pay-title { font-size: 21px; font-weight: 950; margin-bottom: 14px; letter-spacing: 0; }
+    .pay-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding: 12px 0; }
+    .pay-label { color: var(--muted); font-weight: 800; }
+    .pay-value { font-weight: 900; text-align: right; overflow-wrap: anywhere; }
+    .pay-mobile { margin-top: 18px; }
+    .pay-mobile label { display: block; margin-bottom: 7px; }
+    .pay-mobile input { width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 8px; padding: 0 13px; outline: none; font: inherit; }
+    .pay-mobile input:focus { border-color: #9bb8ff; box-shadow: 0 0 0 3px rgba(47, 109, 246, .12); }
+    .state-line { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .state-line.error { color: var(--red); }
+    .state-line.success { color: var(--green); }
+    .error-text { font-size: 12px; color: var(--red); margin-top: 6px; min-height: 18px; }
+    .pay-action, .button-link {
+      width: 100%; height: 52px; border: 0; border-radius: 8px; background: var(--blue); color: #fff;
+      font: inherit; font-weight: 950; margin-top: 12px; cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .pay-action[disabled] { opacity: .55; cursor: default; }
+    .success-box { display: none; text-align: center; padding-top: 6px; margin-top: 14px; }
+    .success-box.show { display: block; }
+    .success-tick { width: 66px; height: 66px; border-radius: 50%; background: var(--green-bg); color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; margin: 18px auto; }
+    .success-title { font-size: 22px; font-weight: 950; }
+    .success-desc { color: var(--muted); margin: 8px 0 0; }
+  </style>"""
+
+
+def _pay_page_script(state_json: str) -> str:
+    return f"""<script>
+    (function () {{
+      const state = {state_json};
+      const payButton = document.getElementById("payButton");
+      const stateLine = document.getElementById("payState");
+      const mobileInput = document.getElementById("mobileInput");
+      const mobileError = document.getElementById("mobileError");
+      const checkoutCard = document.getElementById("checkoutCard");
+      const successBox = document.getElementById("successBox");
+      const successDesc = document.getElementById("successDesc");
+      let activeOrderNo = "";
+
+      function setState(message, type) {{
+        if (!stateLine) return;
+        stateLine.textContent = message;
+        stateLine.classList.remove("error", "success");
+        if (type) stateLine.classList.add(type);
+      }}
+
+      function setMobileError(message) {{
+        if (mobileError) mobileError.textContent = message || "";
+      }}
+
+      function normalizedMobile() {{
+        return String((mobileInput && mobileInput.value) || "").replace(/\\D+/g, "");
+      }}
+
+      function validateMobile() {{
+        if (!state.require_mobile) return "";
+        const value = normalizedMobile();
+        if (!/^1\\d{{10}}$/.test(value)) {{
+          setMobileError("请填写 11 位手机号后再继续。");
+          return "";
+        }}
+        setMobileError("");
+        return value;
+      }}
+
+      function invokeBridge(payParams) {{
+        return new Promise((resolve) => {{
+          const call = function () {{
+            window.WeixinJSBridge.invoke("getBrandWCPayRequest", payParams, function (res) {{
+              resolve(res || {{}});
+            }});
+          }};
+          if (typeof window.WeixinJSBridge === "undefined") {{
+            document.addEventListener("WeixinJSBridgeReady", call, false);
+          }} else {{
+            call();
+          }}
+        }});
+      }}
+
+      async function confirmStatus(outTradeNo, refresh) {{
+        const url = state.status_url_template.replace("{{out_trade_no}}", encodeURIComponent(outTradeNo)) + (refresh ? "?refresh=1" : "");
+        const response = await fetch(url, {{ credentials: "same-origin" }});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {{
+          throw new Error(payload.error || "支付结果确认失败");
+        }}
+        return payload.order || {{}};
+      }}
+
+      function delay(ms) {{
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+      }}
+
+      async function waitForPaid(outTradeNo) {{
+        for (let index = 0; index < 8; index += 1) {{
+          const order = await confirmStatus(outTradeNo, index === 0);
+          if (order.status === "paid") return order;
+          await delay(900);
+        }}
+        return confirmStatus(outTradeNo, true);
+      }}
+
+      async function createOrder() {{
+        const body = {{
+          product_code: state.product.product_code,
+          order_source: "product_checkout"
+        }};
+        if (state.require_mobile) {{
+          const mobile = validateMobile();
+          if (!mobile) return null;
+          body.mobile = mobile;
+        }}
+        const response = await fetch(state.create_order_url, {{
+          method: "POST",
+          credentials: "same-origin",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(body)
+        }});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {{
+          if (payload.oauth_start_url) {{
+            window.location.href = payload.oauth_start_url;
+            return null;
+          }}
+          throw new Error(payload.error || "下单失败");
+        }}
+        return payload;
+      }}
+
+      function isSafeRedirectUrl(url) {{
+        return /^https:\\/\\//.test(url) || /^\\/(?!\\/)[^\\s\\\\]*$/.test(url);
+      }}
+
+      function completionActionFromOrder(order) {{
+        const action = order && order.completion_action ? order.completion_action : {{}};
+        const actionUrl = String((action && action.redirect_url) || "");
+        if (action && action.type === "redirect" && actionUrl && isSafeRedirectUrl(actionUrl)) {{
+          return {{ type: "redirect", redirect_url: actionUrl }};
+        }}
+        return {{ type: "default", redirect_url: "" }};
+      }}
+
+      function showPaid(order) {{
+        const completionAction = completionActionFromOrder(order || {{}});
+        if (completionAction.type === "redirect" && completionAction.redirect_url) {{
+          setState("报名成功，正在跳转...", "success");
+          window.location.href = completionAction.redirect_url;
+          return;
+        }}
+        if (checkoutCard) checkoutCard.style.display = "none";
+        if (successBox) successBox.classList.add("show");
+        if (successDesc) {{
+          successDesc.textContent = "已购买 " + state.product.name + "，支付金额 ¥" + (Number(state.product.amount_total || 0) / 100).toFixed(2) + "。";
+        }}
+      }}
+
+      if (payButton) {{
+        payButton.addEventListener("click", async function () {{
+          if (state.require_mobile && !validateMobile()) return;
+          payButton.disabled = true;
+          setState("正在创建订单...");
+          try {{
+            const payload = await createOrder();
+            if (!payload) {{
+              payButton.disabled = false;
+              return;
+            }}
+            activeOrderNo = payload.order.out_trade_no;
+            setState("等待微信支付确认...");
+            const payResult = await invokeBridge(payload.pay_params);
+            const message = String(payResult.err_msg || "");
+            if (message.indexOf(":ok") === -1) {{
+              throw new Error(message.indexOf(":cancel") !== -1 ? "支付已取消" : "支付未完成");
+            }}
+            setState("正在确认支付结果...");
+            const order = await waitForPaid(activeOrderNo);
+            if (order.status !== "paid") {{
+              throw new Error("支付结果确认中，请稍后刷新查看");
+            }}
+            setState("支付成功", "success");
+            showPaid(order);
+          }} catch (err) {{
+            setState(err.message || "支付失败，请稍后重试", "error");
+            payButton.disabled = false;
+          }}
+        }});
+      }}
+
+      if (mobileInput) {{
+        mobileInput.addEventListener("input", function () {{
+          if (mobileError) mobileError.textContent = "";
+        }});
+      }}
+    }})();
+  </script>"""
 
 
 def _page_styles() -> str:

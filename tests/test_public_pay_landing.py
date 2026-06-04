@@ -12,18 +12,18 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
-def test_public_pay_landing_renders_blocked_payment_state(monkeypatch) -> None:
+def test_public_pay_landing_renders_wechat_jsapi_checkout(monkeypatch) -> None:
     response = _client(monkeypatch).get("/pay/test-product")
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert response.headers["X-AICRM-Fallback-Used"] == "false"
-    assert response.headers["X-AICRM-Payment-Request-Executed"] == "false"
-    assert response.headers["X-AICRM-Order-Create-Executed"] == "false"
     assert "测试商品" in response.text
-    assert "支付/下单动作已受控阻断" in response.text
-    assert "disabled" in response.text
-    assert "/p/test-product" in response.text
+    assert "确认报名信息" in response.text
+    assert "/api/h5/wechat-pay/jsapi/orders" in response.text
+    assert "/api/h5/wechat-pay/orders/{out_trade_no}" in response.text
+    assert "WeixinJSBridge.invoke" in response.text
+    assert "支付/下单动作已受控阻断" not in response.text
 
 
 def test_public_pay_landing_unknown_path_is_controlled_404(monkeypatch) -> None:
