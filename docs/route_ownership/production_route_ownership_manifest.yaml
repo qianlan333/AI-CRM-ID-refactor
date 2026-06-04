@@ -1631,24 +1631,30 @@ routes:
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
     current_runtime_owner: next
-    production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Order status API exact route plus production_compat fallback.
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public order read/status APIs are Next-owned; unknown child paths return controlled 410 and production_compat rollback is removed.
   - route_pattern: /api/checkout*
     methods: [POST, OPTIONS, GET, PUT, PATCH, DELETE, HEAD]
     capability_owner: aicrm_next.commerce
     current_runtime_owner: next
     production_behavior: fake_adapter
-    legacy_fallback_allowed: true
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Checkout routes use fake payment adapter unless a separately approved real provider path exists.
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_checkout_orders_registry_lifecycle.py
+    adapter_mode: fake/real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public checkout APIs are Next-owned; checkout creates local/fake orders only, never executes a real payment request, and unknown child paths return controlled 410 without legacy fallback.
   - route_pattern: /api/wechat-pay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

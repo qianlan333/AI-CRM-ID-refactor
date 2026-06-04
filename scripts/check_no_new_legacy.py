@@ -342,6 +342,47 @@ PUBLIC_PRODUCT_PAY_TRUE_MARKERS = {
     "real_enabled default": "public_product_real_enabled_default",
     "default real_enabled": "public_product_real_enabled_default",
 }
+CHECKOUT_ORDERS_COMPAT_ROUTES = ("/api/checkout/{path:path}", "/api/orders/{path:path}")
+CHECKOUT_ORDERS_REGISTRY_RECORDS = (
+    "checkout_wechat_next_checkout",
+    "checkout_alipay_next_checkout",
+    "orders_public_read_next_order_read",
+    "orders_public_status_next_order_read",
+    "checkout_unknown_next_blocked",
+    "orders_unknown_child_next_not_found",
+)
+CHECKOUT_ORDERS_MANIFEST_ROUTES = ("/api/checkout*", "/api/orders*")
+CHECKOUT_ORDERS_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "checkout_orders_legacy_forward",
+    "legacy_flask_facade": "checkout_orders_legacy_facade",
+    "requests.": "checkout_orders_direct_http_client",
+    "httpx.": "checkout_orders_direct_http_client",
+    "access_token": "checkout_orders_access_token_marker",
+    "raw WeChatPay": "checkout_orders_raw_wechatpay_client",
+    "raw Alipay": "checkout_orders_raw_alipay_client",
+}
+CHECKOUT_ORDERS_TRUE_MARKERS = {
+    '"fallback_used": True': "checkout_orders_fallback_true",
+    "'fallback_used': True": "checkout_orders_fallback_true",
+    '"real_external_call_executed": True': "checkout_orders_real_external_call_true",
+    "'real_external_call_executed': True": "checkout_orders_real_external_call_true",
+    "real_external_call_executed=True": "checkout_orders_real_external_call_true",
+    "real_external_call_executed = True": "checkout_orders_real_external_call_true",
+    '"payment_request_executed": True': "checkout_orders_payment_request_true",
+    "'payment_request_executed': True": "checkout_orders_payment_request_true",
+    "payment_request_executed=True": "checkout_orders_payment_request_true",
+    "payment_request_executed = True": "checkout_orders_payment_request_true",
+    '"real_wechat_pay_executed": True': "checkout_orders_real_wechat_pay_true",
+    "'real_wechat_pay_executed': True": "checkout_orders_real_wechat_pay_true",
+    "real_wechat_pay_executed=True": "checkout_orders_real_wechat_pay_true",
+    "real_wechat_pay_executed = True": "checkout_orders_real_wechat_pay_true",
+    '"real_alipay_executed": True': "checkout_orders_real_alipay_true",
+    "'real_alipay_executed': True": "checkout_orders_real_alipay_true",
+    "real_alipay_executed=True": "checkout_orders_real_alipay_true",
+    "real_alipay_executed = True": "checkout_orders_real_alipay_true",
+    "real_enabled default": "checkout_orders_real_enabled_default",
+    "default real_enabled": "checkout_orders_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2667,6 +2708,110 @@ def check_public_product_pay_closeout_lock(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_checkout_orders_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/checkout_orders_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("checkout_orders_inventory_missing", str(inventory_path.relative_to(root)), "missing checkout/orders inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "API <-> Backend <-> Payment Adapter Contract Matrix",
+            "/api/checkout/wechat",
+            "/api/checkout/alipay",
+            "/api/orders/{order_no}",
+            "/api/orders/{order_no}/status",
+            "/api/checkout/{unknown_path}",
+            "/api/orders/{unknown_child_path}",
+            "payment_request_executed=false",
+            "real_external_call_executed=false",
+            "production_compat wildcard removed",
+            "provider notify/return",
+            "admin payment",
+            "H5 payment",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("checkout_orders_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, _methods in _decorator_route_methods(compat_path):
+            if route_path in CHECKOUT_ORDERS_COMPAT_ROUTES:
+                violations.append(
+                    Violation(
+                        "checkout_orders_production_compat_wildcard",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Checkout/orders public API wildcard rollback is deletion_locked to Next; keep provider/admin/h5 payment wildcards out of scope.",
+                    )
+                )
+
+    commerce_paths = [
+        root / "aicrm_next/commerce/api.py",
+        root / "aicrm_next/commerce/application.py",
+    ]
+    for path in commerce_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(root))
+        for marker, code in CHECKOUT_ORDERS_DIRECT_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Checkout/orders Next closeout must not call legacy facades, direct HTTP clients, raw payment clients, or access-token paths.",
+                    )
+                )
+        for marker, code in CHECKOUT_ORDERS_TRUE_MARKERS.items():
+            if marker in text:
+                violations.append(
+                    Violation(
+                        code,
+                        rel,
+                        marker,
+                        "Checkout/orders Next closeout must keep fallback, real external, and real payment execution flags false.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in CHECKOUT_ORDERS_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("checkout_orders_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("checkout_orders_registry_owner", route_id, "runtime_owner=production_compat"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("checkout_orders_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("checkout_orders_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("checkout_orders_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in CHECKOUT_ORDERS_MANIFEST_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("checkout_orders_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") not in {"next", "next_checkout", "next_order_read"}:
+            violations.append(Violation("checkout_orders_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("checkout_orders_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("checkout_orders_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("checkout_orders_manifest_lifecycle", route_path, str(record)))
+
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -4159,6 +4304,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_hxc_dashboard_closeout_lock(ROOT)
         + check_admin_auth_login_closeout_lock(ROOT)
         + check_public_product_pay_closeout_lock(ROOT)
+        + check_checkout_orders_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)

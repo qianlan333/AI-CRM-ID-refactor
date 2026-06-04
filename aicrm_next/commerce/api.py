@@ -51,6 +51,64 @@ def _raise_http(exc: Exception) -> None:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _checkout_order_headers(*, order_create_executed: str = "false") -> dict[str, str]:
+    return {
+        "X-AICRM-Route-Owner": "ai_crm_next",
+        "X-AICRM-Fallback-Used": "false",
+        "X-AICRM-Real-External-Call-Executed": "false",
+        "X-AICRM-Payment-Request-Executed": "false",
+        "X-AICRM-Order-Create-Executed": order_create_executed,
+    }
+
+
+def _checkout_order_side_effects(*, order_create_executed: str | bool = False) -> dict:
+    return {
+        "fallback_used": False,
+        "real_external_call_executed": False,
+        "payment_request_executed": False,
+        "real_wechat_pay_executed": False,
+        "real_alipay_executed": False,
+        "order_create_executed": order_create_executed,
+    }
+
+
+def _checkout_order_options_payload(route: str, methods: list[str], *, adapter_mode: str = "fake/real_blocked") -> dict:
+    return {
+        "ok": True,
+        "route": route,
+        "methods": methods,
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "adapter_mode": adapter_mode,
+        "side_effect_safety": _checkout_order_side_effects(),
+    }
+
+
+def _checkout_order_error_payload(
+    *,
+    error_code: str,
+    message: str,
+    method: str,
+    path: str,
+    source_status: str,
+    status_code: int,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error_code": error_code,
+            "message": message,
+            "method": method.upper(),
+            "path": path,
+            "source_status": source_status,
+            "route_owner": "ai_crm_next",
+            **_checkout_order_side_effects(),
+        },
+        status_code=status_code,
+        headers=_checkout_order_headers(),
+    )
+
+
 def _product_admin_context(
     request: Request,
     *,
@@ -431,28 +489,89 @@ def product_page(request: Request, page_slug: str) -> str:
 
 
 @router.post("/api/checkout/wechat")
-def checkout_wechat(payload: CheckoutRequest) -> dict:
+def checkout_wechat(payload: CheckoutRequest) -> JSONResponse:
     try:
-        return CheckoutCommand("wechat")(payload)
+        result = CheckoutCommand("wechat")(payload)
+        return JSONResponse(result, headers=_checkout_order_headers(order_create_executed="local_only"))
     except Exception as exc:
         _raise_http(exc)
 
 
 @router.post("/api/checkout/alipay")
-def checkout_alipay(payload: CheckoutRequest) -> dict:
+def checkout_alipay(payload: CheckoutRequest) -> JSONResponse:
     try:
-        return CheckoutCommand("alipay")(payload)
+        result = CheckoutCommand("alipay")(payload)
+        return JSONResponse(result, headers=_checkout_order_headers(order_create_executed="local_only"))
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.options("/api/checkout/wechat")
+def checkout_wechat_options() -> JSONResponse:
+    payload = _checkout_order_options_payload("/api/checkout/wechat", ["POST", "OPTIONS"])
+    return JSONResponse(payload, headers=_checkout_order_headers())
+
+
+@router.options("/api/checkout/alipay")
+def checkout_alipay_options() -> JSONResponse:
+    payload = _checkout_order_options_payload("/api/checkout/alipay", ["POST", "OPTIONS"])
+    return JSONResponse(payload, headers=_checkout_order_headers())
+
+
+@router.api_route("/api/checkout/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+def checkout_unknown(path: str, request: Request) -> JSONResponse:
+    return _checkout_order_error_payload(
+        error_code="checkout_path_removed",
+        message="unknown checkout API path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/checkout/{path}",
+        source_status="next_checkout_not_found",
+        status_code=410,
+    )
 
 
 @router.get("/api/orders/{order_no}")
 @router.get("/api/orders/{order_no}/status")
-def get_order(order_no: str) -> dict:
+def get_order(order_no: str) -> JSONResponse:
     try:
-        return GetOrderQuery()(order_no)
+        return JSONResponse(GetOrderQuery()(order_no), headers=_checkout_order_headers())
+    except NotFoundError as exc:
+        return _checkout_order_error_payload(
+            error_code="order_not_found",
+            message=str(exc),
+            method="GET",
+            path=f"/api/orders/{order_no}",
+            source_status="next_order_read_not_found",
+            status_code=404,
+        )
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.options("/api/orders/{order_no}")
+def get_order_options(order_no: str) -> JSONResponse:
+    payload = _checkout_order_options_payload(f"/api/orders/{order_no}", ["GET", "OPTIONS"], adapter_mode="none")
+    payload["source_status"] = "next_order_read"
+    return JSONResponse(payload, headers=_checkout_order_headers())
+
+
+@router.options("/api/orders/{order_no}/status")
+def get_order_status_options(order_no: str) -> JSONResponse:
+    payload = _checkout_order_options_payload(f"/api/orders/{order_no}/status", ["GET", "OPTIONS"], adapter_mode="none")
+    payload["source_status"] = "next_order_read"
+    return JSONResponse(payload, headers=_checkout_order_headers())
+
+
+@router.api_route("/api/orders/{order_no}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+def order_unknown_child(order_no: str, path: str, request: Request) -> JSONResponse:
+    return _checkout_order_error_payload(
+        error_code="order_child_path_removed",
+        message="unknown order API child path is closed in Next; legacy fallback is removed",
+        method=request.method,
+        path=f"/api/orders/{order_no}/{path}",
+        source_status="next_order_child_not_found",
+        status_code=410,
+    )
 
 
 @router.post("/api/wechat-pay/notify")

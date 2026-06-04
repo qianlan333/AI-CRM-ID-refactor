@@ -39,7 +39,7 @@ def test_public_product_manifest_records_are_locked_and_out_of_scope_retained() 
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
 
-    for route in ["/api/checkout*", "/api/orders*", "/api/admin/wechat-pay*", "/api/h5/wechat-pay*"]:
+    for route in ["/api/admin/wechat-pay*", "/api/h5/wechat-pay*"]:
         record = records[route]
         assert record["legacy_fallback_allowed"] is True
         assert record["delete_ready"] is False
