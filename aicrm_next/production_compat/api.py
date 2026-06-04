@@ -11,12 +11,6 @@ wildcard_router = APIRouter()
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
-@router.api_route("/login", methods=_ALL_METHODS)
-@router.api_route("/logout", methods=_ALL_METHODS)
-async def legacy_admin_auth_routes(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
-
-
 @router.api_route("/p/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/pay/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)

@@ -26,6 +26,12 @@ PRODUCTION_COMPAT_BEHAVIORS = {"legacy_forward", "scheduled_safe_mode"}
 RESOLUTION_SAMPLES = [
     ("GET", "/health"),
     ("GET", "/api/system/health"),
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("OPTIONS", "/login"),
+    ("GET", "/logout"),
+    ("OPTIONS", "/logout"),
+    ("GET", "/auth/wecom/start"),
     ("GET", "/api/customers"),
     ("GET", "/api/customers/wx_ext_001"),
     ("GET", "/api/customers/wx_ext_001/timeline"),

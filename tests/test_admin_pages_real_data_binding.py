@@ -843,7 +843,7 @@ def test_automation_program_entry_channels_page_uses_next_binding_payload(monkey
     assert "/api/admin/automation-conversion/programs/7/channel-bindings" in response.text
 
 
-def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
+def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monkeypatch):
     import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
@@ -866,8 +866,11 @@ def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert "legacy-auth-forwarded:GET:/login:next=/admin/automation-conversion/programs/7/entry-channels" in response.text
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert "后台登录" in response.text
+    assert 'action="/login"' in response.text
+    assert "/auth/wecom/start" in response.text
 
 
 def test_automation_program_summary_derives_publish_state_from_next_readiness():

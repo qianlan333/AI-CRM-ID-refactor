@@ -1589,32 +1589,32 @@ routes:
     notes: Frontend compatibility route inventory endpoint.
   - route_id: frontend_compat_auth_pages
     path_pattern: /login
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: production_compat
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
-    external_side_effect_risk: low
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_console_shell.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Login route retained as legacy admin auth fallback.
+    methods: [GET, POST, OPTIONS]
+    capability_owner: aicrm_next.admin_auth
+    runtime_owner: next_auth
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_auth_registry_lifecycle.py
+    rollback_owner: aicrm_next.admin_auth
+    notes: Login route is Next-owned; legacy rollback removed; break-glass local auth only; WeCom SSO link points to existing blocked auth/wecom route.
   - route_id: frontend_compat_logout_pages
     path_pattern: /logout
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: production_compat
-    legacy_fallback_allowed: true
-    legacy_source: production_compat
-    external_side_effect_risk: low
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_console_shell.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Logout route retained as legacy admin auth fallback.
+    methods: [GET, OPTIONS]
+    capability_owner: aicrm_next.admin_auth
+    runtime_owner: next_auth
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_auth_registry_lifecycle.py
+    rollback_owner: aicrm_next.admin_auth
+    notes: Logout route is Next-owned; clears Next admin session cookie and redirects to /login; legacy rollback removed.
   - route_id: frontend_compat_admin_logout
     path_pattern: /admin/logout
     methods: [GET]

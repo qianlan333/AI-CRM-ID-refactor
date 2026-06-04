@@ -97,7 +97,7 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_api_docs": "/admin/api-docs",
         "api.admin_console_jobs": "/admin/jobs",
         "api.admin_dashboard_shell_context": "/api/admin/dashboard/shell-context",
-        "api.admin_logout": "/admin/logout",
+        "api.admin_logout": "/logout",
     }
     base = path_map.get(name, "#")
     query = {key: value for key, value in path_params.items() if value not in (None, "")}

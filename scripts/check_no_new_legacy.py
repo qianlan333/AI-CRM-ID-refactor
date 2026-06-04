@@ -281,6 +281,29 @@ HXC_DASHBOARD_TRUE_MARKERS = {
     '"wecom_api_called": True': "hxc_dashboard_wecom_api_true",
     "'wecom_api_called': True": "hxc_dashboard_wecom_api_true",
 }
+ADMIN_AUTH_LOGIN_ROUTES = ("/login", "/logout")
+ADMIN_AUTH_LOGIN_REGISTRY_RECORDS = ("frontend_compat_auth_pages", "frontend_compat_logout_pages")
+ADMIN_AUTH_LOGIN_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "admin_auth_legacy_forward",
+    "legacy_flask_facade": "admin_auth_legacy_facade",
+    "admin_auth_routes": "admin_auth_legacy_handler",
+    "requests.": "admin_auth_direct_http_client",
+    "httpx": "admin_auth_direct_http_client",
+    "access_token": "admin_auth_access_token_marker",
+    "exchange_code_for_wecom_user": "admin_auth_direct_wecom_exchange",
+    "build_wecom_qr_login_url": "admin_auth_direct_wecom_authorize",
+    "build_wecom_oauth_login_url": "admin_auth_direct_wecom_authorize",
+}
+ADMIN_AUTH_LOGIN_TRUE_MARKERS = {
+    '"fallback_used": True': "admin_auth_fallback_true",
+    "'fallback_used': True": "admin_auth_fallback_true",
+    '"real_external_call_executed": True': "admin_auth_real_external_call_true",
+    "'real_external_call_executed': True": "admin_auth_real_external_call_true",
+    "real_external_call_executed=True": "admin_auth_real_external_call_true",
+    "real_external_call_executed = True": "admin_auth_real_external_call_true",
+    "real_enabled default": "admin_auth_real_enabled_default",
+    "default real_enabled": "admin_auth_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2406,6 +2429,100 @@ def check_hxc_dashboard_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_admin_auth_login_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/admin_auth_login_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("admin_auth_login_inventory_missing", str(inventory_path.relative_to(root)), "missing admin auth login inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend <-> API <-> Backend Contract Matrix",
+            "GET 200, non-empty",
+            "Invalid credential controlled",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "/auth/wecom/start",
+            "/auth/wecom/callback",
+            "Do not change payment",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("admin_auth_login_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        for route_path, _methods in _decorator_route_methods(compat_path):
+            if route_path in ADMIN_AUTH_LOGIN_ROUTES:
+                violations.append(
+                    Violation(
+                        "admin_auth_login_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Admin auth login/logout is deletion_locked to Next; do not register production_compat rollback routes.",
+                    )
+                )
+
+    auth_root = root / "aicrm_next/admin_auth"
+    if auth_root.exists():
+        for path in auth_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            rel = str(path.relative_to(root))
+            for marker, code in ADMIN_AUTH_LOGIN_DIRECT_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "Admin auth login/logout Next closeout must not call legacy auth handlers or direct HTTP/WeCom token exchange paths.",
+                        )
+                    )
+            for marker, code in ADMIN_AUTH_LOGIN_TRUE_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "Admin auth login/logout Next closeout must keep fallback and real external execution flags false.",
+                        )
+                    )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in ADMIN_AUTH_LOGIN_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("admin_auth_login_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("admin_auth_login_registry_owner", route_id, "runtime_owner=production_compat"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("admin_auth_login_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("admin_auth_login_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("admin_auth_login_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in ADMIN_AUTH_LOGIN_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("admin_auth_login_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next":
+            violations.append(Violation("admin_auth_login_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("admin_auth_login_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("admin_auth_login_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("admin_auth_login_manifest_lifecycle", route_path, str(record)))
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -3896,6 +4013,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
+        + check_admin_auth_login_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
