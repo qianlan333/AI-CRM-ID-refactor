@@ -17,6 +17,7 @@ from scripts.check_no_new_legacy import (
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
+    check_post_legacy_architecture_freeze,
     check_public_product_pay_closeout_lock,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -199,6 +200,70 @@ def test_no_new_legacy_checker_exempts_tests_and_docs(tmp_path: Path) -> None:
     tests.write_text("from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask\n", encoding="utf-8")
 
     assert scan_source_tree(tmp_path) == []
+
+
+def test_post_legacy_architecture_freeze_guard_flags_deleted_handler_registration(tmp_path: Path) -> None:
+    docs = tmp_path / "docs/architecture"
+    dev_docs = tmp_path / "docs/development"
+    http = tmp_path / "wecom_ability_service/http"
+    next_root = tmp_path / "aicrm_next"
+    docs.mkdir(parents=True)
+    dev_docs.mkdir(parents=True)
+    http.mkdir(parents=True)
+    next_root.mkdir(parents=True)
+
+    (docs / "post_legacy_next_development_rules.md").write_text(
+        "所有新功能必须 Next-owned\n"
+        "禁止新增 production_compat\n"
+        "禁止新增 legacy Flask forward\n"
+        "禁止新增 compatibility facade\n"
+        "route registry\n"
+        "production route ownership manifest\n"
+        "aicrm_next.customer_read_model\n"
+        "aicrm_next.cloud_orchestrator\n"
+        "aicrm_next.commerce\n"
+        "aicrm_next.media_library\n"
+        "aicrm_next.customer_tags\n"
+        "aicrm_next.questionnaire\n"
+        "duplicate checkout\nduplicate media upload\nduplicate customer selector\n"
+        "duplicate tag catalog\nduplicate broadcast sender\nWeComClient.from_app\n"
+        "real_external_call_executed=True\nreal_enabled default\n",
+        encoding="utf-8",
+    )
+    (dev_docs / "codex_post_legacy_development_contract.md").write_text(
+        "每次开发前必须读取\n"
+        "existing module search\n"
+        "不允许恢复 `production_compat`\n"
+        "不允许新增 `forward_to_legacy_flask`\n"
+        "不允许新建 legacy facade\n"
+        "不允许默认真实外部调用\n"
+        "不允许不登记 route owner\n"
+        "不允许跳过 strict guard\n",
+        encoding="utf-8",
+    )
+    (docs / "post_legacy_legacy_module_prune_inventory.md").write_text(
+        "legacy module / package | 替代 Next 模块 | 删除决策\n"
+        "`wecom_ability_service/http/admin_hxc_dashboard.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/admin_auth_routes.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/cloud_orchestrator_campaigns.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/cloud_orchestrator_media.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/cloud_orchestrator_endpoint.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/automation_conversion.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/automation_conversion_runtime_api.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/automation_conversion_task_runtime.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/automation_conversion_execution_outbound.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/automation_conversion_member_api.py` | next | keep_temporarily_historical\n"
+        "`wecom_ability_service/http/customer_automation.py` | next | keep_temporarily_historical\n",
+        encoding="utf-8",
+    )
+    (http / "__init__.py").write_text("from .admin_auth_routes import register_routes\n", encoding="utf-8")
+    (http / "admin_auth_routes.py").write_text("def register_routes(bp): pass\n", encoding="utf-8")
+    (next_root / "main.py").write_text("from fastapi import FastAPI\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_post_legacy_architecture_freeze(tmp_path)}
+
+    assert "post_legacy_deleted_handler_still_exists" in codes
+    assert "post_legacy_deleted_handler_still_registered" in codes
 
 
 def test_final_cleanup_guard_flags_reintroduced_production_compat_source(tmp_path: Path) -> None:

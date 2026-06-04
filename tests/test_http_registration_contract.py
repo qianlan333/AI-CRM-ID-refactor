@@ -37,7 +37,7 @@ HTTP_LARGE_ROUTE_OWNER_LINE_LIMITS = {
     "admin_wechat_pay.py": 360,
     "admin_config.py": 350,
     "automation_conversion.py": 350,
-    "internal_auth.py": 360,
+    "internal_auth.py": 390,
 }
 
 def test_routes_py_has_no_direct_bp_route_decorators():
@@ -436,13 +436,13 @@ def test_public_questionnaire_oauth_routes_stay_in_child_controller():
         assert route_modules[route] == expected_diagnostics_module
 
 
-def test_admin_auth_login_routes_stay_in_child_controller():
+def test_admin_auth_legacy_module_is_pruned_but_shell_routes_stay_internal():
     from wecom_ability_service import create_app
 
     internal_auth_source = (ROOT / "wecom_ability_service" / "http" / "internal_auth.py").read_text(encoding="utf-8")
-    assert len(internal_auth_source.splitlines()) <= 360
+    assert len(internal_auth_source.splitlines()) <= 390
+    assert not (ROOT / "wecom_ability_service" / "http" / "admin_auth_routes.py").exists()
     for forbidden in (
-        "def admin_login(",
         "def admin_wecom_start(",
         "build_wecom_qr_login_url",
         "login_break_glass_session",
@@ -455,15 +455,14 @@ def test_admin_auth_login_routes_stay_in_child_controller():
         rule.rule: getattr(app.view_functions[rule.endpoint], "__module__", "")
         for rule in app.url_map.iter_rules()
     }
-    expected_module = "wecom_ability_service.http.admin_auth_routes"
 
     for route in {
-        "/login",
-        "/logout",
         "/auth/wecom/start",
         "/auth/wecom/callback",
     }:
-        assert route_modules[route] == expected_module
+        assert route not in route_modules
+    for route in {"/login", "/logout"}:
+        assert route_modules[route] == "wecom_ability_service.http.internal_auth"
 
 
 def test_admin_broadcast_job_routes_stay_in_child_controller():

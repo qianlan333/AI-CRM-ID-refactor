@@ -481,6 +481,72 @@ POST_LEGACY_DEFERRED_ROUTES = {
         "manifest_owner": "next_command",
     },
 }
+POST_LEGACY_DEVELOPMENT_DOCS = {
+    Path("docs/architecture/post_legacy_next_development_rules.md"): (
+        "所有新功能必须 Next-owned",
+        "禁止新增 production_compat",
+        "禁止新增 legacy Flask forward",
+        "禁止新增 compatibility facade",
+        "route registry",
+        "production route ownership manifest",
+        "aicrm_next.customer_read_model",
+        "aicrm_next.cloud_orchestrator",
+        "aicrm_next.commerce",
+        "aicrm_next.media_library",
+        "aicrm_next.customer_tags",
+        "aicrm_next.questionnaire",
+    ),
+    Path("docs/development/codex_post_legacy_development_contract.md"): (
+        "每次开发前必须读取",
+        "existing module search",
+        "不允许恢复 `production_compat`",
+        "不允许新增 `forward_to_legacy_flask`",
+        "不允许新建 legacy facade",
+        "不允许默认真实外部调用",
+        "不允许不登记 route owner",
+        "不允许跳过 strict guard",
+    ),
+    Path("docs/architecture/post_legacy_legacy_module_prune_inventory.md"): (
+        "legacy module / package",
+        "替代 Next 模块",
+        "删除决策",
+        "keep_temporarily_historical",
+        "wecom_ability_service/http/admin_hxc_dashboard.py",
+        "wecom_ability_service/http/admin_auth_routes.py",
+    ),
+}
+POST_LEGACY_DELETED_HTTP_MODULES = {
+    "admin_hxc_dashboard": Path("wecom_ability_service/http/admin_hxc_dashboard.py"),
+    "admin_auth_routes": Path("wecom_ability_service/http/admin_auth_routes.py"),
+}
+POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES = {
+    "cloud_orchestrator_campaigns": Path("wecom_ability_service/http/cloud_orchestrator_campaigns.py"),
+    "cloud_orchestrator_media": Path("wecom_ability_service/http/cloud_orchestrator_media.py"),
+    "cloud_orchestrator_endpoint": Path("wecom_ability_service/http/cloud_orchestrator_endpoint.py"),
+    "automation_conversion": Path("wecom_ability_service/http/automation_conversion.py"),
+    "automation_conversion_runtime_api": Path("wecom_ability_service/http/automation_conversion_runtime_api.py"),
+    "automation_conversion_task_runtime": Path("wecom_ability_service/http/automation_conversion_task_runtime.py"),
+    "automation_conversion_execution_outbound": Path("wecom_ability_service/http/automation_conversion_execution_outbound.py"),
+    "automation_conversion_member_api": Path("wecom_ability_service/http/automation_conversion_member_api.py"),
+    "customer_automation": Path("wecom_ability_service/http/customer_automation.py"),
+}
+POST_LEGACY_MAIN_FORBIDDEN_MARKERS = {
+    "production_compat_router": "post_legacy_main_production_compat_router",
+    "production_compat_wildcard_router": "post_legacy_main_production_compat_wildcard_router",
+    "forward_to_legacy_flask": "post_legacy_main_legacy_forward",
+    "legacy_flask_facade": "post_legacy_main_legacy_facade",
+    "X-AICRM-Compatibility-Facade": "post_legacy_main_compatibility_facade_header",
+}
+POST_LEGACY_PARALLEL_MODULE_MARKERS = {
+    "duplicate checkout": "post_legacy_duplicate_checkout_guard",
+    "duplicate media upload": "post_legacy_duplicate_media_upload_guard",
+    "duplicate customer selector": "post_legacy_duplicate_customer_selector_guard",
+    "duplicate tag catalog": "post_legacy_duplicate_tag_catalog_guard",
+    "duplicate broadcast sender": "post_legacy_duplicate_broadcast_sender_guard",
+    "WeComClient.from_app": "post_legacy_wecom_client_from_app_guard",
+    "real_external_call_executed=True": "post_legacy_real_external_true_guard",
+    "real_enabled default": "post_legacy_real_enabled_default_guard",
+}
 PAYMENT_WILDCARD_FINAL_DIRECT_MARKERS = {
     "forward_to_legacy_flask": "payment_wildcard_final_legacy_forward",
     "legacy_flask_facade": "payment_wildcard_final_legacy_facade",
@@ -4881,6 +4947,85 @@ def check_post_legacy_deferred_api_cleanup(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_post_legacy_architecture_freeze(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    for rel_path, required_phrases in POST_LEGACY_DEVELOPMENT_DOCS.items():
+        path = root / rel_path
+        if not path.exists():
+            violations.append(Violation("post_legacy_development_doc_missing", str(rel_path), "required post-legacy freeze document is missing"))
+            continue
+        text = path.read_text(encoding="utf-8")
+        for phrase in required_phrases:
+            if phrase not in text:
+                violations.append(Violation("post_legacy_development_doc_phrase_missing", str(rel_path), phrase))
+
+    inventory_path = root / "docs/architecture/post_legacy_legacy_module_prune_inventory.md"
+    inventory_text = inventory_path.read_text(encoding="utf-8") if inventory_path.exists() else ""
+    for module_name, rel_path in POST_LEGACY_DELETED_HTTP_MODULES.items():
+        module_path = root / rel_path
+        if module_path.exists():
+            violations.append(Violation("post_legacy_deleted_handler_still_exists", str(rel_path), "deleted legacy handler file is still present"))
+        if f"`{rel_path.as_posix()}`" not in inventory_text or "`deleted`" not in inventory_text:
+            violations.append(Violation("post_legacy_deleted_handler_inventory_missing", str(inventory_path.relative_to(root)), module_name))
+
+    for module_name, rel_path in POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES.items():
+        if f"`{rel_path.as_posix()}`" not in inventory_text or "keep_temporarily_historical" not in inventory_text:
+            violations.append(Violation("post_legacy_kept_handler_inventory_missing", str(inventory_path.relative_to(root)), module_name))
+
+    http_init = root / "wecom_ability_service/http/__init__.py"
+    if http_init.exists():
+        http_init_text = http_init.read_text(encoding="utf-8")
+        for module_name in POST_LEGACY_DELETED_HTTP_MODULES:
+            if module_name in http_init_text:
+                violations.append(Violation("post_legacy_deleted_handler_still_registered", str(http_init.relative_to(root)), module_name))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        main_text = main_path.read_text(encoding="utf-8")
+        for marker, code in POST_LEGACY_MAIN_FORBIDDEN_MARKERS.items():
+            if marker in main_text:
+                violations.append(Violation(code, str(main_path.relative_to(root)), marker))
+
+    for rel_root in ("aicrm_next", "scripts", "tools"):
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        for path in search_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            rel = path.relative_to(root)
+            for module_name in POST_LEGACY_DELETED_HTTP_MODULES:
+                dotted = f"wecom_ability_service.http.{module_name}"
+                if dotted in text or f"from wecom_ability_service.http import {module_name}" in text:
+                    violations.append(Violation("post_legacy_deleted_handler_import", str(rel), dotted))
+
+    combined_docs = "\n".join(
+        (root / rel_path).read_text(encoding="utf-8")
+        for rel_path in POST_LEGACY_DEVELOPMENT_DOCS
+        if (root / rel_path).exists()
+    )
+    for marker, code in POST_LEGACY_PARALLEL_MODULE_MARKERS.items():
+        if marker not in combined_docs:
+            violations.append(Violation(code, "post_legacy_development_docs", marker))
+
+    if root == ROOT:
+        route_report = build_route_check_report(strict=True)
+        zero_counter_keys = (
+            "deleted_but_still_registered_count",
+            "production_compat_route_count",
+            "production_compat_catch_all_count",
+            "legacy_fallback_routes_count",
+            "wildcard_legacy_forward_count",
+            "undocumented_routes_count",
+            "unknown_owner_routes_count",
+        )
+        for key in zero_counter_keys:
+            if route_report[key] != 0:
+                violations.append(Violation("post_legacy_route_resolution_counter_nonzero", "runtime", f"{key}={route_report[key]}"))
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -4915,6 +5060,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_customer_automation_webhook_next_safe_mode(ROOT)
         + check_final_legacy_exit_cleanup(ROOT)
         + check_post_legacy_deferred_api_cleanup(ROOT)
+        + check_post_legacy_architecture_freeze(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

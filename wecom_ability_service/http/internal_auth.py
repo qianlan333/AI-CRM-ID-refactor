@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from flask import abort, current_app, jsonify, redirect, render_template, request, url_for
+from werkzeug.routing import BuildError
 
 from ..domains.admin_auth import (
     admin_role_can_access_module,
@@ -13,6 +14,7 @@ from ..domains.admin_auth import (
     ensure_admin_console_action_token,
     exchange_code_for_wecom_user,
     is_break_glass_login_enabled,
+    logout_admin_session,
     require_admin_login,
     require_admin_roles,
 )
@@ -94,6 +96,23 @@ def require_internal_api_token(
 
 def current_admin_session_user() -> dict | None:
     return current_admin_user()
+
+
+def admin_login():
+    if current_admin_session_user():
+        return redirect(_safe_next_path(request.args.get("next")), code=302)
+    return _render_admin_auth_page(next_path=request.args.get("next"))
+
+
+def admin_logout():
+    logout_admin_session()
+    return redirect("/login", code=302)
+
+
+def register_routes(bp):
+    bp.route("/login", methods=["GET"])(admin_login)
+    bp.route("/logout", methods=["GET"])(admin_logout)
+    return bp
 
 
 def _safe_next_path(value: object) -> str:
@@ -186,7 +205,7 @@ def _wecom_login_links(next_path: str) -> dict[str, str]:
     try:
         qr_url = url_for("api.admin_wecom_start", next=next_path, mode="qr")
         oauth_url = url_for("api.admin_wecom_start", next=next_path, mode="oauth")
-    except RuntimeError:
+    except (RuntimeError, BuildError):
         qr_url = "/auth/wecom/start?mode=qr"
         oauth_url = "/auth/wecom/start?mode=oauth"
     return {"qr": qr_url, "oauth": oauth_url}
