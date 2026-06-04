@@ -71,7 +71,7 @@ def test_new_production_compat_fallback_fails_strict_when_not_registered() -> No
     assert report["wildcard_routes"][0]["path"] == "/api/new-legacy/{path:path}"
 
 
-def test_wildcard_fallback_is_recognized_when_registered() -> None:
+def test_wildcard_fallback_fails_strict_even_when_registered() -> None:
     app = FastAPI()
 
     async def fallback():
@@ -94,9 +94,10 @@ def test_wildcard_fallback_is_recognized_when_registered() -> None:
 
     report = build_route_check_report(app=app, service=RouteRegistryService(registry), strict=True)
 
-    assert report["ok"] is True
+    assert report["ok"] is False
     assert report["wildcard_routes"][0]["path"] == "/api/known/{path:path}"
     assert report["legacy_fallback_routes"][0]["path"] == "/api/known/{path:path}"
+    assert "legacy_fallback_route_registered:/api/known/{path:path}" in report["blockers"]
 
 
 def test_path_wildcard_runtime_route_does_not_match_single_segment_placeholder() -> None:
@@ -130,8 +131,9 @@ def test_path_wildcard_runtime_route_does_not_match_single_segment_placeholder()
 
     report = build_route_check_report(app=app, service=RouteRegistryService(registry), strict=True)
 
-    assert report["ok"] is True
+    assert report["ok"] is False
     assert report["legacy_fallback_routes"][0]["registry"]["route_id"] == "message_wildcard"
+    assert "legacy_fallback_route_registered:/api/messages/{path:path}" in report["blockers"]
 
 
 def test_deleted_route_still_registered_fails_strict_mode() -> None:

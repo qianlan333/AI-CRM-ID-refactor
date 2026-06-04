@@ -76,6 +76,10 @@ SIDE_EFFECT_MARKERS = {
     "httpx.delete(",
 }
 CUSTOMER_READ_ROLLBACK_FLAG = "CUSTOMER_READ_MODEL" + "_LEGACY_ROLLBACK_ENABLED"
+PROD_COMPAT_ROUTER_NAME = "production_compat" + "_router"
+PROD_COMPAT_WILDCARD_ROUTER_NAME = "production_compat" + "_wildcard_router"
+PROD_COMPAT_INCLUDE = f"include_router({PROD_COMPAT_ROUTER_NAME})"
+PROD_COMPAT_WILDCARD_INCLUDE = f"include_router({PROD_COMPAT_WILDCARD_ROUTER_NAME})"
 MESSAGES_BROAD_WILDCARD = "/api/messages*"
 MESSAGES_BROAD_WILDCARD_RUNTIME = "/api/messages/{path:path}"
 SIDEBAR_READONLY_ROUTES = (
@@ -1336,12 +1340,12 @@ def check_sidebar_jssdk_next_adapter(root: Path = ROOT) -> list[Violation]:
         main_text = main_path.read_text(encoding="utf-8")
         if "sidebar_jssdk_router" not in main_text:
             violations.append(Violation("sidebar_jssdk_router_not_included", str(main_path.relative_to(root)), "sidebar_jssdk_router"))
-        elif "production_compat_router" in main_text and main_text.index("sidebar_jssdk_router") > main_text.index("production_compat_router"):
+        elif PROD_COMPAT_ROUTER_NAME in main_text and main_text.index("sidebar_jssdk_router") > main_text.index(PROD_COMPAT_ROUTER_NAME):
             violations.append(
                 Violation(
                     "sidebar_jssdk_router_order",
                     str(main_path.relative_to(root)),
-                    "sidebar_jssdk_router must be included before production_compat_router",
+                    f"sidebar_jssdk_router must be included before {PROD_COMPAT_ROUTER_NAME}",
                 )
             )
 
@@ -1759,18 +1763,18 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
     else:
         if write_family.get("runtime_owner") != "next_command":
             violations.append(Violation("questionnaire_admin_write_registry_owner", "/api/admin/questionnaires*", f"runtime_owner={write_family.get('runtime_owner')}"))
-        if write_family.get("legacy_fallback_allowed") is not True:
+        if write_family.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("questionnaire_admin_write_registry_legacy_allowed", "/api/admin/questionnaires*", f"legacy_fallback_allowed={write_family.get('legacy_fallback_allowed')}"))
-        if write_family.get("legacy_source") != "legacy_flask_facade":
+        if write_family.get("legacy_source") != "":
             violations.append(Violation("questionnaire_admin_write_registry_legacy_source", "/api/admin/questionnaires*", f"legacy_source={write_family.get('legacy_source')}"))
         if write_family.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_admin_write_registry_adapter_mode", "/api/admin/questionnaires*", f"adapter_mode={write_family.get('adapter_mode')}"))
-        if write_family.get("delete_status") != "active_fallback":
+        if write_family.get("delete_status") != "deletion_locked":
             violations.append(Violation("questionnaire_admin_write_registry_delete_status", "/api/admin/questionnaires*", f"delete_status={write_family.get('delete_status')}"))
-        if write_family.get("replacement_status") != "production_fallback":
+        if write_family.get("replacement_status") != "locked":
             violations.append(Violation("questionnaire_admin_write_registry_replacement_status", "/api/admin/questionnaires*", f"replacement_status={write_family.get('replacement_status')}"))
         notes = str(write_family.get("notes") or "")
-        if "CommandBus" not in notes or "legacy_flask_facade" not in notes or "production_data_ready" not in notes:
+        if "CommandBus" not in notes or "legacy rollback removed" not in notes:
             violations.append(Violation("questionnaire_admin_write_registry_notes", "/api/admin/questionnaires*", notes))
 
     export_record = registry_by_path.get("/api/admin/questionnaires/{questionnaire_id}/export")
@@ -1800,16 +1804,16 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
             continue
         if record.get("current_runtime_owner") != "next_command":
             violations.append(Violation("questionnaire_admin_write_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
-        expected_behavior = "next_command_local_legacy_write_fallback" if route_path == "/api/admin/questionnaires*" else "next_command"
+        expected_behavior = "next_command" if route_path == "/api/admin/questionnaires*" else "next_command"
         if record.get("production_behavior") != expected_behavior:
             violations.append(Violation("questionnaire_admin_write_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
-        expected_fallback = route_path == "/api/admin/questionnaires*"
+        expected_fallback = False
         if record.get("legacy_fallback_allowed") is not expected_fallback:
             violations.append(Violation("questionnaire_admin_write_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
         if record.get("adapter_mode") != "real_blocked":
             violations.append(Violation("questionnaire_admin_write_manifest_adapter_mode", route_path, f"adapter_mode={record.get('adapter_mode')}"))
-        expected_delete_status = "active_fallback" if route_path == "/api/admin/questionnaires*" else "deletion_locked"
-        expected_replacement_status = "production_fallback" if route_path == "/api/admin/questionnaires*" else "locked"
+        expected_delete_status = "deletion_locked"
+        expected_replacement_status = "locked"
         if record.get("delete_status") != expected_delete_status or record.get("replacement_status") != expected_replacement_status:
             violations.append(Violation("questionnaire_admin_write_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
     return violations
@@ -2275,13 +2279,13 @@ def check_wecom_tag_read_next_native(root: Path = ROOT) -> list[Violation]:
     if main_path.exists():
         main_text = main_path.read_text(encoding="utf-8")
         read_include = main_text.find("include_router(customer_tags_read_router)")
-        compat_include = main_text.find("include_router(production_compat_router)")
-        if read_include < 0 or compat_include < 0 or read_include > compat_include:
+        compat_include = main_text.find(PROD_COMPAT_INCLUDE)
+        if read_include < 0 or (compat_include >= 0 and read_include > compat_include):
             violations.append(
                 Violation(
                     "wecom_tag_read_router_order",
                     str(main_path.relative_to(root)),
-                    "customer_tags_read_router must be included before production_compat_router",
+                    f"customer_tags_read_router must be included before {PROD_COMPAT_ROUTER_NAME}",
                 )
             )
     if production_compat_path.exists():
@@ -4400,11 +4404,11 @@ def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
     if main_path.exists():
         main_text = main_path.read_text(encoding="utf-8")
         write_include = main_text.find("include_router(customer_tags_write_router)")
-        compat_include = main_text.find("include_router(production_compat_router)")
+        compat_include = main_text.find(PROD_COMPAT_INCLUDE)
         if write_include < 0:
             violations.append(Violation("wecom_tag_write_router_order", str(main_path.relative_to(root)), "customer_tags_write_router missing"))
         elif compat_include >= 0 and write_include > compat_include:
-            violations.append(Violation("wecom_tag_write_router_order", str(main_path.relative_to(root)), "customer_tags_write_router must be included before production_compat_router"))
+            violations.append(Violation("wecom_tag_write_router_order", str(main_path.relative_to(root)), f"customer_tags_write_router must be included before {PROD_COMPAT_ROUTER_NAME}"))
 
     if production_compat_path.exists():
         compat_sources = _decorated_route_function_sources(production_compat_path)
@@ -4590,6 +4594,83 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
     return violations
 
 
+def check_final_legacy_exit_cleanup(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    main_path = root / "aicrm_next/main.py"
+
+    if compat_path.exists():
+        source = compat_path.read_text(encoding="utf-8")
+        for marker, code in {
+            "@router.api_route": "final_cleanup_prod_compat_route_decorator",
+            "@wildcard_router.api_route": "final_cleanup_production_compat_wildcard_route",
+            "forward_to_legacy_flask": "final_cleanup_production_compat_legacy_forward",
+            "legacy_flask_facade": "final_cleanup_production_compat_legacy_facade",
+        }.items():
+            if marker in source:
+                violations.append(
+                    Violation(
+                        code,
+                        str(compat_path.relative_to(root)),
+                        marker,
+                        "Final Legacy Exit requires production_compat to stay route-free and detached from the app runtime.",
+                    )
+                )
+
+    if main_path.exists():
+        main_text = main_path.read_text(encoding="utf-8")
+        for marker in (PROD_COMPAT_ROUTER_NAME, PROD_COMPAT_WILDCARD_ROUTER_NAME, PROD_COMPAT_INCLUDE, PROD_COMPAT_WILDCARD_INCLUDE):
+            if marker in main_text:
+                violations.append(
+                    Violation(
+                        "final_cleanup_production_compat_included",
+                        str(main_path.relative_to(root)),
+                        marker,
+                        "Remove production compatibility router imports and include_router calls from app startup.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    for record in registry_records:
+        route = str(record.get("path_pattern") or record.get("route_id") or "<unknown>")
+        if record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("final_cleanup_registry_legacy_fallback_allowed", route, "legacy_fallback_allowed=true"))
+        if record.get("runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("final_cleanup_registry_legacy_owner", route, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("delete_status") == "next_primary_with_legacy_rollback":
+            violations.append(Violation("final_cleanup_registry_rollback_lifecycle", route, f"delete_status={record.get('delete_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for record in manifest_records:
+        route = str(record.get("route_pattern") or "<unknown>")
+        if record.get("legacy_fallback_allowed") is True:
+            violations.append(Violation("final_cleanup_manifest_legacy_fallback_allowed", route, "legacy_fallback_allowed=true"))
+        if record.get("current_runtime_owner") in {"production_compat", "legacy_forward"}:
+            violations.append(Violation("final_cleanup_manifest_legacy_owner", route, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("final_cleanup_manifest_legacy_behavior", route, f"production_behavior={record.get('production_behavior')}"))
+
+    route_report = build_route_check_report(strict=True)
+    final_counts = {
+        "undocumented_routes_count": len(route_report["undocumented_routes"]),
+        "legacy_fallback_routes_count": len(route_report["legacy_fallback_routes"]),
+        "unknown_owner_routes_count": len(route_report["unknown_owner_routes"]),
+        "deleted_but_still_registered_routes_count": len(route_report["deleted_but_still_registered_routes"]),
+    }
+    for count_name, count in final_counts.items():
+        if count != 0:
+            violations.append(
+                Violation(
+                    "final_cleanup_route_registry_count",
+                    "runtime",
+                    f"{count_name}={count}",
+                    "Final Legacy Exit strict runtime counters must stay at zero.",
+                )
+            )
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -4622,6 +4703,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_automation_workspace_runtime_next_safe_mode(ROOT)
         + check_automation_member_actions_next_safe_mode(ROOT)
         + check_customer_automation_webhook_next_safe_mode(ROOT)
+        + check_final_legacy_exit_cleanup(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

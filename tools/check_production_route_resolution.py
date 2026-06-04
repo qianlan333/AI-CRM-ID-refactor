@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from aicrm_next.platform_foundation.route_registry.checker import build_route_check_report
+
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 
 NEXT_OWNED_BEHAVIORS = {"next_exact", "next_command", "next_adapter", "guarded_preview", "fake_adapter", "readonly_facade"}
@@ -329,6 +331,7 @@ def resolution_samples(routes: list[dict[str, Any]], records: list[dict[str, Any
 def run_check() -> dict[str, Any]:
     records = load_manifest()
     routes = collect_app_routes()
+    registry_report = build_route_check_report(strict=True)
     shadowed = shadowed_exact_routes(routes, records)
     samples = resolution_samples(routes, records)
     blockers: list[str] = []
@@ -364,6 +367,15 @@ def run_check() -> dict[str, Any]:
             or record.get("current_runtime_owner") == "blocked"
         ],
     }
+    registry_final_counts = {
+        "undocumented_routes_count": len(registry_report["undocumented_routes"]),
+        "legacy_fallback_routes_count": len(registry_report["legacy_fallback_routes"]),
+        "unknown_owner_routes_count": len(registry_report["unknown_owner_routes"]),
+        "deleted_but_still_registered_count": len(registry_report["deleted_but_still_registered_routes"]),
+    }
+    for name, value in registry_final_counts.items():
+        if value:
+            blockers.append(f"route_registry_final_count_nonzero:{name}={value}")
     return {
         "ok": not blockers,
         "blockers": sorted(set(blockers)),
@@ -371,6 +383,8 @@ def run_check() -> dict[str, Any]:
         "route_count": len(routes),
         "production_compat_route_count": len([route for route in routes if route["is_production_compat"]]),
         "production_compat_catch_all_count": len([route for route in routes if route["is_production_compat"] and route["is_catch_all"]]),
+        "wildcard_legacy_forward_count": len([route for route in routes if route["is_production_compat"] and route["is_catch_all"]]),
+        **registry_final_counts,
         "shadowed_exact_routes": shadowed,
         "resolution_samples": samples,
         "categories": {
@@ -398,6 +412,11 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- route_count: `{result['route_count']}`",
             f"- production_compat_route_count: `{result['production_compat_route_count']}`",
             f"- production_compat_catch_all_count: `{result['production_compat_catch_all_count']}`",
+            f"- legacy_fallback_routes_count: `{result['legacy_fallback_routes_count']}`",
+            f"- wildcard_legacy_forward_count: `{result['wildcard_legacy_forward_count']}`",
+            f"- undocumented_routes_count: `{result['undocumented_routes_count']}`",
+            f"- unknown_owner_routes_count: `{result['unknown_owner_routes_count']}`",
+            f"- deleted_but_still_registered_count: `{result['deleted_but_still_registered_count']}`",
             f"- blockers: `{len(result['blockers'])}`",
             "",
             "## Resolution Samples",

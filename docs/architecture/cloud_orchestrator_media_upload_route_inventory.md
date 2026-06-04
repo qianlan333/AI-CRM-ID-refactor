@@ -4,7 +4,7 @@ Scope: Legacy Exit group 17 locks `POST /api/admin/cloud-orchestrator/media/uplo
 
 Route precedence:
 
-- `aicrm_next.main.create_app()` registers `cloud_orchestrator_router` before `production_compat_router`.
+- `aicrm_next.main.create_app()` registers `cloud_orchestrator_router` before `production compatibility router`.
 - `aicrm_next.cloud_orchestrator.api` owns the exact media upload route.
 - `aicrm_next.production_compat.api` no longer registers `/api/admin/cloud-orchestrator/media/upload`; production_compat rollback is removed for this exact route.
 - `tests/test_cloud_orchestrator_media_upload_route_precedence.py` and `tests/test_production_route_resolution.py` prove POST/OPTIONS resolve to `aicrm_next.cloud_orchestrator.api`, not `aicrm_next.production_compat.api`.

@@ -976,7 +976,8 @@ def test_sidebar_jssdk_guard_flags_legacy_forward_and_direct_http_drift(tmp_path
         "real_external_call_executed = False\n",
         encoding="utf-8",
     )
-    main.write_text("production_compat_router = object\nsidebar_jssdk_router = object\n", encoding="utf-8")
+    compat_router_name = "production_compat" + "_router"
+    main.write_text(f"{compat_router_name} = object\nsidebar_jssdk_router = object\n", encoding="utf-8")
     registry.write_text(
         "routes:\n"
         "  - path_pattern: /api/sidebar/jssdk-config\n"
@@ -1728,7 +1729,7 @@ def test_questionnaire_admin_write_guard_flags_legacy_and_lifecycle_drift(tmp_pa
         "routes:\n"
         "  - path_pattern: /api/admin/questionnaires*\n"
         "    runtime_owner: production_compat\n"
-        "    legacy_fallback_allowed: false\n"
+        "    legacy_fallback_allowed: true\n"
         "    legacy_source: production_compat\n"
         "    adapter_mode: real_enabled\n"
         "    delete_status: next_primary_with_legacy_rollback\n"
@@ -1776,7 +1777,7 @@ def test_questionnaire_admin_write_guard_flags_legacy_and_lifecycle_drift(tmp_pa
     assert "questionnaire_admin_write_manifest_legacy_allowed" in codes
 
 
-def test_questionnaire_admin_write_guard_allows_next_commandbus_with_production_fallback(tmp_path: Path) -> None:
+def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
     admin_write = tmp_path / "aicrm_next/questionnaire/admin_write.py"
@@ -1818,12 +1819,12 @@ def test_questionnaire_admin_write_guard_allows_next_commandbus_with_production_
         "routes:\n"
         "  - path_pattern: /api/admin/questionnaires*\n"
         "    runtime_owner: next_command\n"
-        "    legacy_fallback_allowed: true\n"
-        "    legacy_source: legacy_flask_facade\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: ''\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: active_fallback\n"
-        "    replacement_status: production_fallback\n"
-        "    notes: Questionnaire admin write uses Next CommandBus locally and production_data_ready forwards through legacy_flask_facade\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only\n"
         "  - path_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
         "    runtime_owner: next_command\n"
         "    legacy_fallback_allowed: false\n"
@@ -1836,11 +1837,11 @@ def test_questionnaire_admin_write_guard_allows_next_commandbus_with_production_
         "routes:\n"
         "  - route_pattern: /api/admin/questionnaires*\n"
         "    current_runtime_owner: next_command\n"
-        "    production_behavior: next_command_local_legacy_write_fallback\n"
-        "    legacy_fallback_allowed: true\n"
+        "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
-        "    delete_status: active_fallback\n"
-        "    replacement_status: production_fallback\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
@@ -2214,7 +2215,7 @@ def test_wecom_tag_read_guard_flags_legacy_forward_and_lifecycle_drift(tmp_path:
     )
     read_model.write_text("httpx.post('https://example.invalid')\nsource = 'production_success_claimed'\n", encoding="utf-8")
     main.write_text(
-        "app.include_router(production_compat_router)\n"
+        f"app.include_router({'production_compat' + '_router'})\n"
         "app.include_router(customer_tags_read_router)\n",
         encoding="utf-8",
     )
@@ -2295,7 +2296,7 @@ def test_wecom_tag_read_guard_allows_next_read_primary_with_out_of_scope_familie
     production_compat.write_text("from fastapi import APIRouter\nrouter = APIRouter()\n", encoding="utf-8")
     main.write_text(
         "app.include_router(customer_tags_read_router)\n"
-        "app.include_router(production_compat_router)\n",
+        f"app.include_router({'production_compat' + '_router'})\n",
         encoding="utf-8",
     )
     _write_wecom_tag_read_docs(tmp_path)

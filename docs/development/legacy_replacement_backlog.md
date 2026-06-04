@@ -1,6 +1,6 @@
 # Legacy Replacement Backlog
 
-Status: Phase 2 planning only. This document does not change runtime behavior, remove fallback, narrow production_compat, enable timers, or open real external calls.
+Status: Final cleanup frozen. Historical planning entries are archived; restoring production compatibility runtime requires a new explicit gated PR.
 
 ## Replacement Principles
 
@@ -12,11 +12,11 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 ## Business Continuity
 
 - Do not interrupt current production daily use.
-- Do not delete current fallback.
-- Do not remove current production_compat routes.
+- Do not restore production compatibility fallback.
+- Production compatibility routes have been removed; do not reintroduce them.
 - Do not enable real external calls.
 - Do not let fixture/local_contract data enter production success paths.
-- Every daily-business-critical replacement must keep fallback until parity, checker, smoke, and rollback conditions are satisfied.
+- Every daily-business-critical replacement must keep locked owner until parity, checker, smoke, and rollback conditions are satisfied.
 
 ## Summary By Capability Owner
 
@@ -48,8 +48,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.frontend_compat`
 - priority: `P0` / `phase_3_readonly` / `shell_or_navigation`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_admin_ui_data_parity.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 2. `/admin/customers`
@@ -57,8 +57,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `shell_or_navigation`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_production_runtime_gaps.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 3. `/admin/questionnaires`
@@ -66,8 +66,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.questionnaire`
 - priority: `P0` / `phase_3_readonly` / `shell_or_navigation`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_production_runtime_gaps.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 4. `/api/admin/customers/profile`
@@ -75,8 +75,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_sidebar_profile_next_owner_readiness.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 5. `/api/admin/customers/profile/tags`
@@ -84,8 +84,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_sidebar_profile_next_owner_readiness.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 6. `/api/customers`
@@ -93,8 +93,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_production_runtime_gaps.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 7. `/api/customers/{external_userid}`
@@ -102,8 +102,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_production_runtime_gaps.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 8. `/api/customers/{external_userid}/timeline`
@@ -111,8 +111,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_next_production_runtime_gaps.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 9. `/api/sidebar/contact-binding-status`
@@ -120,8 +120,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.identity_contact`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_sidebar_profile_next_owner_readiness.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ### 10. `/api/sidebar/customer-context`
@@ -129,8 +129,8 @@ Status: Phase 2 planning only. This document does not change runtime behavior, r
 - owner: `aicrm_next.customer_read_model`
 - priority: `P0` / `phase_3_readonly` / `readonly`
 - why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.
-- continuity: During replacement, do not interrupt the current production path. Keep legacy fallback until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
-- fallback until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
+- continuity: During replacement, do not interrupt the current production path. Keep the locked Next owner until Next native parity, checker, smoke verification, and rollback are all satisfied. The route must not regress to 404, 500, empty-data false success, or accidental external side effects.
+- locked owner until: Next native parity, checker pass, smoke verification, rollback path, and owner approval are all complete.
 - verification: tools/check_sidebar_profile_next_owner_readiness.py; read-model parity check; admin/browser smoke for the current page or API; legacy fallback rollback check
 
 ## Full Backlog Index

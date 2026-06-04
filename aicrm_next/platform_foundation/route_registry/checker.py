@@ -186,7 +186,9 @@ def build_route_check_report(
         blockers.extend(f"deleted_route_still_registered:{item['path']}" for item in registered_deleted)
     for item in legacy_fallback:
         registry = item["registry"]
-        if item["is_legacy_forward"] and not registry["legacy_fallback_allowed"]:
+        if strict:
+            blockers.append(f"legacy_fallback_route_registered:{item['path']}")
+        elif item["is_legacy_forward"] and not registry["legacy_fallback_allowed"]:
             blockers.append(f"legacy_forward_not_allowed:{item['path']}")
     if wildcard_routes:
         warnings.extend(f"wildcard_route:{item['methods']} {item['path']}" for item in wildcard_routes)

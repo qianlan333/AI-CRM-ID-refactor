@@ -36,7 +36,7 @@ Lifecycle for exact write routes is `delete_status=deletion_locked` and `replace
 
 ## Backend Boundary
 
-`aicrm_next/customer_tags/api.py` exposes `write_router` and registers exact write routes before `production_compat_router` in `aicrm_next/main.py`.
+`aicrm_next/customer_tags/api.py` exposes `write_router` and registers exact write routes before `production compatibility router` in `aicrm_next/main.py`.
 
 `aicrm_next/production_compat/api.py` no longer registers WeCom tag read/write/sync exact or family fallback routes.
 

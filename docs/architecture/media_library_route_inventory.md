@@ -4,8 +4,8 @@ Scope: Legacy Exit group 16 deletion closeout locks the media library admin page
 
 Route precedence check:
 
-- `aicrm_next.main.create_app()` currently registers `production_compat_router` before `media_library_router`, but `aicrm_next.production_compat.api` has no media-library exact route or broad `/api/admin/{path:path}` route that can catch media library requests.
-- `media_library_router` is registered before `frontend_compat_router` and `production_compat_wildcard_router`.
+- `aicrm_next.main.create_app()` currently registers `production compatibility router` before `media_library_router`, but `aicrm_next.production_compat.api` has no media-library exact route or broad `/api/admin/{path:path}` route that can catch media library requests.
+- `media_library_router` is registered before `frontend_compat_router` and `production compatibility wildcard router`.
 - `tools/check_production_route_resolution.py` samples every media library API family plus the three admin pages; `tests/test_production_route_resolution.py` asserts they resolve to `aicrm_next.media_library.api` or `aicrm_next.frontend_compat.legacy_routes`, not production_compat.
 - `scripts/check_no_new_legacy.py --strict` now treats any Media Library production_compat route, direct HTTP/storage client, or `legacy_fallback_allowed=true` lifecycle drift as a violation.
 

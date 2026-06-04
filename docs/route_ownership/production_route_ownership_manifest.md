@@ -1,7 +1,7 @@
 # Production Route Ownership Manifest
 
-Status: manifest only. This document does not change runtime behavior, narrow
-`production_compat` wildcard routes, enable timers, or open real external calls.
+Status: final frozen. This document does not restore production compatibility
+fallbacks, enable timers, or open real external calls.
 
 The source of truth is
 `docs/route_ownership/production_route_ownership_manifest.yaml`.
@@ -9,13 +9,13 @@ The source of truth is
 ## Ownership Rules
 
 - AI-CRM Next remains the default FastAPI modular monolith runtime.
-- `production_compat` catch-all routes are documented here before any future
-  narrowing work.
+- Production compatibility catch-all routes have been removed from runtime and
+  must not be reintroduced without a new explicit gated adapter PR.
 - Next exact routers own current exact route implementations.
 - `frontend_compat` owns legacy admin page parity and must not add direct
   production SQL.
-- `legacy_facade` and `production_compat` entries are fallbacks, not a signal
-  that old Flask is the preferred implementation.
+- Historical legacy facade notes are archived planning context, not active
+  route ownership.
 - Timer routes remain `scheduled_safe_mode`; this manifest does not approve
   enabling timers.
 - External side-effect routes remain `real_blocked`, `guarded`, or fake adapter
@@ -49,12 +49,11 @@ Run:
   --output-json /tmp/production_route_ownership_manifest.json
 ```
 
-The checker imports the FastAPI app with the legacy production facade enabled
-so `production_compat` routes are visible in `app.routes`. It verifies:
+The checker imports the FastAPI app with final Legacy Exit guards enabled. It verifies:
 
-- required route families match current app routes or production compatibility
-  routes;
-- every `production_compat` catch-all has a manifest entry;
+- required route families match current app routes;
+- production compatibility route count remains zero;
+- legacy fallback route count remains zero;
 - real external side-effect routes are not marked as real production behavior;
 - `/admin/customers` and `/admin/questionnaires` are production readonly facade
   paths and do not allow fixture data in production;

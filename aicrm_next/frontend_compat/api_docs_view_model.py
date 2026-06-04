@@ -125,8 +125,6 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     from aicrm_next.ops_enrollment.api import router as user_ops_router
     from aicrm_next.platform_foundation.api import router as platform_router
     from aicrm_next.public_product.api import router as public_product_router
-    from aicrm_next.production_compat.api import router as production_compat_router
-    from aicrm_next.production_compat.api import wildcard_router as production_compat_wildcard_router
     from aicrm_next.questionnaire.api import router as questionnaire_router
     from aicrm_next.send_content.api import router as send_content_router
 
@@ -150,7 +148,6 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     ]
     if frontend_router is not None:
         routers.append(frontend_router)
-    routers.extend([production_compat_router, production_compat_wildcard_router])
     return routers
 
 

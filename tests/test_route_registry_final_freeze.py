@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _records(path: str) -> list[dict]:
+    return list((yaml.safe_load((ROOT / path).read_text(encoding="utf-8")) or {}).get("routes") or [])
+
+
+def test_legacy_exit_registry_has_no_active_legacy_fallback() -> None:
+    for record in _records("docs/architecture/legacy_exit_route_registry.yaml"):
+        assert record.get("legacy_fallback_allowed") is not True, record.get("route_id")
+        assert record.get("runtime_owner") not in {"production_compat", "legacy_forward"}, record.get("route_id")
+        assert record.get("delete_status") != "next_primary_with_legacy_rollback", record.get("route_id")
+
+
+def test_production_manifest_has_no_active_legacy_forward() -> None:
+    for record in _records("docs/route_ownership/production_route_ownership_manifest.yaml"):
+        assert record.get("legacy_fallback_allowed") is not True, record.get("route_pattern")
+        assert record.get("current_runtime_owner") not in {"production_compat", "legacy_forward"}, record.get("route_pattern")
+        assert record.get("production_behavior") not in {"legacy_forward", "next_primary_with_legacy_rollback"}, record.get("route_pattern")
+
+
+def test_final_closeout_records_are_locked() -> None:
+    registry = {record["route_id"]: record for record in _records("docs/architecture/legacy_exit_route_registry.yaml") if record.get("route_id")}
+    for route_id in (
+        "frontend_compat_auth_pages",
+        "frontend_compat_logout_pages",
+        "public_product_page_next_landing",
+        "checkout_wechat_next_checkout",
+        "wechat_pay_notify_next_payment_notify",
+        "admin_wechat_pay_wildcard_final_closeout",
+    ):
+        record = registry[route_id]
+        assert record["legacy_fallback_allowed"] is False
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
+

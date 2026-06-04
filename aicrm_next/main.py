@@ -49,8 +49,6 @@ from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
 from .public_product.api import router as public_product_router
-from .production_compat.api import router as production_compat_router
-from .production_compat.api import wildcard_router as production_compat_wildcard_router
 from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
 from .radar_links.api import router as radar_links_router
@@ -58,7 +56,6 @@ from .radar_links.repo import reset_radar_links_fixture_state
 from .sidebar_write.api import router as sidebar_write_router
 from .sidebar_write import reset_sidebar_write_fixture_state
 from .shared.repository_provider import RepositoryProviderError
-from .shared.runtime import legacy_production_facade_enabled
 from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
 from .questionnaire.admin_write import reset_questionnaire_admin_write_fixture_state
@@ -132,8 +129,6 @@ def create_app() -> FastAPI:
     app.include_router(customer_tags_read_router)
     app.include_router(customer_tags_write_router)
     app.include_router(cloud_orchestrator_router)
-    if legacy_production_facade_enabled():
-        app.include_router(production_compat_router)
     app.include_router(customer_router)
     app.include_router(customer_tags_router)
     app.include_router(user_ops_router)
@@ -151,8 +146,6 @@ def create_app() -> FastAPI:
     app.include_router(admin_jobs_router)
     app.include_router(owner_migration_router)
     app.include_router(frontend_compat_router)
-    if legacy_production_facade_enabled():
-        app.include_router(production_compat_wildcard_router)
     return app
 
 
