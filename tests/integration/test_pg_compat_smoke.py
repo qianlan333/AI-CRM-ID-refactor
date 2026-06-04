@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
 
 def _insert_segment_with_known_member(app, *, segment_code: str, member_id: int, external_id: str) -> int:
     """造一个最小可用的 segment + automation_member，返回 segment_id。
@@ -796,32 +798,30 @@ def test_cloud_campaign_group_over_500_is_listed_and_batch_started(app):
     assert len(listed) == 505
     assert {row["group_code"] for row in listed} == {group_code}
 
-    started: list[int] = []
+    from aicrm_next.main import create_app as create_next_app
 
-    def fake_start_campaign(*, campaign_id: int, human_approver: str, approval_token_value: str):
-        started.append(int(campaign_id))
-        return {"id": campaign_id, "run_status": "active"}
-
-    client = app.test_client()
-    with patch(
-        "wecom_ability_service.http.cloud_orchestrator_campaigns.approval_token_module.issue_token",
-        return_value={"token": "approval-token"},
-    ), patch(
-        "wecom_ability_service.http.cloud_orchestrator_campaigns.campaign_service.start_campaign",
-        side_effect=fake_start_campaign,
-    ):
-        response = client.post(
-            "/api/admin/cloud-orchestrator/campaigns/batch-start",
-            json={"group_code": group_code, "operator": "tester"},
-        )
+    client = TestClient(create_next_app(), raise_server_exceptions=False)
+    response = client.post(
+        "/api/admin/cloud-orchestrator/campaigns/batch-start",
+        json={"group_code": group_code, "operator": "tester"},
+        headers={"Idempotency-Key": "pg-compat-over-500-batch-start"},
+    )
 
     assert response.status_code == 200
-    body = response.get_json()
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert response.headers["X-AICRM-Fallback-Used"] == "false"
+    body = response.json()
     assert body["ok"] is True
+    assert body["source_status"] == "next_command"
+    assert body["route_owner"] == "ai_crm_next"
+    assert body["fallback_used"] is False
+    assert body["real_external_call_executed"] is False
     assert body["started_count"] == 505
     assert body["skipped_count"] == 0
     assert body["failed_count"] == 0
-    assert len(started) == 505
+    assert len(body["campaigns"]) == 505
+    assert body["side_effect_plan"]["adapter_mode"] == "real_blocked"
+    assert body["side_effect_plan"]["real_external_call_executed"] is False
 
 
 def test_pg_bug_200_register_member_reply_clears_next_due(app):

@@ -10,11 +10,15 @@ HTTP_INIT = ROOT / "wecom_ability_service/http/__init__.py"
 DELETED_MODULES = [
     "wecom_ability_service/http/admin_hxc_dashboard.py",
     "wecom_ability_service/http/admin_auth_routes.py",
-]
-KEPT_MODULES = [
     "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
+    "wecom_ability_service/http/cloud_orchestrator_campaign_details.py",
     "wecom_ability_service/http/cloud_orchestrator_media.py",
     "wecom_ability_service/http/cloud_orchestrator_endpoint.py",
+    "wecom_ability_service/http/cloud_orchestrator_pages.py",
+    "wecom_ability_service/http/cloud_orchestrator_plans.py",
+    "wecom_ability_service/http/cloud_orchestrator_segments.py",
+]
+KEPT_MODULES = [
     "wecom_ability_service/http/automation_conversion.py",
     "wecom_ability_service/http/automation_conversion_runtime_api.py",
     "wecom_ability_service/http/automation_conversion_task_runtime.py",
