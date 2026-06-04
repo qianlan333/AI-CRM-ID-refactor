@@ -62,6 +62,75 @@ def test_questionnaire_share_endpoint_uses_production_public_path(monkeypatch):
     assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
 
 
+def test_next_public_questionnaire_api_returns_already_submitted_redirect(monkeypatch):
+    import aicrm_next.questionnaire.api as questionnaire_api
+
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        questionnaire_api,
+        "get_public_questionnaire_submission_status_from_legacy",
+        lambda slug, **kwargs: {
+            "ok": True,
+            "submitted": True,
+            "slug": slug,
+            "redirect_url": "https://example.com/done",
+            "submitted_url": f"/s/{slug}/submitted",
+        },
+    )
+
+    response = _client(monkeypatch).get(
+        "/api/h5/questionnaires/real-questionnaire",
+        params={"external_userid": "wm_submitted"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "already_submitted"
+    assert response.json()["redirect_url"] == "https://example.com/done"
+
+
+def test_next_public_questionnaire_page_redirects_already_submitted_user(monkeypatch):
+    import aicrm_next.questionnaire.api as questionnaire_api
+
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        questionnaire_api,
+        "get_public_questionnaire_from_legacy",
+        lambda slug: {
+            "ok": True,
+            "questionnaire": {
+                "id": 101,
+                "slug": slug,
+                "title": "真实生产问卷",
+                "description": "",
+                "answer_display_mode": "all_in_one",
+                "redirect_url": "https://example.com/done",
+                "questions": [],
+            },
+            "questions": [],
+        },
+    )
+    monkeypatch.setattr(
+        questionnaire_api,
+        "get_public_questionnaire_submission_status_from_legacy",
+        lambda slug, **kwargs: {
+            "ok": True,
+            "submitted": True,
+            "slug": slug,
+            "redirect_url": "https://example.com/done",
+            "submitted_url": f"/s/{slug}/submitted",
+        },
+    )
+
+    response = _client(monkeypatch).get(
+        "/s/real-questionnaire",
+        params={"external_userid": "wm_submitted"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://example.com/done"
+
+
 def test_questionnaire_admin_page_renders_share_modal(monkeypatch):
     response = _client(monkeypatch).get("/admin/questionnaires")
 

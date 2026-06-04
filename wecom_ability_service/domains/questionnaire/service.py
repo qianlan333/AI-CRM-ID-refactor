@@ -1891,6 +1891,99 @@ def backfill_questionnaire_submission_identities(
     }
 
 
+def backfill_questionnaire_submissions_for_mobile_binding(
+    *,
+    external_userid: str,
+    mobile: str,
+    follow_user_userid: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_mobile = _normalize_mobile(str(mobile or "").strip())
+    normalized_follow_user_userid = str(follow_user_userid or "").strip()
+    normalized_limit = max(1, min(int(limit or 200), 500))
+    if not normalized_external_userid or not normalized_mobile:
+        return {
+            "ok": False,
+            "mode": "questionnaire_submission_mobile_binding_backfill",
+            "reason": "external_userid_and_mobile_required",
+            "updated_count": 0,
+            "submission_ids": [],
+        }
+
+    db = get_db()
+    updated_rows = db.execute(
+        """
+        WITH candidates AS (
+            SELECT id
+            FROM questionnaire_submissions
+            WHERE (external_userid IS NULL OR external_userid = '')
+              AND regexp_replace(COALESCE(mobile_snapshot, ''), '\\D', '', 'g') = ?
+            ORDER BY submitted_at ASC, id ASC
+            LIMIT ?
+        )
+        UPDATE questionnaire_submissions AS qs
+        SET external_userid = ?,
+            follow_user_userid = CASE
+                WHEN COALESCE(qs.follow_user_userid, '') = '' THEN ?
+                ELSE qs.follow_user_userid
+            END,
+            matched_by = CASE
+                WHEN COALESCE(qs.matched_by, '') = '' THEN 'mobile'
+                ELSE qs.matched_by
+            END
+        FROM candidates
+        WHERE qs.id = candidates.id
+        RETURNING qs.id, qs.questionnaire_id, qs.identity_map_id, qs.respondent_key, qs.openid, qs.unionid,
+                  qs.external_userid, qs.follow_user_userid, qs.matched_by, qs.mobile_snapshot,
+                  qs.source_channel, qs.campaign_id, qs.staff_id, qs.total_score, qs.final_tags,
+                  qs.assessment_result_snapshot, qs.result_token, qs.redirect_url_snapshot, qs.submitted_at
+        """,
+        (
+            normalized_mobile,
+            normalized_limit,
+            normalized_external_userid,
+            normalized_follow_user_userid,
+        ),
+    ).fetchall()
+
+    applied_profile_count = 0
+    for row in updated_rows:
+        answer_snapshots = _load_questionnaire_submission_answer_snapshots(int(row["id"]))
+        try:
+            profile_result = apply_questionnaire_sidebar_profile_mapping(
+                dict(row),
+                {"answer_snapshots": answer_snapshots},
+            )
+        except Exception:
+            questionnaire_logger.exception(
+                "questionnaire mobile binding backfill profile mapping failed submission_id=%s",
+                int(row["id"]),
+            )
+            continue
+        if profile_result.get("applied"):
+            applied_profile_count += 1
+
+    db.commit()
+    submission_ids = [int(row["id"]) for row in updated_rows]
+    if submission_ids:
+        questionnaire_logger.info(
+            "questionnaire mobile binding backfilled external_userid=%s mobile=%s submission_count=%s",
+            normalized_external_userid,
+            normalized_mobile,
+            len(submission_ids),
+        )
+    return {
+        "ok": True,
+        "mode": "questionnaire_submission_mobile_binding_backfill",
+        "external_userid_present": True,
+        "mobile_present": True,
+        "updated_count": len(submission_ids),
+        "profile_mapping_applied_count": applied_profile_count,
+        "submission_ids": submission_ids,
+    }
+
+
 def replay_questionnaire_sidebar_profile_mappings(
     *,
     questionnaire_id: int,
@@ -2400,7 +2493,12 @@ def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, 
             mobile_snapshot,
             str((resolved_identity or {}).get("person_id") or (binding or {}).get("person_id") or ""),
         )
-        return {"bound": True, "binding": binding}
+        backfill_result = backfill_questionnaire_submissions_for_mobile_binding(
+            external_userid=external_userid,
+            mobile=mobile_snapshot,
+            follow_user_userid=follow_user_userid,
+        )
+        return {"bound": True, "binding": binding, "submission_backfill": backfill_result}
     except Exception as exc:
         questionnaire_logger.exception(
             "questionnaire mobile bind failed submission_id=%s external_userid=%s",

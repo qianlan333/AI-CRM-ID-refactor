@@ -53,7 +53,9 @@ from .application import (
 from .dto import OAuthCallbackRequest, OAuthStartRequest
 from .oauth import COOKIE_NAME, questionnaire_h5_identity_from_cookies, questionnaire_oauth_state_context
 from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
+    LegacyQuestionnaireDataUnavailable,
     get_public_questionnaire_from_legacy,
+    get_public_questionnaire_submission_status_from_legacy,
     get_questionnaire_detail_from_legacy,
     latest_submit_debug_from_legacy,
 )
@@ -437,6 +439,10 @@ def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> 
     return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
 
 
+def _questionnaire_session_identity_from_request(request: Request) -> dict[str, str]:
+    return legacy_questionnaire_session_identity(request.cookies) or questionnaire_h5_identity_from_cookies(request.cookies)
+
+
 def _questionnaire_share_url(request: Request, questionnaire: dict[str, Any]) -> str:
     public_url = str(questionnaire.get("public_url") or "").strip()
     if public_url.startswith(("http://", "https://")):
@@ -581,9 +587,24 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 
 
 @router.get("/api/h5/questionnaires/{slug}")
-def public_get_questionnaire(slug: str) -> dict:
+def public_get_questionnaire(request: Request, slug: str) -> dict:
     try:
         if production_data_ready():
+            submission_status = get_public_questionnaire_submission_status_from_legacy(
+                slug,
+                session_identity=_questionnaire_session_identity_from_request(request),
+                request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
+            )
+            if submission_status.get("submitted"):
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "already_submitted",
+                        "message": "已经提交过该问卷",
+                        "redirect_url": submission_status.get("redirect_url") or submission_status.get("submitted_url"),
+                    },
+                    status_code=409,
+                )
             return _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
         return GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
@@ -761,7 +782,8 @@ def wechat_oauth_callback_options() -> Response:
 @router.get("/s/{slug}", response_class=HTMLResponse)
 def public_questionnaire_h5_page(request: Request, slug: str):
     try:
-        if production_data_ready():
+        use_production_data = production_data_ready()
+        if use_production_data:
             payload = _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
         else:
             payload = GetPublicQuestionnaireQuery()(slug)
@@ -771,7 +793,21 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     questions = jsonable_encoder(payload.get("questions") or [])
     source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
     request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
-    session_identity = legacy_questionnaire_session_identity(request.cookies) or questionnaire_h5_identity_from_cookies(request.cookies)
+    session_identity = _questionnaire_session_identity_from_request(request)
+    if use_production_data:
+        try:
+            submission_status = get_public_questionnaire_submission_status_from_legacy(
+                slug,
+                session_identity=session_identity,
+                request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
+            )
+        except LegacyQuestionnaireDataUnavailable:
+            submission_status = {}
+        if submission_status.get("submitted"):
+            redirect_url = str(
+                submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
+            ).strip()
+            return RedirectResponse(redirect_url, status_code=302)
     is_wechat_browser = _is_wechat_browser(request)
     is_authorized = bool(session_identity.get("openid") or session_identity.get("unionid") or session_identity.get("respondent_key"))
     oauth_configured = legacy_questionnaire_oauth_is_configured()
