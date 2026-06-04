@@ -114,6 +114,7 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     from aicrm_next.ai_assist.api import router as ai_assist_router
     from aicrm_next.automation_engine.api import router as automation_router
     from aicrm_next.automation_engine.channels_api import router as automation_channels_router
+    from aicrm_next.cloud_orchestrator.api import router as cloud_orchestrator_router
     from aicrm_next.commerce.api import router as commerce_router
     from aicrm_next.customer_read_model.api import router as customer_router
     from aicrm_next.customer_tags.api import read_router as customer_tags_read_router
@@ -123,6 +124,7 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     from aicrm_next.media_library.api import router as media_library_router
     from aicrm_next.ops_enrollment.api import router as user_ops_router
     from aicrm_next.platform_foundation.api import router as platform_router
+    from aicrm_next.public_product.api import router as public_product_router
     from aicrm_next.production_compat.api import router as production_compat_router
     from aicrm_next.production_compat.api import wildcard_router as production_compat_wildcard_router
     from aicrm_next.questionnaire.api import router as questionnaire_router
@@ -139,6 +141,8 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
         identity_router,
         questionnaire_router,
         automation_router,
+        cloud_orchestrator_router,
+        public_product_router,
         commerce_router,
         media_library_router,
         ai_assist_router,

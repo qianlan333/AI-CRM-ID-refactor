@@ -2161,6 +2161,48 @@ routes:
     checker: tests/test_customer_automation_webhook_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
     notes: Legacy production_compat fallback removed; Next CommandBus creates SideEffectPlan and blocked ExternalCallAttempt; source_status=next_customer_webhook_retry_due_plan.
+  - route_id: public_product_page_next_landing
+    path_pattern: /p/{path:path}
+    methods: [GET, HEAD, OPTIONS]
+    capability_owner: aicrm_next.public_product
+    runtime_owner: next_public_product
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_public_product_registry_lifecycle.py
+    rollback_owner: aicrm_next.public_product
+    notes: Public product landing is Next-owned; product display only, no checkout/payment/order side effects, production_compat rollback removed.
+  - route_id: public_pay_landing_next_blocked
+    path_pattern: /pay/{path:path}
+    methods: [GET, HEAD, OPTIONS]
+    capability_owner: aicrm_next.public_product
+    runtime_owner: next_public_pay_landing
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_public_product_registry_lifecycle.py
+    rollback_owner: aicrm_next.public_product
+    notes: Public pay landing is Next-owned; displays controlled blocked payment state and never creates orders or calls payment providers.
+  - route_id: public_product_api_next_contract
+    path_pattern: /api/products/{path:path}
+    methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    capability_owner: aicrm_next.public_product
+    runtime_owner: next_public_product_api
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_public_product_registry_lifecycle.py
+    rollback_owner: aicrm_next.public_product
+    notes: Public product API is Next-owned; known product paths return display contract, unknown paths return controlled 404/410, payment/order write actions are blocked.
 lifecycle_items:
   - legacy_item_id: sample_customer_sidebar_readonly
     capability_owner: aicrm_next.customer_read_model

@@ -304,6 +304,44 @@ ADMIN_AUTH_LOGIN_TRUE_MARKERS = {
     "real_enabled default": "admin_auth_real_enabled_default",
     "default real_enabled": "admin_auth_real_enabled_default",
 }
+PUBLIC_PRODUCT_PAY_ROUTES = ("/p/{path:path}", "/pay/{path:path}", "/api/products/{path:path}")
+PUBLIC_PRODUCT_PAY_REGISTRY_RECORDS = (
+    "public_product_page_next_landing",
+    "public_pay_landing_next_blocked",
+    "public_product_api_next_contract",
+)
+PUBLIC_PRODUCT_PAY_MANIFEST_ROUTES = ("/p/{page_slug}", "/pay/{product_code}", "/api/products*")
+PUBLIC_PRODUCT_PAY_DIRECT_MARKERS = {
+    "forward_to_legacy_flask": "public_product_legacy_forward",
+    "legacy_flask_facade": "public_product_legacy_facade",
+    "WeChatPay": "public_product_direct_wechat_pay",
+    "Alipay": "public_product_direct_alipay",
+    "requests.": "public_product_direct_http_client",
+    "httpx": "public_product_direct_http_client",
+    "access_token": "public_product_access_token_marker",
+    "create_jsapi_order": "public_product_payment_request",
+    "create_h5_order": "public_product_payment_request",
+    "create_wap_order": "public_product_payment_request",
+    "create_order(": "public_product_order_create",
+}
+PUBLIC_PRODUCT_PAY_TRUE_MARKERS = {
+    '"fallback_used": True': "public_product_fallback_true",
+    "'fallback_used': True": "public_product_fallback_true",
+    '"real_external_call_executed": True': "public_product_real_external_call_true",
+    "'real_external_call_executed': True": "public_product_real_external_call_true",
+    "real_external_call_executed=True": "public_product_real_external_call_true",
+    "real_external_call_executed = True": "public_product_real_external_call_true",
+    '"payment_request_executed": True': "public_product_payment_request_true",
+    "'payment_request_executed': True": "public_product_payment_request_true",
+    "payment_request_executed=True": "public_product_payment_request_true",
+    "payment_request_executed = True": "public_product_payment_request_true",
+    '"order_create_executed": True': "public_product_order_create_true",
+    "'order_create_executed': True": "public_product_order_create_true",
+    "order_create_executed=True": "public_product_order_create_true",
+    "order_create_executed = True": "public_product_order_create_true",
+    "real_enabled default": "public_product_real_enabled_default",
+    "default real_enabled": "public_product_real_enabled_default",
+}
 CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE = "/api/admin/cloud-orchestrator/media/upload"
 CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE = "/admin/cloud-orchestrator/campaigns"
 CLOUD_ORCHESTRATOR_CAMPAIGN_READ_ROUTE = "/api/admin/cloud-orchestrator/campaigns*"
@@ -2523,6 +2561,112 @@ def check_admin_auth_login_closeout_lock(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_public_product_pay_closeout_lock(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    inventory_path = root / "docs/architecture/public_product_pay_route_inventory.md"
+    if not inventory_path.exists():
+        violations.append(Violation("public_product_inventory_missing", str(inventory_path.relative_to(root)), "missing public product/pay inventory document"))
+    else:
+        inventory_text = inventory_path.read_text(encoding="utf-8")
+        for phrase in (
+            "Frontend <-> API <-> Backend Contract Matrix",
+            "/p/{product_or_slug}",
+            "/pay/{product_or_slug}",
+            "/api/products/{path}",
+            "production_compat rollback removed",
+            "wildcard_router rollback removed",
+            "legacy_fallback_allowed=false",
+            "deletion_locked",
+            "Do not process real payment",
+            "Do not change payment/admin/h5/checkout/orders",
+        ):
+            if phrase not in inventory_text:
+                violations.append(Violation("public_product_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    if compat_path.exists():
+        compat_text = compat_path.read_text(encoding="utf-8")
+        for route_path in PUBLIC_PRODUCT_PAY_ROUTES:
+            if f'@router.api_route("{route_path}"' in compat_text or f"@router.api_route('{route_path}'" in compat_text:
+                violations.append(
+                    Violation(
+                        "public_product_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Public product/pay routes are deletion_locked to Next; do not register production_compat router rollback routes.",
+                    )
+                )
+            if f'@wildcard_router.api_route("{route_path}"' in compat_text or f"@wildcard_router.api_route('{route_path}'" in compat_text:
+                violations.append(
+                    Violation(
+                        "public_product_wildcard_production_compat_route",
+                        str(compat_path.relative_to(root)),
+                        route_path,
+                        "Public product/pay wildcard rollback is removed; keep payment/admin/h5/checkout/orders out-of-scope wildcards only.",
+                    )
+                )
+
+    public_root = root / "aicrm_next/public_product"
+    if public_root.exists():
+        for path in public_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            rel = str(path.relative_to(root))
+            for marker, code in PUBLIC_PRODUCT_PAY_DIRECT_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "Public product/pay closeout must not call legacy facade, direct payment clients, HTTP clients, token paths, or order creation.",
+                        )
+                    )
+            for marker, code in PUBLIC_PRODUCT_PAY_TRUE_MARKERS.items():
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            code,
+                            rel,
+                            marker,
+                            "Public product/pay closeout must keep fallback, payment request, order create, and real external execution flags false.",
+                        )
+                    )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id in PUBLIC_PRODUCT_PAY_REGISTRY_RECORDS:
+        record = registry_by_id.get(route_id)
+        if record is None:
+            violations.append(Violation("public_product_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_id))
+            continue
+        if record.get("runtime_owner") == "production_compat":
+            violations.append(Violation("public_product_registry_owner", route_id, "runtime_owner=production_compat"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("public_product_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("legacy_source") not in {"", None}:
+            violations.append(Violation("public_product_registry_legacy_source", route_id, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("public_product_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
+    for route_path in PUBLIC_PRODUCT_PAY_MANIFEST_ROUTES:
+        record = manifest_by_path.get(route_path)
+        if record is None:
+            violations.append(Violation("public_product_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+            continue
+        if record.get("current_runtime_owner") != "next":
+            violations.append(Violation("public_product_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") in {"legacy_forward", "next_primary_with_legacy_rollback"}:
+            violations.append(Violation("public_product_manifest_legacy_forward", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("public_product_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("delete_ready") is not True or record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("public_product_manifest_lifecycle", route_path, str(record)))
+    return violations
+
+
 def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -4014,6 +4158,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
         + check_admin_auth_login_closeout_lock(ROOT)
+        + check_public_product_pay_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)

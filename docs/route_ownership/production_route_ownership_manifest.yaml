@@ -1587,37 +1587,46 @@ routes:
     notes: Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked.
   - route_pattern: /api/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
-    capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    capability_owner: aicrm_next.public_product
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Public product API forwards to legacy Flask/product_service so real PostgreSQL product links opened from QR codes do not hit the Next fake commerce repository.
+    external_side_effect_risk: medium
+    delete_ready: true
+    checker: tests/test_public_product_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public product API is Next-owned; GET returns product display contract or controlled 404/410, write/payment/order-like methods are blocked, and production_compat rollback is removed.
   - route_pattern: /p/{page_slug}
-    methods: [GET]
-    capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    methods: [GET, HEAD, OPTIONS]
+    capability_owner: aicrm_next.public_product
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Public product page forwards to legacy Flask/product_service; checkout side effects remain guarded by the legacy payment flow.
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_public_product_registry_lifecycle.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public product page is Next-owned; renders product display only, does not create orders or execute payment requests, and production_compat rollback is removed.
   - route_pattern: /pay/{product_code}
-    methods: [GET]
-    capability_owner: aicrm_next.commerce
-    current_runtime_owner: production_compat
-    production_behavior: legacy_forward
-    legacy_fallback_allowed: true
+    methods: [GET, HEAD, OPTIONS]
+    capability_owner: aicrm_next.public_product
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: false
     fixture_allowed_in_production: false
-    external_side_effect_risk: real_blocked
-    delete_ready: false
-    checker: tools/check_production_route_resolution.py
-    notes: Product checkout page forwards to the legacy WeChat-internal H5/JSAPI flow; real provider order creation stays on the legacy guarded /api/h5/wechat-pay* routes.
+    external_side_effect_risk: medium
+    delete_ready: true
+    checker: tests/test_public_product_registry_lifecycle.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public pay landing is Next-owned and payment-like actions are blocked; real WeChat Pay/Alipay/order creation remain out of scope on the checkout/orders/h5/admin wildcard families.
   - route_pattern: /api/orders*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

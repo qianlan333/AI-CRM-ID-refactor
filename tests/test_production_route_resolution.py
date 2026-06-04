@@ -240,12 +240,22 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "PUT", "/api/admin/wechat-pay/products/1/external-push") == "aicrm_next.commerce.api"
     assert _owner_for(samples, "POST", "/api/admin/wechat-pay/products/1/external-push/test") == "next"
     assert _endpoint_for(samples, "POST", "/api/admin/wechat-pay/products/1/external-push/test") == "aicrm_next.commerce.api"
-    assert _owner_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
-    assert _owner_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "production_compat"
-    assert _endpoint_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "GET", "/p/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "OPTIONS", "/p/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "OPTIONS", "/p/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "GET", "/pay/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "OPTIONS", "/pay/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "OPTIONS", "/pay/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "GET", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "POST", "/api/products/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "POST", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "OPTIONS", "/api/products/prd_20260518095708_9f77db") == "next"
+    assert _endpoint_for(samples, "OPTIONS", "/api/products/prd_20260518095708_9f77db") == "aicrm_next.public_product.api"
+    assert _owner_for(samples, "GET", "/api/orders/smoke") == "next"
+    assert _endpoint_for(samples, "GET", "/api/orders/smoke") == "aicrm_next.commerce.api"
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/sidebar/jssdk-config") == "next"
@@ -268,9 +278,6 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
                 "/api/admin/wecom/tag-groups*",
                 "/api/h5/questionnaires/{slug}/submit",
                 "/api/h5/wechat/oauth*",
-                "/p/{page_slug}",
-                "/pay/{product_code}",
-                "/api/products*",
         }
     ]
     assert unexpected_shadowed == []
