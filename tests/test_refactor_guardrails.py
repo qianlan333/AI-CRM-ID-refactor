@@ -331,17 +331,6 @@ def test_questionnaire_http_callers_do_not_bypass_application_owner():
             "forbidden_questionnaire_modules": {"domains.questionnaire.service"},
             "forbidden_admin_console_symbols": set(),
         },
-        "wecom_ability_service/http/admin_questionnaire_push_logs.py": {
-            "required_fragments": ["application.questionnaire"],
-            "forbidden_service_symbols": set(),
-            "forbidden_questionnaire_modules": {"domains.questionnaire.service"},
-            "forbidden_admin_console_symbols": {
-                "build_questionnaire_external_push_logs_payload",
-                "build_global_questionnaire_external_push_logs_payload",
-                "retry_questionnaire_external_push_log_for_console",
-                "retry_questionnaire_external_push_logs_for_console",
-            },
-        },
     }
 
     for relative_path, config in target_files.items():

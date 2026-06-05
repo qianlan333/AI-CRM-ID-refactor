@@ -106,7 +106,7 @@
     </label>
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
-      <a class="admin-button admin-button--ghost" href="{% if logs_payload.is_global %}{{ url_for('api.admin_console_global_questionnaire_external_push_logs') }}{% else %}{{ url_for('api.admin_console_questionnaire_external_push_logs', questionnaire_id=logs_payload.questionnaire.id) }}{% endif %}">重置</a>
+      <a class="admin-button admin-button--ghost" href="{{ logs_payload.paths.index }}">重置</a>
     </div>
   </form>
 </section>
@@ -127,7 +127,7 @@
     </div>
     {% endif %}
   </div>
-  <form method="post" action="{% if logs_payload.is_global %}{{ url_for('api.admin_console_global_questionnaire_external_push_logs_retry_batch') }}{% else %}{{ url_for('api.admin_console_questionnaire_external_push_logs_retry_batch', questionnaire_id=logs_payload.questionnaire.id) }}{% endif %}">
+  <form method="post" action="{{ logs_payload.paths.retry_batch }}">
     {% if logs_payload.is_global %}
     <input type="hidden" name="questionnaire_id" value="{{ logs_payload.filters.questionnaire_id or '' }}">
     <input type="hidden" name="questionnaire_title" value="{{ logs_payload.filters.questionnaire_title or '' }}">
@@ -192,7 +192,7 @@
           <td>{{ item.latest_updated_at or '-' }}</td>
           <td>
             {% if item.can_retry %}
-              <button class="admin-button admin-button--secondary" type="submit" formaction="{% if logs_payload.is_global %}{{ url_for('api.admin_console_global_questionnaire_external_push_logs_retry', push_log_id=item.latest_log.id) }}{% else %}{{ url_for('api.admin_console_questionnaire_external_push_logs_retry', questionnaire_id=logs_payload.questionnaire.id, push_log_id=item.latest_log.id) }}{% endif %}">补发</button>
+              <button class="admin-button admin-button--secondary" type="submit" formaction="{{ logs_payload.paths.index }}/{{ item.latest_log.id }}/retry">补发</button>
             {% endif %}
             <details class="admin-details-block">
               <summary>展开</summary>

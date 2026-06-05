@@ -10,6 +10,12 @@ import pytest
 def test_questionnaire_external_push_application_contract_is_importable():
     sys.modules.setdefault("imghdr", types.ModuleType("imghdr"))
 
+    from aicrm_next.questionnaire.external_push_logs import (
+        ExternalPushDeliveryAdapter,
+        QuestionnaireExternalPushLogReadService,
+        QuestionnaireExternalPushRetryBatchCommand,
+        QuestionnaireExternalPushRetryCommand,
+    )
     from wecom_ability_service.application.questionnaire.commands import (
         RetryQuestionnaireExternalPushCommand,
     )
@@ -21,48 +27,103 @@ def test_questionnaire_external_push_application_contract_is_importable():
     assert GetQuestionnaireExternalPushLogsQuery
     assert GetGlobalQuestionnaireExternalPushLogsQuery
     assert RetryQuestionnaireExternalPushCommand
+    assert QuestionnaireExternalPushLogReadService
+    assert QuestionnaireExternalPushRetryCommand
+    assert QuestionnaireExternalPushRetryBatchCommand
+    assert ExternalPushDeliveryAdapter
 
 
-def test_admin_questionnaire_console_uses_formal_application_external_push_owner():
+def test_next_external_push_log_routes_do_not_forward_to_legacy_flask():
     source = (
         Path(__file__).resolve().parents[1]
-        / "wecom_ability_service"
-        / "http"
-        / "admin_questionnaire_push_logs.py"
+        / "aicrm_next"
+        / "frontend_compat"
+        / "legacy_routes.py"
     ).read_text(encoding="utf-8")
+    start = source.index('"/admin/questionnaires/external-push-logs"')
+    end = source.index('@router.get("/admin/automation-conversion"', start)
+    route_block = source[start:end]
 
-    required_fragments = [
-        "GetQuestionnaireExternalPushLogsQuery",
-        "GetGlobalQuestionnaireExternalPushLogsQuery",
-        "RetryQuestionnaireExternalPushCommand",
+    assert "forward_to_legacy_flask" not in route_block
+    assert "QuestionnaireExternalPushLogReadService" in source
+    assert "QuestionnaireExternalPushRetryService" in source
+
+
+def test_next_external_push_log_pages_do_not_use_admin_shell_legacy_endpoint_mapping():
+    root = Path(__file__).resolve().parents[1]
+    retired_endpoint_markers = [
+        "api.admin_console_global_questionnaire_external_push_logs",
+        "api.admin_console_questionnaire_external_push_logs",
     ]
-    for fragment in required_fragments:
-        assert fragment in source
+    shell_sources = [
+        root / "aicrm_next" / "frontend_compat" / "admin_shell.py",
+        root / "aicrm_next" / "admin_jobs" / "shell.py",
+    ]
+    for path in shell_sources:
+        source = path.read_text(encoding="utf-8")
+        for marker in retired_endpoint_markers:
+            assert marker not in source
 
-    forbidden_fragments = [
+    template_source = (
+        root
+        / "aicrm_next"
+        / "frontend_compat"
+        / "templates"
+        / "admin_console"
+        / "questionnaire_external_push_logs.html"
+    ).read_text(encoding="utf-8")
+    for marker in retired_endpoint_markers:
+        assert marker not in template_source
+    assert "logs_payload.paths.index" in template_source
+    assert "logs_payload.paths.retry_batch" in template_source
+
+
+def test_legacy_flask_external_push_log_routes_are_deleted():
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "wecom_ability_service" / "http" / "admin_questionnaire_push_logs.py").exists()
+    assert not (
+        root
+        / "wecom_ability_service"
+        / "templates"
+        / "admin_console"
+        / "questionnaire_external_push_logs.html"
+    ).exists()
+
+    http_init = (root / "wecom_ability_service" / "http" / "__init__.py").read_text(encoding="utf-8")
+    assert "admin_questionnaire_push_logs" not in http_init
+
+    admin_console_service = (
+        root / "wecom_ability_service" / "domains" / "admin_console" / "service.py"
+    ).read_text(encoding="utf-8")
+    for fragment in [
         "build_questionnaire_external_push_logs_payload",
         "build_global_questionnaire_external_push_logs_payload",
         "retry_questionnaire_external_push_log_for_console",
         "retry_questionnaire_external_push_logs_for_console",
-    ]
-    for fragment in forbidden_fragments:
-        assert fragment not in source
+    ]:
+        assert fragment not in admin_console_service
 
 
-def test_external_push_pages_do_not_link_via_retired_flask_questionnaire_get_endpoints():
+def test_external_push_actions_do_not_link_via_retired_flask_endpoint_helpers():
     root = Path(__file__).resolve().parents[1]
-    sources = [
-        root / "wecom_ability_service" / "http" / "admin_questionnaire_push_logs.py",
-        root / "wecom_ability_service" / "application" / "questionnaire" / "queries.py",
-        root / "wecom_ability_service" / "templates" / "admin_console" / "questionnaire_external_push_logs.html",
-    ]
-    combined = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+    query_source = (root / "wecom_ability_service" / "application" / "questionnaire" / "queries.py").read_text(
+        encoding="utf-8"
+    )
+    next_template_source = (
+        root
+        / "aicrm_next"
+        / "frontend_compat"
+        / "templates"
+        / "admin_console"
+        / "questionnaire_external_push_logs.html"
+    ).read_text(encoding="utf-8")
 
-    assert 'url_for("api.admin_console_questionnaires")' not in combined
-    assert "url_for('api.admin_console_questionnaires')" not in combined
-    assert 'url_for("api.admin_console_questionnaire_detail"' not in combined
-    assert "url_for('api.admin_console_questionnaire_detail'" not in combined
-    assert "/admin/questionnaires" in combined
+    assert 'url_for("api.admin_console_global_questionnaire_external_push_logs' not in query_source
+    assert "url_for('api.admin_console_global_questionnaire_external_push_logs" not in query_source
+    assert 'url_for("api.admin_console_questionnaire_external_push_logs' not in query_source
+    assert "url_for('api.admin_console_questionnaire_external_push_logs" not in query_source
+    assert "logs_payload.paths.index" in next_template_source
+    assert "logs_payload.paths.retry_batch" in next_template_source
 
 
 def test_next_admin_detail_projection_preserves_legacy_external_push_fields():

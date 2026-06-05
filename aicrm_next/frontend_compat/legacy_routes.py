@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.shared.runtime import production_data_ready
@@ -43,6 +43,12 @@ from aicrm_next.questionnaire.application import (
     GetQuestionnairePreflightQuery,
     ListQuestionnairesQuery,
 )
+from aicrm_next.questionnaire.external_push_logs import (
+    QuestionnaireExternalPushLogReadService,
+    QuestionnaireExternalPushRetryBatchCommand,
+    QuestionnaireExternalPushRetryCommand,
+    QuestionnaireExternalPushRetryService,
+)
 from .admin_shell import (
     legacy_url_for as _legacy_url_for,
     nav_items as _nav_items,
@@ -60,12 +66,6 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires",
     "/admin/questionnaires/new",
     "/admin/questionnaires/{questionnaire_id}",
-    "/admin/questionnaires/external-push-logs",
-    "/admin/questionnaires/external-push-logs/retry-batch",
-    "/admin/questionnaires/external-push-logs/{push_log_id}/retry",
-    "/admin/questionnaires/{questionnaire_id}/external-push-logs",
-    "/admin/questionnaires/{questionnaire_id}/external-push-logs/retry-batch",
-    "/admin/questionnaires/{questionnaire_id}/external-push-logs/{push_log_id}/retry",
     "/admin/radar-links",
     "/admin/radar-links/new",
     "/admin/radar-links/{link_id}/edit",
@@ -703,6 +703,81 @@ def admin_radar_link_detail(request: Request, link_id: int):
     return templates.TemplateResponse(request, "admin_console/radar_link_detail.html", context)
 
 
+def _render_questionnaire_external_push_logs(request: Request) -> Response:
+    questionnaire_id = request.path_params.get("questionnaire_id")
+    service = QuestionnaireExternalPushLogReadService()
+    if questionnaire_id:
+        payload = service.questionnaire_logs(
+            int(questionnaire_id),
+            status=str(request.query_params.get("status") or ""),
+            limit=str(request.query_params.get("limit") or "50"),
+        )
+        if payload is None:
+            return JSONResponse({"ok": False, "error": "questionnaire not found", "source_status": "not_found"}, status_code=404)
+    else:
+        payload = service.global_logs(
+            questionnaire_id=str(request.query_params.get("questionnaire_id") or ""),
+            questionnaire_title=str(request.query_params.get("questionnaire_title") or ""),
+            status=str(request.query_params.get("status") or ""),
+            user_id=str(request.query_params.get("user_id") or ""),
+            target_url=str(request.query_params.get("target_url") or ""),
+            limit=str(request.query_params.get("limit") or "50"),
+        )
+    context = _shell_context(
+        request=request,
+        page_title="问卷外推记录",
+        page_summary="查看问卷提交后的外部推送结果、失败原因和补发计划。",
+        active_endpoint="api.admin_console_questionnaires",
+    )
+    context["logs_payload"] = payload
+    return templates.TemplateResponse(request, "admin_console/questionnaire_external_push_logs.html", context)
+
+
+async def _handle_questionnaire_external_push_retry(request: Request) -> Response:
+    form = await request.form()
+    service = QuestionnaireExternalPushRetryService()
+    push_log_id = request.path_params.get("push_log_id")
+    if push_log_id:
+        result = service.retry_one(
+            QuestionnaireExternalPushRetryCommand(
+                push_log_id=int(push_log_id),
+                actor_id=str(request.headers.get("X-AICRM-Actor-Id") or "questionnaire_admin"),
+                actor_type=str(request.headers.get("X-AICRM-Actor-Type") or "user"),
+                source_route=str(request.url.path),
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+            )
+        )
+    else:
+        result = service.retry_batch(
+            QuestionnaireExternalPushRetryBatchCommand(
+                push_log_ids=[int(item) for item in form.getlist("push_log_ids") if str(item).strip().isdigit()],
+                questionnaire_id=int(request.path_params["questionnaire_id"]) if request.path_params.get("questionnaire_id") else None,
+                actor_id=str(request.headers.get("X-AICRM-Actor-Id") or "questionnaire_admin"),
+                actor_type=str(request.headers.get("X-AICRM-Actor-Type") or "user"),
+                source_route=str(request.url.path),
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+            )
+        )
+    if "application/json" in str(request.headers.get("accept") or "").lower():
+        return JSONResponse(result)
+    return RedirectResponse(_external_push_logs_redirect_url(request, form), status_code=303)
+
+
+def _external_push_logs_redirect_url(request: Request, form: object) -> str:
+    questionnaire_id = request.path_params.get("questionnaire_id")
+    base = (
+        f"/admin/questionnaires/{int(questionnaire_id)}/external-push-logs"
+        if questionnaire_id
+        else "/admin/questionnaires/external-push-logs"
+    )
+    query: dict[str, str] = {}
+    for key in ["questionnaire_id", "questionnaire_title", "status", "user_id", "target_url", "limit"]:
+        value = getattr(form, "get", lambda *_: "")(key)
+        if value not in (None, ""):
+            query[key] = str(value)
+    return base + (f"?{urlencode(query)}" if query else "")
+
+
 @router.api_route(
     "/admin/questionnaires/external-push-logs",
     methods=["GET"],
@@ -734,7 +809,9 @@ def admin_radar_link_detail(request: Request, link_id: int):
     name="api.admin_console_questionnaire_external_push_logs_retry",
 )
 async def admin_questionnaire_external_push_logs(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
+    if request.method == "POST":
+        return await _handle_questionnaire_external_push_retry(request)
+    return _render_questionnaire_external_push_logs(request)
 
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
