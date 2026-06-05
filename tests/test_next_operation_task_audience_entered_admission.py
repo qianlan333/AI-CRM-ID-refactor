@@ -323,6 +323,23 @@ def test_admission_persists_behavior_segment_from_questionnaire_mobile_snapshot(
                 T1,
             ),
         )
+        get_db().execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, external_userid, mobile_snapshot, total_score, final_tags, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(questionnaire["id"]),
+                f"{external_contact_id}_latest_empty_mobile",
+                external_contact_id,
+                "",
+                0,
+                "[]",
+                "2026-05-23 10:05:00",
+            ),
+        )
         get_db().commit()
 
         admitted = admit_channel_contact_to_program(

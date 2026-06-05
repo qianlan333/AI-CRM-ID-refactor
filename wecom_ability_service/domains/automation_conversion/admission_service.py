@@ -551,10 +551,17 @@ def _behavior_phone_for_member(member_identity: dict[str, Any]) -> tuple[str, st
     external_contact_id = _normalized_text(member_identity.get("external_contact_id"))
     if not external_contact_id:
         return "", ""
-    submission = workflow_repo.get_latest_any_questionnaire_submission_row(
-        external_contact_ids=[external_contact_id],
-        phone="",
-    )
+    submission = get_db().execute(
+        """
+        SELECT mobile_snapshot
+        FROM questionnaire_submissions
+        WHERE external_userid = ?
+          AND NULLIF(mobile_snapshot, '') IS NOT NULL
+        ORDER BY submitted_at DESC, id DESC
+        LIMIT 1
+        """,
+        (external_contact_id,),
+    ).fetchone()
     mobile = _normalized_text((submission or {}).get("mobile_snapshot"))
     if mobile:
         return mobile, "questionnaire_mobile_snapshot"
