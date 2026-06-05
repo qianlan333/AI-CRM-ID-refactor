@@ -94,6 +94,11 @@ def _safe_return_url(value: Any) -> str:
     return normalized
 
 
+def sidebar_product_context_status(context_token: str) -> str:
+    result = load_sidebar_product_context_token(_normalized_text(context_token))
+    return _normalized_text(result.get("status")) or "missing"
+
+
 def _external_base_url(request: Request) -> str:
     forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
     forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()

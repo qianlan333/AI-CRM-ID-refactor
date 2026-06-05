@@ -7,7 +7,6 @@ from typing import Any
 from aicrm_next.commerce.domain import preview_product
 from aicrm_next.commerce.repo import build_commerce_repository
 from aicrm_next.shared.errors import NotFoundError
-from wecom_ability_service.infra.signed_context import append_ctx_query
 
 
 PUBLIC_PRODUCT_ROUTES = ("/p/{path:path}", "/pay/{path:path}", "/api/products/{path:path}")
@@ -135,7 +134,7 @@ def render_product_page(product: dict[str, Any], *, context_token: str = "", con
     description = escape(str(product.get("description") or ""))
     cta = escape(str(product.get("buy_button_text") or product.get("cta_text") or "立即报名"))
     product_code = escape(str(product.get("product_code") or ""))
-    checkout_url = escape(append_ctx_query(f"/pay/{product.get('product_code') or ''}", context_token) if context_token else f"/pay/{product.get('product_code') or ''}", quote=True)
+    checkout_url = escape(_append_query(f"/pay/{product.get('product_code') or ''}", "ctx", context_token) if context_token else f"/pay/{product.get('product_code') or ''}", quote=True)
     media = _render_detail_media(product)
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -158,6 +157,18 @@ def render_product_page(product: dict[str, Any], *, context_token: str = "", con
   </nav>
 </body>
 </html>"""
+
+
+def _append_query(path: str, key: str, value: str) -> str:
+    normalized_path = str(path or "").strip()
+    normalized_key = str(key or "").strip()
+    normalized_value = str(value or "").strip()
+    if not normalized_path or not normalized_key or not normalized_value:
+        return normalized_path
+    from urllib.parse import quote
+
+    separator = "&" if "?" in normalized_path else "?"
+    return f"{normalized_path}{separator}{quote(normalized_key, safe='')}={quote(normalized_value, safe='')}"
 
 
 def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> str:
