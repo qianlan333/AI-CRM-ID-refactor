@@ -6,9 +6,11 @@ from pathlib import Path
 WORKBENCH_TEMPLATE = Path("wecom_ability_service/templates/sidebar_customer_workbench.html")
 WORKBENCH_JS = Path("wecom_ability_service/static/sidebar_workbench/sidebar_workbench.js")
 WORKBENCH_CSS = Path("wecom_ability_service/static/sidebar_workbench/sidebar_workbench.css")
+WORKBENCH_PRODUCT_CARD_COVER = Path("wecom_ability_service/static/sidebar_workbench/product-card-cover.png")
 NEXT_WORKBENCH_TEMPLATE = Path("aicrm_next/frontend_compat/templates/sidebar_customer_workbench.html")
 NEXT_WORKBENCH_JS = Path("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.js")
 NEXT_WORKBENCH_CSS = Path("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.css")
+NEXT_WORKBENCH_PRODUCT_CARD_COVER = Path("aicrm_next/frontend_compat/static/sidebar_workbench/product-card-cover.png")
 
 
 def test_sidebar_workbench_v2_default_page_is_not_legacy_long_page(client):
@@ -63,8 +65,8 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "badge" not in combined.lower()
     assert "phone-state loading" in template
     assert "加载中..." in template
-    assert "20260523-top-card-no-avatar" in template
-    assert "20260523-top-card-no-avatar" in next_template
+    assert "20260605-product-card-send" in template
+    assert "20260605-product-card-send" in next_template
     assert "customer-avatar" not in combined
     assert "class=\"avatar\"" not in combined
     assert ".avatar" not in css
@@ -82,8 +84,19 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "<select" not in combined
     assert "selectField" not in combined
     assert "请选择" not in combined
-    assert "复制商品链接" in script
-    assert "data-product-copy" in script
+    assert "发送商品" in script
+    assert "data-product-send" in script
+    assert "PRODUCT_CARD_IMAGE_PATH" in script
+    assert "product-card-cover.png" in script
+    assert 'msgtype: "news"' in script
+    assert "news: {" in script
+    assert "link: String(payload.url" in script
+    assert 'desc: ""' in script
+    assert "imgUrl" in script
+    assert "sendLinkToCurrentChat" in script
+    assert "复制商品链接" not in combined
+    assert "data-product-copy" not in combined
+    assert "copyText" not in combined
     assert "product_url" in script
     assert "customerContextQuery()" in script
     assert "product_url_has_context" in script
@@ -92,7 +105,6 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "context_token" not in script
     assert "发送介绍" not in script
     assert "商品介绍发送能力待接入" not in script
-    assert "data-product-send" not in script
     assert "data-product-detail" not in script
     assert "image-thumb" in script
     assert "material-thumb" in script
@@ -113,6 +125,8 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert ">发送</button>" in script
     assert "发给客户" not in combined
     assert "预览" not in combined
+    assert WORKBENCH_PRODUCT_CARD_COVER.exists()
+    assert NEXT_WORKBENCH_PRODUCT_CARD_COVER.exists()
     assert "更新时间" not in combined
     assert "source_url" not in script
     assert "source_url" not in next_script
