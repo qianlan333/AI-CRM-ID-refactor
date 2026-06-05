@@ -2726,6 +2726,17 @@ def test_group_ops_content_formatters_are_not_legacy_allowlisted() -> None:
     assert integration_gateway not in checker.WECOM_IMPORT_ALLOWLIST
 
 
+def test_wecom_group_adapter_is_not_legacy_allowlisted() -> None:
+    import scripts.check_no_new_legacy as checker
+
+    adapter = Path("aicrm_next/integration_gateway/wecom_group_adapter.py")
+    scheduler = Path("aicrm_next/automation_engine/group_ops/scheduler.py")
+
+    assert adapter not in checker.LEGACY_IMPORT_ALLOWLIST
+    assert adapter not in checker.WECOM_IMPORT_ALLOWLIST
+    assert scheduler not in checker.WECOM_IMPORT_ALLOWLIST
+
+
 def _write_automation_member_actions_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
     inventory = tmp_path / "docs/architecture/automation_member_actions_route_inventory.md"
     compat = tmp_path / "aicrm_next/production_compat/api.py"

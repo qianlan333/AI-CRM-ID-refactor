@@ -41,17 +41,14 @@ LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_sidebar_read_facade.py"),
-    Path("aicrm_next/integration_gateway/wecom_group_adapter.py"),
 }
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/automation_engine/group_ops/scheduler.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/channel_entry/identity_bridge.py"),
     Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
-    Path("aicrm_next/integration_gateway/wecom_group_adapter.py"),
     Path("aicrm_next/cloud_orchestrator/repository.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {

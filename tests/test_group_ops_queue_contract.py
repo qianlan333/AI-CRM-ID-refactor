@@ -14,19 +14,16 @@ class DummyApp:
         return False
 
 
-def test_queue_gateway_uses_broadcast_jobs_with_empty_targets_allowed():
-    from aicrm_next.integration_gateway.wecom_group_adapter import LegacyBroadcastJobQueueGateway
+def test_queue_gateway_uses_next_broadcast_jobs_with_exact_chat_targets():
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextGroupOpsQueueGateway
 
     captured: dict = {}
 
-    def fake_enqueue_job(**kwargs):
+    def fake_insert_job(**kwargs):
         captured.update(kwargs)
         return 321
 
-    gateway = LegacyBroadcastJobQueueGateway(
-        legacy_app_factory=lambda: DummyApp(),
-        enqueue_job_fn=fake_enqueue_job,
-    )
+    gateway = NextGroupOpsQueueGateway(insert_job_fn=fake_insert_job)
     job_id = gateway.enqueue_group_message(
         plan_id=2,
         source_id="2:webhook:5",
@@ -46,23 +43,31 @@ def test_queue_gateway_uses_broadcast_jobs_with_empty_targets_allowed():
     assert captured["channel"] == "wecom_customer_group"
     assert captured["target_kind"] == "chat_id"
     assert captured["target_external_userids"] == []
-    assert captured["allow_empty_targets"] is True
     assert captured["content_type"] == "wecom_customer_group"
     assert captured["content_payload"]["channel"] == "wecom_customer_group"
     assert captured["content_payload"]["chat_ids"] == ["wrOgAAA001", "wrOgAAA002"]
     assert captured["content_payload"]["sender"] == "owner_001"
 
 
+def test_queue_gateway_rejects_empty_chat_ids():
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextGroupOpsQueueGateway
+
+    with pytest.raises(ValueError, match="chat_ids is required"):
+        NextGroupOpsQueueGateway(insert_job_fn=lambda **kwargs: 321).enqueue_group_message(
+            plan_id=2,
+            source_id="2:webhook:5",
+            scheduled_at="2026-05-25T20:00:00+08:00",
+            owner_userid="owner_001",
+            chat_ids=[],
+            content_payload={"text": {"content": "hello"}},
+            content_summary="hello",
+            created_by="pytest",
+        )
+
+
 def test_wecom_group_adapter_default_disabled_does_not_call_wecom(monkeypatch):
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
-    def fail_if_called():
-        raise AssertionError("real WeCom client must not be constructed")
-
-    monkeypatch.setattr(
-        "wecom_ability_service.wecom_client.WeComClient.from_app",
-        fail_if_called,
-    )
     result = WeComGroupMessageAdapter(mode="disabled").create_group_message_task(
         {"sender": "owner_001", "chat_ids": ["wrOgAAA001"], "text": {"content": "hello"}},
         idempotency_key="pytest-disabled",
@@ -90,14 +95,6 @@ def test_wecom_group_adapter_staging_blocks_real_send(monkeypatch):
 def test_wecom_group_adapter_rejects_empty_chat_ids(monkeypatch):
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
-    def fail_if_called():
-        raise AssertionError("real WeCom client must not be constructed")
-
-    monkeypatch.setattr(
-        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
-        fail_if_called,
-    )
-
     with pytest.raises(ValueError, match="chat_ids is required"):
         WeComGroupMessageAdapter(mode="production").create_group_message_task(
             {"sender": "owner_001", "text": {"content": "hello"}},
@@ -109,22 +106,19 @@ def test_wecom_group_adapter_maps_requested_chat_ids_to_official_wecom_payload(m
     # WeCom add_msg_template uses chat_id_list for customer-group targets; sender
     # alone expands to the member's customer scope, so internal chat_ids must not
     # leak through as an ignored field.
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextWeComGroupClient
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
     captured: dict = {}
 
-    class FakeClient:
-        def create_group_message_task(self, payload):
-            captured.update(payload)
-            return {"errcode": 0, "errmsg": "ok", "msgid": "msg_exact_001", "fail_list": []}
+    def fake_request(path, payload):
+        assert path == "/cgi-bin/externalcontact/add_msg_template"
+        captured.update(payload)
+        return {"errcode": 0, "errmsg": "ok", "msgid": "msg_exact_001", "fail_list": []}
 
     monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
-    monkeypatch.setattr(
-        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
-        lambda: FakeClient(),
-    )
 
-    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+    result = WeComGroupMessageAdapter(mode="production", client=NextWeComGroupClient(request_fn=fake_request)).create_group_message_task(
         {"sender": "owner_001", "chat_ids": ["chat_001"], "text": {"content": "hello"}},
         idempotency_key="pytest-exact-chat-id-list",
     )
@@ -141,19 +135,15 @@ def test_wecom_group_adapter_maps_requested_chat_ids_to_official_wecom_payload(m
 
 
 def test_wecom_group_adapter_fails_when_exact_target_cannot_be_verified(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextWeComGroupClient
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
-    class FakeClient:
-        def create_group_message_task(self, payload):
-            return {"errcode": 0, "errmsg": "ok", "fail_list": []}
+    def fake_request(path, payload):
+        return {"errcode": 0, "errmsg": "ok", "fail_list": []}
 
     monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
-    monkeypatch.setattr(
-        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
-        lambda: FakeClient(),
-    )
 
-    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+    result = WeComGroupMessageAdapter(mode="production", client=NextWeComGroupClient(request_fn=fake_request)).create_group_message_task(
         {"sender": "owner_001", "chat_ids": ["chat_001"], "text": {"content": "hello"}},
         idempotency_key="pytest-no-msgid",
     )
@@ -167,24 +157,20 @@ def test_wecom_group_adapter_fails_when_exact_target_cannot_be_verified(monkeypa
 
 
 def test_wecom_group_adapter_fails_when_wecom_rejects_some_chat_ids(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextWeComGroupClient
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 
-    class FakeClient:
-        def create_group_message_task(self, payload):
-            return {
-                "errcode": 0,
-                "errmsg": "ok",
-                "msgid": "msg_partial_001",
-                "fail_list": ["chat_002"],
-            }
+    def fake_request(path, payload):
+        return {
+            "errcode": 0,
+            "errmsg": "ok",
+            "msgid": "msg_partial_001",
+            "fail_list": ["chat_002"],
+        }
 
     monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE", "true")
-    monkeypatch.setattr(
-        "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
-        lambda: FakeClient(),
-    )
 
-    result = WeComGroupMessageAdapter(mode="production").create_group_message_task(
+    result = WeComGroupMessageAdapter(mode="production", client=NextWeComGroupClient(request_fn=fake_request)).create_group_message_task(
         {"sender": "owner_001", "chat_ids": ["chat_001", "chat_002"], "text": {"content": "hello"}},
         idempotency_key="pytest-partial-fail-list",
     )
@@ -218,10 +204,6 @@ def test_wecom_group_adapter_production_without_guard_is_blocked(monkeypatch):
 def test_group_sync_adapter_fake_filters_owner_without_real_wecom(monkeypatch):
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
 
-    def fail_if_called():
-        raise AssertionError("real WeCom client must not be constructed")
-
-    monkeypatch.setattr("wecom_ability_service.wecom_client.WeComClient.from_app", fail_if_called)
     result = WeComGroupChatSyncAdapter(mode="fake").list_group_chats(owner_userid="owner_001", limit=10)
 
     assert result["ok"] is True
@@ -245,32 +227,21 @@ def test_group_sync_adapter_production_without_guard_is_blocked(monkeypatch):
     assert result["error_code"] == "production_guard_failed"
 
 
-def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
+def test_group_sync_adapter_production_uses_next_wecom_client(monkeypatch):
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextWeComGroupClient
     from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupChatSyncAdapter
 
-    context = {"active": False, "list_called": False, "detail_called": False}
+    context = {"list_called": False, "detail_called": False}
 
-    class ContextApp(DummyApp):
-        def __enter__(self):
-            context["active"] = True
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            context["active"] = False
-            return False
-
-    class FakeClient:
-        def list_group_chats(self, payload):
-            assert context["active"] is True
+    def fake_request(path, payload):
+        if path == "/cgi-bin/externalcontact/groupchat/list":
             context["list_called"] = True
             assert payload["owner_filter"] == {"userid_list": ["owner_live"]}
             return {"group_chat_list": [{"chat_id": "live_chat_001"}], "next_cursor": ""}
-
-        def get_group_chat(self, chat_id, need_name=1):
-            assert context["active"] is True
+        if path == "/cgi-bin/externalcontact/groupchat/get":
             context["detail_called"] = True
-            assert chat_id == "live_chat_001"
-            assert need_name == 1
+            assert payload["chat_id"] == "live_chat_001"
+            assert payload["need_name"] == 1
             return {
                 "group_chat": {
                     "chat_id": "live_chat_001",
@@ -280,12 +251,11 @@ def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
                     "member_list": [{"userid": "owner_live", "type": 1}, {"external_userid": "wm_live", "type": 2}],
                 }
             }
+        raise AssertionError(path)
 
     monkeypatch.setenv("AICRM_ENABLE_REAL_WECOM_GROUP_SYNC", "true")
-    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_flask_facade._legacy_app", lambda: ContextApp())
-    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app", lambda: FakeClient())
 
-    result = WeComGroupChatSyncAdapter(mode="production").list_group_chats(owner_userid="owner_live", limit=10)
+    result = WeComGroupChatSyncAdapter(mode="production", client=NextWeComGroupClient(request_fn=fake_request)).list_group_chats(owner_userid="owner_live", limit=10)
 
     assert result["ok"] is True
     assert result["side_effect_executed"] is True
@@ -306,10 +276,9 @@ def test_group_sync_adapter_production_uses_legacy_app_context(monkeypatch):
 
 
 def test_group_ops_queue_stats_counts_only_group_ops_jobs():
-    from aicrm_next.integration_gateway.wecom_group_adapter import LegacyGroupOpsQueueStatsGateway
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextGroupOpsQueueStatsReader
 
-    gateway = LegacyGroupOpsQueueStatsGateway(
-        legacy_app_factory=lambda: DummyApp(),
+    gateway = NextGroupOpsQueueStatsReader(
         list_jobs_fn=lambda: [
             {"id": 1, "source_table": "automation_group_ops_plans", "content_payload": {"channel": "wecom_customer_group"}},
             {"id": 2, "source_table": "other", "content_payload": {"channel": "text"}},
