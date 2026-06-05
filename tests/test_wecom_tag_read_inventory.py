@@ -29,7 +29,7 @@ def test_wecom_tag_read_inventory_covers_read_write_selector_and_sync_scope() ->
     assert "Frontend API Backend Contract Matrix" in text
     assert "deletion_locked" in text
     assert "legacy_fallback_allowed=false" in text
-    assert "does not execute real WeCom sync" in text
+    assert "may execute real WeCom sync" in text
     assert "does not create/update/delete tags or groups" in text
     assert "does not mutate customer or questionnaire tags" in text
     assert "production_unavailable" in text
@@ -40,7 +40,7 @@ def test_wecom_tag_read_inventory_marks_external_systems_out_of_scope() -> None:
     text = INVENTORY.read_text(encoding="utf-8")
 
     assert "Payment, storage, OpenClaw, and automation runtime remain out of scope" in text
-    assert "does not call WeCom" in text
+    assert "Exact read routes do not call WeCom" in text
     assert "Empty production projection tables return an empty catalog rather than fixture data" in text
 
 

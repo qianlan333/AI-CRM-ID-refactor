@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from aicrm_next.shared.config import get_settings
+from aicrm_next.shared.database import get_sqlalchemy_database_url
 from aicrm_next.shared.runtime import database_mode, production_environment
 
 
@@ -162,7 +162,7 @@ class LocalContractTagCatalogRepository(TagCatalogRepository):
 
 class PostgresTagCatalogRepository(TagCatalogRepository):
     def __init__(self, engine: Engine | None = None) -> None:
-        self._engine = engine or create_engine(get_settings().database_url, pool_pre_ping=True)
+        self._engine = engine or create_engine(get_sqlalchemy_database_url(), pool_pre_ping=True)
 
     def list_catalog(self) -> TagCatalog:
         try:

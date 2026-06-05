@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
 
@@ -19,4 +21,13 @@ class Base(DeclarativeBase):
 
 
 def get_database_url() -> str:
-    return get_settings().database_url
+    return str(os.getenv("DATABASE_URL") or "").strip() or get_settings().database_url
+
+
+def get_sqlalchemy_database_url(url: str | None = None) -> str:
+    database_url = str(url or get_database_url()).strip()
+    if database_url.startswith("postgres://"):
+        return "postgresql+psycopg://" + database_url[len("postgres://") :]
+    if database_url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + database_url[len("postgresql://") :]
+    return database_url

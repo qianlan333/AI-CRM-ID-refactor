@@ -2,7 +2,7 @@
 
 Status: Group 13 closeout deletion_locked
 
-This inventory covers the WeCom Tag CRUD and sync surfaces moved to Next CommandBus after the WeCom Tag Read legacy deletion was locked. Read routes stay `deletion_locked`; this closeout deletes the production_compat rollback for write/sync and locks exact write routes to Next CommandBus only.
+This inventory covers the WeCom Tag CRUD surfaces moved to Next CommandBus after the WeCom Tag Read legacy deletion was locked. Read routes stay `deletion_locked`; this closeout deletes the production_compat rollback for write routes and locks exact CRUD routes to Next CommandBus only. Tag catalog sync is a separate Next-native catalog refresh that may call WeCom `get_corp_tag_list` and only refreshes the tag projection.
 
 ## Frontend API Backend Contract Matrix
 
@@ -15,7 +15,7 @@ This inventory covers the WeCom Tag CRUD and sync surfaces moved to Next Command
 | `/admin/wecom-tags` | `wecom_tag_management.js` with generated `Idempotency-Key` | create group | `/api/admin/wecom/tag-groups` | POST | `create_admin_wecom_tag_group_command` | `CreateWeComTagGroupCommand` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | 200, `adapter_mode=real_blocked` |
 | `/admin/wecom-tags` | `wecom_tag_management.js` with generated `Idempotency-Key` | update group | `/api/admin/wecom/tag-groups/{group_id}` | PUT or PATCH | `mutate_admin_wecom_tag_group_command` | `UpdateWeComTagGroupCommand` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | 200, `fallback_used=false` |
 | `/admin/wecom-tags` | `wecom_tag_management.js` with generated `Idempotency-Key` | delete group | `/api/admin/wecom/tag-groups/{group_id}` | DELETE | `mutate_admin_wecom_tag_group_command` | `DeleteWeComTagGroupCommand` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | 200, no compatibility facade |
-| `/admin/wecom-tags` | `wecom_tag_management.js` with generated `Idempotency-Key` | sync | `/api/admin/wecom/tags/sync` | POST | `sync_admin_wecom_tags_command` | `SyncWeComTagCatalogCommand` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | `next_command`, `legacy_fallback_allowed=false`, `deletion_locked` | 200, `sync_executed=false`, `local_only=true` |
+| `/admin/wecom-tags` | `wecom_tag_management.js` | sync | `/api/admin/wecom/tags/sync` | POST | `sync_admin_wecom_tags_command` | `execute_wecom_tag_catalog_sync` | `next_native_sync`, `legacy_fallback_allowed=false`, `deletion_locked` | `next_live_catalog_sync`, `legacy_fallback_allowed=false`, `deletion_locked` | 200, `sync_executed=true`, `source_status=next_live_remote_synced` |
 
 No actual `/api/admin/wecom/tag-groups/sync` route exists in the current codebase, so it is not added as a Group 13 surface.
 
@@ -25,8 +25,8 @@ No actual `/api/admin/wecom/tag-groups/sync` route exists in the current codebas
 | --- | --- | --- | --- | --- |
 | `/api/admin/wecom/tags` | POST, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
 | `/api/admin/wecom/tags/{tag_id}` | PUT, PATCH, DELETE, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
-| `/api/admin/wecom/tags/sync` | POST, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
-| `/api/admin/wecom/tags/sync-due` | POST, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
+| `/api/admin/wecom/tags/sync` | POST, OPTIONS | `next_native_sync` | `next_live_catalog_sync` | production_compat rollback removed; `legacy_fallback_allowed=false`; projection refresh only |
+| `/api/admin/wecom/tags/sync-due` | POST, OPTIONS | `next_native_sync` | `next_live_catalog_sync` | production_compat rollback removed; `legacy_fallback_allowed=false`; projection refresh only |
 | `/api/admin/wecom/tag-groups` | POST, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
 | `/api/admin/wecom/tag-groups/{group_id}` | PUT, PATCH, DELETE, OPTIONS | `next_command` | `next_command` | production_compat rollback removed; `legacy_fallback_allowed=false` |
 | `/api/admin/wecom/tags*` | POST, PUT, PATCH, DELETE, OPTIONS | `next_native` | `guarded_preview` | auxiliary out-of-scope Next subpaths only; no production_compat fallback |
@@ -40,15 +40,17 @@ Lifecycle for exact write routes is `delete_status=deletion_locked` and `replace
 
 `aicrm_next/production_compat/api.py` no longer registers WeCom tag read/write/sync exact or family fallback routes.
 
-`aicrm_next/customer_tags/commands.py` defines the write command shapes. `aicrm_next/customer_tags/admin_write.py` owns CommandBus dispatch, validation, idempotency, audit recording, production blocking, and response shape. `aicrm_next/customer_tags/write_repo.py` owns `WeComTagWriteRepository`, the local projection write fixture repository used by the blocked command path.
-
-`aicrm_next/customer_tags/commands.py` defines the write command shapes. `aicrm_next/customer_tags/admin_write.py` owns CommandBus dispatch, validation, idempotency, audit recording, production blocking, and response shape. `aicrm_next/customer_tags/write_repo.py` owns the local projection write fixture repository.
+`aicrm_next/customer_tags/commands.py` defines the write command shapes. `aicrm_next/customer_tags/admin_write.py` owns CommandBus dispatch, validation, idempotency, audit recording, production blocking, and response shape. `aicrm_next/customer_tags/write_repo.py` owns `WeComTagWriteRepository`, the local projection write fixture repository.
 
 Every successful command response must include `route_owner=ai_crm_next`, `source_status=next_command`, `fallback_used=false`, `real_external_call_executed=false`, `local_only=true`, and a `side_effect_plan` with `adapter_mode=real_blocked`.
 
+`aicrm_next/customer_tags/sync_service.py` owns the sync route. It calls the Next `WeComTagLiveGateway`, normalizes remote `tag_group`/`tag` payloads, and refreshes only `wecom_corp_tag_groups` and `wecom_corp_tags` projection rows. A live success returns `route_owner=ai_crm_next`, `source_status=next_live_remote_synced`, `fallback_used=false`, `real_external_call_executed=true`, `sync_executed=true`, and `adapter_mode=live_catalog_sync`. Fixture/local contract mode returns `source_status=local_contract_refreshed`, `real_external_call_executed=false`, and `sync_executed=false`.
+
 ## Guardrails
 
-Real WeCom create/update/delete/sync is not executed in this group. The command layer records a `SideEffectPlan` and returns `sync_executed=false` for sync commands. Production data mode returns `production_unavailable` instead of fixture writes.
+Real WeCom create/update/delete is not executed by the CRUD write model. The command layer records a `SideEffectPlan`, keeps `adapter_mode=real_blocked`, and production data mode returns `production_unavailable` instead of fixture writes.
+
+Sync may execute the read-only WeCom tag catalog API and must not create/update/delete WeCom tags, tag groups, customer tags, questionnaire tags, payment records, storage assets, OpenClaw tasks, or automation runtime jobs. Sync writes are limited to the Next tag catalog projection tables and sync run evidence.
 
 Frontend writes use `Idempotency-Key`; duplicate keys return the existing CommandBus result instead of creating duplicate audit/projection events.
 

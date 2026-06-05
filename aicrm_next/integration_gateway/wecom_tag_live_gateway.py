@@ -22,10 +22,14 @@ class WeComTagLiveGateway:
         return self
 
     def _access_token(self) -> str:
+        corp_id = os.getenv("AICRM_WECOM_TAG_CORP_ID") or os.getenv("WECOM_CORP_ID") or ""
+        secret = os.getenv("AICRM_WECOM_TAG_AGENT_SECRET") or os.getenv("WECOM_CONTACT_SECRET") or os.getenv("WECOM_SECRET") or ""
+        if not corp_id.strip() or not secret.strip():
+            raise RuntimeError("WECOM_CORP_ID and WECOM_CONTACT_SECRET are required for WeCom tag sync")
         query = urlencode(
             {
-                "corpid": os.environ["AICRM_WECOM_TAG_CORP_ID"],
-                "corpsecret": os.environ["AICRM_WECOM_TAG_AGENT_SECRET"],
+                "corpid": corp_id,
+                "corpsecret": secret,
             }
         )
         with urlopen(f"{self._api_base}/cgi-bin/gettoken?{query}", timeout=self._timeout) as response:
