@@ -992,7 +992,7 @@ def _project_operation_task(row: dict[str, Any]) -> dict[str, Any]:
     unified = _json_loads(row.get("unified_content_json"), default={})
     segments = _json_loads(row.get("segment_contents_json"), default=[])
     agent = _json_loads(row.get("agent_config_json"), default={})
-    return {
+    projected = {
         "id": int(row.get("id") or 0),
         "program_id": int(row.get("program_id") or 0),
         "task_name": _clean_text(row.get("task_name")),
@@ -1023,6 +1023,13 @@ def _project_operation_task(row: dict[str, Any]) -> dict[str, Any]:
         "updated_at": _stringify_datetime(row.get("updated_at")),
         "published_at": _stringify_datetime(row.get("published_at")),
     }
+    diagnostics = publishable_diagnostics(projected)
+    projected["runtime_contract"] = {
+        "status": "executable" if diagnostics.get("ok") else "unexecutable",
+        "diagnostics": diagnostics,
+        "agent_runtime_diagnostics": agent_runtime_diagnostics(projected) if content_mode == "agent" else {},
+    }
+    return projected
 
 
 def _project_operation_task_group(row: dict[str, Any]) -> dict[str, Any]:
@@ -1037,7 +1044,13 @@ def _project_operation_task_group(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program_id: int, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+def _normalize_operation_task_payload(
+    payload: dict[str, Any] | None,
+    *,
+    program_id: int,
+    existing: dict[str, Any] | None = None,
+    validate_active: bool = True,
+) -> dict[str, Any]:
     payload = dict(payload or {})
     existing = dict(existing or {})
     content = dict(existing.get("operation_content") or {})
@@ -1082,7 +1095,8 @@ def _normalize_operation_task_payload(payload: dict[str, Any] | None, *, program
         "segment_contents_json": list(payload.get("segment_contents_json") or content.get("segment_contents_json") or existing.get("segment_contents_json") or []),
         "agent_config_json": dict(payload.get("agent_config_json") or content.get("agent_config_json") or existing.get("agent_config_json") or {}),
     }
-    _validate_operation_task_payload(normalized)
+    if validate_active:
+        _validate_operation_task_payload(normalized)
     return normalized
 
 
@@ -2808,6 +2822,7 @@ def preview_automation_program_operation_task_audience(program_id: int, payload:
     normalized = _normalize_operation_task_payload(
         {"task_name": dict(payload or {}).get("task_name") or "预览任务", **dict(payload or {})},
         program_id=int(program_id),
+        validate_active=False,
     )
     try:
         preview = _preview_candidates_next(int(program_id), normalized)

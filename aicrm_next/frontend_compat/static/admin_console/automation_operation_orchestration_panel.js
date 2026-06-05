@@ -62,6 +62,18 @@
       content_missing: "发送内容缺失",
       external_contact_id_missing: "企微客户 ID 缺失",
     };
+    const CONTRACT_LABELS = {
+      content_missing: "统一内容缺失",
+      profile_segment_template_missing: "画像模板缺失",
+      segment_content_missing: "分层话术缺失",
+      segment_content_incomplete: "分层话术不完整",
+      behavior_segment_content_missing: "行为分层未覆盖所选分层，实时触发不会入队",
+      agent_code_missing: "Agent 未配置",
+      agent_runtime_content_missing: "Agent 个性化未配置可发送兜底内容，实时触发会创建 0 条发送任务",
+      trigger_type_invalid: "触发方式不正确",
+      behavior_filter_invalid: "行为过滤不正确",
+      content_mode_invalid: "发送策略不正确",
+    };
     const normalizeContentMode = (mode) => (VALID_MODES.has(String(mode || "")) ? String(mode) : "unified");
     const dom = {
       groupFilter: root.querySelector("[data-group-filter]"),
@@ -208,6 +220,20 @@
         </div>`;
     }
 
+    function runtimeContractSummary(task) {
+      const contract = task.runtime_contract || {};
+      const diagnostics = contract.diagnostics || {};
+      const errors = Array.isArray(diagnostics.errors) ? diagnostics.errors : [];
+      if (String(task.status || "") !== "active") {
+        return { ok: true, text: "草稿/停用可保存不完整配置" };
+      }
+      if (!errors.length && (diagnostics.ok || contract.status === "executable")) {
+        return { ok: true, text: "可执行" };
+      }
+      const text = errors.map((key) => CONTRACT_LABELS[key] || key).join("；") || "不可执行";
+      return { ok: false, text };
+    }
+
     function renderList() {
       if (!dom.list) return;
       const tasks = filteredTasks();
@@ -230,9 +256,11 @@
             .map((task) => {
               const active = Number(task.id) === currentId();
               const status = String(task.status || "draft");
+              const contract = runtimeContractSummary(task);
               return `<article class="op-task-item${active ? " is-active" : ""}" data-task-id="${task.id}">
                 <div class="op-task-item__top"><strong>${escapeHtml(task.task_name || "未命名任务")}</strong><span class="op-task-badge is-${escapeHtml(status)}">${escapeHtml(labels.status[status] || status)}</span></div>
                 <div class="op-task-muted">${escapeHtml(labels.trigger[task.trigger_type] || task.trigger_type || "每天固定时间")} · ${escapeHtml(labels.audience[task.target_audience_code] || task.target_audience_code || "运营中")}</div>
+                <div class="op-task-muted">${escapeHtml(contract.ok ? "运行合同：可执行" : `运行合同：不可执行 · ${contract.text}`)}</div>
                 ${taskActionButtons(task)}
               </article>`;
             })
@@ -480,7 +508,18 @@
         .filter((key) => Number(filtered[key] || 0) > 0)
         .map((key) => `${REASON_LABELS[key] || key} ${Number(filtered[key] || 0)}`)
         .join("；");
-      if (dom.previewReasons) dom.previewReasons.textContent = reasonText ? `未命中：${reasonText}` : "";
+      const diagnostics = state.preview.content_diagnostics || {};
+      const diagnosticText = (diagnostics.errors || []).map((key) => CONTRACT_LABELS[key] || key).join("；");
+      const agent = state.preview.agent_runtime_diagnostics || {};
+      const agentText =
+        Object.keys(agent).length && !agent.expected_send_body_present
+          ? "Agent 个性化未配置可发送兜底内容，实时触发会创建 0 条发送任务"
+          : "";
+      if (dom.previewReasons) {
+        dom.previewReasons.textContent = [reasonText ? `未命中：${reasonText}` : "", diagnosticText ? `内容诊断：${diagnosticText}` : "", agentText]
+          .filter(Boolean)
+          .join("；");
+      }
       showFeedback(dom.feedback, "命中人群已刷新", true);
     }
 

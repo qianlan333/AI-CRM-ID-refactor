@@ -10,6 +10,13 @@ from wecom_ability_service.domains.automation_conversion.channel_binding_service
 from wecom_ability_service.domains.automation_conversion.operation_task_service import (
     run_audience_entered_operation_tasks,
 )
+from wecom_ability_service.domains.automation_conversion import operation_task_repo
+from wecom_ability_service.domains.automation_conversion.operation_task_replay_service import (
+    replay_audience_entered_operation_task,
+)
+from wecom_ability_service.domains.automation_conversion.projection_repair_service import (
+    repair_automation_member_projection,
+)
 from wecom_ability_service.domains.automation_conversion.questionnaire_bridge_service import (
     sync_questionnaire_submission_audience_transition,
 )
@@ -293,6 +300,130 @@ def test_audience_entered_behavior_layered_uses_program_member_segment_snapshot(
         assert item["status"] == "queued"
 
 
+def test_audience_entered_invalid_active_task_records_diagnostics_and_replay_requires_explicit_allow(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_invalid_active_replay")
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_invalid_active_replay",
+            trigger_time=T1,
+        )
+        assert admitted["audience_code"] == "operating"
+        get_db().execute(
+            """
+            UPDATE automation_program_member
+            SET state_payload_json = CAST(? AS jsonb)
+            WHERE program_id = ?
+              AND external_contact_id = ?
+            """,
+            (
+                json.dumps({"behavior_tier_key": "between_2_9"}),
+                program_id,
+                "wm_next_rt_invalid_active_replay",
+            ),
+        )
+        get_db().commit()
+        task = operation_task_repo.insert_task(
+            {
+                "program_id": program_id,
+                "task_name": "Historical invalid behavior task",
+                "status": "active",
+                "trigger_type": "audience_entered",
+                "send_time": "10:00",
+                "target_stage_code": "operating",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "between_2_9",
+                "content_mode": "behavior_layered",
+                "segment_contents_json": [],
+                "created_by": "pytest",
+                "updated_by": "pytest",
+            }
+        )
+        get_db().commit()
+
+        first = run_audience_entered_operation_tasks(
+            member_id=int(admitted["member_id"]),
+            audience_code="operating",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            operator_id="pytest_invalid_active",
+        )
+
+        execution_id = f"actask-event-{int(task['id'])}-{int(admitted['audience_entry_id'])}"
+        assert first["enqueued_count"] == 0
+        assert first["results"][0]["reason"] == "behavior_segment_content_missing"
+        assert first["results"][0]["content_diagnostics"]["ok"] is False
+        assert _execution_count(task["id"], admitted["audience_entry_id"]) == 1
+        assert _execution_item_count(task["id"], admitted["audience_entry_id"]) == 0
+        assert _job_count(task["id"], admitted["audience_entry_id"]) == 0
+        execution = get_db().execute(
+            "SELECT status, summary_json FROM automation_operation_task_execution WHERE execution_id = ?",
+            (execution_id,),
+        ).fetchone()
+        assert execution["status"] == "failed"
+        assert execution["summary_json"]["no_execution_items"] is True
+
+        fixed = dict(task)
+        fixed["segment_contents_json"] = [
+            {"segment_key": "between_2_9", "segment_name": "消息 2-9 条", "content_text": "fixed behavior content"}
+        ]
+        operation_task_repo.update_task(int(task["id"]), fixed)
+        get_db().commit()
+
+        blocked = run_audience_entered_operation_tasks(
+            member_id=int(admitted["member_id"]),
+            audience_code="operating",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            operator_id="pytest_invalid_active_again",
+        )
+        assert blocked["enqueued_count"] == 0
+        assert blocked["results"][0]["reason"] == "existing_execution_without_items"
+        assert blocked["results"][0]["blocked_by_existing_execution"] is True
+
+        dry_run = replay_audience_entered_operation_task(
+            program_id=program_id,
+            external_userid="wm_next_rt_invalid_active_replay",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            task_ids=[int(task["id"])],
+            dry_run=True,
+        )
+        assert dry_run["results"][0]["can_replay"] is False
+        assert dry_run["results"][0]["reason"] == "failed_empty_content_execution_blocks_replay"
+
+        allowed_dry_run = replay_audience_entered_operation_task(
+            program_id=program_id,
+            external_userid="wm_next_rt_invalid_active_replay",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            task_ids=[int(task["id"])],
+            dry_run=True,
+            allow_failed_empty_execution_retry=True,
+        )
+        assert allowed_dry_run["results"][0]["can_replay"] is True
+        assert allowed_dry_run["results"][0]["retry_of_execution_id"] == execution_id
+        assert _execution_item_count(task["id"], admitted["audience_entry_id"]) == 0
+
+        applied = replay_audience_entered_operation_task(
+            program_id=program_id,
+            external_userid="wm_next_rt_invalid_active_replay",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            task_ids=[int(task["id"])],
+            dry_run=False,
+            allow_failed_empty_execution_retry=True,
+        )
+        result = applied["results"][0]
+        assert result["enqueued_count"] == 1
+        assert result["created_execution_id"].startswith(f"actask-event-{int(task['id'])}-{int(admitted['audience_entry_id'])}-retry-")
+        assert result["job_id"] > 0
+        assert table_count(
+            "broadcast_jobs",
+            "source_type = 'operation_task' AND source_id = ?",
+            (result["source_id"],),
+        ) == 1
+        assert _execution_item_count(task["id"], admitted["audience_entry_id"]) == 1
+
+
 def test_admission_persists_behavior_segment_from_questionnaire_mobile_snapshot(app, monkeypatch):
     with app.app_context():
         monkeypatch.setattr(
@@ -553,6 +684,85 @@ def test_questionnaire_submit_moves_pending_entry_to_operating_and_triggers_audi
         assert _execution_count(task["id"], operating_entry["id"]) == 1
         assert _execution_item_count(task["id"], operating_entry["id"]) == 1
         assert _job_count(task["id"], operating_entry["id"]) == 1
+
+
+def test_projection_repair_dry_run_and_apply_syncs_questionnaire_operating_state(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_projection_repair")
+        questionnaire = create_choice_questionnaire("next_rt_projection_repair_q")
+        external_contact_id = "wm_next_rt_projection_repair"
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            external_contact_id,
+            trigger_time=T1,
+        )
+        assert admitted["audience_code"] == "operating"
+        get_db().execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, external_userid, mobile_snapshot, total_score, final_tags, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (int(questionnaire["id"]), external_contact_id, external_contact_id, "13900000088", 0, "[]", T1),
+        )
+        get_db().execute(
+            """
+            UPDATE automation_member
+            SET questionnaire_status = 'pending',
+                current_pool = 'pending_questionnaire',
+                current_audience_code = 'operating'
+            WHERE external_contact_id = ?
+            """,
+            (external_contact_id,),
+        )
+        get_db().execute(
+            """
+            UPDATE automation_program_member
+            SET current_stage_code = 'pending_questionnaire',
+                current_audience_code = 'pending_questionnaire'
+            WHERE program_id = ?
+              AND external_contact_id = ?
+            """,
+            (program_id, external_contact_id),
+        )
+        get_db().commit()
+
+        dry_run = repair_automation_member_projection(
+            external_userid=external_contact_id,
+            program_id=program_id,
+            dry_run=True,
+        )
+        assert dry_run["would_update"] is True
+        assert dry_run["diff"]["member"]["questionnaire_status"]["after"] == "submitted"
+        assert dry_run["diff"]["member"]["current_pool"]["after"] == "operating"
+
+        row = get_db().execute(
+            "SELECT questionnaire_status, current_pool FROM automation_member WHERE external_contact_id = ?",
+            (external_contact_id,),
+        ).fetchone()
+        assert row["questionnaire_status"] == "pending"
+        assert row["current_pool"] == "pending_questionnaire"
+
+        applied = repair_automation_member_projection(
+            external_userid=external_contact_id,
+            program_id=program_id,
+            dry_run=False,
+            apply=True,
+            operator_id="pytest_projection_repair",
+        )
+        assert applied["updated"] is True
+        row = get_db().execute(
+            "SELECT id, questionnaire_status, current_pool, current_audience_code, phone FROM automation_member WHERE external_contact_id = ?",
+            (external_contact_id,),
+        ).fetchone()
+        assert row["questionnaire_status"] == "submitted"
+        assert row["current_pool"] == "operating"
+        assert row["current_audience_code"] == "operating"
+        assert row["phone"] == "13900000088"
+        assert table_count("automation_event", "member_id = ? AND action = ?", (int(row["id"]), "projection_repair")) == 1
 
 
 def test_questionnaire_submit_bridge_reports_source_channel_missing_without_enqueue(app):
