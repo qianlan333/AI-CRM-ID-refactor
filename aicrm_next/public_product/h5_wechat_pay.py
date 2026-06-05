@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 from typing import Any
@@ -14,6 +15,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
+from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
@@ -27,6 +29,7 @@ from .service import format_price, get_public_product, product_not_found_payload
 
 COOKIE_NAME = "wechat_pay_h5_identity"
 STATE_TTL_SECONDS = 600
+LOGGER = logging.getLogger(__name__)
 
 
 def _normalized_text(value: Any) -> str:
@@ -630,13 +633,18 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any]) -> dict[str, Any]
     ).fetchone()
     order_payload = dict(order or {})
     is_paid = _normalized_text(order_payload.get("status")) == "paid" or _normalized_text(order_payload.get("trade_state")) == "SUCCESS"
-    if is_paid and not was_paid:
-        try:
-            from wecom_ability_service.domains.external_push import service as external_push_service
-
-            external_push_service.enqueue_transaction_paid_event(order_payload)
-        except Exception:
-            pass
+    if is_paid:
+        outbox = enqueue_transaction_paid_outbox(conn, order_payload)
+        LOGGER.info(
+            "wechat_pay_transaction_paid_outbox_ensured",
+            extra={
+                "order_id": order_payload.get("id"),
+                "out_trade_no": _normalized_text(order_payload.get("out_trade_no")),
+                "event_type": "transaction.paid",
+                "outbox_created": bool(outbox),
+                "was_paid": was_paid,
+            },
+        )
     return order_payload
 
 
@@ -744,8 +752,13 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
                 transaction = WeChatPayClient(_client_config()).query_order_by_out_trade_no(trade_no)
                 order = _apply_transaction(conn, transaction)
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as exc:
+                conn.rollback()
+                LOGGER.exception(
+                    "wechat_pay_order_status_refresh_failed",
+                    extra={"out_trade_no": trade_no, "event_type": "transaction.paid"},
+                )
+                return JSONResponse({"ok": False, "error": str(exc) or "wechat_pay_order_refresh_failed"}, status_code=502, headers=route_headers())
         order_payload = dict(order)
         product_code = _normalized_text(order_payload.get("product_code"))
         completion_redirect = _completion_redirect_for_product_code(conn, product_code)
@@ -767,4 +780,5 @@ async def notify_response(request: Request) -> JSONResponse:
             conn.commit()
         return JSONResponse({"code": "SUCCESS", "message": "成功"})
     except Exception as exc:
+        LOGGER.exception("wechat_pay_notify_failed", extra={"event_type": "transaction.paid"})
         return JSONResponse({"code": "FAIL", "message": str(exc)}, status_code=401)
