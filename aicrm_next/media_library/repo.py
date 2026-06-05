@@ -100,6 +100,8 @@ def _seed() -> dict[str, list[dict[str, Any]]]:
                 "mime_type": "application/pdf",
                 "file_size": 32,
                 "data_base64": "ZmFrZQ==",
+                "media_id": "",
+                "wecom_media_id": "",
                 "tags": ["fixture"],
                 "enabled": True,
                 "created_at": ts,
@@ -347,6 +349,8 @@ class InMemoryMediaLibraryRepository:
             "mime_type": str(data.get("mime_type") or "application/octet-stream"),
             "file_size": int(data.get("file_size") or 0),
             "data_base64": str(data.get("data_base64") or ""),
+            "media_id": str(data.get("media_id") or data.get("wecom_media_id") or ""),
+            "wecom_media_id": str(data.get("wecom_media_id") or data.get("media_id") or ""),
             "tags": normalize_tags(data.get("tags")),
             "enabled": bool(data.get("enabled", True)),
         }

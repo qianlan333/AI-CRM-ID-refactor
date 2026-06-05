@@ -60,6 +60,23 @@ def _action_idempotency_key(input_data: dict[str, Any], action: dict[str, Any]) 
     return f"group_ops:{plan_id}:{trigger_event_id}:{external_userid}:{action['action_type']}"
 
 
+def _message_payload(action: dict[str, Any]) -> dict[str, Any]:
+    payload = action.get("content_payload") if isinstance(action.get("content_payload"), dict) else {}
+    if not payload:
+        raw = action.get("raw") if isinstance(action.get("raw"), dict) else {}
+        payload = raw.get("content_payload") if isinstance(raw.get("content_payload"), dict) else raw.get("message_payload")
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _message_payload_text(payload: dict[str, Any]) -> str:
+    text = payload.get("text") if isinstance(payload.get("text"), dict) else {}
+    return clean_text(text.get("content") if isinstance(text, dict) else payload.get("content"))
+
+
+def _message_payload_has_body(payload: dict[str, Any]) -> bool:
+    return bool(_message_payload_text(payload) or list(payload.get("attachments") or []))
+
+
 @dataclass(frozen=True)
 class GroupOpsActionCommand:
     plan_id: int
@@ -99,14 +116,18 @@ class NextOutboundMessageQueueGateway:
         self._fetch_job_by_idempotency_key = fetch_job_by_idempotency_key
 
     def enqueue_private_message(self, command: GroupOpsActionCommand) -> dict[str, Any]:
+        message_payload = _message_payload(command.action)
         payload = {
             "channel": "wecom_private",
             "sender": command.sender,
             "external_userid": [command.external_userid],
-            "text": {"content": command.content} if command.content else {},
             "action": command.action,
             "recipient": command.recipient,
         }
+        if message_payload:
+            payload.update(message_payload)
+        elif command.content:
+            payload["text"] = {"content": command.content}
         source_id = f"{command.plan_id}:trigger:{command.trigger_event_id}:{command.external_userid}:{command.action['action_type']}"
         if self._insert_job is not None:
             job_id = int(self._insert_job(command=command, source_id=source_id, payload=payload) or 0)
@@ -301,8 +322,9 @@ class GroupOpsActionDispatcher:
         external_userid = _recipient_external_userid(input_data)
         if not external_userid and action["action_type"] in {"enqueue", "publish_task", "send_message"}:
             raise ContractError(f"external_user_id is required for {action['action_type']}")
-        content = clean_text(action.get("content"))
-        if action["action_type"] == "send_message" and not content:
+        message_payload = _message_payload(action)
+        content = clean_text(action.get("content")) or _message_payload_text(message_payload)
+        if action["action_type"] == "send_message" and not content and not _message_payload_has_body(message_payload):
             raise ContractError("content is required for send_message")
         sender = _operator(input_data)
         if action["action_type"] == "send_message" and not sender:

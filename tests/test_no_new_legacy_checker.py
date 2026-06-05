@@ -2716,6 +2716,16 @@ def test_group_ops_action_port_is_not_legacy_allowlisted() -> None:
     assert action_port not in checker.WECOM_IMPORT_ALLOWLIST
 
 
+def test_group_ops_content_formatters_are_not_legacy_allowlisted() -> None:
+    import scripts.check_no_new_legacy as checker
+
+    domain = Path("aicrm_next/automation_engine/group_ops/domain.py")
+    integration_gateway = Path("aicrm_next/automation_engine/group_ops/integration_gateway.py")
+
+    assert domain not in checker.LEGACY_IMPORT_ALLOWLIST
+    assert integration_gateway not in checker.WECOM_IMPORT_ALLOWLIST
+
+
 def _write_automation_member_actions_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
     inventory = tmp_path / "docs/architecture/automation_member_actions_route_inventory.md"
     compat = tmp_path / "aicrm_next/production_compat/api.py"

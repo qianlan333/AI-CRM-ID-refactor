@@ -465,7 +465,7 @@ class UpdateGroupOpsNodeCommand:
         existing = next((item for item in repo.list_nodes(int(plan_id)) if int(item["id"]) == int(node_id)), None)
         if not existing:
             raise NotFoundError("group ops node not found")
-        item = repo.update_node(int(plan_id), int(node_id), normalize_node_payload(request.model_dump(), existing=existing))
+        item = repo.update_node(int(plan_id), int(node_id), normalize_node_payload(request.model_dump(exclude_unset=True), existing=existing))
         return _response({"item": item}, repo=repo)
 
 
