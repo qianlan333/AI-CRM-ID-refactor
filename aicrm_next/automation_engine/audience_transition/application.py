@@ -3,17 +3,33 @@ from __future__ import annotations
 from typing import Any
 
 from .domain import AudienceTransitionEvent, base_realtime_result
+from aicrm_next.shared.postgres_connection import get_db
+
 from .integration_gateway import OperationTaskRealtimeTriggerGateway
 from .repository import AudienceTransitionRepository
 
 
 def _safe_rollback() -> None:
+    connections = []
     try:
-        from wecom_ability_service.db import get_db
+        from flask import g, has_app_context
 
-        get_db().rollback()
+        if has_app_context():
+            for name in ("next_db", "db"):
+                db = getattr(g, name, None)
+                if db is not None:
+                    connections.append(db)
     except Exception:
-        return
+        pass
+    try:
+        connections.append(get_db())
+    except Exception:
+        pass
+    for db in connections:
+        try:
+            db.rollback()
+        except Exception:
+            continue
 
 
 def _normalise_trigger_result(event: AudienceTransitionEvent, result: dict[str, Any]) -> dict[str, Any]:
