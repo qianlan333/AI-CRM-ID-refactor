@@ -10,6 +10,21 @@
   .program-shell .admin-stat-card { min-height: auto; padding: 14px 16px; }
   .program-shell .admin-card-value--compact { font-size: 22px; line-height: 1.18; }
   .program-shell .admin-stat-card:nth-child(4) .admin-card-value--compact { font-size: 18px; }
+  .program-section-title { margin: 0; font-size: 16px; color: #0f172a; }
+  .program-section-copy { margin: 4px 0 0; color: #64748b; line-height: 1.6; }
+  .program-pool-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .program-pool-card { display: grid; gap: 10px; }
+  .program-pool-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .program-pool-name { margin: 0; font-size: 14px; color: #0f172a; }
+  .program-pool-count { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .program-pool-metrics { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .program-pool-metric { padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+  .program-pool-metric span { display: block; color: #64748b; font-size: 12px; }
+  .program-pool-metric strong { display: block; margin-top: 2px; font-size: 14px; color: #0f172a; }
+  .program-status-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .program-status-item { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; }
+  .program-status-item span { display: block; color: #64748b; font-size: 12px; }
+  .program-status-item strong { display: block; margin-top: 4px; color: #0f172a; }
   .program-panel[hidden] { display: none; }
   .program-panel { scroll-margin-top: 86px; }
   .program-panel h3,
@@ -49,6 +64,8 @@
 
 {% block content %}
 {% set payload = program_list_payload or {} %}
+{% set overview_payload = automation_overview_payload or {} %}
+{% set pool_payload = automation_pool_payload or {} %}
 {% set items = payload["items"] or [] %}
 {% set default_program = payload["default_program"] or {} %}
 {% set ns = namespace(active_count=0, archived_count=0, workflow_total=0, latest_execution_at="") %}
@@ -67,6 +84,58 @@
 {% endfor %}
 
 <div class="program-shell">
+  <section class="admin-card" data-automation-overview-root data-overview-api-url="/api/admin/automation-conversion/overview" data-pools-api-url="/api/admin/automation-conversion/pools" data-source-status="{{ overview_payload.source_status or 'next_read_model' }}">
+    <div class="admin-card-head admin-card-head--tight">
+      <div>
+        <h2 class="program-section-title">池子统计</h2>
+        <p class="program-section-copy">自动化成员池、今日新增、focus / normal 和运营状态。</p>
+      </div>
+    </div>
+    <div class="admin-card-grid" data-automation-overview-cards>
+      {% for card in overview_payload.cards or [] %}
+      <article class="admin-card admin-stat-card admin-stat-card--nested" data-automation-overview-card="{{ card.key }}">
+        <div class="admin-card-label">{{ card.label }}</div>
+        <div class="admin-card-value admin-card-value--compact" data-card-value>{{ card.value or 0 }}</div>
+        <p class="admin-card-copy">{{ card.description }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="program-pool-grid" data-automation-pool-cards>
+      {% for pool in pool_payload.pools or [] %}
+      <article class="admin-card admin-stat-card admin-stat-card--nested program-pool-card" data-automation-pool-card="{{ pool.pool_key }}">
+        <div class="program-pool-head">
+          <h3 class="program-pool-name">{{ pool.label }}</h3>
+          <strong class="program-pool-count" data-pool-count>{{ pool.count or 0 }}</strong>
+        </div>
+        <p class="program-muted">{{ pool.description }}</p>
+        <div class="program-pool-metrics">
+          <div class="program-pool-metric"><span>focus</span><strong data-pool-focus>{{ pool.focus_count or 0 }}</strong></div>
+          <div class="program-pool-metric"><span>normal</span><strong data-pool-normal>{{ pool.normal_count or 0 }}</strong></div>
+          <div class="program-pool-metric"><span>今日新增</span><strong data-pool-today>{{ pool.today_new_count or 0 }}</strong></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="program-status-grid" data-automation-operational-status>
+      {% set sync_status = overview_payload.message_activity_sync or {} %}
+      {% set sync_last_run = sync_status.last_run or {} %}
+      {% set reply_status = overview_payload.reply_monitor or {} %}
+      {% set auto_start = overview_payload.auto_start_window or {} %}
+      <div class="program-status-item" data-operational-status="message_activity_sync">
+        <span>消息活跃状态</span>
+        <strong>{{ sync_last_run.status_label or sync_status.db_status.status or "暂无记录" }}</strong>
+      </div>
+      <div class="program-status-item" data-operational-status="reply_monitor">
+        <span>自动回复监控</span>
+        <strong>{{ reply_status.status_label or "已关闭" }}</strong>
+      </div>
+      <div class="program-status-item" data-operational-status="auto_start_window">
+        <span>自动启动窗口</span>
+        <strong>{{ auto_start.label or "09:00 - 23:00" }}</strong>
+      </div>
+    </div>
+  </section>
+
   <section class="admin-card-grid">
     <article class="admin-card admin-stat-card admin-stat-card--nested">
       <div class="admin-card-label">方案总数</div>
@@ -211,4 +280,48 @@
     </div>
   </section>
 </div>
+<script>
+(() => {
+  const root = document.querySelector("[data-automation-overview-root]");
+  if (!root) return;
+  const textValue = (value) => String(value ?? 0);
+  const updateOverview = (payload) => {
+    (payload.cards || []).forEach((card) => {
+      const node = root.querySelector(`[data-automation-overview-card="${CSS.escape(card.key || "")}"] [data-card-value]`);
+      if (node) node.textContent = textValue(card.value);
+    });
+    const sync = payload.message_activity_sync || {};
+    const syncNode = root.querySelector('[data-operational-status="message_activity_sync"] strong');
+    if (syncNode) syncNode.textContent = ((sync.last_run || {}).status_label || (sync.db_status || {}).status || "暂无记录");
+    const reply = payload.reply_monitor || {};
+    const replyNode = root.querySelector('[data-operational-status="reply_monitor"] strong');
+    if (replyNode) replyNode.textContent = reply.status_label || "已关闭";
+    const autoStart = payload.auto_start_window || {};
+    const autoNode = root.querySelector('[data-operational-status="auto_start_window"] strong');
+    if (autoNode) autoNode.textContent = autoStart.label || "09:00 - 23:00";
+  };
+  const updatePools = (payload) => {
+    (payload.pools || []).forEach((pool) => {
+      const card = root.querySelector(`[data-automation-pool-card="${CSS.escape(pool.pool_key || "")}"]`);
+      if (!card) return;
+      const count = card.querySelector("[data-pool-count]");
+      const focus = card.querySelector("[data-pool-focus]");
+      const normal = card.querySelector("[data-pool-normal]");
+      const today = card.querySelector("[data-pool-today]");
+      if (count) count.textContent = textValue(pool.count);
+      if (focus) focus.textContent = textValue(pool.focus_count);
+      if (normal) normal.textContent = textValue(pool.normal_count);
+      if (today) today.textContent = textValue(pool.today_new_count);
+    });
+  };
+  const loadJson = async (url, apply) => {
+    if (!url) return;
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) return;
+    apply(await response.json());
+  };
+  loadJson(root.dataset.overviewApiUrl, updateOverview).catch(() => {});
+  loadJson(root.dataset.poolsApiUrl, updatePools).catch(() => {});
+})();
+</script>
 {% endblock %}
