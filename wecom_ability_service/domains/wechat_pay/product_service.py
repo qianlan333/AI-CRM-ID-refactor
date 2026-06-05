@@ -11,6 +11,7 @@ from aicrm_next.commerce.domain import completion_redirect_projection, safe_comp
 
 from ...db import get_db
 from ...infra.json_utils import safe_json_loads
+from ...infra.signed_context import append_ctx_query
 from ...infra.settings import get_setting
 from . import product_repo
 from .exceptions import WeChatPayOrderError, WeChatPayProductError
@@ -299,14 +300,17 @@ def get_product_slices(product_id: int, *, include_image_url: bool = True) -> li
     ]
 
 
-def get_public_product_page_state(product_code: str) -> dict[str, Any]:
+def get_public_product_page_state(product_code: str, *, context_token: str = "", context_status: str = "") -> dict[str, Any]:
     product = get_product(product_code)
     if not product:
         raise WeChatPayOrderError("product_not_configured")
+    checkout_path = f"/pay/{product['product_code']}"
     return {
         "product": product,
         "slices": get_product_slices(int(product.get("id") or 0)),
-        "checkout_url": f"/pay/{product['product_code']}",
+        "checkout_url": append_ctx_query(checkout_path, context_token) if context_token else checkout_path,
+        "context_token": context_token,
+        "context_status": context_status or ("valid" if context_token else "missing"),
     }
 
 

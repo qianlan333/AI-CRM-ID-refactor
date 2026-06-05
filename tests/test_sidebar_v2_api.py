@@ -6,6 +6,7 @@ import json
 import pytest
 
 from wecom_ability_service.db import get_db
+from wecom_ability_service.infra.signed_context import load_sidebar_product_context_token
 
 _TINY_PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAEAAAcAAekVCC0AAAAASUVORK5CYII="
@@ -45,6 +46,52 @@ def test_sidebar_v2_workbench_returns_text_profile_fields_without_enum_options(c
     assert "profile_options" not in payload
     assert payload["modules"] == ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
     assert "counts" not in payload
+    assert payload["diagnostics"]["display_name_source"]
+
+
+def test_sidebar_v2_workbench_resolves_display_name_from_contacts_or_identity_map(client, app):
+    external_userid = "wmbNXy_raw_should_not_title"
+    identity_only_external_userid = "wm_identity_name_only"
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
+            VALUES (?, '', 'sales_01', '真实备注名', '')
+            """,
+            (external_userid,),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name
+            ) VALUES (?, ?, '', '', ?, ?)
+            """,
+            ("ww-test", external_userid, "sales_01", "身份表姓名"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name
+            ) VALUES (?, ?, '', '', ?, ?)
+            """,
+            ("ww-test", identity_only_external_userid, "sales_02", "身份表唯一姓名"),
+        )
+        db.commit()
+
+    response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": external_userid})
+    identity_only_response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": identity_only_external_userid})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["customer"]["display_name"] == "真实备注名"
+    assert payload["customer"]["external_userid"] == external_userid
+    assert payload["diagnostics"]["display_name_source"] == "contacts.remark"
+    assert payload["customer"]["display_name"] != external_userid
+    assert identity_only_response.status_code == 200
+    identity_only_payload = identity_only_response.get_json()
+    assert identity_only_payload["customer"]["display_name"] == "身份表唯一姓名"
+    assert identity_only_payload["diagnostics"]["display_name_source"] == "wecom_external_contact_identity_map.name"
 
 
 def test_sidebar_v2_profile_put_accepts_free_text_source_and_industry(client):
@@ -347,36 +394,47 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
         ).fetchone()["id"]
         db.commit()
 
-    products_response = client.get("/api/sidebar/v2/products", query_string={"external_userid": "wm_sidebar_v2"})
-    orders_response = client.get("/api/sidebar/v2/orders", query_string={"external_userid": "wm_sidebar_v2"})
+    products_response = client.get(
+        "/api/sidebar/v2/products",
+        query_string={"external_userid": "wm_sidebar_v2", "owner_userid": "owner_current", "bind_by_userid": "sales_01"},
+    )
+    orders_response = client.get(
+        "/api/sidebar/v2/orders",
+        query_string={"external_userid": "wm_sidebar_v2", "owner_userid": "owner_current"},
+    )
 
     assert products_response.status_code == 200
     assert orders_response.status_code == 200
-    assert products_response.get_json() == {
-        "ok": True,
-        "products": [
-            {
-                "id": "prd_sidebar_active",
-                "title": "暑期阅读提升营 · 4 周",
-                "price_label": "¥399",
-                "product_url": "/p/prd_sidebar_active",
-            }
-        ],
-    }
-    assert orders_response.get_json() == {
-        "ok": True,
-        "orders": [
-            {
-                "id": "WXP_SIDE_001",
-                "order_id": str(order_id),
-                "title": "暑期阅读提升营 · 4 周",
-                "amount_label": "¥399",
-                "status_label": "已支付",
-                "paid_at": "2026-05-20 14:22",
-                "detail_url": f"/admin/wechat-pay/transactions/{order_id}",
-            }
-        ],
-    }
+    products_payload = products_response.get_json()
+    product = products_payload["products"][0]
+    assert product["id"] == "prd_sidebar_active"
+    assert product["title"] == "暑期阅读提升营 · 4 周"
+    assert product["price_label"] == "¥399"
+    assert product["product_url"].startswith("/p/prd_sidebar_active?ctx=")
+    assert product["checkout_url"].startswith("/pay/prd_sidebar_active?ctx=")
+    assert "wm_sidebar_v2" not in product["product_url"]
+    token = product["product_url"].split("ctx=", 1)[1]
+    token_payload = load_sidebar_product_context_token(token)
+    assert token_payload["ok"] is True
+    assert token_payload["context"]["external_userid"] == "wm_sidebar_v2"
+    assert token_payload["context"]["owner_userid"] == "owner_current"
+    assert token_payload["context"]["bind_by_userid"] == "sales_01"
+    assert products_payload["diagnostics"]["context_status"] == "signed"
+
+    orders_payload = orders_response.get_json()
+    assert orders_payload["orders"] == [
+        {
+            "id": "WXP_SIDE_001",
+            "order_id": str(order_id),
+            "title": "暑期阅读提升营 · 4 周",
+            "amount_label": "¥399",
+            "status_label": "已支付",
+            "paid_at": "2026-05-20 14:22",
+            "detail_url": f"/admin/wechat-pay/transactions/{order_id}",
+        }
+    ]
+    assert orders_payload["customer"]["external_userid"] == "wm_sidebar_v2"
+    assert orders_payload["diagnostics"]["paid_order_mobile_binding"]["status"] in {"already_bound", "no_single_candidate"}
 
 
 def test_sidebar_v2_workbench_binds_unbound_mobile_from_paid_wechat_pay_order(client, app, monkeypatch):

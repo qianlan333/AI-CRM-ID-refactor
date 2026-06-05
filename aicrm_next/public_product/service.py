@@ -7,6 +7,7 @@ from typing import Any
 from aicrm_next.commerce.domain import preview_product
 from aicrm_next.commerce.repo import build_commerce_repository
 from aicrm_next.shared.errors import NotFoundError
+from wecom_ability_service.infra.signed_context import append_ctx_query
 
 
 PUBLIC_PRODUCT_ROUTES = ("/p/{path:path}", "/pay/{path:path}", "/api/products/{path:path}")
@@ -129,11 +130,12 @@ def product_not_found_payload(path: Any) -> dict[str, Any]:
     }
 
 
-def render_product_page(product: dict[str, Any]) -> str:
+def render_product_page(product: dict[str, Any], *, context_token: str = "", context_status: str = "") -> str:
     title = escape(str(product.get("title") or "商品详情"))
     description = escape(str(product.get("description") or ""))
     cta = escape(str(product.get("buy_button_text") or product.get("cta_text") or "立即报名"))
     product_code = escape(str(product.get("product_code") or ""))
+    checkout_url = escape(append_ctx_query(f"/pay/{product.get('product_code') or ''}", context_token) if context_token else f"/pay/{product.get('product_code') or ''}", quote=True)
     media = _render_detail_media(product)
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -152,7 +154,7 @@ def render_product_page(product: dict[str, Any]) -> str:
       <div class="sticky-title">{title}</div>
       <div class="sticky-price"><small>¥</small>{_price_amount(product)}</div>
     </div>
-    <a class="cta" href="/pay/{product_code}">{cta}</a>
+    <a class="cta" href="{checkout_url}" data-context-status="{escape(str(context_status or ('valid' if context_token else 'missing')), quote=True)}">{cta}</a>
   </nav>
 </body>
 </html>"""
@@ -506,6 +508,9 @@ def _pay_page_script(state_json: str) -> str:
           product_code: state.product.product_code,
           order_source: "product_checkout"
         }};
+        if (state.context_token) {{
+          body.ctx = state.context_token;
+        }}
         if (state.require_mobile) {{
           const mobile = validateMobile();
           if (!mobile) return null;

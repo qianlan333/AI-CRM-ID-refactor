@@ -22,8 +22,20 @@
     ["mini", "小程序素材"],
     ["pdf", "PDF 素材"],
   ];
+  const WORKBENCH_STATES = {
+    identifying_customer: "identifying_customer",
+    sdk_unavailable: "sdk_unavailable",
+    context_missing: "context_missing",
+    loading_workbench: "loading_workbench",
+    ready: "ready",
+    degraded_ready: "degraded_ready",
+    error: "error",
+  };
+  const DEFAULT_TIMEOUT_MS = 8000;
+  const SDK_TIMEOUT_MS = 5000;
 
   const state = {
+    status: WORKBENCH_STATES.identifying_customer,
     external_userid: "",
     owner_userid: "",
     bind_by_userid: "",
@@ -40,6 +52,7 @@
     },
     profileSaveTimer: null,
     toastTimer: null,
+    lastError: null,
   };
 
   const debugEnabled = root && root.dataset.debugEnabled === "true";
@@ -75,6 +88,29 @@
     console.log(line);
   }
 
+  function customerContextQuery() {
+    return {
+      external_userid: state.external_userid,
+      owner_userid: state.owner_userid,
+      bind_by_userid: state.bind_by_userid || state.owner_userid,
+    };
+  }
+
+  function productContextDiagnostics(payload) {
+    const products = (payload && payload.products) || [];
+    return {
+      context_source: payload && payload.diagnostics ? payload.diagnostics.context_source : "",
+      context_status: payload && payload.diagnostics ? payload.diagnostics.context_status : "",
+      product_url_has_context: products.some((item) => {
+        try {
+          return new URL(item.product_url || "", window.location.origin).searchParams.has("ctx");
+        } catch (_error) {
+          return String(item.product_url || "").indexOf("ctx=") !== -1;
+        }
+      }),
+    };
+  }
+
   function showToast(message, tone) {
     window.clearTimeout(state.toastTimer);
     toastNode.textContent = message || "";
@@ -84,6 +120,11 @@
   }
 
   async function requestJson(url, options) {
+    const timeoutMs = Number((options && options.timeoutMs) || DEFAULT_TIMEOUT_MS);
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
     const finalOptions = {
       headers: {
         Accept: "application/json",
@@ -91,17 +132,30 @@
         ...((options && options.headers) || {}),
       },
       ...(options || {}),
+      ...(controller ? { signal: controller.signal } : {}),
     };
-    const response = await fetch(url, finalOptions);
-    const text = await response.text();
-    const payload = text ? safeJsonParse(text) : null;
-    if (!response.ok || (payload && payload.ok === false)) {
-      const error = new Error((payload && payload.error) || "请求失败");
-      error.status = response.status;
-      error.payload = payload || {};
+    delete finalOptions.timeoutMs;
+    try {
+      const response = await fetch(url, finalOptions);
+      const text = await response.text();
+      const payload = text ? safeJsonParse(text) : null;
+      if (!response.ok || (payload && payload.ok === false)) {
+        const error = new Error((payload && payload.error) || "请求失败");
+        error.status = response.status;
+        error.payload = payload || {};
+        throw error;
+      }
+      return payload || { ok: true };
+    } catch (error) {
+      if (error && error.name === "AbortError") {
+        const timeoutError = new Error("请求超时，请重试");
+        timeoutError.stage = "request_timeout";
+        throw timeoutError;
+      }
       throw error;
+    } finally {
+      if (timer) window.clearTimeout(timer);
     }
-    return payload || { ok: true };
   }
 
   function queryUrl(baseUrl, params) {
@@ -146,6 +200,49 @@
 
   function setPanelLoading(title) {
     content.innerHTML = panel(title || "", '<div class="status">正在加载…</div>');
+  }
+
+  function stateLabel(status) {
+    const labels = {
+      identifying_customer: "识别中",
+      sdk_unavailable: "未识别到客户",
+      context_missing: "未识别到客户",
+      loading_workbench: "加载中",
+      ready: "",
+      degraded_ready: "部分加载",
+      error: "加载失败",
+    };
+    return labels[status] || "加载失败";
+  }
+
+  function setWorkbenchState(status, detail) {
+    state.status = status;
+    state.lastError = detail || null;
+    writeDebug("state transition", { status, detail: detail || {} });
+    if (status !== WORKBENCH_STATES.ready && status !== WORKBENCH_STATES.degraded_ready) {
+      renderTopState(status, detail || {});
+    }
+  }
+
+  function renderTopState(status, detail) {
+    const isLoading = status === WORKBENCH_STATES.identifying_customer || status === WORKBENCH_STATES.loading_workbench;
+    document.getElementById("customer-name").textContent = stateLabel(status);
+    document.getElementById("customer-mobile").textContent = "";
+    document.getElementById("customer-external-userid").textContent = state.external_userid ? "外部联系人 ID " + state.external_userid : "";
+    document.getElementById("workflow-title").textContent = "";
+    const bindingState = document.getElementById("binding-state");
+    bindingState.textContent = isLoading ? (status === WORKBENCH_STATES.identifying_customer ? "识别中" : "加载中...") : stateLabel(status);
+    bindingState.classList.toggle("loading", isLoading);
+    bindingState.classList.toggle("unbound", !isLoading);
+    if (detail && detail.message) writeDebug("top state detail", detail);
+  }
+
+  function renderRetryPanel(title, message) {
+    content.innerHTML = panel(
+      title || "",
+      '<div class="status error">' + escapeHtml(message || "加载失败，请稍后重试。") + "</div>" +
+        '<div class="row-actions"><button class="btn primary" type="button" data-retry-boot>重试</button></div>'
+    );
   }
 
   function panel(title, body) {
@@ -367,12 +464,14 @@
   }
 
   async function loadWorkbench() {
+    setWorkbenchState(WORKBENCH_STATES.loading_workbench, { external_userid: state.external_userid });
     const payload = await requestJson(
       queryUrl(endpoint("workbenchUrl"), {
         external_userid: state.external_userid,
         owner_userid: state.owner_userid,
       })
     );
+    writeDebug("workbench response", payload);
     state.workbench = payload;
     const customer = payload.customer || {};
     state.external_userid = customer.external_userid || state.external_userid;
@@ -381,6 +480,7 @@
     renderTop();
     renderTabs();
     renderActiveTab();
+    setWorkbenchState(payload.diagnostics && payload.diagnostics.context_source_status === "error" ? WORKBENCH_STATES.degraded_ready : WORKBENCH_STATES.ready, payload.diagnostics || {});
   }
 
   async function loadTabData(tab) {
@@ -389,10 +489,16 @@
       const payload = await requestJson(queryUrl(endpoint("questionnairesUrl"), { external_userid: state.external_userid }));
       state.data.questionnaires = payload.questionnaires || [];
     } else if (tab === "products") {
-      const payload = await requestJson(queryUrl(endpoint("productsUrl"), { external_userid: state.external_userid }));
+      const payload = await requestJson(queryUrl(endpoint("productsUrl"), customerContextQuery()));
+      writeDebug("products response", productContextDiagnostics(payload));
       state.data.products = payload.products || [];
     } else if (tab === "orders") {
-      const payload = await requestJson(queryUrl(endpoint("ordersUrl"), { external_userid: state.external_userid }));
+      const payload = await requestJson(queryUrl(endpoint("ordersUrl"), customerContextQuery()));
+      if (payload.customer) {
+        state.workbench.customer = Object.assign({}, state.workbench.customer || {}, payload.customer);
+        renderTop();
+      }
+      writeDebug("orders response", payload.diagnostics || {});
       state.data.orders = payload.orders || [];
     } else if (tab === "materials") {
       await loadMaterials(state.materialType);
@@ -465,27 +571,17 @@
 
   async function sendImageToCurrentChat(mediaId) {
     const sdkReady = await initWeComSdk();
-    if (!sdkReady || !window.wx || typeof window.wx.invoke !== "function") {
+    if (!sdkReady.ok || !window.wx || typeof window.wx.invoke !== "function") {
       throw new Error("请在企微侧边栏内发送");
     }
-    return await new Promise((resolve, reject) => {
-      window.wx.invoke(
-        "sendChatMessage",
-        {
-          msgtype: "image",
-          image: { mediaid: mediaId },
-        },
-        function (res) {
-          writeDebug("sendChatMessage result", res || {});
-          const errMsg = String((res || {}).err_msg || "");
-          if (!errMsg || errMsg.indexOf(":ok") >= 0) {
-            resolve(res);
-            return;
-          }
-          reject(new Error(String((res || {}).errmsg || errMsg || "发送失败")));
-        }
-      );
-    });
+    const res = await invokeWeCom("sendChatMessage", {
+      msgtype: "image",
+      image: { mediaid: mediaId },
+    }, SDK_TIMEOUT_MS);
+    writeDebug("sendChatMessage result", res || {});
+    const errMsg = String((res || {}).err_msg || "");
+    if (!errMsg || errMsg.indexOf(":ok") >= 0) return res;
+    throw new Error(String((res || {}).errmsg || errMsg || "发送失败"));
   }
 
   function openMobileModal() {
@@ -534,20 +630,34 @@
     state.external_userid = getQueryValue("external_userid").trim();
     state.owner_userid = getQueryValue("owner_userid").trim();
     state.bind_by_userid = getQueryValue("bind_by_userid").trim() || state.owner_userid;
-    writeDebug("query context", state);
+    writeDebug("query context", {
+      external_userid: state.external_userid,
+      owner_userid: state.owner_userid,
+      bind_by_userid: state.bind_by_userid,
+      query: Object.fromEntries(new URLSearchParams(window.location.search).entries()),
+    });
     return Boolean(state.external_userid);
   }
 
   async function initWeComSdk() {
-    if (!window.wx) return false;
-    const currentUrl = window.location.href.split("#")[0];
-    const configPayload = await requestJson(endpoint("jssdkConfigUrl") + "?url=" + encodeURIComponent(currentUrl));
+    if (!window.wx) return { ok: false, status: WORKBENCH_STATES.sdk_unavailable, reason: "wx_missing" };
+    let configPayload;
+    try {
+      const currentUrl = window.location.href.split("#")[0];
+      configPayload = await requestJson(endpoint("jssdkConfigUrl") + "?url=" + encodeURIComponent(currentUrl), { timeoutMs: SDK_TIMEOUT_MS });
+      writeDebug("jssdk config response", { has_config: Boolean(configPayload && configPayload.config), has_agent_config: Boolean(configPayload && configPayload.agent_config) });
+    } catch (error) {
+      writeDebug("jssdk config error", { message: error.message || String(error) });
+      return { ok: false, status: WORKBENCH_STATES.sdk_unavailable, reason: "jssdk_config_failed", error: error.message || String(error) };
+    }
     return await new Promise((resolve) => {
       let resolved = false;
-      const finish = (ok) => {
+      const timer = window.setTimeout(() => finish(false, "sdk_timeout"), SDK_TIMEOUT_MS);
+      const finish = (ok, reason) => {
         if (!resolved) {
           resolved = true;
-          resolve(ok);
+          window.clearTimeout(timer);
+          resolve({ ok, status: ok ? WORKBENCH_STATES.identifying_customer : WORKBENCH_STATES.sdk_unavailable, reason: reason || "" });
         }
       };
       window.wx.config({
@@ -562,7 +672,7 @@
       window.wx.ready(function () {
         writeDebug("wx.config success", { url: configPayload.config.url });
         if (typeof window.wx.agentConfig !== "function") {
-          finish(false);
+          finish(false, "agentConfig_missing");
           return;
         }
         window.wx.agentConfig({
@@ -574,56 +684,90 @@
           jsApiList: ["getContext", "getCurExternalContact", "sendChatMessage"],
           success: function (res) {
             writeDebug("wx.agentConfig success", res || {});
-            finish(true);
+            finish(true, "");
           },
           fail: function (err) {
             writeDebug("wx.agentConfig fail", err || {});
-            finish(false);
+            finish(false, "agentConfig_failed");
           },
         });
       });
       window.wx.error(function (err) {
         writeDebug("wx.config fail", err || {});
-        finish(false);
+        finish(false, "wx_config_failed");
+      });
+    });
+  }
+
+  function invokeWeCom(method, payload, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      if (!window.wx || typeof window.wx.invoke !== "function") {
+        reject(new Error("wx.invoke unavailable"));
+        return;
+      }
+      let resolved = false;
+      const timer = window.setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        const error = new Error(method + " timeout");
+        error.stage = method;
+        reject(error);
+      }, timeoutMs || SDK_TIMEOUT_MS);
+      window.wx.invoke(method, payload || {}, function (res) {
+        if (resolved) return;
+        resolved = true;
+        window.clearTimeout(timer);
+        resolve(res || {});
       });
     });
   }
 
   async function resolveContextFromWeCom() {
     const sdkReady = await initWeComSdk();
-    if (!sdkReady || !window.wx || typeof window.wx.invoke !== "function") return false;
-    window.wx.invoke("getContext", {}, function (res) {
-      writeDebug("getContext result", res || {});
-    });
-    return await new Promise((resolve) => {
-      window.wx.invoke("getCurExternalContact", {}, function (res) {
-        writeDebug("getCurExternalContact result", res || {});
-        const externalUserid = String((res || {}).userId || (res || {}).external_userid || "").trim();
-        if (!externalUserid) {
-          resolve(false);
-          return;
-        }
-        state.external_userid = externalUserid;
-        state.owner_userid = String((res || {}).owner_userid || state.owner_userid || "").trim();
-        state.bind_by_userid = String((res || {}).operator_userid || state.bind_by_userid || state.owner_userid || "").trim();
-        writeDebug("getCurExternalContact success", state);
-        resolve(true);
+    if (!sdkReady.ok || !window.wx || typeof window.wx.invoke !== "function") return sdkReady;
+    invokeWeCom("getContext", {}, SDK_TIMEOUT_MS)
+      .then((res) => writeDebug("getContext result", res || {}))
+      .catch((error) => writeDebug("getContext error", { message: error.message || String(error) }));
+    try {
+      const res = await invokeWeCom("getCurExternalContact", {}, SDK_TIMEOUT_MS);
+      writeDebug("getCurExternalContact result", res || {});
+      const externalUserid = String((res || {}).userId || (res || {}).external_userid || "").trim();
+      if (!externalUserid) {
+        return { ok: false, status: WORKBENCH_STATES.context_missing, reason: "external_userid_missing" };
+      }
+      state.external_userid = externalUserid;
+      state.owner_userid = String((res || {}).owner_userid || state.owner_userid || "").trim();
+      state.bind_by_userid = String((res || {}).operator_userid || state.bind_by_userid || state.owner_userid || "").trim();
+      writeDebug("getCurExternalContact success", {
+        external_userid: state.external_userid,
+        owner_userid: state.owner_userid,
+        bind_by_userid: state.bind_by_userid,
       });
-    });
+      return { ok: true, status: WORKBENCH_STATES.identifying_customer };
+    } catch (error) {
+      writeDebug("getCurExternalContact error", { message: error.message || String(error), stage: error.stage || "" });
+      return { ok: false, status: WORKBENCH_STATES.context_missing, reason: error.stage || "getCurExternalContact_failed", error: error.message || String(error) };
+    }
   }
 
   async function boot() {
     renderTabs();
+    setWorkbenchState(WORKBENCH_STATES.identifying_customer);
+    setPanelLoading("");
     try {
       const hasQuery = await resolveContextFromQuery();
-      const hasContext = hasQuery ? true : await resolveContextFromWeCom();
-      if (!hasContext) {
-        content.innerHTML = panel("", '<div class="status error">当前未识别到客户信息，请从企微客户侧边栏重新打开。</div>');
+      const contextResult = hasQuery ? { ok: true, status: WORKBENCH_STATES.identifying_customer, source: "query" } : await resolveContextFromWeCom();
+      writeDebug("identity result", contextResult);
+      if (!contextResult.ok) {
+        setWorkbenchState(contextResult.status || WORKBENCH_STATES.context_missing, contextResult);
+        renderRetryPanel("", contextResult.status === WORKBENCH_STATES.sdk_unavailable ? "企微 SDK 暂不可用，请确认从企微侧边栏打开，或带 external_userid 参数重试。" : "未识别到客户，请从企微客户侧边栏重新打开。");
         return;
       }
       await loadWorkbench();
     } catch (error) {
-      content.innerHTML = panel("", '<div class="status error">' + escapeHtml(error.message || "加载失败，请稍后重试。") + "</div>");
+      writeDebug("boot error", { message: error.message || String(error), stage: error.stage || "" });
+      setWorkbenchState(WORKBENCH_STATES.error, { message: error.message || String(error), stage: error.stage || "" });
+      renderRetryPanel("", error.message || "加载失败，请稍后重试。");
     }
   }
 
@@ -655,6 +799,12 @@
   }, true);
 
   content.addEventListener("click", async (event) => {
+    const retryButton = event.target.closest("[data-retry-boot]");
+    if (retryButton) {
+      retryButton.disabled = true;
+      boot();
+      return;
+    }
     const qButton = event.target.closest("[data-toggle-questionnaire]");
     if (qButton) {
       const card = content.querySelector('[data-questionnaire-card="' + qButton.dataset.toggleQuestionnaire + '"]');

@@ -217,12 +217,15 @@
       }
 
       async function createOrder() {
-        const body = {
-          product_code: state.product.product_code,
-          order_source: "product_checkout"
-        };
-        if (state.require_mobile) {
-          const mobile = validateMobile();
+      const body = {
+        product_code: state.product.product_code,
+        order_source: "product_checkout"
+      };
+      if (state.context_token) {
+        body.ctx = state.context_token;
+      }
+      if (state.require_mobile) {
+        const mobile = validateMobile();
           if (!mobile) return null;
           body.mobile = mobile;
         }

@@ -104,14 +104,25 @@ def sidebar_v2_other_staff_messages():
 
 def sidebar_v2_products():
     try:
-        return jsonify(sidebar_v2.get_products(external_userid=request.args.get("external_userid", "")))
+        return jsonify(
+            sidebar_v2.get_products(
+                external_userid=request.args.get("external_userid", ""),
+                owner_userid=request.args.get("owner_userid", ""),
+                bind_by_userid=request.args.get("bind_by_userid", ""),
+            )
+        )
     except ValueError as exc:
         return _json_error(str(exc))
 
 
 def sidebar_v2_orders():
     try:
-        return jsonify(sidebar_v2.get_orders(external_userid=request.args.get("external_userid", "")))
+        return jsonify(
+            sidebar_v2.get_orders(
+                external_userid=request.args.get("external_userid", ""),
+                owner_userid=request.args.get("owner_userid", ""),
+            )
+        )
     except ValueError as exc:
         return _json_error(str(exc))
 

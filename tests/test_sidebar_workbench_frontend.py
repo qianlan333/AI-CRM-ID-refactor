@@ -47,6 +47,19 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert '["materials", "素材"]' in script
     assert '["other_staff_messages", "其他客服聊天"]' in script
     assert "data-tab" in script
+    assert "identifying_customer" in script
+    assert "sdk_unavailable" in script
+    assert "context_missing" in script
+    assert "loading_workbench" in script
+    assert "degraded_ready" in script
+    assert "AbortController" in script
+    assert "timeoutMs" in script
+    assert 'const error = new Error(method + " timeout");' in script
+    assert 'invokeWeCom("getCurExternalContact"' in script
+    assert "data-retry-boot" in script
+    assert "bindingState.classList.toggle(\"loading\", isLoading)" in script
+    assert "query context" in script
+    assert "workbench response" in script
     assert "badge" not in combined.lower()
     assert "phone-state loading" in template
     assert "加载中..." in template
@@ -72,6 +85,11 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "复制商品链接" in script
     assert "data-product-copy" in script
     assert "product_url" in script
+    assert "customerContextQuery()" in script
+    assert "product_url_has_context" in script
+    assert "payload.customer" in script
+    assert "renderTop();" in script
+    assert "context_token" not in script
     assert "发送介绍" not in script
     assert "商品介绍发送能力待接入" not in script
     assert "data-product-send" not in script
@@ -135,6 +153,17 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     ]
     for text in forbidden:
         assert text not in combined
+
+
+def test_sidebar_workbench_static_copies_stay_in_sync():
+    assert WORKBENCH_JS.read_text(encoding="utf-8") == NEXT_WORKBENCH_JS.read_text(encoding="utf-8")
+
+
+def test_sidebar_workbench_query_context_skips_wecom_sdk_path():
+    script = WORKBENCH_JS.read_text(encoding="utf-8")
+
+    assert "const hasQuery = await resolveContextFromQuery();" in script
+    assert 'const contextResult = hasQuery ? { ok: true, status: WORKBENCH_STATES.identifying_customer, source: "query" } : await resolveContextFromWeCom();' in script
 
 
 def test_sidebar_legacy_binding_apis_remain_available(client):

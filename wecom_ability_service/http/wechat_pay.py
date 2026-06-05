@@ -17,6 +17,8 @@ from ..domains.wechat_pay import (
     get_product_slices,
     handle_wechat_pay_notification,
 )
+from ..domains.wechat_pay.sidebar_context import resolve_sidebar_order_context
+from ..infra.signed_context import append_ctx_query, load_sidebar_product_context_token
 from ..infra.wechat_oauth import WeChatOAuthRequestError, exchange_wechat_oauth_code, fetch_wechat_userinfo
 from ..infra.settings import get_setting
 from .questionnaire_support import (
@@ -55,6 +57,21 @@ def _payment_oauth_callback_url() -> str:
 def _payment_oauth_start_url(return_url: str) -> str:
     query = urlencode({"return_url": _safe_return_url(return_url)})
     return f"{url_for('api.h5_wechat_pay_oauth_start')}?{query}"
+
+
+def _request_sidebar_product_context() -> dict[str, Any]:
+    token = _normalized_text(request.args.get("ctx"))
+    result = load_sidebar_product_context_token(token)
+    return {
+        "token": token,
+        "status": _normalized_text(result.get("status")) or "missing",
+        "context": dict(result.get("context") or {}) if result.get("ok") else {},
+    }
+
+
+def _product_path_with_ctx(prefix: str, product_code: str, context_token: str = "") -> str:
+    path = f"/{prefix}/{product_code}" if product_code else f"/{prefix}"
+    return append_ctx_query(path, context_token) if context_token else path
 
 
 def _wechat_pay_oauth_error_page(message: str, *, return_url: str = "/", status_code: int = 400):
@@ -112,27 +129,38 @@ def h5_wechat_pay_checkout(product_code: str):
     if wechat_gate is not None:
         return wechat_gate
     identity = _wechat_h5_identity(payment_only=True)
+    sidebar_context = _request_sidebar_product_context()
+    pay_path = _product_path_with_ctx("pay", product_code, sidebar_context["token"])
     page_state = build_checkout_page_state(
         product_code=product_code,
         identity=identity if _payment_identity_ready(identity) else {},
-        oauth_start_url=_payment_oauth_start_url(f"/pay/{product_code}"),
+        oauth_start_url=_payment_oauth_start_url(pay_path),
+        context_token=sidebar_context["token"],
+        context_status=sidebar_context["status"],
     )
     return render_template("wechat_pay_h5_checkout.html", page_state=page_state)
 
 
 def h5_wechat_pay_product_page(product_code: str):
+    sidebar_context = _request_sidebar_product_context()
     try:
-        page_state = get_public_product_page_state(product_code)
+        page_state = get_public_product_page_state(
+            product_code,
+            context_token=sidebar_context["token"],
+            context_status=sidebar_context["status"],
+        )
     except WeChatPayOrderError:
         abort(404)
     identity = _wechat_h5_identity(payment_only=True)
     if _is_wechat_browser() and not _normalized_text(identity.get("openid")) and _wechat_oauth_is_configured():
-        return redirect(_payment_oauth_start_url(f"/p/{product_code}"), code=302)
+        return redirect(_payment_oauth_start_url(_product_path_with_ctx("p", product_code, sidebar_context["token"])), code=302)
     if _normalized_text(identity.get("openid")):
         checkout_state = build_checkout_page_state(
             product_code=product_code,
             identity=identity,
-            oauth_start_url=_payment_oauth_start_url(f"/pay/{product_code}"),
+            oauth_start_url=_payment_oauth_start_url(_product_path_with_ctx("pay", product_code, sidebar_context["token"])),
+            context_token=sidebar_context["token"],
+            context_status=sidebar_context["status"],
         )
         if checkout_state.get("paid_order"):
             return render_template("wechat_pay_h5_checkout.html", page_state=checkout_state)
@@ -211,18 +239,35 @@ def api_h5_wechat_pay_create_jsapi_order():
         return wechat_gate
     payload = request.get_json(silent=True) or {}
     product_code = _normalized_text(payload.get("product_code"))
+    context_token = _normalized_text(payload.get("ctx") or payload.get("context_token"))
     identity = _wechat_h5_identity(payment_only=True)
     if not _payment_identity_ready(identity):
+        pay_path = _product_path_with_ctx("pay", product_code, context_token)
         return (
             jsonify(
                 {
                     "ok": False,
                     "error": "openid_required",
-                    "oauth_start_url": _payment_oauth_start_url(f"/pay/{product_code}" if product_code else "/"),
+                    "oauth_start_url": _payment_oauth_start_url(pay_path if product_code else "/"),
                 }
             ),
             401,
         )
+    product = get_product(product_code) or {}
+    resolved_context = resolve_sidebar_order_context(
+        context_token=context_token,
+        payment_identity=identity,
+        product=product,
+        payload_mobile=_normalized_text(payload.get("mobile")),
+    )
+    request_meta = _questionnaire_request_meta()
+    request_meta["sidebar_product_context"] = {
+        "context_status": resolved_context.get("context_status"),
+        "context_source": resolved_context.get("context_source"),
+        "external_userid_present": bool(resolved_context.get("external_userid")),
+        "owner_userid_present": bool(resolved_context.get("owner_userid")),
+        "mobile_source": resolved_context.get("mobile_source"),
+    }
     notify_url = _normalized_text(get_setting("WECHAT_PAY_NOTIFY_URL") or current_app.config.get("WECHAT_PAY_NOTIFY_URL")) or (
         _external_base_url() + url_for("api.api_h5_wechat_pay_notify")
     )
@@ -232,13 +277,17 @@ def api_h5_wechat_pay_create_jsapi_order():
             payer_openid=identity.get("openid", ""),
             respondent_key=identity.get("respondent_key", ""),
             unionid=identity.get("unionid", ""),
-            external_userid=identity.get("external_userid", ""),
+            external_userid=_normalized_text(resolved_context.get("external_userid")),
             payer_name=identity.get("payer_name", ""),
             client_order_ref=_normalized_text(payload.get("client_order_ref")),
             order_source=_normalized_text(payload.get("order_source")) or "h5_checkout",
             notify_url=notify_url,
-            mobile=_normalized_text(payload.get("mobile")),
-            request_meta=_questionnaire_request_meta(),
+            mobile=_normalized_text(resolved_context.get("mobile")),
+            request_meta=request_meta,
+            owner_userid=_normalized_text(resolved_context.get("owner_userid")),
+            bind_by_userid=_normalized_text(resolved_context.get("bind_by_userid")),
+            context_source=_normalized_text(resolved_context.get("context_source")),
+            mobile_source=_normalized_text(resolved_context.get("mobile_source")),
         )
         return jsonify({"ok": True, **result})
     except WeChatPayConfigError as exc:
