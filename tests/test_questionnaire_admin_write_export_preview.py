@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import csv
+from io import StringIO
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -35,6 +38,19 @@ def test_questionnaire_export_preview_returns_masked_sample_and_plan_only(client
 
 
 def test_existing_get_export_route_downloads_csv_without_storage_file(client: TestClient) -> None:
+    submit = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={
+            "answers": {
+                "q_activation": "activated",
+                "q_interest": ["ai_tools"],
+                "q_note": "希望补充运营建议",
+            },
+            "identity": {"unionid": "union_export_001", "mobile": "13800138000"},
+        },
+    )
+    assert submit.status_code == 200
+
     response = client.get("/api/admin/questionnaires/1/export", headers={"Idempotency-Key": "questionnaire-export-get"})
 
     assert response.status_code == 200
@@ -42,5 +58,28 @@ def test_existing_get_export_route_downloads_csv_without_storage_file(client: Te
     assert response.headers["X-AICRM-Source-Status"] == "next_command"
     assert "X-AICRM-Compatibility-Facade" not in response.headers
     csv_text = response.content.decode("utf-8-sig")
-    assert "submission_id,submitted_at,external_userid,mobile,matched_by,score,final_tags,answers" in csv_text
-    assert "sub_fixture_001" in csv_text
+    reader = csv.DictReader(StringIO(csv_text))
+    assert reader.fieldnames == [
+        "submission_id",
+        "submitted_at",
+        "external_userid",
+        "unionid",
+        "mobile",
+        "score",
+        "final_tags",
+        "黄小璨是否已激活？",
+        "你关注哪些能力？",
+        "还有什么想补充？",
+    ]
+    assert "matched_by" not in (reader.fieldnames or [])
+    assert "answers" not in (reader.fieldnames or [])
+    rows = list(reader)
+    fixture_row = next(row for row in rows if row["submission_id"] == "sub_fixture_001")
+    submitted_row = next(row for row in rows if row["unionid"] == "union_export_001")
+    assert fixture_row["submitted_at"] == "2026-05-20 18:10:00"
+    assert "T" not in fixture_row["submitted_at"]
+    assert "+" not in fixture_row["submitted_at"]
+    assert fixture_row["黄小璨是否已激活？"] == "已激活"
+    assert submitted_row["黄小璨是否已激活？"] == "已激活"
+    assert submitted_row["你关注哪些能力？"] == "AI 工具"
+    assert submitted_row["还有什么想补充？"] == "希望补充运营建议"
