@@ -5,7 +5,7 @@ import importlib
 import logging
 import os
 from functools import lru_cache
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable
 from urllib.parse import urlparse
 
 LOGGER = logging.getLogger("aicrm_next.legacy_flask_facade")
@@ -122,41 +122,6 @@ def legacy_wecom_client_from_app() -> Any:
 
 def legacy_broadcast_enqueue_job(**kwargs: Any) -> int:
     return int(legacy_broadcast_jobs_service().enqueue_job(**kwargs))
-
-
-def legacy_questionnaire_oauth_is_configured() -> bool:
-    app = _legacy_app()
-    secret_key = str(app.config.get("SECRET_KEY", "") or "").strip()
-    return bool(
-        app.config.get("WECHAT_MP_APP_ID")
-        and app.config.get("WECHAT_MP_APP_SECRET")
-        and secret_key
-        and secret_key != "dev-secret-key-change-me"
-    )
-
-
-def legacy_questionnaire_session_identity(cookies: Mapping[str, str]) -> dict[str, str]:
-    app = _legacy_app()
-    cookie_name = str(app.config.get("SESSION_COOKIE_NAME") or "session")
-    raw_cookie = str(cookies.get(cookie_name) or "").strip()
-    if not raw_cookie:
-        return {}
-    serializer = app.session_interface.get_signing_serializer(app)
-    if serializer is None:
-        return {}
-    try:
-        session_payload = serializer.loads(raw_cookie)
-    except Exception:
-        return {}
-    identity = session_payload.get("questionnaire_h5_identity") if isinstance(session_payload, dict) else None
-    if not isinstance(identity, dict):
-        return {}
-    return {
-        "openid": str(identity.get("openid") or "").strip(),
-        "unionid": str(identity.get("unionid") or "").strip(),
-        "external_userid": str(identity.get("external_userid") or "").strip(),
-        "respondent_key": str(identity.get("respondent_key") or "").strip(),
-    }
 
 
 def _filtered_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:

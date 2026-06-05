@@ -27,111 +27,79 @@ def test_questionnaire_share_endpoint_returns_public_link_and_qr(monkeypatch):
     assert 'xmlns="http://www.w3.org/2000/svg"' in unquote(share["qr_data_url"])
 
 
-def test_questionnaire_share_endpoint_uses_production_public_path(monkeypatch):
-    import aicrm_next.questionnaire.api as questionnaire_api
-
-    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
-    monkeypatch.setattr(
-        questionnaire_api,
-        "get_questionnaire_detail_from_legacy",
-        lambda questionnaire_id: {
-            "ok": True,
-            "questionnaire": {
-                "id": questionnaire_id,
-                "slug": "real-questionnaire",
-                "title": "真实生产问卷",
-                "name": "真实生产问卷",
-                "enabled": True,
-                "is_disabled": False,
-                "created_at": "2026-05-01T00:00:00Z",
-                "updated_at": "2026-05-22T00:00:00Z",
-                "submission_count": 1171,
-                "assessment_enabled": False,
-                "public_path": "/s/real-questionnaire",
-            },
-        },
-    )
-
-    response = _client(monkeypatch).get("/api/admin/questionnaires/101/share")
+def test_public_api_uses_next_identity_status_and_filters_backend_fields(monkeypatch):
+    response = _client(monkeypatch).get("/api/h5/questionnaires/hxc-activation-v1")
 
     assert response.status_code == 200
-    share = response.json()["share"]
-    assert share["questionnaire_id"] == 101
-    assert share["title"] == "真实生产问卷"
-    assert share["url"] == "http://testserver/s/real-questionnaire"
-    assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert "questionnaire_h5_identity=" in response.headers.get("set-cookie", "")
+    body = response.json()
+    assert body["source_status"] == "local_contract_probe"
+    assert body["route_owner"] == "ai_crm_next"
+    assert body["fallback_used"] is False
+    assert body["questionnaire"]["slug"] == "hxc-activation-v1"
+    assert "sidebar_profile_field" not in response.text
 
 
-def test_next_public_questionnaire_api_returns_already_submitted_redirect(monkeypatch):
-    import aicrm_next.questionnaire.api as questionnaire_api
-
-    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
-    monkeypatch.setattr(
-        questionnaire_api,
-        "get_public_questionnaire_submission_status_from_legacy",
-        lambda slug, **kwargs: {
-            "ok": True,
-            "submitted": True,
-            "slug": slug,
-            "redirect_url": "https://example.com/done",
-            "submitted_url": f"/s/{slug}/submitted",
-        },
-    )
-
+def test_public_api_returns_already_submitted_for_query_identity(monkeypatch):
     response = _client(monkeypatch).get(
-        "/api/h5/questionnaires/real-questionnaire",
-        params={"external_userid": "wm_submitted"},
+        "/api/h5/questionnaires/hxc-activation-v1",
+        params={"external_userid": "external_user_masked_fixture"},
     )
 
     assert response.status_code == 409
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert response.json()["error"] == "already_submitted"
-    assert response.json()["redirect_url"] == "https://example.com/done"
+    assert response.json()["redirect_url"] == "/s/hxc-activation-v1/submitted"
 
 
-def test_next_public_questionnaire_page_redirects_already_submitted_user(monkeypatch):
-    import aicrm_next.questionnaire.api as questionnaire_api
+def test_public_page_sets_anonymous_identity_and_redirects_after_submit(monkeypatch):
+    client = _client(monkeypatch)
+    first_page = client.get("/s/hxc-activation-v1", follow_redirects=False)
 
-    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
-    monkeypatch.setattr(
-        questionnaire_api,
-        "get_public_questionnaire_from_legacy",
-        lambda slug: {
-            "ok": True,
-            "questionnaire": {
-                "id": 101,
-                "slug": slug,
-                "title": "真实生产问卷",
-                "description": "",
-                "answer_display_mode": "all_in_one",
-                "redirect_url": "https://example.com/done",
-                "questions": [],
-            },
-            "questions": [],
-        },
-    )
-    monkeypatch.setattr(
-        questionnaire_api,
-        "get_public_questionnaire_submission_status_from_legacy",
-        lambda slug, **kwargs: {
-            "ok": True,
-            "submitted": True,
-            "slug": slug,
-            "redirect_url": "https://example.com/done",
-            "submitted_url": f"/s/{slug}/submitted",
-        },
-    )
+    assert first_page.status_code == 200
+    assert "questionnaire_h5_identity=" in first_page.headers.get("set-cookie", "")
+    assert "name=\"respondent_key\"" in first_page.text
+    assert "黄小璨激活问卷" in first_page.text
 
+    submit = client.post("/api/h5/questionnaires/hxc-activation-v1/submit", json={"answers": {"q_activation": "activated"}})
+    assert submit.status_code == 200, submit.text
+
+    second_api = client.get("/api/h5/questionnaires/hxc-activation-v1")
+    assert second_api.status_code == 409
+    assert second_api.json()["error"] == "already_submitted"
+
+    second_page = client.get("/s/hxc-activation-v1", follow_redirects=False)
+    assert second_page.status_code == 302
+    assert second_page.headers["location"] == "/s/hxc-activation-v1/submitted"
+
+
+def test_wechat_browser_without_authorized_identity_shows_auth_gate(monkeypatch):
     response = _client(monkeypatch).get(
-        "/s/real-questionnaire",
-        params={"external_userid": "wm_submitted"},
-        follow_redirects=False,
+        "/s/hxc-activation-v1",
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger"},
     )
 
-    assert response.status_code == 302
-    assert response.headers["location"] == "https://example.com/done"
+    assert response.status_code == 200
+    assert "授权后即可填写问卷信息" in response.text
+    assert "/api/h5/wechat/oauth/start?" in response.text
+    assert "questionnaire_h5_identity=" in response.headers.get("set-cookie", "")
 
 
-def test_next_public_questionnaire_page_redirects_local_already_submitted_identity(monkeypatch):
+def test_wechat_browser_with_query_identity_can_open_questionnaire(monkeypatch):
+    response = _client(monkeypatch).get(
+        "/s/hxc-activation-v1",
+        params={"openid": "openid-next-public-001"},
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger"},
+    )
+
+    assert response.status_code == 200
+    assert "授权后即可填写问卷信息" not in response.text
+    assert "黄小璨激活问卷" in response.text
+    assert "name=\"openid\" value=\"openid-next-public-001\"" in response.text
+
+
+def test_public_page_redirects_local_already_submitted_identity(monkeypatch):
     response = _client(monkeypatch).get(
         "/s/hxc-activation-v1",
         params={"external_userid": "external_user_masked_fixture"},
@@ -139,18 +107,18 @@ def test_next_public_questionnaire_page_redirects_local_already_submitted_identi
     )
 
     assert response.status_code == 302
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert response.headers["location"] == "/s/hxc-activation-v1/submitted"
 
 
-def test_next_public_questionnaire_api_returns_local_already_submitted(monkeypatch):
-    response = _client(monkeypatch).get(
-        "/api/h5/questionnaires/hxc-activation-v1",
-        params={"external_userid": "external_user_masked_fixture"},
-    )
+def test_public_read_disabled_and_missing_slug_return_404(monkeypatch):
+    client = _client(monkeypatch)
 
-    assert response.status_code == 409
-    assert response.json()["error"] == "already_submitted"
-    assert response.json()["redirect_url"] == "/s/hxc-activation-v1/submitted"
+    disabled = client.get("/api/h5/questionnaires/disabled-demo")
+    missing = client.get("/api/h5/questionnaires/missing-slug")
+
+    assert disabled.status_code == 404
+    assert missing.status_code == 404
 
 
 def test_questionnaire_admin_page_renders_share_modal(monkeypatch):

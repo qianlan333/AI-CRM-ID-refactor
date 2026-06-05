@@ -159,6 +159,7 @@ def public_projection(item: dict[str, Any]) -> dict[str, Any]:
             "description",
             "enabled",
             "redirect_url",
+            "answer_display_mode",
             "submit_button_text",
             "created_at",
             "updated_at",

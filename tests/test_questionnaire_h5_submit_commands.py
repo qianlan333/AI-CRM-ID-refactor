@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.questionnaire.h5_write import get_questionnaire_h5_write_audit_events
+from aicrm_next.questionnaire.oauth import COOKIE_NAME, build_questionnaire_h5_identity_cookie
 
 
 @pytest.fixture()
@@ -79,21 +80,17 @@ def test_h5_submit_supports_anonymous_identity(client: TestClient) -> None:
     assert body["result"]["score"] == 0
 
 
-def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import aicrm_next.questionnaire.api as questionnaire_api
-
-    monkeypatch.setattr(
-        questionnaire_api,
-        "questionnaire_h5_identity_from_cookies",
-        lambda cookies: {
-            "openid": "openid-cookie-001",
-            "unionid": "unionid-cookie-001",
-            "respondent_key": "unionid-cookie-001",
-            "external_userid": "wm_cookie_identity_001",
-        },
+def test_h5_submit_uses_oauth_cookie_identity_when_payload_has_no_identity(client: TestClient) -> None:
+    client.cookies.set(
+        COOKIE_NAME,
+        build_questionnaire_h5_identity_cookie(
+            {
+                "openid": "openid-cookie-001",
+                "unionid": "unionid-cookie-001",
+                "respondent_key": "unionid-cookie-001",
+                "external_userid": "wm_cookie_identity_001",
+            }
+        ),
     )
 
     response = client.post(
