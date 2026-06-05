@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -58,6 +59,8 @@ _command_bus = CommandBus()
 
 
 QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"", "subscription", "premium", "trial"}
+_BEIJING_TZ = timezone(timedelta(hours=8))
+_EXPORT_BASE_FIELDS = ["submission_id", "submitted_at", "external_userid", "unionid", "mobile", "score", "final_tags"]
 QUESTIONNAIRE_QUESTION_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
 QUESTIONNAIRE_ANSWER_DISPLAY_MODES = {"all_in_one", "one_by_one"}
 
@@ -587,7 +590,7 @@ def _handle_export_download(command: Command) -> dict[str, Any]:
     if result is None:
         raise NotFoundError("questionnaire not found")
     submissions, total = result
-    rows = [{field: row.get(field) for field in fields} for row in submissions]
+    fields, rows = _export_rows(item, submissions, requested_fields=fields)
     plan = QuestionnaireExternalPushConfigPlanner().export_download_plan(command, questionnaire_id, fields, total)
     slug = str(item.get("slug") or f"questionnaire-{questionnaire_id}").strip()
     return {
@@ -614,6 +617,118 @@ def _mask_submission(row: dict[str, Any], fields: list[str]) -> dict[str, Any]:
         else:
             payload[field] = value
     return payload
+
+
+def _export_rows(
+    questionnaire: dict[str, Any],
+    submissions: list[dict[str, Any]],
+    *,
+    requested_fields: list[str],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    question_headers = _export_question_headers(questionnaire, submissions)
+    requested = [field for field in requested_fields if field and field not in {"matched_by", "answers"}]
+    base_fields = requested or list(_EXPORT_BASE_FIELDS)
+    for field in _EXPORT_BASE_FIELDS:
+        if field not in base_fields and field == "unionid":
+            insert_at = base_fields.index("mobile") if "mobile" in base_fields else len(base_fields)
+            base_fields.insert(insert_at, field)
+    fields = [*base_fields, *[header for _, header in question_headers]]
+    rows: list[dict[str, Any]] = []
+    for submission in submissions:
+        row = {field: _export_base_value(submission, field) for field in base_fields}
+        answers_by_question = _export_answers_by_question(submission)
+        for question_id, header in question_headers:
+            row[header] = answers_by_question.get(question_id, "")
+        rows.append(row)
+    return fields, rows
+
+
+def _export_base_value(submission: dict[str, Any], field: str) -> Any:
+    if field == "submitted_at":
+        return _format_beijing_time(submission.get("submitted_at") or submission.get("created_at"))
+    if field == "final_tags":
+        tags = submission.get("final_tags")
+        if isinstance(tags, list):
+            return "、".join(str(item) for item in tags if item not in (None, ""))
+        return tags or ""
+    value = submission.get(field)
+    return "" if value is None else value
+
+
+def _export_question_headers(questionnaire: dict[str, Any], submissions: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    title_by_id: dict[str, str] = {}
+    for question in questionnaire.get("questions") or []:
+        if not isinstance(question, dict):
+            continue
+        question_id = str(question.get("id") or "").strip()
+        title = str(question.get("title") or "").strip()
+        if question_id and title and question_id not in title_by_id:
+            title_by_id[question_id] = title
+    for submission in submissions:
+        for answer in submission.get("answer_snapshots") or []:
+            if not isinstance(answer, dict):
+                continue
+            question_id = str(answer.get("question_id") or "").strip()
+            title = str(answer.get("question_title_snapshot") or "").strip()
+            if question_id and title and question_id not in title_by_id:
+                title_by_id[question_id] = title
+    seen_headers: dict[str, int] = {}
+    headers: list[tuple[str, str]] = []
+    for question_id, title in title_by_id.items():
+        count = seen_headers.get(title, 0) + 1
+        seen_headers[title] = count
+        headers.append((question_id, title if count == 1 else f"{title} ({count})"))
+    return headers
+
+
+def _export_answers_by_question(submission: dict[str, Any]) -> dict[str, str]:
+    answers: dict[str, str] = {}
+    for answer in submission.get("answer_snapshots") or []:
+        if not isinstance(answer, dict):
+            continue
+        question_id = str(answer.get("question_id") or "").strip()
+        if not question_id:
+            continue
+        answers[question_id] = _export_answer_value(answer)
+    return answers
+
+
+def _export_answer_value(answer: dict[str, Any]) -> str:
+    question_type = str(answer.get("question_type") or "").strip()
+    text_value = str(answer.get("text_value") or "").strip()
+    if question_type in {"textarea", "mobile"}:
+        return text_value
+    option_texts = [str(item).strip() for item in answer.get("selected_option_texts_snapshot") or [] if str(item).strip()]
+    if text_value and option_texts:
+        option_texts[-1] = f"{option_texts[-1]}：{text_value}"
+    elif text_value:
+        option_texts.append(text_value)
+    return "、".join(option_texts)
+
+
+def _format_beijing_time(value: Any) -> str:
+    if not value:
+        return ""
+    parsed: datetime | None = value if isinstance(value, datetime) else None
+    if parsed is None:
+        raw = str(value).strip()
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return _strip_timezone_text(raw)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(_BEIJING_TZ)
+    return parsed.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _strip_timezone_text(value: str) -> str:
+    text = value.replace("T", " ").strip()
+    if "." in text:
+        text = text.split(".", 1)[0]
+    for marker in ("+", "Z"):
+        if marker in text:
+            text = text.split(marker, 1)[0].strip()
+    return text
 
 
 def _create_side_effect_plan(

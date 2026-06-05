@@ -393,9 +393,18 @@ class InMemoryQuestionnaireRepository:
         }
 
     def list_submissions(self, questionnaire_id: int, *, limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int] | None:
-        if not self._raw_questionnaire(questionnaire_id):
+        questionnaire = self._raw_questionnaire(questionnaire_id)
+        if not questionnaire:
             return None
-        rows = [deepcopy(item) for item in self._submissions if int(item.get("questionnaire_id") or 0) == int(questionnaire_id)]
+        rows = []
+        for item in self._submissions:
+            if int(item.get("questionnaire_id") or 0) != int(questionnaire_id):
+                continue
+            row = deepcopy(item)
+            row.setdefault("unionid", _text((row.get("respondent_identity") or {}).get("unionid")))
+            if "answer_snapshots" not in row:
+                row["answer_snapshots"] = _answer_snapshots(questionnaire.get("questions") or [], dict(row.get("answers") or {}))
+            rows.append(row)
         return rows[int(offset) : int(offset) + int(limit)], len(rows)
 
     def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]:
@@ -745,7 +754,8 @@ class PostgresQuestionnaireReadRepository:
             if row_ids:
                 answer_rows = conn.execute(
                     """
-                    SELECT submission_id, question_id, question_type, selected_option_ids, text_value
+                    SELECT submission_id, question_id, question_type, question_title_snapshot,
+                           selected_option_ids, selected_option_texts_snapshot, text_value
                     FROM questionnaire_submission_answers
                     WHERE submission_id = ANY(%s)
                     ORDER BY submission_id ASC, id ASC
@@ -753,9 +763,11 @@ class PostgresQuestionnaireReadRepository:
                     (row_ids,),
                 ).fetchall()
         answers_by_submission: dict[int, dict[str, Any]] = {}
+        answer_snapshots_by_submission: dict[int, list[dict[str, Any]]] = {}
         for answer in answer_rows:
             submission_id = int(answer.get("submission_id") or 0)
             answer_payload = dict(answer)
+            answer_snapshots_by_submission.setdefault(submission_id, []).append(answer_payload)
             key = str(answer_payload.get("question_id"))
             answers = answers_by_submission.setdefault(submission_id, {})
             if answer_payload.get("question_type") in {"textarea", "mobile"}:
@@ -776,6 +788,7 @@ class PostgresQuestionnaireReadRepository:
                 "score": float(row.get("total_score") or 0),
                 "mobile": _text(row.get("mobile_snapshot")),
                 "answers": answers_by_submission.get(int(row.get("id") or 0), {}),
+                "answer_snapshots": answer_snapshots_by_submission.get(int(row.get("id") or 0), []),
             }
             for row in rows
         ]
@@ -1142,7 +1155,8 @@ class PostgresQuestionnaireReadRepository:
                 return None
             answer_rows = conn.execute(
                 """
-                SELECT question_id, question_type, selected_option_ids, text_value
+                SELECT question_id, question_type, question_title_snapshot,
+                       selected_option_ids, selected_option_texts_snapshot, text_value
                 FROM questionnaire_submission_answers
                 WHERE submission_id = %s
                 ORDER BY id ASC
