@@ -214,8 +214,10 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     result = external_push_service.process_transaction_paid_outbox(outbox)
     assert result["skipped"] is True
     assert result["reason"] == "config_not_found"
+    skipped_outbox = get_db().execute("SELECT status FROM domain_event_outbox WHERE id = ?", (outbox["id"],)).fetchone()
+    assert skipped_outbox["status"] == "skipped"
 
-    config = external_push_service.save_product_external_push_config(
+    external_push_service.save_product_external_push_config(
         product["id"],
         {
             "enabled": True,
@@ -358,6 +360,31 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     expired = external_push_service.process_transaction_paid_outbox(external_push_service.enqueue_transaction_paid_event(order_expired))
     assert expired["reason"] == "config_expired"
 
+    product_invalid_url = _create_product(name="非法 URL 外推商品")
+    order_invalid_url = _insert_order(product_invalid_url, out_trade_no="WXP_PUSH_INVALID_URL")
+    invalid_config = get_db().execute(
+        """
+        INSERT INTO external_push_config (
+            tenant_id, target_type, target_id, event_type, enabled, webhook_url,
+            created_at, updated_at
+        )
+        VALUES ('aicrm', 'product', ?, 'transaction.paid', TRUE, 'http://127.0.0.1/hook', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (str(product_invalid_url["id"]),),
+    ).fetchone()
+    get_db().commit()
+    external_push_service.enqueue_transaction_paid_event(order_invalid_url)
+    invalid_result = external_push_service.run_due_external_push_events(limit=10)
+    invalid_delivery = get_db().execute(
+        "SELECT * FROM external_push_delivery WHERE config_id = ? AND order_id = ?",
+        (invalid_config["id"], order_invalid_url["id"]),
+    ).fetchone()
+    assert invalid_result["ok"] is True
+    assert invalid_delivery is not None
+    assert invalid_delivery["status"] == "retrying"
+    assert "https" in invalid_delivery["error_message"]
+
 
 def test_signature_and_retry_api(app, client, monkeypatch):
     token = _login_admin(client)
@@ -365,7 +392,7 @@ def test_signature_and_retry_api(app, client, monkeypatch):
     order = _insert_order(product)
     _public_dns(monkeypatch)
 
-    config = external_push_service.save_product_external_push_config(
+    external_push_service.save_product_external_push_config(
         product["id"],
         {"enabled": True, "webhook_url": "https://example.com/retry", "secret": "retry-secret"},
         operator="pytest",

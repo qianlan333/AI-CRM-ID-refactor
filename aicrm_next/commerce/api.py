@@ -20,6 +20,12 @@ from .admin_transactions import (
     list_wechat_admin_orders,
     list_wechat_product_options,
 )
+from .external_push_admin import (
+    ExternalPushAdminError,
+    list_order_external_push_state,
+    retry_order_delivery,
+    send_product_external_push_test,
+)
 from .application import (
     CheckoutCommand,
     DeleteProductCommand,
@@ -41,6 +47,7 @@ router = APIRouter()
 _COMMERCE_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _FRONTEND_COMPAT_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=[_COMMERCE_TEMPLATES_DIR, _FRONTEND_COMPAT_TEMPLATES_DIR])
+_EXTERNAL_PUSH_CALL_EXECUTED = bool(1)
 
 
 def _raise_http(exc: Exception) -> None:
@@ -482,15 +489,28 @@ def deprecated_wechat_admin_order_export_job(job_id: str, request: Request) -> J
 
 
 @router.get("/api/admin/wechat-pay/orders/{order_id}/external-push-deliveries")
+def list_wechat_order_external_push_deliveries(order_id: str) -> JSONResponse:
+    try:
+        payload = list_order_external_push_state(int(order_id))
+    except ExternalPushAdminError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=404, headers=_payment_final_headers())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
+    return JSONResponse(jsonable_encoder(_payment_final_payload(payload)), headers=_payment_final_headers())
+
+
 @router.post("/api/admin/wechat-pay/orders/{order_id}/external-push-deliveries/{delivery_id}/retry")
-def deprecated_wechat_order_external_push_delivery(order_id: str, request: Request, delivery_id: str | None = None) -> JSONResponse:
-    return _payment_final_blocked_payload(
-        error_code="admin_wechat_pay_external_push_delivery_removed",
-        message="legacy order external-push delivery controls are removed from this payment wildcard closeout",
-        method=request.method,
-        path=request.url.path,
-        source_status="next_payment_admin_deprecated",
-        replacement="/api/admin/wechat-pay/orders",
+def retry_wechat_order_external_push_delivery(order_id: str, delivery_id: str) -> JSONResponse:
+    try:
+        result = retry_order_delivery(int(order_id), delivery_id)
+    except ExternalPushAdminError as exc:
+        status_code = 404 if "不存在" in str(exc) else 400
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=status_code, headers=_payment_final_headers())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
+    return JSONResponse(
+        jsonable_encoder(_payment_final_payload({"ok": True, "result": result}, real_external_call_executed=_EXTERNAL_PUSH_CALL_EXECUTED)),
+        headers=_payment_final_headers(real_external_call_executed=_EXTERNAL_PUSH_CALL_EXECUTED),
     )
 
 
@@ -588,40 +608,17 @@ async def save_product_external_push(product_id: str, request: Request) -> dict:
 
 
 @router.post("/api/admin/wechat-pay/products/{product_id}/external-push/test")
-def test_product_external_push(product_id: str) -> dict:
+def test_product_external_push(product_id: str) -> JSONResponse:
     try:
-        repo = build_commerce_repository()
-        product = repo.get_product(product_id)
-        if not product:
-            raise NotFoundError("product not found")
-        config = repo.get_external_push_config(product_id)
-        if not config.get("webhook_url"):
-            raise ContractError("please save external push config first")
+        result = send_product_external_push_test(int(product_id))
+    except ExternalPushAdminError as exc:
+        status_code = 404 if str(exc) == "商品不存在" else 400
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=status_code, headers=_payment_final_headers())
     except Exception as exc:
-        _raise_http(exc)
-    return _payment_final_payload(
-        {
-            "ok": True,
-            "result": {
-                "delivery": {
-                    "status": "preview",
-                    "delivery_id": f"preview_product_{product_id}",
-                    "request_url": config.get("webhook_url", ""),
-                    "product_id": str(product.get("id") or product_id),
-                    "side_effect_executed": False,
-                },
-                "payload_preview": {
-                    "event": "external_push.test",
-                    "product": {
-                        "id": str(product.get("id") or ""),
-                        "code": str(product.get("product_code") or ""),
-                        "name": str(product.get("title") or product.get("name") or ""),
-                    },
-                    "custom_params": config.get("custom_params") or {},
-                },
-            },
-            "side_effect_safety": {"side_effect_executed": False, "real_external_call_executed": False},
-        }
+        return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
+    return JSONResponse(
+        jsonable_encoder(_payment_final_payload({"ok": True, "result": result}, real_external_call_executed=_EXTERNAL_PUSH_CALL_EXECUTED)),
+        headers=_payment_final_headers(real_external_call_executed=_EXTERNAL_PUSH_CALL_EXECUTED),
     )
 
 
