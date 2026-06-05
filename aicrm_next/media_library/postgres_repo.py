@@ -662,6 +662,8 @@ class PostgresMediaLibraryRepository:
             "file_name": str(row.get("file_name") or ""),
             "mime_type": str(row.get("mime_type") or "application/octet-stream"),
             "file_size": int(row.get("file_size") or 0),
+            "media_id": str(row.get("media_id") or ""),
+            "wecom_media_id": str(row.get("media_id") or ""),
             "tags": normalize_tags(_json(row.get("tags"), [])),
             "enabled": _bool(row.get("enabled")),
             "created_at": _iso(row.get("created_at")),

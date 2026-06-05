@@ -293,12 +293,13 @@ def test_group_ops_text_and_attachment_enqueues():
 
 
 def test_group_ops_bad_node_does_not_block_good_node(monkeypatch):
-    from wecom_ability_service.domains import image_library
+    from aicrm_next.automation_engine.group_ops.content_builder import SendContentPackageResolver
+    from aicrm_next.shared.errors import ContractError
 
-    def fail_resolve(image_id):
-        raise RuntimeError(f"missing image {image_id}")
+    def fail_resolve(self, content_package):
+        raise ContractError("image_library_resolve_failed:id=404:missing image 404")
 
-    monkeypatch.setattr(image_library, "resolve_image_media_id", fail_resolve)
+    monkeypatch.setattr(SendContentPackageResolver, "resolve", fail_resolve)
     repo = FakeGroupOpsRepo(
         plans=[_plan()],
         groups={1: [_group()]},
@@ -334,9 +335,13 @@ def test_group_ops_bad_node_does_not_block_good_node(monkeypatch):
 
 
 def test_group_ops_unresolvable_content_package_records_node_error(monkeypatch):
-    from wecom_ability_service.domains import image_library
+    from aicrm_next.automation_engine.group_ops.content_builder import SendContentPackageResolver
+    from aicrm_next.shared.errors import ContractError
 
-    monkeypatch.setattr(image_library, "resolve_image_media_id", lambda image_id: "")
+    def fail_resolve(self, content_package):
+        raise ContractError("image_library_resolve_failed:id=404:empty_media_id")
+
+    monkeypatch.setattr(SendContentPackageResolver, "resolve", fail_resolve)
     repo = FakeGroupOpsRepo(
         plans=[_plan()],
         groups={1: [_group()]},

@@ -8,9 +8,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from aicrm_next.integration_gateway.legacy_flask_facade import build_legacy_private_message_request_payload
 from aicrm_next.send_content.application import NormalizeSendContentPackageCommand
 from aicrm_next.shared.errors import ContractError
+
+from .content_builder import PrivateMessagePayloadBuilder
+from .content_builder import SendContentPackageResolver
 
 PLAN_TYPES = {"standard", "webhook"}
 PLAN_TYPE_ALIASES = {
@@ -235,9 +237,11 @@ def normalize_recipients(values: Any) -> list[dict[str, str]]:
 def normalize_action_payload(value: Any, *, default_action_type: str = "record_only") -> dict[str, Any]:
     action = dict(value or {}) if isinstance(value, dict) else {}
     action_type = normalize_action_type(action.get("action_type") or action.get("actionType") or action.get("actionType"), default=default_action_type)
+    content_payload = action.get("content_payload") if isinstance(action.get("content_payload"), dict) else action.get("message_payload")
     return {
         "action_type": action_type,
         "content": clean_text(action.get("content") or action.get("messageTemplate") or action.get("message_template")),
+        "content_payload": dict(content_payload) if isinstance(content_payload, dict) else {},
         "task_template_id": clean_text(action.get("taskTemplateId") or action.get("task_template_id")),
         "queue_key": clean_text(action.get("queueKey") or action.get("queue_key")),
         "audience_id": clean_text(action.get("audienceId") or action.get("audience_id")),
@@ -263,49 +267,22 @@ def mask_sensitive_payload(value: Any) -> Any:
     return masked
 
 
-def normalize_attachments_for_builder(attachments: list[Any]) -> tuple[list[dict[str, Any]], list[str]]:
-    normalized_attachments: list[dict[str, Any]] = []
-    image_media_ids: list[str] = []
-    for item in attachments or []:
-        if not isinstance(item, dict):
-            raise ContractError("attachments entries must be objects")
-        msgtype = clean_text(item.get("msgtype")).lower()
-        if msgtype == "image":
-            image_payload = item.get("image")
-            if not isinstance(image_payload, dict):
-                raise ContractError("image attachments must include image object")
-            media_id = clean_text(image_payload.get("media_id"))
-            if not media_id:
-                raise ContractError("image attachments must include media_id")
-            image_media_ids.append(media_id)
-        else:
-            normalized_attachments.append(dict(item))
-    return normalized_attachments, image_media_ids
-
-
 def normalize_message_content(
     *,
     text: Any = "",
     attachments: list[Any] | None = None,
     image_media_ids: list[Any] | None = None,
     sender: str = "",
+    allow_empty_draft: bool = False,
 ) -> dict[str, Any]:
-    builder_attachments, attachment_image_media_ids = normalize_attachments_for_builder(list(attachments or []))
-    builder_image_ids = [clean_text(item) for item in list(image_media_ids or []) if clean_text(item)]
     payload: dict[str, Any] = {
         "content": clean_text(text),
-        "attachments": builder_attachments,
-        "image_media_ids": attachment_image_media_ids + builder_image_ids,
+        "attachments": list(attachments or []),
+        "image_media_ids": [clean_text(item) for item in list(image_media_ids or []) if clean_text(item)],
     }
     if sender:
         payload["sender"] = clean_text(sender)
-    try:
-        normalized, _image_count = build_legacy_private_message_request_payload(payload)
-    except ValueError as exc:
-        raise ContractError(str(exc)) from exc
-    if not normalized.get("text") and not normalized.get("attachments"):
-        raise ContractError("content.text or content.attachments is required")
-    return normalized
+    return PrivateMessagePayloadBuilder().build(payload, allow_empty_draft=allow_empty_draft)
 
 
 def normalize_group_ops_content_package(value: Any) -> dict[str, Any]:
@@ -399,9 +376,12 @@ def build_node_group_message_content(
     sender: str,
     resolved_attachments: list[dict[str, Any]] | None = None,
     resolved_image_media_ids: list[str] | None = None,
+    content_package_resolver: SendContentPackageResolver | None = None,
 ) -> dict[str, Any]:
     content_package = node.get("content_package_json") if isinstance(node.get("content_package_json"), dict) else {}
     text_content = clean_text(node.get("text_content")) or clean_text(content_package.get("content_text"))
+    if resolved_attachments is None and resolved_image_media_ids is None and _content_package_has_body(content_package):
+        resolved_attachments, resolved_image_media_ids = (content_package_resolver or SendContentPackageResolver()).resolve(content_package)
     return normalize_message_content(
         text=text_content,
         attachments=list(node.get("attachments") or []) + list(resolved_attachments or []),

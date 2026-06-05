@@ -35,7 +35,6 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
-    Path("aicrm_next/automation_engine/group_ops/domain.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/cloud_orchestrator/media_upload.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
@@ -48,7 +47,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/automation_engine/group_ops/integration_gateway.py"),
     Path("aicrm_next/automation_engine/group_ops/scheduler.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/channel_entry/identity_bridge.py"),
