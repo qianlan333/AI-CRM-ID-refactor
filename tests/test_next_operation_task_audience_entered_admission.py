@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from wecom_ability_service.db import get_db
@@ -210,6 +212,85 @@ def test_next_program_admission_uses_entry_snapshot_program_when_channel_row_poi
         assert _job_count(new_task["id"], result["audience_entry_id"]) == 1
         assert _execution_count(old_task["id"], result["audience_entry_id"]) == 0
         assert _job_count(old_task["id"], result["audience_entry_id"]) == 0
+
+
+def test_audience_entered_behavior_layered_uses_program_member_segment_snapshot(app):
+    with app.app_context():
+        program_id, channel, binding_id = _setup_admission_case("next_rt_behavior_program_segment")
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_behavior_program_segment",
+            trigger_time=T1,
+        )
+        assert admitted["audience_code"] == "operating"
+
+        get_db().execute(
+            """
+            UPDATE automation_program_member
+            SET state_payload_json = CAST(? AS jsonb)
+            WHERE program_id = ?
+              AND external_contact_id = ?
+            """,
+            (
+                json.dumps({"behavior_tier_key": "between_2_9"}),
+                program_id,
+                "wm_next_rt_behavior_program_segment",
+            ),
+        )
+        get_db().commit()
+
+        task = create_automation_program_operation_task(
+            program_id,
+            {
+                "task_name": "Next behavior layered program segment",
+                "status": "active",
+                "trigger_type": "audience_entered",
+                "send_time": "10:00",
+                "target_stage_code": "operating",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "between_2_9",
+                "content_mode": "behavior_layered",
+                "segment_contents_json": [
+                    {
+                        "segment_key": "between_2_9",
+                        "segment_name": "消息 2-9 条",
+                        "content_text": "behavior layered content",
+                    }
+                ],
+            },
+            operator_id="pytest",
+        )["task"]
+
+        result = run_audience_entered_operation_tasks(
+            member_id=int(admitted["member_id"]),
+            audience_code="operating",
+            audience_entry_id=int(admitted["audience_entry_id"]),
+            operator_id="pytest_behavior_segment",
+        )
+
+        execution_id = f"actask-event-{int(task['id'])}-{int(admitted['audience_entry_id'])}"
+        assert result["ok"] is True
+        assert result["ran"] == 1
+        assert result["enqueued_count"] == 1
+        assert _execution_count(task["id"], admitted["audience_entry_id"]) == 1
+        assert _job_count(task["id"], admitted["audience_entry_id"]) == 1
+
+        item = get_db().execute(
+            """
+            SELECT segment_key, content_text, status
+            FROM automation_operation_task_execution_item
+            WHERE execution_id = ?
+            LIMIT 1
+            """,
+            (execution_id,),
+        ).fetchone()
+        assert item
+        assert item["segment_key"] == "between_2_9"
+        assert item["content_text"] == "behavior layered content"
+        assert item["status"] == "queued"
 
 
 def test_next_program_admission_does_not_trigger_unmatched_audience_task(app):

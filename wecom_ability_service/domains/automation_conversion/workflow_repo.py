@@ -866,14 +866,18 @@ def list_current_member_audience_rows(
             m.ai_cooldown_until AS member_ai_cooldown_until,
             m.current_audience_code AS member_current_audience_code,
             m.current_audience_entered_at AS member_current_audience_entered_at,
-            m.profile_segment_key AS member_profile_segment_key,
-            m.behavior_tier_key AS member_behavior_tier_key,
+            COALESCE(NULLIF(pm.state_payload_json ->> 'profile_segment_key', ''), m.profile_segment_key) AS member_profile_segment_key,
+            COALESCE(NULLIF(pm.state_payload_json ->> 'behavior_tier_key', ''), m.behavior_tier_key) AS member_behavior_tier_key,
             m.segment_refreshed_at AS member_segment_refreshed_at,
             m.created_at AS member_created_at,
             m.updated_at AS member_updated_at,
             c.customer_name AS member_customer_name
         FROM automation_member_audience_entry e
         INNER JOIN automation_member m ON m.id = e.member_id
+        LEFT JOIN automation_program_member pm
+          ON pm.program_id = ?
+         AND pm.external_contact_id = m.external_contact_id
+         AND pm.in_program = ?
         LEFT JOIN contacts c ON c.external_userid = m.external_contact_id AND m.external_contact_id <> ''
         WHERE e.audience_code = ?
           AND e.is_current = ?
@@ -881,7 +885,14 @@ def list_current_member_audience_rows(
           {program_filter_sql}
         ORDER BY e.entered_at ASC, e.id ASC
         """,
-        (_normalized_text(audience_code), True, *entry_reason_params, *program_filter_params),
+        (
+            int(program_id or 0),
+            True,
+            _normalized_text(audience_code),
+            True,
+            *entry_reason_params,
+            *program_filter_params,
+        ),
     ):
         items.append(
             {

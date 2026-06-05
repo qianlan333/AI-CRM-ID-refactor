@@ -399,6 +399,47 @@ def _profile_key(member: dict[str, Any], template_id: int | None) -> str:
     return _text(match.get("segment_key"))
 
 
+def _program_scoped_member(task: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
+    program_id = _int(task.get("program_id"), minimum=0)
+    external_contact_id = _text(member.get("external_contact_id"))
+    if program_id <= 0 or not external_contact_id:
+        return dict(member)
+    row = get_db().execute(
+        """
+        SELECT
+            COALESCE(latest_source_channel_id, source_channel_id) AS source_channel_id,
+            NULLIF(state_payload_json ->> 'profile_segment_key', '') AS profile_segment_key,
+            NULLIF(state_payload_json ->> 'behavior_tier_key', '') AS behavior_tier_key
+        FROM automation_program_member
+        WHERE program_id = ?
+          AND external_contact_id = ?
+          AND in_program = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (program_id, external_contact_id, True),
+    ).fetchone()
+    if not row:
+        return dict(member)
+    scoped = dict(member)
+    source_channel_id = _int(row.get("source_channel_id"), minimum=0)
+    if source_channel_id > 0:
+        scoped["source_channel_id"] = source_channel_id
+    profile_segment_key = _text(row.get("profile_segment_key"))
+    if profile_segment_key:
+        scoped["profile_segment_key"] = profile_segment_key
+    behavior_tier_key = _text(row.get("behavior_tier_key"))
+    if behavior_tier_key:
+        scoped["behavior_tier_key"] = behavior_tier_key
+    return scoped
+
+
+def _entry_for_task(task: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    scoped = dict(entry)
+    scoped["member"] = _program_scoped_member(task, dict(entry.get("member") or {}))
+    return scoped
+
+
 def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
     current_time = now or _now()
     program_channel_ids = _program_channel_ids(int(task.get("program_id") or 0))
@@ -414,11 +455,12 @@ def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> 
     )
     result: list[dict[str, Any]] = []
     for entry in entries:
-        member = dict(entry.get("member") or {})
+        scoped_entry = _entry_for_task(task, entry)
+        member = dict(scoped_entry.get("member") or {})
         if not _member_in_program_channels(member, program_channel_ids):
             continue
         if _text(task.get("trigger_type")) != "audience_entered" and not _entry_due(
-            entry,
+            scoped_entry,
             day_offset=_int(task.get("audience_day_offset"), default=1, minimum=1),
             now=current_time,
         ):
@@ -426,7 +468,7 @@ def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> 
         behavior_filter = _text(task.get("behavior_filter")) or "none"
         if behavior_filter != "none" and _behavior_key(member) != behavior_filter:
             continue
-        result.append(entry)
+        result.append(scoped_entry)
     return result
 
 
@@ -828,7 +870,7 @@ def _entry_matches_event_task(task: dict[str, Any], entry: dict[str, Any]) -> bo
         return False
     if stage_filter["entry_reason"] and stage_filter["entry_reason"] != _text(entry.get("entry_reason")):
         return False
-    member = dict(entry.get("member") or {})
+    member = dict(_entry_for_task(task, entry).get("member") or {})
     if not _member_in_program_channels(member, _program_channel_ids(int(task.get("program_id") or 0))):
         return False
     behavior_filter = _text(task.get("behavior_filter")) or "none"
@@ -912,10 +954,11 @@ def run_audience_entered_operation_tasks(
     tasks = repo.list_tasks(program_id, status="active")
     results: list[dict[str, Any]] = []
     for task in tasks:
-        if not _entry_matches_event_task(task, entry):
+        scoped_entry = _entry_for_task(task, entry)
+        if not _entry_matches_event_task(task, scoped_entry):
             continue
-        execution_id = _event_execution_id_for_task(int(task["id"]), int(entry.get("id") or 0))
-        source_id = f"{int(task['id'])}:audience_entered:{int(entry.get('id') or 0)}"
+        execution_id = _event_execution_id_for_task(int(task["id"]), int(scoped_entry.get("id") or 0))
+        source_id = f"{int(task['id'])}:audience_entered:{int(scoped_entry.get('id') or 0)}"
         if repo.get_execution(execution_id) or broadcast_queue_repo.fetch_job_by_source(
             source_type="operation_task",
             source_id=source_id,
@@ -926,11 +969,11 @@ def run_audience_entered_operation_tasks(
             task=task,
             scheduled_for=current_time,
             operator_id=operator_id,
-            entries=[entry],
+            entries=[scoped_entry],
             execution_id=execution_id,
             summary_extra={
                 "trigger_type": "audience_entered",
-                "audience_entry_id": int(entry.get("id") or 0),
+                "audience_entry_id": int(scoped_entry.get("id") or 0),
             },
         )
         if not items:
