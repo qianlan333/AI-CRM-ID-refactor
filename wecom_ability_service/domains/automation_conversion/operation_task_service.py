@@ -649,12 +649,32 @@ def _content_has_send_body(content_text: str, content: dict[str, Any]) -> bool:
     return contract_has_send_body(content, content_text=content_text)
 
 
-def _program_channel_ids(program_id: int) -> set[int]:
+def _program_channels(program_id: int, *, include_inactive: bool = True) -> list[dict[str, Any]]:
     if not int(program_id or 0):
-        return set()
+        return []
+    sql = """
+        SELECT DISTINCT c.*
+        FROM automation_channel c
+        WHERE (
+            c.program_id = ?
+            OR c.id IN (
+                SELECT channel_id
+                FROM automation_program_channel_binding
+                WHERE program_id = ?
+            )
+        )
+    """
+    params: list[Any] = [int(program_id), int(program_id)]
+    if not include_inactive:
+        sql += " AND c.status IN ('active', 'configured')"
+    sql += " ORDER BY c.updated_at DESC, c.id DESC"
+    return [dict(row or {}) for row in get_db().execute(sql, tuple(params)).fetchall()]
+
+
+def _program_channel_ids(program_id: int) -> set[int]:
     return {
         int(channel.get("id") or 0)
-        for channel in channel_repo.list_channels_by_program(int(program_id), include_inactive=True)
+        for channel in _program_channels(int(program_id), include_inactive=True)
         if int(channel.get("id") or 0)
     }
 
@@ -668,7 +688,7 @@ def _member_in_program_channels(member: dict[str, Any], program_channel_ids: set
 def _program_channel_sender_userid(program_id: int) -> str:
     if not int(program_id or 0):
         return workflow_runtime.DEFAULT_AUTOMATION_SENDER
-    channels = channel_repo.list_channels_by_program(int(program_id), include_inactive=True)
+    channels = _program_channels(int(program_id), include_inactive=True)
     default_channel_codes = {f"program_{int(program_id)}_default_qrcode", "default_qrcode"}
     for channel in channels:
         if _text(channel.get("channel_code")) not in default_channel_codes:
