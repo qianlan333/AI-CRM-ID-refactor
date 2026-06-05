@@ -33,6 +33,7 @@
   };
   const DEFAULT_TIMEOUT_MS = 8000;
   const SDK_TIMEOUT_MS = 5000;
+  const PRODUCT_CARD_IMAGE_PATH = "/static/sidebar_workbench/product-card-cover.png";
 
   const state = {
     status: WORKBENCH_STATES.identifying_customer,
@@ -176,22 +177,6 @@
     } catch (_error) {
       return text;
     }
-  }
-
-  async function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-    const input = document.createElement("textarea");
-    input.value = text;
-    input.setAttribute("readonly", "readonly");
-    input.style.position = "fixed";
-    input.style.left = "-9999px";
-    document.body.appendChild(input);
-    input.select();
-    document.execCommand("copy");
-    document.body.removeChild(input);
   }
 
   function getQueryValue(key) {
@@ -370,12 +355,11 @@
     content.innerHTML = panel(
       "商品",
       rows
-        .map((item) => {
-          const link = item.product_url || (item.id ? "/p/" + item.id : "");
+        .map((item, index) => {
           return (
             '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
             '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
-            '<div class="row-actions"><button class="btn primary" type="button" data-product-copy="' + escapeHtml(link) + '">复制商品链接</button></div></article>'
+            '<div class="row-actions"><button class="btn primary" type="button" data-product-send="' + escapeHtml(index) + '">发送商品</button></div></article>'
           );
         })
         .join("")
@@ -569,6 +553,50 @@
     }
   }
 
+  async function sendProduct(productIndex) {
+    const item = (state.data.products || [])[Number(productIndex)] || {};
+    const link = absoluteUrl(item.product_url || (item.id ? "/p/" + item.id : ""));
+    if (!link) {
+      showToast("暂无商品链接", "error");
+      return;
+    }
+    try {
+      await sendLinkToCurrentChat({
+        title: item.title || "未命名商品",
+        url: link,
+        imageUrl: absoluteUrl(PRODUCT_CARD_IMAGE_PATH),
+      });
+      showToast("已发送商品");
+    } catch (error) {
+      showToast(error.message || "发送失败", "error");
+    }
+  }
+
+  function assertWeComSendOk(res) {
+    const errMsg = String((res || {}).err_msg || "");
+    if (!errMsg || errMsg.indexOf(":ok") >= 0) return;
+    throw new Error(String((res || {}).errmsg || errMsg || "发送失败"));
+  }
+
+  async function sendLinkToCurrentChat(payload) {
+    const sdkReady = await initWeComSdk();
+    if (!sdkReady.ok || !window.wx || typeof window.wx.invoke !== "function") {
+      throw new Error("请在企微侧边栏内发送");
+    }
+    const res = await invokeWeCom("sendChatMessage", {
+      msgtype: "link",
+      link: {
+        title: String(payload.title || "未命名商品"),
+        desc: "",
+        url: String(payload.url || ""),
+        imgUrl: String(payload.imageUrl || ""),
+      },
+    }, SDK_TIMEOUT_MS);
+    writeDebug("sendChatMessage link result", res || {});
+    assertWeComSendOk(res);
+    return res;
+  }
+
   async function sendImageToCurrentChat(mediaId) {
     const sdkReady = await initWeComSdk();
     if (!sdkReady.ok || !window.wx || typeof window.wx.invoke !== "function") {
@@ -579,9 +607,8 @@
       image: { mediaid: mediaId },
     }, SDK_TIMEOUT_MS);
     writeDebug("sendChatMessage result", res || {});
-    const errMsg = String((res || {}).err_msg || "");
-    if (!errMsg || errMsg.indexOf(":ok") >= 0) return res;
-    throw new Error(String((res || {}).errmsg || errMsg || "发送失败"));
+    assertWeComSendOk(res);
+    return res;
   }
 
   function openMobileModal() {
@@ -833,18 +860,13 @@
       }
       return;
     }
-    const productCopyButton = event.target.closest("[data-product-copy]");
-    if (productCopyButton) {
-      const link = absoluteUrl(productCopyButton.dataset.productCopy);
-      if (!link) {
-        showToast("暂无商品链接", "error");
-        return;
-      }
+    const productSendButton = event.target.closest("[data-product-send]");
+    if (productSendButton) {
+      productSendButton.disabled = true;
       try {
-        await copyText(link);
-        showToast("已复制商品链接");
-      } catch (_error) {
-        showToast("复制失败，请手动复制", "error");
+        await sendProduct(productSendButton.dataset.productSend);
+      } finally {
+        productSendButton.disabled = false;
       }
       return;
     }
