@@ -164,7 +164,7 @@ def test_legacy_flask_facade_forwards_request_cookies(monkeypatch):
     assert response.json()["session"] == "signed-session"
 
 
-def test_legacy_flask_facade_rewrites_questionnaire_enable_to_legacy_disable(monkeypatch):
+def test_legacy_flask_facade_does_not_rewrite_questionnaire_enable(monkeypatch):
     monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "http://testserver")
     legacy_app = Flask(__name__)
     received = {}
@@ -184,12 +184,11 @@ def test_legacy_flask_facade_rewrites_questionnaire_enable_to_legacy_disable(mon
 
     response = TestClient(app).post("/api/admin/questionnaires/42/enable", json={})
 
-    assert response.status_code == 200
-    assert received == {"questionnaire_id": 42, "payload": {"is_disabled": False}}
-    assert response.json()["questionnaire"]["is_disabled"] is False
+    assert response.status_code == 404
+    assert received == {}
 
 
-def test_legacy_flask_facade_rewrites_questionnaire_patch_update_to_legacy_put(monkeypatch):
+def test_legacy_flask_facade_does_not_rewrite_questionnaire_patch_update(monkeypatch):
     monkeypatch.setenv("AICRM_PUBLIC_BASE_URL", "http://testserver")
     legacy_app = Flask(__name__)
     received = {}
@@ -210,9 +209,8 @@ def test_legacy_flask_facade_rewrites_questionnaire_patch_update_to_legacy_put(m
 
     response = TestClient(app).patch("/api/admin/questionnaires/42", json={"title": "生产更新"})
 
-    assert response.status_code == 200
-    assert received == {"method": "PUT", "questionnaire_id": 42, "payload": {"title": "生产更新"}}
-    assert response.json()["questionnaire"]["title"] == "生产更新"
+    assert response.status_code == 405
+    assert received == {}
 
 
 def test_cutover_checker_contract(monkeypatch):

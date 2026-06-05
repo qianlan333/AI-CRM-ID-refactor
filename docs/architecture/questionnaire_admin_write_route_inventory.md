@@ -13,7 +13,7 @@ Scope: backend questionnaire admin write replacement only. Public H5 submit, OAu
 | `/api/admin/questionnaires/{questionnaire_id}` | `DELETE` | Admin delete wrote through legacy facade in production and hard-deleted fixture locally. | Replaced with `questionnaire.admin.delete` soft-delete/disable command. |
 | `/api/admin/questionnaires/{questionnaire_id}/enable` | `POST` | Admin enable wrote through legacy facade in production and fixture command locally. | Replaced with `questionnaire.admin.enable` on Next CommandBus. |
 | `/api/admin/questionnaires/{questionnaire_id}/disable` | `POST` | Admin disable wrote through legacy facade in production and fixture command locally. | Replaced with `questionnaire.admin.disable` on Next CommandBus. |
-| `/api/admin/questionnaires/{questionnaire_id}/export` | `GET` | Export generated/downloaded data directly, using legacy facade in production. | Replaced with audited `questionnaire.admin.export_audit`; no real file or storage side effect is executed. |
+| `/api/admin/questionnaires/{questionnaire_id}/export` | `GET` | Export generated/downloaded data directly, using legacy facade in production. | Replaced with `questionnaire.admin.export_download`; returns a CSV response stream without creating a server-side file or storage side effect. |
 
 ## Added Routes
 
@@ -38,13 +38,13 @@ Responses include:
 
 ## Production Boundary
 
-When production data is ready but the questionnaire admin Postgres write model is not production-ready, create/update/enable/disable/delete routes forward through the `legacy_flask_facade` so production admin edits keep using the proven legacy Flask persistence path. Fixture data is not used as production data.
+When production data is ready, create/update/duplicate/publish/enable/disable/delete/export-preview execute through the Next questionnaire admin CommandBus and Postgres questionnaire repository. The legacy Flask questionnaire admin write rollback has been removed; fixture data is not used as production data.
 
-The active Next handler still owns the route surface and uses the Next CommandBus in fixture/local mode. Production fallback is limited to admin persistence commands; duplicate/publish/export preview remain guarded Next commands and may still return controlled `production_unavailable` until their production write model is completed.
+The active Next handler owns the route surface in both production and fixture/local mode. No production fallback remains for admin persistence commands; duplicate/publish/export preview/export download remain guarded Next commands with `legacy rollback removed`.
 
 ## Deletion Closeout
 
-Admin write routes are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=true`, `delete_status=active_fallback`, and `replacement_status=production_fallback` until the Postgres questionnaire write repository is production-ready.
+Admin write routes are tracked as `runtime_owner=next_command`, `legacy_fallback_allowed=false`, `delete_status=deletion_locked`, and `replacement_status=locked`. Responses must include `source_status=next_command`, `fallback_used=false`, and no `X-AICRM-Compatibility-Facade`.
 
 No production_compat admin write wildcard is registered; fallback stays inside the explicit integration gateway boundary. H5 submit/diagnostics and OAuth/auth remain out of scope and are not changed by this closeout.
 

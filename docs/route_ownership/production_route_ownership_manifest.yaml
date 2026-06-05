@@ -572,7 +572,7 @@ routes:
     replacement_status: locked
     adapter_mode: real_blocked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
-    notes: Existing admin export route is an audited Next CommandBus export preview/plan route, not real storage or file generation; admin write legacy rollback removed; SideEffectPlan only; no real external calls; real_external_call_executed=false.
+    notes: Existing admin export route returns a Next CSV response stream through CommandBus, not legacy Flask, real storage, or server-side file generation; admin write legacy rollback removed; SideEffectPlan only; no real external calls; real_external_call_executed=false.
   - route_pattern: /api/admin/questionnaires/{questionnaire_id}/share
     methods: [GET]
     capability_owner: aicrm_next.questionnaire

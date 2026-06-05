@@ -4,6 +4,8 @@ from typing import Any
 
 from aicrm_next.shared.errors import ContractError
 
+CHOICE_QUESTION_TYPES = {"single_choice", "multi_choice"}
+
 
 def _item_has_key(item: dict[str, Any], key: str) -> bool:
     return key in item and item.get(key) is not None
@@ -41,12 +43,14 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "status": str(item.get("status") or ("disabled" if not enabled else "published")),
         "version": int(item.get("version") or 1),
         "redirect_url": str(item.get("redirect_url") or "").strip(),
+        "answer_display_mode": str(item.get("answer_display_mode") or "all_in_one").strip() or "all_in_one",
         "submit_button_text": str(item.get("submit_button_text") or "提交").strip(),
         "created_at": item.get("created_at") or "",
         "updated_at": item.get("updated_at") or "",
         "questions": [normalize_question(question) for question in item.get("questions", [])],
         "rules": list(item.get("rules") or item.get("score_rules") or []),
         "score_rules": list(item.get("score_rules") or item.get("rules") or []),
+        "assessment_config": dict(item.get("assessment_config") or item.get("result_config") or {}),
         "result_config": dict(item.get("result_config") or item.get("assessment_config") or {}),
         "submissions_summary": dict(item.get("submissions_summary") or {}),
         "last_submitted_at": item.get("last_submitted_at") or "",
@@ -102,6 +106,9 @@ def normalize_option(option: dict[str, Any]) -> dict[str, Any]:
         "value": value,
         "tag_codes": list(option.get("tag_codes") or []),
         "score": int(option.get("score") or 0),
+        "is_other": bool(option.get("is_other", False)),
+        "other_placeholder": str(option.get("other_placeholder") or ""),
+        "other_max_length": int(option.get("other_max_length") or 80),
     }
 
 
@@ -164,25 +171,107 @@ def public_projection(item: dict[str, Any]) -> dict[str, Any]:
     return {"questionnaire": public_questionnaire, "questions": public_questions}
 
 
+def choice_answer_parts(raw_value: Any) -> tuple[list[str], str]:
+    if raw_value is None or raw_value == "":
+        return [], ""
+    if isinstance(raw_value, dict):
+        selected_value = None
+        for key in ("selected_option_ids", "option_ids", "value"):
+            if key in raw_value:
+                selected_value = raw_value.get(key)
+                break
+        selected_ids = _choice_value_list(selected_value)
+        other_text = ""
+        for key in ("other_text", "text_value"):
+            if key in raw_value:
+                other_text = str(raw_value.get(key) or "").strip()
+                break
+        return selected_ids, other_text
+    if isinstance(raw_value, list):
+        return _choice_value_list(raw_value), ""
+    return _choice_value_list(raw_value), ""
+
+
+def _choice_value_list(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item not in (None, "")]
+    return [str(value)]
+
+
+def _question_label(question: dict[str, Any]) -> str:
+    title = str(question.get("title") or "").strip()
+    question_id = question.get("id")
+    return f"{question_id} ({title})" if title else str(question_id)
+
+
+def _option_lookup(question: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for option in question.get("options") or []:
+        option_id = str(option.get("id") or "").strip()
+        option_value = str(option.get("value") or option_id).strip()
+        if option_id:
+            lookup[option_id] = option
+        if option_value:
+            lookup[option_value] = option
+    return lookup
+
+
+def selected_choice_options(question: dict[str, Any], raw_value: Any) -> tuple[list[dict[str, Any]], str]:
+    selected_ids, other_text = choice_answer_parts(raw_value)
+    lookup = _option_lookup(question)
+    selected_options: list[dict[str, Any]] = []
+    seen_option_ids: set[str] = set()
+    for selected_id in selected_ids:
+        option = lookup.get(str(selected_id))
+        if option is None:
+            raise ContractError(f"question {_question_label(question)} selected option not found: {selected_id}")
+        option_id = str(option.get("id") or selected_id)
+        if option_id in seen_option_ids:
+            continue
+        seen_option_ids.add(option_id)
+        selected_options.append(option)
+    return selected_options, other_text
+
+
 def validate_required_answers(questionnaire: dict[str, Any], answers: dict[str, Any]) -> None:
     for question in normalize_questionnaire(questionnaire)["questions"]:
-        if not question["required"]:
-            continue
+        question_type = str(question.get("type") or "single_choice")
         value = answers.get(str(question["id"]))
-        if value in (None, "", []):
+        if question_type not in CHOICE_QUESTION_TYPES:
+            if question["required"] and value in (None, "", []):
+                raise ContractError(f"missing required answer: {question['id']}")
+            continue
+        selected_ids, _other_text = choice_answer_parts(value)
+        if question["required"] and not selected_ids:
             raise ContractError(f"missing required answer: {question['id']}")
+        if not selected_ids:
+            continue
+        if question_type == "single_choice" and len(selected_ids) > 1:
+            raise ContractError(f"question {_question_label(question)} single_choice only allows one selected option")
+        selected_options, other_text = selected_choice_options(question, value)
+        other_options = [option for option in selected_options if bool(option.get("is_other"))]
+        if not other_options:
+            continue
+        if not other_text.strip():
+            raise ContractError(f"question {_question_label(question)} other_text is required")
+        other_max_length = int(other_options[0].get("other_max_length") or 80)
+        if len(other_text.strip()) > other_max_length:
+            raise ContractError(f"question {_question_label(question)} other_text length must be <= {other_max_length}")
 
 
 def score_and_tags(questionnaire: dict[str, Any], answers: dict[str, Any]) -> tuple[int, list[str]]:
     score = 0
     tags: list[str] = []
     for question in normalize_questionnaire(questionnaire)["questions"]:
+        if str(question.get("type") or "") not in CHOICE_QUESTION_TYPES:
+            continue
         raw_value = answers.get(str(question["id"]))
-        selected_values = {str(item) for item in raw_value} if isinstance(raw_value, list) else {str(raw_value)}
-        for option in question["options"]:
-            if str(option["id"]) in selected_values or str(option["value"]) in selected_values:
-                score += int(option.get("score") or 0)
-                for tag_code in option.get("tag_codes") or []:
-                    if tag_code not in tags:
-                        tags.append(str(tag_code))
+        selected_options, _other_text = selected_choice_options(question, raw_value)
+        for option in selected_options:
+            score += int(option.get("score") or 0)
+            for tag_code in option.get("tag_codes") or []:
+                if tag_code not in tags:
+                    tags.append(str(tag_code))
     return score, tags

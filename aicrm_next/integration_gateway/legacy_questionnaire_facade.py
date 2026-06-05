@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-from aicrm_next.questionnaire.domain import admin_detail_projection, public_projection, summary_projection
+from aicrm_next.questionnaire.domain import admin_detail_projection, public_projection
 
 from .legacy_flask_facade import _legacy_app, _legacy_import_module, legacy_questionnaire_service
 
@@ -63,66 +63,6 @@ def get_questionnaire_detail_from_legacy(questionnaire_id: int) -> dict[str, Any
         }
 
     return _with_legacy_app_context(_load)
-
-
-def create_questionnaire_in_legacy(payload: dict[str, Any]) -> dict[str, Any]:
-    def _save() -> dict[str, Any]:
-        legacy_service = legacy_questionnaire_service()
-        item = legacy_service.create_questionnaire(dict(payload or {}))
-        return {
-            "ok": True,
-            **admin_detail_projection(item),
-            "source_status": "production_postgres",
-            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        }
-
-    return _with_legacy_app_context(_save)
-
-
-def update_questionnaire_in_legacy(questionnaire_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-    def _save() -> dict[str, Any]:
-        legacy_service = legacy_questionnaire_service()
-        item = legacy_service.update_questionnaire(int(questionnaire_id), dict(payload or {}))
-        if not item:
-            raise LookupError("questionnaire not found")
-        return {
-            "ok": True,
-            **admin_detail_projection(item),
-            "source_status": "production_postgres",
-            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        }
-
-    return _with_legacy_app_context(_save)
-
-
-def set_questionnaire_enabled_in_legacy(questionnaire_id: int, *, enabled: bool) -> dict[str, Any]:
-    def _save() -> dict[str, Any]:
-        legacy_service = legacy_questionnaire_service()
-        item = legacy_service.disable_questionnaire(int(questionnaire_id), is_disabled=not bool(enabled))
-        if not item:
-            raise LookupError("questionnaire not found")
-        return {
-            "ok": True,
-            "questionnaire": summary_projection(item),
-            "source_status": "production_postgres",
-            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        }
-
-    return _with_legacy_app_context(_save)
-
-
-def delete_questionnaire_in_legacy(questionnaire_id: int) -> dict[str, Any]:
-    def _delete() -> dict[str, Any]:
-        legacy_service = legacy_questionnaire_service()
-        return {
-            "ok": True,
-            "deleted": legacy_service.delete_questionnaire(int(questionnaire_id)),
-            "delete_mode": "legacy_postgres",
-            "source_status": "production_postgres",
-            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        }
-
-    return _with_legacy_app_context(_delete)
 
 
 def get_public_questionnaire_from_legacy(slug: str) -> dict[str, Any]:
@@ -193,19 +133,6 @@ def latest_submit_debug_from_legacy(questionnaire_id: int) -> dict[str, Any]:
             "submission": item,
             "source_status": "production_postgres",
             "safe_debug": True,
-            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        }
-
-    return _with_legacy_app_context(_load)
-
-
-def export_questionnaire_from_legacy(questionnaire_id: int) -> dict[str, Any]:
-    def _load() -> dict[str, Any]:
-        legacy_service = legacy_questionnaire_service()
-        return {
-            "ok": True,
-            "export": legacy_service.export_questionnaire_submissions(int(questionnaire_id)),
-            "source_status": "production_postgres",
             "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
         }
 

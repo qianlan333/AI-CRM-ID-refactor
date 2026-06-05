@@ -915,7 +915,7 @@ routes:
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
     notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; duplicate/publish/export preview remain guarded Next commands; real_external_call_executed=false for Next command responses.
-  - route_id: questionnaire_admin_export_audit_next_commandbus
+  - route_id: questionnaire_admin_export_download_next_commandbus
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/export
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
@@ -928,7 +928,7 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_write_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; existing export route returns an audited export preview/plan instead of generating a real file; SideEffectPlan only; no real external calls; real_external_call_executed=false.
+    notes: Questionnaire admin write legacy rollback removed; Next CommandBus only; existing export route returns a CSV response stream instead of generating a server-side file; SideEffectPlan only; no real external calls; real_external_call_executed=false.
   - route_id: questionnaire_admin_share_out_of_scope
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/share
     methods: [GET]

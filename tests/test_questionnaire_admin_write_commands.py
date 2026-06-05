@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from fastapi.responses import JSONResponse
 
 from aicrm_next.main import create_app
 import aicrm_next.questionnaire.api as questionnaire_api
-from aicrm_next.questionnaire.admin_write import get_questionnaire_admin_write_audit_events
+from aicrm_next.questionnaire.admin_write import (
+    get_questionnaire_admin_write_audit_events,
+    reset_questionnaire_admin_write_fixture_state,
+)
+from aicrm_next.questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
+from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
 
 
 @pytest.fixture()
@@ -14,6 +18,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
+    reset_questionnaire_fixture_state()
+    reset_questionnaire_admin_write_fixture_state()
+    reset_questionnaire_h5_write_fixture_state()
     return TestClient(create_app())
 
 
@@ -123,41 +130,109 @@ def test_questionnaire_admin_write_routes_return_controlled_errors(client: TestC
     assert missing_questionnaire.json()["source_status"] == "not_found"
 
 
-@pytest.mark.parametrize(
-    ("method", "path", "body"),
-    [
-        ("post", "/api/admin/questionnaires", _payload()),
-        ("put", "/api/admin/questionnaires/11", _payload("生产更新")),
-        ("post", "/api/admin/questionnaires/11/disable", {"is_disabled": True}),
-        ("post", "/api/admin/questionnaires/11/enable", {}),
-        ("delete", "/api/admin/questionnaires/11", {}),
-    ],
-)
-def test_questionnaire_admin_write_production_uses_legacy_fallback(
+def test_questionnaire_admin_write_production_uses_next_commandbus(
     monkeypatch: pytest.MonkeyPatch,
-    method: str,
-    path: str,
-    body: dict,
 ) -> None:
-    forwarded: list[tuple[str, str]] = []
-
-    async def fake_forward_to_legacy_flask(request):
-        forwarded.append((request.method, request.url.path))
-        return JSONResponse(
-            {"ok": True, "questionnaire": {"id": 11, "title": "legacy"}, "fallback_used": True},
-            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
-        )
-
     monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
-    monkeypatch.setattr(questionnaire_api, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+    reset_questionnaire_fixture_state()
+    reset_questionnaire_admin_write_fixture_state()
 
     client = TestClient(create_app())
-    request = getattr(client, method)
-    kwargs = {"json": body} if method != "delete" else {}
-    response = request(path, **kwargs)
+    create = client.post("/api/admin/questionnaires", json=_payload("生产创建"))
+    assert create.status_code == 200
+    questionnaire_id = create.json()["questionnaire_id"]
 
-    assert response.status_code == 200
-    assert forwarded == [(method.upper(), path)]
-    body = response.json()
-    assert body["ok"] is True
-    assert response.headers["x-aicrm-compatibility-facade"] == "legacy_flask_facade"
+    responses = [
+        create,
+        client.put(f"/api/admin/questionnaires/{questionnaire_id}", json=_payload("生产更新")),
+        client.post(f"/api/admin/questionnaires/{questionnaire_id}/publish", json={}),
+        client.post(f"/api/admin/questionnaires/{questionnaire_id}/disable", json={}),
+        client.post(f"/api/admin/questionnaires/{questionnaire_id}/enable", json={}),
+        client.delete(f"/api/admin/questionnaires/{questionnaire_id}"),
+    ]
+    for response in responses:
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["source_status"] == "next_command"
+        assert body["fallback_used"] is False
+        assert "x-aicrm-compatibility-facade" not in response.headers
+
+
+def test_questionnaire_admin_lifecycle_production_mode_acceptance(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    payload = {
+        **_payload("生产闭环问卷"),
+        "slug": "prod-lifecycle-survey",
+        "assessment_enabled": True,
+        "assessment_config": {"levels": [{"name": "高意向", "min_score": 1}]},
+        "score_rules": [{"min_score": 1, "max_score": 10, "tag_codes": ["tag_prod_lifecycle"]}],
+        "external_push_enabled": True,
+        "external_push_url": "https://example.invalid/questionnaire",
+        "external_push_type": "trial",
+        "external_push_day": 7,
+        "external_push_remark": "生产闭环验收",
+    }
+
+    create = client.post("/api/admin/questionnaires", json=payload)
+    assert create.status_code == 200
+    assert create.json()["source_status"] == "next_command"
+    assert create.json()["fallback_used"] is False
+    assert "x-aicrm-compatibility-facade" not in create.headers
+    questionnaire_id = create.json()["questionnaire_id"]
+
+    update_payload = {**payload, "title": "生产闭环问卷更新"}
+    update = client.put(f"/api/admin/questionnaires/{questionnaire_id}", json=update_payload)
+    assert update.status_code == 200
+
+    refreshed = client.get(f"/api/admin/questionnaires/{questionnaire_id}")
+    assert refreshed.status_code == 200
+    refreshed_body = refreshed.json()
+    assert refreshed_body["questionnaire"]["title"] == "生产闭环问卷更新"
+    assert refreshed_body["questionnaire"]["assessment_config"]["levels"][0]["name"] == "高意向"
+    assert refreshed_body["questionnaire"]["external_push_type"] == "trial"
+    assert refreshed_body["questions"][0]["options"][0]["tag_codes"] == []
+
+    publish = client.post(f"/api/admin/questionnaires/{questionnaire_id}/publish", json={})
+    assert publish.status_code == 200
+    h5_page = client.get("/s/prod-lifecycle-survey")
+    assert h5_page.status_code == 200
+    assert "生产闭环问卷更新" in h5_page.text
+
+    submit = client.post(
+        "/api/h5/questionnaires/prod-lifecycle-survey/submit",
+        json={
+            "answers": {"q1": "yes"},
+            "identity": {"external_userid": "wm_prod_lifecycle_001", "mobile": "13800138000"},
+        },
+    )
+    assert submit.status_code == 200
+
+    export_preview = client.post(
+        f"/api/admin/questionnaires/{questionnaire_id}/export/preview",
+        json={"fields": ["submission_id", "external_userid", "mobile", "answers"]},
+    )
+    assert export_preview.status_code == 200
+    export_body = export_preview.json()
+    assert export_body["source_status"] == "next_command"
+    assert export_body["fallback_used"] is False
+    assert export_body["export_preview"]["file_created"] is False
+    assert export_body["export_preview"]["masked_sample"][0]["external_userid"] == "masked"
+    assert export_body["export_preview"]["masked_sample"][0]["mobile"] == "masked"
+    assert "x-aicrm-compatibility-facade" not in export_preview.headers
+
+    disable = client.post(f"/api/admin/questionnaires/{questionnaire_id}/disable", json={})
+    assert disable.status_code == 200
+    disabled_h5 = client.get("/api/h5/questionnaires/prod-lifecycle-survey")
+    assert disabled_h5.status_code == 404
+
+    delete = client.delete(f"/api/admin/questionnaires/{questionnaire_id}")
+    assert delete.status_code == 200
+    assert delete.json()["delete_mode"] == "soft_delete_disable"
+    list_response = client.get("/api/admin/questionnaires")
+    assert list_response.status_code == 200
+    list_item = next(item for item in list_response.json()["questionnaires"] if item["id"] == questionnaire_id)
+    assert list_item["is_disabled"] is True

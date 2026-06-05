@@ -3,11 +3,14 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Protocol
+from uuid import uuid4
 
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
+from .domain import CHOICE_QUESTION_TYPES, selected_choice_options
 
 
 class QuestionnaireRepository(Protocol):
@@ -79,6 +82,66 @@ def _jsonb(value: Any) -> Any:
     return Jsonb(value, dumps=_json_dumps)
 
 
+def _as_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _slugify_questionnaire(value: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    if not base:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        base = f"q-{timestamp}-{uuid4().hex[:6]}"
+    return base[:120]
+
+
+def _external_push_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    config = dict(payload.get("external_push_config") or {})
+    return {
+        "enabled": _as_bool(payload.get("external_push_enabled", config.get("enabled"))),
+        "url": _text(payload.get("external_push_url") or config.get("webhook_url")),
+        "type": _text(payload.get("external_push_type") or config.get("type")),
+        "expires_at_ts": _optional_int(payload.get("external_push_expires_at_ts", config.get("expires_at_ts"))),
+        "day": _optional_int(payload.get("external_push_day", config.get("day"))),
+        "frequency": _optional_int(payload.get("external_push_frequency", config.get("frequency"))),
+        "remark": _text(payload.get("external_push_remark") or config.get("remark")),
+        "custom_params": _json_list(payload.get("external_push_custom_params", config.get("custom_params"))),
+    }
+
+
+def _questionnaire_payload(payload: dict[str, Any], *, slug: str) -> dict[str, Any]:
+    external_push = _external_push_payload(payload)
+    assessment_config = _json_dict(payload.get("assessment_config") or payload.get("result_config"))
+    title = _text(payload.get("title") or payload.get("name")).strip()
+    return {
+        "slug": slug,
+        "name": _text(payload.get("name") or title).strip(),
+        "title": title,
+        "description": _text(payload.get("description")),
+        "is_disabled": _as_bool(payload.get("is_disabled"), default=not _as_bool(payload.get("enabled"), default=True)),
+        "redirect_url": _text(payload.get("redirect_url")),
+        "answer_display_mode": _text(payload.get("answer_display_mode") or "all_in_one") or "all_in_one",
+        "assessment_enabled": _as_bool(payload.get("assessment_enabled")),
+        "assessment_config": assessment_config,
+        "external_push": external_push,
+    }
+
+
 def _answer_value_list(raw_value: Any) -> list[str]:
     if raw_value is None:
         return []
@@ -103,14 +166,10 @@ def _answer_snapshots(questions: list[dict[str, Any]], answers: dict[str, Any]) 
             continue
         question_type = _text(question.get("type") or "single_choice")
         raw_value = answers.get(question_key)
-        selected_values = set(_answer_value_list(raw_value))
         selected_options: list[dict[str, Any]] = []
-        if question_type in {"single_choice", "multi_choice"}:
-            for option in question.get("options") or []:
-                option_id = str(option.get("id") or "")
-                option_value = str(option.get("value") or option_id)
-                if option_id in selected_values or option_value in selected_values:
-                    selected_options.append(option)
+        other_text = ""
+        if question_type in CHOICE_QUESTION_TYPES:
+            selected_options, other_text = selected_choice_options(question, raw_value)
         selected_option_scores = [float(option.get("score") or 0) for option in selected_options]
         selected_option_tags: list[str] = []
         for option in selected_options:
@@ -118,6 +177,7 @@ def _answer_snapshots(questions: list[dict[str, Any]], answers: dict[str, Any]) 
                 tag_text = str(tag_code or "").strip()
                 if tag_text and tag_text not in selected_option_tags:
                     selected_option_tags.append(tag_text)
+        selected_other_text = other_text.strip() if any(bool(option.get("is_other")) for option in selected_options) else ""
         snapshots.append(
             {
                 "question_id": question_id,
@@ -127,11 +187,28 @@ def _answer_snapshots(questions: list[dict[str, Any]], answers: dict[str, Any]) 
                 "selected_option_texts_snapshot": [_text(option.get("label") or option.get("option_text")) for option in selected_options],
                 "selected_option_scores_snapshot": selected_option_scores,
                 "selected_option_tags_snapshot": selected_option_tags,
-                "text_value": _text_answer(raw_value) if question_type in {"textarea", "mobile"} else "",
+                "text_value": _text_answer(raw_value) if question_type in {"textarea", "mobile"} else selected_other_text,
                 "score_contribution": sum(selected_option_scores) if question_type not in {"textarea", "mobile"} else 0.0,
             }
         )
     return snapshots
+
+
+def _answers_from_snapshots(answer_snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    answers: dict[str, Any] = {}
+    for snapshot in answer_snapshots:
+        key = str(snapshot.get("question_id"))
+        question_type = _text(snapshot.get("question_type") or "single_choice")
+        if question_type in {"textarea", "mobile"}:
+            answers[key] = _text(snapshot.get("text_value"))
+            continue
+        selected = _json_list(snapshot.get("selected_option_ids"))
+        other_text = _text(snapshot.get("text_value")).strip()
+        if other_text:
+            answers[key] = {"selected_option_ids": selected, "other_text": other_text}
+        else:
+            answers[key] = selected[0] if len(selected) == 1 else selected
+    return answers
 
 
 def _mobile_answer(questions: list[dict[str, Any]], answers: dict[str, Any]) -> str:
@@ -345,8 +422,14 @@ class InMemoryQuestionnaireRepository:
                 "enabled": bool(payload.get("enabled", item.get("enabled", True))),
                 "redirect_url": str(payload.get("redirect_url") or ""),
                 "submit_button_text": str(payload.get("submit_button_text") or "提交"),
+                "answer_display_mode": str(payload.get("answer_display_mode") or item.get("answer_display_mode") or "all_in_one"),
+                "assessment_enabled": bool(payload.get("assessment_enabled", item.get("assessment_enabled", False))),
+                "assessment_config": deepcopy(payload.get("assessment_config") or payload.get("result_config") or item.get("assessment_config") or {}),
+                "result_config": deepcopy(payload.get("result_config") or payload.get("assessment_config") or item.get("result_config") or {}),
                 "updated_at": now,
                 "questions": deepcopy(payload.get("questions") or item.get("questions") or []),
+                "score_rules": deepcopy(payload.get("score_rules") or payload.get("rules") or item.get("score_rules") or []),
+                "rules": deepcopy(payload.get("rules") or payload.get("score_rules") or item.get("rules") or []),
                 "external_push_config": deepcopy(payload.get("external_push_config") or item.get("external_push_config") or {}),
             }
         )
@@ -383,7 +466,11 @@ class InMemoryQuestionnaireRepository:
     def get_submission(self, submission_id: str) -> dict[str, Any] | None:
         for item in self._submissions:
             if item.get("submission_id") == submission_id:
-                return deepcopy(item)
+                payload = deepcopy(item)
+                if isinstance(payload.get("answer_snapshots"), list):
+                    payload["answers"] = _answers_from_snapshots(payload["answer_snapshots"])
+                    payload["answers_json"] = payload["answers"]
+                return payload
         return None
 
     def find_submission_for_identity(self, questionnaire_id: int, identity: dict[str, Any]) -> dict[str, Any] | None:
@@ -582,6 +669,9 @@ class PostgresQuestionnaireReadRepository:
                     "option_text": _text(payload.get("option_text")),
                     "score": int(float(payload.get("score") or 0)),
                     "tag_codes": _json_list(payload.get("tag_codes")),
+                    "is_other": bool(payload.get("is_other")),
+                    "other_placeholder": _text(payload.get("other_placeholder")),
+                    "other_max_length": int(payload.get("other_max_length") or 80),
                     "sort_order": int(payload.get("sort_order") or 0),
                 }
             )
@@ -650,6 +740,33 @@ class PostgresQuestionnaireReadRepository:
                 """,
                 (int(questionnaire_id), int(limit), int(offset)),
             ).fetchall()
+            row_ids = [int(row["id"]) for row in rows]
+            answer_rows = []
+            if row_ids:
+                answer_rows = conn.execute(
+                    """
+                    SELECT submission_id, question_id, question_type, selected_option_ids, text_value
+                    FROM questionnaire_submission_answers
+                    WHERE submission_id = ANY(%s)
+                    ORDER BY submission_id ASC, id ASC
+                    """,
+                    (row_ids,),
+                ).fetchall()
+        answers_by_submission: dict[int, dict[str, Any]] = {}
+        for answer in answer_rows:
+            submission_id = int(answer.get("submission_id") or 0)
+            answer_payload = dict(answer)
+            key = str(answer_payload.get("question_id"))
+            answers = answers_by_submission.setdefault(submission_id, {})
+            if answer_payload.get("question_type") in {"textarea", "mobile"}:
+                answers[key] = _text(answer_payload.get("text_value"))
+                continue
+            selected = _json_list(answer_payload.get("selected_option_ids"))
+            other_text = _text(answer_payload.get("text_value")).strip()
+            if other_text:
+                answers[key] = {"selected_option_ids": selected, "other_text": other_text}
+            else:
+                answers[key] = selected[0] if len(selected) == 1 else selected
         items = [
             {
                 **dict(row),
@@ -657,6 +774,8 @@ class PostgresQuestionnaireReadRepository:
                 "submitted_at": _timestamp(row.get("submitted_at")),
                 "final_tags": _json_list(row.get("final_tags")),
                 "score": float(row.get("total_score") or 0),
+                "mobile": _text(row.get("mobile_snapshot")),
+                "answers": answers_by_submission.get(int(row.get("id") or 0), {}),
             }
             for row in rows
         ]
@@ -687,15 +806,222 @@ class PostgresQuestionnaireReadRepository:
             for row in rows
         ]
 
-    # Write/export behavior remains intentionally outside the admin-read replacement.
     def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]:
-        raise RepositoryProviderError("questionnaire writes remain out of scope for the admin read replacement")
+        with self._connect() as conn:
+            with conn.transaction():
+                existing = None
+                if questionnaire_id is not None:
+                    existing = conn.execute(
+                        "SELECT id, slug, name, title FROM questionnaires WHERE id = %s FOR UPDATE",
+                        (int(questionnaire_id),),
+                    ).fetchone()
+                    if not existing:
+                        return {}
+                requested_slug = _text(payload.get("slug")).strip()
+                slug_source = requested_slug or _text((existing or {}).get("slug")) or _text(payload.get("name")) or _text(payload.get("title"))
+                slug = _slugify_questionnaire(slug_source)
+                if self._slug_exists(conn, slug, exclude_id=int(questionnaire_id) if questionnaire_id is not None else None):
+                    if requested_slug:
+                        raise RepositoryProviderError("slug already exists")
+                    slug = self._dedupe_slug(conn, slug_source, exclude_id=int(questionnaire_id) if questionnaire_id is not None else None)
+                normalized = _questionnaire_payload(payload, slug=slug)
+                if not normalized["name"]:
+                    raise RepositoryProviderError("name is required")
+                if not normalized["title"]:
+                    raise RepositoryProviderError("title is required")
+                external_push = normalized["external_push"]
+
+                if questionnaire_id is None:
+                    row = conn.execute(
+                        """
+                        INSERT INTO questionnaires (
+                            slug, name, title, description, is_disabled, redirect_url,
+                            answer_display_mode, assessment_enabled, assessment_config,
+                            external_push_enabled, external_push_url, external_push_type, external_push_expires_at_ts,
+                            external_push_day, external_push_frequency, external_push_remark, external_push_custom_params,
+                            created_at, updated_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        RETURNING id
+                        """,
+                        (
+                            normalized["slug"],
+                            normalized["name"],
+                            normalized["title"],
+                            normalized["description"],
+                            normalized["is_disabled"],
+                            normalized["redirect_url"],
+                            normalized["answer_display_mode"],
+                            normalized["assessment_enabled"],
+                            _jsonb(normalized["assessment_config"]),
+                            external_push["enabled"],
+                            external_push["url"],
+                            external_push["type"],
+                            external_push["expires_at_ts"],
+                            external_push["day"],
+                            external_push["frequency"],
+                            external_push["remark"],
+                            _jsonb(external_push["custom_params"]),
+                        ),
+                    ).fetchone()
+                    questionnaire_id = int(row["id"])
+                else:
+                    conn.execute(
+                        """
+                        UPDATE questionnaires
+                        SET slug = %s, name = %s, title = %s, description = %s, is_disabled = %s,
+                            redirect_url = %s, answer_display_mode = %s, assessment_enabled = %s,
+                            assessment_config = %s, external_push_enabled = %s, external_push_url = %s,
+                            external_push_type = %s, external_push_expires_at_ts = %s, external_push_day = %s,
+                            external_push_frequency = %s, external_push_remark = %s,
+                            external_push_custom_params = %s, updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            normalized["slug"],
+                            normalized["name"],
+                            normalized["title"],
+                            normalized["description"],
+                            normalized["is_disabled"],
+                            normalized["redirect_url"],
+                            normalized["answer_display_mode"],
+                            normalized["assessment_enabled"],
+                            _jsonb(normalized["assessment_config"]),
+                            external_push["enabled"],
+                            external_push["url"],
+                            external_push["type"],
+                            external_push["expires_at_ts"],
+                            external_push["day"],
+                            external_push["frequency"],
+                            external_push["remark"],
+                            _jsonb(external_push["custom_params"]),
+                            int(questionnaire_id),
+                        ),
+                    )
+                self._sync_questions(conn, int(questionnaire_id), _json_list(payload.get("questions")))
+                self._sync_score_rules(conn, int(questionnaire_id), _json_list(payload.get("score_rules") or payload.get("rules")))
+        item = self.get_questionnaire(int(questionnaire_id))
+        if not item:
+            raise RepositoryProviderError("questionnaire write failed")
+        return item
 
     def set_enabled(self, questionnaire_id: int, enabled: bool) -> dict[str, Any] | None:
-        raise RepositoryProviderError("questionnaire enable/disable remains out of scope for the admin read replacement")
+        with self._connect() as conn:
+            with conn.transaction():
+                row = conn.execute(
+                    """
+                    UPDATE questionnaires
+                    SET is_disabled = %s, updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING id
+                    """,
+                    (not bool(enabled), int(questionnaire_id)),
+                ).fetchone()
+        if not row:
+            return None
+        return self.get_questionnaire(int(questionnaire_id))
 
     def delete_questionnaire(self, questionnaire_id: int) -> bool:
-        raise RepositoryProviderError("questionnaire delete remains out of scope for the admin read replacement")
+        return self.set_enabled(questionnaire_id, False) is not None
+
+    def _slug_exists(self, conn: Any, slug: str, *, exclude_id: int | None = None) -> bool:
+        params: list[Any] = [slug]
+        sql = "SELECT 1 FROM questionnaires WHERE slug = %s"
+        if exclude_id is not None:
+            sql += " AND id <> %s"
+            params.append(int(exclude_id))
+        return bool(conn.execute(sql, tuple(params)).fetchone())
+
+    def _dedupe_slug(self, conn: Any, slug_source: str, *, exclude_id: int | None = None) -> str:
+        candidate = _slugify_questionnaire(slug_source)
+        if not self._slug_exists(conn, candidate, exclude_id=exclude_id):
+            return candidate
+        while True:
+            suffix = uuid4().hex[:6]
+            prefix = candidate[: max(120 - len(suffix) - 1, 1)].rstrip("-")
+            fallback_prefix = datetime.now(timezone.utc).strftime("q-%Y%m%d%H%M%S")
+            deduped = f"{prefix or fallback_prefix}-{suffix}"[:120]
+            if not self._slug_exists(conn, deduped, exclude_id=exclude_id):
+                return deduped
+
+    def _sync_questions(self, conn: Any, questionnaire_id: int, questions: list[Any]) -> None:
+        conn.execute("DELETE FROM questionnaire_questions WHERE questionnaire_id = %s", (int(questionnaire_id),))
+        for index, raw_question in enumerate(questions, start=1):
+            question = dict(raw_question or {})
+            question_type = _text(question.get("type") or "single_choice")
+            title = _text(question.get("title"))
+            if not title:
+                raise RepositoryProviderError("question title is required")
+            row = conn.execute(
+                """
+                INSERT INTO questionnaire_questions (
+                    questionnaire_id, type, title, placeholder_text, assessment_dimension_key,
+                    sidebar_profile_field, required, sort_order, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id
+                """,
+                (
+                    int(questionnaire_id),
+                    question_type,
+                    title,
+                    _text(question.get("placeholder_text")),
+                    _text(question.get("assessment_dimension_key")),
+                    _text(question.get("sidebar_profile_field")),
+                    _as_bool(question.get("required")),
+                    int(question.get("sort_order") or index),
+                ),
+            ).fetchone()
+            question_id = int(row["id"])
+            if question_type not in {"textarea", "mobile"}:
+                self._insert_options(conn, question_id, _json_list(question.get("options")))
+
+    def _insert_options(self, conn: Any, question_id: int, options: list[Any]) -> None:
+        for index, raw_option in enumerate(options, start=1):
+            option = dict(raw_option or {})
+            option_text = _text(option.get("option_text") or option.get("label") or option.get("value"))
+            if not option_text:
+                raise RepositoryProviderError("option_text is required")
+            conn.execute(
+                """
+                INSERT INTO questionnaire_options (
+                    question_id, option_text, score, assessment_type_key, tag_codes,
+                    is_other, other_placeholder, other_max_length, sort_order, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                """,
+                (
+                    int(question_id),
+                    option_text,
+                    float(option.get("score") or 0),
+                    _text(option.get("assessment_type_key")),
+                    _jsonb(_json_list(option.get("tag_codes"))),
+                    _as_bool(option.get("is_other")),
+                    _text(option.get("other_placeholder")),
+                    int(option.get("other_max_length") or 80),
+                    int(option.get("sort_order") or index),
+                ),
+            )
+
+    def _sync_score_rules(self, conn: Any, questionnaire_id: int, score_rules: list[Any]) -> None:
+        conn.execute("DELETE FROM questionnaire_score_rules WHERE questionnaire_id = %s", (int(questionnaire_id),))
+        for index, raw_rule in enumerate(score_rules, start=1):
+            rule = dict(raw_rule or {})
+            conn.execute(
+                """
+                INSERT INTO questionnaire_score_rules (
+                    questionnaire_id, min_score, max_score, tag_codes, sort_order, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                """,
+                (
+                    int(questionnaire_id),
+                    _optional_float(rule.get("min_score")),
+                    _optional_float(rule.get("max_score")),
+                    _jsonb(_json_list(rule.get("tag_codes"))),
+                    int(rule.get("sort_order") or index),
+                ),
+            )
 
     def create_submission(self, payload: dict[str, Any]) -> dict[str, Any]:
         questionnaire_id = int(payload.get("questionnaire_id") or 0)
@@ -833,7 +1159,11 @@ class PostgresQuestionnaireReadRepository:
                 answers[key] = _text(answer_payload.get("text_value"))
             else:
                 selected = _json_list(answer_payload.get("selected_option_ids"))
-                answers[key] = selected[0] if len(selected) == 1 else selected
+                other_text = _text(answer_payload.get("text_value")).strip()
+                if other_text:
+                    answers[key] = {"selected_option_ids": selected, "other_text": other_text}
+                else:
+                    answers[key] = selected[0] if len(selected) == 1 else selected
         return {
             **dict(row),
             "submission_id": str(row.get("id")),

@@ -35,7 +35,6 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
-    Path("aicrm_next/questionnaire/api.py"),
     Path("aicrm_next/automation_engine/group_ops/action_port.py"),
     Path("aicrm_next/automation_engine/group_ops/domain.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),

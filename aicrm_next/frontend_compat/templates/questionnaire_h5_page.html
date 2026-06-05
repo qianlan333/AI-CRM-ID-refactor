@@ -183,6 +183,18 @@
       background: #eef4ff;
       box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.08);
     }
+    .other-text-input {
+      width: calc(100% - 34px);
+      margin: -4px 0 12px 34px;
+      padding: 11px 13px;
+      border-radius: 12px;
+      border: 1px solid rgba(20, 86, 240, 0.12);
+      background: #fff;
+      font: inherit;
+    }
+    .other-text-input[hidden] {
+      display: none;
+    }
     textarea {
       width: 100%;
       min-height: 132px;
@@ -202,7 +214,8 @@
       background: #fff;
     }
     textarea::placeholder,
-    input[type="tel"]::placeholder {
+    input[type="tel"]::placeholder,
+    .other-text-input::placeholder {
       color: #97a69d;
     }
     .submit-btn {
@@ -364,16 +377,29 @@
           >
           {% else %}
           {% for option in question.options %}
-          <label class="option">
+          <label class="option{% if question.type == 'single_choice' and page_state.prefill_fields.get(field_name, '') == (option.id|string) %} is-selected{% endif %}{% if question.type == 'multi_choice' and (option.id|string) in page_state.prefill_fields.get(field_name, []) %} is-selected{% endif %}">
             <input
               type="{{ 'radio' if question.type == 'single_choice' else 'checkbox' }}"
               name="{{ field_name }}"
               value="{{ option.id }}"
+              {% if option.is_other %}data-other-option="1"{% else %}data-other-option="0"{% endif %}
               {% if question.type == 'single_choice' and page_state.prefill_fields.get(field_name, '') == (option.id|string) %}checked{% endif %}
               {% if question.type == 'multi_choice' and (option.id|string) in page_state.prefill_fields.get(field_name, []) %}checked{% endif %}
             >
             <span>{{ option.option_text }}</span>
           </label>
+          {% if option.is_other %}
+          <input
+            type="text"
+            class="other-text-input"
+            name="{{ field_name }}_other_text"
+            placeholder="{{ option.other_placeholder or '请填写其它内容' }}"
+            maxlength="{{ option.other_max_length or 80 }}"
+            data-other-text-input="1"
+            hidden
+            disabled
+          >
+          {% endif %}
           {% endfor %}
           {% endif %}
         </section>
@@ -453,11 +479,11 @@
       function collectMetaFromQuery() {
         const params = new URLSearchParams(window.location.search);
         const fields = ['respondent_key', 'openid', 'unionid', 'external_userid', 'source_channel', 'campaign_id', 'staff_id', 'sidebar_context_token', 'sidebar_context'];
-        const meta = fields.reduce((acc, field) => {
+        const meta = { ...(pageState.request_hints || {}) };
+        fields.forEach((field) => {
           const value = params.get(field);
-          if (value) acc[field] = value;
-          return acc;
-        }, {});
+          if (value) meta[field] = value;
+        });
         fields.forEach((field) => {
           const hidden = formEl.querySelector(`input[type="hidden"][name="${field}"]`);
           if (hidden && hidden.value && !meta[field]) meta[field] = hidden.value;
@@ -491,11 +517,11 @@
           const value = prefillFields[fieldName];
           if (value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)) return;
           if (question.type === 'multi_choice') {
-            answers[question.id] = Array.isArray(value) ? value.map((item) => Number(item)) : [Number(value)];
+            answers[question.id] = Array.isArray(value) ? value.map(String) : [String(value)];
             return;
           }
           if (question.type === 'single_choice') {
-            answers[question.id] = Number(value);
+            answers[question.id] = String(value);
             return;
           }
           answers[question.id] = String(value);
@@ -503,20 +529,124 @@
         return answers;
       }
 
+      function isOtherOption(option) {
+        return option && option.is_other === true;
+      }
+
+      function choiceValueToIds(value, question) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return (value.selected_option_ids || []).map(String);
+        }
+        if (question.type === 'multi_choice') {
+          return Array.isArray(value) ? value.map(String) : [];
+        }
+        if (value === undefined || value === null || value === '') return [];
+        return [String(value)];
+      }
+
+      function getSelectedOptionIds(question) {
+        return choiceValueToIds(answersState[question.id], question);
+      }
+
+      function getOtherText(question) {
+        const value = answersState[question.id];
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return String(value.other_text || '');
+        }
+        return '';
+      }
+
+      function hasSelectedOther(question, selectedIds) {
+        const normalized = new Set((selectedIds || []).map(String));
+        return (question.options || []).some((option) => isOtherOption(option) && normalized.has(String(option.id)));
+      }
+
+      function setChoiceAnswer(question, selectedIds, otherText = '') {
+        const normalizedIds = (selectedIds || []).map(String);
+        if (hasSelectedOther(question, normalizedIds)) {
+          answersState[question.id] = {
+            selected_option_ids: normalizedIds,
+            other_text: String(otherText || ''),
+          };
+          return;
+        }
+        if (question.type === 'single_choice') {
+          answersState[question.id] = normalizedIds.length ? normalizedIds[0] : '';
+          return;
+        }
+        answersState[question.id] = normalizedIds;
+      }
+
+      function syncOtherInputVisibility(wrapper, question) {
+        const selectedIds = getSelectedOptionIds(question);
+        const selectedOther = hasSelectedOther(question, selectedIds);
+        const input = wrapper.querySelector(`input[name="q_${question.id}_other_text"]`);
+        if (!input) return;
+        input.hidden = !selectedOther;
+        input.disabled = !selectedOther;
+        if (!selectedOther) {
+          input.value = '';
+          setChoiceAnswer(question, selectedIds, '');
+        }
+      }
+
+      function updateSelectedClasses(wrapper, question) {
+        const selectedIds = new Set(getSelectedOptionIds(question).map(String));
+        wrapper.querySelectorAll(`input[name="q_${question.id}"]`).forEach((input) => {
+          const label = input.closest('label.option');
+          if (!label) return;
+          label.classList.toggle('is-selected', selectedIds.has(String(input.value)));
+        });
+      }
+
       function isAnswerCompleted(question, value) {
-        if (question.type === 'multi_choice') return Array.isArray(value) && value.length > 0;
-        if (question.type === 'single_choice') return value !== undefined && value !== null && value !== '';
+        if (question.type === 'single_choice' || question.type === 'multi_choice') {
+          const selectedIds = choiceValueToIds(value, question);
+          if (!selectedIds.length) return false;
+          if (hasSelectedOther(question, selectedIds)) {
+            return getOtherText(question).trim() !== '';
+          }
+          return true;
+        }
         return String(value || '').trim() !== '';
       }
 
-      function validateCurrentQuestion() {
-        const question = questionnaire.questions[currentQuestionIndex];
-        if (question && question.required && !isAnswerCompleted(question, answersState[question.id])) {
-          setState('请先完成当前题，再进入下一题。', true);
+      function validateQuestion(question) {
+        const value = answersState[question.id];
+        if (question.type === 'single_choice' || question.type === 'multi_choice') {
+          const selectedIds = getSelectedOptionIds(question);
+          if (question.required && !selectedIds.length) {
+            setState(`请完成必填题：“${question.title}”。`, true);
+            return false;
+          }
+          const otherOption = (question.options || []).find((option) => isOtherOption(option) && selectedIds.includes(String(option.id)));
+          if (otherOption) {
+            const otherText = getOtherText(question).trim();
+            if (!otherText) {
+              setState(`请填写“${question.title}”中的其它内容。`, true);
+              return false;
+            }
+            const maxLength = Number(otherOption.other_max_length || 80);
+            if (otherText.length > maxLength) {
+              setState(`“${question.title}”中的其它内容不能超过 ${maxLength} 个字。`, true);
+              return false;
+            }
+          }
+          setState('');
+          return true;
+        }
+        if (question.required && !isAnswerCompleted(question, value)) {
+          setState(`请完成必填题：“${question.title}”。`, true);
           return false;
         }
         setState('');
         return true;
+      }
+
+      function validateCurrentQuestion() {
+        const question = questionnaire.questions[currentQuestionIndex];
+        if (!question) return true;
+        return validateQuestion(question);
       }
 
       function firstIncompleteRequiredIndex() {
@@ -549,58 +679,8 @@
         formEl.innerHTML = '';
 
         data.questions.forEach((question) => {
-          const wrapper = document.createElement('section');
-          wrapper.className = 'question';
-
-          const title = document.createElement('h2');
-          title.className = 'question-title';
-          title.textContent = question.title;
-          if (question.required) {
-            const required = document.createElement('span');
-            required.className = 'required';
-            required.textContent = '*';
-            title.appendChild(required);
-          }
-          wrapper.appendChild(title);
-
-          if (question.type === 'textarea') {
-            const textarea = document.createElement('textarea');
-            textarea.name = `q_${question.id}`;
-            textarea.placeholder = question.placeholder_text || '';
-            if (answersState[question.id]) textarea.value = answersState[question.id];
-            wrapper.appendChild(textarea);
-          } else if (question.type === 'mobile') {
-            const input = document.createElement('input');
-            input.type = 'tel';
-            input.name = `q_${question.id}`;
-            input.inputMode = 'numeric';
-            input.autocomplete = 'tel';
-            input.placeholder = question.placeholder_text || '请输入手机号';
-            input.maxLength = 20;
-            if (answersState[question.id]) input.value = answersState[question.id];
-            wrapper.appendChild(input);
-          } else {
-            const type = question.type === 'single_choice' ? 'radio' : 'checkbox';
-            question.options.forEach((option) => {
-              const label = document.createElement('label');
-              label.className = 'option';
-              const input = document.createElement('input');
-              input.type = type;
-              input.name = `q_${question.id}`;
-              input.value = String(option.id);
-              if (question.type === 'single_choice' && Number(answersState[question.id]) === Number(option.id)) {
-                input.checked = true;
-              }
-              if (question.type === 'multi_choice' && Array.isArray(answersState[question.id]) && answersState[question.id].map(Number).includes(Number(option.id))) {
-                input.checked = true;
-              }
-              const text = document.createElement('span');
-              text.textContent = option.option_text;
-              label.appendChild(input);
-              label.appendChild(text);
-              wrapper.appendChild(label);
-            });
-          }
+          const wrapper = createQuestionShell(question);
+          renderQuestionFields(wrapper, question);
           formEl.appendChild(wrapper);
         });
 
@@ -609,6 +689,98 @@
         submitButton.className = 'submit-btn';
         submitButton.textContent = '提交';
         formEl.appendChild(submitButton);
+      }
+
+      function createQuestionShell(question, index = null) {
+        const wrapper = document.createElement('section');
+        wrapper.className = 'question';
+        if (index !== null) {
+          const number = document.createElement('p');
+          number.className = 'question-number';
+          number.textContent = `第 ${index + 1} 题`;
+          wrapper.appendChild(number);
+        }
+        const title = document.createElement('h2');
+        title.className = 'question-title';
+        title.textContent = question.title;
+        if (question.required) {
+          const required = document.createElement('span');
+          required.className = 'required';
+          required.textContent = '*';
+          title.appendChild(required);
+        }
+        wrapper.appendChild(title);
+        return wrapper;
+      }
+
+      function renderChoiceField(wrapper, question, options = {}) {
+        const type = question.type === 'single_choice' ? 'radio' : 'checkbox';
+        const selectedIds = new Set(getSelectedOptionIds(question).map(String));
+        (question.options || []).forEach((option) => {
+          const optionId = String(option.id);
+          const label = document.createElement('label');
+          label.className = 'option';
+          const input = document.createElement('input');
+          input.type = type;
+          input.name = `q_${question.id}`;
+          input.value = optionId;
+          input.dataset.otherOption = isOtherOption(option) ? '1' : '0';
+          if (selectedIds.has(optionId)) {
+            input.checked = true;
+            label.classList.add('is-selected');
+          }
+          const text = document.createElement('span');
+          text.textContent = option.option_text || option.label || option.value || '';
+          label.appendChild(input);
+          label.appendChild(text);
+          wrapper.appendChild(label);
+
+          if (isOtherOption(option)) {
+            const otherInput = document.createElement('input');
+            otherInput.type = 'text';
+            otherInput.className = 'other-text-input';
+            otherInput.name = `q_${question.id}_other_text`;
+            otherInput.placeholder = option.other_placeholder || '请填写其它内容';
+            otherInput.maxLength = Number(option.other_max_length || 80);
+            otherInput.value = getOtherText(question);
+            otherInput.hidden = !input.checked;
+            otherInput.disabled = !input.checked;
+            otherInput.dataset.otherTextInput = '1';
+            otherInput.addEventListener('input', (event) => {
+              setChoiceAnswer(question, getSelectedOptionIds(question), event.target.value);
+              setState('');
+            });
+            wrapper.appendChild(otherInput);
+          }
+
+          input.addEventListener('change', () => {
+            setState('');
+            clearAutoNextTimer();
+            let nextSelectedIds = [];
+            if (question.type === 'single_choice') {
+              nextSelectedIds = [optionId];
+            } else {
+              nextSelectedIds = Array.from(wrapper.querySelectorAll(`input[name="q_${question.id}"]:checked`)).map((item) => String(item.value));
+            }
+            const otherInput = wrapper.querySelector(`input[name="q_${question.id}_other_text"]`);
+            const existingOtherText = otherInput ? otherInput.value : '';
+            setChoiceAnswer(question, nextSelectedIds, existingOtherText);
+            syncOtherInputVisibility(wrapper, question);
+            updateSelectedClasses(wrapper, question);
+            const selectedOther = hasSelectedOther(question, nextSelectedIds);
+            if (selectedOther && otherInput) {
+              otherInput.focus();
+            }
+            if (question.type === 'single_choice' && options.autoAdvance && !selectedOther && currentQuestionIndex < questionnaire.questions.length - 1) {
+              autoNextTimer = setTimeout(() => {
+                currentQuestionIndex += 1;
+                renderOneByOneQuestion();
+              }, 450);
+            }
+          });
+        });
+        syncOtherInputVisibility(wrapper, question);
+        updateSelectedClasses(wrapper, question);
       }
 
       function renderQuestionFields(wrapper, question, options = {}) {
@@ -640,46 +812,7 @@
           wrapper.appendChild(input);
           return;
         }
-        const type = question.type === 'single_choice' ? 'radio' : 'checkbox';
-        (question.options || []).forEach((option) => {
-          const label = document.createElement('label');
-          label.className = 'option';
-          const input = document.createElement('input');
-          input.type = type;
-          input.name = `q_${question.id}`;
-          input.value = String(option.id);
-          if (question.type === 'single_choice' && Number(answersState[question.id]) === Number(option.id)) {
-            input.checked = true;
-            label.classList.add('is-selected');
-          }
-          if (question.type === 'multi_choice' && Array.isArray(answersState[question.id]) && answersState[question.id].map(Number).includes(Number(option.id))) {
-            input.checked = true;
-            label.classList.add('is-selected');
-          }
-          const text = document.createElement('span');
-          text.textContent = option.option_text;
-          label.appendChild(input);
-          label.appendChild(text);
-          input.addEventListener('change', () => {
-            setState('');
-            if (question.type === 'single_choice') {
-              answersState[question.id] = Number(option.id);
-              renderOneByOneQuestion();
-              if (options.autoAdvance && currentQuestionIndex < questionnaire.questions.length - 1) {
-                clearAutoNextTimer();
-                autoNextTimer = setTimeout(() => {
-                  currentQuestionIndex += 1;
-                  renderOneByOneQuestion();
-                }, 450);
-              }
-              return;
-            }
-            const selected = Array.from(formEl.querySelectorAll(`input[name="q_${question.id}"]:checked`)).map((item) => Number(item.value));
-            answersState[question.id] = selected;
-            renderOneByOneQuestion();
-          });
-          wrapper.appendChild(label);
-        });
+        renderChoiceField(wrapper, question, options);
       }
 
       function renderOneByOneQuestion() {
@@ -709,28 +842,15 @@
         track.appendChild(fill);
         formEl.appendChild(track);
 
-        const wrapper = document.createElement('section');
-        wrapper.className = 'question';
-        const number = document.createElement('p');
-        number.className = 'question-number';
-        number.textContent = `第 ${currentQuestionIndex + 1} 题`;
-        wrapper.appendChild(number);
-        const titleEl = document.createElement('h2');
-        titleEl.className = 'question-title';
-        titleEl.textContent = question.title;
-        if (question.required) {
-          const required = document.createElement('span');
-          required.className = 'required';
-          required.textContent = '*';
-          titleEl.appendChild(required);
-        }
-        wrapper.appendChild(titleEl);
+        const wrapper = createQuestionShell(question, currentQuestionIndex);
         renderQuestionFields(wrapper, question, { autoAdvance: true });
         formEl.appendChild(wrapper);
 
         const tip = document.createElement('p');
         tip.className = 'one-by-one-tip';
-        tip.textContent = '选择答案后会自动进入下一题。';
+        tip.textContent = question.type === 'single_choice'
+          ? '普通选项会自动进入下一题；选择“其它”后请先填写内容。'
+          : '完成当前题后点击下一题。';
         formEl.appendChild(tip);
 
         const actions = document.createElement('div');
@@ -768,9 +888,7 @@
         if (!pageState.initial_questionnaire) return false;
         validateQuestionnaire(pageState.initial_questionnaire);
         questionnaire = pageState.initial_questionnaire;
-        if (getAnswerDisplayMode(questionnaire) === 'one_by_one' || !formEl.querySelector('button[type="submit"]')) {
-          renderQuestionnaire(questionnaire);
-        }
+        renderQuestionnaire(questionnaire);
         return true;
       }
 
@@ -802,13 +920,29 @@
               return;
             }
             if (!ok || !data.ok) throw new Error(data.error || '问卷不存在');
-            renderQuestionnaire(data.questionnaire);
+            renderQuestionnaire({ ...(data.questionnaire || {}), questions: data.questions || (data.questionnaire || {}).questions || [] });
             setState('');
           })
           .catch((error) => {
             reportClientIssue('load_failed', error, { apiUrl });
             setState(`${normalizedErrorMessage(error, '加载失败')}。如果持续异常，请关闭页面后重试。`, true);
           });
+      }
+
+      function collectChoiceAnswer(question) {
+        const name = `q_${question.id}`;
+        const checked = Array.from(formEl.querySelectorAll(`input[name="${name}"]:checked`));
+        const selectedIds = checked.map((item) => String(item.value));
+        if (!selectedIds.length) return undefined;
+        if (checked.some((item) => item.dataset.otherOption === '1')) {
+          const otherInput = formEl.querySelector(`input[name="${name}_other_text"]`);
+          const otherText = otherInput ? otherInput.value.trim() : '';
+          return {
+            selected_option_ids: selectedIds,
+            other_text: otherText,
+          };
+        }
+        return question.type === 'single_choice' ? selectedIds[0] : selectedIds;
       }
 
       function collectAnswers() {
@@ -818,14 +952,9 @@
         const answers = {};
         questionnaire.questions.forEach((question) => {
           const name = `q_${question.id}`;
-          if (question.type === 'single_choice') {
-            const checked = formEl.querySelector(`input[name="${name}"]:checked`);
-            if (checked) answers[question.id] = Number(checked.value);
-            return;
-          }
-          if (question.type === 'multi_choice') {
-            const checked = Array.from(formEl.querySelectorAll(`input[name="${name}"]:checked`));
-            if (checked.length) answers[question.id] = checked.map((item) => Number(item.value));
+          if (question.type === 'single_choice' || question.type === 'multi_choice') {
+            const answer = collectChoiceAnswer(question);
+            if (answer !== undefined) answers[question.id] = answer;
             return;
           }
           if (question.type === 'textarea') {
@@ -839,24 +968,54 @@
         return answers;
       }
 
+      function normalizeOneByOneAnswersForSubmit() {
+        const answers = {};
+        questionnaire.questions.forEach((question) => {
+          const value = answersState[question.id];
+          if (question.type === 'single_choice' || question.type === 'multi_choice') {
+            const selectedIds = getSelectedOptionIds(question);
+            if (!selectedIds.length) return;
+            if (hasSelectedOther(question, selectedIds)) {
+              answers[question.id] = {
+                selected_option_ids: selectedIds,
+                other_text: getOtherText(question).trim(),
+              };
+              return;
+            }
+            answers[question.id] = question.type === 'single_choice' ? selectedIds[0] : selectedIds;
+            return;
+          }
+          const text = String(value || '').trim();
+          if (text) answers[question.id] = text;
+        });
+        return answers;
+      }
+
+      function validateAllQuestions() {
+        for (let index = 0; index < questionnaire.questions.length; index += 1) {
+          const question = questionnaire.questions[index];
+          if (!validateQuestion(question)) {
+            if (getAnswerDisplayMode() === 'one_by_one') {
+              currentQuestionIndex = index;
+              renderOneByOneQuestion();
+            }
+            return false;
+          }
+        }
+        setState('');
+        return true;
+      }
+
       formEl.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!questionnaire || submitInFlight) return;
         const submitButton = formEl.querySelector('button[type="submit"]');
-        if (getAnswerDisplayMode() === 'one_by_one') {
-          const incompleteIndex = firstIncompleteRequiredIndex();
-          if (incompleteIndex >= 0) {
-            currentQuestionIndex = incompleteIndex;
-            renderOneByOneQuestion();
-            setState('还有题目未完成，请补充后再提交。', true);
-            return;
-          }
-        }
+        if (!validateAllQuestions()) return;
         submitInFlight = true;
         if (submitButton) submitButton.disabled = true;
         setState('提交中...');
         try {
-          const answers = getAnswerDisplayMode() === 'one_by_one' ? answersState : collectAnswers();
+          const answers = getAnswerDisplayMode() === 'one_by_one' ? normalizeOneByOneAnswersForSubmit() : collectAnswers();
           const response = await fetch(submitUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

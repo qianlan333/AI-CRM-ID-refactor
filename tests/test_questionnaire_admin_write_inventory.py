@@ -20,11 +20,13 @@ def test_questionnaire_admin_write_inventory_covers_existing_and_added_write_rou
 
     assert "Next CommandBus" in text
     assert "Idempotency-Key" in text
-    assert "production_unavailable" in text
-    assert "create/update/enable/disable/delete routes forward through the `legacy_flask_facade`" in text
+    assert "source_status=next_command" in text
+    assert "fallback_used=false" in text
+    assert "legacy rollback removed" in text
     assert "runtime_owner=next_command" in text
-    assert "delete_status=active_fallback" in text
-    assert "replacement_status=production_fallback" in text
+    assert "legacy_fallback_allowed=false" in text
+    assert "delete_status=deletion_locked" in text
+    assert "replacement_status=locked" in text
     assert "real_external_call_executed=false" in text
     assert "/api/h5/questionnaires*" in text
     assert "/api/h5/wechat/oauth*" in text
