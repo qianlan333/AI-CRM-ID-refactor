@@ -62,7 +62,6 @@ def test_wecom_tag_crud_and_sync_remain_deletion_locked() -> None:
     for route, method in [
         ("/api/admin/wecom/tags", "POST"),
         ("/api/admin/wecom/tags/{tag_id}", "PATCH"),
-        ("/api/admin/wecom/tags/sync", "POST"),
         ("/api/admin/wecom/tag-groups", "POST"),
         ("/api/admin/wecom/tag-groups/{group_id}", "PATCH"),
     ]:
@@ -72,3 +71,11 @@ def test_wecom_tag_crud_and_sync_remain_deletion_locked() -> None:
         assert entry.legacy_fallback_allowed is False
         assert entry.delete_status == "deletion_locked"
         assert entry.replacement_status == "locked"
+
+    sync_entry = service.find_route("/api/admin/wecom/tags/sync", {"POST"})
+    assert sync_entry is not None
+    assert sync_entry.runtime_owner == "next_native_sync"
+    assert sync_entry.adapter_mode == "live_catalog_sync"
+    assert sync_entry.legacy_fallback_allowed is False
+    assert sync_entry.delete_status == "deletion_locked"
+    assert sync_entry.replacement_status == "locked"

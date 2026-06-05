@@ -33,6 +33,7 @@ from .live_mutation import (
 )
 from .mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand, WeComTagMutationCommand
 from .read_model import TagCatalogUnavailable, build_tag_catalog_repository
+from .sync_service import WeComTagSyncError, execute_wecom_tag_catalog_sync
 from aicrm_next.shared.runtime import fixture_mode, legacy_production_facade_enabled, production_environment
 
 
@@ -186,7 +187,23 @@ def get_admin_wecom_tag_group_read_model(group_id: str):
 @write_router.api_route("/api/admin/wecom/tags/sync", methods=["POST", "OPTIONS"])
 @write_router.api_route("/api/admin/wecom/tags/sync-due", methods=["POST", "OPTIONS"])
 async def sync_admin_wecom_tags_command(request: Request):
-    return await _execute_write(request, SyncWeComTagCatalogCommand)
+    if request.method == "OPTIONS":
+        return Response(status_code=204)
+    try:
+        body = await _json_body(request)
+        payload = execute_wecom_tag_catalog_sync(
+            operator=str(body.get("operator") or body.get("actor_id") or request.headers.get("X-AICRM-Actor-Id") or "admin_wecom_tags_sync").strip()
+        )
+        return JSONResponse(jsonable_encoder(payload), status_code=200)
+    except WeComTagSyncError as exc:
+        return _write_error(
+            str(exc),
+            status_code=502,
+            source_status="next_live_sync_failed",
+            write_model_status="sync_failed",
+            error_code="wecom_tag_sync_failed",
+            degraded=True,
+        )
 
 
 @write_router.api_route("/api/admin/wecom/tag-groups", methods=["POST", "OPTIONS"])

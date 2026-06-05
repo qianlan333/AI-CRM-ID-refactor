@@ -26,7 +26,7 @@ def test_wecom_tag_write_inventory_covers_frontend_api_backend_matrix() -> None:
         "CreateWeComTagGroupCommand",
         "UpdateWeComTagGroupCommand",
         "DeleteWeComTagGroupCommand",
-        "SyncWeComTagCatalogCommand",
+        "execute_wecom_tag_catalog_sync",
         "WeComTagWriteRepository",
     ]:
         assert marker in text
@@ -44,7 +44,9 @@ def test_wecom_tag_write_inventory_marks_side_effects_and_legacy_deletion() -> N
         "SideEffectPlan",
         "adapter_mode=real_blocked",
         "real_external_call_executed=false",
-        "sync_executed=false",
+        "next_live_catalog_sync",
+        "sync_executed=true",
+        "live_catalog_sync",
         "production_unavailable",
         "/api/admin/wecom/tags*",
         "/api/admin/wecom/tag-groups*",

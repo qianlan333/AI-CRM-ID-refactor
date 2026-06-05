@@ -54,7 +54,6 @@ def test_wecom_tag_write_requests_record_side_effect_plan_without_real_call(monk
     payloads = [
         client.post("/api/admin/wecom/tags", json={"group_id": "group_fixture_lifecycle", "tag_name": "无真实副作用"}).json(),
         client.patch("/api/admin/wecom/tags/tag_fixture_active", json={"tag_name": "无真实副作用更新"}).json(),
-        client.post("/api/admin/wecom/tags/sync", json={"source": "pytest"}).json(),
     ]
 
     for payload in payloads:
@@ -63,7 +62,6 @@ def test_wecom_tag_write_requests_record_side_effect_plan_without_real_call(monk
         assert payload["real_external_call_executed"] is False
         assert payload["side_effect_plan"]["adapter_mode"] == "real_blocked"
         assert payload["side_effect_plan"]["real_external_call_executed"] is False
-    assert payloads[-1]["sync_executed"] is False
 
 
 def test_wecom_tag_write_blocks_production_fixture_claims(monkeypatch) -> None:

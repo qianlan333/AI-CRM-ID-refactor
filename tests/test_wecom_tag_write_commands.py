@@ -75,17 +75,12 @@ def test_wecom_tag_group_crud_and_sync_routes_execute_next_commands(monkeypatch)
     _assert_next_command(update, "wecom.tag_group.update")
     assert update["group"]["group_name"] == "第13组标签组更新"
 
-    sync = client.post("/api/admin/wecom/tags/sync", json={"source": "pytest"}).json()
-    _assert_next_command(sync, "wecom.tag.sync")
-    assert sync["sync_executed"] is False
-    assert sync["sync"]["groups"] >= 1
-
     delete = client.delete(f"/api/admin/wecom/tag-groups/{group_id}").json()
     _assert_next_command(delete, "wecom.tag_group.delete")
     assert delete["deleted"] is True
 
-    assert len(get_wecom_tag_write_audit_events()) >= 4
-    assert len(get_wecom_tag_write_side_effect_plans()) >= 4
+    assert len(get_wecom_tag_write_audit_events()) >= 3
+    assert len(get_wecom_tag_write_side_effect_plans()) >= 3
 
 
 def test_wecom_tag_write_validation_errors_are_controlled(monkeypatch) -> None:

@@ -1111,34 +1111,34 @@ routes:
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
     notes: Group 13 closeout locked tag update/delete on Next CommandBus only; production_compat rollback removed; writes local projection and SideEffectPlan only.
-  - route_id: wecom_tag_sync_next_command
+  - route_id: wecom_tag_sync_next_native
     path_pattern: /api/admin/wecom/tags/sync
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
-    runtime_owner: next_command
+    runtime_owner: next_native_sync
     legacy_fallback_allowed: false
     legacy_source: ""
-    external_side_effect_risk: high
-    adapter_mode: real_blocked
+    external_side_effect_risk: medium
+    adapter_mode: live_catalog_sync
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Group 13 closeout locked tag catalog sync on Next CommandBus only; production_compat rollback removed; command records SideEffectPlan only and keeps real WeCom calls blocked.
-  - route_id: wecom_tag_sync_due_next_command
+    notes: Tag catalog sync is Next-native; production_compat rollback removed; calls WeCom get_corp_tag_list and upserts only wecom_corp_tag_groups/wecom_corp_tags projection rows, with no WeCom mutation or customer/questionnaire tag mutation.
+  - route_id: wecom_tag_sync_due_next_native
     path_pattern: /api/admin/wecom/tags/sync-due
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.customer_tags
-    runtime_owner: next_command
+    runtime_owner: next_native_sync
     legacy_fallback_allowed: false
     legacy_source: ""
-    external_side_effect_risk: high
-    adapter_mode: real_blocked
+    external_side_effect_risk: medium
+    adapter_mode: live_catalog_sync
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
-    notes: Historical sync-due entrypoint is locked on the blocked Next CommandBus sync plan; production_compat rollback removed.
+    notes: Historical sync-due entrypoint uses the same Next-native tag catalog refresh; production_compat rollback removed; projection refresh only and no WeCom mutation.
   - route_id: wecom_tag_group_create_next_command
     path_pattern: /api/admin/wecom/tag-groups
     methods: [POST, OPTIONS]

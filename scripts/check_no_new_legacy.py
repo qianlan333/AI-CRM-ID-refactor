@@ -173,10 +173,12 @@ WECOM_TAG_FAMILY_ROUTES = (
 WECOM_TAG_WRITE_ROUTES = (
     ("/api/admin/wecom/tags", ("POST", "OPTIONS")),
     ("/api/admin/wecom/tags/{tag_id}", ("PUT", "PATCH", "DELETE", "OPTIONS")),
-    ("/api/admin/wecom/tags/sync", ("POST", "OPTIONS")),
-    ("/api/admin/wecom/tags/sync-due", ("POST", "OPTIONS")),
     ("/api/admin/wecom/tag-groups", ("POST", "OPTIONS")),
     ("/api/admin/wecom/tag-groups/{group_id}", ("PUT", "PATCH", "DELETE", "OPTIONS")),
+)
+WECOM_TAG_SYNC_ROUTES = (
+    ("/api/admin/wecom/tags/sync", ("POST", "OPTIONS")),
+    ("/api/admin/wecom/tags/sync-due", ("POST", "OPTIONS")),
 )
 WECOM_TAG_LIVE_MUTATION_ROUTES = (
     ("/api/admin/wecom/tags/live/gate", ("GET",), "next_native", "next_exact"),
@@ -4702,14 +4704,21 @@ def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
         for route_path, _methods in WECOM_TAG_WRITE_ROUTES:
             if route_path not in inventory_text:
                 violations.append(Violation("wecom_tag_write_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
+        for route_path, _methods in WECOM_TAG_SYNC_ROUTES:
+            if route_path not in inventory_text:
+                violations.append(Violation("wecom_tag_sync_inventory_route_missing", str(inventory_path.relative_to(root)), route_path))
         for phrase in ("Frontend API Backend Contract Matrix", "SideEffectPlan", "production_compat rollback removed", "legacy_fallback_allowed=false", "deletion_locked", "real_external_call_executed=false"):
             if phrase not in inventory_text:
                 violations.append(Violation("wecom_tag_write_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
+        for phrase in ("execute_wecom_tag_catalog_sync", "next_live_catalog_sync", "live_catalog_sync", "sync_executed=true"):
+            if phrase not in inventory_text:
+                violations.append(Violation("wecom_tag_sync_inventory_boundary_missing", str(inventory_path.relative_to(root)), phrase))
 
     api_path = root / "aicrm_next/customer_tags/api.py"
     admin_write_path = root / "aicrm_next/customer_tags/admin_write.py"
     commands_path = root / "aicrm_next/customer_tags/commands.py"
     write_repo_path = root / "aicrm_next/customer_tags/write_repo.py"
+    sync_service_path = root / "aicrm_next/customer_tags/sync_service.py"
     main_path = root / "aicrm_next/main.py"
     production_compat_path = root / "aicrm_next/production_compat/api.py"
 
@@ -4722,8 +4731,13 @@ def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
         for route_path, _methods in WECOM_TAG_WRITE_ROUTES:
             if route_path not in api_text:
                 violations.append(Violation("wecom_tag_write_exact_route_missing", str(api_path.relative_to(root)), route_path))
+        for route_path, _methods in WECOM_TAG_SYNC_ROUTES:
+            if route_path not in api_text:
+                violations.append(Violation("wecom_tag_sync_exact_route_missing", str(api_path.relative_to(root)), route_path))
         if "execute_wecom_tag_write" not in api_text:
             violations.append(Violation("wecom_tag_write_command_executor_missing", str(api_path.relative_to(root)), "execute_wecom_tag_write"))
+        if "execute_wecom_tag_catalog_sync" not in api_text:
+            violations.append(Violation("wecom_tag_sync_executor_missing", str(api_path.relative_to(root)), "execute_wecom_tag_catalog_sync"))
 
     for path, marker in [
         (admin_write_path, "execute_wecom_tag_write"),
@@ -4753,6 +4767,27 @@ def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
         }.items():
             if forbidden in source:
                 violations.append(Violation(code, str(path.relative_to(root)), forbidden))
+
+    if not sync_service_path.exists():
+        violations.append(Violation("wecom_tag_sync_service_missing", str(sync_service_path.relative_to(root)), "missing sync service"))
+    else:
+        sync_source = sync_service_path.read_text(encoding="utf-8")
+        for marker in ("execute_wecom_tag_catalog_sync", "WeComTagSyncRepository", "build_wecom_tag_live_gateway"):
+            if marker not in sync_source:
+                violations.append(Violation("wecom_tag_sync_service_marker_missing", str(sync_service_path.relative_to(root)), marker))
+        for forbidden, code in {
+            "forward_to_legacy_flask": "wecom_tag_sync_legacy_forward",
+            "legacy_flask_facade": "wecom_tag_sync_legacy_facade",
+            "X-AICRM-Compatibility-Facade": "wecom_tag_sync_compatibility_facade",
+            '"fallback_used": True': "wecom_tag_sync_fallback_used_true",
+            "'fallback_used': True": "wecom_tag_sync_fallback_used_true",
+            "mark_external_contact_tags": "wecom_tag_sync_real_wecom_mutation",
+            "externalcontact/add_corp_tag": "wecom_tag_sync_real_wecom_mutation",
+            "externalcontact/edit_corp_tag": "wecom_tag_sync_real_wecom_mutation",
+            "externalcontact/del_corp_tag": "wecom_tag_sync_real_wecom_mutation",
+        }.items():
+            if forbidden in sync_source:
+                violations.append(Violation(code, str(sync_service_path.relative_to(root)), forbidden))
 
     if main_path.exists():
         main_text = main_path.read_text(encoding="utf-8")
@@ -4813,6 +4848,43 @@ def check_wecom_tag_write_next_commandbus(root: Path = ROOT) -> list[Violation]:
                 violations.append(Violation("wecom_tag_write_manifest_adapter_mode", route_path, f"adapter_mode={manifest_record.get('adapter_mode')}"))
             if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
                 violations.append(Violation("wecom_tag_write_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
+
+    for route_path, methods in WECOM_TAG_SYNC_ROUTES:
+        registry_record = registry_by_route.get((route_path, methods))
+        if registry_record is None:
+            violations.append(Violation("wecom_tag_sync_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
+        else:
+            if registry_record.get("runtime_owner") != "next_native_sync":
+                violations.append(Violation("wecom_tag_sync_registry_owner", route_path, f"runtime_owner={registry_record.get('runtime_owner')}"))
+            if registry_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("wecom_tag_sync_registry_rollback_allowed", route_path, f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')}"))
+            if registry_record.get("legacy_source") not in {"", None}:
+                violations.append(Violation("wecom_tag_sync_registry_legacy_source", route_path, f"legacy_source={registry_record.get('legacy_source')}"))
+            if registry_record.get("external_side_effect_risk") != "medium":
+                violations.append(Violation("wecom_tag_sync_registry_risk", route_path, f"external_side_effect_risk={registry_record.get('external_side_effect_risk')}"))
+            if registry_record.get("adapter_mode") != "live_catalog_sync":
+                violations.append(Violation("wecom_tag_sync_registry_adapter_mode", route_path, f"adapter_mode={registry_record.get('adapter_mode')}"))
+            if registry_record.get("delete_status") != "deletion_locked" or registry_record.get("replacement_status") != "locked":
+                violations.append(Violation("wecom_tag_sync_registry_lifecycle", route_path, f"delete_status={registry_record.get('delete_status')} replacement_status={registry_record.get('replacement_status')}"))
+
+        manifest_record = manifest_by_route.get((route_path, methods))
+        if manifest_record is None:
+            violations.append(Violation("wecom_tag_sync_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
+        else:
+            if manifest_record.get("current_runtime_owner") != "next_native_sync":
+                violations.append(Violation("wecom_tag_sync_manifest_owner", route_path, f"current_runtime_owner={manifest_record.get('current_runtime_owner')}"))
+            if manifest_record.get("production_behavior") != "next_live_catalog_sync":
+                violations.append(Violation("wecom_tag_sync_manifest_behavior", route_path, f"production_behavior={manifest_record.get('production_behavior')}"))
+            if manifest_record.get("legacy_fallback_allowed") is not False:
+                violations.append(Violation("wecom_tag_sync_manifest_rollback_allowed", route_path, f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')}"))
+            if manifest_record.get("production_behavior") == "legacy_forward":
+                violations.append(Violation("wecom_tag_sync_manifest_legacy_forward", route_path, "production_behavior=legacy_forward"))
+            if manifest_record.get("external_side_effect_risk") != "medium":
+                violations.append(Violation("wecom_tag_sync_manifest_risk", route_path, f"external_side_effect_risk={manifest_record.get('external_side_effect_risk')}"))
+            if manifest_record.get("adapter_mode") != "live_catalog_sync":
+                violations.append(Violation("wecom_tag_sync_manifest_adapter_mode", route_path, f"adapter_mode={manifest_record.get('adapter_mode')}"))
+            if manifest_record.get("delete_status") != "deletion_locked" or manifest_record.get("replacement_status") != "locked":
+                violations.append(Violation("wecom_tag_sync_manifest_lifecycle", route_path, f"delete_status={manifest_record.get('delete_status')} replacement_status={manifest_record.get('replacement_status')}"))
 
     return violations
 
