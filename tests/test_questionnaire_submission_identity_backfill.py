@@ -354,3 +354,81 @@ def test_questionnaire_sidebar_profile_replay_matches_recreated_questions_by_tit
             ).fetchone()
             assert profile["needs_blockers_followup"] == "旧题 ID 的答案也要同步"
             assert profile["updated_by"] == "questionnaire_submit"
+
+
+def test_signed_sidebar_context_submit_binds_questionnaire_and_profile(client, app, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
+    questionnaire_id = _seed_questionnaire(app)
+    with app.app_context():
+        from wecom_ability_service.http.questionnaire_support import build_sidebar_questionnaire_context_token
+
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
+            VALUES ('wm_signed_sidebar_001', '签名上下文客户', 'sales_01', '', '')
+            """
+        )
+        db.commit()
+        token = build_sidebar_questionnaire_context_token(
+            external_userid="wm_signed_sidebar_001",
+            owner_userid="sales_01",
+            follow_user_userid="sales_01",
+            bind_by_userid="sales_01",
+        )
+
+    response = client.post(
+        "/api/h5/questionnaires/identity-backfill-710/submit",
+        json={
+            "sidebar_context_token": token,
+            "external_userid": "wm_spoofed_payload_should_not_win",
+            "answers": {
+                "71001": "13800137188",
+                "71002": "侧边栏提交后立即同步",
+            },
+        },
+        headers={"User-Agent": "Mozilla/5.0 MicroMessenger"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    questionnaires = client.get(
+        "/api/sidebar/v2/questionnaires",
+        query_string={"external_userid": "wm_signed_sidebar_001"},
+    )
+    assert questionnaires.status_code == 200
+    assert questionnaires.get_json()["questionnaires"][0]["answers"] == [
+        {"question": "手机号", "answer": "13800137188"},
+        {"question": "跟进诉求", "answer": "侧边栏提交后立即同步"},
+    ]
+
+    with app.app_context():
+        submission = get_db().execute(
+            """
+            SELECT external_userid, follow_user_userid, matched_by, mobile_snapshot
+            FROM questionnaire_submissions
+            WHERE questionnaire_id = ?
+            """,
+            (questionnaire_id,),
+        ).fetchone()
+        profile = get_db().execute(
+            """
+            SELECT needs_blockers_followup, updated_by
+            FROM sidebar_customer_profile_fields
+            WHERE external_userid = 'wm_signed_sidebar_001'
+            """
+        ).fetchone()
+        assert dict(submission) == {
+            "external_userid": "wm_signed_sidebar_001",
+            "follow_user_userid": "sales_01",
+            "matched_by": "signed_sidebar_context",
+            "mobile_snapshot": "13800137188",
+        }
+        assert dict(profile) == {
+            "needs_blockers_followup": "侧边栏提交后立即同步",
+            "updated_by": "questionnaire_submit",
+        }

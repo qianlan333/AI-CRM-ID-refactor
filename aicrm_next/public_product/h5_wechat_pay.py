@@ -19,6 +19,8 @@ from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClie
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 from wecom_ability_service.infra.wechat_oauth import WeChatOAuthRequestError, exchange_wechat_oauth_code, fetch_wechat_userinfo
+from wecom_ability_service.infra.signed_context import append_ctx_query, load_sidebar_product_context_token
+from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context
 
 from .service import format_price, get_public_product, product_not_found_payload, route_headers
 
@@ -90,6 +92,11 @@ def _safe_return_url(value: Any) -> str:
     if not normalized or not normalized.startswith("/") or normalized.startswith("//") or "\\" in normalized:
         return "/"
     return normalized
+
+
+def sidebar_product_context_status(context_token: str) -> str:
+    result = load_sidebar_product_context_token(_normalized_text(context_token))
+    return _normalized_text(result.get("status")) or "missing"
 
 
 def _external_base_url(request: Request) -> str:
@@ -213,6 +220,9 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
     identity = _identity_from_request(request)
     code = _normalized_text(product.get("product_code"))
     paid_order = _existing_paid_order_for_checkout(product, identity) if identity.get("openid") else None
+    context_token = _normalized_text(request.query_params.get("ctx"))
+    context_result = load_sidebar_product_context_token(context_token)
+    pay_path = append_ctx_query(f"/pay/{code}", context_token) if context_token else f"/pay/{code}"
     return {
         "product": {
             "product_code": code,
@@ -221,7 +231,7 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
             "currency": _normalized_text(product.get("currency")) or "CNY",
         },
         "identity_ready": bool(identity.get("openid")),
-        "oauth_start_url": payment_oauth_start_url(f"/pay/{code}"),
+        "oauth_start_url": payment_oauth_start_url(pay_path),
         "create_order_url": "/api/h5/wechat-pay/jsapi/orders",
         "status_url_template": "/api/h5/wechat-pay/orders/{out_trade_no}",
         "enabled": _env_bool("WECHAT_PAY_ENABLED", False),
@@ -230,6 +240,8 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
         "completion_action": product.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
         "price_display": format_price(product),
+        "context_token": context_token,
+        "context_status": _normalized_text(context_result.get("status")) or "missing",
     }
 
 
@@ -516,17 +528,17 @@ def _order_payload(
     return payload
 
 
-def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str], mobile: str, out_trade_no: str) -> dict[str, Any]:
+def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str], mobile: str, out_trade_no: str, request_meta: dict[str, Any] | None = None) -> dict[str, Any]:
     row = conn.execute(
         """
         INSERT INTO wechat_pay_orders (
             out_trade_no, order_source, client_order_ref, product_code, product_name, description,
             amount_total, currency, payer_openid, respondent_key, unionid, external_userid,
-            mobile_snapshot, payer_name_snapshot, status, success_url, metadata_json,
+            userid_snapshot, mobile_snapshot, payer_name_snapshot, status, success_url, metadata_json,
             request_meta_json, expires_at, created_at, updated_at
         )
         VALUES (
-            %s, 'h5_checkout', '', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, 'h5_checkout', '', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             'created', %s, %s::jsonb, %s::jsonb, %s::timestamptz, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         RETURNING *
@@ -542,11 +554,12 @@ def _insert_order(conn: Any, *, product: dict[str, Any], identity: dict[str, str
             identity.get("respondent_key") or "",
             identity.get("unionid") or "",
             identity.get("external_userid") or "",
+            identity.get("owner_userid") or "",
             mobile,
             identity.get("payer_name") or "",
             _safe_success_url(product.get("completion_redirect_url")),
             _jsonb({"completion_redirect": product.get("completion_redirect") or {}}),
-            _jsonb({}),
+            _jsonb(request_meta or {}),
             _expires_at(),
         ),
     ).fetchone()
@@ -647,8 +660,29 @@ def create_jsapi_order_response(request: Request, payload: dict[str, Any]) -> JS
     except RuntimeError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=503, headers=route_headers())
     mobile = _normalized_text(payload.get("mobile"))
-    if product.get("require_mobile") and not mobile:
+    context_token = _normalized_text(payload.get("ctx") or payload.get("context_token"))
+    resolved_context = resolve_sidebar_order_context(
+        context_token=context_token,
+        payment_identity=identity,
+        product=product,
+        payload_mobile=mobile,
+    )
+    if product.get("require_mobile") and not _normalized_text(resolved_context.get("mobile")):
         return JSONResponse({"ok": False, "error": "mobile_required"}, status_code=400, headers=route_headers())
+    order_identity = {
+        **identity,
+        "external_userid": _normalized_text(resolved_context.get("external_userid")),
+        "owner_userid": _normalized_text(resolved_context.get("owner_userid")),
+    }
+    request_meta = {
+        "sidebar_product_context": {
+            "context_status": resolved_context.get("context_status"),
+            "context_source": resolved_context.get("context_source"),
+            "external_userid_present": bool(resolved_context.get("external_userid")),
+            "owner_userid_present": bool(resolved_context.get("owner_userid")),
+            "mobile_source": resolved_context.get("mobile_source"),
+        }
+    }
     out_trade_no = _out_trade_no()
     notify_url = _env("WECHAT_PAY_NOTIFY_URL") or f"{_external_base_url(request)}/api/h5/wechat-pay/notify"
     transaction_payload = {
@@ -663,11 +697,18 @@ def create_jsapi_order_response(request: Request, payload: dict[str, Any]) -> JS
     }
     try:
         with _connect() as conn:
-            existing_paid_order = _paid_order_payload_for_product_identity(conn, product=product, identity=identity)
+            existing_paid_order = _paid_order_payload_for_product_identity(conn, product=product, identity=order_identity)
             if existing_paid_order:
                 return JSONResponse({"ok": True, "already_paid": True, "order": existing_paid_order}, headers=route_headers())
             client = WeChatPayClient(config)
-            _insert_order(conn, product=product, identity=identity, mobile=mobile, out_trade_no=out_trade_no)
+            _insert_order(
+                conn,
+                product=product,
+                identity=order_identity,
+                mobile=_normalized_text(resolved_context.get("mobile")),
+                out_trade_no=out_trade_no,
+                request_meta=request_meta,
+            )
             response_payload = client.create_jsapi_transaction(transaction_payload)
             prepay_id = _normalized_text(response_payload.get("prepay_id"))
             if not prepay_id:

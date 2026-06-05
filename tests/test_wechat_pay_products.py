@@ -13,6 +13,7 @@ from wecom_ability_service.domains import image_library
 from wecom_ability_service.domains.wechat_pay import product_service
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import service as wechat_pay_service
+from wecom_ability_service.infra.signed_context import build_sidebar_product_context_token
 from wecom_ability_service.domains.admin_auth.auth_runtime import (
     ADMIN_CONSOLE_ACTION_TOKEN_SESSION_KEY,
     ADMIN_SESSION_BREAK_GLASS_USERNAME_KEY,
@@ -689,6 +690,84 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
     assert public_html.index("YWFhYWFh") < public_html.index("YmJiYmJi")
 
 
+def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client):
+    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
+    token = _login_admin(client)
+    product = _create_product(client, token, name="带上下文商品")
+    with app.app_context():
+        context_token = build_sidebar_product_context_token(
+            external_userid="wm_pay_ctx",
+            owner_userid="sales_01",
+            bind_by_userid="sales_01",
+        )
+
+    product_html = client.get(f"/p/{product['product_code']}?ctx={context_token}").get_data(as_text=True)
+    checkout_html = client.get(f"/pay/{product['product_code']}?ctx={context_token}", headers=_wechat_headers()).get_data(as_text=True)
+
+    assert f"/pay/{product['product_code']}?ctx=" in product_html
+    assert "wm_pay_ctx" not in product_html
+    assert context_token in checkout_html
+    assert "context_status" in checkout_html
+    assert "/api/h5/wechat-pay/oauth/start" in checkout_html
+
+
+def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app, client, monkeypatch):
+    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
+    captured: dict[str, object] = {}
+    with app.app_context():
+        context_token = build_sidebar_product_context_token(
+            external_userid="wm_signed_pay_ctx",
+            owner_userid="sales_01",
+            bind_by_userid="sales_02",
+        )
+
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {
+            "openid": "openid_pay_ctx",
+            "unionid": "union_pay_ctx",
+            "payer_name": "付款用户",
+        }
+
+    def fake_create_jsapi_order(**kwargs):
+        captured.update(kwargs)
+        return {
+            "order": {
+                "out_trade_no": "WXP_CTX_UNIT",
+                "status": "paying",
+            },
+            "pay_params": {"package": "prepay_id=ctx"},
+        }
+
+    monkeypatch.setattr("wecom_ability_service.http.wechat_pay.create_jsapi_order", fake_create_jsapi_order)
+
+    response = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        headers=_wechat_headers(),
+        json={
+            "product_code": "prd_ctx_unit",
+            "ctx": context_token,
+            "external_userid": "wm_forged_raw_query",
+            "mobile": "138 0013 8000",
+            "order_source": "product_checkout",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["external_userid"] == "wm_signed_pay_ctx"
+    assert captured["owner_userid"] == "sales_01"
+    assert captured["bind_by_userid"] == "sales_02"
+    assert captured["mobile"] == "13800138000"
+    assert captured["context_source"] == "signed_sidebar_product_link"
+    assert captured["mobile_source"] == "payload"
+    assert captured["request_meta"]["sidebar_product_context"] == {
+        "context_status": "valid",
+        "context_source": "signed_sidebar_product_link",
+        "external_userid_present": True,
+        "owner_userid_present": True,
+        "mobile_source": "payload",
+    }
+
+
 def test_product_slices_limit_is_ten(app, client):
     token = _login_admin(client)
     images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
@@ -874,7 +953,7 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
         (payload["order"]["out_trade_no"],),
     ).fetchone()
     assert row["mobile_snapshot"] == "13800138000"
-    assert row["request_meta_json"]["mobile_binding"]["mobile"] == "13800138000"
+    assert row["request_meta_json"]["mobile_binding"]["mobile_masked"] == "138****8000"
     assert calls["transaction_payload"]["amount"]["total"] == 19900
 
 

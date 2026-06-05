@@ -204,13 +204,14 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         mode="simple",
         service_module="service.py",
         persistence_modules=("repo.py",),
+        companion_service_modules=("context_resolver.py",),
         notes="WeCom sidebar V2 workbench, profile fields, materials, and lightweight adapters.",
     ),
     "wechat_pay": DomainLayoutSpec(
         name="wechat_pay",
         mode="simple",
         service_module="service.py",
-        companion_service_modules=("product_service.py", "admin_service.py"),
+        companion_service_modules=("product_service.py", "admin_service.py", "sidebar_context.py"),
         persistence_modules=("repo.py", "product_repo.py"),
         allowed_companion_modules=("exceptions.py", "client.py"),
         notes=(

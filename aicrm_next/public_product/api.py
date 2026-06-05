@@ -15,6 +15,7 @@ from .h5_wechat_pay import (
     order_status_response,
     payment_oauth_callback,
     payment_oauth_start,
+    sidebar_product_context_status,
 )
 from .service import (
     blocked_action_payload,
@@ -61,7 +62,11 @@ def public_product_page(request: Request, path: str) -> Response:
         product = get_public_product(path)
     except NotFoundError:
         return HTMLResponse(render_not_found_page(path), status_code=404, headers=route_headers())
-    return HTMLResponse(render_product_page(product), headers=route_headers())
+    context_token = str(request.query_params.get("ctx") or "").strip()
+    return HTMLResponse(
+        render_product_page(product, context_token=context_token, context_status=sidebar_product_context_status(context_token)),
+        headers=route_headers(),
+    )
 
 
 @router.options("/pay/{path:path}", name="api.public_pay_landing_options")

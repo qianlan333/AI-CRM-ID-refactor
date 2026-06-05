@@ -1249,7 +1249,7 @@ def _resolve_questionnaire_submit_identity_by_mobile(
             resolve_signup_status_for_contact=lambda external_userid, owner_userid: "",
         )
     except Exception:
-        questionnaire_logger.exception("questionnaire mobile identity lookup failed mobile=%s", normalized_mobile)
+        questionnaire_logger.exception("questionnaire mobile identity lookup failed mobile=%s", _mask_questionnaire_backfill_value(normalized_mobile))
         return None
 
     resolved_external_userid = str((person_identity or {}).get("external_userid") or "").strip()
@@ -1285,6 +1285,23 @@ def _get_questionnaire_session_identity() -> dict[str, str]:
         "openid": str(identity.get("openid") or "").strip(),
         "unionid": str(identity.get("unionid") or "").strip(),
         "respondent_key": str(identity.get("respondent_key") or "").strip(),
+    }
+
+
+def _signed_sidebar_context_identity(context: dict[str, Any] | None) -> dict[str, Any] | None:
+    payload = dict(context or {}) if isinstance(context, dict) else {}
+    external_userid = str(payload.get("external_userid") or "").strip()
+    if not external_userid:
+        return None
+    follow_user_userid = str(payload.get("follow_user_userid") or payload.get("owner_userid") or "").strip()
+    resolved = resolve_questionnaire_submit_identity(external_userid=external_userid) or {}
+    return {
+        **resolved,
+        "external_userid": external_userid,
+        "follow_user_userid": str(resolved.get("follow_user_userid") or follow_user_userid or "").strip(),
+        "matched_by": "signed_sidebar_context",
+        "sidebar_context_source": str(payload.get("source") or "sidebar_questionnaire_link").strip(),
+        "bind_by_userid": str(payload.get("bind_by_userid") or follow_user_userid or "").strip(),
     }
 
 
@@ -1970,7 +1987,7 @@ def backfill_questionnaire_submissions_for_mobile_binding(
         questionnaire_logger.info(
             "questionnaire mobile binding backfilled external_userid=%s mobile=%s submission_count=%s",
             normalized_external_userid,
-            normalized_mobile,
+            _mask_questionnaire_backfill_value(normalized_mobile),
             len(submission_ids),
         )
     return {
@@ -2490,7 +2507,7 @@ def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, 
             "questionnaire mobile bound submission_id=%s external_userid=%s mobile=%s person_id=%s",
             int(submission.get("id") or 0),
             external_userid,
-            mobile_snapshot,
+            _mask_questionnaire_backfill_value(mobile_snapshot),
             str((resolved_identity or {}).get("person_id") or (binding or {}).get("person_id") or ""),
         )
         backfill_result = backfill_questionnaire_submissions_for_mobile_binding(
@@ -2676,16 +2693,21 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     submit_meta["openid"] = session_identity.get("openid") or str(payload.get("openid") or "").strip()
     submit_meta["unionid"] = session_identity.get("unionid") or str(payload.get("unionid") or "").strip()
     submit_meta["external_userid"] = str(payload.get("external_userid") or "").strip()
+    signed_sidebar_context = dict(submit_meta.get("signed_sidebar_context") or {}) if isinstance(submit_meta.get("signed_sidebar_context"), dict) else {}
 
     resolved_unionid = submit_meta["unionid"]
     resolved_openid = submit_meta["openid"]
     payload_external_userid = submit_meta["external_userid"]
 
-    identity = resolve_questionnaire_submit_identity(
-        openid=resolved_openid,
-        unionid=resolved_unionid,
-        external_userid=payload_external_userid,
-    )
+    identity = _signed_sidebar_context_identity(signed_sidebar_context)
+    if identity:
+        submit_meta["external_userid"] = str(identity.get("external_userid") or "").strip()
+    else:
+        identity = resolve_questionnaire_submit_identity(
+            openid=resolved_openid,
+            unionid=resolved_unionid,
+            external_userid=payload_external_userid,
+        )
     if identity and identity.get("matched_by") == "unionid" and resolved_openid and not str(identity.get("openid") or "").strip():
         corp_id = str(current_app.config.get("WECOM_CORP_ID", "") or "").strip()
         rebound = _bind_questionnaire_identity(

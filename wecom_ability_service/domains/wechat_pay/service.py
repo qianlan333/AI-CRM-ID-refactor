@@ -27,6 +27,15 @@ def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _mask_mobile(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if not digits:
+        return ""
+    if len(digits) <= 5:
+        return "*" * len(digits)
+    return f"{digits[:3]}****{digits[-4:]}"
+
+
 def _setting(key: str, default: str = "") -> str:
     stored = get_setting(key)
     if stored is not None:
@@ -190,6 +199,8 @@ def _mobile_binding_audit(
     openid: str,
     unionid: str,
     external_userid: str,
+    owner_userid: str = "",
+    bind_by_userid: str = "",
 ) -> dict[str, Any]:
     if not mobile:
         return {}
@@ -209,33 +220,34 @@ def _mobile_binding_audit(
             )
         ) or {}
         resolved_external_userid = _normalized_text(resolved.get("external_userid")) or _normalized_text(external_userid)
-        owner_userid = (
-            _normalized_text(resolved.get("follow_user_userid"))
+        resolved_owner_userid = (
+            _normalized_text(owner_userid)
+            or _normalized_text(resolved.get("follow_user_userid"))
             or _normalized_text(resolved.get("owner_userid"))
             or _normalized_text(resolved.get("last_owner_userid"))
             or _normalized_text(resolved.get("first_owner_userid"))
         )
         if not resolved_external_userid:
-            return {"status": "skipped", "reason": "external_userid_unresolved", "mobile": mobile}
+            return {"status": "skipped", "reason": "external_userid_unresolved", "mobile_masked": _mask_mobile(mobile)}
         binding = BindExternalContactIdentityCommand()(
             BindExternalContactIdentityCommandDTO(
                 external_userid=resolved_external_userid,
-                owner_userid=owner_userid,
-                bind_by_userid=owner_userid or "wechat_pay_h5",
+                owner_userid=resolved_owner_userid,
+                bind_by_userid=_normalized_text(bind_by_userid) or resolved_owner_userid or "wechat_pay_h5",
                 mobile=mobile,
                 force_rebind=False,
             )
         )
         return {
             "status": "bound",
-            "mobile": mobile,
+            "mobile_masked": _mask_mobile(mobile),
             "external_userid": resolved_external_userid,
-            "owner_userid": owner_userid,
+            "owner_userid": resolved_owner_userid,
             "person_id": (binding or {}).get("person_id") if isinstance(binding, dict) else None,
         }
     except Exception as exc:  # Do not block payment if identity binding cannot be resolved.
-        logger.warning("wechat pay mobile bind skipped mobile=%s reason=%s", mobile, exc)
-        return {"status": "skipped", "reason": str(exc), "mobile": mobile}
+        logger.warning("wechat pay mobile bind skipped mobile=%s reason=%s", _mask_mobile(mobile), exc)
+        return {"status": "skipped", "reason": str(exc), "mobile_masked": _mask_mobile(mobile)}
 
 
 def _transaction_amount_total(transaction: dict[str, Any]) -> int:
@@ -401,6 +413,10 @@ def create_jsapi_order(
     notify_url: str,
     mobile: str = "",
     request_meta: dict[str, Any] | None = None,
+    owner_userid: str = "",
+    bind_by_userid: str = "",
+    context_source: str = "",
+    mobile_source: str = "",
 ) -> dict[str, Any]:
     config = _require_ready_for_order()
     product = get_product(product_code)
@@ -421,13 +437,22 @@ def create_jsapi_order(
     normalized_mobile = _normalize_order_mobile(product=product, mobile=mobile)
     request_meta_payload = dict(request_meta or {})
     identity_external_userid = _normalized_text(external_userid)
-    userid_snapshot = ""
+    userid_snapshot = _normalized_text(owner_userid)
+    if _normalized_text(context_source):
+        request_meta_payload["sidebar_context"] = {
+            "context_source": _normalized_text(context_source),
+            "external_userid_present": bool(identity_external_userid),
+            "owner_userid_present": bool(userid_snapshot),
+            "mobile_source": _normalized_text(mobile_source) or ("payload" if normalized_mobile else "none"),
+        }
     if normalized_mobile:
         mobile_binding = _mobile_binding_audit(
             mobile=normalized_mobile,
             openid=openid,
             unionid=unionid,
             external_userid=external_userid,
+            owner_userid=owner_userid,
+            bind_by_userid=bind_by_userid,
         )
         request_meta_payload["mobile_binding"] = mobile_binding
         if isinstance(mobile_binding, dict) and mobile_binding.get("status") == "bound":
@@ -556,6 +581,8 @@ def build_checkout_page_state(
     product_code: str,
     identity: dict[str, str] | None,
     oauth_start_url: str,
+    context_token: str = "",
+    context_status: str = "",
 ) -> dict[str, Any]:
     product = get_product(product_code)
     if not product:
@@ -576,4 +603,6 @@ def build_checkout_page_state(
         "completion_redirect": completion_redirect,
         "completion_action": completion_redirect.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
+        "context_token": _normalized_text(context_token),
+        "context_status": _normalized_text(context_status) or ("valid" if _normalized_text(context_token) else "missing"),
     }
