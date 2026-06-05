@@ -460,6 +460,7 @@
         <td>
           <div class="questionnaire-row-actions">
             <a class="admin-button admin-button--secondary" href="/admin/questionnaires/${item.id}">编辑</a>
+            <button type="button" class="admin-button admin-button--ghost" data-action="duplicate">复制</button>
             <button type="button" class="admin-button admin-button--ghost" data-action="toggle">
               ${item.is_disabled ? '启用' : '停用'}
             </button>
@@ -511,6 +512,23 @@
     showToast(item.is_disabled ? '问卷已启用' : '问卷已停用');
   }
 
+  async function duplicateQuestionnaire(questionnaireId) {
+    const item = state.questionnaires.find((entry) => Number(entry.id) === Number(questionnaireId));
+    if (!item) return;
+    if (!window.confirm(`复制问卷“${questionnaireDisplayName(item)}”？复制后会生成一份默认停用的新问卷。`)) return;
+    const data = await fetchJson(`/api/admin/questionnaires/${item.id}/duplicate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const copied = data.questionnaire || {};
+    showToast('问卷已复制，默认停用');
+    await reloadList();
+    if (copied.id) {
+      window.location.assign(`/admin/questionnaires/${copied.id}`);
+    }
+  }
+
   async function deleteQuestionnaire(questionnaireId) {
     const item = state.questionnaires.find((entry) => Number(entry.id) === Number(questionnaireId));
     if (!item) return;
@@ -518,6 +536,32 @@
     await fetchJson(`/api/admin/questionnaires/${item.id}`, { method: 'DELETE' });
     showToast('问卷已删除');
     await reloadList();
+  }
+
+  function downloadFilenameFromResponse(response, fallback) {
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) return decodeURIComponent(utf8Match[1]);
+    const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return asciiMatch ? asciiMatch[1] : fallback;
+  }
+
+  async function downloadQuestionnaireData(questionnaireId) {
+    const response = await fetch(`/api/admin/questionnaires/${questionnaireId}/export`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(String(data.error || data.message || '下载失败，请稍后重试'));
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = downloadFilenameFromResponse(response, `questionnaire-${questionnaireId}-submissions.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('下载已开始');
   }
 
   searchEl.addEventListener('input', (event) => {
@@ -546,12 +590,16 @@
       openQuestionnaireShare(item).catch((error) => showToast(error.message || '分享信息加载失败，请稍后重试', true));
       return;
     }
+    if (button.dataset.action === 'duplicate') {
+      duplicateQuestionnaire(questionnaireId).catch((error) => showToast(error.message || '复制失败，请稍后重试', true));
+      return;
+    }
     if (button.dataset.action === 'delete') {
       deleteQuestionnaire(questionnaireId).catch((error) => showToast(error.message || '删除失败，请稍后重试', true));
       return;
     }
     if (button.dataset.action === 'export') {
-      window.open(`/api/admin/questionnaires/${item.id}/export`, '_blank');
+      downloadQuestionnaireData(item.id).catch((error) => showToast(error.message || '下载失败，请稍后重试', true));
     }
   });
 

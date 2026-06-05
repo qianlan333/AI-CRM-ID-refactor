@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
+import json
 import logging
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -11,11 +14,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.integration_gateway.legacy_flask_facade import (
-    forward_to_legacy_flask,
-    legacy_questionnaire_oauth_is_configured,
-    legacy_questionnaire_session_identity,
-)
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import production_data_ready
 
@@ -53,14 +51,7 @@ from .application import (
     build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest
-from .oauth import COOKIE_NAME, questionnaire_h5_identity_from_cookies, questionnaire_oauth_state_context
-from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
-    LegacyQuestionnaireDataUnavailable,
-    get_public_questionnaire_from_legacy,
-    get_public_questionnaire_submission_status_from_legacy,
-    get_questionnaire_detail_from_legacy,
-    latest_submit_debug_from_legacy,
-)
+from .oauth import COOKIE_NAME, questionnaire_h5_identity_from_cookies, questionnaire_oauth_state_context, resolve_adapter_mode
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -79,15 +70,6 @@ _QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
     "staff_id",
 )
 _QUESTIONNAIRE_META_FIELDS = _QUESTIONNAIRE_IDENTITY_HINT_FIELDS + _QUESTIONNAIRE_SOURCE_PARAM_FIELDS
-_PRODUCTION_LEGACY_ADMIN_WRITE_COMMANDS = {
-    "questionnaire.admin.create",
-    "questionnaire.admin.update",
-    "questionnaire.admin.enable",
-    "questionnaire.admin.disable",
-    "questionnaire.admin.delete",
-}
-
-
 def _raise_http(exc: Exception) -> None:
     if isinstance(exc, NotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -102,6 +84,38 @@ def _read_response(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
     return payload
 
 
+def _csv_value(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if value is None:
+        return ""
+    return value
+
+
+def _csv_download_response(payload: dict[str, Any]) -> Response:
+    export_payload = dict(payload.get("export_download") or {})
+    fields = [str(field) for field in export_payload.get("fields") or []]
+    rows = export_payload.get("rows") if isinstance(export_payload.get("rows"), list) else []
+    buffer = StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        row_payload = row if isinstance(row, dict) else {}
+        writer.writerow({field: _csv_value(row_payload.get(field)) for field in fields})
+    filename = str(export_payload.get("filename") or "questionnaire-submissions.csv").replace('"', "")
+    content = "\ufeff" + buffer.getvalue()
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-AICRM-Route-Owner": "ai_crm_next",
+            "X-AICRM-Source-Status": str(payload.get("source_status") or "next_command"),
+            "X-AICRM-Fallback-Used": "false",
+        },
+    )
+
+
 async def _execute_admin_write(
     request: Request,
     command_name: str,
@@ -109,8 +123,6 @@ async def _execute_admin_write(
     questionnaire_id: int | None = None,
     body: dict[str, Any] | None = None,
 ) -> Response:
-    if production_data_ready() and command_name in _PRODUCTION_LEGACY_ADMIN_WRITE_COMMANDS:
-        return await forward_to_legacy_flask(request)
     try:
         payload = body if body is not None else await _json_body(request)
         command = QuestionnaireAdminWriteCommand(
@@ -450,7 +462,7 @@ def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> 
 
 
 def _questionnaire_session_identity_from_request(request: Request) -> dict[str, str]:
-    return legacy_questionnaire_session_identity(request.cookies) or questionnaire_h5_identity_from_cookies(request.cookies)
+    return questionnaire_h5_identity_from_cookies(request.cookies)
 
 
 def _questionnaire_identity_from_request(request: Request) -> dict[str, str]:
@@ -485,8 +497,6 @@ def list_questionnaires(limit: int = 50, offset: int = 0) -> Any:
 
 @router.get("/api/admin/questionnaires/preflight", response_model=None)
 async def questionnaire_preflight(request: Request) -> dict | Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
     return GetQuestionnairePreflightQuery()()
 
 
@@ -530,18 +540,6 @@ def get_questionnaire_submissions(questionnaire_id: int, limit: int = 20, offset
 @router.get("/api/admin/questionnaires/{questionnaire_id}/share")
 def get_questionnaire_share(questionnaire_id: int, request: Request) -> dict:
     try:
-        if production_data_ready():
-            payload = _questionnaire_payload_with_nested_questions(
-                get_questionnaire_detail_from_legacy(questionnaire_id)
-            )
-            questionnaire = payload.get("questionnaire") if isinstance(payload.get("questionnaire"), dict) else payload
-            return {
-                "ok": True,
-                "share": build_questionnaire_share_payload(
-                    questionnaire,
-                    share_url=_questionnaire_share_url(request, questionnaire),
-                ),
-            }
         detail = GetQuestionnaireDetailQuery()(questionnaire_id)
         questionnaire = detail["questionnaire"]
         return GetQuestionnaireShareQuery()(
@@ -588,7 +586,31 @@ async def delete_questionnaire(questionnaire_id: int, request: Request) -> Respo
 
 @router.get("/api/admin/questionnaires/{questionnaire_id}/export")
 async def export_questionnaire(questionnaire_id: int, request: Request) -> Response:
-    return await _execute_admin_write(request, "questionnaire.admin.export_audit", questionnaire_id=questionnaire_id)
+    try:
+        command = QuestionnaireAdminWriteCommand(
+            command_name="questionnaire.admin.export_download",
+            questionnaire_id=questionnaire_id,
+            payload={"limit": 10000},
+            idempotency_key=str(request.headers.get("Idempotency-Key") or request.query_params.get("idempotency_key") or "").strip(),
+            actor_id=str(request.headers.get("X-AICRM-Actor-Id") or "questionnaire_admin"),
+            actor_type=str(request.headers.get("X-AICRM-Actor-Type") or "user"),
+            source_route=request.url.path,
+            trace_id=str(request.headers.get("X-Request-Id") or uuid4().hex),
+        )
+        response = execute_questionnaire_admin_write(command)
+        return _csv_download_response(response)
+    except QuestionnaireAdminWriteInputError as exc:
+        return _write_error(str(exc), status_code=400, source_status="input_error", write_model_status="input_error")
+    except QuestionnaireAdminWriteNotFoundError as exc:
+        return _write_error(str(exc), status_code=404, source_status="not_found", write_model_status="not_found")
+    except QuestionnaireAdminWriteProductionUnavailableError as exc:
+        return _write_error(
+            str(exc),
+            status_code=503,
+            source_status="production_unavailable",
+            write_model_status="unavailable",
+            degraded=True,
+        )
 
 
 @router.post("/api/admin/questionnaires/{questionnaire_id}/export/preview")
@@ -599,8 +621,6 @@ async def export_questionnaire_preview(questionnaire_id: int, request: Request) 
 @router.get("/api/admin/questionnaires/{questionnaire_id}/latest-submit-debug")
 def latest_submit_debug(questionnaire_id: int) -> dict:
     try:
-        if production_data_ready():
-            return latest_submit_debug_from_legacy(questionnaire_id)
         return LatestSubmitDebugQuery()(questionnaire_id)
     except Exception as exc:
         _raise_http(exc)
@@ -609,23 +629,6 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 @router.get("/api/h5/questionnaires/{slug}")
 def public_get_questionnaire(request: Request, slug: str) -> dict:
     try:
-        if production_data_ready():
-            submission_status = get_public_questionnaire_submission_status_from_legacy(
-                slug,
-                session_identity=_questionnaire_session_identity_from_request(request),
-                request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
-            )
-            if submission_status.get("submitted"):
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": "already_submitted",
-                        "message": "已经提交过该问卷",
-                        "redirect_url": submission_status.get("redirect_url") or submission_status.get("submitted_url"),
-                    },
-                    status_code=409,
-                )
-            return _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
         submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
         if submission_status.get("submitted"):
             return JSONResponse(
@@ -813,11 +816,7 @@ def wechat_oauth_callback_options() -> Response:
 @router.get("/s/{slug}", response_class=HTMLResponse)
 def public_questionnaire_h5_page(request: Request, slug: str):
     try:
-        use_production_data = production_data_ready()
-        if use_production_data:
-            payload = _public_questionnaire_payload(get_public_questionnaire_from_legacy(slug))
-        else:
-            payload = GetPublicQuestionnaireQuery()(slug)
+        payload = GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
     questionnaire = jsonable_encoder(payload["questionnaire"])
@@ -825,30 +824,15 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
     request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
     session_identity = _questionnaire_session_identity_from_request(request)
-    if use_production_data:
-        try:
-            submission_status = get_public_questionnaire_submission_status_from_legacy(
-                slug,
-                session_identity=session_identity,
-                request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
-            )
-        except LegacyQuestionnaireDataUnavailable:
-            submission_status = {}
-        if submission_status.get("submitted"):
-            redirect_url = str(
-                submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
-            ).strip()
-            return RedirectResponse(redirect_url, status_code=302)
-    else:
-        submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
-        if submission_status.get("submitted"):
-            redirect_url = str(
-                submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
-            ).strip()
-            return RedirectResponse(redirect_url, status_code=302)
+    submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
+    if submission_status.get("submitted"):
+        redirect_url = str(
+            submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
+        ).strip()
+        return RedirectResponse(redirect_url, status_code=302)
     is_wechat_browser = _is_wechat_browser(request)
     is_authorized = bool(session_identity.get("openid") or session_identity.get("unionid") or session_identity.get("respondent_key"))
-    oauth_configured = legacy_questionnaire_oauth_is_configured()
+    oauth_configured = bool(resolve_adapter_mode())
     page_mode = "auth_gate" if is_wechat_browser and not is_authorized else "questionnaire"
     env_notice = ""
     if page_mode == "auth_gate":

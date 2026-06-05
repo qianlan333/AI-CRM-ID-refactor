@@ -11,6 +11,9 @@ class QuestionnaireOptionInput(BaseModel):
     value: str = ""
     tag_codes: list[str] = Field(default_factory=list)
     score: int = 0
+    is_other: bool = False
+    other_placeholder: str = ""
+    other_max_length: int = 80
 
 
 class QuestionnaireQuestionInput(BaseModel):

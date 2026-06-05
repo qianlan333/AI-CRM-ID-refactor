@@ -3341,6 +3341,23 @@
       await loadList();
     }
 
+    async function duplicateQuestionnaire(item) {
+      if (!item?.id) return;
+      if (!confirmDiscardChanges()) return;
+      if (!window.confirm(`复制问卷“${item.name || item.title || '未命名问卷'}”？复制后会生成一份默认停用的新问卷。`)) return;
+      const data = await fetchJson(`/api/admin/questionnaires/${item.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const copied = data.questionnaire || {};
+      await loadList();
+      if (copied.id) {
+        await loadQuestionnaire(copied.id, { skipConfirm: true });
+      }
+      showToast('问卷已复制，默认停用');
+    }
+
     async function copyText(text, successMessage = '链接已复制') {
       if (!text) {
         showToast('当前还没有可复制的链接', true);
@@ -3356,6 +3373,36 @@
       } catch (error) {
         window.prompt('请手动复制以下链接', text);
       }
+    }
+
+    function downloadFilenameFromResponse(response, fallback) {
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (utf8Match) return decodeURIComponent(utf8Match[1]);
+      const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+      return asciiMatch ? asciiMatch[1] : fallback;
+    }
+
+    async function downloadQuestionnaireData(questionnaireId) {
+      if (!questionnaireId) {
+        showToast('保存问卷后才能下载数据', true);
+        return;
+      }
+      const response = await fetch(`/api/admin/questionnaires/${questionnaireId}/export`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(humanizeErrorMessage(extractErrorMessage(data), '下载失败，请稍后重试'));
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = downloadFilenameFromResponse(response, `questionnaire-${questionnaireId}-submissions.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast('下载已开始');
     }
 
     function renderManagementTable() {
@@ -3395,6 +3442,7 @@
                 <td>
                   <div class="row-actions">
                     <button type="button" class="mini-btn edit" data-action="edit">编辑</button>
+                    <button type="button" class="mini-btn duplicate" data-action="duplicate">复制</button>
                     <button type="button" class="mini-btn toggle" data-action="toggle">${item.is_disabled ? '启用' : '停用'}</button>
                     <button type="button" class="mini-btn share" data-action="share">分享</button>
                     <button type="button" class="mini-btn export" data-action="export">下载数据</button>
@@ -3414,11 +3462,14 @@
         row.querySelector('[data-action="toggle"]').addEventListener('click', () => {
           toggleQuestionnaire(item).catch((error) => showToast(error.message || '问卷状态更新失败，请稍后重试', true));
         });
+        row.querySelector('[data-action="duplicate"]').addEventListener('click', () => {
+          duplicateQuestionnaire(item).catch((error) => showToast(error.message || '问卷复制失败，请稍后重试', true));
+        });
         row.querySelector('[data-action="share"]').addEventListener('click', () => {
           copyText(item.public_url, '分享链接已复制');
         });
         row.querySelector('[data-action="export"]').addEventListener('click', () => {
-          window.open(`/api/admin/questionnaires/${item.id}/export`, '_blank');
+          downloadQuestionnaireData(item.id).catch((error) => showToast(error.message || '下载失败，请稍后重试', true));
         });
       });
     }
@@ -3446,12 +3497,14 @@
         <button id="editor-global-external-push-logs-btn" type="button" class="btn ghost">外推总览</button>
         ${state.currentId ? `
           <button id="editor-share-btn" type="button" class="btn ghost">分享</button>
+          <button id="editor-duplicate-btn" type="button" class="btn ghost">复制问卷</button>
           <button id="editor-export-btn" type="button" class="btn ghost">下载数据</button>
           <button id="editor-external-push-logs-btn" type="button" class="btn ghost">外推记录</button>
         ` : ''}
       `;
       const globalExternalPushLogsBtn = document.getElementById('editor-global-external-push-logs-btn');
       const shareBtn = document.getElementById('editor-share-btn');
+      const duplicateBtn = document.getElementById('editor-duplicate-btn');
       const exportBtn = document.getElementById('editor-export-btn');
       const externalPushLogsBtn = document.getElementById('editor-external-push-logs-btn');
       globalExternalPushLogsBtn?.addEventListener('click', () => {
@@ -3460,8 +3513,11 @@
       shareBtn?.addEventListener('click', () => {
         copyText(buildPublicUrl(), '分享链接已复制');
       });
+      duplicateBtn?.addEventListener('click', () => {
+        duplicateQuestionnaire({ ...(state.questionnaire || {}), id: state.currentId }).catch((error) => showToast(error.message || '问卷复制失败，请稍后重试', true));
+      });
       exportBtn?.addEventListener('click', () => {
-        window.open(`/api/admin/questionnaires/${state.currentId}/export`, '_blank');
+        downloadQuestionnaireData(state.currentId).catch((error) => showToast(error.message || '下载失败，请稍后重试', true));
       });
       externalPushLogsBtn?.addEventListener('click', () => {
         window.location.assign(`/admin/questionnaires/${state.currentId}/external-push-logs`);

@@ -34,13 +34,13 @@ def test_questionnaire_export_preview_returns_masked_sample_and_plan_only(client
     assert body["side_effect_plan"]["adapter_mode"] == "real_blocked"
 
 
-def test_existing_get_export_route_is_audit_command_not_file_download(client: TestClient) -> None:
+def test_existing_get_export_route_downloads_csv_without_storage_file(client: TestClient) -> None:
     response = client.get("/api/admin/questionnaires/1/export", headers={"Idempotency-Key": "questionnaire-export-get"})
 
     assert response.status_code == 200
-    assert "Content-Disposition" not in response.headers
-    body = response.json()
-    assert body["command_name"] == "questionnaire.admin.export_audit"
-    assert body["source_status"] == "next_command"
-    assert body["export_preview"]["file_created"] is False
-    assert body["real_external_call_executed"] is False
+    assert response.headers["Content-Disposition"].startswith('attachment; filename="questionnaire-hxc-activation-v1-submissions.csv"')
+    assert response.headers["X-AICRM-Source-Status"] == "next_command"
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    csv_text = response.content.decode("utf-8-sig")
+    assert "submission_id,submitted_at,external_userid,mobile,matched_by,score,final_tags,answers" in csv_text
+    assert "sub_fixture_001" in csv_text

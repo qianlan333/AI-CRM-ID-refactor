@@ -16,6 +16,8 @@ def test_questionnaire_admin_list_page_exposes_next_read_status_without_facade()
     assert "data-read-model-status=\"fixture\"" in html
     assert "data-fallback-used=\"false\"" in html
     assert "hxc-activation-v1" in html
+    assert "data-action=\"duplicate\"" in html
+    assert "downloadQuestionnaireData" in html
 
 
 def test_questionnaire_admin_new_page_is_readonly_shell_without_write_execution() -> None:
@@ -34,3 +36,4 @@ def test_questionnaire_admin_detail_page_uses_next_read_model_editor_payload() -
     assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert "黄小璨激活问卷" in response.text
     assert "hxc-activation-v1" in response.text
+    assert "复制问卷" in response.text

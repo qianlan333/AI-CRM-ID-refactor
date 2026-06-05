@@ -652,26 +652,6 @@ def _probe_dry_run_response(request: Request) -> Response | None:
     )
 
 
-def _questionnaire_admin_write_legacy_override(
-    request: Request,
-    payload: dict[str, Any],
-    body: bytes,
-) -> tuple[str, str, bytes]:
-    path = request.url.path
-    method = request.method.upper()
-    parts = path.strip("/").split("/")
-    if len(parts) == 5 and parts[:3] == ["api", "admin", "questionnaires"] and parts[4] == "enable" and method == "POST":
-        rewritten_payload = {**payload, "is_disabled": False}
-        return (
-            f"/api/admin/questionnaires/{parts[3]}/disable",
-            method,
-            json.dumps(rewritten_payload, ensure_ascii=False).encode("utf-8"),
-        )
-    if len(parts) == 4 and parts[:3] == ["api", "admin", "questionnaires"] and method == "PATCH":
-        return (path, "PUT", body)
-    return (path, method, body)
-
-
 async def forward_to_legacy_flask(request: Request) -> Response:
     guard_response = _timer_token_guard(request)
     if guard_response is not None:
@@ -693,7 +673,9 @@ async def forward_to_legacy_flask(request: Request) -> Response:
     if dry_run_response is not None:
         return dry_run_response
 
-    forwarded_path, forwarded_method, forwarded_body = _questionnaire_admin_write_legacy_override(request, payload, body)
+    forwarded_path = request.url.path
+    forwarded_method = request.method.upper()
+    forwarded_body = body
     query_string = request.url.query
     headers = {
         key: value

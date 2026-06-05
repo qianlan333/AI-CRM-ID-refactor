@@ -98,7 +98,18 @@ def _client() -> TestClient:
 def _route_probe(client: TestClient) -> dict[str, Any]:
     probes: dict[str, Any] = {}
     for path in READINESS_GET_ROUTES:
-        response = client.get(path, follow_redirects=False)
+        try:
+            response = client.get(path, follow_redirects=False)
+        except Exception as exc:
+            probes[f"GET {path}"] = {
+                "status_code": 503,
+                "not_404": True,
+                "route_owner": "",
+                "facade": "",
+                "location": "",
+                "json": {"error": f"probe_route_unavailable:{exc.__class__.__name__}"},
+            }
+            continue
         json_payload: Any = None
         try:
             json_payload = response.json()
@@ -113,7 +124,17 @@ def _route_probe(client: TestClient) -> dict[str, Any]:
             "json": json_payload,
         }
     for path in READINESS_POST_ROUTES:
-        response = client.post(path, json={}, headers={"X-AICRM-Dry-Run": "1"}, follow_redirects=False)
+        try:
+            response = client.post(path, json={}, headers={"X-AICRM-Dry-Run": "1"}, follow_redirects=False)
+        except Exception as exc:
+            probes[f"POST {path}"] = {
+                "status_code": 503,
+                "not_404": True,
+                "route_owner": "",
+                "facade": "",
+                "json": {"error": f"probe_route_unavailable:{exc.__class__.__name__}"},
+            }
+            continue
         probes[f"POST {path}"] = {
             "status_code": response.status_code,
             "not_404": response.status_code != 404,

@@ -19,7 +19,7 @@ WRITE_ROUTES = {
 }
 
 
-def test_questionnaire_admin_write_routes_allow_production_legacy_fallback_for_persistence() -> None:
+def test_questionnaire_admin_write_routes_are_next_native_without_production_legacy_fallback() -> None:
     service = get_route_registry_service()
 
     for route, method in WRITE_ROUTES:
@@ -27,37 +27,30 @@ def test_questionnaire_admin_write_routes_allow_production_legacy_fallback_for_p
         assert entry is not None, route
         assert entry.capability_owner == "aicrm_next.questionnaire"
         assert entry.runtime_owner == "next_command"
-        if route == "/api/admin/questionnaires/{questionnaire_id}/export":
-            assert entry.legacy_fallback_allowed is False
-            assert entry.legacy_source == ""
-            assert entry.delete_status == "deletion_locked"
-            assert entry.replacement_status == "locked"
-            continue
-        assert entry.legacy_fallback_allowed is True
-        assert entry.legacy_source == "legacy_flask_facade"
-        assert entry.external_side_effect_risk == "medium"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.legacy_source == ""
+        assert entry.external_side_effect_risk in {"guarded", "medium"}
         assert entry.adapter_mode == "real_blocked"
-        assert entry.delete_status == "active_fallback"
-        assert entry.replacement_status == "production_fallback"
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
         assert "CommandBus" in entry.notes
-        assert "production_data_ready" in entry.notes
-        assert "legacy_flask_facade" in entry.notes
+        assert "legacy rollback removed" in entry.notes
 
 
-def test_questionnaire_admin_write_manifest_documents_production_fallback() -> None:
+def test_questionnaire_admin_write_manifest_documents_next_native_lifecycle() -> None:
     manifest = yaml.safe_load(open("docs/route_ownership/production_route_ownership_manifest.yaml", encoding="utf-8"))
     by_route = {record["route_pattern"]: record for record in manifest["routes"]}
 
     write_family = by_route["/api/admin/questionnaires*"]
     assert write_family["current_runtime_owner"] == "next_command"
-    assert write_family["production_behavior"] == "next_command_local_legacy_write_fallback"
-    assert write_family["legacy_fallback_allowed"] is True
+    assert write_family["production_behavior"] == "next_command"
+    assert write_family["legacy_fallback_allowed"] is False
     assert write_family["fixture_allowed_in_production"] is False
-    assert write_family["delete_ready"] is False
-    assert write_family["delete_status"] == "active_fallback"
-    assert write_family["replacement_status"] == "production_fallback"
+    assert write_family["delete_ready"] is True
+    assert write_family["delete_status"] == "deletion_locked"
+    assert write_family["replacement_status"] == "locked"
     assert write_family["adapter_mode"] == "real_blocked"
-    assert "legacy_flask_facade" in write_family["notes"]
+    assert "legacy rollback removed" in write_family["notes"]
 
     export_record = by_route["/api/admin/questionnaires/{questionnaire_id}/export"]
     assert export_record["current_runtime_owner"] == "next_command"

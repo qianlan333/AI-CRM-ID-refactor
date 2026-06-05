@@ -1294,13 +1294,29 @@ CREATE TABLE IF NOT EXISTS questionnaire_options (
     score DOUBLE PRECISION NOT NULL DEFAULT 0,
     assessment_type_key TEXT NOT NULL DEFAULT '',
     tag_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_other BOOLEAN NOT NULL DEFAULT FALSE,
+    other_placeholder TEXT NOT NULL DEFAULT '',
+    other_max_length INTEGER NOT NULL DEFAULT 80,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE questionnaire_options
+ADD COLUMN IF NOT EXISTS is_other BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE questionnaire_options
+ADD COLUMN IF NOT EXISTS other_placeholder TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE questionnaire_options
+ADD COLUMN IF NOT EXISTS other_max_length INTEGER NOT NULL DEFAULT 80;
+
 CREATE INDEX IF NOT EXISTS idx_questionnaire_options_question
 ON questionnaire_options (question_id, sort_order, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_questionnaire_options_one_other_per_question
+ON questionnaire_options(question_id)
+WHERE is_other = TRUE;
 
 CREATE TABLE IF NOT EXISTS questionnaire_score_rules (
     id BIGSERIAL PRIMARY KEY,

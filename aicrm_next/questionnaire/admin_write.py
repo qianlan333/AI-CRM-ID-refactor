@@ -8,10 +8,8 @@ from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 from aicrm_next.shared.errors import ContractError, NotFoundError
-from aicrm_next.shared.runtime import production_data_ready
 
 from .domain import admin_detail_projection, summary_projection
-from .dto import QuestionnaireUpsertRequest
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -59,11 +57,156 @@ _side_effect_plans = InMemorySideEffectPlanRepository()
 _command_bus = CommandBus()
 
 
+QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"", "subscription", "premium", "trial"}
+QUESTIONNAIRE_QUESTION_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
+QUESTIONNAIRE_ANSWER_DISPLAY_MODES = {"all_in_one", "one_by_one"}
+
+
+class QuestionnaireLifecyclePolicy:
+    def validate_command(self, command: QuestionnaireAdminWriteCommand) -> None:
+        _validate_command(command)
+
+    def validate_upsert(self, payload: dict[str, Any], *, existing_has_questions: bool = False) -> dict[str, Any]:
+        normalized = _normalize_upsert_payload(payload)
+        if not str(normalized.get("title") or "").strip():
+            raise QuestionnaireAdminWriteInputError("title is required")
+        if existing_has_questions and not normalized["questions"]:
+            raise QuestionnaireAdminWriteInputError("questions cannot be empty when updating an existing questionnaire with questions")
+        return normalized
+
+
+class QuestionnaireAdminRepository:
+    def __init__(self, repository: QuestionnaireRepository | None = None) -> None:
+        self._repository = repository or _repo()
+
+    def list_submissions(self, questionnaire_id: int, *, limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int] | None:
+        return self._repository.list_submissions(questionnaire_id, limit=limit, offset=offset)
+
+    def get_questionnaire(self, questionnaire_id: int) -> dict[str, Any] | None:
+        return self._repository.get_questionnaire(questionnaire_id)
+
+    def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]:
+        return self._repository.save_questionnaire(payload, questionnaire_id)
+
+    def set_enabled(self, questionnaire_id: int, enabled: bool) -> dict[str, Any] | None:
+        return self._repository.set_enabled(questionnaire_id, enabled)
+
+
+class QuestionnaireAuditWriter:
+    def record(self, command: Command, result: CommandResult) -> None:
+        _audit_ledger.record_event(
+            event_type=f"{command.command_name}.{result.status}",
+            actor_id=result.actor_id,
+            actor_type=result.actor_type,
+            target_type="questionnaire",
+            target_id=str(result.payload.get("questionnaire_id") or command.payload.get("questionnaire_id") or ""),
+            source_route=result.source_route,
+            command_id=result.command_id,
+            trace_id=result.trace_id,
+            payload={
+                "status": result.status,
+                "write_model_status": result.payload.get("write_model_status") or "",
+                "fallback_used": False,
+                "real_external_call_executed": False,
+            },
+        )
+
+
+class QuestionnaireExternalPushConfigPlanner:
+    def optional_config_plan(self, command: Command, item: dict[str, Any]) -> SideEffectPlan | None:
+        config = dict(item.get("external_push_config") or {})
+        if not bool(config.get("enabled")):
+            return None
+        return _create_side_effect_plan(
+            command=command,
+            effect_type="questionnaire.external_push.configure",
+            adapter_name="external_push",
+            target_id=str(item["id"]),
+            payload_summary={"questionnaire_id": int(item["id"]), "external_push_configured": True},
+            risk_level="medium",
+        )
+
+    def publish_plan(self, command: Command, questionnaire_id: int) -> SideEffectPlan:
+        return _create_side_effect_plan(
+            command=command,
+            effect_type="questionnaire.public_projection.publish",
+            adapter_name="questionnaire_projection",
+            target_id=str(questionnaire_id),
+            payload_summary={"questionnaire_id": questionnaire_id, "publish": True},
+            risk_level="medium",
+        )
+
+    def export_preview_plan(self, command: Command, questionnaire_id: int, fields: list[str], total: int) -> SideEffectPlan:
+        return _create_side_effect_plan(
+            command=command,
+            effect_type="questionnaire.export.preview",
+            adapter_name="storage",
+            target_id=str(questionnaire_id),
+            payload_summary={"questionnaire_id": questionnaire_id, "fields": fields, "estimated_count": total},
+            risk_level="medium",
+        )
+
+    def export_download_plan(self, command: Command, questionnaire_id: int, fields: list[str], total: int) -> SideEffectPlan:
+        return _create_side_effect_plan(
+            command=command,
+            effect_type="questionnaire.export.download",
+            adapter_name="response_stream",
+            target_id=str(questionnaire_id),
+            payload_summary={"questionnaire_id": questionnaire_id, "fields": fields, "estimated_count": total},
+            risk_level="medium",
+        )
+
+
+class QuestionnaireAdminCommandService:
+    def __init__(self) -> None:
+        self.lifecycle_policy = QuestionnaireLifecyclePolicy()
+
+    def execute(self, command: QuestionnaireAdminWriteCommand) -> dict[str, Any]:
+        self.lifecycle_policy.validate_command(command)
+        platform_command = Command(
+            command_name=command.command_name,
+            payload=command.to_payload(),
+            command_id=command.command_id,
+            idempotency_key=command.idempotency_key,
+            context=CommandContext(
+                actor_id=command.actor_id,
+                actor_type=command.actor_type,
+                trace_id=command.trace_id,
+                source_route=command.source_route,
+                dry_run=command.dry_run,
+            ),
+        )
+        result = _command_bus.execute(platform_command)
+        if result.status == "failed":
+            if "questionnaire not found" in result.error:
+                raise QuestionnaireAdminWriteNotFoundError("questionnaire not found")
+            if (
+                "is required" in result.error
+                or "Field required" in result.error
+                or "validation error" in result.error
+                or "json object" in result.error
+                or "cannot be empty" in result.error
+                or "already exists" in result.error
+                or "must be" in result.error
+            ):
+                raise QuestionnaireAdminWriteInputError(result.error)
+            raise QuestionnaireAdminWriteProductionUnavailableError(result.error)
+
+        payload = dict(result.payload)
+        payload.setdefault("questionnaire_id", command.questionnaire_id or 0)
+        payload.setdefault("write_model_status", "dry_run" if result.status == "dry_run" else "updated")
+        return _response_from_result(result, payload)
+
+
+_command_service = QuestionnaireAdminCommandService()
+
+
 def reset_questionnaire_admin_write_fixture_state() -> None:
-    global _audit_ledger, _side_effect_plans, _command_bus
+    global _audit_ledger, _side_effect_plans, _command_bus, _command_service
     _audit_ledger = InMemoryAuditLedger()
     _side_effect_plans = InMemorySideEffectPlanRepository()
-    _command_bus = CommandBus(audit_hook=_audit_hook)
+    _command_bus = CommandBus(audit_hook=QuestionnaireAuditWriter().record)
+    _command_service = QuestionnaireAdminCommandService()
     _register_handlers()
 
 
@@ -76,56 +219,7 @@ def get_questionnaire_admin_write_side_effect_plans() -> list[dict[str, Any]]:
 
 
 def execute_questionnaire_admin_write(command: QuestionnaireAdminWriteCommand) -> dict[str, Any]:
-    _validate_command(command)
-    if production_data_ready():
-        raise QuestionnaireAdminWriteProductionUnavailableError(
-            "questionnaire admin write model is not production-ready for command execution"
-        )
-
-    platform_command = Command(
-        command_name=command.command_name,
-        payload=command.to_payload(),
-        command_id=command.command_id,
-        idempotency_key=command.idempotency_key,
-        context=CommandContext(
-            actor_id=command.actor_id,
-            actor_type=command.actor_type,
-            trace_id=command.trace_id,
-            source_route=command.source_route,
-            dry_run=command.dry_run,
-        ),
-    )
-    result = _command_bus.execute(platform_command)
-    if result.status == "failed":
-        if "questionnaire not found" in result.error:
-            raise QuestionnaireAdminWriteNotFoundError("questionnaire not found")
-        if "is required" in result.error or "Field required" in result.error or "validation error" in result.error or "json object" in result.error:
-            raise QuestionnaireAdminWriteInputError(result.error)
-        raise QuestionnaireAdminWriteProductionUnavailableError(result.error)
-
-    payload = dict(result.payload)
-    payload.setdefault("questionnaire_id", command.questionnaire_id or 0)
-    payload.setdefault("write_model_status", "dry_run" if result.status == "dry_run" else "updated")
-    return _response_from_result(result, payload)
-
-
-def _audit_hook(command: Command, result: CommandResult) -> None:
-    _audit_ledger.record_event(
-        event_type=f"{command.command_name}.{result.status}",
-        actor_id=result.actor_id,
-        actor_type=result.actor_type,
-        target_type="questionnaire",
-        target_id=str(result.payload.get("questionnaire_id") or command.payload.get("questionnaire_id") or ""),
-        source_route=result.source_route,
-        command_id=result.command_id,
-        trace_id=result.trace_id,
-        payload={
-            "status": result.status,
-            "write_model_status": result.payload.get("write_model_status") or "",
-            "fallback_used": False,
-            "real_external_call_executed": False,
-        },
-    )
+    return _command_service.execute(command)
 
 
 def _register_handlers() -> None:
@@ -138,6 +232,7 @@ def _register_handlers() -> None:
     _command_bus.register("questionnaire.admin.delete", _handle_delete)
     _command_bus.register("questionnaire.admin.export_preview", _handle_export_preview)
     _command_bus.register("questionnaire.admin.export_audit", _handle_export_preview)
+    _command_bus.register("questionnaire.admin.export_download", _handle_export_download)
 
 
 def _validate_command(command: QuestionnaireAdminWriteCommand) -> None:
@@ -159,17 +254,191 @@ def _repo() -> QuestionnaireRepository:
 
 
 def _upsert_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    try:
-        return QuestionnaireUpsertRequest.model_validate(payload).model_dump()
-    except Exception as exc:
-        raise QuestionnaireAdminWriteInputError(str(exc)) from exc
+    return QuestionnaireLifecyclePolicy().validate_upsert(payload)
+
+
+def _normalized_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalized_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        text = _normalized_text(item)
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _external_push_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config = dict(payload.get("external_push_config") or {})
+    root_to_config = {
+        "external_push_enabled": "enabled",
+        "external_push_url": "webhook_url",
+        "external_push_type": "type",
+        "external_push_expires_at_ts": "expires_at_ts",
+        "external_push_day": "day",
+        "external_push_frequency": "frequency",
+        "external_push_remark": "remark",
+        "external_push_custom_params": "custom_params",
+    }
+    for root_key, config_key in root_to_config.items():
+        if root_key in payload:
+            config[config_key] = payload.get(root_key)
+    external_type = _normalized_text(config.get("type"))
+    if external_type not in QUESTIONNAIRE_EXTERNAL_PUSH_TYPES:
+        raise QuestionnaireAdminWriteInputError("external_push_type must be subscription, premium or trial")
+    return {
+        "enabled": _normalized_bool(config.get("enabled")),
+        "webhook_url": _normalized_text(config.get("webhook_url") or config.get("url")),
+        "type": external_type,
+        "expires_at_ts": _optional_int(config.get("expires_at_ts")),
+        "day": _optional_int(config.get("day")),
+        "frequency": _optional_int(config.get("frequency")),
+        "remark": _normalized_text(config.get("remark")),
+        "custom_params": list(config.get("custom_params") or []) if isinstance(config.get("custom_params"), list) else [],
+    }
+
+
+def _normalize_option(option: dict[str, Any], index: int) -> dict[str, Any]:
+    option_text = _normalized_text(option.get("option_text") or option.get("label") or option.get("value"))
+    if not option_text:
+        raise QuestionnaireAdminWriteInputError("option_text is required")
+    other_max_length = _optional_int(option.get("other_max_length"))
+    if other_max_length is None:
+        other_max_length = 80
+    if other_max_length < 1 or other_max_length > 200:
+        raise QuestionnaireAdminWriteInputError("other_max_length must be between 1 and 200")
+    return {
+        "id": option.get("id") or option.get("value") or f"option_{index + 1}",
+        "option_text": option_text,
+        "label": option_text,
+        "value": _normalized_text(option.get("value") or option.get("id") or option_text),
+        "score": float(option.get("score") or 0),
+        "assessment_type_key": _normalized_text(option.get("assessment_type_key")),
+        "tag_codes": _string_list(option.get("tag_codes")),
+        "is_other": _normalized_bool(option.get("is_other")),
+        "other_placeholder": _normalized_text(option.get("other_placeholder")),
+        "other_max_length": other_max_length,
+        "sort_order": int(option.get("sort_order") or index + 1),
+    }
+
+
+def _normalize_question(question: dict[str, Any], index: int) -> dict[str, Any]:
+    question_type = _normalized_text(question.get("type") or "single_choice")
+    if question_type not in QUESTIONNAIRE_QUESTION_TYPES:
+        raise QuestionnaireAdminWriteInputError("question type must be single_choice, multi_choice, textarea or mobile")
+    title = _normalized_text(question.get("title"))
+    if not title:
+        raise QuestionnaireAdminWriteInputError("question title is required")
+    raw_options = list(question.get("options") or []) if isinstance(question.get("options") or [], list) else []
+    if question_type in {"textarea", "mobile"}:
+        if raw_options:
+            raise QuestionnaireAdminWriteInputError("options are not allowed for textarea or mobile questions")
+        options = []
+    else:
+        options = [
+            _normalize_option(dict(option or {}), option_index)
+            for option_index, option in enumerate(raw_options)
+        ]
+        if sum(1 for option in options if bool(option.get("is_other"))) > 1:
+            raise QuestionnaireAdminWriteInputError("other option count must be at most one per question")
+    return {
+        "id": question.get("id") or f"q_{index + 1}",
+        "type": question_type,
+        "title": title,
+        "placeholder_text": _normalized_text(question.get("placeholder_text")),
+        "assessment_dimension_key": _normalized_text(question.get("assessment_dimension_key")),
+        "sidebar_profile_field": _normalized_text(question.get("sidebar_profile_field")),
+        "required": _normalized_bool(question.get("required")),
+        "sort_order": int(question.get("sort_order") or index + 1),
+        "options": options,
+    }
+
+
+def _normalize_score_rule(rule: dict[str, Any], index: int) -> dict[str, Any]:
+    return {
+        "min_score": _optional_float(rule.get("min_score")),
+        "max_score": _optional_float(rule.get("max_score")),
+        "tag_codes": _string_list(rule.get("tag_codes")),
+        "sort_order": int(rule.get("sort_order") or index + 1),
+    }
+
+
+def _normalize_upsert_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = dict(payload or {})
+    title = _normalized_text(raw.get("title") or raw.get("name"))
+    slug = _normalized_text(raw.get("slug"))
+    answer_display_mode = _normalized_text(raw.get("answer_display_mode") or "all_in_one")
+    if answer_display_mode not in QUESTIONNAIRE_ANSWER_DISPLAY_MODES:
+        raise QuestionnaireAdminWriteInputError("answer_display_mode must be all_in_one or one_by_one")
+    external_config = _external_push_config(raw)
+    is_disabled = _normalized_bool(raw.get("is_disabled")) if "is_disabled" in raw else not _normalized_bool(raw.get("enabled", True))
+    assessment_config = raw.get("assessment_config")
+    if assessment_config is None:
+        assessment_config = raw.get("result_config") or {}
+    if not isinstance(assessment_config, dict):
+        raise QuestionnaireAdminWriteInputError("assessment_config must be an object")
+    return {
+        "slug": slug,
+        "name": _normalized_text(raw.get("name") or title),
+        "title": title,
+        "description": _normalized_text(raw.get("description")),
+        "enabled": not is_disabled,
+        "is_disabled": is_disabled,
+        "redirect_url": _normalized_text(raw.get("redirect_url")),
+        "submit_button_text": _normalized_text(raw.get("submit_button_text") or "提交"),
+        "answer_display_mode": answer_display_mode,
+        "assessment_enabled": _normalized_bool(raw.get("assessment_enabled")),
+        "assessment_config": assessment_config,
+        "result_config": assessment_config,
+        "questions": [
+            _normalize_question(dict(question or {}), index)
+            for index, question in enumerate(raw.get("questions") or [])
+        ],
+        "score_rules": [
+            _normalize_score_rule(dict(rule or {}), index)
+            for index, rule in enumerate(raw.get("score_rules") or raw.get("rules") or [])
+        ],
+        "external_push_config": external_config,
+        "external_push_enabled": external_config["enabled"],
+        "external_push_url": external_config["webhook_url"],
+        "external_push_type": external_config["type"],
+        "external_push_expires_at_ts": external_config["expires_at_ts"],
+        "external_push_day": external_config["day"],
+        "external_push_frequency": external_config["frequency"],
+        "external_push_remark": external_config["remark"],
+        "external_push_custom_params": external_config["custom_params"],
+    }
 
 
 def _handle_create(command: Command) -> dict[str, Any]:
     payload = _upsert_payload(dict(command.payload.get("payload") or {}))
     if not str(payload.get("title") or "").strip():
         raise ContractError("title is required")
-    item = _repo().save_questionnaire(payload)
+    item = QuestionnaireAdminRepository().save_questionnaire(payload)
     response = admin_detail_projection(item)
     response.update(
         {
@@ -177,7 +446,7 @@ def _handle_create(command: Command) -> dict[str, Any]:
             "write_model_status": "created",
         }
     )
-    plan = _optional_external_push_plan(command, item)
+    plan = QuestionnaireExternalPushConfigPlanner().optional_config_plan(command, item)
     if plan:
         response["side_effect_plan"] = _plan_response(plan)
     return response
@@ -185,15 +454,22 @@ def _handle_create(command: Command) -> dict[str, Any]:
 
 def _handle_update(command: Command) -> dict[str, Any]:
     questionnaire_id = int(command.payload["questionnaire_id"])
-    payload = _upsert_payload(dict(command.payload.get("payload") or {}))
+    admin_repo = QuestionnaireAdminRepository()
+    existing = admin_repo.get_questionnaire(questionnaire_id)
+    if not existing:
+        raise NotFoundError("questionnaire not found")
+    payload = QuestionnaireLifecyclePolicy().validate_upsert(
+        dict(command.payload.get("payload") or {}),
+        existing_has_questions=bool(existing.get("questions")),
+    )
     if not str(payload.get("title") or "").strip():
         raise ContractError("title is required")
-    item = _repo().save_questionnaire(payload, questionnaire_id)
+    item = admin_repo.save_questionnaire(payload, questionnaire_id)
     if not item:
         raise NotFoundError("questionnaire not found")
     response = admin_detail_projection(item)
     response.update({"questionnaire_id": questionnaire_id, "write_model_status": "updated"})
-    plan = _optional_external_push_plan(command, item)
+    plan = QuestionnaireExternalPushConfigPlanner().optional_config_plan(command, item)
     if plan:
         response["side_effect_plan"] = _plan_response(plan)
     return response
@@ -223,17 +499,10 @@ def _handle_duplicate(command: Command) -> dict[str, Any]:
 
 def _handle_publish(command: Command) -> dict[str, Any]:
     questionnaire_id = int(command.payload["questionnaire_id"])
-    item = _repo().set_enabled(questionnaire_id, True)
+    item = QuestionnaireAdminRepository().set_enabled(questionnaire_id, True)
     if not item:
         raise NotFoundError("questionnaire not found")
-    plan = _create_side_effect_plan(
-        command=command,
-        effect_type="questionnaire.public_projection.publish",
-        adapter_name="questionnaire_projection",
-        target_id=str(questionnaire_id),
-        payload_summary={"questionnaire_id": questionnaire_id, "publish": True},
-        risk_level="medium",
-    )
+    plan = QuestionnaireExternalPushConfigPlanner().publish_plan(command, questionnaire_id)
     return {
         "questionnaire_id": questionnaire_id,
         "questionnaire": summary_projection(item),
@@ -252,7 +521,7 @@ def _handle_disable(command: Command) -> dict[str, Any]:
 
 def _set_enabled(command: Command, *, enabled: bool, status: str) -> dict[str, Any]:
     questionnaire_id = int(command.payload["questionnaire_id"])
-    item = _repo().set_enabled(questionnaire_id, enabled)
+    item = QuestionnaireAdminRepository().set_enabled(questionnaire_id, enabled)
     if not item:
         raise NotFoundError("questionnaire not found")
     return {
@@ -264,10 +533,11 @@ def _set_enabled(command: Command, *, enabled: bool, status: str) -> dict[str, A
 
 def _handle_delete(command: Command) -> dict[str, Any]:
     questionnaire_id = int(command.payload["questionnaire_id"])
-    existing = _repo().get_questionnaire(questionnaire_id)
+    admin_repo = QuestionnaireAdminRepository()
+    existing = admin_repo.get_questionnaire(questionnaire_id)
     if not existing:
         raise NotFoundError("questionnaire not found")
-    item = _repo().set_enabled(questionnaire_id, False)
+    item = admin_repo.set_enabled(questionnaire_id, False)
     return {
         "questionnaire_id": questionnaire_id,
         "questionnaire": summary_projection(item or existing),
@@ -281,19 +551,12 @@ def _handle_export_preview(command: Command) -> dict[str, Any]:
     questionnaire_id = int(command.payload["questionnaire_id"])
     requested = dict(command.payload.get("payload") or {})
     fields = [str(item) for item in requested.get("fields") or ["submission_id", "external_userid", "answers", "created_at"]]
-    result = _repo().list_submissions(questionnaire_id, limit=3, offset=0)
+    result = QuestionnaireAdminRepository().list_submissions(questionnaire_id, limit=3, offset=0)
     if result is None:
         raise NotFoundError("questionnaire not found")
     submissions, total = result
     masked_sample = [_mask_submission(row, fields) for row in submissions]
-    plan = _create_side_effect_plan(
-        command=command,
-        effect_type="questionnaire.export.preview",
-        adapter_name="storage",
-        target_id=str(questionnaire_id),
-        payload_summary={"questionnaire_id": questionnaire_id, "fields": fields, "estimated_count": total},
-        risk_level="medium",
-    )
+    plan = QuestionnaireExternalPushConfigPlanner().export_preview_plan(command, questionnaire_id, fields, total)
     return {
         "questionnaire_id": questionnaire_id,
         "write_model_status": "export_preview_planned",
@@ -301,6 +564,41 @@ def _handle_export_preview(command: Command) -> dict[str, Any]:
             "fields": fields,
             "estimated_count": total,
             "masked_sample": masked_sample,
+            "file_created": False,
+        },
+        "side_effect_plan": _plan_response(plan),
+    }
+
+
+def _handle_export_download(command: Command) -> dict[str, Any]:
+    questionnaire_id = int(command.payload["questionnaire_id"])
+    item = QuestionnaireAdminRepository().get_questionnaire(questionnaire_id)
+    if not item:
+        raise NotFoundError("questionnaire not found")
+    requested = dict(command.payload.get("payload") or {})
+    fields = [
+        str(item)
+        for item in requested.get("fields")
+        or ["submission_id", "submitted_at", "external_userid", "mobile", "matched_by", "score", "final_tags", "answers"]
+    ]
+    limit = int(requested.get("limit") or 10000)
+    limit = max(1, min(limit, 50000))
+    result = QuestionnaireAdminRepository().list_submissions(questionnaire_id, limit=limit, offset=0)
+    if result is None:
+        raise NotFoundError("questionnaire not found")
+    submissions, total = result
+    rows = [{field: row.get(field) for field in fields} for row in submissions]
+    plan = QuestionnaireExternalPushConfigPlanner().export_download_plan(command, questionnaire_id, fields, total)
+    slug = str(item.get("slug") or f"questionnaire-{questionnaire_id}").strip()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "write_model_status": "export_download_ready",
+        "export_download": {
+            "fields": fields,
+            "rows": rows,
+            "total": total,
+            "returned_count": len(rows),
+            "filename": f"questionnaire-{slug}-submissions.csv",
             "file_created": False,
         },
         "side_effect_plan": _plan_response(plan),
@@ -316,20 +614,6 @@ def _mask_submission(row: dict[str, Any], fields: list[str]) -> dict[str, Any]:
         else:
             payload[field] = value
     return payload
-
-
-def _optional_external_push_plan(command: Command, item: dict[str, Any]) -> SideEffectPlan | None:
-    config = dict(item.get("external_push_config") or {})
-    if not bool(config.get("enabled")):
-        return None
-    return _create_side_effect_plan(
-        command=command,
-        effect_type="questionnaire.external_push.configure",
-        adapter_name="external_push",
-        target_id=str(item["id"]),
-        payload_summary={"questionnaire_id": int(item["id"]), "external_push_configured": True},
-        risk_level="medium",
-    )
 
 
 def _create_side_effect_plan(
