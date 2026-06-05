@@ -2738,16 +2738,21 @@ def _preview_candidates_next(program_id: int, task: dict[str, Any]) -> dict[str,
                         e.entered_at,
                         m.id AS member_id,
                         m.external_contact_id,
-                        m.source_channel_id,
-                        m.behavior_tier_key,
-                        m.profile_segment_key,
+                        COALESCE(pm.latest_source_channel_id, pm.source_channel_id, m.source_channel_id) AS source_channel_id,
+                        COALESCE(NULLIF(pm.state_payload_json ->> 'behavior_tier_key', ''), m.behavior_tier_key) AS behavior_tier_key,
+                        COALESCE(NULLIF(pm.state_payload_json ->> 'profile_segment_key', ''), m.profile_segment_key) AS profile_segment_key,
                         c.program_id AS channel_program_id,
                         b.program_id AS binding_program_id
                     FROM automation_member_audience_entry e
                     JOIN automation_member m ON m.id = e.member_id
-                    LEFT JOIN automation_channel c ON c.id = m.source_channel_id
+                    LEFT JOIN automation_program_member pm
+                      ON pm.program_id = :program_id
+                     AND pm.external_contact_id = m.external_contact_id
+                     AND pm.in_program = TRUE
+                    LEFT JOIN automation_channel c
+                      ON c.id = COALESCE(pm.latest_source_channel_id, pm.source_channel_id, m.source_channel_id)
                     LEFT JOIN automation_program_channel_binding b
-                      ON b.channel_id = m.source_channel_id
+                      ON b.channel_id = COALESCE(pm.latest_source_channel_id, pm.source_channel_id, m.source_channel_id)
                      AND b.program_id = :program_id
                     WHERE e.is_current = TRUE
                     """

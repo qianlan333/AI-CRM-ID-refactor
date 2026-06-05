@@ -18,6 +18,7 @@ from automation_channel_admission_helpers import (
     disabled_entry_rule,
     save_audience_entry_rule,
 )
+from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion.admission_service import admit_channel_contact_to_program
 from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
 from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
@@ -179,6 +180,63 @@ def test_operation_runtime_contract_preview_uses_program_channel_binding(app):
         assert preview["target_count"] == 1
         assert preview["segment_counts"]["unified"] == 1
         assert "program_channel_not_matched" not in preview["reasons"]
+
+
+def test_operation_runtime_contract_preview_uses_program_member_profile_segment(app):
+    with app.app_context():
+        program_id = create_program("runtime_contract_preview_program_segment")
+        channel = create_channel("runtime_contract_preview_program_segment_channel", program_id=program_id)
+        binding_id = _bind(program_id, int(channel["id"]))
+        save_audience_entry_rule(program_id, disabled_entry_rule())
+
+        external_contact_id = "wm_runtime_contract_preview_program_segment"
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            external_contact_id,
+            trigger_time="2026-06-05 10:00:00",
+        )
+        assert admitted["audience_code"] == "operating"
+
+        get_db().execute(
+            """
+            UPDATE automation_program_member
+            SET state_payload_json = CAST(? AS jsonb)
+            WHERE program_id = ?
+              AND external_contact_id = ?
+            """,
+            (json.dumps({"profile_segment_key": "category_a"}), program_id, external_contact_id),
+        )
+        get_db().commit()
+
+        result = preview_automation_program_operation_task_audience(
+            program_id,
+            {
+                "task_name": "preview program segment task",
+                "status": "draft",
+                "trigger_type": "audience_entered",
+                "send_time": "10:00",
+                "target_stage_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "none",
+                "content_mode": "profile_layered",
+                "profile_segment_template_id": 99,
+                "segment_contents_json": [
+                    {
+                        "segment_key": "category_a",
+                        "segment_name": "画像 A",
+                        "content_text": "hello",
+                    }
+                ],
+            },
+        )
+
+        preview = result["preview"]
+        assert preview["target_count"] == 1
+        assert preview["segment_counts"]["category_a"] == 1
+        assert "profile_segment_not_matched" not in preview["reasons"]
+        assert "content_missing" not in preview["reasons"]
 
 
 def test_operation_runtime_contract_due_script_supports_operation_task_without_defaulting_it(monkeypatch):
