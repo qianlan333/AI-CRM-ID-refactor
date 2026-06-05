@@ -2707,6 +2707,15 @@ def test_audience_transition_imports_are_not_wecom_allowlisted() -> None:
     assert checker.WECOM_IMPORT_ALLOWLIST.isdisjoint(audience_transition_paths)
 
 
+def test_group_ops_action_port_is_not_legacy_allowlisted() -> None:
+    import scripts.check_no_new_legacy as checker
+
+    action_port = Path("aicrm_next/automation_engine/group_ops/action_port.py")
+
+    assert action_port not in checker.LEGACY_IMPORT_ALLOWLIST
+    assert action_port not in checker.WECOM_IMPORT_ALLOWLIST
+
+
 def _write_automation_member_actions_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
     inventory = tmp_path / "docs/architecture/automation_member_actions_route_inventory.md"
     compat = tmp_path / "aicrm_next/production_compat/api.py"

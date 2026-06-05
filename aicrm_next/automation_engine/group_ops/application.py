@@ -302,7 +302,7 @@ class CreateGroupOpsPlanCommand:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        plan = repo.create_plan(request.model_dump())
+        plan = repo.create_plan(request.model_dump(exclude_none=True))
         return _response(
             {"item": plan, **_plan_public_payload(repo, plan)},
             status_code=201,
