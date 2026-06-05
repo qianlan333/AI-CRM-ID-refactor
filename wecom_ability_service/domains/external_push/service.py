@@ -10,6 +10,8 @@ from urllib.parse import urljoin
 import requests
 from flask import current_app
 
+from aicrm_next.commerce.product_code_aliases import product_code_filter_values
+
 from ...infra.json_utils import safe_json_loads
 from ..wechat_pay import product_repo
 from ..wechat_pay import repo as wechat_pay_repo
@@ -207,9 +209,10 @@ def redact_sensitive_fields(payload: Any) -> Any:
 
 
 def _product_for_order(order: dict[str, Any]) -> dict[str, Any]:
-    product = product_repo.get_product_by_code(_normalized_text(order.get("product_code")))
-    if product:
-        return product
+    for product_code in product_code_filter_values(_normalized_text(order.get("product_code"))):
+        product = product_repo.get_product_by_code(product_code)
+        if product:
+            return product
     return {
         "id": 0,
         "product_code": _normalized_text(order.get("product_code")),
