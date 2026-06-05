@@ -185,7 +185,7 @@ def test_operation_runtime_contract_due_script_supports_operation_task_without_d
     module = _load_due_script()
     captured: list[dict[str, object]] = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, *, timeout):
         captured.append(
             {
                 "url": request.full_url,
