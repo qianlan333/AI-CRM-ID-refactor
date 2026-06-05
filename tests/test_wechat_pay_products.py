@@ -708,7 +708,7 @@ def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client
     assert "wm_pay_ctx" not in product_html
     assert context_token in checkout_html
     assert "context_status" in checkout_html
-    assert f"/pay/{product['product_code']}?ctx=" in checkout_html
+    assert "/api/h5/wechat-pay/oauth/start" in checkout_html
 
 
 def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app, client, monkeypatch):
