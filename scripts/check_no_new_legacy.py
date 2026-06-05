@@ -767,6 +767,23 @@ AUTOMATION_MEMBER_ACTION_ROUTES = {
     "automation_member_unmark_won_next_command": "/api/admin/automation-conversion/member/unmark-won",
     "automation_member_push_openclaw_next_command": "/api/admin/automation-conversion/member/push-openclaw",
 }
+AUTOMATION_OVERVIEW_POOL_ROUTES = (
+    "/api/admin/automation-conversion/overview",
+    "/api/admin/automation-conversion/pools",
+)
+AUTOMATION_OVERVIEW_POOL_ROUTE_IDS = {
+    "automation_conversion_overview_next_read_model": "/api/admin/automation-conversion/overview",
+    "automation_conversion_pools_next_read_model": "/api/admin/automation-conversion/pools",
+}
+AUTOMATION_OVERVIEW_POOL_DELETED_MARKERS = {
+    "get_automation_overview_from_legacy",
+    "list_automation_pools_from_legacy",
+}
+AUTOMATION_OVERVIEW_POOL_FORBIDDEN_API_MARKERS = {
+    *AUTOMATION_OVERVIEW_POOL_DELETED_MARKERS,
+    "legacy_automation_facade",
+    "production_data_ready",
+}
 AUTOMATION_MEMBER_API_ROUTES = (
     AUTOMATION_MEMBER_DETAIL_ROUTE,
     *AUTOMATION_MEMBER_ACTION_ROUTES.values(),
@@ -4443,6 +4460,97 @@ def check_automation_member_actions_next_safe_mode(root: Path = ROOT) -> list[Vi
     return violations
 
 
+def check_automation_overview_pools_next_read_model(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    module_path = root / "aicrm_next/automation_engine/overview_read_model.py"
+    if not module_path.exists():
+        violations.append(Violation("automation_overview_read_model_missing", str(module_path.relative_to(root)), "missing overview_read_model.py"))
+    else:
+        source = module_path.read_text(encoding="utf-8")
+        for marker in (
+            "AutomationOverviewReadModel",
+            "AutomationPoolReadModel",
+            "AutomationStageColumnProjection",
+            "automation_member",
+            "stage_columns",
+            "focus_count",
+            "normal_count",
+            "today_new_count",
+            "source_status",
+            "next_read_model",
+        ):
+            if marker not in source:
+                violations.append(Violation("automation_overview_read_model_marker_missing", str(module_path.relative_to(root)), marker))
+        for marker in AUTOMATION_OVERVIEW_POOL_FORBIDDEN_API_MARKERS:
+            if marker in source:
+                violations.append(Violation("automation_overview_read_model_legacy_marker", str(module_path.relative_to(root)), marker))
+
+    api_path = root / "aicrm_next/automation_engine/api.py"
+    if not api_path.exists():
+        violations.append(Violation("automation_overview_api_missing", str(api_path.relative_to(root)), "missing automation api"))
+    else:
+        api_source = api_path.read_text(encoding="utf-8")
+        for marker in ("AutomationOverviewReadModel", "AutomationPoolReadModel", "X-AICRM-Fallback-Used"):
+            if marker not in api_source:
+                violations.append(Violation("automation_overview_api_marker_missing", str(api_path.relative_to(root)), marker))
+        sources = _decorated_route_function_sources(api_path)
+        for route_path in AUTOMATION_OVERVIEW_POOL_ROUTES:
+            joined = "\n".join(sources.get(route_path, []))
+            if not joined:
+                violations.append(Violation("automation_overview_api_route_missing", str(api_path.relative_to(root)), route_path))
+                continue
+            for marker in AUTOMATION_OVERVIEW_POOL_FORBIDDEN_API_MARKERS:
+                if marker in joined:
+                    violations.append(Violation("automation_overview_api_legacy_marker", str(api_path.relative_to(root)), f"{route_path}: {marker}"))
+            if "JSONResponse" not in joined or "Automation" not in joined:
+                violations.append(Violation("automation_overview_api_not_next_read_model", str(api_path.relative_to(root)), route_path))
+
+    facade_path = root / "aicrm_next/integration_gateway/legacy_automation_facade.py"
+    if facade_path.exists():
+        facade_source = facade_path.read_text(encoding="utf-8")
+        for marker in AUTOMATION_OVERVIEW_POOL_DELETED_MARKERS:
+            if marker in facade_source:
+                violations.append(Violation("automation_overview_deleted_facade_function", str(facade_path.relative_to(root)), marker))
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_by_id = {record.get("route_id"): record for record in registry_records}
+    for route_id, route_path in AUTOMATION_OVERVIEW_POOL_ROUTE_IDS.items():
+        record = registry_by_id.get(route_id)
+        if not record:
+            violations.append(Violation("automation_overview_registry_missing", route_id, route_path))
+            continue
+        if record.get("path_pattern") != route_path or tuple(record.get("methods") or []) != ("GET",):
+            violations.append(Violation("automation_overview_registry_shape", route_id, f"path_pattern={record.get('path_pattern')} methods={record.get('methods')}"))
+        if record.get("runtime_owner") != "next_read_model":
+            violations.append(Violation("automation_overview_registry_owner", route_id, f"runtime_owner={record.get('runtime_owner')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_overview_registry_legacy_allowed", route_id, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("external_side_effect_risk") != "none":
+            violations.append(Violation("automation_overview_registry_side_effect_risk", route_id, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_overview_registry_lifecycle", route_id, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for route_path in AUTOMATION_OVERVIEW_POOL_ROUTES:
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, ("GET",))
+        if not record:
+            violations.append(Violation("automation_overview_manifest_missing", route_path, "GET"))
+            continue
+        if record.get("current_runtime_owner") != "next_read_model":
+            violations.append(Violation("automation_overview_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
+        if record.get("production_behavior") != "next_exact":
+            violations.append(Violation("automation_overview_manifest_behavior", route_path, f"production_behavior={record.get('production_behavior')}"))
+        if record.get("legacy_fallback_allowed") is not False:
+            violations.append(Violation("automation_overview_manifest_legacy_allowed", route_path, f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}"))
+        if record.get("external_side_effect_risk") != "none":
+            violations.append(Violation("automation_overview_manifest_side_effect_risk", route_path, f"external_side_effect_risk={record.get('external_side_effect_risk')}"))
+        if record.get("delete_status") != "deletion_locked" or record.get("replacement_status") != "locked":
+            violations.append(Violation("automation_overview_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+
+    return violations
+
+
 def check_customer_automation_webhook_next_safe_mode(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -5207,6 +5315,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_automation_conversion_timers_next_safe_mode(ROOT)
         + check_automation_workspace_runtime_next_safe_mode(ROOT)
         + check_automation_member_actions_next_safe_mode(ROOT)
+        + check_automation_overview_pools_next_read_model(ROOT)
         + check_customer_automation_webhook_next_safe_mode(ROOT)
         + check_final_legacy_exit_cleanup(ROOT)
         + check_post_legacy_deferred_api_cleanup(ROOT)

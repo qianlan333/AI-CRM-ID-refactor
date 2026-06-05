@@ -1524,6 +1524,34 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     notes: Safe-mode CommandBus SideEffectPlan only; adapter_name=openclaw; requires_approval=true; openclaw_push_executed=false.
+  - route_pattern: /api/admin/automation-conversion/overview
+    methods: [GET]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next_read_model
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    checker: tests/test_automation_overview_read_model.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Overview cards/counts/stage_columns read directly from automation_member via AutomationOverviewReadModel; no production legacy facade branch.
+  - route_pattern: /api/admin/automation-conversion/pools
+    methods: [GET]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next_read_model
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    checker: tests/test_automation_overview_read_model.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Pool tab count/focus/normal/today_new metrics read directly from automation_member via AutomationPoolReadModel; no production legacy facade branch.
   - route_pattern: /api/admin/automation-conversion*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

@@ -6,12 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
-from aicrm_next.shared.runtime import production_data_ready
-from aicrm_next.integration_gateway.legacy_automation_facade import (
-    LegacyAutomationDataUnavailable,
-    get_automation_overview_from_legacy,
-    list_automation_pools_from_legacy,
-)
 from aicrm_next.integration_gateway import legacy_sidebar_read_facade
 
 from .application import (
@@ -43,12 +37,10 @@ from .application import (
     GetProfileSegmentTemplateOptionsQuery,
     GetProfileSegmentTemplateQuery,
     GetAutomationMemberDetailQuery,
-    GetAutomationOverviewQuery,
     GetAutomationRuntimeContractQuery,
     ListProfileSegmentTemplatesQuery,
     ListAutomationExecutionRecordsQuery,
     ListAutomationMembersQuery,
-    ListAutomationPoolsQuery,
     OverrideFollowupTypeCommand,
     PushMemberContextToOpenClawCommand,
     SaveAgentMaterialsCommand,
@@ -160,6 +152,7 @@ from .dto import (
     WorkflowNodeUpdateRequest,
 )
 from .group_ops.api import router as group_ops_router
+from .overview_read_model import AutomationOverviewReadModel, AutomationPoolReadModel
 
 router = APIRouter()
 router.include_router(group_ops_router)
@@ -195,6 +188,10 @@ _CUSTOMER_WEBHOOK_HEADERS = {
     "X-AICRM-Outbound-Webhook-Executed": "false",
     "X-AICRM-Automation-Runtime-Executed": "false",
     "X-AICRM-WeCom-Send-Executed": "false",
+}
+_AUTOMATION_READ_MODEL_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
 }
 
 
@@ -854,23 +851,19 @@ def automation_contract() -> dict:
 
 
 @router.get("/api/admin/automation-conversion/overview")
-def automation_overview() -> dict:
-    if production_data_ready():
-        try:
-            return get_automation_overview_from_legacy()
-        except LegacyAutomationDataUnavailable as exc:
-            raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
-    return GetAutomationOverviewQuery()()
+def automation_overview() -> JSONResponse:
+    try:
+        return JSONResponse(AutomationOverviewReadModel().execute(), headers=_AUTOMATION_READ_MODEL_HEADERS)
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.get("/api/admin/automation-conversion/pools")
-def automation_pools() -> dict:
-    if production_data_ready():
-        try:
-            return list_automation_pools_from_legacy()
-        except LegacyAutomationDataUnavailable as exc:
-            raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
-    return ListAutomationPoolsQuery()()
+def automation_pools() -> JSONResponse:
+    try:
+        return JSONResponse(AutomationPoolReadModel().execute(), headers=_AUTOMATION_READ_MODEL_HEADERS)
+    except Exception as exc:
+        _raise_http(exc)
 
 
 @router.post(

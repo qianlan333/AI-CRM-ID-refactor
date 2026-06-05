@@ -9,6 +9,7 @@ from scripts.check_no_new_legacy import (
     check_auth_wecom_wildcard_inventory,
     check_automation_conversion_timers_next_safe_mode,
     check_automation_member_actions_next_safe_mode,
+    check_automation_overview_pools_next_read_model,
     check_automation_workspace_runtime_next_safe_mode,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_campaign_read_closeout_lock,
@@ -2861,3 +2862,111 @@ def test_automation_member_actions_guard_allows_next_safe_mode_locked(tmp_path: 
     _write_automation_member_actions_guard_fixture(tmp_path, locked=True)
 
     assert check_automation_member_actions_next_safe_mode(tmp_path) == []
+
+
+def _write_automation_overview_pools_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
+    api = tmp_path / "aicrm_next/automation_engine/api.py"
+    module = tmp_path / "aicrm_next/automation_engine/overview_read_model.py"
+    facade = tmp_path / "aicrm_next/integration_gateway/legacy_automation_facade.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    api.parent.mkdir(parents=True)
+    facade.parent.mkdir(parents=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    legacy_branch = (
+        "from aicrm_next.integration_gateway.legacy_automation_facade import get_automation_overview_from_legacy\n"
+        "from aicrm_next.shared.runtime import production_data_ready\n"
+        "if production_data_ready(): return get_automation_overview_from_legacy()\n"
+        if not locked
+        else ""
+    )
+    api.write_text(
+        "from fastapi import APIRouter\n"
+        "from starlette.responses import JSONResponse\n"
+        "from aicrm_next.automation_engine.overview_read_model import AutomationOverviewReadModel, AutomationPoolReadModel\n"
+        "router = APIRouter()\n"
+        "@router.get('/api/admin/automation-conversion/overview')\n"
+        "def overview():\n"
+        f"    {legacy_branch if legacy_branch else 'return JSONResponse(AutomationOverviewReadModel().execute(), headers={\"X-AICRM-Fallback-Used\": \"false\"})'}\n"
+        "@router.get('/api/admin/automation-conversion/pools')\n"
+        "def pools():\n"
+        "    return JSONResponse(AutomationPoolReadModel().execute(), headers={'X-AICRM-Fallback-Used': 'false'})\n",
+        encoding="utf-8",
+    )
+    module.write_text(
+        "class AutomationOverviewReadModel: pass\n"
+        "class AutomationPoolReadModel: pass\n"
+        "class AutomationStageColumnProjection: pass\n"
+        "automation_member stage_columns focus_count normal_count today_new_count source_status next_read_model\n",
+        encoding="utf-8",
+    )
+    facade.write_text(
+        ("def get_automation_overview_from_legacy(): pass\n" "def list_automation_pools_from_legacy(): pass\n" if not locked else ""),
+        encoding="utf-8",
+    )
+    owner = "next_read_model" if locked else "production_compat"
+    fallback = "false" if locked else "true"
+    behavior = "next_exact" if locked else "legacy_forward"
+    lifecycle = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
+    replacement = "locked" if locked else "validating"
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: automation_conversion_overview_next_read_model\n"
+        "    path_pattern: /api/admin/automation-conversion/overview\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {owner}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        "  - route_id: automation_conversion_pools_next_read_model\n"
+        "    path_pattern: /api/admin/automation-conversion/pools\n"
+        "    methods: [GET]\n"
+        f"    runtime_owner: {owner}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "routes:\n"
+        "  - route_pattern: /api/admin/automation-conversion/overview\n"
+        "    methods: [GET]\n"
+        f"    current_runtime_owner: {owner}\n"
+        f"    production_behavior: {behavior}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n"
+        "  - route_pattern: /api/admin/automation-conversion/pools\n"
+        "    methods: [GET]\n"
+        f"    current_runtime_owner: {owner}\n"
+        f"    production_behavior: {behavior}\n"
+        f"    legacy_fallback_allowed: {fallback}\n"
+        "    external_side_effect_risk: none\n"
+        f"    delete_status: {lifecycle}\n"
+        f"    replacement_status: {replacement}\n",
+        encoding="utf-8",
+    )
+
+
+def test_automation_overview_pools_guard_flags_legacy_drift(tmp_path: Path) -> None:
+    _write_automation_overview_pools_guard_fixture(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_automation_overview_pools_next_read_model(tmp_path)}
+
+    assert "automation_overview_api_legacy_marker" in codes
+    assert "automation_overview_deleted_facade_function" in codes
+    assert "automation_overview_registry_owner" in codes
+    assert "automation_overview_registry_legacy_allowed" in codes
+    assert "automation_overview_manifest_behavior" in codes
+    assert "automation_overview_manifest_legacy_allowed" in codes
+
+
+def test_automation_overview_pools_guard_allows_next_read_model_locked(tmp_path: Path) -> None:
+    _write_automation_overview_pools_guard_fixture(tmp_path, locked=True)
+
+    assert check_automation_overview_pools_next_read_model(tmp_path) == []

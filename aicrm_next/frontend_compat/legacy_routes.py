@@ -25,6 +25,7 @@ from aicrm_next.automation_engine.channels_api import (
     list_program_channel_bindings_resource,
     list_program_entry_candidate_channels,
 )
+from aicrm_next.automation_engine.overview_read_model import AutomationOverviewReadModel, AutomationPoolReadModel
 from aicrm_next.automation_engine.programs import (
     AutomationProgramDataUnavailable,
     SETUP_STEPS,
@@ -820,6 +821,12 @@ def admin_automation_conversion(request: Request):
         program_list_payload = list_automation_programs_payload()
     except AutomationProgramDataUnavailable:
         program_list_payload = {"items": [], "default_program": {}, "total": 0, "source_status": "next_postgres_unavailable"}
+    try:
+        automation_overview_payload = AutomationOverviewReadModel().execute()
+        automation_pool_payload = AutomationPoolReadModel().execute()
+    except Exception:
+        automation_overview_payload = AutomationOverviewReadModel(rows=[]).execute()
+        automation_pool_payload = AutomationPoolReadModel(rows=[]).execute()
     context = _shell_context(
         request=request,
         page_title="自动化运营",
@@ -829,6 +836,8 @@ def admin_automation_conversion(request: Request):
     context.update(
         {
             "program_list_payload": program_list_payload,
+            "automation_overview_payload": automation_overview_payload,
+            "automation_pool_payload": automation_pool_payload,
             "show_create_form": False,
             "admin_action_token": "",
             "action_urls": {"create": "/admin/automation-conversion"},

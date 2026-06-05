@@ -2007,6 +2007,34 @@ routes:
     checker: tests/test_automation_workspace_runtime_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
     notes: Legacy rollback removed; safe-mode Next plan only; no real Bazhuayu dispatch; source_status=next_bazhuayu_dispatch_plan.
+  - route_id: automation_conversion_overview_next_read_model
+    path_pattern: /api/admin/automation-conversion/overview
+    methods: [GET]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_read_model
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_overview_read_model.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Overview cards/counts/stage_columns are served by AutomationOverviewReadModel over automation_member; production legacy facade removed.
+  - route_id: automation_conversion_pools_next_read_model
+    path_pattern: /api/admin/automation-conversion/pools
+    methods: [GET]
+    capability_owner: aicrm_next.automation_engine
+    runtime_owner: next_read_model
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_overview_read_model.py
+    rollback_owner: aicrm_next.automation_engine
+    notes: Pool count/focus/normal/today_new metrics are served by AutomationPoolReadModel over automation_member; production legacy facade removed.
   - route_id: automation_member_detail_next_read_model
     path_pattern: /api/admin/automation-conversion/member
     methods: [GET, HEAD]
