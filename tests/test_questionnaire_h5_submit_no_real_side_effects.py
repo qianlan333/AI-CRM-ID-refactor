@@ -54,6 +54,26 @@ def test_h5_write_source_has_no_real_external_call_markers() -> None:
             assert marker not in text
 
 
+def test_public_h5_read_source_has_no_legacy_public_identity_helpers() -> None:
+    combined = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in [
+            "aicrm_next/questionnaire/api.py",
+            "aicrm_next/questionnaire/application.py",
+            "aicrm_next/questionnaire/public_access.py",
+            "aicrm_next/integration_gateway/legacy_questionnaire_facade.py",
+            "aicrm_next/integration_gateway/legacy_flask_facade.py",
+        ]
+    )
+    for marker in [
+        "get_public_questionnaire_from_legacy",
+        "get_public_questionnaire_submission_status_from_legacy",
+        "legacy_questionnaire_session_identity",
+        "legacy_questionnaire_oauth_is_configured",
+    ]:
+        assert marker not in combined
+
+
 def test_production_compat_no_longer_registers_h5_submit_or_diagnostics_exact_routes() -> None:
     text = Path("aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
     assert '"/api/h5/questionnaires/{slug}/submit"' not in text

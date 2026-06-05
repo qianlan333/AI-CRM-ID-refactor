@@ -12,9 +12,14 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError, block
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
-from .domain import admin_detail_projection, public_projection, score_and_tags, summary_projection, validate_required_answers
+from .domain import admin_detail_projection, score_and_tags, summary_projection, validate_required_answers
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
 from .oauth import QuestionnaireOAuthAdapter, build_questionnaire_oauth_adapter
+from .public_access import (
+    QuestionnaireOAuthConfigReader,
+    QuestionnairePublicReadService,
+    QuestionnaireSubmissionStatusService,
+)
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -290,6 +295,16 @@ class GetQuestionnairePreflightQuery:
     __call__ = execute
 
 
+class GetQuestionnaireOAuthConfigQuery:
+    def __init__(self, reader: QuestionnaireOAuthConfigReader | None = None) -> None:
+        self._reader = reader or QuestionnaireOAuthConfigReader()
+
+    def execute(self) -> dict[str, Any]:
+        return self._reader.read()
+
+    __call__ = execute
+
+
 class LatestSubmitDebugQuery:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
         self._repo = repo or build_questionnaire_repository()
@@ -305,42 +320,20 @@ class LatestSubmitDebugQuery:
 
 class GetPublicQuestionnaireQuery:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
-        self._repo = repo or build_questionnaire_repository()
+        self._service = QuestionnairePublicReadService(repo)
 
     def execute(self, slug: str) -> dict[str, Any]:
-        item = self._repo.get_questionnaire_by_slug(slug)
-        if not item:
-            raise NotFoundError("questionnaire not found")
-        if not bool(item.get("enabled", True)):
-            raise NotFoundError("questionnaire disabled")
-        return {"ok": True, **public_projection(item)}
+        return self._service.get_public_questionnaire(slug)
 
     __call__ = execute
 
 
 class GetPublicQuestionnaireSubmissionStatusQuery:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
-        self._repo = repo or build_questionnaire_repository()
+        self._service = QuestionnaireSubmissionStatusService(repo)
 
     def execute(self, slug: str, *, identity: dict[str, Any] | None = None) -> dict[str, Any]:
-        item = self._repo.get_questionnaire_by_slug(slug)
-        if not item:
-            raise NotFoundError("questionnaire not found")
-        if not bool(item.get("enabled", True)):
-            raise NotFoundError("questionnaire disabled")
-        submission = self._repo.find_submission_for_identity(int(item["id"]), dict(identity or {}))
-        normalized_slug = str(item.get("slug") or slug or "").strip()
-        redirect_url = str(item.get("redirect_url") or "").strip()
-        return {
-            "ok": True,
-            "submitted": bool(submission),
-            "questionnaire_id": int(item["id"]),
-            "slug": normalized_slug,
-            "submission": submission,
-            "redirect_url": redirect_url,
-            "submitted_url": f"/s/{normalized_slug}/submitted",
-            **_read_meta(self._repo),
-        }
+        return self._service.get_submission_status(slug, identity=dict(identity or {}))
 
     __call__ = execute
 

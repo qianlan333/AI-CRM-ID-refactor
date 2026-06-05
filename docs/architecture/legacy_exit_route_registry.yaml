@@ -970,7 +970,7 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Public H5 read family is locked to Next guarded preview with no production_compat rollback; exact submit and diagnostics POST routes are tracked separately as group 9 Next CommandBus primary; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
+    notes: Public H5 read family is locked to Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POST routes are tracked separately as Next CommandBus primary; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
   - route_id: questionnaire_h5_submit_next_commandbus
     path_pattern: /api/h5/questionnaires/{slug}/submit
     methods: [POST, OPTIONS]

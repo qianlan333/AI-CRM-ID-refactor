@@ -174,7 +174,21 @@ def questionnaire_h5_identity_from_cookies(cookies: Mapping[str, str]) -> Json:
         "respondent_key": str(payload.get("respondent_key") or "").strip(),
         "external_userid": str(payload.get("external_userid") or "").strip(),
         "slug": str(payload.get("slug") or "").strip(),
+        "anonymous": bool(payload.get("anonymous")),
     }
+
+
+def build_questionnaire_h5_identity_cookie(identity: Mapping[str, Any]) -> str:
+    payload = {
+        "respondent_key": str(identity.get("respondent_key") or "").strip(),
+        "openid": str(identity.get("openid") or "").strip(),
+        "unionid": str(identity.get("unionid") or "").strip(),
+        "external_userid": str(identity.get("external_userid") or "").strip(),
+        "slug": str(identity.get("slug") or "").strip(),
+        "anonymous": bool(identity.get("anonymous")),
+        "iat": _now(),
+    }
+    return _signed_blob(payload)
 
 
 @dataclass(frozen=True)
