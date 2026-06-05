@@ -2741,10 +2741,14 @@ def _preview_candidates_next(program_id: int, task: dict[str, Any]) -> dict[str,
                         m.source_channel_id,
                         m.behavior_tier_key,
                         m.profile_segment_key,
-                        c.program_id AS channel_program_id
+                        c.program_id AS channel_program_id,
+                        b.program_id AS binding_program_id
                     FROM automation_member_audience_entry e
                     JOIN automation_member m ON m.id = e.member_id
                     LEFT JOIN automation_channel c ON c.id = m.source_channel_id
+                    LEFT JOIN automation_program_channel_binding b
+                      ON b.channel_id = m.source_channel_id
+                     AND b.program_id = :program_id
                     WHERE e.is_current = TRUE
                     """
                 ),
@@ -2760,7 +2764,7 @@ def _preview_candidates_next(program_id: int, task: dict[str, Any]) -> dict[str,
         reasons: list[str] = []
         if not int(row.get("source_channel_id") or 0):
             reasons.append("source_channel_missing")
-        elif int(row.get("channel_program_id") or 0) != int(program_id):
+        elif int(row.get("channel_program_id") or 0) != int(program_id) and int(row.get("binding_program_id") or 0) != int(program_id):
             reasons.append("program_channel_not_matched")
         if _clean_text(row.get("audience_code")) != _clean_text(task.get("target_audience_code")):
             reasons.append("audience_code_not_matched")

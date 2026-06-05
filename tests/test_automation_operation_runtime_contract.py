@@ -143,6 +143,44 @@ def test_operation_runtime_contract_preview_is_read_only_and_reports_reasons(app
         assert "content_missing" in missing_content["reasons"]
 
 
+def test_operation_runtime_contract_preview_uses_program_channel_binding(app):
+    with app.app_context():
+        old_program_id = create_program("runtime_contract_preview_old_channel_program")
+        new_program_id = create_program("runtime_contract_preview_bound_program")
+        channel = create_channel("runtime_contract_preview_bound_channel", program_id=old_program_id)
+        binding_id = _bind(new_program_id, int(channel["id"]))
+        save_audience_entry_rule(new_program_id, disabled_entry_rule())
+
+        admitted = admit_channel_contact_to_program(
+            new_program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_runtime_contract_preview_binding",
+            trigger_time="2026-06-05 10:00:00",
+        )
+        assert admitted["audience_code"] == "operating"
+
+        result = preview_automation_program_operation_task_audience(
+            new_program_id,
+            {
+                "task_name": "preview bound channel task",
+                "status": "draft",
+                "trigger_type": "audience_entered",
+                "send_time": "10:00",
+                "target_stage_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "none",
+                "content_mode": "unified",
+                "unified_content_json": {"content_text": "hello"},
+            },
+        )
+
+        preview = result["preview"]
+        assert preview["target_count"] == 1
+        assert preview["segment_counts"]["unified"] == 1
+        assert "program_channel_not_matched" not in preview["reasons"]
+
+
 def test_operation_runtime_contract_due_script_supports_operation_task_without_defaulting_it(monkeypatch):
     module = _load_due_script()
     captured: list[dict[str, object]] = []
