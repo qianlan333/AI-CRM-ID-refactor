@@ -33,6 +33,29 @@ class QuestionnaireRepository(Protocol):
     def export_submissions(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def get_app_setting(self, key: str) -> str | None: ...
     def create_external_push_log(self, **kwargs: Any) -> dict[str, Any]: ...
+    def list_external_push_log_threads(
+        self,
+        questionnaire_id: int | None = None,
+        *,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        limit: int | None = 50,
+    ) -> list[dict[str, Any]]: ...
+    def count_external_push_logs(
+        self,
+        *,
+        questionnaire_id: int | None = None,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        created_at_gte: str = "",
+    ) -> int: ...
+    def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]: ...
+    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None: ...
+    def count_external_push_retry_logs(self, root_log_id: int) -> int: ...
 
 
 def _now() -> str:
@@ -72,6 +95,18 @@ def _json_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _json_payload(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -80,6 +115,76 @@ def _jsonb(value: Any) -> Any:
     from psycopg.types.json import Jsonb
 
     return Jsonb(value, dumps=_json_dumps)
+
+
+def _normalized_external_push_log(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    payload["id"] = int(payload.get("id") or 0)
+    payload["questionnaire_id"] = int(payload.get("questionnaire_id") or 0)
+    payload["submission_record_id"] = int(payload.get("submission_record_id") or 0)
+    payload["retry_from_log_id"] = int(payload.get("retry_from_log_id") or 0) or None
+    payload["retry_attempt"] = int(payload.get("retry_attempt") or 0)
+    payload["request_payload"] = _json_payload(payload.get("request_payload"))
+    payload["response_status_code"] = payload.get("response_status_code")
+    payload["questionnaire_title_snapshot"] = _text(payload.get("questionnaire_title_snapshot"))
+    payload["user_id"] = _text(payload.get("user_id"))
+    payload["target_url"] = _text(payload.get("target_url"))
+    payload["response_body"] = _text(payload.get("response_body"))
+    payload["status"] = _text(payload.get("status"))
+    payload["failure_reason"] = _text(payload.get("failure_reason"))
+    payload["created_at"] = _timestamp(payload.get("created_at"))
+    payload["updated_at"] = _timestamp(payload.get("updated_at"))
+    return payload
+
+
+def _external_push_log_threads(
+    rows: list[dict[str, Any]],
+    *,
+    status: str = "",
+    limit: int | None = 50,
+) -> list[dict[str, Any]]:
+    normalized = [_normalized_external_push_log(row) for row in rows]
+    roots = [row for row in normalized if not row.get("retry_from_log_id")]
+    retries_by_root: dict[int, list[dict[str, Any]]] = {int(row["id"]): [] for row in roots}
+    for row in normalized:
+        root_id = int(row.get("retry_from_log_id") or 0)
+        if root_id:
+            retries_by_root.setdefault(root_id, []).append(row)
+    threads: list[dict[str, Any]] = []
+    normalized_status = _text(status).strip()
+    for root in roots:
+        retries = sorted(
+            retries_by_root.get(int(root["id"]), []),
+            key=lambda item: (_text(item.get("created_at")), int(item.get("id") or 0)),
+            reverse=True,
+        )
+        latest = retries[0] if retries else root
+        latest_status = _text(latest.get("status")).strip()
+        if normalized_status and latest_status != normalized_status:
+            continue
+        threads.append(
+            {
+                **root,
+                "is_retry": False,
+                "retry_count": len(retries),
+                "retries": retries,
+                "latest_log": latest,
+                "latest_status": latest_status,
+                "latest_response_status_code": latest.get("response_status_code"),
+                "latest_response_body": latest.get("response_body"),
+                "latest_failure_reason": latest.get("failure_reason"),
+                "latest_updated_at": latest.get("updated_at") or latest.get("created_at"),
+                "has_retry": bool(retries),
+                "can_retry": latest_status == "failed",
+            }
+        )
+    threads.sort(
+        key=lambda item: (_text(item.get("latest_updated_at")), int((item.get("latest_log") or {}).get("id") or 0)),
+        reverse=True,
+    )
+    if limit is None:
+        return threads
+    return threads[: max(1, min(int(limit or 50), 200))]
 
 
 def _as_bool(value: Any, *, default: bool = False) -> bool:
@@ -525,6 +630,87 @@ class InMemoryQuestionnaireRepository:
         self._next_external_push_log += 1
         self._external_push_logs.append(row)
         return deepcopy(row)
+
+    def list_external_push_log_threads(
+        self,
+        questionnaire_id: int | None = None,
+        *,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        limit: int | None = 50,
+    ) -> list[dict[str, Any]]:
+        title_filter = _text(questionnaire_title).strip()
+        user_filter = _text(user_id).strip()
+        target_filter = _text(target_url).strip()
+        rows = []
+        for row in self._external_push_logs:
+            if questionnaire_id is not None and int(row.get("questionnaire_id") or 0) != int(questionnaire_id):
+                continue
+            if title_filter and title_filter not in _text(row.get("questionnaire_title_snapshot")):
+                continue
+            if user_filter and user_filter not in _text(row.get("user_id")):
+                continue
+            if target_filter and target_filter not in _text(row.get("target_url")):
+                continue
+            rows.append(deepcopy(row))
+        return _external_push_log_threads(rows, status=status, limit=limit)
+
+    def count_external_push_logs(
+        self,
+        *,
+        questionnaire_id: int | None = None,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        created_at_gte: str = "",
+    ) -> int:
+        title_filter = _text(questionnaire_title).strip()
+        user_filter = _text(user_id).strip()
+        target_filter = _text(target_url).strip()
+        status_filter = _text(status).strip()
+        since_filter = _text(created_at_gte).strip()
+        total = 0
+        for row in self._external_push_logs:
+            normalized = _normalized_external_push_log(deepcopy(row))
+            if questionnaire_id is not None and int(normalized.get("questionnaire_id") or 0) != int(questionnaire_id):
+                continue
+            if title_filter and title_filter not in _text(normalized.get("questionnaire_title_snapshot")):
+                continue
+            if user_filter and user_filter not in _text(normalized.get("user_id")):
+                continue
+            if target_filter and target_filter not in _text(normalized.get("target_url")):
+                continue
+            if status_filter and _text(normalized.get("status")) != status_filter:
+                continue
+            if since_filter and _text(normalized.get("created_at")) < since_filter:
+                continue
+            total += 1
+        return total
+
+    def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]:
+        rows = [
+            _normalized_external_push_log(deepcopy(row))
+            for row in self._external_push_logs
+            if int(row.get("questionnaire_id") or 0) == int(questionnaire_id)
+        ]
+        return {
+            "total_count": len(rows),
+            "success_count": sum(1 for row in rows if row.get("status") == "success"),
+            "failed_count": sum(1 for row in rows if row.get("status") == "failed"),
+            "last_created_at": max((_text(row.get("created_at")) for row in rows), default=""),
+        }
+
+    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None:
+        for row in self._external_push_logs:
+            if int(row.get("id") or 0) == int(log_id):
+                return _normalized_external_push_log(deepcopy(row))
+        return None
+
+    def count_external_push_retry_logs(self, root_log_id: int) -> int:
+        return sum(1 for row in self._external_push_logs if int(row.get("retry_from_log_id") or 0) == int(root_log_id))
 
 
 class PostgresQuestionnaireReadRepository:
@@ -1272,6 +1458,118 @@ class PostgresQuestionnaireReadRepository:
             ).fetchone()
             conn.commit()
         return dict(row)
+
+    def list_external_push_log_threads(
+        self,
+        questionnaire_id: int | None = None,
+        *,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        limit: int | None = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, questionnaire_id, questionnaire_title_snapshot, submission_record_id,
+                   retry_from_log_id, retry_attempt, user_id, target_url, request_payload,
+                   response_status_code, response_body, status, failure_reason, created_at, updated_at
+            FROM questionnaire_external_push_logs
+            WHERE 1 = 1
+        """
+        params: list[Any] = []
+        if questionnaire_id is not None:
+            sql += " AND questionnaire_id = %s"
+            params.append(int(questionnaire_id))
+        if _text(questionnaire_title).strip():
+            sql += " AND questionnaire_title_snapshot ILIKE %s"
+            params.append(f"%{_text(questionnaire_title).strip()}%")
+        if _text(user_id).strip():
+            sql += " AND user_id ILIKE %s"
+            params.append(f"%{_text(user_id).strip()}%")
+        if _text(target_url).strip():
+            sql += " AND target_url ILIKE %s"
+            params.append(f"%{_text(target_url).strip()}%")
+        sql += " ORDER BY created_at DESC, id DESC"
+        with self._connect() as conn:
+            rows = [dict(row) for row in conn.execute(sql, tuple(params)).fetchall()]
+        return _external_push_log_threads(rows, status=status, limit=limit)
+
+    def count_external_push_logs(
+        self,
+        *,
+        questionnaire_id: int | None = None,
+        questionnaire_title: str = "",
+        user_id: str = "",
+        target_url: str = "",
+        status: str = "",
+        created_at_gte: str = "",
+    ) -> int:
+        sql = "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs WHERE 1 = 1"
+        params: list[Any] = []
+        if questionnaire_id is not None:
+            sql += " AND questionnaire_id = %s"
+            params.append(int(questionnaire_id))
+        if _text(questionnaire_title).strip():
+            sql += " AND questionnaire_title_snapshot ILIKE %s"
+            params.append(f"%{_text(questionnaire_title).strip()}%")
+        if _text(user_id).strip():
+            sql += " AND user_id ILIKE %s"
+            params.append(f"%{_text(user_id).strip()}%")
+        if _text(target_url).strip():
+            sql += " AND target_url ILIKE %s"
+            params.append(f"%{_text(target_url).strip()}%")
+        if _text(status).strip():
+            sql += " AND status = %s"
+            params.append(_text(status).strip())
+        if _text(created_at_gte).strip():
+            sql += " AND created_at >= %s"
+            params.append(_text(created_at_gte).strip())
+        with self._connect() as conn:
+            row = conn.execute(sql, tuple(params)).fetchone() or {}
+        return int(row.get("total") or 0)
+
+    def summarize_external_push_logs(self, questionnaire_id: int) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS total_count,
+                       SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+                       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+                       MAX(created_at) AS last_created_at
+                FROM questionnaire_external_push_logs
+                WHERE questionnaire_id = %s
+                """,
+                (int(questionnaire_id),),
+            ).fetchone() or {}
+        return {
+            "total_count": int(row.get("total_count") or 0),
+            "success_count": int(row.get("success_count") or 0),
+            "failed_count": int(row.get("failed_count") or 0),
+            "last_created_at": _timestamp(row.get("last_created_at")),
+        }
+
+    def get_external_push_log(self, log_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, questionnaire_id, questionnaire_title_snapshot, submission_record_id,
+                       retry_from_log_id, retry_attempt, user_id, target_url, request_payload,
+                       response_status_code, response_body, status, failure_reason, created_at, updated_at
+                FROM questionnaire_external_push_logs
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (int(log_id),),
+            ).fetchone()
+        return _normalized_external_push_log(dict(row)) if row else None
+
+    def count_external_push_retry_logs(self, root_log_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs WHERE retry_from_log_id = %s",
+                (int(root_log_id),),
+            ).fetchone() or {}
+        return int(row.get("total") or 0)
 
 
 _DEFAULT_REPO = InMemoryQuestionnaireRepository()

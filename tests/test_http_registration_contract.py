@@ -500,7 +500,7 @@ def test_admin_broadcast_job_routes_stay_in_child_controller():
         assert route_modules[route] == expected_module
 
 
-def test_admin_questionnaire_push_log_routes_stay_in_child_controller():
+def test_retired_admin_questionnaire_push_log_routes_are_not_registered_in_legacy_flask():
     from wecom_ability_service import create_app
 
     questionnaire_console_source = (
@@ -516,21 +516,16 @@ def test_admin_questionnaire_push_log_routes_stay_in_child_controller():
         assert forbidden not in questionnaire_console_source
 
     app = create_app({"TESTING": True})
-    route_modules = {
-        rule.rule: getattr(app.view_functions[rule.endpoint], "__module__", "")
-        for rule in app.url_map.iter_rules()
-    }
-    expected_module = "wecom_ability_service.http.admin_questionnaire_push_logs"
-
-    for route in {
+    registered_routes = {rule.rule for rule in app.url_map.iter_rules()}
+    retired_routes = {
         "/admin/questionnaires/external-push-logs",
         "/admin/questionnaires/external-push-logs/retry-batch",
         "/admin/questionnaires/external-push-logs/<int:push_log_id>/retry",
         "/admin/questionnaires/<int:questionnaire_id>/external-push-logs",
         "/admin/questionnaires/<int:questionnaire_id>/external-push-logs/<int:push_log_id>/retry",
         "/admin/questionnaires/<int:questionnaire_id>/external-push-logs/retry-batch",
-    }:
-        assert route_modules[route] == expected_module
+    }
+    assert registered_routes.isdisjoint(retired_routes)
 
 
 def test_retired_admin_user_ops_page_routes_are_not_registered():

@@ -1905,6 +1905,122 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
             )
         )
 
+    external_push_route = "/admin/questionnaires*external-push-logs*"
+    external_push_record = registry_by_path.get(external_push_route)
+    if external_push_record is None:
+        violations.append(Violation("questionnaire_external_push_logs_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", external_push_route))
+    elif (
+        external_push_record.get("runtime_owner") != "next_native"
+        or external_push_record.get("legacy_fallback_allowed") is not False
+        or external_push_record.get("legacy_source") != ""
+        or external_push_record.get("adapter_mode") != "real_blocked"
+        or external_push_record.get("delete_status") != "deletion_locked"
+        or external_push_record.get("replacement_status") != "locked"
+    ):
+        violations.append(
+            Violation(
+                "questionnaire_external_push_logs_registry_lifecycle",
+                external_push_route,
+                f"runtime_owner={external_push_record.get('runtime_owner')} legacy_fallback_allowed={external_push_record.get('legacy_fallback_allowed')} legacy_source={external_push_record.get('legacy_source')} adapter_mode={external_push_record.get('adapter_mode')} delete_status={external_push_record.get('delete_status')} replacement_status={external_push_record.get('replacement_status')}",
+            )
+        )
+    frontend_routes_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes_path.exists():
+        frontend_source = frontend_routes_path.read_text(encoding="utf-8")
+        try:
+            start = frontend_source.index('"/admin/questionnaires/external-push-logs"')
+            end = frontend_source.index('@router.get("/admin/automation-conversion"', start)
+            route_block = frontend_source[start:end]
+        except ValueError:
+            violations.append(Violation("questionnaire_external_push_logs_route_block_missing", str(frontend_routes_path.relative_to(root)), external_push_route))
+        else:
+            if "forward_to_legacy_flask" in route_block:
+                violations.append(Violation("questionnaire_external_push_logs_legacy_forward", str(frontend_routes_path.relative_to(root)), "forward_to_legacy_flask"))
+            for marker in [
+                "QuestionnaireExternalPushLogReadService",
+                "QuestionnaireExternalPushRetryService",
+                "QuestionnaireExternalPushRetryCommand",
+                "QuestionnaireExternalPushRetryBatchCommand",
+            ]:
+                if marker not in frontend_source:
+                    violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(frontend_routes_path.relative_to(root)), marker))
+
+    shell_endpoint_markers = [
+        "api.admin_console_global_questionnaire_external_push_logs",
+        "api.admin_console_questionnaire_external_push_logs",
+    ]
+    for shell_path in [
+        root / "aicrm_next/frontend_compat/admin_shell.py",
+        root / "aicrm_next/admin_jobs/shell.py",
+    ]:
+        if not shell_path.exists():
+            continue
+        shell_source = shell_path.read_text(encoding="utf-8")
+        for marker in shell_endpoint_markers:
+            if marker in shell_source:
+                violations.append(
+                    Violation(
+                        "questionnaire_external_push_logs_admin_shell_mapping",
+                        str(shell_path.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    next_template_path = root / "aicrm_next/frontend_compat/templates/admin_console/questionnaire_external_push_logs.html"
+    if next_template_path.exists():
+        next_template_source = next_template_path.read_text(encoding="utf-8")
+        for marker in shell_endpoint_markers:
+            if marker in next_template_source:
+                violations.append(
+                    Violation(
+                        "questionnaire_external_push_logs_template_shell_endpoint",
+                        str(next_template_path.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    retired_legacy_paths = [
+        root / "wecom_ability_service/http/admin_questionnaire_push_logs.py",
+        root / "wecom_ability_service/templates/admin_console/questionnaire_external_push_logs.html",
+    ]
+    for retired_path in retired_legacy_paths:
+        if retired_path.exists():
+            violations.append(
+                Violation(
+                    "questionnaire_external_push_logs_legacy_file_retained",
+                    str(retired_path.relative_to(root)),
+                    "retired Flask external-push-log surface must stay deleted",
+                )
+            )
+    legacy_http_init = root / "wecom_ability_service/http/__init__.py"
+    if legacy_http_init.exists():
+        http_init_source = legacy_http_init.read_text(encoding="utf-8")
+        if "admin_questionnaire_push_logs" in http_init_source:
+            violations.append(
+                Violation(
+                    "questionnaire_external_push_logs_legacy_registrar",
+                    str(legacy_http_init.relative_to(root)),
+                    "admin_questionnaire_push_logs",
+                )
+            )
+    legacy_admin_console_service = root / "wecom_ability_service/domains/admin_console/service.py"
+    if legacy_admin_console_service.exists():
+        legacy_service_source = legacy_admin_console_service.read_text(encoding="utf-8")
+        for marker in [
+            "build_questionnaire_external_push_logs_payload",
+            "build_global_questionnaire_external_push_logs_payload",
+            "retry_questionnaire_external_push_log_for_console",
+            "retry_questionnaire_external_push_logs_for_console",
+        ]:
+            if marker in legacy_service_source:
+                violations.append(
+                    Violation(
+                        "questionnaire_external_push_logs_legacy_console_helper",
+                        str(legacy_admin_console_service.relative_to(root)),
+                        marker,
+                    )
+                )
+
     manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
     manifest_by_path = {record.get("route_pattern"): record for record in manifest_records}
     for route_path in ["/api/admin/questionnaires*", "/api/admin/questionnaires/{questionnaire_id}/export"]:
@@ -1926,6 +2042,24 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
         expected_replacement_status = "locked"
         if record.get("delete_status") != expected_delete_status or record.get("replacement_status") != expected_replacement_status:
             violations.append(Violation("questionnaire_admin_write_manifest_lifecycle", route_path, f"delete_status={record.get('delete_status')} replacement_status={record.get('replacement_status')}"))
+    external_push_manifest = manifest_by_path.get(external_push_route)
+    if external_push_manifest is None:
+        violations.append(Violation("questionnaire_external_push_logs_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", external_push_route))
+    elif (
+        external_push_manifest.get("current_runtime_owner") != "next_native"
+        or external_push_manifest.get("production_behavior") != "next_native"
+        or external_push_manifest.get("legacy_fallback_allowed") is not False
+        or external_push_manifest.get("adapter_mode") != "real_blocked"
+        or external_push_manifest.get("delete_status") != "deletion_locked"
+        or external_push_manifest.get("replacement_status") != "locked"
+    ):
+        violations.append(
+            Violation(
+                "questionnaire_external_push_logs_manifest_lifecycle",
+                external_push_route,
+                f"current_runtime_owner={external_push_manifest.get('current_runtime_owner')} production_behavior={external_push_manifest.get('production_behavior')} legacy_fallback_allowed={external_push_manifest.get('legacy_fallback_allowed')} adapter_mode={external_push_manifest.get('adapter_mode')} delete_status={external_push_manifest.get('delete_status')} replacement_status={external_push_manifest.get('replacement_status')}",
+            )
+        )
     return violations
 
 

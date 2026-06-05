@@ -1703,16 +1703,16 @@ routes:
     path_pattern: /admin/questionnaires*external-push-logs*
     methods: [GET, POST]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_questionnaire_external_push_contract.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_next_questionnaire_external_push_logs.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire external push log pages and retry actions.
+    notes: Questionnaire external push log pages use Next QuestionnaireExternalPushLogReadService; retry actions use Next retry commands and generate SideEffectPlan by default; real external retry delivery is gated.
   - route_id: sidebar_customer_context_api
     path_pattern: /api/sidebar/customer-context
     methods: [GET]

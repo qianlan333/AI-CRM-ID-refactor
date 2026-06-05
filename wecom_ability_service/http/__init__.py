@@ -13,7 +13,6 @@ try:
     from .admin_questionnaire_console import register_routes as register_admin_questionnaire_console_routes
 except ModuleNotFoundError:  # pragma: no cover - compatibility shim for older file layout
     from .admin_questionnaires import register_routes as register_admin_questionnaire_console_routes
-from .admin_questionnaire_push_logs import register_routes as register_admin_questionnaire_push_logs_routes
 from .admin_config_api import register_routes as register_admin_config_api_routes
 from .admin_config import register_routes as register_admin_config_routes
 from .admin_config_login_access import register_routes as register_admin_config_login_access_routes
@@ -89,7 +88,6 @@ HTTP_ROUTE_MODULES = {
     "admin_mcp": "wecom_ability_service.http.admin_mcp",
     "admin_operations": "wecom_ability_service.http.admin_operations",
     "admin_questionnaire_console": "wecom_ability_service.http.admin_questionnaire_console",
-    "admin_questionnaire_push_logs": "wecom_ability_service.http.admin_questionnaire_push_logs",
     "admin_config": "wecom_ability_service.http.admin_config",
     "admin_config_api": "wecom_ability_service.http.admin_config_api",
     "admin_config_login_access": "wecom_ability_service.http.admin_config_login_access",
@@ -139,7 +137,6 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_mcp.py for legacy /admin/mcp compatibility redirect only",
         "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
         "admin_questionnaire_console.py for legacy questionnaire console POST save/toggle fallback only; D5 retired admin questionnaire readonly page ownership",
-        "admin_questionnaire_push_logs.py for /admin/questionnaires* external-push-log list and retry handlers",
         "admin_config.py for /admin/config* pages and form action controllers",
         "admin_config_api.py for /api/admin/config* JSON controllers",
         "admin_config_login_access.py for /admin/config/login-access* pages and account-management actions",
@@ -194,7 +191,6 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_mcp", register_admin_mcp_console_routes),
     ("admin_operations", register_admin_operations_console_routes),
     ("admin_questionnaire_console", register_admin_questionnaire_console_routes),
-    ("admin_questionnaire_push_logs", register_admin_questionnaire_push_logs_routes),
     ("admin_config", register_admin_config_routes),
     ("admin_config_api", register_admin_config_api_routes),
     ("admin_config_login_access", register_admin_config_login_access_routes),

@@ -6,12 +6,6 @@ from typing import Any
 from flask import current_app
 
 from ...application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
-from ...application.questionnaire.commands import RetryQuestionnaireExternalPushCommand
-from ...application.questionnaire.dto import RetryQuestionnaireExternalPushCommandDTO
-from ...application.questionnaire.queries import (
-    GetGlobalQuestionnaireExternalPushLogsQuery,
-    GetQuestionnaireExternalPushLogsQuery,
-)
 from ...application.class_user.commands import MigrateClassUserStatusFromContactTagsCommand
 from ...application.class_user.dto import (
     ListClassUserManagementRecordsQueryDTO,
@@ -472,76 +466,6 @@ def build_questionnaire_detail_payload(questionnaire_id: int) -> dict[str, Any] 
             for row in repo.list_questionnaire_apply_logs(int(questionnaire_id), limit=50)
         ],
     }
-
-def build_questionnaire_external_push_logs_payload(
-    questionnaire_id: int,
-    *,
-    status: str = "",
-    limit: int = 50,
-) -> dict[str, Any] | None:
-    return GetQuestionnaireExternalPushLogsQuery()(
-        questionnaire_id=int(questionnaire_id),
-        status=status,
-        limit=limit,
-    )
-
-def build_global_questionnaire_external_push_logs_payload(
-    *,
-    questionnaire_id: str = "",
-    questionnaire_title: str = "",
-    status: str = "",
-    user_id: str = "",
-    target_url: str = "",
-    limit: int = 50,
-) -> dict[str, Any]:
-    return GetGlobalQuestionnaireExternalPushLogsQuery()(
-        questionnaire_id=questionnaire_id,
-        questionnaire_title=questionnaire_title,
-        status=status,
-        user_id=user_id,
-        target_url=target_url,
-        limit=limit,
-    )
-
-def retry_questionnaire_external_push_log_for_console(push_log_id: int) -> dict[str, Any]:
-    return RetryQuestionnaireExternalPushCommand()(
-        RetryQuestionnaireExternalPushCommandDTO(push_log_id=int(push_log_id))
-    )
-
-def retry_questionnaire_external_push_logs_for_console(push_log_ids: list[int]) -> dict[str, Any]:
-    return RetryQuestionnaireExternalPushCommand()(
-        RetryQuestionnaireExternalPushCommandDTO(
-            push_log_ids=[int(item) for item in push_log_ids],
-        )
-    )
-
-def _questionnaire_external_push_status_tone(value: str) -> str:
-    if value == "success":
-        return "ok"
-    if value == "skipped":
-        return "warn"
-    return "danger"
-
-def _questionnaire_external_push_status_label(value: str) -> str:
-    if value == "success":
-        return "成功"
-    if value == "skipped":
-        return "跳过"
-    return "失败"
-
-def _questionnaire_external_push_effective_state_label(row: dict[str, Any]) -> str:
-    latest_status = str(row.get("latest_status") or "").strip()
-    if row.get("has_retry"):
-        if latest_status == "success":
-            return "补发成功"
-        if latest_status == "skipped":
-            return "补发已跳过"
-        return "补发仍失败（待补发）"
-    if str(row.get("status") or "").strip() == "success":
-        return "首次成功"
-    if str(row.get("status") or "").strip() == "skipped":
-        return "全局关闭跳过"
-    return "首次失败（待补发）"
 
 def parse_questionnaire_editor_form(form: Any) -> dict[str, Any]:
     questions_json = _normalized_text(form.get("questions_json"))
