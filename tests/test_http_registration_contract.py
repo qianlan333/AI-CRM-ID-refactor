@@ -32,6 +32,7 @@ HTTP_HELPER_MODULE_FILES = {
     "sidebar_marketing_support.py",
     "sync_jobs.py",
     "sync_support.py",
+    "wechat_pay_support.py",
 }
 HTTP_LARGE_ROUTE_OWNER_LINE_LIMITS = {
     "admin_wechat_pay.py": 360,

@@ -693,11 +693,12 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client):
     token = _login_admin(client)
     product = _create_product(client, token, name="带上下文商品")
-    context_token = build_sidebar_product_context_token(
-        external_userid="wm_pay_ctx",
-        owner_userid="sales_01",
-        bind_by_userid="sales_01",
-    )
+    with app.app_context():
+        context_token = build_sidebar_product_context_token(
+            external_userid="wm_pay_ctx",
+            owner_userid="sales_01",
+            bind_by_userid="sales_01",
+        )
 
     product_html = client.get(f"/p/{product['product_code']}?ctx={context_token}").get_data(as_text=True)
     checkout_html = client.get(f"/pay/{product['product_code']}?ctx={context_token}", headers=_wechat_headers()).get_data(as_text=True)
@@ -711,11 +712,12 @@ def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client
 
 def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app, client, monkeypatch):
     captured: dict[str, object] = {}
-    context_token = build_sidebar_product_context_token(
-        external_userid="wm_signed_pay_ctx",
-        owner_userid="sales_01",
-        bind_by_userid="sales_02",
-    )
+    with app.app_context():
+        context_token = build_sidebar_product_context_token(
+            external_userid="wm_signed_pay_ctx",
+            owner_userid="sales_01",
+            bind_by_userid="sales_02",
+        )
 
     with client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {
