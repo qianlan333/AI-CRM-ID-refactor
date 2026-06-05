@@ -13,7 +13,6 @@ from aicrm_next.automation_engine.operation_task_contract import (
 from ..broadcast_jobs import repo as broadcast_queue_repo
 from ..broadcast_jobs import service as broadcast_queue
 from . import operation_task_repo as repo
-from . import repo as channel_repo
 from . import workflow_repo
 from . import workflow_runtime
 from .private_message_dispatch import _dispatch_private_message_batch
@@ -691,6 +690,97 @@ def _content_has_send_body(content_text: str, content: dict[str, Any]) -> bool:
     return contract_has_send_body(content, content_text=content_text)
 
 
+def _diagnostic_reason_from_contract(task: dict[str, Any], diagnostics: dict[str, Any]) -> str:
+    errors = list(diagnostics.get("errors") or [])
+    if not errors:
+        return ""
+    if "agent_runtime_content_missing" in errors:
+        return "agent_runtime_content_missing"
+    if "behavior_segment_content_missing" in errors:
+        return "behavior_segment_content_missing"
+    if "content_missing" in errors:
+        return "content_missing"
+    return "task_unpublishable"
+
+
+def _render_result_summary_for_entry(task: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    member = dict(entry.get("member") or {})
+    mode = _text(task.get("content_mode")) or "unified"
+    if mode == "agent":
+        agent_diag = agent_runtime_diagnostics(task)
+        return {
+            "content_mode": mode,
+            "segment_key": "agent",
+            "content_text_present": False,
+            "send_body_present": bool(agent_diag.get("expected_send_body_present")),
+            "external_contact_id_present": bool(_text(member.get("external_contact_id"))),
+            "agent_runtime_diagnostics": agent_diag,
+        }
+    segment_key, content_text, content = _render_for_member(task, member, request_id="diagnostic")
+    return {
+        "content_mode": mode,
+        "segment_key": segment_key,
+        "content_text_present": bool(_text(content_text)),
+        "send_body_present": _content_has_send_body(content_text, content),
+        "external_contact_id_present": bool(_text(member.get("external_contact_id"))),
+    }
+
+
+def _diagnostic_reason_from_render(task: dict[str, Any], summary: dict[str, Any]) -> str:
+    if not bool(summary.get("external_contact_id_present")):
+        return "external_contact_id_missing"
+    if bool(summary.get("send_body_present")):
+        return ""
+    mode = _text(task.get("content_mode")) or "unified"
+    if mode == "agent":
+        return "agent_runtime_content_missing"
+    if mode == "behavior_layered":
+        return "behavior_segment_content_missing"
+    return "content_missing"
+
+
+def _execution_without_items(execution: dict[str, Any], items: list[dict[str, Any]]) -> bool:
+    if not execution or items:
+        return False
+    summary = dict(execution.get("summary_json") or {})
+    status = _text(execution.get("status"))
+    return status in {"failed", "finished", "queued"} and int(summary.get("created_item_count") or 0) == 0
+
+
+def _event_task_diagnostic_result(
+    *,
+    task: dict[str, Any],
+    execution_id: str,
+    audience_entry_id: int,
+    enqueued_count: int,
+    status: str = "",
+    reason: str = "",
+    render_result_summary: Any = None,
+    blocked_by_existing_execution: bool = False,
+    blocked_by_existing_job: bool = False,
+) -> dict[str, Any]:
+    diagnostics = publishable_diagnostics(task)
+    result = {
+        "task_id": int(task.get("id") or 0),
+        "task_name": _text(task.get("task_name")),
+        "execution_id": _text(execution_id),
+        "audience_entry_id": int(audience_entry_id or 0),
+        "enqueued_count": int(enqueued_count or 0),
+        "status": _text(status),
+        "reason": _text(reason) or _diagnostic_reason_from_contract(task, diagnostics) or "ok",
+        "content_diagnostics": diagnostics,
+        "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if _text(task.get("content_mode")) == "agent" else {},
+        "render_result_summary": dict(render_result_summary)
+        if isinstance(render_result_summary, dict)
+        else {"items": list(render_result_summary or [])}
+        if isinstance(render_result_summary, list)
+        else {},
+        "blocked_by_existing_execution": bool(blocked_by_existing_execution),
+        "blocked_by_existing_job": bool(blocked_by_existing_job),
+    }
+    return result
+
+
 def _program_channels(program_id: int, *, include_inactive: bool = True) -> list[dict[str, Any]]:
     if not int(program_id or 0):
         return []
@@ -813,14 +903,48 @@ def _materialize_operation_task_execution(
         return execution, existing_items
 
     entries = list(entries) if entries is not None else _candidate_entries(task, now=scheduled_for)
+    diagnostics = publishable_diagnostics(task)
+    contract_reason = _diagnostic_reason_from_contract(task, diagnostics)
+    if contract_reason:
+        execution = repo.update_execution(
+            execution_id,
+            {
+                "status": "failed" if entries else "finished",
+                "target_count": len(entries),
+                "enqueued_count": 0,
+                "sent_count": 0,
+                "failed_count": len(entries),
+                "summary_json": {
+                    "created_item_count": 0,
+                    "materialized_by": _text(operator_id) or "operation_task_runner",
+                    "reason": contract_reason,
+                    "content_diagnostics": diagnostics,
+                    "no_execution_items": True,
+                    **dict(summary_extra or {}),
+                },
+            },
+        )
+        return execution, []
+
     created_items: list[dict[str, Any]] = []
     failed_count = 0
+    skipped_summaries: list[dict[str, Any]] = []
     for entry in entries:
         member = dict(entry.get("member") or {})
         render_request_id = f"{execution_id}:{int(entry.get('id') or 0) or int(member.get('id') or 0)}"
         segment_key, content_text, content = _render_for_member(task, member, request_id=render_request_id)
         if not _content_has_send_body(content_text, content) or not _text(member.get("external_contact_id")):
             failed_count += 1
+            render_summary = {
+                "audience_entry_id": int(entry.get("id") or 0),
+                "member_id": int(member.get("id") or entry.get("member_id") or 0),
+                "segment_key": segment_key,
+                "content_text_present": bool(_text(content_text)),
+                "send_body_present": _content_has_send_body(content_text, content),
+                "external_contact_id_present": bool(_text(member.get("external_contact_id"))),
+            }
+            render_summary["reason"] = _diagnostic_reason_from_render(task, render_summary)
+            skipped_summaries.append(render_summary)
             continue
         item = repo.insert_execution_item(
             {
@@ -849,6 +973,9 @@ def _materialize_operation_task_execution(
             "summary_json": {
                 "created_item_count": len(created_items),
                 "materialized_by": _text(operator_id) or "operation_task_runner",
+                "reason": "" if created_items else (skipped_summaries[0].get("reason") if skipped_summaries else ""),
+                "render_result_summary": skipped_summaries[:10],
+                "no_execution_items": not bool(created_items),
                 **dict(summary_extra or {}),
             },
         },
@@ -959,11 +1086,31 @@ def run_audience_entered_operation_tasks(
             continue
         execution_id = _event_execution_id_for_task(int(task["id"]), int(scoped_entry.get("id") or 0))
         source_id = f"{int(task['id'])}:audience_entered:{int(scoped_entry.get('id') or 0)}"
-        if repo.get_execution(execution_id) or broadcast_queue_repo.fetch_job_by_source(
+        existing_execution = repo.get_execution(execution_id)
+        existing_items = repo.list_execution_items(execution_id) if existing_execution else []
+        existing_job = broadcast_queue_repo.fetch_job_by_source(
             source_type="operation_task",
             source_id=source_id,
             source_table="automation_operation_task_execution",
-        ):
+        )
+        if existing_execution or existing_job:
+            reason = "existing_broadcast_job" if existing_job else "existing_execution"
+            if _execution_without_items(existing_execution or {}, existing_items):
+                reason = "existing_execution_without_items"
+            results.append(
+                _event_task_diagnostic_result(
+                    task=task,
+                    execution_id=execution_id,
+                    audience_entry_id=int(scoped_entry.get("id") or 0),
+                    enqueued_count=0,
+                    status=_text((existing_execution or {}).get("status") or (existing_job or {}).get("status")),
+                    reason=reason,
+                    render_result_summary=dict((existing_execution or {}).get("summary_json") or {}).get("render_result_summary")
+                    or {},
+                    blocked_by_existing_execution=bool(existing_execution),
+                    blocked_by_existing_job=bool(existing_job),
+                )
+            )
             continue
         execution, items = _materialize_operation_task_execution(
             task=task,
@@ -977,16 +1124,21 @@ def run_audience_entered_operation_tasks(
             },
         )
         if not items:
+            summary = dict(execution.get("summary_json") or {})
+            render_summary = summary.get("render_result_summary") or _render_result_summary_for_entry(task, scoped_entry)
             results.append(
-                {
-                    "task_id": int(task["id"]),
-                    "execution_id": execution_id,
-                    "enqueued_count": 0,
-                    "status": _text(execution.get("status")),
-                }
+                _event_task_diagnostic_result(
+                    task=task,
+                    execution_id=execution_id,
+                    audience_entry_id=int(scoped_entry.get("id") or 0),
+                    enqueued_count=0,
+                    status=_text(execution.get("status")),
+                    reason=_text(summary.get("reason")) or _diagnostic_reason_from_render(task, render_summary),
+                    render_result_summary=render_summary if isinstance(render_summary, dict) else {"items": render_summary},
+                )
             )
             continue
-        broadcast_queue.enqueue_job(
+        job_id = broadcast_queue.enqueue_job(
             source_type="operation_task",
             source_id=source_id,
             source_table="automation_operation_task_execution",
@@ -1007,12 +1159,16 @@ def run_audience_entered_operation_tasks(
             allow_empty_targets=True,
         )
         results.append(
-            {
-                "task_id": int(task["id"]),
-                "execution_id": execution_id,
-                "enqueued_count": 1,
-                "scheduled_for": current_time.strftime("%Y-%m-%d %H:%M:%S"),
-            }
+            _event_task_diagnostic_result(
+                task=task,
+                execution_id=execution_id,
+                audience_entry_id=int(scoped_entry.get("id") or 0),
+                enqueued_count=1,
+                status="queued",
+                reason="ok",
+                render_result_summary={"created_item_count": len(items), "job_id": int(job_id or 0), "source_id": source_id},
+            )
+            | {"scheduled_for": current_time.strftime("%Y-%m-%d %H:%M:%S")}
         )
     get_db().commit()
     return {

@@ -99,6 +99,21 @@ def test_operation_runtime_contract_rejects_unpublishable_active_content(app):
                 operator_id="pytest",
             )
 
+        with pytest.raises(ValueError, match="行为分层"):
+            create_automation_program_operation_task(
+                program_id,
+                {
+                    "task_name": "behavior without segment content",
+                    "status": "active",
+                    "trigger_type": "audience_entered",
+                    "target_stage_code": "operating",
+                    "behavior_filter": "between_2_9",
+                    "content_mode": "behavior_layered",
+                    "segment_contents_json": [],
+                },
+                operator_id="pytest",
+            )
+
 
 def test_operation_runtime_contract_preview_is_read_only_and_reports_reasons(app):
     with app.app_context():
@@ -142,6 +157,28 @@ def test_operation_runtime_contract_preview_is_read_only_and_reports_reasons(app
         assert missing_content["target_count"] == 0
         assert missing_content["filtered_out_counts"]["content_missing"] == 1
         assert "content_missing" in missing_content["reasons"]
+
+
+def test_operation_runtime_contract_preview_returns_diagnostics_for_invalid_active_task(app):
+    with app.app_context():
+        program_id = create_program("runtime_contract_preview_invalid_active")
+        result = preview_automation_program_operation_task_audience(
+            program_id,
+            {
+                "task_name": "invalid active preview",
+                "status": "active",
+                "trigger_type": "audience_entered",
+                "target_stage_code": "operating",
+                "behavior_filter": "between_2_9",
+                "content_mode": "behavior_layered",
+                "segment_contents_json": [],
+            },
+        )
+
+        preview = result["preview"]
+        assert preview["target_count"] == 0
+        assert preview["content_diagnostics"]["ok"] is False
+        assert "behavior_segment_content_missing" in preview["content_diagnostics"]["errors"]
 
 
 def test_operation_runtime_contract_preview_uses_program_channel_binding(app):

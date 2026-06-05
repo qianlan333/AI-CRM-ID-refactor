@@ -62,4 +62,5 @@ def test_init_db_bootstrap_keeps_sop_and_prompt_seed_paths(monkeypatch):
 
 def test_questionnaire_service_lazy_import_path_keeps_sync_member_entrypoint():
     source = inspect.getsource(questionnaire_service.submit_questionnaire)
-    assert "from ..automation_conversion.service import sync_member_from_questionnaire_submission" in source
+    assert "from ..automation_conversion.questionnaire_bridge_service import" in source
+    assert "sync_questionnaire_submission_audience_transition" in source
