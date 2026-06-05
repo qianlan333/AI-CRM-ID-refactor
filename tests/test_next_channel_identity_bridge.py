@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from aicrm_next.channel_entry.identity_bridge import ensure_external_contact_identity_for_sidebar
 from aicrm_next.channel_entry.application import process_wecom_external_contact_event
 from aicrm_next.channel_entry.schemas import ProcessWeComExternalContactEventCommand
 from aicrm_next.channel_entry.wecom_adapter import get_wecom_adapter, set_wecom_adapter
@@ -36,6 +37,7 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
         "aicrm_next.channel_entry.application.process_channel_entry",
         lambda command: {"handled": False, "reason": "channel_entry_not_under_test"},
     )
+    monkeypatch.setattr("aicrm_next.channel_entry.identity_bridge._legacy_app", lambda: app)
     previous_adapter = get_wecom_adapter()
     set_wecom_adapter(DetailAdapter())
     try:
@@ -100,21 +102,23 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
             ).fetchone()["id"]
             db.commit()
 
-            result = process_wecom_external_contact_event(
-                ProcessWeComExternalContactEventCommand(
-                    corp_id="ww-bridge",
-                    event_data={
-                        "Event": "change_external_contact",
-                        "ChangeType": "add_external_contact",
-                        "ExternalUserID": "wm_bridge_001",
-                        "UserID": "owner_bridge",
-                        "CreateTime": "1780640000",
-                    },
-                    payload_xml="<xml/>",
-                    route="/wecom/external-contact/callback",
-                )
+        result = process_wecom_external_contact_event(
+            ProcessWeComExternalContactEventCommand(
+                corp_id="ww-bridge",
+                event_data={
+                    "Event": "change_external_contact",
+                    "ChangeType": "add_external_contact",
+                    "ExternalUserID": "wm_bridge_001",
+                    "UserID": "owner_bridge",
+                    "CreateTime": "1780640000",
+                },
+                payload_xml="<xml/>",
+                route="/wecom/external-contact/callback",
             )
+        )
 
+        with app.app_context():
+            db = get_db()
             identity = db.execute(
                 """
                 SELECT external_userid, unionid, openid, follow_user_userid, name, status
@@ -162,6 +166,79 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
             "external_userid": "wm_bridge_001",
             "follow_user_userid": "owner_bridge",
             "matched_by": "mobile",
+        }
+    finally:
+        set_wecom_adapter(previous_adapter)
+
+
+def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, monkeypatch):
+    monkeypatch.setattr("aicrm_next.channel_entry.identity_bridge._legacy_app", lambda: app)
+    previous_adapter = get_wecom_adapter()
+    set_wecom_adapter(DetailAdapter())
+    try:
+        with app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                ("wm_bridge_001", "桥接客户", "owner_bridge", "桥接备注", ""),
+            )
+            db.execute(
+                """
+                INSERT INTO wechat_pay_orders (
+                    out_trade_no, product_code, product_name, amount_total, currency,
+                    payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
+                    transaction_id, paid_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
+                """,
+                (
+                    "WXP_BRIDGE_SIDEBAR",
+                    "subscription_trial_month",
+                    "黄小璨首月体验",
+                    990,
+                    "CNY",
+                    "openid_bridge_001",
+                    "union_bridge_001",
+                    "",
+                    "18565883798",
+                    "paid",
+                    "SUCCESS",
+                    "4200003130202606052403665107",
+                    "2026-06-05 06:02:08+00",
+                    "2026-06-05 06:02:01+00",
+                ),
+            )
+            db.commit()
+
+        result = ensure_external_contact_identity_for_sidebar(
+            external_userid="wm_bridge_001",
+            owner_userid="owner_bridge",
+            corp_id="ww-bridge",
+            min_interval_seconds=60,
+        )
+
+        with app.app_context():
+            db = get_db()
+            binding = db.execute(
+                """
+                SELECT b.external_userid, p.mobile, b.first_owner_userid
+                FROM external_contact_bindings b
+                JOIN people p ON p.id = b.person_id
+                WHERE b.external_userid = ?
+                """,
+                ("wm_bridge_001",),
+            ).fetchone()
+
+        assert result["status"] == "attempted"
+        assert result["reason"] == "identity_missing"
+        assert result["sync_status"] == "success"
+        assert result["mobile_binding_status"] == "bound"
+        assert dict(binding) == {
+            "external_userid": "wm_bridge_001",
+            "mobile": "18565883798",
+            "first_owner_userid": "owner_bridge",
         }
     finally:
         set_wecom_adapter(previous_adapter)

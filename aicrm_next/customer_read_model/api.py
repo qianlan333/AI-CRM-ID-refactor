@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
+from aicrm_next.channel_entry.identity_bridge import ensure_external_contact_identity_for_sidebar
 from aicrm_next.shared.errors import NotFoundError
 
 from .application import (
@@ -87,6 +88,22 @@ def _sidebar_read_unavailable(exc: Exception) -> JSONResponse:
         },
         status_code=503,
     )
+
+
+def _ensure_sidebar_identity_refresh(*, external_userid: str, owner_userid: str = "") -> dict[str, object]:
+    try:
+        return ensure_external_contact_identity_for_sidebar(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+        )
+    except Exception as exc:
+        return {"status": "failed", "reason": str(exc).strip() or exc.__class__.__name__}
+
+
+def _attach_sidebar_identity_refresh(payload: dict, refresh: dict[str, object]) -> dict:
+    diagnostics = dict(payload.get("diagnostics") or {})
+    diagnostics["identity_refresh"] = dict(refresh or {})
+    return {**payload, "diagnostics": diagnostics}
 
 
 def _resolve_external_userid(external_userid: str | None = None, user_id: str | None = None) -> str:
@@ -472,15 +489,22 @@ def get_sidebar_marketing_status(external_userid: str | None = None):
 def get_sidebar_v2_workbench(external_userid: str | None = None, owner_userid: str | None = None):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    identity_refresh = _ensure_sidebar_identity_refresh(
+        external_userid=normalized_external_userid,
+        owner_userid=normalized_owner_userid,
+    )
     try:
         payload = _legacy_sidebar_read_facade().sidebar_v2_workbench_readonly(
-            external_userid=str(external_userid or "").strip(),
-            owner_userid=str(owner_userid or "").strip(),
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
         )
     except ValueError as exc:
         return _sidebar_input_error(str(exc))
     except Exception as exc:
         return _sidebar_read_unavailable(exc)
+    payload = _attach_sidebar_identity_refresh(payload, identity_refresh)
     return {"ok": True, **payload, "route_owner": "ai_crm_next"}
 
 
@@ -569,14 +593,17 @@ def get_sidebar_v2_products(external_userid: str | None = None):
 def get_sidebar_v2_orders(external_userid: str | None = None):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    normalized_external_userid = str(external_userid or "").strip()
+    identity_refresh = _ensure_sidebar_identity_refresh(external_userid=normalized_external_userid)
     try:
         payload = _legacy_sidebar_read_facade().sidebar_v2_orders_readonly(
-            external_userid=str(external_userid or "").strip(),
+            external_userid=normalized_external_userid,
         )
     except ValueError as exc:
         return _sidebar_input_error(str(exc))
     except Exception as exc:
         return _sidebar_read_unavailable(exc)
+    payload = _attach_sidebar_identity_refresh(payload, identity_refresh)
     return {"ok": True, **payload, "route_owner": "ai_crm_next"}
 
 
