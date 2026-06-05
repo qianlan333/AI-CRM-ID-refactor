@@ -91,6 +91,49 @@ def test_webhook_direct_recipients_idempotency_and_disabled_guard(group_ops_api_
     assert logs.json()["items"][0]["external_user_id"] == "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"
 
 
+def test_webhook_enqueue_action_routes_through_next_action_port(group_ops_api_client, monkeypatch):
+    calls: list[dict] = []
+
+    class FakeActionPort:
+        def dispatch(self, input_data):
+            calls.append(input_data)
+            return {"ok": True, "status": "queued", "action_ref_id": "job_123", "side_effect_executed": False}
+
+    monkeypatch.setattr(
+        "aicrm_next.automation_engine.group_ops.action_port.build_group_ops_action_port",
+        lambda: FakeActionPort(),
+    )
+    created = group_ops_api_client.post(
+        "/api/automation/group-ops/plans",
+        json={
+            "name": "Webhook enqueue plan",
+            "type": "webhook_receiver",
+            "status": "disabled",
+            "operatorMemberId": "HuangYouCan",
+            "defaultActionType": "enqueue",
+            "allowNoSop": True,
+        },
+    ).json()
+    enabled = group_ops_api_client.post(f"/api/automation/group-ops/plans/{created['id']}/enable")
+    assert enabled.status_code == 200
+
+    response = group_ops_api_client.post(
+        f"/api/automation/group-ops/webhooks/{created['webhook']['endpointKey']}",
+        headers={"Authorization": f"Bearer {created['webhook']['token']}", "X-Idempotency-Key": "pytest-enqueue-action"},
+        json={
+            "event": "core_feature_activation",
+            "source": "pytest",
+            "recipients": [{"external_user_id": "wm_enqueue_001"}],
+            "action": {"action_type": "enqueue", "content": "queued content"},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["executed"] == 1
+    assert calls[0]["action"]["action_type"] == "enqueue"
+    assert calls[0]["recipient"]["external_user_id"] == "wm_enqueue_001"
+
+
 def test_rules_segmentation_and_missing_builtin_data_source_are_explicit(group_ops_api_client):
     rules = group_ops_api_client.get("/api/automation/group-ops/audience-rules")
     assert rules.status_code == 200
@@ -120,27 +163,147 @@ def test_rules_segmentation_and_missing_builtin_data_source_are_explicit(group_o
     assert error_code(preview) in {"rule_data_source_missing", "contract_error"}
 
 
-def test_send_message_action_port_uses_real_dispatch_seam(monkeypatch):
+def test_action_port_enqueue_uses_next_queue_gateway_and_exact_external_userid():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextOutboundMessageQueueGateway
     from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
 
     captured: dict = {}
 
-    class DummyApp:
-        def app_context(self):
-            return self
+    def fake_insert_job(**kwargs):
+        captured.update(kwargs)
+        return 123
 
-        def __enter__(self):
-            return self
+    dispatcher = GroupOpsActionDispatcher(
+        queue_gateway=NextOutboundMessageQueueGateway(insert_job=fake_insert_job),
+    )
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+    result = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 1,
+            "trigger_event_id": "evt_001",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"},
+            "action": {"action_type": "enqueue", "content": "AI-CRM Webhook 触发测试消息"},
+        }
+    )
 
-    def fake_dispatch(task_type, fn_name, payload):
-        captured.update({"task_type": task_type, "fn_name": fn_name, "payload": payload})
-        return {"task_id": 123, "wecom_result": {"errcode": 0, "errmsg": "ok"}}
+    assert result["ok"] is True
+    assert result["status"] == "queued"
+    assert result["side_effect_executed"] is False
+    assert captured["command"].idempotency_key == "group_ops:1:evt_001:wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ:enqueue"
+    assert captured["payload"]["external_userid"] == ["wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"]
+    assert captured["payload"]["sender"] == "HuangYouCan"
 
-    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_flask_facade._legacy_app", lambda: DummyApp())
-    monkeypatch.setattr("wecom_ability_service.domains.tasks.service.dispatch_wecom_task", fake_dispatch)
+
+def test_action_port_enqueue_duplicate_does_not_create_second_task():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextOutboundMessageQueueGateway
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    seen: set[str] = set()
+
+    def fake_insert_job(**kwargs):
+        key = kwargs["command"].idempotency_key
+        if key in seen:
+            return 0
+        seen.add(key)
+        return 456
+
+    dispatcher = GroupOpsActionDispatcher(
+        queue_gateway=NextOutboundMessageQueueGateway(insert_job=fake_insert_job),
+    )
+    payload = {
+        "plan_id": 1,
+        "trigger_event_id": "evt_dup",
+        "operator_member_id": "HuangYouCan",
+        "recipient": {"external_user_id": "wm_dup"},
+        "action": {"action_type": "enqueue", "content": "hello"},
+    }
+
+    first = DefaultGroupOpsActionPort(dispatcher).dispatch(payload)
+    second = DefaultGroupOpsActionPort(dispatcher).dispatch(payload)
+
+    assert first["status"] == "queued"
+    assert second["status"] == "duplicate"
+    assert len(seen) == 1
+
+
+def test_action_port_publish_task_uses_next_queue_gateway():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextOutboundMessageQueueGateway
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    captured: dict = {}
+
+    def fake_insert_job(**kwargs):
+        captured.update(kwargs)
+        return 789
+
+    dispatcher = GroupOpsActionDispatcher(
+        queue_gateway=NextOutboundMessageQueueGateway(insert_job=fake_insert_job),
+    )
+
+    result = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 2,
+            "trigger_event_id": "evt_publish",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_publish"},
+            "action": {"action_type": "publish_task", "content": "publish task content"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "queued"
+    assert result["side_effect_executed"] is False
+    assert captured["command"].idempotency_key == "group_ops:2:evt_publish:wm_publish:publish_task"
+    assert captured["payload"]["external_userid"] == ["wm_publish"]
+    assert captured["payload"]["action"]["action_type"] == "publish_task"
+
+
+def test_action_port_add_to_audience_records_audit_without_side_effect():
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    result = DefaultGroupOpsActionPort().dispatch(
+        {
+            "plan_id": 3,
+            "trigger_event_id": "evt_audience",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_audience"},
+            "action": {"action_type": "add_to_audience", "audience_id": "aud_high_intent"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "added"
+    assert result["action_ref_id"] == "aud_high_intent"
+    assert result["side_effect_executed"] is False
+    assert result["audit"]["action_type"] == "add_to_audience"
+    assert result["audit"]["external_userid"] == "wm_audience"
+
+
+def test_action_port_missing_external_userid_returns_clear_error():
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    try:
+        DefaultGroupOpsActionPort().dispatch(
+            {
+                "plan_id": 1,
+                "trigger_event_id": "evt_missing",
+                "operator_member_id": "HuangYouCan",
+                "recipient": {},
+                "action": {"action_type": "enqueue", "content": "hello"},
+            }
+        )
+    except Exception as exc:
+        assert "external_user_id is required for enqueue" in str(exc)
+    else:
+        raise AssertionError("missing external_userid must fail")
+
+
+def test_send_message_action_port_default_is_real_blocked():
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
 
     result = DefaultGroupOpsActionPort().dispatch(
         {
@@ -152,9 +315,71 @@ def test_send_message_action_port_uses_real_dispatch_seam(monkeypatch):
         }
     )
 
+    assert result["ok"] is False
+    assert result["status"] == "blocked"
+    assert result["side_effect_executed"] is False
+    assert result["error_code"] == "real_blocked"
+
+
+def test_send_message_action_port_fake_adapter_returns_fake_result():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextPrivateMessageTaskGateway
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    dispatcher = GroupOpsActionDispatcher(
+        private_message_gateway=NextPrivateMessageTaskGateway(mode="fake"),
+    )
+    result = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 1,
+            "trigger_event_id": "evt_001",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"},
+            "action": {"action_type": "send_message", "content": "AI-CRM Webhook 触发测试消息"},
+        }
+    )
+
     assert result["ok"] is True
-    assert result["side_effect_executed"] is True
-    assert captured["task_type"] == "private_message"
-    assert captured["fn_name"] == "create_private_message_task"
-    assert captured["payload"]["sender"] == "HuangYouCan"
-    assert captured["payload"]["external_userid"] == ["wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"]
+    assert result["status"] == "sent_fake"
+    assert result["side_effect_executed"] is False
+    assert result["wecom_result"]["dispatch_adapter"] == "fake_wecom"
+    assert result["wecom_result"]["external_userids"] == ["wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"]
+
+
+def test_send_message_production_mode_requires_gate_approval_and_audit():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextPrivateMessageTaskGateway
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    gateway = NextPrivateMessageTaskGateway(
+        mode="production",
+        env=lambda key, default="": "true" if key == "AICRM_ENABLE_REAL_GROUP_OPS_PRIVATE_MESSAGE" else default,
+    )
+    dispatcher = GroupOpsActionDispatcher(private_message_gateway=gateway)
+
+    blocked = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 1,
+            "trigger_event_id": "evt_prod",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_prod"},
+            "action": {"action_type": "send_message", "content": "production content"},
+        }
+    )
+    approved_but_no_adapter = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 1,
+            "trigger_event_id": "evt_prod",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_prod"},
+            "action": {"action_type": "send_message", "content": "production content", "approved_by": "reviewer"},
+        }
+    )
+
+    assert blocked["ok"] is False
+    assert blocked["error_code"] == "real_send_guard_failed"
+    assert blocked["audit"]["status"] == "blocked"
+    assert blocked["audit"]["side_effect_executed"] is False
+    assert approved_but_no_adapter["ok"] is False
+    assert approved_but_no_adapter["error_code"] == "real_private_message_adapter_not_configured"
+    assert approved_but_no_adapter["audit"]["side_effect_executed"] is False

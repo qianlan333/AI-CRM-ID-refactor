@@ -17,7 +17,7 @@ class GroupOpsPlanListRequest(BaseModel):
 class GroupOpsPlanCreateRequest(BaseModel):
     plan_code: str | None = None
     plan_name: str | None = None
-    plan_type: str = "standard"
+    plan_type: str | None = None
     name: str | None = None
     type: str | None = None
     owner_userid: str | None = None
