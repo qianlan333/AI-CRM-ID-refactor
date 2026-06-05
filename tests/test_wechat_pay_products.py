@@ -691,6 +691,7 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 
 
 def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client):
+    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
     token = _login_admin(client)
     product = _create_product(client, token, name="带上下文商品")
     with app.app_context():
@@ -711,6 +712,7 @@ def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client
 
 
 def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app, client, monkeypatch):
+    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
     captured: dict[str, object] = {}
     with app.app_context():
         context_token = build_sidebar_product_context_token(
