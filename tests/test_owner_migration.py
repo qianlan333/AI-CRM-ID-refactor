@@ -13,12 +13,17 @@ class FakeOwnerMigrationRepository:
     def __init__(self) -> None:
         self.executed = False
 
-    def preview_owner_migration(self, *, source_owner_userid: str, target_owner_userid: str) -> dict:
+    def preview_owner_migration(self, *, source_owner_userid: str, target_owner_userid: str, external_userids: list[str] | None = None) -> dict:
+        all_external_userids = ["wm_ext_1", "wm_ext_2"]
+        if external_userids is not None:
+            allowed = set(external_userids)
+            all_external_userids = [item for item in all_external_userids if item in allowed]
         return {
             "source_status": self.source_status,
-            "candidate_count": 2,
-            "sample_external_userids": ["wm_ext_1", "wm_ext_2"],
-            "surface_counts": {"contacts": 2},
+            "candidate_count": len(all_external_userids),
+            "all_external_userids": all_external_userids,
+            "sample_external_userids": all_external_userids,
+            "surface_counts": {"contacts": len(all_external_userids)},
             "pending_review": {"pending_user_ops_deferred_jobs": 1},
         }
 
@@ -29,7 +34,9 @@ class FakeOwnerMigrationRepository:
         target_owner_userid: str,
         operator: str,
         external_userids: list[str] | None = None,
+        target_owner_display_name: str | None = None,
     ) -> dict:
+        del target_owner_display_name
         self.executed = True
         return {
             **self.preview_owner_migration(
@@ -39,6 +46,19 @@ class FakeOwnerMigrationRepository:
             "executed": True,
             "touched_count": 2,
             "update_counts": {"contacts": 2},
+            "touched_external_userids": external_userids or ["wm_ext_1", "wm_ext_2"],
+        }
+
+    def resolve_operation_members(self, userids: list[str]) -> dict:
+        return {
+            userid: {"user_id": userid, "display_name": userid.title(), "status": "active"}
+            for userid in userids
+        }
+
+    def lookup_customer_owners(self, external_userids: list[str]) -> dict:
+        return {
+            "wm_ext_1": {"owner_userids": ["mengyu"], "customer_name": "客户一"},
+            "wm_ext_2": {"owner_userids": ["other"], "customer_name": "客户二"},
         }
 
 

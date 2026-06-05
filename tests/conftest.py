@@ -223,6 +223,9 @@ _TABLES_TO_TRUNCATE = [
     "outbound_webhook_deliveries",
     "outbound_event_outbox",
     "admin_operation_logs",
+    "owner_migration_results",
+    "owner_migration_previews",
+    "owner_migration_import_sessions",
     "user_ops_import_batches",
     # customer_pulse_* / followup_orchestrator_* 表已经被 PR #232 删除——不再列入
     # truncate 清单（之前每个 test 跑 8 次注定失败的 SQL，刷 PG error log 还耗时）。
