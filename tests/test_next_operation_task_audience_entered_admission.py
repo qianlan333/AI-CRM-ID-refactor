@@ -293,6 +293,64 @@ def test_audience_entered_behavior_layered_uses_program_member_segment_snapshot(
         assert item["status"] == "queued"
 
 
+def test_admission_persists_behavior_segment_from_questionnaire_mobile_snapshot(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setattr(
+            "wecom_ability_service.domains.automation_conversion.message_activity_client.get_message_activity_db_status",
+            lambda: {"configured": True},
+        )
+        monkeypatch.setattr(
+            "wecom_ability_service.domains.automation_conversion.message_activity_client.query_message_activity_counts",
+            lambda: [{"phone_match_key": "139_9001", "message_count": 5}],
+        )
+        program_id, channel, binding_id = _setup_admission_case("next_rt_behavior_snapshot_admission")
+        questionnaire = create_choice_questionnaire("next_rt_behavior_snapshot_admission_q")
+        external_contact_id = "wm_next_rt_behavior_snapshot"
+        get_db().execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, external_userid, mobile_snapshot, total_score, final_tags, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(questionnaire["id"]),
+                external_contact_id,
+                external_contact_id,
+                "13900009001",
+                0,
+                "[]",
+                T1,
+            ),
+        )
+        get_db().commit()
+
+        admitted = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            external_contact_id,
+            trigger_time=T1,
+        )
+
+        assert admitted["audience_code"] == "operating"
+        assert admitted["segmentation"]["behavior_tier_key"] == "between_2_9"
+        assert admitted["segmentation"]["behavior_result"]["phone_source"] == "questionnaire_mobile_snapshot"
+
+        program_member = get_db().execute(
+            """
+            SELECT state_payload_json
+            FROM automation_program_member
+            WHERE program_id = ?
+              AND external_contact_id = ?
+            LIMIT 1
+            """,
+            (program_id, external_contact_id),
+        ).fetchone()
+        assert program_member
+        assert program_member["state_payload_json"]["behavior_tier_key"] == "between_2_9"
+
+
 def test_next_program_admission_does_not_trigger_unmatched_audience_task(app):
     with app.app_context():
         program_id, channel, binding_id = _setup_admission_case("next_rt_admission_unmatched")
