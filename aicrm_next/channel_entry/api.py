@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 
 from .application import (
@@ -116,4 +117,4 @@ def repair_entry(payload: dict) -> JSONResponse:
             corp_id=str(payload.get("corp_id") or payload.get("ToUserName") or "").strip(),
         )
     )
-    return JSONResponse({"ok": bool(result.get("handled")), "result": result, "source": "aicrm_next.channel_entry"})
+    return JSONResponse(jsonable_encoder({"ok": bool(result.get("handled")), "result": result, "source": "aicrm_next.channel_entry"}))

@@ -838,6 +838,34 @@ def _entry_bundle_for_event(*, member_id: int, audience_entry_id: int = 0, audie
     return selected
 
 
+def _program_id_for_audience_entry(entry: dict[str, Any], *, source_channel_id: int) -> int:
+    snapshot = dict(entry.get("source_snapshot_json") or {})
+    program_id = _int(snapshot.get("program_id"), minimum=0)
+    if program_id > 0:
+        return program_id
+    program_member_id = _int(snapshot.get("program_member_id"), minimum=0)
+    if program_member_id > 0:
+        row = get_db().execute(
+            "SELECT program_id FROM automation_program_member WHERE id = ? LIMIT 1",
+            (program_member_id,),
+        ).fetchone()
+        if row and int(row.get("program_id") or 0) > 0:
+            return int(row["program_id"])
+    binding_id = _int(snapshot.get("binding_id"), minimum=0)
+    if binding_id > 0:
+        row = get_db().execute(
+            "SELECT program_id FROM automation_program_channel_binding WHERE id = ? LIMIT 1",
+            (binding_id,),
+        ).fetchone()
+        if row and int(row.get("program_id") or 0) > 0:
+            return int(row["program_id"])
+    channel_row = get_db().execute(
+        "SELECT program_id FROM automation_channel WHERE id = ? LIMIT 1",
+        (int(source_channel_id),),
+    ).fetchone()
+    return int((channel_row or {}).get("program_id") or 0)
+
+
 def run_audience_entered_operation_tasks(
     *,
     member_id: int,
@@ -858,13 +886,9 @@ def run_audience_entered_operation_tasks(
     source_channel_id = _int(member.get("source_channel_id"), minimum=0)
     if source_channel_id <= 0:
         return {"ok": True, "ran": 0, "enqueued_count": 0, "results": [], "reason": "source_channel_missing"}
-    channel_row = get_db().execute(
-        "SELECT program_id FROM automation_channel WHERE id = ? LIMIT 1",
-        (source_channel_id,),
-    ).fetchone()
-    if not channel_row or not int(channel_row["program_id"] or 0):
+    program_id = _program_id_for_audience_entry(entry, source_channel_id=source_channel_id)
+    if program_id <= 0:
         return {"ok": True, "ran": 0, "enqueued_count": 0, "results": [], "reason": "program_channel_missing"}
-    program_id = int(channel_row["program_id"])
     tasks = repo.list_tasks(program_id, status="active")
     results: list[dict[str, Any]] = []
     for task in tasks:

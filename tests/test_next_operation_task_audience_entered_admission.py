@@ -184,6 +184,34 @@ def test_next_program_admission_recheck_is_idempotent_for_audience_entered_task(
         assert _job_count(task["id"], first["audience_entry_id"]) == 1
 
 
+def test_next_program_admission_uses_entry_snapshot_program_when_channel_row_points_elsewhere(app):
+    with app.app_context():
+        old_program_id = create_program("next_rt_channel_row_old_program")
+        new_program_id = create_program("next_rt_binding_new_program")
+        channel = create_channel("next_rt_shared_channel", program_id=old_program_id)
+        binding_id = _bind(new_program_id, int(channel["id"]))
+        save_audience_entry_rule(new_program_id, disabled_entry_rule())
+        old_task = _create_audience_entered_task(old_program_id, name="Old program must not run")
+        new_task = _create_audience_entered_task(new_program_id, name="New binding program runs")
+
+        result = admit_channel_contact_to_program(
+            new_program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_binding_program",
+            trigger_time=T1,
+        )
+
+        assert result["admission_status"] == "accepted"
+        assert result["audience_entry_id"] > 0
+        assert result["realtime_operation_tasks_enqueued_count"] == 1
+        assert result["realtime_operation_tasks_results"][0]["task_id"] == new_task["id"]
+        assert _execution_count(new_task["id"], result["audience_entry_id"]) == 1
+        assert _job_count(new_task["id"], result["audience_entry_id"]) == 1
+        assert _execution_count(old_task["id"], result["audience_entry_id"]) == 0
+        assert _job_count(old_task["id"], result["audience_entry_id"]) == 0
+
+
 def test_next_program_admission_does_not_trigger_unmatched_audience_task(app):
     with app.app_context():
         program_id, channel, binding_id = _setup_admission_case("next_rt_admission_unmatched")
