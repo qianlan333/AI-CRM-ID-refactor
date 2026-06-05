@@ -14,7 +14,24 @@ def _patch_repo(monkeypatch, *, channel_status="active", bindings=None):
     monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_entry_effect_log", lambda **kwargs: {"ok": True})
     monkeypatch.setattr("aicrm_next.channel_entry.repo.save_tag_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: list(bindings or []))
-    monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_program_member", lambda **kwargs: calls.append("member") or {"id": 99})
+    monkeypatch.setattr(
+        "aicrm_next.channel_entry.application._admit_program_binding",
+        lambda **kwargs: calls.append("member")
+        or {
+            "admission_status": "accepted",
+            "accepted": True,
+            "reason": "audience_entry_rule_passed",
+            "program_member": {"id": 99},
+            "legacy_member": {"id": 199},
+            "audience_entry_id": 299,
+            "audience_code": "operating",
+            "entry_reason": "audience_entry_rule_passed",
+            "realtime_task_hook": {"ok": True},
+            "realtime_operation_tasks_ran": 1,
+            "realtime_operation_tasks_enqueued_count": 1,
+        },
+    )
+    monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_program_member", lambda **kwargs: calls.append("legacy_member") or {"id": 99})
     monkeypatch.setattr("aicrm_next.channel_entry.repo.insert_program_admission_attempt", lambda **kwargs: {"id": 88, "admission_status": kwargs["admission_status"]})
 
     class Adapter:
@@ -69,4 +86,3 @@ def test_channel_disabled_has_no_baseline_side_effects(monkeypatch):
     assert result["handled"] is False
     assert result["mode"] == "channel_disabled"
     assert calls == []
-

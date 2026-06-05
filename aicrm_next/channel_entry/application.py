@@ -130,6 +130,31 @@ def _log_effect(command: ProcessChannelEntryCommand, *, effect_type: str, idempo
     )
 
 
+def _admit_program_binding(
+    *,
+    program_id: int,
+    channel_id: int,
+    binding_id: int,
+    external_contact_id: str,
+    follow_user_userid: str,
+    trigger_payload: dict[str, Any],
+    trigger_type: str,
+) -> dict[str, Any]:
+    from aicrm_next.automation_engine.audience_transition.integration_gateway import (
+        admit_channel_contact_to_program_with_runtime,
+    )
+
+    return admit_channel_contact_to_program_with_runtime(
+        program_id=int(program_id),
+        channel_id=int(channel_id),
+        binding_id=int(binding_id),
+        external_contact_id=text(external_contact_id),
+        follow_user_userid=text(follow_user_userid),
+        trigger_payload=dict(trigger_payload or {}),
+        trigger_type=text(trigger_type) or "qrcode_enter",
+    )
+
+
 def _adapter_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
     if isinstance(exc, WeComAdapterBlocked):
         payload: dict[str, Any] = {"reason": exc.reason}
@@ -301,21 +326,53 @@ def _admit(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scen
             results.append({"admission_status": "planned", "program_id": program_id, "binding_id": binding_id})
             reason = "planned"
             continue
-        member = repo.upsert_program_member(program_id=program_id, channel_id=channel_id, binding_id=binding_id, external_contact_id=command.external_contact_id, payload=command.payload_json)
-        attempt = repo.insert_program_admission_attempt(
-            program_id=program_id,
-            channel_id=channel_id,
-            binding_id=binding_id,
-            external_contact_id=command.external_contact_id,
-            trigger_type=command.event_action,
-            trigger_event_id=str(command.event_log_id or ""),
-            trigger_payload_json=command.payload_json,
-            admission_status="accepted",
-            entry_reason="program_admission",
+        try:
+            admission = _admit_program_binding(
+                program_id=program_id,
+                channel_id=channel_id,
+                binding_id=binding_id,
+                external_contact_id=command.external_contact_id,
+                follow_user_userid=command.follow_user_userid,
+                trigger_payload={
+                    **dict(command.payload_json or {}),
+                    "event_log_id": command.event_log_id,
+                    "source_type": command.source_type,
+                    "scene_value": scene,
+                },
+                trigger_type=command.event_action,
+            )
+        except Exception as exc:
+            admission = {
+                "admission_status": "failed",
+                "accepted": False,
+                "reason": "admission_service_error",
+                "error": str(exc),
+            }
+        status = text(admission.get("admission_status"))
+        accepted = bool(admission.get("accepted")) or status in {"accepted", "waiting", "converted", "duplicate_active"}
+        results.append(
+            {
+                "admission_status": status or "unknown",
+                "reason": text(admission.get("reason")) or status or "unknown",
+                "program_id": program_id,
+                "binding_id": binding_id,
+                "program_member": admission.get("program_member") or {},
+                "legacy_member": admission.get("legacy_member") or {},
+                "admission_attempt": admission.get("admission_attempt") or {},
+                "audience_entry_id": int(admission.get("audience_entry_id") or 0),
+                "audience_code": text(admission.get("audience_code")),
+                "entry_reason": text(admission.get("entry_reason")),
+                "realtime_task_hook": admission.get("realtime_task_hook") or {},
+                "realtime_operation_tasks_ran": int(admission.get("realtime_operation_tasks_ran") or 0),
+                "realtime_operation_tasks_enqueued_count": int(admission.get("realtime_operation_tasks_enqueued_count") or 0),
+                "admission": admission,
+            }
         )
-        results.append({"admission_status": "accepted", "reason": "program_admission", "program_id": program_id, "binding_id": binding_id, "program_member": member, "admission_attempt": attempt})
-        member_written = True
-        reason = "program_member_written"
+        if accepted:
+            member_written = True
+            reason = "program_member_written"
+        elif reason == "program_admission_rejected":
+            reason = text(admission.get("reason")) or "program_admission_rejected"
     return results, member_written, reason
 
 
@@ -373,6 +430,7 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
     welcome = _send_welcome(command, channel=channel, scene=scene)
     tag = _apply_tag(command, channel=channel, scene=scene)
     admission_results, member_written, admission_reason = _admit(command, channel=channel, scene=scene)
+    workflow_triggered = any(bool(item.get("realtime_task_hook")) for item in admission_results)
     admission_effect_status = "success" if member_written else ("skipped" if admission_reason == "no_active_binding" else "attempted")
     _log_effect(command, effect_type="program_admission", idempotency_key=f"{corp_id}:{command.external_contact_id}:{channel_id}:{command.event_log_id or scene}:admission", status=admission_effect_status, channel_id=channel_id, scene_value=scene, reason=admission_reason, response_json={"admission_results": admission_results})
     mode = "program_admission" if member_written else ("standalone_channel" if admission_reason == "no_active_binding" else "channel_baseline_only")
@@ -385,7 +443,7 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         "baseline_effects": {"channel_contact": channel_contact, "welcome_message": welcome, "entry_tag": tag},
         "admission_results": admission_results,
         "program_member_written": bool(member_written),
-        "workflow_triggered": False,
+        "workflow_triggered": bool(workflow_triggered),
         "channel_contact": channel_contact,
         "welcome_message": welcome,
         "entry_tag": tag,
@@ -483,7 +541,10 @@ def dry_run_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
 
 def repair_channel_entry(command: RepairChannelEntryCommand) -> dict[str, Any]:
     event = repo.get_external_contact_event_log(int(command.event_log_id or 0)) if int(command.event_log_id or 0) > 0 else None
-    payload = repo.decode_payload_json((event or {}).get("payload_json")) if event else {"State": text(command.scene_value)}
+    corp_id = text(command.corp_id) or callback_config().get("corp_id", "")
+    payload = repo.decode_payload_json((event or {}).get("payload_json")) if event else {"State": text(command.scene_value), "ToUserName": corp_id}
+    if corp_id and not extract_corp_id(payload):
+        payload["ToUserName"] = corp_id
     external = text((event or {}).get("external_userid")) or text(command.external_userid)
     owner = text((event or {}).get("user_id"))
     result = process_channel_entry(

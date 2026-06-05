@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from .application import (
+    callback_config,
     decrypt_callback_body,
     diagnose_channel_runtime,
     dry_run_channel_entry,
@@ -91,10 +92,11 @@ def generate_qrcode(channel_id: int, payload: dict | None = None) -> dict:
 
 @router.post("/api/admin/channels/runtime-diagnosis/dry-run")
 def runtime_diagnosis_dry_run(payload: dict) -> dict:
+    corp_id = str(payload.get("corp_id") or payload.get("ToUserName") or callback_config().get("corp_id") or "").strip()
     result = dry_run_channel_entry(
         ProcessChannelEntryCommand(
             external_contact_id=str(payload.get("external_userid") or payload.get("external_contact_id") or "dry_run_external_userid").strip(),
-            payload_json={"State": str(payload.get("state") or payload.get("scene_value") or "").strip(), "WelcomeCode": str(payload.get("welcome_code") or "")},
+            payload_json={"State": str(payload.get("state") or payload.get("scene_value") or "").strip(), "WelcomeCode": str(payload.get("welcome_code") or ""), "ToUserName": corp_id},
             follow_user_userid=str(payload.get("follow_user_userid") or "").strip(),
             event_action=str(payload.get("change_type") or "add_external_contact").strip(),
             send_welcome_message=bool(payload.get("welcome_code") or payload.get("welcome_code_present")),
@@ -111,6 +113,7 @@ def repair_entry(payload: dict) -> JSONResponse:
             event_log_id=int(payload.get("event_log_id") or 0) or None,
             external_userid=str(payload.get("external_userid") or payload.get("external_contact_id") or "").strip(),
             scene_value=str(payload.get("scene_value") or payload.get("state") or "").strip(),
+            corp_id=str(payload.get("corp_id") or payload.get("ToUserName") or "").strip(),
         )
     )
     return JSONResponse({"ok": bool(result.get("handled")), "result": result, "source": "aicrm_next.channel_entry"})

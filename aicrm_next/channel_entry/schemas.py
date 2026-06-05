@@ -52,3 +52,4 @@ class RepairChannelEntryCommand(BaseModel):
     event_log_id: int | None = None
     external_userid: str = ""
     scene_value: str = ""
+    corp_id: str = ""

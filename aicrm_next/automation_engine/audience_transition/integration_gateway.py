@@ -19,3 +19,31 @@ class OperationTaskRealtimeTriggerGateway:
             audience_entry_id=int(event.audience_entry_id),
             operator_id=event.operator_id or event.entry_source or "audience_entered",
         )
+
+
+def admit_channel_contact_to_program_with_runtime(
+    *,
+    program_id: int,
+    channel_id: int,
+    binding_id: int,
+    external_contact_id: str,
+    follow_user_userid: str = "",
+    trigger_payload: dict[str, Any] | None = None,
+    trigger_type: str = "qrcode_enter",
+) -> dict[str, Any]:
+    from aicrm_next.integration_gateway.legacy_automation_facade import _with_legacy_app_context
+    from wecom_ability_service.domains.automation_conversion.admission_service import (
+        admit_channel_contact_to_program,
+    )
+
+    return _with_legacy_app_context(
+        lambda: admit_channel_contact_to_program(
+            int(program_id),
+            int(channel_id),
+            int(binding_id),
+            str(external_contact_id or "").strip(),
+            follow_user_userid=str(follow_user_userid or "").strip(),
+            trigger_payload=dict(trigger_payload or {}),
+            trigger_type=str(trigger_type or "qrcode_enter").strip() or "qrcode_enter",
+        )
+    )

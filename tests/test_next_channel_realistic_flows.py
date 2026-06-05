@@ -93,6 +93,7 @@ class RuntimeHarness:
         monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: list(self.bindings.get(channel_id, [])))
         monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_program_member", self.upsert_member)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.insert_program_admission_attempt", self.insert_attempt)
+        monkeypatch.setattr("aicrm_next.channel_entry.application._admit_program_binding", self.admit_program_binding)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.save_tag_snapshot", self.save_tag_snapshot)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.get_channel_by_id", lambda channel_id: self.channel if channel_id == 101 else None)
         monkeypatch.setattr("aicrm_next.channel_entry.repo.list_channel_scene_aliases", lambda channel_id: list(self.aliases.values()))
@@ -183,6 +184,40 @@ class RuntimeHarness:
         self.admission_attempts.append(row)
         return row
 
+    def admit_program_binding(self, **kwargs):
+        member = self.upsert_member(
+            program_id=kwargs["program_id"],
+            channel_id=kwargs["channel_id"],
+            binding_id=kwargs["binding_id"],
+            external_contact_id=kwargs["external_contact_id"],
+            payload=kwargs["trigger_payload"],
+        )
+        attempt = self.insert_attempt(
+            program_id=kwargs["program_id"],
+            channel_id=kwargs["channel_id"],
+            binding_id=kwargs["binding_id"],
+            external_contact_id=kwargs["external_contact_id"],
+            trigger_type=kwargs["trigger_type"],
+            trigger_event_id=str((kwargs["trigger_payload"] or {}).get("event_log_id") or ""),
+            trigger_payload_json=kwargs["trigger_payload"],
+            admission_status="accepted",
+            entry_reason="audience_entry_rule_passed",
+        )
+        return {
+            "admission_status": "accepted",
+            "accepted": True,
+            "reason": "audience_entry_rule_passed",
+            "program_member": member,
+            "legacy_member": {"id": 501, "external_contact_id": kwargs["external_contact_id"]},
+            "admission_attempt": attempt,
+            "audience_entry_id": 601,
+            "audience_code": "operating",
+            "entry_reason": "audience_entry_rule_passed",
+            "realtime_task_hook": {"ok": True},
+            "realtime_operation_tasks_ran": 1,
+            "realtime_operation_tasks_enqueued_count": 1,
+        }
+
     def save_tag_snapshot(self, owner_staff_id, external_contact_id, tag_ids, tag_names):
         for tag_id in tag_ids:
             self.tags.add((owner_staff_id, external_contact_id, tag_id))
@@ -212,6 +247,8 @@ def test_realistic_active_program_flow_has_qr_alias_effects_and_member(runtime):
     assert result["mode"] == "program_admission"
     assert result["scene_match"]["match_type"] == "qrcode_asset_active"
     assert result["program_member_written"] is True
+    assert result["workflow_triggered"] is True
+    assert result["admission_results"][0]["realtime_task_hook"] == {"ok": True}
     assert runtime.aliases["scene-current"]["config_id"] == "config-101"
     assert runtime.contacts[0]["owner_staff_id"] == "owner-a"
     assert runtime.welcome_calls[0]["welcome_code"] == "welcome-real"
