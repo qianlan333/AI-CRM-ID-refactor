@@ -229,6 +229,60 @@ def test_action_port_enqueue_duplicate_does_not_create_second_task():
     assert len(seen) == 1
 
 
+def test_action_port_publish_task_uses_next_queue_gateway():
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import GroupOpsActionDispatcher
+    from aicrm_next.automation_engine.group_ops.action_dispatcher import NextOutboundMessageQueueGateway
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    captured: dict = {}
+
+    def fake_insert_job(**kwargs):
+        captured.update(kwargs)
+        return 789
+
+    dispatcher = GroupOpsActionDispatcher(
+        queue_gateway=NextOutboundMessageQueueGateway(insert_job=fake_insert_job),
+    )
+
+    result = DefaultGroupOpsActionPort(dispatcher).dispatch(
+        {
+            "plan_id": 2,
+            "trigger_event_id": "evt_publish",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_publish"},
+            "action": {"action_type": "publish_task", "content": "publish task content"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "queued"
+    assert result["side_effect_executed"] is False
+    assert captured["command"].idempotency_key == "group_ops:2:evt_publish:wm_publish:publish_task"
+    assert captured["payload"]["external_userid"] == ["wm_publish"]
+    assert captured["payload"]["action"]["action_type"] == "publish_task"
+
+
+def test_action_port_add_to_audience_records_audit_without_side_effect():
+    from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
+
+    result = DefaultGroupOpsActionPort().dispatch(
+        {
+            "plan_id": 3,
+            "trigger_event_id": "evt_audience",
+            "operator_member_id": "HuangYouCan",
+            "recipient": {"external_user_id": "wm_audience"},
+            "action": {"action_type": "add_to_audience", "audience_id": "aud_high_intent"},
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "added"
+    assert result["action_ref_id"] == "aud_high_intent"
+    assert result["side_effect_executed"] is False
+    assert result["audit"]["action_type"] == "add_to_audience"
+    assert result["audit"]["external_userid"] == "wm_audience"
+
+
 def test_action_port_missing_external_userid_returns_clear_error():
     from aicrm_next.automation_engine.group_ops.action_port import DefaultGroupOpsActionPort
 
