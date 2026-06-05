@@ -278,6 +278,10 @@ class BehaviorSegmentSendContentUpdateRequest(BaseModel):
 class AgentMaterialsUpdateRequest(BaseModel):
     agent_code: str
     content_package: SendContentPackage = Field(default_factory=SendContentPackage)
+    requirement: str = ""
+    fallback_content: str = ""
+    prompt: str = ""
+    material_prompt: str = ""
     operator: str = "system"
 
 

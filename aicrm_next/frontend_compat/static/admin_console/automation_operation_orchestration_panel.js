@@ -69,7 +69,8 @@
       segment_content_incomplete: "分层话术不完整",
       behavior_segment_content_missing: "行为分层未覆盖所选分层，实时触发不会入队",
       agent_code_missing: "Agent 未配置",
-      agent_runtime_content_missing: "Agent 个性化未配置可发送兜底内容，实时触发会创建 0 条发送任务",
+      questionnaire_context_missing: "缺少问卷答案上下文",
+      agent_runtime_content_missing: "缺少 Agent 发布提示词或任务生成要求",
       trigger_type_invalid: "触发方式不正确",
       behavior_filter_invalid: "行为过滤不正确",
       content_mode_invalid: "发送策略不正确",
@@ -513,7 +514,9 @@
       const agent = state.preview.agent_runtime_diagnostics || {};
       const agentText =
         Object.keys(agent).length && !agent.expected_send_body_present
-          ? "Agent 个性化未配置可发送兜底内容，实时触发会创建 0 条发送任务"
+          ? agent.questionnaire_context_required && !agent.questionnaire_context_available
+            ? "Agent 需要问卷答案上下文"
+            : "缺少 Agent 发布提示词或任务生成要求"
           : "";
       if (dom.previewReasons) {
         dom.previewReasons.textContent = [reasonText ? `未命中：${reasonText}` : "", diagnosticText ? `内容诊断：${diagnosticText}` : "", agentText]
@@ -617,6 +620,9 @@
 
     function renderAgent(content) {
       const agentConfig = content.agent_config_json || {};
+      const contractAgent = ((state.currentTask || {}).runtime_contract || {}).agent_runtime_diagnostics || {};
+      const previewAgent = state.preview.agent_runtime_diagnostics || {};
+      const runtimeAgent = Object.keys(previewAgent).length ? previewAgent : contractAgent;
       const options = [`<option value="">请选择智能体</option>`]
         .concat(
           state.agents.map((agent) => {
@@ -633,17 +639,32 @@
       const hasMaterial = []
         .concat(agentConfig.image_library_ids || [], agentConfig.miniprogram_library_ids || [], agentConfig.attachment_library_ids || [])
         .filter(Boolean).length > 0;
-      const hasFallback = Boolean(String(agentConfig.fallback_content || agentConfig.requirement || "").trim() || String((state.currentTask || {}).description || "").trim());
+      const hasInstruction = Boolean(
+        String(agentConfig.fallback_content || agentConfig.requirement || agentConfig.prompt || agentConfig.material_prompt || "").trim() ||
+          String((state.currentTask || {}).description || "").trim()
+      );
+      const hasPublishedPrompt = Boolean(runtimeAgent.agent_published_prompt_present);
       const agentWarnings = [];
       if (!String(agentConfig.agent_code || "").trim()) agentWarnings.push("请选择智能体");
-      if (!hasFallback && !hasMaterial) agentWarnings.push("缺少 fallback、requirement、description 或素材");
+      if (!hasInstruction && !hasMaterial && !hasPublishedPrompt) agentWarnings.push("缺少 Agent 发布提示词或任务生成要求");
+      const statusRows = [
+        `已选择 Agent：${String(agentConfig.agent_code || "").trim() ? "是" : "否"}`,
+        `已配置生成要求/兜底：${hasInstruction || hasMaterial ? "是" : "否"}`,
+        `可使用 Agent 已发布提示词 + 问卷答案生成：${hasPublishedPrompt ? "是" : "待刷新命中人数确认"}`,
+      ];
       return `
         <label class="op-task-field"><span>智能体</span><select data-agent-select>${options}</select></label>
         ${statusMessage}
         ${agentWarnings.length ? `<div class="op-task-feedback" style="display:block">${escapeHtml(agentWarnings.join("；"))}</div>` : ""}
+        <div class="op-task-muted">${escapeHtml(statusRows.join("；"))}</div>
+        <label class="op-task-field"><span>生成要求</span><textarea data-agent-requirement rows="3">${escapeHtml(agentConfig.requirement || agentConfig.prompt || "")}</textarea></label>
+        <label class="op-task-field"><span>兜底话术</span><textarea data-agent-fallback rows="3">${escapeHtml(agentConfig.fallback_content || "")}</textarea></label>
         <div class="op-task-strategy-head">
-          <div><h4>Agent 个性化素材</h4><div class="op-task-muted">${escapeHtml(contentSummary(agentConfig, true))}</div></div>
-          <button class="op-task-button is-soft" type="button" data-config-agent-materials>配置素材</button>
+          <div><h4>Agent 个性化配置</h4><div class="op-task-muted">${escapeHtml(contentSummary(agentConfig, true))}</div></div>
+          <div class="op-task-actions">
+            <button class="op-task-button is-soft" type="button" data-save-agent-text>保存生成要求</button>
+            <button class="op-task-button is-soft" type="button" data-config-agent-materials>配置素材</button>
+          </div>
         </div>`;
     }
 
@@ -745,9 +766,9 @@
       const config = operationContent().agent_config_json || {};
       openSendContentComposer({
         title: "Agent 个性化素材",
-        textEnabled: false,
+        textEnabled: true,
         value: {
-          content_text: "",
+          content_text: config.requirement || config.prompt || "",
           image_library_ids: config.image_library_ids || [],
           miniprogram_library_ids: config.miniprogram_library_ids || [],
           attachment_library_ids: config.attachment_library_ids || [],
@@ -755,8 +776,33 @@
         onConfirm: (contentPackage) =>
           saveContent(`${withId(endpoints.taskBase, currentId())}/send-content/agent-materials`, {
             agent_code: agentCode,
+            requirement: contentPackage.content_text || config.requirement || "",
+            fallback_content: config.fallback_content || "",
+            prompt: config.prompt || "",
+            material_prompt: config.material_prompt || "",
             content_package: contentPackage,
           }),
+      });
+    }
+
+    function saveAgentTextConfig() {
+      const agentCode = String(dom.strategyPanel.querySelector("[data-agent-select]")?.value || "").trim();
+      if (!agentCode) {
+        showFeedback(dom.feedback, "请先选择智能体");
+        return Promise.resolve();
+      }
+      const config = operationContent().agent_config_json || {};
+      return saveContent(`${withId(endpoints.taskBase, currentId())}/send-content/agent-materials`, {
+        agent_code: agentCode,
+        requirement: String(dom.strategyPanel.querySelector("[data-agent-requirement]")?.value || "").trim(),
+        fallback_content: String(dom.strategyPanel.querySelector("[data-agent-fallback]")?.value || "").trim(),
+        prompt: config.prompt || "",
+        material_prompt: config.material_prompt || "",
+        content_package: {
+          image_library_ids: config.image_library_ids || [],
+          miniprogram_library_ids: config.miniprogram_library_ids || [],
+          attachment_library_ids: config.attachment_library_ids || [],
+        },
       });
     }
 
@@ -803,6 +849,7 @@
         const behaviorButton = event.target.closest("[data-config-behavior-segment]");
         if (behaviorButton) openBehaviorComposer(behaviorButton.dataset.configBehaviorSegment || "", behaviorButton.closest("[data-segment-name]")?.dataset.segmentName || "");
         if (event.target.closest("[data-config-agent-materials]")) openAgentComposer();
+        if (event.target.closest("[data-save-agent-text]")) await saveAgentTextConfig().catch((error) => showFeedback(dom.feedback, error.message || "保存失败"));
         const actionButton = event.target.closest("[data-task-action]");
         if (actionButton) {
           const taskId = Number(actionButton.closest("[data-task-id]")?.dataset.taskId || 0);

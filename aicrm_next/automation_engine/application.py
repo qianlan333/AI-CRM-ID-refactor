@@ -464,6 +464,16 @@ def _update_task_operation_content(
     return _task_response({"source_status": getattr(repo, "source_status", "fixture_local_contract"), **result})
 
 
+def _current_agent_config(owner: _TaskRepositoryOwner, task_id: int) -> dict[str, Any]:
+    repo = owner._repo_or_none()
+    if repo is None:
+        return {}
+    current = repo.get_task(int(task_id))
+    if not current:
+        raise NotFoundError("automation task not found")
+    return dict(_operation_content_from_task(current).get("agent_config_json") or {})
+
+
 def _update_task_segment_content(
     owner: _TaskRepositoryOwner,
     task_id: int,
@@ -1040,7 +1050,9 @@ class UpdateTaskSendStrategyCommand(_TaskRepositoryOwner):
             agent_code = str(request.agent_code or "").strip()
             if not agent_code:
                 raise ContractError("agent 模式必须提供 agent_code")
-            operation_patch["agent_config_json"] = {"agent_code": agent_code}
+            agent_config = _current_agent_config(self, int(task_id))
+            agent_config["agent_code"] = agent_code
+            operation_patch["agent_config_json"] = agent_config
         return _update_task_operation_content(
             self,
             task_id,
@@ -1129,20 +1141,31 @@ class SaveAgentMaterialsCommand(_TaskRepositoryOwner):
             raise ContractError("agent_code 不能为空")
         content_package = NormalizeSendContentPackageCommand()(
             request.content_package,
-            text_enabled=False,
+            text_enabled=True,
             require_body=False,
         )
+        agent_config = _current_agent_config(self, int(task_id))
+        agent_config.update(
+            {
+                "agent_code": agent_code,
+                "image_library_ids": content_package["image_library_ids"],
+                "miniprogram_library_ids": content_package["miniprogram_library_ids"],
+                "attachment_library_ids": content_package["attachment_library_ids"],
+            }
+        )
+        for key in ("requirement", "fallback_content", "prompt", "material_prompt"):
+            value = str(getattr(request, key, "") or "").strip()
+            if value or key not in agent_config:
+                agent_config[key] = value
+        content_text = str(content_package.get("content_text") or "").strip()
+        if content_text and not str(agent_config.get("requirement") or "").strip():
+            agent_config["requirement"] = content_text
         return _update_task_operation_content(
             self,
             task_id,
             {
                 "content_mode": "agent",
-                "agent_config_json": {
-                    "agent_code": agent_code,
-                    "image_library_ids": content_package["image_library_ids"],
-                    "miniprogram_library_ids": content_package["miniprogram_library_ids"],
-                    "attachment_library_ids": content_package["attachment_library_ids"],
-                },
+                "agent_config_json": agent_config,
             },
             operator=request.operator,
         )

@@ -191,7 +191,7 @@ def test_automation_behavior_rules_and_agent_materials(client) -> None:
         json={
             "agent_code": "hxc_activation",
             "content_package": {
-                "content_text": "必须忽略",
+                "content_text": "生成要求",
                 "image_library_ids": [12],
                 "miniprogram_library_ids": [34],
                 "attachment_library_ids": [56],
@@ -205,5 +205,9 @@ def test_automation_behavior_rules_and_agent_materials(client) -> None:
         "image_library_ids": [12],
         "miniprogram_library_ids": [34],
         "attachment_library_ids": [56],
+        "requirement": "生成要求",
+        "fallback_content": "",
+        "prompt": "",
+        "material_prompt": "",
     }
     assert "content_text" not in agent_config

@@ -163,7 +163,7 @@ def test_behavior_segment_lt_2_and_invalid_key(client) -> None:
     assert invalid.status_code == 400
 
 
-def test_agent_materials_write_agent_config_without_content_text(client) -> None:
+def test_agent_materials_write_requirement_without_raw_content_text(client) -> None:
     task_id = _create_task(client)
 
     response = client.put(
@@ -171,7 +171,7 @@ def test_agent_materials_write_agent_config_without_content_text(client) -> None
         json={
             "agent_code": "hxc_activation",
             "content_package": {
-                "content_text": "必须忽略",
+                "content_text": "生成要求",
                 "image_library_ids": [12],
                 "miniprogram_library_ids": [34],
                 "attachment_library_ids": [56],
@@ -187,8 +187,38 @@ def test_agent_materials_write_agent_config_without_content_text(client) -> None
         "image_library_ids": [12],
         "miniprogram_library_ids": [34],
         "attachment_library_ids": [56],
+        "requirement": "生成要求",
+        "fallback_content": "",
+        "prompt": "",
+        "material_prompt": "",
     }
     assert "content_text" not in operation_content["agent_config_json"]
+
+
+def test_agent_send_strategy_switch_preserves_generation_config(client) -> None:
+    task_id = _create_task(client)
+    saved = client.put(
+        f"/api/admin/automation-conversion/tasks/{task_id}/send-content/agent-materials",
+        json={
+            "agent_code": "first_agent",
+            "requirement": "结合问卷答案生成",
+            "fallback_content": "兜底话术",
+            "content_package": {"image_library_ids": [12]},
+        },
+    )
+    assert saved.status_code == 200
+
+    switched = client.put(
+        f"/api/admin/automation-conversion/tasks/{task_id}/send-strategy",
+        json={"content_mode": "agent", "agent_code": "second_agent"},
+    )
+
+    assert switched.status_code == 200
+    agent_config = _operation_content(switched.json()["task"])["agent_config_json"]
+    assert agent_config["agent_code"] == "second_agent"
+    assert agent_config["requirement"] == "结合问卷答案生成"
+    assert agent_config["fallback_content"] == "兜底话术"
+    assert agent_config["image_library_ids"] == [12]
 
 
 def test_behavior_segment_rules(client) -> None:
@@ -198,4 +228,3 @@ def test_behavior_segment_rules(client) -> None:
     rule = response.json()["rules"][0]
     assert rule["rule_key"] == "default_message_count"
     assert [segment["segment_key"] for segment in rule["segments"]] == ["lt_2", "between_2_9", "gte_10"]
-

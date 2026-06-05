@@ -46,6 +46,8 @@ def test_operation_setup_panel_exposes_next_native_task_and_group_controls() -> 
     assert "agentLoadStatus" in script
     assert "智能体列表加载失败，请检查 Agent 接口/生产数据源" in script
     assert "智能体列表为空，请检查 Agent 接口/生产数据源" in script
+    assert "data-save-agent-text" in script
+    assert "可使用 Agent 已发布提示词 + 问卷答案生成" in script
     assert "FALLBACK_AGENTS" not in script
 
 
@@ -209,6 +211,42 @@ def test_operation_setup_send_content_routes_bind_to_operation_task() -> None:
     assert updated["content_mode"] == "unified"
     assert updated["unified_content_json"]["content_text"] == "统一话术"
     assert updated["unified_content_json"]["image_library_ids"] == [1]
+
+
+def test_operation_setup_agent_materials_merge_generation_fields() -> None:
+    client = TestClient(app)
+
+    task_response = client.post(
+        "/api/admin/automation-conversion/programs/1/setup/operation-tasks",
+        json={"task_name": "Agent 内容任务", "content_mode": "agent", "agent_config_json": {"agent_code": "first_agent"}},
+    )
+    task = task_response.json()["task"]
+    content_response = client.put(
+        f"/api/admin/automation-conversion/programs/1/setup/operation-tasks/{task['id']}/send-content/agent-materials",
+        json={
+            "agent_code": "first_agent",
+            "requirement": "结合问卷答案生成",
+            "fallback_content": "兜底话术",
+            "content_package": {"image_library_ids": [1]},
+        },
+    )
+
+    assert content_response.status_code == 200
+    agent_config = content_response.json()["task"]["agent_config_json"]
+    assert agent_config["agent_code"] == "first_agent"
+    assert agent_config["requirement"] == "结合问卷答案生成"
+    assert agent_config["fallback_content"] == "兜底话术"
+    assert agent_config["image_library_ids"] == [1]
+
+    strategy_response = client.put(
+        f"/api/admin/automation-conversion/programs/1/setup/operation-tasks/{task['id']}/send-strategy",
+        json={"content_mode": "agent", "agent_code": "second_agent"},
+    )
+    switched_config = strategy_response.json()["task"]["agent_config_json"]
+    assert switched_config["agent_code"] == "second_agent"
+    assert switched_config["requirement"] == "结合问卷答案生成"
+    assert switched_config["fallback_content"] == "兜底话术"
+    assert switched_config["image_library_ids"] == [1]
 
 
 def test_operation_setup_profile_mode_reuses_saved_segmentation_categories() -> None:

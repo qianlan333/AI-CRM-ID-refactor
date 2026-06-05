@@ -12,6 +12,7 @@ from aicrm_next.automation_engine.operation_task_contract import (
 )
 from ..broadcast_jobs import repo as broadcast_queue_repo
 from ..broadcast_jobs import service as broadcast_queue
+from .agents import repo as agent_repo
 from . import operation_task_repo as repo
 from . import workflow_repo
 from . import workflow_runtime
@@ -266,7 +267,7 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
 def _validate_publishable_task(task: dict[str, Any]) -> None:
     if _text(task.get("status")) != "active":
         return
-    validate_publishable_task(task)
+    validate_publishable_task(task, agent_runtime_context=_agent_runtime_context(task, require_questionnaire_context=False))
 
 
 def list_task_groups(program_id: int) -> dict[str, Any]:
@@ -494,11 +495,111 @@ def _preview_all_current_entries(program_id: int) -> list[dict[str, Any]]:
     return list(by_id.values())
 
 
+def _agent_code(task: dict[str, Any]) -> str:
+    return _text((dict(task.get("agent_config_json") or {})).get("agent_code"))
+
+
+def _agent_published_prompt_context(task: dict[str, Any]) -> dict[str, Any]:
+    agent_code = _agent_code(task)
+    if not agent_code:
+        return {
+            "agent_published_prompt_present": False,
+            "agent_published_role_prompt_present": False,
+            "agent_published_task_prompt_present": False,
+            "enabled_context_sources": [],
+            "agent_prompt_error": "",
+        }
+    try:
+        row = agent_repo.deserialize_agent_config_row(agent_repo.get_agent_config_row(agent_code) or {})
+        role_prompt = _text(row.get("published_role_prompt"))
+        task_prompt = _text(row.get("published_task_prompt"))
+        enabled_context_sources = workflow_runtime._resolve_effective_enabled_context_sources(
+            role_prompt=role_prompt,
+            task_prompt=task_prompt,
+            enabled_context_sources=None,
+            variables=row.get("published_variables_json") or [],
+        )
+        return {
+            "agent_published_prompt_present": bool(role_prompt or task_prompt),
+            "agent_published_role_prompt_present": bool(role_prompt),
+            "agent_published_task_prompt_present": bool(task_prompt),
+            "enabled_context_sources": list(enabled_context_sources),
+            "agent_prompt_error": "",
+        }
+    except Exception as exc:
+        return {
+            "agent_published_prompt_present": False,
+            "agent_published_role_prompt_present": False,
+            "agent_published_task_prompt_present": False,
+            "enabled_context_sources": [],
+            "agent_prompt_error": str(exc),
+        }
+
+
+def _member_questionnaire_context(member: dict[str, Any]) -> dict[str, Any]:
+    latest_submission = workflow_repo.get_latest_any_questionnaire_submission_row(
+        external_contact_ids=[_text(member.get("external_contact_id"))],
+        phone=_text(member.get("phone")),
+    )
+    answers = (
+        workflow_repo.list_questionnaire_submission_answer_rows(int(latest_submission["id"]))
+        if latest_submission
+        else []
+    )
+    return {
+        "questionnaire_context_available": bool(answers),
+        "questionnaire_submission_id": int((latest_submission or {}).get("id") or 0),
+        "questionnaire_answer_count": len(answers),
+    }
+
+
+def _agent_runtime_context(
+    task: dict[str, Any],
+    *,
+    member: dict[str, Any] | None = None,
+    require_questionnaire_context: bool | None = None,
+) -> dict[str, Any]:
+    config = dict(task.get("agent_config_json") or {})
+    context = _agent_published_prompt_context(task)
+    enabled_sources = list(context.get("enabled_context_sources") or [])
+    if require_questionnaire_context is None:
+        require_questionnaire_context = bool(config.get("questionnaire_context_required")) or "questionnaire" in enabled_sources
+    if member is not None:
+        context.update(_member_questionnaire_context(member))
+    else:
+        context.update(
+            {
+                "questionnaire_context_available": False,
+                "questionnaire_submission_id": 0,
+                "questionnaire_answer_count": 0,
+            }
+        )
+    context["questionnaire_context_required"] = bool(require_questionnaire_context)
+    return context
+
+
+def _agent_runtime_context_for_entries(task: dict[str, Any], entries: list[dict[str, Any]]) -> dict[str, Any]:
+    base = _agent_runtime_context(task, require_questionnaire_context=None)
+    questionnaire_available = False
+    questionnaire_submission_id = 0
+    questionnaire_answer_count = 0
+    for entry in entries:
+        member_context = _agent_runtime_context(task, member=dict(entry.get("member") or {}), require_questionnaire_context=None)
+        if bool(member_context.get("questionnaire_context_available")):
+            questionnaire_available = True
+            questionnaire_submission_id = int(member_context.get("questionnaire_submission_id") or 0)
+            questionnaire_answer_count += int(member_context.get("questionnaire_answer_count") or 0)
+    base["questionnaire_context_available"] = questionnaire_available
+    base["questionnaire_submission_id"] = questionnaire_submission_id
+    base["questionnaire_answer_count"] = questionnaire_answer_count
+    return base
+
+
 def _preview_content_ready(task: dict[str, Any], entry: dict[str, Any]) -> tuple[bool, str]:
     member = dict(entry.get("member") or {})
     mode = _text(task.get("content_mode")) or "unified"
     if mode == "agent":
-        diag = agent_runtime_diagnostics(task)
+        diag = agent_runtime_diagnostics(task, agent_runtime_context=_agent_runtime_context(task, member=member))
         return bool(diag.get("expected_send_body_present")), "agent"
     segment_key, content_text, content = _render_for_member(task, member, request_id="preview")
     return _content_has_send_body(content_text, content), segment_key
@@ -568,8 +669,12 @@ def preview_operation_task_audience(program_id: int, payload: dict[str, Any]) ->
         program_id=int(program_id),
         operator_id="preview",
     )
-    diagnostics = publishable_diagnostics(task)
     preview = _preview_entries(task)
+    agent_context = None
+    if task["content_mode"] == "agent":
+        context_entries = preview["entries"] or _preview_all_current_entries(int(program_id))
+        agent_context = _agent_runtime_context_for_entries(task, context_entries)
+    diagnostics = publishable_diagnostics(task, agent_runtime_context=agent_context)
     return {
         "preview": {
             "target_count": len(preview["entries"]),
@@ -577,7 +682,9 @@ def preview_operation_task_audience(program_id: int, payload: dict[str, Any]) ->
             "filtered_out_counts": preview["filtered_out_counts"],
             "reasons": preview["reasons"],
             "content_diagnostics": diagnostics,
-            "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if task["content_mode"] == "agent" else {},
+            "agent_runtime_diagnostics": agent_runtime_diagnostics(task, agent_runtime_context=agent_context)
+            if task["content_mode"] == "agent"
+            else {},
         }
     }
 
@@ -596,7 +703,14 @@ def _render_agent_for_member(
     request_id: str,
 ) -> tuple[str, str, dict[str, Any]]:
     config = dict(task.get("agent_config_json") or {})
-    standard_content_text = _text(config.get("fallback_content")) or _text(config.get("requirement")) or _text(task.get("description"))
+    standard_content_text = (
+        _text(config.get("fallback_content"))
+        or _text(config.get("requirement"))
+        or _text(config.get("prompt"))
+        or _text(config.get("material_prompt"))
+        or _text(task.get("description"))
+    )
+    agent_context = _agent_runtime_context(task, member=member)
     workflow_bundle = {
         "workflow": {
             "workflow_code": f"operation_task_{int(task.get('program_id') or 0)}",
@@ -636,11 +750,20 @@ def _render_agent_for_member(
         **config,
         "agent_config": config,
         "agent_code": _text(generated.get("agent_code")) or agent_code,
+        "agent_published_prompt_present": bool(agent_context.get("agent_published_prompt_present")),
+        "agent_published_role_prompt_present": bool(agent_context.get("agent_published_role_prompt_present")),
+        "agent_published_task_prompt_present": bool(agent_context.get("agent_published_task_prompt_present")),
+        "questionnaire_context_required": bool(agent_context.get("questionnaire_context_required")),
+        "questionnaire_context_available": bool(agent_context.get("questionnaire_context_available")),
+        "questionnaire_submission_id": int(agent_context.get("questionnaire_submission_id") or 0),
+        "questionnaire_answer_count": int(agent_context.get("questionnaire_answer_count") or 0),
+        "generation_source": "automation_operation_task",
         "content_source": _text(generated.get("content_source")) or "standard_content",
         "fallback_reason": _text(generated.get("fallback_reason")),
         "agent_run_id": _text(generated.get("agent_run_id")),
         "agent_output_id": _text(generated.get("agent_output_id")),
         "behavior_match": behavior_match,
+        "agent_runtime_context": agent_context,
     }
     return "agent", _text(generated.get("content_text")) or standard_content_text, content
 
@@ -694,6 +817,8 @@ def _diagnostic_reason_from_contract(task: dict[str, Any], diagnostics: dict[str
     errors = list(diagnostics.get("errors") or [])
     if not errors:
         return ""
+    if "questionnaire_context_missing" in errors:
+        return "questionnaire_context_missing"
     if "agent_runtime_content_missing" in errors:
         return "agent_runtime_content_missing"
     if "behavior_segment_content_missing" in errors:
@@ -707,7 +832,8 @@ def _render_result_summary_for_entry(task: dict[str, Any], entry: dict[str, Any]
     member = dict(entry.get("member") or {})
     mode = _text(task.get("content_mode")) or "unified"
     if mode == "agent":
-        agent_diag = agent_runtime_diagnostics(task)
+        agent_context = _agent_runtime_context(task, member=member)
+        agent_diag = agent_runtime_diagnostics(task, agent_runtime_context=agent_context)
         return {
             "content_mode": mode,
             "segment_key": "agent",
@@ -715,6 +841,7 @@ def _render_result_summary_for_entry(task: dict[str, Any], entry: dict[str, Any]
             "send_body_present": bool(agent_diag.get("expected_send_body_present")),
             "external_contact_id_present": bool(_text(member.get("external_contact_id"))),
             "agent_runtime_diagnostics": agent_diag,
+            "agent_runtime_context": agent_context,
         }
     segment_key, content_text, content = _render_for_member(task, member, request_id="diagnostic")
     return {
@@ -733,6 +860,15 @@ def _diagnostic_reason_from_render(task: dict[str, Any], summary: dict[str, Any]
         return ""
     mode = _text(task.get("content_mode")) or "unified"
     if mode == "agent":
+        agent_diag = dict(summary.get("agent_runtime_diagnostics") or {})
+        if (
+            agent_diag.get("agent_published_prompt_present")
+            and agent_diag.get("questionnaire_context_required")
+            and not agent_diag.get("questionnaire_context_available")
+            and not agent_diag.get("task_instruction_present")
+            and not agent_diag.get("task_material_present")
+        ):
+            return "questionnaire_context_missing"
         return "agent_runtime_content_missing"
     if mode == "behavior_layered":
         return "behavior_segment_content_missing"
@@ -759,7 +895,9 @@ def _event_task_diagnostic_result(
     blocked_by_existing_execution: bool = False,
     blocked_by_existing_job: bool = False,
 ) -> dict[str, Any]:
-    diagnostics = publishable_diagnostics(task)
+    render_summary = dict(render_result_summary) if isinstance(render_result_summary, dict) else {}
+    agent_context = dict(render_summary.get("agent_runtime_context") or {})
+    diagnostics = publishable_diagnostics(task, agent_runtime_context=agent_context or None)
     result = {
         "task_id": int(task.get("id") or 0),
         "task_name": _text(task.get("task_name")),
@@ -769,7 +907,9 @@ def _event_task_diagnostic_result(
         "status": _text(status),
         "reason": _text(reason) or _diagnostic_reason_from_contract(task, diagnostics) or "ok",
         "content_diagnostics": diagnostics,
-        "agent_runtime_diagnostics": agent_runtime_diagnostics(task) if _text(task.get("content_mode")) == "agent" else {},
+        "agent_runtime_diagnostics": agent_runtime_diagnostics(task, agent_runtime_context=agent_context or None)
+        if _text(task.get("content_mode")) == "agent"
+        else {},
         "render_result_summary": dict(render_result_summary)
         if isinstance(render_result_summary, dict)
         else {"items": list(render_result_summary or [])}
@@ -903,7 +1043,8 @@ def _materialize_operation_task_execution(
         return execution, existing_items
 
     entries = list(entries) if entries is not None else _candidate_entries(task, now=scheduled_for)
-    diagnostics = publishable_diagnostics(task)
+    agent_context = _agent_runtime_context_for_entries(task, entries) if _text(task.get("content_mode")) == "agent" else None
+    diagnostics = publishable_diagnostics(task, agent_runtime_context=agent_context)
     contract_reason = _diagnostic_reason_from_contract(task, diagnostics)
     if contract_reason:
         execution = repo.update_execution(
@@ -932,6 +1073,27 @@ def _materialize_operation_task_execution(
     for entry in entries:
         member = dict(entry.get("member") or {})
         render_request_id = f"{execution_id}:{int(entry.get('id') or 0) or int(member.get('id') or 0)}"
+        if _text(task.get("content_mode")) == "agent":
+            entry_agent_context = _agent_runtime_context(task, member=member)
+            entry_diagnostics = publishable_diagnostics(task, agent_runtime_context=entry_agent_context)
+            entry_contract_reason = _diagnostic_reason_from_contract(task, entry_diagnostics)
+            if entry_contract_reason:
+                failed_count += 1
+                skipped_summaries.append(
+                    {
+                        "audience_entry_id": int(entry.get("id") or 0),
+                        "member_id": int(member.get("id") or entry.get("member_id") or 0),
+                        "segment_key": "agent",
+                        "content_text_present": False,
+                        "send_body_present": False,
+                        "external_contact_id_present": bool(_text(member.get("external_contact_id"))),
+                        "reason": entry_contract_reason,
+                        "content_diagnostics": entry_diagnostics,
+                        "agent_runtime_diagnostics": entry_diagnostics.get("details", {}).get("agent_runtime_diagnostics") or {},
+                        "agent_runtime_context": entry_agent_context,
+                    }
+                )
+                continue
         segment_key, content_text, content = _render_for_member(task, member, request_id=render_request_id)
         if not _content_has_send_body(content_text, content) or not _text(member.get("external_contact_id")):
             failed_count += 1
