@@ -207,6 +207,9 @@ def test_paid_transition_writes_outbox_once(app):
 
 def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     product = _create_product()
+    get_db().execute("UPDATE wechat_pay_products SET product_code = ? WHERE id = ?", ("subscription_trial_month", product["id"]))
+    get_db().commit()
+    product["product_code"] = "subscription_trial_month"
     order = _insert_order(product)
     _public_dns(monkeypatch)
 
@@ -307,6 +310,29 @@ def test_external_push_worker_success_failure_skip_and_dedupe(app, monkeypatch):
     deduped = external_push_service.process_transaction_paid_outbox(dict(outbox_row))
     assert deduped["deduped"] is True
     assert get_db().execute("SELECT COUNT(*) AS count FROM external_push_delivery WHERE order_id = ?", (order["id"],)).fetchone()["count"] == 1
+
+    alias_order = _insert_order(product, out_trade_no="WXP_PUSH_ALIAS")
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET status = 'paid',
+            trade_state = 'SUCCESS',
+            product_code = 'prd_20260518095708_9f77db',
+            paid_at = ?
+        WHERE id = ?
+        """,
+        ("2026-06-01T08:30:10+00:00", alias_order["id"]),
+    )
+    get_db().commit()
+    alias_outbox = external_push_service.enqueue_transaction_paid_event(
+        dict(get_db().execute("SELECT * FROM wechat_pay_orders WHERE id = ?", (alias_order["id"],)).fetchone())
+    )
+    monkeypatch.setattr(external_push_service.requests, "post", capture_success_post)
+    alias_result = external_push_service.process_transaction_paid_outbox(alias_outbox)
+    alias_delivery = get_db().execute("SELECT * FROM external_push_delivery WHERE order_id = ?", (alias_order["id"],)).fetchone()
+    assert alias_result["ok"] is True
+    assert alias_delivery["status"] == "success"
+    assert alias_delivery["product_id"] == product["id"]
 
     product_failed = _create_product(name="失败外推商品")
     order_failed = _insert_order(product_failed, out_trade_no="WXP_PUSH_FAILED")
