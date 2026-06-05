@@ -717,7 +717,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Public questionnaire read routes are Next guarded preview with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary in group 9; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
+    notes: Public questionnaire read routes use Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
   - route_pattern: /api/h5/questionnaires/{slug}/submit
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.questionnaire
@@ -756,7 +756,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Public H5 page rendered by Next frontend templates; WeChat auth gate uses the retained legacy OAuth transport and session cookie.
+    notes: Public H5 page rendered by Next frontend templates; WeChat auth gate uses Next respondent identity cookies and Next OAuth runtime config, not legacy Flask session/config helpers.
   - route_pattern: /api/h5/wechat/oauth/start
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire

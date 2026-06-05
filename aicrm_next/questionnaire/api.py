@@ -39,6 +39,7 @@ from .application import (
     GetPublicQuestionnaireQuery,
     GetPublicQuestionnaireSubmissionStatusQuery,
     GetQuestionnaireDetailQuery,
+    GetQuestionnaireOAuthConfigQuery,
     GetQuestionnairePreflightQuery,
     GetQuestionnaireShareQuery,
     GetQuestionnaireResultsSummaryQuery,
@@ -51,7 +52,8 @@ from .application import (
     build_questionnaire_share_payload,
 )
 from .dto import OAuthCallbackRequest, OAuthStartRequest
-from .oauth import COOKIE_NAME, questionnaire_h5_identity_from_cookies, questionnaire_oauth_state_context, resolve_adapter_mode
+from .oauth import COOKIE_NAME, questionnaire_oauth_state_context
+from .public_access import QuestionnaireRespondentIdentityService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -461,18 +463,31 @@ def _questionnaire_oauth_start_url(slug: str, source_params: dict[str, str]) -> 
     return f"/api/h5/wechat/oauth/start?{urlencode(query)}"
 
 
-def _questionnaire_session_identity_from_request(request: Request) -> dict[str, str]:
-    return questionnaire_h5_identity_from_cookies(request.cookies)
-
-
 def _questionnaire_identity_from_request(request: Request) -> dict[str, str]:
-    identity = {
-        key: value
-        for key, value in _questionnaire_session_identity_from_request(request).items()
-        if key in _QUESTIONNAIRE_IDENTITY_HINT_FIELDS and value
-    }
-    identity.update(_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS))
-    return identity
+    return _questionnaire_identity_result_from_request(request)["identity"]
+
+
+def _questionnaire_identity_result_from_request(request: Request) -> dict[str, Any]:
+    return QuestionnaireRespondentIdentityService().resolve(
+        cookies=request.cookies,
+        request_identity=_request_values(request, _QUESTIONNAIRE_IDENTITY_HINT_FIELDS),
+        slug=str(request.path_params.get("slug") or request.query_params.get("slug") or ""),
+    )
+
+
+def _with_identity_cookie(response: Response, identity_result: dict[str, Any]) -> Response:
+    cookie_value = str(identity_result.get("cookie_value") or "")
+    if cookie_value:
+        response.set_cookie(
+            str(identity_result.get("cookie_name") or COOKIE_NAME),
+            cookie_value,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 365,
+            path="/",
+        )
+    return response
 
 
 def _questionnaire_share_url(request: Request, questionnaire: dict[str, Any]) -> str:
@@ -627,11 +642,12 @@ def latest_submit_debug(questionnaire_id: int) -> dict:
 
 
 @router.get("/api/h5/questionnaires/{slug}")
-def public_get_questionnaire(request: Request, slug: str) -> dict:
+def public_get_questionnaire(request: Request, slug: str) -> Response:
     try:
-        submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
+        identity_result = _questionnaire_identity_result_from_request(request)
+        submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity_result["identity"])
         if submission_status.get("submitted"):
-            return JSONResponse(
+            return _with_identity_cookie(JSONResponse(
                 {
                     "ok": False,
                     "error": "already_submitted",
@@ -639,8 +655,8 @@ def public_get_questionnaire(request: Request, slug: str) -> dict:
                     "redirect_url": submission_status.get("redirect_url") or submission_status.get("submitted_url"),
                 },
                 status_code=409,
-            )
-        return GetPublicQuestionnaireQuery()(slug)
+            ), identity_result)
+        return _with_identity_cookie(JSONResponse(jsonable_encoder(GetPublicQuestionnaireQuery()(slug))), identity_result)
     except Exception as exc:
         _raise_http(exc)
 
@@ -823,16 +839,24 @@ def public_questionnaire_h5_page(request: Request, slug: str):
     questions = jsonable_encoder(payload.get("questions") or [])
     source_params = _request_values(request, _QUESTIONNAIRE_SOURCE_PARAM_FIELDS)
     request_hints = _request_values(request, _QUESTIONNAIRE_META_FIELDS)
-    session_identity = _questionnaire_session_identity_from_request(request)
-    submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=_questionnaire_identity_from_request(request))
+    identity_result = _questionnaire_identity_result_from_request(request)
+    identity = dict(identity_result.get("identity") or {})
+    request_hints = {**request_hints, **{key: value for key, value in identity.items() if value}}
+    submission_status = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity)
     if submission_status.get("submitted"):
         redirect_url = str(
             submission_status.get("redirect_url") or submission_status.get("submitted_url") or f"/s/{slug}/submitted"
         ).strip()
-        return RedirectResponse(redirect_url, status_code=302)
+        return _with_identity_cookie(RedirectResponse(redirect_url, status_code=302), identity_result)
     is_wechat_browser = _is_wechat_browser(request)
-    is_authorized = bool(session_identity.get("openid") or session_identity.get("unionid") or session_identity.get("respondent_key"))
-    oauth_configured = bool(resolve_adapter_mode())
+    is_authorized = bool(
+        identity.get("openid")
+        or identity.get("unionid")
+        or identity.get("external_userid")
+        or (identity.get("respondent_key") and not identity_result.get("anonymous"))
+    )
+    oauth_config = GetQuestionnaireOAuthConfigQuery()()
+    oauth_configured = bool(oauth_config.get("configured"))
     page_mode = "auth_gate" if is_wechat_browser and not is_authorized else "questionnaire"
     env_notice = ""
     if page_mode == "auth_gate":
@@ -856,11 +880,12 @@ def public_questionnaire_h5_page(request: Request, slug: str):
         "is_wechat_browser": is_wechat_browser,
         "is_authorized": is_authorized,
     }
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "questionnaire_h5_page.html",
         {"request": request, "page_state": page_state},
     )
+    return _with_identity_cookie(response, identity_result)
 
 
 @router.get("/s/{slug}/submitted", response_class=HTMLResponse)
