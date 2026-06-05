@@ -21,6 +21,7 @@
     escapeBound: false,
     scope: "",
     pageSize: "",
+    includeInactive: null,
   };
 
   function memberLabel(member) {
@@ -28,6 +29,15 @@
     const displayName = String((member || {}).display_name || "").trim();
     if (!displayName || displayName === userId) return userId;
     return `${displayName} / ${userId}`;
+  }
+
+  function optionBool(options, camelKey, snakeKey) {
+    const hasCamel = Object.prototype.hasOwnProperty.call(options, camelKey);
+    const hasSnake = Object.prototype.hasOwnProperty.call(options, snakeKey);
+    if (!hasCamel && !hasSnake) return null;
+    const raw = hasCamel ? options[camelKey] : options[snakeKey];
+    if (typeof raw === "string") return !["0", "false", "no", "off", ""].includes(raw.trim().toLowerCase());
+    return Boolean(raw);
   }
 
   function ensureStyles() {
@@ -266,6 +276,7 @@
     if (q) url.searchParams.set("q", q);
     if (state.scope) url.searchParams.set("scope", state.scope);
     if (state.pageSize) url.searchParams.set("page_size", state.pageSize);
+    if (state.includeInactive !== null) url.searchParams.set("include_inactive", state.includeInactive ? "true" : "false");
     return url;
   }
 
@@ -361,6 +372,7 @@
     const value = String(options.value || options.selectedUserId || "").trim();
     state.scope = String(options.scope || "").trim();
     state.pageSize = String(options.page_size || options.pageSize || "").trim();
+    state.includeInactive = optionBool(options, "includeInactive", "include_inactive");
     state.confirmed = options.selectedMember || (value ? { user_id: value, display_name: options.selectedLabel || value, avatar_url: "" } : null);
     state.selected = state.confirmed;
     state.onSelect = options.onSelect || options.onConfirm || null;
@@ -379,11 +391,14 @@
     if (!normalized) return null;
     const previousScope = state.scope;
     const previousPageSize = state.pageSize;
+    const previousIncludeInactive = state.includeInactive;
     state.scope = String(options.scope || "").trim();
     state.pageSize = String(options.page_size || options.pageSize || "").trim();
+    state.includeInactive = optionBool(options, "includeInactive", "include_inactive");
     const url = scopedUrl(normalized);
     state.scope = previousScope;
     state.pageSize = previousPageSize;
+    state.includeInactive = previousIncludeInactive;
     const response = await fetch(url.toString(), { headers: { Accept: "application/json" }, credentials: "same-origin" });
     const data = await response.json().catch(() => ({}));
     return (data.items || []).find((item) => item.user_id === normalized) || (data.items || [])[0] || null;

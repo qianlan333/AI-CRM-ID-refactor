@@ -103,6 +103,8 @@ def test_operation_member_picker_error_empty_debounce_clear_cancel_confirm_contr
     assert "url.searchParams.set(\"q\", q)" in source
     assert 'url.searchParams.set("scope", state.scope)' in source
     assert 'url.searchParams.set("page_size", state.pageSize)' in source
+    assert 'url.searchParams.set("include_inactive", state.includeInactive ? "true" : "false")' in source
+    assert "includeInactive" in source
 
 
 def test_business_pages_use_operation_member_picker_instead_of_visible_userid_inputs():

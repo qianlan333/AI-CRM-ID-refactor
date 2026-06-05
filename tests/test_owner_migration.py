@@ -62,14 +62,41 @@ class FakeOwnerMigrationRepository:
         }
 
 
-def test_owner_migration_page_renders_default_mengyu_to_huangyoucan(monkeypatch):
+def test_owner_migration_page_renders_frontend_workbench_contract(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     response = TestClient(create_app()).get("/admin/owner-migration")
 
     assert response.status_code == 200
-    assert 'value="mengyu"' in response.text
-    assert 'value="huangyoucan"' in response.text
-    assert "执行迁移" in response.text
+    html = response.text
+    assert "客户负责人迁移 / 在职继承" in html
+    assert "先完成企微客户转接，再同步 CRM 本地归属；执行前必须预览。" in html
+    assert "① 选择人员与话术" in html
+    assert "② 选择迁移范围" in html
+    assert "③ 预览结果" in html
+    assert "④ 二次确认与执行" in html
+    assert 'name="scope_type" value="excel_include" checked' in html
+    assert 'name="scope_type" value="all"' in html
+    assert 'type="hidden" value="mengyu" data-owner-userid="source"' in html
+    assert 'type="hidden" value="huangyoucan" data-owner-userid="target"' in html
+    assert 'type="text" name="source_owner_userid"' not in html
+    assert 'type="text" name="target_owner_userid"' not in html
+    assert "OperationMemberPicker.open" in html
+    assert 'scope: "owner_migration"' in html
+    assert "includeInactive: kind === \"source\"" in html
+    assert "/api/admin/owner-migration/template.xlsx" in html
+    assert "/api/admin/owner-migration/import" in html
+    assert "/api/admin/owner-migration/preview" in html
+    assert "/api/admin/owner-migration/execute" in html
+    assert "/api/admin/owner-migration/sessions/" in html
+    assert "/api/admin/owner-migration/results/" in html
+    assert "preview_token" in html
+    assert "preview_hash" in html
+    assert "confirm_phrase" in html
+    assert "eligible_external_userids" not in html
+    assert "all_external_userids" not in html
+    assert "external_userids: [" not in html
+    assert "fakeCustomerDB" not in html
+    assert "xlsx.full.min.js" not in html
 
 
 def test_owner_migration_service_rejects_same_owner():
