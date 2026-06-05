@@ -17,6 +17,7 @@ from .domain import (
     scene_match,
     text,
 )
+from .identity_bridge import sync_external_contact_identity_for_event
 from .schemas import (
     DiagnoseChannelRuntimeQuery,
     GenerateChannelQrCodeCommand,
@@ -465,6 +466,8 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
     )
     result = {"handled": False, "event_log": logged}
     try:
+        identity_sync = sync_external_contact_identity_for_event(event, corp_id=command.corp_id)
+        result["identity_sync"] = identity_sync
         if text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES:
             entry = process_channel_entry(
                 ProcessChannelEntryCommand(
