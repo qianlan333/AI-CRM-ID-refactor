@@ -11,6 +11,10 @@ from aicrm_next.automation_engine.programs import (
     create_automation_program_operation_task,
     preview_automation_program_operation_task_audience,
 )
+from aicrm_next.automation_engine.automation_program_admission import admit_channel_contact_to_program
+from aicrm_next.automation_engine.automation_program_admission import (
+    run_audience_entered_operation_tasks,
+)
 from aicrm_next.main import create_app
 from automation_channel_admission_helpers import (
     create_channel,
@@ -21,13 +25,11 @@ from automation_channel_admission_helpers import (
     table_count,
 )
 from wecom_ability_service.db import get_db
-from wecom_ability_service.domains.automation_conversion.admission_service import admit_channel_contact_to_program
 from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
 from wecom_ability_service.domains.automation_conversion import operation_task_repo
 from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
 from wecom_ability_service.domains.automation_conversion.operation_task_service import (
     preview_operation_task_audience,
-    run_audience_entered_operation_tasks,
 )
 
 

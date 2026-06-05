@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from wecom_ability_service.db import get_db
+from aicrm_next.shared.postgres_connection import get_db
 
 from .domain import AudienceTransitionEvent
 

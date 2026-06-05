@@ -2695,6 +2695,18 @@ def test_automation_workspace_runtime_guard_allows_next_safe_mode_locked(tmp_pat
     assert check_automation_workspace_runtime_next_safe_mode(tmp_path) == []
 
 
+def test_audience_transition_imports_are_not_wecom_allowlisted() -> None:
+    import scripts.check_no_new_legacy as checker
+
+    audience_transition_paths = {
+        Path("aicrm_next/automation_engine/audience_transition/repository.py"),
+        Path("aicrm_next/automation_engine/audience_transition/integration_gateway.py"),
+        Path("aicrm_next/automation_engine/audience_transition/application.py"),
+    }
+
+    assert checker.WECOM_IMPORT_ALLOWLIST.isdisjoint(audience_transition_paths)
+
+
 def _write_automation_member_actions_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
     inventory = tmp_path / "docs/architecture/automation_member_actions_route_inventory.md"
     compat = tmp_path / "aicrm_next/production_compat/api.py"

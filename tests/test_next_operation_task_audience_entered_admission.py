@@ -6,11 +6,11 @@ import json
 import pytest
 
 from wecom_ability_service.db import get_db
-from wecom_ability_service.domains.automation_conversion.admission_service import admit_channel_contact_to_program
-from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
-from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+from aicrm_next.automation_engine.automation_program_admission import admit_channel_contact_to_program
+from aicrm_next.automation_engine.automation_program_admission import (
     run_audience_entered_operation_tasks,
 )
+from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
 from wecom_ability_service.domains.automation_conversion import operation_task_repo
 from wecom_ability_service.domains.automation_conversion.operation_task_replay_service import (
     replay_audience_entered_operation_task,
