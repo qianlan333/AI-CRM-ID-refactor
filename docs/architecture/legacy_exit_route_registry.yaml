@@ -1923,6 +1923,104 @@ routes:
     checker: tests/test_sidebar_write_registry_lifecycle.py
     rollback_owner: aicrm_next.sidebar_write
     notes: Sidebar write group 5 deletion closeout removed legacy production_compat rollback; Next CommandBus is the only route owner; external side effects remain SideEffectPlan only with real_external_call_executed=false; JSSDK remains separate out-of-scope group.
+  - route_id: sidebar_v2_workbench_read_api
+    path_pattern: /api/sidebar/v2/workbench
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 workbench read is locked to the Next SidebarWorkbenchReadModel; legacy sidebar read facade fallback is removed and paid-order mobile is read-overlay only.
+  - route_id: sidebar_v2_questionnaires_read_api
+    path_pattern: /api/sidebar/v2/questionnaires
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 questionnaire read is locked to the Next read model; orphan submissions are matched read-only by normalized mobile without DB backfill.
+  - route_id: sidebar_v2_materials_read_api
+    path_pattern: /api/sidebar/v2/materials
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 material list reads the Next media library read model only; legacy sidebar material facade is removed.
+  - route_id: sidebar_v2_material_thumbnail_read_api
+    path_pattern: /api/sidebar/v2/materials/image/{image_id}/thumbnail
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 image thumbnail reads the Next media library thumbnail query only; no legacy sidebar facade fallback is allowed.
+  - route_id: sidebar_v2_other_staff_messages_read_api
+    path_pattern: /api/sidebar/v2/other-staff-messages
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 other-staff messages read archived message projections directly through the Next read model; legacy sidebar facade is removed.
+  - route_id: sidebar_v2_products_read_api
+    path_pattern: /api/sidebar/v2/products
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 products read Next commerce data and Next signed context helpers; legacy sidebar facade fallback is removed.
+  - route_id: sidebar_v2_orders_read_api
+    path_pattern: /api/sidebar/v2/orders
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_readonly_registry_lifecycle.py
+    rollback_owner: aicrm_next.customer_read_model
+    notes: Sidebar V2 orders read Next commerce/order projections with read-only paid-order mobile overlay; legacy sidebar facade fallback is removed.
   - route_id: sidebar_write_v2_profile_api
     path_pattern: /api/sidebar/v2/profile
     methods: [PUT, OPTIONS]

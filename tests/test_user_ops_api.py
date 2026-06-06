@@ -1927,20 +1927,16 @@ def test_import_experience_leads_service_records_sources_and_history(app):
     assert all(row["source_type"] == "experience_import" for row in history)
 
 
-def test_sidebar_bind_mobile_page_legacy_mode_keeps_single_customer_automation_layout(client):
+def test_sidebar_bind_mobile_page_legacy_query_stays_on_customer_workbench_v2(client):
     response = client.get("/sidebar/bind-mobile?v=legacy")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "自动化转化操作区" in html
-    assert "放入自动化转化池" in html
-    assert "移除自动化转化池" in html
-    assert "一键自动化写话术" in html
-    assert "实时标签" in html
-    assert "已填写问卷及答案" in html
-    assert "/api/admin/automation-conversion/member" in html
-    assert "/api/admin/customers/profile/tags" in html
-    assert "/api/admin/customers/profile/questionnaire-answers" in html
+    assert "客户侧边栏 V2 工作台" in html
+    assert "/api/sidebar/v2/workbench" in html
+    assert "/api/sidebar/v2/materials/send" in html
+    assert "自动化转化操作区" not in html
+    assert "/api/admin/automation-conversion/member" not in html
     assert "班期快捷设置" not in html
     assert "自动化转化卡片" not in html
     assert "/api/sidebar/signup-tags/status" not in html

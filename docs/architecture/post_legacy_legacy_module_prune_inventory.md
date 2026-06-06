@@ -18,7 +18,7 @@
 | `wecom_ability_service/http/automation_conversion_task_runtime.py` | legacy operation-task due runner | `aicrm_next.automation_engine.api`、safe-mode task planner | `automation_conversion.py` 仍导入；已有 runtime inventory 标为 historical only | `keep_temporarily_historical`，迁移 automation conversion aggregator 后删除 | `tests/test_post_legacy_legacy_module_prune_inventory.py` |
 | `wecom_ability_service/http/automation_conversion_execution_outbound.py` | legacy execution item Bazhuayu outbound send | `aicrm_next.automation_engine.api`、`SideEffectPlan`、blocked external call attempt | `automation_conversion.py` 仍导入；已有 runtime inventory 标为 historical only | `keep_temporarily_historical`，迁移 outbound historical tests 后删除 | `tests/test_post_legacy_legacy_module_prune_inventory.py` |
 | `wecom_ability_service/http/automation_conversion_member_api.py` | legacy member actions and manual-send JSON handlers | `aicrm_next.common_operation_members`、`aicrm_next.ops_enrollment`、`aicrm_next.automation_engine.api` | `automation_conversion.py` 仍导入；member action tests still expect old monkeypatch seam | `keep_temporarily_historical`，迁移 member action tests 后删除 | `tests/test_post_legacy_legacy_module_prune_inventory.py` |
-| `wecom_ability_service/http/customer_automation.py` | legacy customer automation activation/signup webhook handlers | `aicrm_next.automation_engine.customer_webhooks`、`aicrm_next.automation_engine.api` | `aicrm_next.integration_gateway.legacy_sidebar_read_facade` still imports helper for legacy sidebar read facade; historical HTTP registry tests still cover | `keep_temporarily_historical`，替换 sidebar read facade helper 后删除 | `tests/test_customer_automation_webhook_registry_lifecycle.py`、`tests/test_post_legacy_legacy_module_prune_inventory.py` |
+| `wecom_ability_service/http/customer_automation.py` | legacy customer automation activation/signup webhook handlers | `aicrm_next.automation_engine.customer_webhooks`、`aicrm_next.automation_engine.api`、`aicrm_next.automation_engine.signup_conversion_read_model` | Next runtime no longer imports the old sidebar read facade; historical HTTP registry tests still cover the legacy Flask handler module | `keep_temporarily_historical`，迁移 historical HTTP registry tests 后删除 | `tests/test_customer_automation_webhook_registry_lifecycle.py`、`tests/test_post_legacy_legacy_module_prune_inventory.py` |
 
 ## 引用核验
 
@@ -30,4 +30,4 @@
 
 1. 将 legacy explicit fallback app 的 historical HTTP registration tests 改为 domain-service level tests 或 Next API tests。
 2. 将 `tests/test_automation_conversion_v1.py` 中对 `wecom_ability_service.http.automation_conversion` 的 monkeypatch 迁到 `aicrm_next.automation_engine` safe-mode boundary。
-3. 将 `aicrm_next.integration_gateway.legacy_sidebar_read_facade` 的 customer automation helper 迁到 Next read model，再删除 `customer_automation.py`。
+3. 将 `customer_automation.py` 的 historical HTTP registry tests 迁到 Next API/read-model contract 后删除该 legacy HTTP module。

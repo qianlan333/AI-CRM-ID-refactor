@@ -5838,39 +5838,14 @@ def test_sidebar_page_contains_jssdk_debug_chain(client):
     response = client.get("/sidebar/bind-mobile?v=legacy")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "wx.config success" in body
-    assert "wx.agentConfig success" in body
-    assert "getCurExternalContact success" in body
-    assert "/api/sidebar/jssdk-config" in body
-    assert "客户档案绑定" in body
-    assert "debugWrap.classList.toggle('hidden', !debugEnabled);" in body
-    assert "自动化转化操作区" in body
-    assert "是否在自动化转化池" in body
-    assert "当前池子" in body
-    assert "当前阶段" in body
-    assert "当前目标" in body
-    assert "最近 AI 推送时间" in body
-    assert "实时标签" in body
-    assert "已填写问卷及答案" in body
-    assert "放入自动化转化池" in body
-    assert "移除自动化转化池" in body
-    assert "转化为重点跟进" in body
-    assert "转化为普通跟进" in body
-    assert "确认已成交" in body
-    assert "移除已成交" in body
-    assert "一键自动化写话术" in body
-    assert "/api/admin/automation-conversion/member" in body
-    assert "/api/admin/automation-conversion/member/put-in-pool" in body
-    assert "/api/admin/automation-conversion/member/remove-from-pool" in body
-    assert "/api/admin/automation-conversion/member/set-focus" in body
-    assert "/api/admin/automation-conversion/member/set-normal" in body
-    assert "/api/admin/automation-conversion/member/mark-won" in body
-    assert "/api/admin/automation-conversion/member/unmark-won" in body
-    assert "/api/admin/automation-conversion/member/push-openclaw" in body
-    assert "/api/admin/customers/profile/tags" in body
-    assert "/api/admin/customers/profile/questionnaire-answers" in body
-    assert "const singleCustomerAutomationEnabled = true;" in body
-    assert "const legacySidebarCardsEnabled = false;" in body
+    assert 'id="sidebar-workbench-root"' in body
+    assert 'data-workbench-url="/api/sidebar/v2/workbench"' in body
+    assert 'data-jssdk-config-url="/api/sidebar/jssdk-config"' in body
+    assert "/static/sidebar_workbench/sidebar_workbench.js" in body
+    assert "/static/sidebar_workbench/sidebar_workbench.css" in body
+    assert 'id="debug-wrap"' in body
+    assert "自动化转化操作区" not in body
+    assert "/api/admin/automation-conversion/member" not in body
     assert "自动化转化卡片" not in body
     assert "班期快捷设置" not in body
     assert "/api/sidebar/marketing-status" not in body
@@ -5899,8 +5874,9 @@ def test_sidebar_page_hides_debug_and_uses_customer_display_name(client, app):
 
     page_response = client.get("/sidebar/bind-mobile?v=legacy")
     body = page_response.get_data(as_text=True)
-    assert "当前未识别到客户信息，请从企微客户侧边栏重新打开。" in body
-    assert "客户昵称：识别中" in body
+    assert 'id="customer-name">识别中</div>' in body
+    assert 'id="binding-state">加载中...</span>' in body
+    assert 'data-workbench-url="/api/sidebar/v2/workbench"' in body
 
 
 def test_sidebar_bind_mobile_fills_missing_owner_from_contacts(client, app):

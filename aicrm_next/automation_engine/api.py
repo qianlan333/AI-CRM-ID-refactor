@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
-from aicrm_next.integration_gateway import legacy_sidebar_read_facade
 
 from .application import (
     ApplyActivationWebhookCommand,
@@ -52,6 +51,7 @@ from .application import (
     UpdateTaskSendStrategyCommand,
     UpdateProfileSegmentTemplateCommand,
 )
+from .signup_conversion_read_model import SignupConversionReadModel
 from .programs import (
     AutomationProgramDataUnavailable,
     copy_automation_program_operation_task,
@@ -1675,7 +1675,7 @@ def activation_webhook(payload: ActivationWebhookRequest) -> dict:
 @router.get("/api/customers/automation/signup-conversion/batches")
 def signup_conversion_batches(limit: int = 20, cursor: str = "") -> JSONResponse:
     try:
-        payload = legacy_sidebar_read_facade.signup_conversion_batch_list(limit=limit, cursor=cursor)
+        payload = SignupConversionReadModel().list_batches(limit=limit, cursor=cursor)
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc), "route_owner": "ai_crm_next"}, status_code=400)
     except Exception as exc:
@@ -1696,7 +1696,7 @@ def signup_conversion_batches(limit: int = 20, cursor: str = "") -> JSONResponse
 @router.get("/api/customers/automation/signup-conversion/batches/{batch_id}")
 def signup_conversion_batch(batch_id: int) -> JSONResponse:
     try:
-        payload = legacy_sidebar_read_facade.signup_conversion_batch_detail(batch_id)
+        payload = SignupConversionReadModel().batch_detail(batch_id)
     except Exception as exc:
         return JSONResponse(
             {
@@ -1721,7 +1721,7 @@ def customer_automation_webhook_deliveries(
     limit: int = 50,
 ) -> JSONResponse:
     try:
-        payload = legacy_sidebar_read_facade.webhook_delivery_list(event_type=event_type, status=status, limit=limit)
+        payload = SignupConversionReadModel().list_webhook_deliveries(event_type=event_type, status=status, limit=limit)
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc), "route_owner": "ai_crm_next"}, status_code=400)
     except Exception as exc:

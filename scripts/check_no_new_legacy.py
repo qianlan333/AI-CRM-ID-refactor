@@ -41,7 +41,6 @@ LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
-    Path("aicrm_next/integration_gateway/legacy_sidebar_read_facade.py"),
     Path("aicrm_next/integration_gateway/wecom_group_adapter.py"),
 }
 WECOM_IMPORT_ALLOWLIST = {
@@ -87,6 +86,13 @@ SIDEBAR_READONLY_ROUTES = (
     "/api/sidebar/lead-pool/status",
     "/api/sidebar/signup-tags/status",
     "/api/sidebar/marketing-status",
+    "/api/sidebar/v2/workbench",
+    "/api/sidebar/v2/questionnaires",
+    "/api/sidebar/v2/materials",
+    "/api/sidebar/v2/materials/image/{image_id}/thumbnail",
+    "/api/sidebar/v2/other-staff-messages",
+    "/api/sidebar/v2/products",
+    "/api/sidebar/v2/orders",
 )
 SIDEBAR_WRITE_ROUTES = (
     "/api/sidebar/bind-mobile",

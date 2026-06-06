@@ -104,7 +104,8 @@ def test_next_forwards_sidebar_detail_dependencies_without_404(monkeypatch):
     tags_response = client.get("/api/admin/customers/profile/tags")
 
     assert member_response.status_code == 400
-    assert member_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_automation_facade"
+    assert member_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in member_response.headers
     assert member_response.json()["error"] == "external_contact_id or phone is required"
     assert tags_response.status_code == 400
     assert "X-AICRM-Compatibility-Facade" not in tags_response.headers

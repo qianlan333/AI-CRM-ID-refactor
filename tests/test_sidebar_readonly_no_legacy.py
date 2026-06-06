@@ -16,6 +16,13 @@ TARGET_FUNCTIONS = [
     customer_api.get_sidebar_lead_pool_status,
     customer_api.get_sidebar_signup_tag_status,
     customer_api.get_sidebar_marketing_status,
+    customer_api.get_sidebar_v2_workbench,
+    customer_api.get_sidebar_v2_questionnaires,
+    customer_api.get_sidebar_v2_materials,
+    customer_api.get_sidebar_v2_image_thumbnail,
+    customer_api.get_sidebar_v2_other_staff_messages,
+    customer_api.get_sidebar_v2_products,
+    customer_api.get_sidebar_v2_orders,
 ]
 
 
@@ -39,6 +46,13 @@ def test_sidebar_readonly_routes_are_not_production_compat_forwards() -> None:
         "/api/sidebar/lead-pool/status",
         "/api/sidebar/signup-tags/status",
         "/api/sidebar/marketing-status\", methods=[\"GET",
+        "/api/sidebar/v2/workbench",
+        "/api/sidebar/v2/questionnaires",
+        "/api/sidebar/v2/materials",
+        "/api/sidebar/v2/materials/image/",
+        "/api/sidebar/v2/other-staff-messages",
+        "/api/sidebar/v2/products",
+        "/api/sidebar/v2/orders",
     ]:
         assert route not in source
 
