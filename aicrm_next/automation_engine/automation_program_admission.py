@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from aicrm_next.integration_gateway.legacy_automation_facade import _with_legacy_app_context
+
 from .audience_transition.domain import AudienceTransitionEvent
 
 
@@ -58,13 +60,16 @@ class OperationTaskRealtimeTriggerService:
     """
 
     def trigger(self, event: AudienceTransitionEvent) -> dict[str, Any]:
-        runtime = _automation_conversion_domain_module("operation_task_service")
-        return runtime.run_audience_entered_operation_tasks(
-            member_id=int(event.member_id),
-            audience_code=event.audience_code,
-            audience_entry_id=int(event.audience_entry_id),
-            operator_id=event.operator_id or event.entry_source or "audience_entered",
-        )
+        def _trigger() -> dict[str, Any]:
+            runtime = _automation_conversion_domain_module("operation_task_service")
+            return runtime.run_audience_entered_operation_tasks(
+                member_id=int(event.member_id),
+                audience_code=event.audience_code,
+                audience_entry_id=int(event.audience_entry_id),
+                operator_id=event.operator_id or event.entry_source or "audience_entered",
+            )
+
+        return _with_legacy_app_context(_trigger)
 
 
 class QuestionnaireExternalPushConfigPlanner:
@@ -85,17 +90,20 @@ class AutomationProgramAdmissionService:
         self._external_push_planner = external_push_planner or QuestionnaireExternalPushConfigPlanner()
 
     def admit(self, command: AutomationAdmissionCommand) -> dict[str, Any]:
-        admission = _automation_conversion_domain_module("admission_service")
-        result = admission.admit_channel_contact_to_program(
-            int(command.program_id),
-            int(command.channel_id),
-            int(command.binding_id),
-            str(command.external_contact_id or "").strip(),
-            follow_user_userid=str(command.follow_user_userid or "").strip(),
-            trigger_payload=dict(command.trigger_payload or {}),
-            trigger_time=command.trigger_time,
-            trigger_type=str(command.trigger_type or "qrcode_enter").strip() or "qrcode_enter",
-        )
+        def _admit() -> dict[str, Any]:
+            admission = _automation_conversion_domain_module("admission_service")
+            return admission.admit_channel_contact_to_program(
+                int(command.program_id),
+                int(command.channel_id),
+                int(command.binding_id),
+                str(command.external_contact_id or "").strip(),
+                follow_user_userid=str(command.follow_user_userid or "").strip(),
+                trigger_payload=dict(command.trigger_payload or {}),
+                trigger_time=command.trigger_time,
+                trigger_type=str(command.trigger_type or "qrcode_enter").strip() or "qrcode_enter",
+            )
+
+        result = _with_legacy_app_context(_admit)
         payload = dict(result or {})
         payload.setdefault("audit", self._audit_writer.from_result(payload))
         payload.setdefault("external_push_plan", self._external_push_planner.plan(payload))
@@ -138,11 +146,14 @@ def run_audience_entered_operation_tasks(
     now: datetime | None = None,
     operator_id: str = "operation_task_event",
 ) -> dict[str, Any]:
-    runtime = _automation_conversion_domain_module("operation_task_service")
-    return runtime.run_audience_entered_operation_tasks(
-        member_id=int(member_id),
-        audience_code=str(audience_code or "").strip(),
-        audience_entry_id=int(audience_entry_id or 0),
-        now=now,
-        operator_id=str(operator_id or "operation_task_event").strip() or "operation_task_event",
-    )
+    def _trigger() -> dict[str, Any]:
+        runtime = _automation_conversion_domain_module("operation_task_service")
+        return runtime.run_audience_entered_operation_tasks(
+            member_id=int(member_id),
+            audience_code=str(audience_code or "").strip(),
+            audience_entry_id=int(audience_entry_id or 0),
+            now=now,
+            operator_id=str(operator_id or "operation_task_event").strip() or "operation_task_event",
+        )
+
+    return _with_legacy_app_context(_trigger)
