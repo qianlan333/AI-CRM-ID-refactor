@@ -5,11 +5,12 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import create_engine, delete, func, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from aicrm_next.shared.config import Settings, get_settings
+from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.typing import JsonDict
 
@@ -290,6 +291,12 @@ class SqlAlchemyUserOpsRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def close(self) -> None:
+        try:
+            self._session.rollback()
+        finally:
+            self._session.close()
+
     def reset(self) -> None:
         self._session.execute(delete(user_ops_send_records_next))
         self._session.execute(delete(user_ops_do_not_disturb_next))
@@ -526,9 +533,8 @@ def build_user_ops_repository(
     if backend in {"sql", "sqlalchemy", "postgres", "postgresql"}:
         if session is not None:
             return assert_repository_allowed(SqlAlchemyUserOpsRepository(session), capability_owner="ops_enrollment")
-        engine = engine or create_engine(settings.database_url, future=True)
-        session_factory = sessionmaker(bind=engine, future=True)
-        return assert_repository_allowed(SqlAlchemyUserOpsRepository(session_factory()), capability_owner="ops_enrollment")
+        owned_session = get_session_factory(settings=settings)() if engine is None else Session(bind=engine, future=True)
+        return assert_repository_allowed(SqlAlchemyUserOpsRepository(owned_session), capability_owner="ops_enrollment")
     return assert_repository_allowed(InMemoryUserOpsRepository(), capability_owner="ops_enrollment")
 
 

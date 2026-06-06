@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from aicrm_next.shared.database import get_sqlalchemy_database_url
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.runtime import database_mode, production_environment
 
 
@@ -162,7 +162,7 @@ class LocalContractTagCatalogRepository(TagCatalogRepository):
 
 class PostgresTagCatalogRepository(TagCatalogRepository):
     def __init__(self, engine: Engine | None = None) -> None:
-        self._engine = engine or create_engine(get_sqlalchemy_database_url(), pool_pre_ping=True)
+        self._engine = engine or get_engine()
 
     def list_catalog(self) -> TagCatalog:
         try:

@@ -145,14 +145,6 @@ class SessionBackedRepository:
         self._session = FakeSession()
 
 
-class FakeEngine:
-    def __init__(self) -> None:
-        self.disposed = False
-
-    def dispose(self) -> None:
-        self.disposed = True
-
-
 def _production_env(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
@@ -213,23 +205,19 @@ def test_close_repository_rolls_back_and_closes_session_without_repo_close():
     assert repo._session.closed is True
 
 
-def test_sqlalchemy_repositories_dispose_owned_engine_on_close():
+def test_sqlalchemy_repositories_close_session_without_disposing_engine():
     from aicrm_next.customer_read_model.repo import LiveSourceCustomerReadRepository, SqlAlchemyCustomerReadModelRepository
 
     read_model_session = FakeSession()
-    read_model_engine = FakeEngine()
     live_source_session = FakeSession()
-    live_source_engine = FakeEngine()
 
-    SqlAlchemyCustomerReadModelRepository(read_model_session, owned_engine=read_model_engine).close()
-    LiveSourceCustomerReadRepository(live_source_session, owned_engine=live_source_engine).close()
+    SqlAlchemyCustomerReadModelRepository(read_model_session).close()
+    LiveSourceCustomerReadRepository(live_source_session).close()
 
     assert read_model_session.rolled_back is True
     assert read_model_session.closed is True
-    assert read_model_engine.disposed is True
     assert live_source_session.rolled_back is True
     assert live_source_session.closed is True
-    assert live_source_engine.disposed is True
 
 
 def test_customer_list_closes_internal_repository_after_success(monkeypatch):

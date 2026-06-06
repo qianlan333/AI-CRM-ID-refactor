@@ -6,11 +6,12 @@ import os
 from copy import deepcopy
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from aicrm_next.shared.config import get_settings
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 
@@ -791,7 +792,7 @@ def build_profile_segment_template_repository(
                 or os.getenv("AICRM_NEXT_TEST_DATABASE_URL")
                 or settings.database_url
             )
-            engine = create_engine(database_url, future=True)
+            engine = get_engine(database_url)
         return assert_repository_allowed(
             SqlAlchemyProfileSegmentTemplateRepository(engine),
             capability_owner="automation_engine.profile_segment_template",

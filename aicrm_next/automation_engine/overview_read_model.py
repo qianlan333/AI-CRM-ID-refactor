@@ -5,11 +5,10 @@ from datetime import date, datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.runtime import raw_database_url
-
-from .repo import _sqlalchemy_database_url
 
 
 AUTOMATION_OVERVIEW_ROUTE_FAMILY = "automation_conversion_overview_pools_next_read_model"
@@ -477,4 +476,4 @@ def _default_engine() -> Any:
     database_url = raw_database_url()
     if not database_url:
         return None
-    return create_engine(_sqlalchemy_database_url(database_url), future=True)
+    return get_engine(database_url)

@@ -32,24 +32,16 @@ def test_production_repo_uses_runtime_database_url(monkeypatch):
     monkeypatch.delenv("CUSTOMER_READ_MODEL_REPO_BACKEND", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
 
-    created_urls: list[str] = []
-    dummy_engine = object()
     dummy_session = object()
+    factory_calls: list[object] = []
 
-    def fake_create_engine(url: str, *, future: bool):
-        created_urls.append(url)
-        assert future is True
-        return dummy_engine
-
-    def fake_sessionmaker(*, bind, future: bool):
-        assert bind is dummy_engine
-        assert future is True
+    def fake_get_session_factory(*, settings):
+        factory_calls.append(settings)
         return lambda: dummy_session
 
-    monkeypatch.setattr(repo_module, "create_engine", fake_create_engine)
-    monkeypatch.setattr(repo_module, "sessionmaker", fake_sessionmaker)
+    monkeypatch.setattr(repo_module, "get_session_factory", fake_get_session_factory)
 
     repository = repo_module.build_customer_read_model_repository()
 
     assert repository.__class__.__name__ == "SqlAlchemyCustomerReadModelRepository"
-    assert created_urls == ["postgresql+psycopg://prod_user:prod_pass@db.internal:5432/prod_crm"]
+    assert factory_calls

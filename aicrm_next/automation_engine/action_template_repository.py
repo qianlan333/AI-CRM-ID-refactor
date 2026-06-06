@@ -6,8 +6,7 @@ import os
 from copy import deepcopy
 from typing import Any
 
-from sqlalchemy import create_engine
-
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, assert_repository_allowed
 
@@ -231,7 +230,7 @@ def build_action_template_repository(*, backend: str | None = None, engine: Any 
                 raise RepositoryProviderError(
                     f"{ACTION_TEMPLATE_DATABASE_URL_ENV} is required when {ACTION_TEMPLATE_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(database_url, future=True)
+            engine = get_engine(database_url)
         from .action_template_sqlalchemy_repository import SqlAlchemyActionTemplateRepository
 
         return assert_repository_allowed(
