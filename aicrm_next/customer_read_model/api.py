@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import os
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
 
+from aicrm_next.shared.config import get_settings
+from aicrm_next.shared.db_session import get_db
 from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.shared.runtime import database_mode
 
+from . import application as customer_application
 from .application import (
     GetAdminCustomerProfileQuery,
     GetAdminCustomerProfileTagsQuery,
@@ -15,6 +22,7 @@ from .application import (
     ListCustomersQuery,
     ListRecentMessagesQuery,
 )
+from .repo import CustomerReadRepository
 from .dto import (
     CustomerContextRequest,
     CustomerDetailRequest,
@@ -31,6 +39,29 @@ from .sidebar_v2 import (
 )
 
 router = APIRouter()
+_SQL_REPO_BACKENDS = {"sql", "sqlalchemy", "postgres", "postgresql"}
+
+
+def _customer_read_model_sql_backend_enabled() -> bool:
+    configured_backend = str(os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", "") or "").strip().lower()
+    backend = configured_backend or get_settings().customer_read_model_repo_backend.strip().lower()
+    if not configured_backend and database_mode() == "postgres":
+        backend = "sqlalchemy"
+    return backend in _SQL_REPO_BACKENDS
+
+
+def _request_scoped_customer_repositories(db: Session) -> tuple[CustomerReadRepository | None, CustomerReadRepository | None]:
+    if not _customer_read_model_sql_backend_enabled():
+        return None, None
+    return (
+        customer_application.build_customer_read_model_repository(session=db),
+        customer_application.build_customer_live_source_repository(session=db),
+    )
+
+
+def _request_scoped_customer_context_query(db: Session) -> tuple[GetCustomerContextQuery, CustomerReadRepository | None]:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    return GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo), live_source_repo
 
 
 def _input_error(message: str) -> JSONResponse:
@@ -153,8 +184,10 @@ def _context_for_external_userid(
     *,
     recent_message_limit: int = 20,
     timeline_limit: int = 20,
+    customer_repo: CustomerReadRepository | None = None,
+    live_source_repo: CustomerReadRepository | None = None,
 ) -> dict:
-    return GetCustomerContextQuery()(
+    return GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo)(
         CustomerContextRequest(
             external_userid=external_userid,
             recent_message_limit=recent_message_limit,
@@ -177,9 +210,18 @@ def _sidebar_diagnostics_from_context(context: dict) -> dict:
     }
 
 
-def _sidebar_context_or_response(external_userid: str) -> tuple[dict | None, JSONResponse | None]:
+def _sidebar_context_or_response(
+    external_userid: str,
+    *,
+    customer_repo: CustomerReadRepository | None = None,
+    live_source_repo: CustomerReadRepository | None = None,
+) -> tuple[dict | None, JSONResponse | None]:
     try:
-        context = _context_for_external_userid(external_userid)
+        context = _context_for_external_userid(
+            external_userid,
+            customer_repo=customer_repo,
+            live_source_repo=live_source_repo,
+        )
     except NotFoundError:
         return None, _sidebar_lookup_error("customer not found")
     except Exception as exc:
@@ -242,7 +284,9 @@ def list_customers(
     keyword: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    db: Session = Depends(get_db),
 ) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     query = ListCustomersRequest(
         owner_userid=owner_userid,
         tag=tag,
@@ -253,15 +297,16 @@ def list_customers(
         limit=limit,
         offset=offset,
     )
-    result = ListCustomersQuery()(query)
+    result = ListCustomersQuery(customer_repo, live_source_repo=live_source_repo)(query)
     status_code = int(result.pop("status_code", 200) or 200)
     return JSONResponse(jsonable_encoder(result), status_code=status_code)
 
 
 @router.get("/api/customers/{external_userid}")
-def get_customer(external_userid: str) -> dict:
+def get_customer(external_userid: str, db: Session = Depends(get_db)) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     try:
-        result = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid=external_userid))
+        result = GetCustomerDetailQuery(customer_repo, live_source_repo=live_source_repo)(CustomerDetailRequest(external_userid=external_userid))
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
@@ -274,7 +319,9 @@ def get_customer_timeline(
     event_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    db: Session = Depends(get_db),
 ) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     try:
         query = CustomerTimelineRequest(
             external_userid=external_userid,
@@ -282,7 +329,7 @@ def get_customer_timeline(
             limit=limit,
             offset=offset,
         )
-        result = GetCustomerTimelineQuery()(query)
+        result = GetCustomerTimelineQuery(customer_repo, live_source_repo=live_source_repo)(query)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
@@ -290,10 +337,11 @@ def get_customer_timeline(
 
 
 @router.get("/api/messages/{external_userid}/recent")
-def get_recent_messages(external_userid: str, limit: int = 20) -> dict:
+def get_recent_messages(external_userid: str, limit: int = 20, db: Session = Depends(get_db)) -> dict:
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     try:
         query = RecentMessagesRequest(external_userid=external_userid, limit=limit)
-        result = ListRecentMessagesQuery()(query)
+        result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(query)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     status_code = int(result.pop("status_code", 200) or 200)
@@ -301,12 +349,21 @@ def get_recent_messages(external_userid: str, limit: int = 20) -> dict:
 
 
 @router.get("/api/sidebar/customer-context")
-def get_sidebar_customer_context(external_userid: str | None = None, user_id: str | None = None):
+def get_sidebar_customer_context(
+    external_userid: str | None = None,
+    user_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = _resolve_external_userid(external_userid, user_id)
     if not resolved_external_userid:
         return _input_error("external_userid is required")
     try:
-        context = _context_for_external_userid(resolved_external_userid)
+        context = _context_for_external_userid(
+            resolved_external_userid,
+            customer_repo=customer_repo,
+            live_source_repo=live_source_repo,
+        )
         if not context.get("ok"):
             return JSONResponse(jsonable_encoder(context), status_code=503 if context.get("degraded") else 400)
         if not context.get("customer"):
@@ -338,8 +395,9 @@ def get_sidebar_customer_context(external_userid: str | None = None, user_id: st
 
 
 @router.get("/api/sidebar/profile")
-def get_sidebar_profile(external_userid: str | None = None, user_id: str | None = None):
-    result = GetAdminCustomerProfileQuery()(
+def get_sidebar_profile(external_userid: str | None = None, user_id: str | None = None, db: Session = Depends(get_db)):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         user_id=user_id,
     )
@@ -347,8 +405,9 @@ def get_sidebar_profile(external_userid: str | None = None, user_id: str | None 
 
 
 @router.get("/api/sidebar/tags")
-def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = None):
-    result = GetAdminCustomerProfileTagsQuery()(
+def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = None, db: Session = Depends(get_db)):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    result = GetAdminCustomerProfileTagsQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         user_id=user_id,
     )
@@ -356,12 +415,21 @@ def get_sidebar_tags(external_userid: str | None = None, user_id: str | None = N
 
 
 @router.get("/api/sidebar/lead-pool/status")
-def get_sidebar_lead_pool_status(external_userid: str | None = None, owner_userid: str | None = None):
+def get_sidebar_lead_pool_status(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = str(external_userid or "").strip()
     resolved_owner_userid = str(owner_userid or "").strip()
     if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    context, response = _sidebar_context_or_response(resolved_external_userid)
+    context, response = _sidebar_context_or_response(
+        resolved_external_userid,
+        customer_repo=customer_repo,
+        live_source_repo=live_source_repo,
+    )
     if response is not None:
         return response
     customer = dict((context or {}).get("customer") or {})
@@ -394,11 +462,16 @@ def get_sidebar_lead_pool_status(external_userid: str | None = None, owner_useri
 
 
 @router.get("/api/sidebar/signup-tags/status")
-def get_sidebar_signup_tag_status(external_userid: str | None = None):
+def get_sidebar_signup_tag_status(external_userid: str | None = None, db: Session = Depends(get_db)):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = str(external_userid or "").strip()
     if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    context, response = _sidebar_context_or_response(resolved_external_userid)
+    context, response = _sidebar_context_or_response(
+        resolved_external_userid,
+        customer_repo=customer_repo,
+        live_source_repo=live_source_repo,
+    )
     if response is not None:
         return response
     customer = dict((context or {}).get("customer") or {})
@@ -420,11 +493,16 @@ def get_sidebar_signup_tag_status(external_userid: str | None = None):
 
 
 @router.get("/api/sidebar/marketing-status")
-def get_sidebar_marketing_status(external_userid: str | None = None):
+def get_sidebar_marketing_status(external_userid: str | None = None, db: Session = Depends(get_db)):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
     resolved_external_userid = str(external_userid or "").strip()
     if not resolved_external_userid:
         return _sidebar_input_error("external_userid is required")
-    context, response = _sidebar_context_or_response(resolved_external_userid)
+    context, response = _sidebar_context_or_response(
+        resolved_external_userid,
+        customer_repo=customer_repo,
+        live_source_repo=live_source_repo,
+    )
     if response is not None:
         return response
     customer = dict((context or {}).get("customer") or {})
@@ -470,13 +548,18 @@ def get_sidebar_marketing_status(external_userid: str | None = None):
 
 
 @router.get("/api/sidebar/v2/workbench")
-def get_sidebar_v2_workbench(external_userid: str | None = None, owner_userid: str | None = None):
+def get_sidebar_v2_workbench(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     normalized_external_userid = str(external_userid or "").strip()
     normalized_owner_userid = str(owner_userid or "").strip()
+    context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        payload = SidebarWorkbenchReadModel()(
+        payload = SidebarWorkbenchReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=normalized_external_userid,
             owner_userid=normalized_owner_userid,
         )
@@ -490,11 +573,12 @@ def get_sidebar_v2_workbench(external_userid: str | None = None, owner_userid: s
 
 
 @router.get("/api/sidebar/v2/questionnaires")
-def get_sidebar_v2_questionnaires(external_userid: str | None = None):
+def get_sidebar_v2_questionnaires(external_userid: str | None = None, db: Session = Depends(get_db)):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
+    context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        payload = SidebarQuestionnaireReadModel()(
+        payload = SidebarQuestionnaireReadModel(context_query=context_query, live_source_repo=live_source_repo)(
             external_userid=str(external_userid or "").strip(),
         )
     except NotFoundError as exc:
@@ -579,12 +663,17 @@ def get_sidebar_v2_products(
 
 
 @router.get("/api/sidebar/v2/orders")
-def get_sidebar_v2_orders(external_userid: str | None = None, owner_userid: str | None = None):
+def get_sidebar_v2_orders(
+    external_userid: str | None = None,
+    owner_userid: str | None = None,
+    db: Session = Depends(get_db),
+):
     if not str(external_userid or "").strip():
         return _sidebar_input_error("external_userid is required")
     normalized_external_userid = str(external_userid or "").strip()
+    context_query, live_source_repo = _request_scoped_customer_context_query(db)
     try:
-        payload = SidebarCommerceReadModel().orders(
+        payload = SidebarCommerceReadModel(context_query=context_query, live_source_repo=live_source_repo).orders(
             external_userid=normalized_external_userid,
             owner_userid=str(owner_userid or "").strip(),
         )
@@ -602,8 +691,10 @@ def get_admin_customer_profile(
     external_userid: str | None = None,
     mobile: str | None = None,
     user_id: str | None = None,
+    db: Session = Depends(get_db),
 ):
-    result = GetAdminCustomerProfileQuery()(
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -613,8 +704,13 @@ def get_admin_customer_profile(
 
 
 @router.get("/api/admin/customers/profile/tags")
-def get_admin_customer_profile_tags(external_userid: str | None = None, user_id: str | None = None):
-    result = GetAdminCustomerProfileTagsQuery()(
+def get_admin_customer_profile_tags(
+    external_userid: str | None = None,
+    user_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    result = GetAdminCustomerProfileTagsQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         user_id=user_id,
     )
@@ -627,8 +723,10 @@ def get_admin_customer_profile_questionnaire_answers(
     external_userid: str | None = None,
     mobile: str | None = None,
     user_id: str | None = None,
+    db: Session = Depends(get_db),
 ):
-    profile_result = GetAdminCustomerProfileQuery()(
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    profile_result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -661,8 +759,10 @@ def get_admin_customer_profile_messages(
     user_id: str | None = None,
     fetch_all: str | None = None,
     limit: int | None = None,
+    db: Session = Depends(get_db),
 ):
-    profile_result = GetAdminCustomerProfileQuery()(
+    customer_repo, live_source_repo = _request_scoped_customer_repositories(db)
+    profile_result = GetAdminCustomerProfileQuery(GetCustomerContextQuery(customer_repo, live_source_repo=live_source_repo))(
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
@@ -675,7 +775,7 @@ def get_admin_customer_profile_messages(
         return _input_error("external_userid is required")
     requested_limit = int(limit or (100 if str(fetch_all or "").strip().lower() in {"1", "true", "yes", "on"} else 30))
     requested_limit = max(1, min(requested_limit, 100))
-    result = ListRecentMessagesQuery()(RecentMessagesRequest(external_userid=resolved_external_userid, limit=requested_limit))
+    result = ListRecentMessagesQuery(customer_repo, live_source_repo=live_source_repo)(RecentMessagesRequest(external_userid=resolved_external_userid, limit=requested_limit))
     status_code = int(result.pop("status_code", 200) or 200)
     if not result.get("ok", True):
         return JSONResponse(jsonable_encoder(result), status_code=status_code)

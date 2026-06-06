@@ -79,6 +79,9 @@ def test_sidebar_and_profile_readonly_routes_reuse_customer_context_query(monkey
     calls: list[CustomerContextRequest] = []
 
     class FakeGetCustomerContextQuery:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def __call__(self, request: CustomerContextRequest):
             calls.append(request)
             return _context_payload(request.external_userid)
@@ -106,6 +109,9 @@ def test_admin_customer_profile_route_json_encodes_legacy_scalar_values(monkeypa
     from aicrm_next.main import create_app
 
     class FakeGetCustomerContextQuery:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def __call__(self, request: CustomerContextRequest):
             payload = _context_payload(request.external_userid)
             payload["customer"]["updated_at"] = datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc)
