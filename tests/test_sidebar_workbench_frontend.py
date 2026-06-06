@@ -88,7 +88,9 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "data-product-send" in script
     assert "PRODUCT_CARD_IMAGE_PATH" in script
     assert "product-card-cover.png" in script
-    assert 'msgtype: "link"' in script
+    assert 'msgtype: "news"' in script
+    assert "news: {" in script
+    assert "link: String(payload.url" in script
     assert 'desc: ""' in script
     assert "imgUrl" in script
     assert "sendLinkToCurrentChat" in script
