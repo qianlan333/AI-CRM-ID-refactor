@@ -584,15 +584,15 @@
       throw new Error("请在企微侧边栏内发送");
     }
     const res = await invokeWeCom("sendChatMessage", {
-      msgtype: "link",
-      link: {
+      msgtype: "news",
+      news: {
+        link: String(payload.url || ""),
         title: String(payload.title || "未命名商品"),
         desc: "",
-        url: String(payload.url || ""),
         imgUrl: String(payload.imageUrl || ""),
       },
     }, SDK_TIMEOUT_MS);
-    writeDebug("sendChatMessage link result", res || {});
+    writeDebug("sendChatMessage news result", res || {});
     assertWeComSendOk(res);
     return res;
   }
