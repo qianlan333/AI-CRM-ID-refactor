@@ -6,13 +6,14 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import bindparam, create_engine, delete, insert, select, text
+from sqlalchemy import bindparam, delete, insert, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from aicrm_next.shared.config import Settings, get_settings
+from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.repository_provider import assert_repository_allowed
-from aicrm_next.shared.runtime import database_mode, raw_database_url
+from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -462,17 +463,14 @@ class FixtureCustomerReadRepository:
 class SqlAlchemyCustomerReadModelRepository:
     """PostgreSQL-ready Customer Read Model repository backed by SQLAlchemy Core tables."""
 
-    def __init__(self, session: Session, *, owned_engine: Engine | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._owned_engine = owned_engine
 
     def close(self) -> None:
         try:
             self._session.rollback()
         finally:
             self._session.close()
-        if self._owned_engine is not None:
-            self._owned_engine.dispose()
 
     def reset(self) -> None:
         self.clear()
@@ -719,17 +717,14 @@ class SqlAlchemyCustomerReadModelRepository:
 class LiveSourceCustomerReadRepository:
     """Read live customer data from production source tables when projections are not ready."""
 
-    def __init__(self, session: Session, *, owned_engine: Engine | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._owned_engine = owned_engine
 
     def close(self) -> None:
         try:
             self._session.rollback()
         finally:
             self._session.close()
-        if self._owned_engine is not None:
-            self._owned_engine.dispose()
 
     def list_customers(
         self,
@@ -1259,14 +1254,6 @@ def _json_dict(value: object) -> JsonDict:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
-def _sqlalchemy_database_url(url: str) -> str:
-    if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://") :]
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://") :]
-    return url
-
-
 def build_customer_live_source_repository(
     settings: Settings | None = None,
     *,
@@ -1279,12 +1266,9 @@ def build_customer_live_source_repository(
             LiveSourceCustomerReadRepository(session),
             capability_owner="customer_read_model",
         )
-    database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
-    owns_engine = engine is None
-    engine = engine or create_engine(database_url, future=True)
-    session_factory = sessionmaker(bind=engine, future=True)
+    owned_session = get_session_factory(settings=settings)() if engine is None else Session(bind=engine, future=True)
     return assert_repository_allowed(
-        LiveSourceCustomerReadRepository(session_factory(), owned_engine=engine if owns_engine else None),
+        LiveSourceCustomerReadRepository(owned_session),
         capability_owner="customer_read_model",
     )
 
@@ -1306,12 +1290,9 @@ def build_customer_read_model_repository(
                 SqlAlchemyCustomerReadModelRepository(session),
                 capability_owner="customer_read_model",
             )
-        database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
-        owns_engine = engine is None
-        engine = engine or create_engine(database_url, future=True)
-        session_factory = sessionmaker(bind=engine, future=True)
+        owned_session = get_session_factory(settings=settings)() if engine is None else Session(bind=engine, future=True)
         return assert_repository_allowed(
-            SqlAlchemyCustomerReadModelRepository(session_factory(), owned_engine=engine if owns_engine else None),
+            SqlAlchemyCustomerReadModelRepository(owned_session),
             capability_owner="customer_read_model",
         )
     return assert_repository_allowed(InMemoryCustomerReadModelRepository(), capability_owner="customer_read_model")

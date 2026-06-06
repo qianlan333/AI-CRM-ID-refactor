@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from sqlalchemy import bindparam, create_engine, text
+from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.integration_gateway.wecom_tag_live_gateway import build_wecom_tag_live_gateway
-from aicrm_next.shared.database import get_sqlalchemy_database_url
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.runtime import fixture_mode
 
 from .read_model import _fixture_rows
@@ -91,7 +91,7 @@ class PostgresWeComTagSyncRepository:
 
     def _engine(self) -> Engine:
         if self.engine is None:
-            self.engine = create_engine(get_sqlalchemy_database_url(), pool_pre_ping=True)
+            self.engine = get_engine()
         return self.engine
 
     def refresh_catalog(self, *, groups: list[Json], tags: list[Json], synced_at: str, operator: str, raw_response: Json) -> Json:

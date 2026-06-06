@@ -4,10 +4,9 @@ import os
 from copy import deepcopy
 from typing import Any, Protocol
 
-from sqlalchemy import create_engine
-
-from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 from .agent_outputs import agent_output_projection, normalize_agent_output_filters
@@ -1584,7 +1583,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{TASK_GROUP_TEST_DATABASE_URL_ENV} or {TASK_GROUP_STAGING_DATABASE_URL_ENV} is required when {TASK_GROUP_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .task_group_sqlalchemy_repository import SqlAlchemyTaskGroupRepository
 
         return assert_repository_allowed(
@@ -1600,7 +1599,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{WORKFLOW_TEST_DATABASE_URL_ENV} or {WORKFLOW_STAGING_DATABASE_URL_ENV} is required when {WORKFLOW_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .workflow_sqlalchemy_repository import SqlAlchemyWorkflowRepository
 
         return assert_repository_allowed(
@@ -1616,7 +1615,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{WORKFLOW_NODE_TEST_DATABASE_URL_ENV} or {WORKFLOW_NODE_STAGING_DATABASE_URL_ENV} is required when {WORKFLOW_NODE_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .workflow_node_sqlalchemy_repository import SqlAlchemyWorkflowNodeRepository
 
         return assert_repository_allowed(
@@ -1645,7 +1644,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{TASK_TEST_DATABASE_URL_ENV} or {TASK_STAGING_DATABASE_URL_ENV} is required when {TASK_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .postgres_repo import PostgresTaskRepository
 
         return assert_repository_allowed(
@@ -1663,7 +1662,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{AGENT_TEST_DATABASE_URL_ENV} or {AGENT_STAGING_DATABASE_URL_ENV} is required when {AGENT_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .agent_postgres_repository import PostgresAgentRepository
 
         return assert_repository_allowed(
@@ -1679,7 +1678,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{AGENT_OUTPUT_TEST_DATABASE_URL_ENV} or {AGENT_OUTPUT_STAGING_DATABASE_URL_ENV} is required when {AGENT_OUTPUT_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .agent_output_sqlalchemy_repository import SqlAlchemyAgentOutputRepository
 
         return assert_repository_allowed(
@@ -1695,7 +1694,7 @@ def build_automation_repository(
                 raise ContractError(
                     f"{AGENT_RUN_TEST_DATABASE_URL_ENV} or {AGENT_RUN_STAGING_DATABASE_URL_ENV} is required when {AGENT_RUN_BACKEND_ENV}=sqlalchemy"
                 )
-            engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+            engine = get_engine(database_url)
         from .agent_run_sqlalchemy_repository import SqlAlchemyAgentRunRepository
 
         return assert_repository_allowed(

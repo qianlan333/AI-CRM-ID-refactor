@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 
 from aicrm_next.automation_engine.operation_task_contract import (
     BEHAVIOR_FILTERS,
@@ -17,6 +17,7 @@ from aicrm_next.automation_engine.operation_task_contract import (
     publishable_diagnostics,
     validate_publishable_task,
 )
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
 
@@ -760,7 +761,7 @@ def _agent_task_runtime_context(task: dict[str, Any], *, require_questionnaire_c
     }
     agent_code = _agent_code_from_task(task)
     if production_data_ready() and raw_database_url() and agent_code:
-        engine = create_engine(_sqlalchemy_database_url(raw_database_url()), future=True)
+        engine = get_engine(raw_database_url())
         with engine.connect() as conn:
             row = conn.execute(
                 text(
@@ -2503,7 +2504,7 @@ def _build_postgres_repository() -> PostgresAutomationProgramRepository:
     database_url = raw_database_url()
     if not database_url:
         raise AutomationProgramDataUnavailable("DATABASE_URL is required for automation program repository")
-    return PostgresAutomationProgramRepository(create_engine(_sqlalchemy_database_url(database_url), future=True))
+    return PostgresAutomationProgramRepository(get_engine(database_url))
 
 
 def list_automation_programs_payload() -> dict[str, Any]:
@@ -2853,7 +2854,7 @@ def _preview_candidates_next(program_id: int, task: dict[str, Any]) -> dict[str,
     database_url = raw_database_url()
     if not database_url:
         raise AutomationProgramDataUnavailable("DATABASE_URL is required for operation task audience preview")
-    engine = create_engine(_sqlalchemy_database_url(database_url), future=True)
+    engine = get_engine(database_url)
     with engine.connect() as conn:
         rows = [
             dict(row)

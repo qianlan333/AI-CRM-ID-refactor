@@ -4,8 +4,7 @@ import os
 from copy import deepcopy
 from typing import Any, Protocol
 
-from sqlalchemy import create_engine
-
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -903,7 +902,7 @@ def build_group_ops_repository() -> GroupOpsRepository:
         from .postgres_repo import PostgresGroupOpsRepository
 
         return assert_repository_allowed(
-            PostgresGroupOpsRepository(create_engine(_sqlalchemy_database_url(database_url), future=True)),
+            PostgresGroupOpsRepository(get_engine(database_url)),
             capability_owner="aicrm_next.automation_engine.group_ops",
         )
     return assert_repository_allowed(_fixture_repo, capability_owner="aicrm_next.automation_engine.group_ops")
