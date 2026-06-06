@@ -92,6 +92,67 @@ class FakeLiveSourceCustomerReadRepository(FakeNextCustomerReadRepository):
     pass
 
 
+class ClosableNextCustomerReadRepository(FakeNextCustomerReadRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class MissingClosableCustomerReadRepository(ClosableNextCustomerReadRepository):
+    def get_customer(self, external_userid: str):
+        return None
+
+    get_customer_detail = get_customer
+
+
+class FailingClosableCustomerReadRepository:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    def list_customers(self, filters=None, *, limit=None, offset=0):
+        raise RuntimeError("relation customer_list_index_next does not exist")
+
+
+class ClosableLiveSourceCustomerReadRepository(FakeLiveSourceCustomerReadRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.rolled_back = False
+        self.closed = False
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class SessionBackedRepository:
+    def __init__(self) -> None:
+        self._session = FakeSession()
+
+
+class FakeEngine:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
 def _production_env(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
@@ -139,6 +200,80 @@ def test_next_primary_list_detail_timeline_and_recent_messages_do_not_call_legac
     assert detail["customer"]["binding_status"] == "bound"
     assert timeline["timeline"]["items"][0]["event_id"] == "evt-1"
     assert messages["messages"][0]["msgid"] == "msg-1"
+
+
+def test_close_repository_rolls_back_and_closes_session_without_repo_close():
+    from aicrm_next.customer_read_model.application import _close_repository
+
+    repo = SessionBackedRepository()
+
+    _close_repository(repo)
+
+    assert repo._session.rolled_back is True
+    assert repo._session.closed is True
+
+
+def test_sqlalchemy_repositories_dispose_owned_engine_on_close():
+    from aicrm_next.customer_read_model.repo import LiveSourceCustomerReadRepository, SqlAlchemyCustomerReadModelRepository
+
+    read_model_session = FakeSession()
+    read_model_engine = FakeEngine()
+    live_source_session = FakeSession()
+    live_source_engine = FakeEngine()
+
+    SqlAlchemyCustomerReadModelRepository(read_model_session, owned_engine=read_model_engine).close()
+    LiveSourceCustomerReadRepository(live_source_session, owned_engine=live_source_engine).close()
+
+    assert read_model_session.rolled_back is True
+    assert read_model_session.closed is True
+    assert read_model_engine.disposed is True
+    assert live_source_session.rolled_back is True
+    assert live_source_session.closed is True
+    assert live_source_engine.disposed is True
+
+
+def test_customer_list_closes_internal_repository_after_success(monkeypatch):
+    from aicrm_next.customer_read_model.application import ListCustomersQuery
+
+    _production_env(monkeypatch)
+    repo = ClosableNextCustomerReadRepository()
+    _patch_next_repo(monkeypatch, repo)
+
+    payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "next_read_model"
+    assert repo.closed is True
+
+
+def test_customer_detail_closes_internal_repository_when_query_raises(monkeypatch):
+    from aicrm_next.shared.errors import NotFoundError
+    from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
+
+    _production_env(monkeypatch)
+    repo = MissingClosableCustomerReadRepository()
+    _patch_next_repo(monkeypatch, repo)
+
+    try:
+        GetCustomerDetailQuery()(CustomerDetailRequest(external_userid="missing"))
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("expected NotFoundError")
+
+    assert repo.closed is True
+
+
+def test_customer_list_does_not_close_injected_repository(monkeypatch):
+    from aicrm_next.customer_read_model.application import ListCustomersQuery
+
+    _production_env(monkeypatch)
+    repo = ClosableNextCustomerReadRepository()
+
+    payload = ListCustomersQuery(repo)(ListCustomersRequest(limit=10))
+
+    assert payload["ok"] is True
+    assert repo.closed is False
 
 
 def test_next_repository_unavailable_does_not_fallback_to_legacy(monkeypatch):
@@ -207,6 +342,47 @@ def test_next_repository_unavailable_uses_live_source_fallback(monkeypatch):
     assert detail["customer"]["external_userid"] == "wx_ext_001"
     assert timeline["timeline"]["items"][0]["event_id"] == "evt-1"
     assert messages["messages"][0]["msgid"] == "msg-1"
+
+
+def test_customer_list_closes_primary_and_live_source_repositories(monkeypatch):
+    from aicrm_next.customer_read_model import application
+    from aicrm_next.customer_read_model.application import ListCustomersQuery
+
+    _production_env(monkeypatch)
+    primary_repo = FailingClosableCustomerReadRepository()
+    live_source_repo = ClosableLiveSourceCustomerReadRepository()
+    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: primary_repo)
+    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda: live_source_repo)
+
+    payload = ListCustomersQuery()(ListCustomersRequest(limit=10))
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "live_source_fallback"
+    assert primary_repo.closed is True
+    assert live_source_repo.closed is True
+
+
+def test_customer_context_closes_internally_created_repositories(monkeypatch):
+    from aicrm_next.customer_read_model import application
+    from aicrm_next.customer_read_model.application import GetCustomerContextQuery
+    from aicrm_next.customer_read_model.dto import CustomerContextRequest
+
+    _production_env(monkeypatch)
+    created_repositories: list[ClosableNextCustomerReadRepository] = []
+
+    def build_repo():
+        repo = ClosableNextCustomerReadRepository()
+        created_repositories.append(repo)
+        return repo
+
+    monkeypatch.setattr(application, "build_customer_read_model_repository", build_repo)
+
+    payload = GetCustomerContextQuery()(CustomerContextRequest(external_userid="wx_ext_001"))
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "next_read_model"
+    assert len(created_repositories) == 3
+    assert all(repo.closed for repo in created_repositories)
 
 
 def test_customer_api_and_admin_page_smoke_next_primary(monkeypatch):

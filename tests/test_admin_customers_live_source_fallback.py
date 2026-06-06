@@ -28,7 +28,7 @@ def test_admin_customer_payload_keeps_successful_live_source_fallback_rows():
 
 
 def test_admin_customer_payload_hides_unavailable_rows():
-    from aicrm_next.frontend_compat.legacy_routes import _admin_customer_payload_from_list_result
+    from aicrm_next.frontend_compat.legacy_routes import ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE, _admin_customer_payload_from_list_result
 
     payload, page_error = _admin_customer_payload_from_list_result(
         result={
@@ -47,6 +47,6 @@ def test_admin_customer_payload_hides_unavailable_rows():
         offset=0,
     )
 
-    assert page_error == "customer read unavailable"
+    assert page_error == ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE
     assert payload["customers"] == []
     assert payload["pagination"]["total"] == 0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -10,6 +11,8 @@ from aicrm_next.shared.typing import JsonDict
 
 from .repo import CustomerReadRepository, FixtureCustomerReadRepository, build_customer_read_model_repository
 from .reconciliation import CustomerReadModelReconciliationRun, reconcile_customer_read_model
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CustomerReadModelSource(Protocol):
@@ -121,7 +124,19 @@ class CustomerReadModelBackfillService:
         target_repo: CustomerReadRepository | None = None,
     ) -> None:
         self._source = source or FixtureCustomerReadModelSource()
+        self._owns_target_repo = target_repo is None
         self._target_repo = target_repo or build_customer_read_model_repository()
+
+    def _close_owned_target_repo(self) -> None:
+        if not self._owns_target_repo:
+            return
+        close = getattr(self._target_repo, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception:
+            LOGGER.warning("failed to close customer read model backfill target repository", exc_info=True)
 
     def run(
         self,
@@ -130,49 +145,52 @@ class CustomerReadModelBackfillService:
         limit: int | None = None,
         external_userids: list[str] | None = None,
     ) -> CustomerReadModelBackfillResult:
-        allowlist = {str(item).strip() for item in (external_userids or []) if str(item).strip()} or None
-        customers = self._source.list_customers(limit=limit, external_userids=allowlist)
-        detailed_customers: list[JsonDict] = []
-        timeline_by_external_userid: dict[str, list[JsonDict]] = {}
-        messages_by_external_userid: dict[str, list[JsonDict]] = {}
-        for customer in customers:
-            external_userid = str(customer.get("external_userid") or "").strip()
-            if not external_userid:
-                continue
-            detail = self._source.get_customer_detail(external_userid) or customer
-            detailed_customers.append(detail)
-            timeline_by_external_userid[external_userid] = self._source.list_timeline(external_userid, limit=limit)
-            messages_by_external_userid[external_userid] = self._source.list_recent_messages(external_userid, limit=limit)
+        try:
+            allowlist = {str(item).strip() for item in (external_userids or []) if str(item).strip()} or None
+            customers = self._source.list_customers(limit=limit, external_userids=allowlist)
+            detailed_customers: list[JsonDict] = []
+            timeline_by_external_userid: dict[str, list[JsonDict]] = {}
+            messages_by_external_userid: dict[str, list[JsonDict]] = {}
+            for customer in customers:
+                external_userid = str(customer.get("external_userid") or "").strip()
+                if not external_userid:
+                    continue
+                detail = self._source.get_customer_detail(external_userid) or customer
+                detailed_customers.append(detail)
+                timeline_by_external_userid[external_userid] = self._source.list_timeline(external_userid, limit=limit)
+                messages_by_external_userid[external_userid] = self._source.list_recent_messages(external_userid, limit=limit)
 
-        reconciliation: CustomerReadModelReconciliationRun
-        if dry_run:
-            reconciliation = CustomerReadModelReconciliationRun(
+            reconciliation: CustomerReadModelReconciliationRun
+            if dry_run:
+                reconciliation = CustomerReadModelReconciliationRun(
+                    source_count=len(detailed_customers),
+                    target_count=len(self._target_repo.list_customers(limit=None, offset=0)),
+                    diff_count=0,
+                    status="dry_run",
+                )
+                written_customers = 0
+            else:
+                replace_all = getattr(self._target_repo, "replace_all", None)
+                if not callable(replace_all):
+                    raise RuntimeError("target repository does not support replace_all")
+                replace_all(
+                    customers=detailed_customers,
+                    timeline_by_external_userid=timeline_by_external_userid,
+                    messages_by_external_userid=messages_by_external_userid,
+                )
+                reconciliation = reconcile_customer_read_model(source_customers=detailed_customers, target_repo=self._target_repo)
+                written_customers = len(detailed_customers)
+
+            return CustomerReadModelBackfillResult(
+                source_name=self._source.source_name,
+                dry_run=dry_run,
                 source_count=len(detailed_customers),
                 target_count=len(self._target_repo.list_customers(limit=None, offset=0)),
-                diff_count=0,
-                status="dry_run",
+                written_customers=written_customers,
+                written_timeline_events=0 if dry_run else sum(len(items) for items in timeline_by_external_userid.values()),
+                written_recent_messages=0 if dry_run else sum(len(items) for items in messages_by_external_userid.values()),
+                reconciliation=reconciliation.to_dict(),
+                masked_samples=_masked_samples(detailed_customers),
             )
-            written_customers = 0
-        else:
-            replace_all = getattr(self._target_repo, "replace_all", None)
-            if not callable(replace_all):
-                raise RuntimeError("target repository does not support replace_all")
-            replace_all(
-                customers=detailed_customers,
-                timeline_by_external_userid=timeline_by_external_userid,
-                messages_by_external_userid=messages_by_external_userid,
-            )
-            reconciliation = reconcile_customer_read_model(source_customers=detailed_customers, target_repo=self._target_repo)
-            written_customers = len(detailed_customers)
-
-        return CustomerReadModelBackfillResult(
-            source_name=self._source.source_name,
-            dry_run=dry_run,
-            source_count=len(detailed_customers),
-            target_count=len(self._target_repo.list_customers(limit=None, offset=0)),
-            written_customers=written_customers,
-            written_timeline_events=0 if dry_run else sum(len(items) for items in timeline_by_external_userid.values()),
-            written_recent_messages=0 if dry_run else sum(len(items) for items in messages_by_external_userid.values()),
-            reconciliation=reconciliation.to_dict(),
-            masked_samples=_masked_samples(detailed_customers),
-        )
+        finally:
+            self._close_owned_target_repo()
