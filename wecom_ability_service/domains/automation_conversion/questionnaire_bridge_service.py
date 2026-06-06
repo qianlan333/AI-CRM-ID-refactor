@@ -14,6 +14,14 @@ def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _positive_int(value: Any) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
 def _member_from_sync_result(sync_result: dict[str, Any], *, external_contact_id: str = "", phone: str = "") -> dict[str, Any] | None:
     member = dict(sync_result.get("member") or {})
     member_id = int(member.get("id") or 0)
@@ -69,8 +77,33 @@ def sync_questionnaire_submission_audience_transition(
                 "questionnaire_id": normalized_questionnaire_id,
             }
 
+        source_channel_missing = _positive_int(member.get("source_channel_id")) <= 0
         audience_sync = workflow_runtime.sync_conversion_member_audience(member)
         get_db().commit()
+
+        if source_channel_missing:
+            hook_payload = {
+                "ok": True,
+                "audience_entry_id": 0,
+                "audience_code": "",
+                "entry_reason": "",
+                "realtime_operation_tasks_ran": 0,
+                "realtime_operation_tasks_enqueued_count": 0,
+                "realtime_operation_tasks_results": [],
+                "realtime_operation_tasks_error": "",
+                "realtime_operation_tasks_reason": "source_channel_missing",
+            }
+            return {
+                "ok": True,
+                "updated": bool(member_sync.get("updated")) or bool(audience_sync.get("updated")),
+                "reason": "source_channel_missing",
+                "member_id": int(member.get("id") or 0),
+                "submission_id": normalized_submission_id,
+                "questionnaire_id": normalized_questionnaire_id,
+                "member_sync": member_sync,
+                "audience_sync": audience_sync,
+                "realtime_task_hook": hook_payload,
+            }
 
         from aicrm_next.automation_engine.audience_transition.application import handle_committed_audience_transition
 

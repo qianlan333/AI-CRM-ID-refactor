@@ -57,6 +57,10 @@ def _diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, dict[str, 
     }
 
 
+def _json_safe(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
 def repair_automation_member_projection(
     *,
     external_userid: str,
@@ -128,8 +132,8 @@ def repair_automation_member_projection(
     updated = bool(member_diff or program_member_diff)
 
     if do_apply and updated:
-        before = {"member": member, "program_member": program_member}
-        after = {"member": member_after, "program_member": program_member_after}
+        before = _json_safe({"member": member, "program_member": program_member})
+        after = _json_safe({"member": member_after, "program_member": program_member_after})
         member_repo.update_member(_int(member["id"]), member_after)
         if program_member and program_member_diff:
             get_db().execute(

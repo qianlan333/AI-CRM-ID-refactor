@@ -2777,6 +2777,21 @@ def test_audience_transition_imports_are_not_wecom_allowlisted() -> None:
     assert checker.WECOM_IMPORT_ALLOWLIST.isdisjoint(audience_transition_paths)
 
 
+def test_channel_admission_runtime_does_not_import_legacy_services() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "aicrm_next/automation_engine/automation_program_admission.py").read_text(encoding="utf-8")
+
+    forbidden = (
+        "importlib",
+        "wecom_ability_service",
+        "admission_service",
+        "operation_task_service",
+        "_with_legacy_app_context",
+    )
+
+    assert all(marker not in source for marker in forbidden)
+
+
 def test_group_ops_action_port_is_not_legacy_allowlisted() -> None:
     import scripts.check_no_new_legacy as checker
 
