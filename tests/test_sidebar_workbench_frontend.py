@@ -191,21 +191,23 @@ def test_sidebar_legacy_binding_apis_remain_available(client):
     assert "X-AICRM-Compatibility-Facade" not in jssdk_response.headers
 
 
-def test_sidebar_workbench_v2_can_fallback_to_legacy_by_query(client):
+def test_sidebar_workbench_v2_ignores_legacy_query_fallback(client):
     response = client.get("/sidebar/bind-mobile?v=legacy")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "客户档案绑定" in html
-    assert "自动化转化操作区" in html
+    assert 'id="sidebar-workbench-root"' in html
+    assert 'data-workbench-url="/api/sidebar/v2/workbench"' in html
+    assert "自动化转化操作区" not in html
 
 
-def test_sidebar_workbench_v2_can_fallback_to_legacy_by_config(client, app):
+def test_sidebar_workbench_v2_ignores_disabled_legacy_flag(client, app):
     app.config["SIDEBAR_WORKBENCH_V2_ENABLED"] = "false"
 
     response = client.get("/sidebar/bind-mobile")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "客户档案绑定" in html
-    assert "自动化转化操作区" in html
+    assert 'id="sidebar-workbench-root"' in html
+    assert 'data-workbench-url="/api/sidebar/v2/workbench"' in html
+    assert "自动化转化操作区" not in html

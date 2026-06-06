@@ -108,9 +108,6 @@ LEGACY_FRONTEND_ROUTES = [
 
 @router.get("/sidebar/bind-mobile", name="api.sidebar_bind_mobile_page")
 async def sidebar_bind_mobile_page(request: Request):
-    enabled = str(os.getenv("SIDEBAR_WORKBENCH_V2_ENABLED", "true")).strip().lower()
-    if enabled in {"0", "false", "no", "off"} or str(request.query_params.get("v") or "").strip().lower() == "legacy":
-        return await forward_to_legacy_flask(request)
     return templates.TemplateResponse(
         request,
         "sidebar_customer_workbench.html",

@@ -107,7 +107,6 @@ PROTECTED_PREFIXES = (
 RUNTIME_FALLBACK_ALLOWED_EXACT = {
     "aicrm_next/customer_read_model/api.py",
     "aicrm_next/automation_engine/api.py",
-    "aicrm_next/integration_gateway/legacy_sidebar_read_facade.py",
     "wecom_ability_service/http/__init__.py",
     "wecom_ability_service/http/automation_conversion.py",
     "wecom_ability_service/http/automation_conversion_channels.py",

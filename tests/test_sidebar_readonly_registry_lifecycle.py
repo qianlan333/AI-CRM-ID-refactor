@@ -12,6 +12,13 @@ READONLY_ROUTES = [
     "/api/sidebar/lead-pool/status",
     "/api/sidebar/signup-tags/status",
     "/api/sidebar/marketing-status",
+    "/api/sidebar/v2/workbench",
+    "/api/sidebar/v2/questionnaires",
+    "/api/sidebar/v2/materials",
+    "/api/sidebar/v2/materials/image/{image_id}/thumbnail",
+    "/api/sidebar/v2/other-staff-messages",
+    "/api/sidebar/v2/products",
+    "/api/sidebar/v2/orders",
 ]
 
 WRITE_ROUTES = [
