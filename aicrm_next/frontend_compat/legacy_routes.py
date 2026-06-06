@@ -60,6 +60,7 @@ router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE = "客户列表暂不可用：生产客户读源正在同步或数据库连接繁忙，请稍后刷新。"
 
 LEGACY_FRONTEND_ROUTES = [
     "/admin",
@@ -270,7 +271,7 @@ def _admin_customer_payload_from_list_result(
     offset: int,
 ) -> tuple[dict, str]:
     unavailable = not result.get("ok", True) or result.get("source_status") == "production_unavailable"
-    page_error = str(result.get("page_error") or "") if unavailable else ""
+    page_error = ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE if unavailable else ""
     customers = [] if unavailable else list(result.get("customers") or result.get("items") or [])
     total = 0 if unavailable else int(result.get("total") or result.get("count") or len(customers))
     return (

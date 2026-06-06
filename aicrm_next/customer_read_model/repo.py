@@ -462,8 +462,17 @@ class FixtureCustomerReadRepository:
 class SqlAlchemyCustomerReadModelRepository:
     """PostgreSQL-ready Customer Read Model repository backed by SQLAlchemy Core tables."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, owned_engine: Engine | None = None) -> None:
         self._session = session
+        self._owned_engine = owned_engine
+
+    def close(self) -> None:
+        try:
+            self._session.rollback()
+        finally:
+            self._session.close()
+        if self._owned_engine is not None:
+            self._owned_engine.dispose()
 
     def reset(self) -> None:
         self.clear()
@@ -710,8 +719,17 @@ class SqlAlchemyCustomerReadModelRepository:
 class LiveSourceCustomerReadRepository:
     """Read live customer data from production source tables when projections are not ready."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, owned_engine: Engine | None = None) -> None:
         self._session = session
+        self._owned_engine = owned_engine
+
+    def close(self) -> None:
+        try:
+            self._session.rollback()
+        finally:
+            self._session.close()
+        if self._owned_engine is not None:
+            self._owned_engine.dispose()
 
     def list_customers(
         self,
@@ -1262,10 +1280,11 @@ def build_customer_live_source_repository(
             capability_owner="customer_read_model",
         )
     database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
+    owns_engine = engine is None
     engine = engine or create_engine(database_url, future=True)
     session_factory = sessionmaker(bind=engine, future=True)
     return assert_repository_allowed(
-        LiveSourceCustomerReadRepository(session_factory()),
+        LiveSourceCustomerReadRepository(session_factory(), owned_engine=engine if owns_engine else None),
         capability_owner="customer_read_model",
     )
 
@@ -1288,10 +1307,11 @@ def build_customer_read_model_repository(
                 capability_owner="customer_read_model",
             )
         database_url = _sqlalchemy_database_url(raw_database_url() or settings.database_url)
+        owns_engine = engine is None
         engine = engine or create_engine(database_url, future=True)
         session_factory = sessionmaker(bind=engine, future=True)
         return assert_repository_allowed(
-            SqlAlchemyCustomerReadModelRepository(session_factory()),
+            SqlAlchemyCustomerReadModelRepository(session_factory(), owned_engine=engine if owns_engine else None),
             capability_owner="customer_read_model",
         )
     return assert_repository_allowed(InMemoryCustomerReadModelRepository(), capability_owner="customer_read_model")

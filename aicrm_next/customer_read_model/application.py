@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from aicrm_next.shared.errors import NotFoundError
@@ -20,6 +21,8 @@ from .dto import (
 )
 from .projections import detail_projection, list_item_projection
 from .repo import CustomerReadRepository, build_customer_live_source_repository, build_customer_read_model_repository
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -48,6 +51,34 @@ def _production_error_message(exc: Exception) -> str:
         "production/postgres/legacy facade data",
         "production/postgres read model data",
     )
+
+
+def _close_repository(repo: CustomerReadRepository | None) -> None:
+    if repo is None:
+        return
+    close = getattr(repo, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            LOGGER.warning("failed to close customer read repository", exc_info=True)
+        return
+
+    session = getattr(repo, "session", None) or getattr(repo, "_session", None)
+    if session is None:
+        return
+    rollback = getattr(session, "rollback", None)
+    if callable(rollback):
+        try:
+            rollback()
+        except Exception:
+            LOGGER.warning("failed to rollback customer read repository session", exc_info=True)
+    session_close = getattr(session, "close", None)
+    if callable(session_close):
+        try:
+            session_close()
+        except Exception:
+            LOGGER.warning("failed to close customer read repository session", exc_info=True)
 
 
 def _diagnostics(
@@ -179,105 +210,117 @@ def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Except
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
     repo = build_customer_live_source_repository()
-    filters = _list_filters(query)
-    rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
-    total = len(rows)
-    page = rows[query.offset : query.offset + query.limit]
-    return {
-        "ok": True,
-        "customers": page,
-        "items": page,
-        "count": len(page),
-        "total": total,
-        "limit": query.limit,
-        "offset": query.offset,
-        "filters": filters,
-        "status_code": 200,
-        **_diagnostics(
-            source_status="live_source_fallback",
-            read_model_status="fallback",
-            degraded=True,
-            fallback_used=True,
-            fallback_reason=_production_error_message(exc),
-        ),
-    }
+    try:
+        filters = _list_filters(query)
+        rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
+        total = len(rows)
+        page = rows[query.offset : query.offset + query.limit]
+        return {
+            "ok": True,
+            "customers": page,
+            "items": page,
+            "count": len(page),
+            "total": total,
+            "limit": query.limit,
+            "offset": query.offset,
+            "filters": filters,
+            "status_code": 200,
+            **_diagnostics(
+                source_status="live_source_fallback",
+                read_model_status="fallback",
+                degraded=True,
+                fallback_used=True,
+                fallback_reason=_production_error_message(exc),
+            ),
+        }
+    finally:
+        _close_repository(repo)
 
 
 def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exception) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
     repo = build_customer_live_source_repository()
-    customer = repo.get_customer(query.external_userid)
-    if not customer:
-        raise NotFoundError("customer not found")
-    return {
-        "ok": True,
-        "customer": detail_projection(customer),
-        "status_code": 200,
-        **_diagnostics(
-            source_status="live_source_fallback",
-            read_model_status="fallback",
-            degraded=True,
-            fallback_used=True,
-            fallback_reason=_production_error_message(exc),
-        ),
-    }
+    try:
+        customer = repo.get_customer(query.external_userid)
+        if not customer:
+            raise NotFoundError("customer not found")
+        return {
+            "ok": True,
+            "customer": detail_projection(customer),
+            "status_code": 200,
+            **_diagnostics(
+                source_status="live_source_fallback",
+                read_model_status="fallback",
+                degraded=True,
+                fallback_used=True,
+                fallback_reason=_production_error_message(exc),
+            ),
+        }
+    finally:
+        _close_repository(repo)
 
 
 def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: Exception) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
     repo = build_customer_live_source_repository()
-    if not repo.customer_exists(query.external_userid):
-        raise NotFoundError("customer not found")
-    items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
-    total = len(items)
-    page = items[query.offset : query.offset + query.limit]
-    return {
-        "ok": True,
-        "timeline": {
-            "external_userid": query.external_userid,
-            "items": page,
-            "count": len(page),
-            "limit": query.limit,
-            "offset": query.offset,
-            "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
-            "total": total,
-        },
-        "status_code": 200,
-        **_diagnostics(
-            source_status="live_source_fallback",
-            read_model_status="fallback",
-            degraded=True,
-            fallback_used=True,
-            fallback_reason=_production_error_message(exc),
-        ),
-    }
+    try:
+        if not repo.customer_exists(query.external_userid):
+            raise NotFoundError("customer not found")
+        items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+        total = len(items)
+        page = items[query.offset : query.offset + query.limit]
+        return {
+            "ok": True,
+            "timeline": {
+                "external_userid": query.external_userid,
+                "items": page,
+                "count": len(page),
+                "limit": query.limit,
+                "offset": query.offset,
+                "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
+                "total": total,
+            },
+            "status_code": 200,
+            **_diagnostics(
+                source_status="live_source_fallback",
+                read_model_status="fallback",
+                degraded=True,
+                fallback_used=True,
+                fallback_reason=_production_error_message(exc),
+            ),
+        }
+    finally:
+        _close_repository(repo)
 
 
 def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exception) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
     repo = build_customer_live_source_repository()
-    if not repo.customer_exists(query.external_userid):
-        raise NotFoundError("customer not found")
-    messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
-    return {
-        "ok": True,
-        "messages": messages,
-        "items": messages,
-        "count": len(messages),
-        "external_userid": query.external_userid,
-        "limit": query.limit,
-        "status_code": 200,
-        **_diagnostics(
-            source_status="live_source_fallback",
-            read_model_status="fallback",
-            degraded=True,
-            fallback_used=True,
-            fallback_reason=_production_error_message(exc),
-        ),
-    }
+    try:
+        if not repo.customer_exists(query.external_userid):
+            raise NotFoundError("customer not found")
+        messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+        return {
+            "ok": True,
+            "messages": messages,
+            "items": messages,
+            "count": len(messages),
+            "external_userid": query.external_userid,
+            "limit": query.limit,
+            "status_code": 200,
+            **_diagnostics(
+                source_status="live_source_fallback",
+                read_model_status="fallback",
+                degraded=True,
+                fallback_used=True,
+                fallback_reason=_production_error_message(exc),
+            ),
+        }
+    finally:
+        _close_repository(repo)
 
 
 def _normalize_bool_filter(value: str | None) -> bool | None:
@@ -303,10 +346,14 @@ class ListCustomersQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                filters = _list_filters(query)
-                rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
-                total = len(rows)
-                page = rows[query.offset : query.offset + query.limit]
+                try:
+                    filters = _list_filters(query)
+                    rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
+                    total = len(rows)
+                    page = rows[query.offset : query.offset + query.limit]
+                finally:
+                    if self._repo is None:
+                        _close_repository(repo)
                 return {
                     "ok": True,
                     "customers": page,
@@ -328,67 +375,71 @@ class ListCustomersQuery:
                     return _list_customers_unavailable_payload(query, exc)
 
         repo = self._repo or build_customer_read_model_repository()
-        contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
-        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-        contacts_contract = contacts_adapter.fetch_external_contacts(
-            follow_user_userid=query.owner_userid or "",
-            limit=query.limit,
-            sync_cursor=f"offset:{query.offset}",
-        )
-        projection_contract = projection_gateway.update_customer_list_projection(
-            projection_name="customer_list",
-            sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
-        )
-        filters = _list_filters(query)
-        rows = [list_item_projection(item) for item in repo.list_customers()]
-        if query.owner_userid:
-            rows = [item for item in rows if item.get("owner_userid") == query.owner_userid]
-        if query.mobile:
-            rows = [item for item in rows if query.mobile in str(item.get("mobile") or "")]
-        if query.tag:
-            rows = [item for item in rows if query.tag in item.get("tags", [])]
-        if query.status:
-            rows = [
-                item
-                for item in rows
-                if query.status in {
-                    str(item.get("class_user_status", {}).get("current_status") or ""),
-                    str(item.get("class_user_status", {}).get("signup_status") or ""),
-                    str(item.get("class_user_status", {}).get("activation_bucket") or ""),
-                    str(item.get("binding_status") or ""),
-                }
-            ]
-        is_bound = _normalize_bool_filter(query.is_bound)
-        if is_bound is not None:
-            rows = [item for item in rows if bool(item.get("is_bound")) is is_bound]
-        if query.keyword:
-            rows = [
-                item
-                for item in rows
-                if query.keyword in str(item.get("customer_name") or "")
-                or query.keyword in str(item.get("external_userid") or "")
-                or query.keyword in str(item.get("mobile") or "")
-                or query.keyword in str(item.get("owner_userid") or "")
-                or query.keyword in str(item.get("owner_display_name") or "")
-            ]
-        total = len(rows)
-        page = rows[query.offset : query.offset + query.limit]
-        return {
-            "ok": True,
-            "customers": page,
-            "items": page,
-            "count": len(page),
-            "total": total,
-            "limit": query.limit,
-            "offset": query.offset,
-            "filters": filters,
-            "adapter_contract": {
-                "contacts_sync": contacts_contract,
-                "customer_projection": projection_contract,
-            },
-            "side_effect_safety": customer_sync_side_effect_safety(),
-            **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
-        }
+        try:
+            contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
+            projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+            contacts_contract = contacts_adapter.fetch_external_contacts(
+                follow_user_userid=query.owner_userid or "",
+                limit=query.limit,
+                sync_cursor=f"offset:{query.offset}",
+            )
+            projection_contract = projection_gateway.update_customer_list_projection(
+                projection_name="customer_list",
+                sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
+            )
+            filters = _list_filters(query)
+            rows = [list_item_projection(item) for item in repo.list_customers()]
+            if query.owner_userid:
+                rows = [item for item in rows if item.get("owner_userid") == query.owner_userid]
+            if query.mobile:
+                rows = [item for item in rows if query.mobile in str(item.get("mobile") or "")]
+            if query.tag:
+                rows = [item for item in rows if query.tag in item.get("tags", [])]
+            if query.status:
+                rows = [
+                    item
+                    for item in rows
+                    if query.status in {
+                        str(item.get("class_user_status", {}).get("current_status") or ""),
+                        str(item.get("class_user_status", {}).get("signup_status") or ""),
+                        str(item.get("class_user_status", {}).get("activation_bucket") or ""),
+                        str(item.get("binding_status") or ""),
+                    }
+                ]
+            is_bound = _normalize_bool_filter(query.is_bound)
+            if is_bound is not None:
+                rows = [item for item in rows if bool(item.get("is_bound")) is is_bound]
+            if query.keyword:
+                rows = [
+                    item
+                    for item in rows
+                    if query.keyword in str(item.get("customer_name") or "")
+                    or query.keyword in str(item.get("external_userid") or "")
+                    or query.keyword in str(item.get("mobile") or "")
+                    or query.keyword in str(item.get("owner_userid") or "")
+                    or query.keyword in str(item.get("owner_display_name") or "")
+                ]
+            total = len(rows)
+            page = rows[query.offset : query.offset + query.limit]
+            return {
+                "ok": True,
+                "customers": page,
+                "items": page,
+                "count": len(page),
+                "total": total,
+                "limit": query.limit,
+                "offset": query.offset,
+                "filters": filters,
+                "adapter_contract": {
+                    "contacts_sync": contacts_contract,
+                    "customer_projection": projection_contract,
+                },
+                "side_effect_safety": customer_sync_side_effect_safety(),
+                **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
+            }
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     __call__ = execute
 
@@ -405,9 +456,13 @@ class GetCustomerDetailQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                customer = repo.get_customer(query.external_userid)
-                if not customer:
-                    raise NotFoundError("customer not found")
+                try:
+                    customer = repo.get_customer(query.external_userid)
+                    if not customer:
+                        raise NotFoundError("customer not found")
+                finally:
+                    if self._repo is None:
+                        _close_repository(repo)
             except NotFoundError:
                 raise
             except Exception as exc:
@@ -425,23 +480,27 @@ class GetCustomerDetailQuery:
             }
 
         repo = self._repo or build_customer_read_model_repository()
-        contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
-        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-        contacts_contract = contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
-        projection_contract = projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
-        customer = repo.get_customer(query.external_userid)
-        if not customer:
-            raise NotFoundError("customer not found")
-        return {
-            "ok": True,
-            "customer": detail_projection(customer),
-            "adapter_contract": {
-                "contacts_sync": contacts_contract,
-                "customer_projection": projection_contract,
-            },
-            "side_effect_safety": customer_sync_side_effect_safety(),
-            **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
-        }
+        try:
+            contacts_adapter = self._contacts_adapter or build_contacts_sync_adapter()
+            projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+            contacts_contract = contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
+            projection_contract = projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
+            customer = repo.get_customer(query.external_userid)
+            if not customer:
+                raise NotFoundError("customer not found")
+            return {
+                "ok": True,
+                "customer": detail_projection(customer),
+                "adapter_contract": {
+                    "contacts_sync": contacts_contract,
+                    "customer_projection": projection_contract,
+                },
+                "side_effect_safety": customer_sync_side_effect_safety(),
+                **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
+            }
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     __call__ = execute
 
@@ -457,11 +516,15 @@ class GetCustomerTimelineQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                if not repo.customer_exists(query.external_userid):
-                    raise NotFoundError("customer not found")
-                items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
-                total = len(items)
-                page = items[query.offset : query.offset + query.limit]
+                try:
+                    if not repo.customer_exists(query.external_userid):
+                        raise NotFoundError("customer not found")
+                    items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+                    total = len(items)
+                    page = items[query.offset : query.offset + query.limit]
+                finally:
+                    if self._repo is None:
+                        _close_repository(repo)
             except NotFoundError:
                 raise
             except Exception as exc:
@@ -487,34 +550,38 @@ class GetCustomerTimelineQuery:
             }
 
         repo = self._repo or build_customer_read_model_repository()
-        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-        projection_contract = projection_gateway.update_customer_timeline_projection(
-            external_userid=query.external_userid,
-            sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
-        )
-        customer = repo.get_customer(query.external_userid)
-        if not customer:
-            raise NotFoundError("customer not found")
-        items = repo.list_timeline(query.external_userid)
-        if query.event_type:
-            items = [item for item in items if item.get("event_type") == query.event_type]
-        total = len(items)
-        page = items[query.offset : query.offset + query.limit]
-        return {
-            "ok": True,
-            "timeline": {
-                "external_userid": query.external_userid,
-                "items": page,
-                "count": len(page),
-                "limit": query.limit,
-                "offset": query.offset,
-                "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
-                "total": total,
-            },
-            "adapter_contract": {"customer_projection": projection_contract},
-            "side_effect_safety": customer_sync_side_effect_safety(),
-            **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
-        }
+        try:
+            projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+            projection_contract = projection_gateway.update_customer_timeline_projection(
+                external_userid=query.external_userid,
+                sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
+            )
+            customer = repo.get_customer(query.external_userid)
+            if not customer:
+                raise NotFoundError("customer not found")
+            items = repo.list_timeline(query.external_userid)
+            if query.event_type:
+                items = [item for item in items if item.get("event_type") == query.event_type]
+            total = len(items)
+            page = items[query.offset : query.offset + query.limit]
+            return {
+                "ok": True,
+                "timeline": {
+                    "external_userid": query.external_userid,
+                    "items": page,
+                    "count": len(page),
+                    "limit": query.limit,
+                    "offset": query.offset,
+                    "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
+                    "total": total,
+                },
+                "adapter_contract": {"customer_projection": projection_contract},
+                "side_effect_safety": customer_sync_side_effect_safety(),
+                **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
+            }
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     __call__ = execute
 
@@ -531,9 +598,13 @@ class ListRecentMessagesQuery:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                if not repo.customer_exists(query.external_userid):
-                    raise NotFoundError("customer not found")
-                messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+                try:
+                    if not repo.customer_exists(query.external_userid):
+                        raise NotFoundError("customer not found")
+                    messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
+                finally:
+                    if self._repo is None:
+                        _close_repository(repo)
             except NotFoundError:
                 raise
             except Exception as exc:
@@ -555,34 +626,38 @@ class ListRecentMessagesQuery:
             }
 
         repo = self._repo or build_customer_read_model_repository()
-        archive_adapter = self._archive_adapter or build_archive_sync_adapter()
-        projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
-        archive_contract = archive_adapter.fetch_recent_messages(
-            external_userid=query.external_userid,
-            limit=query.limit,
-        )
-        projection_contract = projection_gateway.update_recent_messages_projection(
-            external_userid=query.external_userid,
-            sync_cursor=f"limit:{query.limit}",
-        )
-        customer = repo.get_customer(query.external_userid)
-        if not customer:
-            raise NotFoundError("customer not found")
-        messages = repo.list_recent_messages(query.external_userid)[: query.limit]
-        return {
-            "ok": True,
-            "messages": messages,
-            "items": messages,
-            "count": len(messages),
-            "external_userid": query.external_userid,
-            "limit": query.limit,
-            "adapter_contract": {
-                "archive_sync": archive_contract,
-                "customer_projection": projection_contract,
-            },
-            "side_effect_safety": customer_sync_side_effect_safety(),
-            **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
-        }
+        try:
+            archive_adapter = self._archive_adapter or build_archive_sync_adapter()
+            projection_gateway = self._projection_gateway or build_customer_projection_sync_gateway()
+            archive_contract = archive_adapter.fetch_recent_messages(
+                external_userid=query.external_userid,
+                limit=query.limit,
+            )
+            projection_contract = projection_gateway.update_recent_messages_projection(
+                external_userid=query.external_userid,
+                sync_cursor=f"limit:{query.limit}",
+            )
+            customer = repo.get_customer(query.external_userid)
+            if not customer:
+                raise NotFoundError("customer not found")
+            messages = repo.list_recent_messages(query.external_userid)[: query.limit]
+            return {
+                "ok": True,
+                "messages": messages,
+                "items": messages,
+                "count": len(messages),
+                "external_userid": query.external_userid,
+                "limit": query.limit,
+                "adapter_contract": {
+                    "archive_sync": archive_contract,
+                    "customer_projection": projection_contract,
+                },
+                "side_effect_safety": customer_sync_side_effect_safety(),
+                **_diagnostics(source_status="local_contract_probe", read_model_status="fixture"),
+            }
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     __call__ = execute
 
@@ -737,10 +812,14 @@ class GetCustomerContextQuery:
         if not mobile:
             raise NotFoundError("external_userid is required")
         repo = self._repo or build_customer_read_model_repository()
-        matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
-        if not matches or not str(matches[0].get("external_userid") or "").strip():
-            raise NotFoundError("customer not found")
-        return str(matches[0]["external_userid"])
+        try:
+            matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
+            if not matches or not str(matches[0].get("external_userid") or "").strip():
+                raise NotFoundError("customer not found")
+            return str(matches[0]["external_userid"])
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     def _resolve_production_external_userid(self, query: CustomerContextRequest) -> str:
         external_userid = str(query.external_userid or query.user_id or "").strip()
@@ -801,26 +880,30 @@ class GetCustomerContextQuery:
 
         external_userid = self._resolve_fixture_external_userid(query)
         repo = self._repo or build_customer_read_model_repository()
-        detail = GetCustomerDetailQuery(repo)(CustomerDetailRequest(external_userid=external_userid))
-        timeline = GetCustomerTimelineQuery(repo)(
-            CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
-        )
-        messages = ListRecentMessagesQuery(repo)(
-            RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
-        )
-        return _customer_context_payload(
-            external_userid=external_userid,
-            customer=detail["customer"],
-            timeline=timeline["timeline"],
-            recent_messages=messages["messages"],
-            source_status="local_contract_probe",
-            read_model_status="fixture",
-            adapter_contract={
-                "detail": detail.get("adapter_contract", {}),
-                "timeline": timeline.get("adapter_contract", {}),
-                "recent_messages": messages.get("adapter_contract", {}),
-            },
-        )
+        try:
+            detail = GetCustomerDetailQuery(repo)(CustomerDetailRequest(external_userid=external_userid))
+            timeline = GetCustomerTimelineQuery(repo)(
+                CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
+            )
+            messages = ListRecentMessagesQuery(repo)(
+                RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
+            )
+            return _customer_context_payload(
+                external_userid=external_userid,
+                customer=detail["customer"],
+                timeline=timeline["timeline"],
+                recent_messages=messages["messages"],
+                source_status="local_contract_probe",
+                read_model_status="fixture",
+                adapter_contract={
+                    "detail": detail.get("adapter_contract", {}),
+                    "timeline": timeline.get("adapter_contract", {}),
+                    "recent_messages": messages.get("adapter_contract", {}),
+                },
+            )
+        finally:
+            if self._repo is None:
+                _close_repository(repo)
 
     __call__ = execute
 
