@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from aicrm_next.customer_read_model.repo import build_customer_live_source_repository
+from aicrm_next.customer_read_model.repo import _DEFAULT_LIVE_SOURCE_LIST_LIMIT, build_customer_live_source_repository
 
 
 def _execute_all(session, statements: list[str]) -> None:
@@ -167,3 +167,29 @@ def test_live_source_repository_reads_existing_customer_source_tables(monkeypatc
     assert detail["identity"]["unionid"] == "union-1"
     assert messages[0]["msgid"] == "msg-1"
     assert timeline[0]["event_type"] == "message"
+
+
+def test_live_source_repository_uses_safe_default_limit_when_limit_is_none(monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://customer:customer@127.0.0.1:1/aicrm_customer")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+
+    executed_params: list[dict] = []
+
+    class FakeResult:
+        def mappings(self):
+            return []
+
+        def scalar_one(self):
+            return 0
+
+    class FakeSession:
+        def execute(self, statement, params=None):
+            executed_params.append(dict(params or {}))
+            return FakeResult()
+
+    repo = build_customer_live_source_repository(session=FakeSession())
+
+    assert repo.list_customers(limit=None, offset=0) == []
+    assert executed_params[-1]["limit"] == _DEFAULT_LIVE_SOURCE_LIST_LIMIT
+    assert executed_params[-1]["limit"] != 100000

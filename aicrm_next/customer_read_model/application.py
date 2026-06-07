@@ -206,6 +206,15 @@ def _list_filters(query: ListCustomersRequest) -> JsonDict:
     }
 
 
+def _count_customers(repo: CustomerReadRepository, filters: JsonDict, page: list[JsonDict], *, limit: int, offset: int) -> int:
+    count = getattr(repo, "count_customers", None)
+    if callable(count):
+        return int(count(filters) or 0)
+    if offset == 0 and len(page) < limit:
+        return len(page)
+    return len(repo.list_customers(filters, limit=None, offset=0))
+
+
 def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
@@ -213,9 +222,8 @@ def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Except
     repo = repo or build_customer_live_source_repository()
     try:
         filters = _list_filters(query)
-        rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
-        total = len(rows)
-        page = rows[query.offset : query.offset + query.limit]
+        page = [list_item_projection(item) for item in repo.list_customers(filters, limit=query.limit, offset=query.offset)]
+        total = _count_customers(repo, filters, page, limit=query.limit, offset=query.offset)
         return {
             "ok": True,
             "customers": page,
@@ -363,9 +371,8 @@ class ListCustomersQuery:
                 repo = self._repo or build_customer_read_model_repository()
                 try:
                     filters = _list_filters(query)
-                    rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
-                    total = len(rows)
-                    page = rows[query.offset : query.offset + query.limit]
+                    page = [list_item_projection(item) for item in repo.list_customers(filters, limit=query.limit, offset=query.offset)]
+                    total = _count_customers(repo, filters, page, limit=query.limit, offset=query.offset)
                 finally:
                     if self._repo is None:
                         _close_repository(repo)

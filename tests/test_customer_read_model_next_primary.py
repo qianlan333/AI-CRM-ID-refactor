@@ -13,9 +13,12 @@ from aicrm_next.customer_read_model.dto import (
 class FakeNextCustomerReadRepository:
     def __init__(self) -> None:
         self.list_calls = 0
+        self.list_args: list[tuple[dict, int | None, int]] = []
+        self.count_args: list[dict] = []
 
     def list_customers(self, filters=None, *, limit=None, offset=0):
         self.list_calls += 1
+        self.list_args.append((dict(filters or {}), limit, offset))
         rows = [
             {
                 "external_userid": "wx_ext_001",
@@ -45,6 +48,11 @@ class FakeNextCustomerReadRepository:
         if mobile:
             rows = [row for row in rows if row.get("mobile") == mobile]
         return rows[offset:] if limit is None else rows[offset : offset + limit]
+
+    def count_customers(self, filters=None):
+        self.count_args.append(dict(filters or {}))
+        rows = self.list_customers(filters, limit=None, offset=0)
+        return len(rows)
 
     def get_customer(self, external_userid: str):
         return self.list_customers()[0] if external_userid == "wx_ext_001" else None
@@ -264,6 +272,24 @@ def test_customer_list_does_not_close_injected_repository(monkeypatch):
     assert repo.closed is False
 
 
+def test_customer_list_query_passes_limit_offset_and_uses_count(monkeypatch):
+    from aicrm_next.customer_read_model.application import ListCustomersQuery
+
+    _production_env(monkeypatch)
+    repo = ClosableNextCustomerReadRepository()
+
+    payload = ListCustomersQuery(repo)(ListCustomersRequest(mobile="13800138000", limit=5, offset=2))
+
+    assert payload["ok"] is True
+    assert set(payload) >= {"customers", "items", "total", "limit", "offset", "filters", "status_code"}
+    assert payload["limit"] == 5
+    assert payload["offset"] == 2
+    assert repo.list_args[0][1:] == (5, 2)
+    assert repo.list_args[0][0]["mobile"] == "13800138000"
+    assert repo.count_args == [repo.list_args[0][0]]
+    assert all(limit is not None for _, limit, _ in repo.list_args[:1])
+
+
 def test_next_repository_unavailable_does_not_fallback_to_legacy(monkeypatch):
     from aicrm_next.customer_read_model import application
     from aicrm_next.customer_read_model.application import ListCustomersQuery
@@ -330,6 +356,24 @@ def test_next_repository_unavailable_uses_live_source_fallback(monkeypatch):
     assert detail["customer"]["external_userid"] == "wx_ext_001"
     assert timeline["timeline"]["items"][0]["event_id"] == "evt-1"
     assert messages["messages"][0]["msgid"] == "msg-1"
+
+
+def test_customer_list_live_source_fallback_uses_limit_offset_and_count(monkeypatch):
+    from aicrm_next.customer_read_model import application
+    from aicrm_next.customer_read_model.application import ListCustomersQuery
+
+    _production_env(monkeypatch)
+    live_source_repo = ClosableLiveSourceCustomerReadRepository()
+    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: (_ for _ in ()).throw(RuntimeError("relation customer_list_index_next does not exist")))
+    _patch_live_source_repo(monkeypatch, live_source_repo)
+
+    payload = ListCustomersQuery()(ListCustomersRequest(limit=5, offset=3))
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "live_source_fallback"
+    assert live_source_repo.list_args[0][1:] == (5, 3)
+    assert live_source_repo.count_args == [live_source_repo.list_args[0][0]]
+    assert live_source_repo.closed is True
 
 
 def test_customer_list_closes_primary_and_live_source_repositories(monkeypatch):

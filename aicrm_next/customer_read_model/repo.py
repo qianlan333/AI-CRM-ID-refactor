@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import bindparam, delete, insert, select, text
+from sqlalchemy import Text, bindparam, cast, delete, func, insert, or_, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,8 @@ from .models import (
     customer_timeline_event_next,
 )
 
+_DEFAULT_LIVE_SOURCE_LIST_LIMIT = 200
+
 
 class CustomerReadRepository(Protocol):
     def list_customers(
@@ -32,6 +34,8 @@ class CustomerReadRepository(Protocol):
         limit: int | None = None,
         offset: int = 0,
     ) -> list[JsonDict]: ...
+
+    def count_customers(self, filters: JsonDict | None = None) -> int: ...
 
     def get_customer_detail(self, external_userid: str) -> JsonDict | None: ...
 
@@ -410,6 +414,9 @@ class FixtureCustomerReadRepository:
         rows = _apply_customer_filters([deepcopy(item) for item in self._customers], filters or {})
         return _apply_page(rows, limit=limit, offset=offset)
 
+    def count_customers(self, filters: JsonDict | None = None) -> int:
+        return len(_apply_customer_filters([deepcopy(item) for item in self._customers], filters or {}))
+
     def replace_all(
         self,
         *,
@@ -599,11 +606,19 @@ class SqlAlchemyCustomerReadModelRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[JsonDict]:
-        rows = self._session.execute(
-            select(customer_list_index_next).order_by(customer_list_index_next.c.id.asc())
-        ).mappings()
+        stmt = self._customer_list_stmt(filters or {})
+        stmt = stmt.order_by(customer_list_index_next.c.id.asc())
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit))).offset(max(0, int(offset or 0)))
+        elif offset:
+            stmt = stmt.offset(max(0, int(offset or 0)))
+        rows = self._session.execute(stmt).mappings()
         customers = [self._list_row_to_customer(row) for row in rows]
-        return _apply_page(_apply_customer_filters(customers, filters or {}), limit=limit, offset=offset)
+        return customers
+
+    def count_customers(self, filters: JsonDict | None = None) -> int:
+        stmt = select(func.count()).select_from(self._customer_list_stmt(filters or {}).subquery())
+        return int(self._session.execute(stmt).scalar_one() or 0)
 
     def get_customer(self, external_userid: str) -> JsonDict | None:
         row = self._session.execute(
@@ -661,6 +676,48 @@ class SqlAlchemyCustomerReadModelRepository:
 
     def customer_exists(self, external_userid: str) -> bool:
         return self.get_customer(external_userid) is not None
+
+    def _customer_list_stmt(self, filters: JsonDict):
+        stmt = select(customer_list_index_next)
+        table = customer_list_index_next.c
+        owner_userid = str(filters.get("owner_userid") or "").strip()
+        if owner_userid:
+            stmt = stmt.where(table.owner_userid == owner_userid)
+        tag = str(filters.get("tag") or "").strip()
+        if tag:
+            stmt = stmt.where(cast(table.tags_json, Text).like(f"%{tag}%"))
+        status = str(filters.get("status") or "").strip()
+        if status:
+            stmt = stmt.where(
+                or_(
+                    table.binding_status == status,
+                    cast(table.class_user_status_json, Text).like(f"%{status}%"),
+                )
+            )
+        is_bound = _normalize_bool_filter(filters.get("is_bound"))
+        if is_bound is not None:
+            stmt = stmt.where(table.is_bound.is_(is_bound))
+        mobile = str(filters.get("mobile") or "").strip()
+        if mobile:
+            stmt = stmt.where(table.mobile.like(f"%{mobile}%"))
+        keyword = str(filters.get("keyword") or "").strip().lower()
+        if keyword:
+            pattern = f"%{keyword}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(table.external_userid).like(pattern),
+                    func.lower(table.customer_name).like(pattern),
+                    func.lower(table.owner_userid).like(pattern),
+                    func.lower(table.owner_display_name).like(pattern),
+                    func.lower(table.remark).like(pattern),
+                    func.lower(table.description).like(pattern),
+                    func.lower(table.mobile).like(pattern),
+                    func.lower(table.binding_status).like(pattern),
+                    func.lower(cast(table.tags_json, Text)).like(pattern),
+                    func.lower(cast(table.class_user_status_json, Text)).like(pattern),
+                )
+            )
+        return stmt
 
     def _list_row_to_customer(self, row) -> JsonDict:
         data = dict(row)
@@ -736,6 +793,12 @@ class LiveSourceCustomerReadRepository:
         rows = self._customer_rows(filters or {}, limit=limit, offset=offset)
         return self._decorate_customer_rows(rows)
 
+    def count_customers(self, filters: JsonDict | None = None) -> int:
+        where, params = self._customer_where(filters or {})
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        sql = self._customer_decorated_sql(where_sql, "COUNT(*) AS total")
+        return int(self._session.execute(text(sql), params).scalar_one() or 0)
+
     def get_customer(self, external_userid: str) -> JsonDict | None:
         rows = self._customer_rows({"external_userid": str(external_userid or "").strip()}, limit=1, offset=0)
         customers = self._decorate_customer_rows(rows)
@@ -810,7 +873,16 @@ class LiveSourceCustomerReadRepository:
     def _customer_rows(self, filters: JsonDict, *, limit: int | None, offset: int) -> list[JsonDict]:
         where, params = self._customer_where(filters)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-        sql = f"""
+        sql = self._customer_decorated_sql(where_sql, "*") + """
+            ORDER BY sort_updated_at DESC, external_userid DESC
+            LIMIT :limit OFFSET :offset
+        """
+        effective_limit = _DEFAULT_LIVE_SOURCE_LIST_LIMIT if limit is None else int(limit)
+        params.update({"limit": max(1, effective_limit), "offset": max(0, int(offset or 0))})
+        return [dict(row) for row in self._session.execute(text(sql), params).mappings()]
+
+    def _customer_decorated_sql(self, where_sql: str, select_sql: str) -> str:
+        return f"""
             WITH scope AS (
                 SELECT external_userid FROM contacts
                 UNION
@@ -902,14 +974,10 @@ class LiveSourceCustomerReadRepository:
                 LEFT JOIN latest_messages ON latest_messages.external_userid = scope.external_userid
                 WHERE scope.external_userid IS NOT NULL AND scope.external_userid <> ''
             )
-            SELECT *
+            SELECT {select_sql}
             FROM decorated
             {where_sql}
-            ORDER BY sort_updated_at DESC, external_userid DESC
-            LIMIT :limit OFFSET :offset
         """
-        params.update({"limit": max(1, int(limit or 100000)), "offset": max(0, int(offset or 0))})
-        return [dict(row) for row in self._session.execute(text(sql), params).mappings()]
 
     def _customer_where(self, filters: JsonDict) -> tuple[list[str], JsonDict]:
         where: list[str] = []

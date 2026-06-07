@@ -23,3 +23,17 @@ def test_runtime_create_engine_and_sessionmaker_are_centralized() -> None:
                 hits.append(f"{relative_path}:{line_no}: {line.strip()}")
 
     assert hits == []
+
+
+def test_sql_repository_close_does_not_dispose_global_engine() -> None:
+    checked_files = [
+        Path("aicrm_next/customer_read_model/repo.py"),
+        Path("aicrm_next/ops_enrollment/repo.py"),
+        Path("aicrm_next/customer_read_model/sidebar_v2.py"),
+    ]
+
+    for path in checked_files:
+        source = path.read_text(encoding="utf-8")
+        assert "create_engine(" not in source or path == Path("aicrm_next/shared/db_session.py")
+        assert "sessionmaker(" not in source
+        assert ".dispose(" not in source
