@@ -28,9 +28,6 @@ from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion.channel_binding_service import bind_channels_to_program
 from wecom_ability_service.domains.automation_conversion import operation_task_repo
 from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
-from wecom_ability_service.domains.automation_conversion.operation_task_service import (
-    preview_operation_task_audience,
-)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,7 +91,7 @@ def _seed_agent_config(agent_code: str, *, role_prompt: str = "", task_prompt: s
 
 
 def _insert_agent_operation_task(program_id: int, *, agent_code: str, fallback_content: str = "") -> dict:
-    return operation_task_repo.insert_task(
+    task = operation_task_repo.insert_task(
         {
             "program_id": int(program_id),
             "task_name": f"agent runtime {agent_code}",
@@ -114,6 +111,8 @@ def _insert_agent_operation_task(program_id: int, *, agent_code: str, fallback_c
             "updated_by": "pytest",
         }
     )
+    get_db().commit()
+    return task
 
 
 def _seed_questionnaire_submission(external_contact_id: str) -> int:
@@ -298,22 +297,7 @@ def test_agent_questionnaire_prompt_context_materializes_and_enqueues(app, monke
         )
         task = _insert_agent_operation_task(program_id, agent_code="questionnaire_followup_agent")
 
-        def fake_generate_content_with_agent(**kwargs):
-            return {
-                "content_text": "结合问卷答案生成的话术",
-                "content_source": "agent_generated",
-                "fallback_reason": "",
-                "agent_run_id": "run-agent-questionnaire",
-                "agent_output_id": "output-agent-questionnaire",
-                "agent_code": kwargs["agent_binding"]["agent_code"],
-            }
-
-        monkeypatch.setattr(
-            "wecom_ability_service.domains.automation_conversion.workflow_runtime._generate_content_with_agent",
-            fake_generate_content_with_agent,
-        )
-
-        preview = preview_operation_task_audience(program_id, {**task})["preview"]
+        preview = preview_automation_program_operation_task_audience(program_id, {**task})["preview"]
         assert preview["target_count"] == 1
         assert preview["agent_runtime_diagnostics"]["agent_published_prompt_present"] is True
         assert preview["agent_runtime_diagnostics"]["questionnaire_context_available"] is True
@@ -339,12 +323,16 @@ def test_agent_questionnaire_prompt_context_materializes_and_enqueues(app, monke
             (execution_id,),
         ).fetchone()
         assert item
-        assert item["rendered_content_text"] == "结合问卷答案生成的话术"
+        assert item["rendered_content_text"] == ""
         assert item["content_snapshot_json"]["generation_source"] == "automation_operation_task"
+        assert item["content_snapshot_json"]["content_source"] == "agent_runtime_plan"
+        assert item["content_snapshot_json"]["fallback_reason"] == "agent_runtime_plan_pending"
         assert item["content_snapshot_json"]["agent_published_prompt_present"] is True
         assert item["content_snapshot_json"]["questionnaire_submission_id"] == submission_id
         assert item["content_snapshot_json"]["questionnaire_answer_count"] == 1
-        assert item["content_snapshot_json"]["agent_run_id"] == "run-agent-questionnaire"
+        assert item["content_snapshot_json"]["agent_runtime_planned"] is True
+        assert item["content_snapshot_json"]["real_agent_runtime_executed"] is False
+        assert item["content_snapshot_json"]["adapter_contract"]["side_effect_executed"] is False
         assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 1
 
 
@@ -369,15 +357,6 @@ def test_agent_prompt_without_questionnaire_answers_reports_context_missing(app,
         )
         task = _insert_agent_operation_task(program_id, agent_code="questionnaire_required_agent")
         called = {"value": False}
-
-        def fake_generate_content_with_agent(**kwargs):
-            called["value"] = True
-            return {"content_text": "should not run"}
-
-        monkeypatch.setattr(
-            "wecom_ability_service.domains.automation_conversion.workflow_runtime._generate_content_with_agent",
-            fake_generate_content_with_agent,
-        )
 
         result = run_audience_entered_operation_tasks(
             member_id=int(admitted["member_id"]),
@@ -410,21 +389,6 @@ def test_agent_runtime_failure_uses_task_fallback_without_real_send(app, monkeyp
         _seed_agent_config("fallback_agent")
         task = _insert_agent_operation_task(program_id, agent_code="fallback_agent", fallback_content="兜底承接话术")
 
-        def fake_generate_content_with_agent(**kwargs):
-            return {
-                "content_text": "",
-                "content_source": "standard_content",
-                "fallback_reason": "agent_generation_failed",
-                "agent_run_id": "",
-                "agent_output_id": "",
-                "agent_code": kwargs["agent_binding"]["agent_code"],
-            }
-
-        monkeypatch.setattr(
-            "wecom_ability_service.domains.automation_conversion.workflow_runtime._generate_content_with_agent",
-            fake_generate_content_with_agent,
-        )
-
         result = run_audience_entered_operation_tasks(
             member_id=int(admitted["member_id"]),
             audience_code="operating",
@@ -444,7 +408,9 @@ def test_agent_runtime_failure_uses_task_fallback_without_real_send(app, monkeyp
             (int(task["id"]),),
         ).fetchone()
         assert item["rendered_content_text"] == "兜底承接话术"
-        assert item["content_snapshot_json"]["fallback_reason"] == "agent_generation_failed"
+        assert item["content_snapshot_json"]["fallback_reason"] == ""
+        assert item["content_snapshot_json"]["agent_runtime_planned"] is True
+        assert item["content_snapshot_json"]["real_agent_runtime_executed"] is False
         assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 1
 
 
