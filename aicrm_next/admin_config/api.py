@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -15,6 +15,7 @@ from .application import (
     AdminConfigReadService,
     AdminConfigWriteCommand,
     LoginAccessSaveCommand,
+    McpToolSettingSaveCommand,
     SetupWizardSaveCommand,
     SetupWizardStateService,
     _bool,
@@ -170,6 +171,82 @@ def api_admin_config_app_settings(request: Request) -> dict[str, Any]:
         "source_status": "next_read_model",
         "fallback_used": False,
     }
+
+
+@router.get("/admin/config/mcp-tools", name="api.admin_config_mcp_tools", response_class=HTMLResponse)
+def admin_config_mcp_tools():
+    return _redirect("/admin/api-docs")
+
+
+@router.post("/admin/config/mcp-tools/save", name="api.admin_config_save_mcp_tool", response_class=HTMLResponse)
+def admin_config_save_mcp_tool():
+    return _redirect("/admin/api-docs")
+
+
+@router.get("/api/admin/config/mcp-tools", name="api.admin_config_mcp_tools_resource")
+def api_admin_config_mcp_tools(request: Request) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "config": AdminConfigReadService().list_mcp_tool_settings(
+            query=_text(request.query_params.get("q")),
+            enabled_only=_bool(request.query_params.get("enabled_only")),
+        ),
+        "source_status": "next_read_model",
+        "fallback_used": False,
+    }
+
+
+@router.post("/api/admin/config/mcp-tools", name="api.admin_config_save_mcp_tool_resource")
+async def api_admin_config_save_mcp_tool(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        return JSONResponse({"ok": False, "error": "payload must be an object"}, status_code=400)
+    try:
+        saved = McpToolSettingSaveCommand().execute(payload, operator=_operator_from_request(request, payload=payload))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return {
+        "ok": True,
+        "item": saved,
+        "source_status": "next_command",
+        "fallback_used": False,
+        "real_external_call_executed": False,
+    }
+
+
+@router.get("/api/admin/config/routing", name="api.admin_config_routing")
+def api_admin_config_routing():
+    raise HTTPException(status_code=404, detail="admin config routing API is retired")
+
+
+@router.post("/api/admin/config/routing/owner-role", name="api.admin_config_save_owner_role")
+def api_admin_config_save_owner_role():
+    raise HTTPException(status_code=404, detail="admin config owner-role API is retired")
+
+
+@router.post("/api/admin/config/routing/rule", name="api.admin_config_save_routing_rule")
+def api_admin_config_save_routing_rule():
+    raise HTTPException(status_code=404, detail="admin config routing-rule API is retired")
+
+
+@router.get("/api/admin/config/signup-tags", name="api.admin_config_signup_tags")
+def api_admin_config_signup_tags():
+    raise HTTPException(status_code=404, detail="admin config signup-tags API is retired")
+
+
+@router.post("/api/admin/config/signup-tags", name="api.admin_config_save_signup_tag")
+def api_admin_config_save_signup_tag():
+    raise HTTPException(status_code=404, detail="admin config signup-tags API is retired")
+
+
+@router.get("/api/admin/config/class-term-tags", name="api.admin_config_class_term_tags")
+def api_admin_config_class_term_tags():
+    raise HTTPException(status_code=404, detail="admin config class-term-tags API is retired")
+
+
+@router.post("/api/admin/config/class-term-tags", name="api.admin_config_save_class_term_tag")
+def api_admin_config_save_class_term_tag():
+    raise HTTPException(status_code=404, detail="admin config class-term-tags API is retired")
 
 
 @router.put("/api/admin/config/app-settings", name="api.admin_config_save_app_settings_resource")

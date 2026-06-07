@@ -161,6 +161,129 @@ class AdminConfigRepository:
             return []
         return [dict(row) for row in rows]
 
+    def list_mcp_tool_settings(self) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            tool_name,
+                            tool_group,
+                            display_name,
+                            description_override,
+                            enabled,
+                            visible_in_console,
+                            show_sample_args,
+                            show_sample_output,
+                            sort_order,
+                            updated_at
+                        FROM mcp_tool_settings
+                        ORDER BY sort_order ASC, tool_name ASC
+                        """
+                    )
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config mcp_tool_settings read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def get_mcp_tool_setting(self, tool_name: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            tool_name,
+                            tool_group,
+                            display_name,
+                            description_override,
+                            enabled,
+                            visible_in_console,
+                            show_sample_args,
+                            show_sample_output,
+                            sort_order,
+                            updated_at
+                        FROM mcp_tool_settings
+                        WHERE tool_name = :tool_name
+                        """
+                    ),
+                    {"tool_name": str(tool_name or "").strip()},
+                ).mappings().first()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config mcp_tool_setting read unavailable", exc_info=True)
+            return None
+        return dict(row) if row else None
+
+    def upsert_mcp_tool_setting(
+        self,
+        *,
+        tool_name: str,
+        tool_group: str,
+        display_name: str,
+        description_override: str,
+        enabled: bool,
+        visible_in_console: bool,
+        show_sample_args: bool,
+        show_sample_output: bool,
+        sort_order: int,
+    ) -> dict[str, Any]:
+        payload = {
+            "tool_name": str(tool_name or "").strip(),
+            "tool_group": str(tool_group or "").strip(),
+            "display_name": str(display_name or "").strip(),
+            "description_override": str(description_override or "").strip(),
+            "enabled": bool(enabled),
+            "visible_in_console": bool(visible_in_console),
+            "show_sample_args": bool(show_sample_args),
+            "show_sample_output": bool(show_sample_output),
+            "sort_order": int(sort_order or 0),
+        }
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_tool_settings (
+                        tool_name,
+                        tool_group,
+                        display_name,
+                        description_override,
+                        enabled,
+                        visible_in_console,
+                        show_sample_args,
+                        show_sample_output,
+                        sort_order,
+                        updated_at
+                    )
+                    VALUES (
+                        :tool_name,
+                        :tool_group,
+                        :display_name,
+                        :description_override,
+                        :enabled,
+                        :visible_in_console,
+                        :show_sample_args,
+                        :show_sample_output,
+                        :sort_order,
+                        CURRENT_TIMESTAMP
+                    )
+                    ON CONFLICT(tool_name) DO UPDATE SET
+                        tool_group = excluded.tool_group,
+                        display_name = excluded.display_name,
+                        description_override = excluded.description_override,
+                        enabled = excluded.enabled,
+                        visible_in_console = excluded.visible_in_console,
+                        show_sample_args = excluded.show_sample_args,
+                        show_sample_output = excluded.show_sample_output,
+                        sort_order = excluded.sort_order,
+                        updated_at = CURRENT_TIMESTAMP
+                    """
+                ),
+                payload,
+            )
+        return self.get_mcp_tool_setting(payload["tool_name"]) or payload
+
     def count_admin_users(self) -> int:
         try:
             with self._engine.connect() as conn:

@@ -31,12 +31,22 @@ def test_admin_config_routes_are_served_by_next_admin_config(monkeypatch, tmp_pa
         ("get", "/admin/config/app-settings", 200, "系统设置"),
         ("get", "/admin/config/login-access", 200, "登录与权限"),
         ("get", "/admin/config/checklist", 200, "配置检查清单"),
+        ("get", "/admin/config/mcp-tools", 302, ""),
         ("post", "/admin/config/app-settings/save", 302, ""),
         ("post", "/admin/config/login-access/save", 302, ""),
+        ("post", "/admin/config/mcp-tools/save", 302, ""),
         ("get", "/setup/wizard", 200, "系统配置向导"),
         ("post", "/setup/wizard/save", 200, "admin_action_token"),
         ("get", "/api/admin/config/app-settings", 200, "next_read_model"),
+        ("get", "/api/admin/config/mcp-tools", 200, "next_read_model"),
         ("put", "/api/admin/config/app-settings", 400, "confirm is required"),
+        ("get", "/api/admin/config/routing", 404, "retired"),
+        ("post", "/api/admin/config/routing/owner-role", 404, "retired"),
+        ("post", "/api/admin/config/routing/rule", 404, "retired"),
+        ("get", "/api/admin/config/signup-tags", 404, "retired"),
+        ("post", "/api/admin/config/signup-tags", 404, "retired"),
+        ("get", "/api/admin/config/class-term-tags", 404, "retired"),
+        ("post", "/api/admin/config/class-term-tags", 404, "retired"),
     ]
     for method, path, status_code, marker in expectations:
         request = getattr(client, method)
@@ -55,6 +65,7 @@ def test_admin_config_manifest_no_longer_lists_config_center_as_legacy(monkeypat
         "/admin/config/app-settings",
         "/admin/config/login-access",
         "/admin/config/checklist",
+        "/admin/config/mcp-tools",
         "/setup/wizard",
     ]:
         assert route not in routes

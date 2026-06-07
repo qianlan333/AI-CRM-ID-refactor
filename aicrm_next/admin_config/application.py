@@ -14,6 +14,7 @@ from .settings import SENSITIVE_KEYS, mask_value
 
 TARGET_APP_SETTING = "app_setting"
 TARGET_ADMIN_USER = "admin_user"
+TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
 
 ROLE_LABELS = {
     "super_admin": "超级管理员",
@@ -24,6 +25,13 @@ ROLE_LABELS = {
 }
 ADMIN_ASSIGNABLE_ROLE_OPTIONS = [{"value": key, "label": value} for key, value in ROLE_LABELS.items() if key != "super_admin"]
 ADMIN_LEVEL_LABELS = {"super_admin": "超级管理员", "admin": "管理员"}
+MCP_TOOL_GROUP_LABELS = {
+    "crm": "客户查询",
+    "tasks": "触达任务",
+    "config": "配置规则",
+    "ops": "同步任务",
+    "misc": "其他",
+}
 
 
 def _text(value: Any) -> str:
@@ -102,6 +110,47 @@ def _validate_known_setting(key: str, value: str) -> str:
     return normalized
 
 
+def _default_mcp_tool_defs() -> list[dict[str, Any]]:
+    from aicrm_next.integration_gateway.mcp import MCP_TOOLS
+
+    return [dict(item) for item in MCP_TOOLS]
+
+
+def _default_tool_group(tool_name: str) -> str:
+    if tool_name.startswith(("create_", "record_", "send_")):
+        return "tasks"
+    if "message_batch" in tool_name:
+        return "ops"
+    if tool_name.startswith(("get_", "resolve_", "search_")):
+        return "crm"
+    return "misc"
+
+
+def _default_display_name(tool_name: str) -> str:
+    return tool_name.replace("_", " ").title()
+
+
+def _tool_group_label(value: str) -> str:
+    normalized = _text(value)
+    return MCP_TOOL_GROUP_LABELS.get(normalized, normalized or "-")
+
+
+def _default_tool_description(tool_name: str, fallback: str = "") -> str:
+    mapping = {
+        "resolve_customer": "根据手机号、客户编号或 external_userid 定位客户。",
+        "get_customer_context": "查看客户资料、互动记录和最近聊天。",
+        "get_recent_messages": "查看客户最近聊天。",
+        "get_automation_context": "查看自动化成员上下文。",
+    }
+    return mapping.get(tool_name, fallback)
+
+
+def _audit_action_label(action_type: str) -> str:
+    mapping = {"create": "新建", "update": "更新"}
+    normalized = _text(action_type)
+    return mapping.get(normalized, normalized or "-")
+
+
 class AdminConfigReadService:
     def __init__(self, repo: AdminConfigRepository | None = None) -> None:
         self.repo = repo or AdminConfigRepository()
@@ -152,6 +201,24 @@ class AdminConfigReadService:
             }
             for row in self.repo.list_audit_logs(target_type=target_type, limit=limit)
         ]
+
+    def ensure_mcp_tool_settings_seed(self) -> None:
+        existing = {item["tool_name"]: item for item in self.repo.list_mcp_tool_settings()}
+        for index, tool in enumerate(_default_mcp_tool_defs()):
+            tool_name = _text(tool.get("name"))
+            if not tool_name or tool_name in existing:
+                continue
+            self.repo.upsert_mcp_tool_setting(
+                tool_name=tool_name,
+                tool_group=_default_tool_group(tool_name),
+                display_name=_default_display_name(tool_name),
+                description_override="",
+                enabled=True,
+                visible_in_console=True,
+                show_sample_args=False,
+                show_sample_output=False,
+                sort_order=index,
+            )
 
     def build_home_payload(self) -> dict[str, Any]:
         app_rows = self.list_app_settings(query="", scope="")
@@ -206,6 +273,67 @@ class AdminConfigReadService:
             ],
             "audit_entries": self._recent_audit_entries(TARGET_APP_SETTING, limit=10),
         }
+
+    def list_mcp_tool_settings(self, *, query: str, enabled_only: bool) -> dict[str, Any]:
+        self.ensure_mcp_tool_settings_seed()
+        defaults = {item["name"]: item for item in _default_mcp_tool_defs() if _text(item.get("name"))}
+        audit_map = self._audit_meta_map_for_type(
+            TARGET_MCP_TOOL_SETTING,
+            [item["tool_name"] for item in self.repo.list_mcp_tool_settings()],
+        )
+        rows: list[dict[str, Any]] = []
+        for item in self.repo.list_mcp_tool_settings():
+            tool_name = _text(item.get("tool_name"))
+            default = defaults.get(tool_name, {})
+            tool_group = _text(item.get("tool_group")) or _default_tool_group(tool_name)
+            raw_display_name = _text(item.get("display_name"))
+            description_override = _text(item.get("description_override"))
+            row = {
+                "tool_name": tool_name,
+                "tool_group": tool_group,
+                "tool_group_label": _tool_group_label(tool_group),
+                "display_name": raw_display_name or _default_display_name(tool_name),
+                "description_override": description_override,
+                "description": description_override or _default_tool_description(tool_name, _text(default.get("description"))),
+                "enabled": _bool(item.get("enabled")),
+                "visible_in_console": _bool(item.get("visible_in_console")),
+                "show_sample_args": _bool(item.get("show_sample_args")),
+                "show_sample_output": _bool(item.get("show_sample_output")),
+                "sort_order": int(item.get("sort_order") or 0),
+                "updated_at": _text(item.get("updated_at")),
+            }
+            row.update(audit_map.get(tool_name, {"last_modified_at": "", "last_modified_by": "", "last_action_type": ""}))
+            if enabled_only and not row["enabled"]:
+                continue
+            if not _filter_text_match(row, ["tool_name", "tool_group", "display_name", "description"], query):
+                continue
+            rows.append(row)
+        auth_value, auth_source = self._setting_value_source("MCP_BEARER_TOKEN")
+        return {
+            "rows": rows,
+            "auth_configured": bool(auth_value),
+            "auth_source": auth_source,
+            "summary_cards": [
+                {"label": "工具数量", "value": len(rows), "description": "当前可管理的 AI 工具数量"},
+                {"label": "已启用", "value": sum(1 for row in rows if row["enabled"]), "description": "当前允许调用的工具数量"},
+                {"label": "后台展示", "value": sum(1 for row in rows if row["visible_in_console"]), "description": "当前在后台显示的工具数量"},
+                {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
+            ],
+            "audit_entries": [
+                {**item, "action_label": _audit_action_label(item["action_type"])}
+                for item in self._recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)
+            ],
+        }
+
+    def _audit_meta_map_for_type(self, target_type: str, target_ids: list[str]) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        for target_id, row in self.repo.latest_audit_map(target_type=target_type, target_ids=target_ids).items():
+            result[target_id] = {
+                "last_modified_at": _text(row.get("created_at")),
+                "last_modified_by": _text(row.get("operator")),
+                "last_action_type": _text(row.get("action_type")),
+            }
+        return result
 
     def schema_groups(self) -> list[dict[str, Any]]:
         return [
@@ -429,3 +557,43 @@ class LoginAccessSaveCommand:
             after={**after, "roles": roles},
         )
         return {**after, "roles": roles}
+
+
+class McpToolSettingSaveCommand:
+    def __init__(self, repo: AdminConfigRepository | None = None, read_service: AdminConfigReadService | None = None) -> None:
+        self.repo = repo or AdminConfigRepository()
+        self.read_service = read_service or AdminConfigReadService(self.repo)
+
+    def execute(self, payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
+        self.read_service.ensure_mcp_tool_settings_seed()
+        tool_name = _text(payload.get("tool_name") or payload.get("tool_key"))
+        defaults = {item["name"]: item for item in _default_mcp_tool_defs() if _text(item.get("name"))}
+        if tool_name not in defaults:
+            raise ValueError("工具名称不合法")
+        before = self.repo.get_mcp_tool_setting(tool_name)
+        saved = self.repo.upsert_mcp_tool_setting(
+            tool_name=tool_name,
+            tool_group=_text(payload.get("tool_group")) or _default_tool_group(tool_name),
+            display_name=_text(payload.get("display_name")) or _default_display_name(tool_name),
+            description_override=_text(payload.get("description_override")),
+            enabled=_bool(payload.get("enabled")),
+            visible_in_console=_bool(payload.get("visible_in_console", True)),
+            show_sample_args=_bool(payload.get("show_sample_args")),
+            show_sample_output=_bool(payload.get("show_sample_output")),
+            sort_order=_normalize_int(payload.get("sort_order") or 0, field_name="sort_order", minimum=0),
+        )
+        self.repo.insert_audit_log(
+            operator=operator,
+            action_type="update" if before else "create",
+            target_type=TARGET_MCP_TOOL_SETTING,
+            target_id=tool_name,
+            before=before or {},
+            after=saved,
+        )
+        return {
+            **saved,
+            "enabled": _bool(saved.get("enabled")),
+            "visible_in_console": _bool(saved.get("visible_in_console")),
+            "show_sample_args": _bool(saved.get("show_sample_args")),
+            "show_sample_output": _bool(saved.get("show_sample_output")),
+        }

@@ -99,6 +99,24 @@ def _prepare_client(monkeypatch, tmp_path) -> TestClient:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE mcp_tool_settings (
+                    tool_name TEXT PRIMARY KEY,
+                    tool_group TEXT NOT NULL DEFAULT '',
+                    display_name TEXT NOT NULL DEFAULT '',
+                    description_override TEXT NOT NULL DEFAULT '',
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    visible_in_console BOOLEAN NOT NULL DEFAULT TRUE,
+                    show_sample_args BOOLEAN NOT NULL DEFAULT FALSE,
+                    show_sample_output BOOLEAN NOT NULL DEFAULT FALSE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
         conn.execute(text("INSERT INTO app_settings (key, value) VALUES ('WECOM_SECRET', 'super-secret-value')"))
     return TestClient(create_app(), raise_server_exceptions=False)
 
@@ -241,6 +259,46 @@ def test_login_access_save_and_directory_refresh_do_not_call_wecom(monkeypatch, 
     assert _scalar(database_url, "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'admin_user'") == 1
 
 
+def test_mcp_tool_settings_api_is_next_owned_and_audited(monkeypatch, tmp_path) -> None:
+    client = _prepare_client(monkeypatch, tmp_path)
+
+    page = client.get("/admin/config/mcp-tools", follow_redirects=False)
+    before = client.get("/api/admin/config/mcp-tools")
+    save = client.post(
+        "/api/admin/config/mcp-tools",
+        json={
+            "tool_name": "resolve_customer",
+            "tool_group": "crm",
+            "display_name": "Resolve Customer",
+            "description_override": "disabled for test",
+            "enabled": False,
+            "visible_in_console": True,
+            "show_sample_args": False,
+            "show_sample_output": False,
+            "sort_order": 99,
+            "operator": "mcp-test",
+        },
+    )
+    after = client.get("/api/admin/config/mcp-tools")
+
+    assert page.status_code == 302
+    assert page.headers["location"] == "/admin/api-docs"
+    assert before.status_code == 200
+    assert before.json()["source_status"] == "next_read_model"
+    assert "resolve_customer" in {row["tool_name"] for row in before.json()["config"]["rows"]}
+    assert save.status_code == 200
+    assert save.json()["source_status"] == "next_command"
+    assert save.json()["fallback_used"] is False
+    assert save.json()["real_external_call_executed"] is False
+    assert save.json()["item"]["enabled"] is False
+    resolve_row = next(row for row in after.json()["config"]["rows"] if row["tool_name"] == "resolve_customer")
+    assert resolve_row["enabled"] is False
+    assert resolve_row["description_override"] == "disabled for test"
+    database_url = _db_url(monkeypatch)
+    assert _scalar(database_url, "SELECT COUNT(*) FROM mcp_tool_settings WHERE tool_name = 'resolve_customer' AND enabled = 0") == 1
+    assert _scalar(database_url, "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'mcp_tool_setting' AND target_id = 'resolve_customer'") == 1
+
+
 def test_admin_config_routes_no_longer_forward_to_legacy_facade() -> None:
     source = (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").read_text(encoding="utf-8")
     assert "admin_config_legacy_facade" not in source
@@ -248,3 +306,4 @@ def test_admin_config_routes_no_longer_forward_to_legacy_facade() -> None:
     admin_config_source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "aicrm_next/admin_config").glob("*.py"))
     assert "legacy_flask_facade" not in admin_config_source
     assert "forward_to_legacy_flask" not in admin_config_source
+    assert "wecom_ability_service" not in admin_config_source
