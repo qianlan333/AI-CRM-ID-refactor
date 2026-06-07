@@ -1954,6 +1954,13 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
         "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
         "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - path_pattern: /admin/questionnaires*external-push-logs*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: ''\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
         "    replacement_status: locked\n",
         encoding="utf-8",
     )
@@ -1969,6 +1976,13 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
         "  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - route_pattern: /admin/questionnaires*external-push-logs*\n"
+        "    current_runtime_owner: next_native\n"
+        "    production_behavior: next_native\n"
         "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
         "    delete_status: deletion_locked\n"
