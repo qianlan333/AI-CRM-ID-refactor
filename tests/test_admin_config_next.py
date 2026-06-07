@@ -117,7 +117,116 @@ def _prepare_client(monkeypatch, tmp_path) -> TestClient:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE questionnaires (
+                    id INTEGER PRIMARY KEY,
+                    slug TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE questionnaire_questions (
+                    id INTEGER PRIMARY KEY,
+                    questionnaire_id INTEGER NOT NULL,
+                    type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    required BOOLEAN NOT NULL DEFAULT FALSE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE questionnaire_options (
+                    id INTEGER PRIMARY KEY,
+                    question_id INTEGER NOT NULL,
+                    option_text TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE marketing_automation_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    automation_key TEXT NOT NULL UNIQUE,
+                    automation_name TEXT NOT NULL DEFAULT '',
+                    target_event TEXT NOT NULL DEFAULT 'signup_success',
+                    channel_type TEXT NOT NULL DEFAULT 'text_message',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    do_not_start_after_hour INTEGER NOT NULL DEFAULT 23,
+                    config_payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE marketing_automation_question_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    automation_config_id INTEGER NOT NULL,
+                    questionnaire_id INTEGER,
+                    question_id INTEGER,
+                    rule_code TEXT NOT NULL DEFAULT '',
+                    rule_name TEXT NOT NULL DEFAULT '',
+                    answer_match_type TEXT NOT NULL DEFAULT 'any_of',
+                    answer_match_value_json TEXT NOT NULL DEFAULT '[]',
+                    score_delta INTEGER NOT NULL DEFAULT 0,
+                    segment_hint TEXT NOT NULL DEFAULT '',
+                    stage_hint TEXT NOT NULL DEFAULT '',
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    rule_payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
         conn.execute(text("INSERT INTO app_settings (key, value) VALUES ('WECOM_SECRET', 'super-secret-value')"))
+        conn.execute(text("INSERT INTO questionnaires (id, slug, name, title) VALUES (81, 'signup-test', '报名问卷', '报名问卷')"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO questionnaire_questions (id, questionnaire_id, type, title, required, sort_order)
+                VALUES
+                    (811, 81, 'single_choice', '你想咨询什么课程？', TRUE, 1),
+                    (812, 81, 'multi_choice', '你关注哪些服务？', FALSE, 2)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO questionnaire_options (id, question_id, option_text, sort_order)
+                VALUES
+                    (8111, 811, 'AI 课程', 1),
+                    (8112, 811, '私域运营', 2),
+                    (8121, 812, '训练营', 1)
+                """
+            )
+        )
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
@@ -152,6 +261,11 @@ def test_admin_config_pages_are_next_owned_and_nonblank(monkeypatch, tmp_path) -
         assert marker in response.text
         assert "X-AICRM-Compatibility-Facade" not in response.headers
         assert "X-AICRM-Compatibility-Facade" not in response.text
+
+    wecom_tags_alias = client.get("/admin/config/wecom-tags", follow_redirects=False)
+    assert wecom_tags_alias.status_code == 302
+    assert wecom_tags_alias.headers["location"] == "/admin/wecom-tags"
+    assert "X-AICRM-Compatibility-Facade" not in wecom_tags_alias.headers
 
 
 def test_app_settings_api_masks_secrets_and_save_is_idempotent(monkeypatch, tmp_path) -> None:
@@ -297,6 +411,61 @@ def test_mcp_tool_settings_api_is_next_owned_and_audited(monkeypatch, tmp_path) 
     database_url = _db_url(monkeypatch)
     assert _scalar(database_url, "SELECT COUNT(*) FROM mcp_tool_settings WHERE tool_name = 'resolve_customer' AND enabled = 0") == 1
     assert _scalar(database_url, "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'mcp_tool_setting' AND target_id = 'resolve_customer'") == 1
+
+
+def test_signup_conversion_config_alias_is_next_owned_and_audited(monkeypatch, tmp_path) -> None:
+    client = _prepare_client(monkeypatch, tmp_path)
+
+    initial = client.get("/api/admin/config/marketing-automation/signup-conversion")
+    assert initial.status_code == 200
+    assert initial.json()["config"]["configured"] is False
+    assert initial.json()["source_status"] == "next_read_model"
+    assert "X-AICRM-Compatibility-Facade" not in initial.headers
+
+    payload = {
+        "operator": "marketing-config-test",
+        "enabled": True,
+        "questionnaire_id": 81,
+        "core_threshold": 2,
+        "top_threshold": 5,
+        "day_start_hour": 8,
+        "quiet_hour_start": 22,
+        "timezone": "Asia/Shanghai",
+        "silent_threshold_days_by_pool": {
+            "new_user": 3,
+            "inactive_normal": 4,
+            "inactive_focus": 5,
+            "active_normal": 6,
+            "active_focus": 7,
+        },
+        "question_rules": [
+            {"questionnaire_question_id": 811, "hit_option_ids_json": [8111, 8112], "sort_order": 1},
+            {"questionnaire_question_id": 812, "hit_option_ids_json": [8121], "sort_order": 2},
+        ],
+    }
+    saved = client.put("/api/admin/config/marketing-automation/signup-conversion", json=payload)
+    loaded = client.get("/api/admin/config/marketing-automation/signup-conversion")
+
+    assert saved.status_code == 200
+    assert saved.json()["source_status"] == "next_command"
+    assert saved.json()["fallback_used"] is False
+    assert saved.json()["real_external_call_executed"] is False
+    assert saved.json()["config"]["configured"] is True
+    assert saved.json()["config"]["questionnaire_id"] == 81
+    assert saved.json()["config"]["core_threshold"] == 2
+    assert saved.json()["config"]["top_threshold"] == 5
+    assert saved.json()["config"]["question_rules"][0]["question_title"] == "你想咨询什么课程？"
+    assert loaded.json()["config"]["silent_threshold_days_by_pool"]["inactive_focus"] == 5
+    database_url = _db_url(monkeypatch)
+    assert _scalar(database_url, "SELECT COUNT(*) FROM marketing_automation_configs WHERE automation_key = 'signup_conversion_v1'") == 1
+    assert _scalar(database_url, "SELECT COUNT(*) FROM marketing_automation_question_rules WHERE automation_config_id = 1") == 2
+    assert (
+        _scalar(
+            database_url,
+            "SELECT COUNT(*) FROM admin_operation_logs WHERE target_type = 'marketing_automation_config' AND target_id = 'signup_conversion_v1'",
+        )
+        == 1
+    )
 
 
 def test_admin_config_routes_no_longer_forward_to_legacy_facade() -> None:
