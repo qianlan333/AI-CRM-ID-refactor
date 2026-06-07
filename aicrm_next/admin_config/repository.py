@@ -1,0 +1,331 @@
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from aicrm_next.shared.db_session import get_engine
+
+LOGGER = logging.getLogger(__name__)
+
+
+class AdminConfigRepository:
+    def __init__(self, *, engine: Engine | None = None) -> None:
+        self._engine = engine or get_engine()
+
+    def list_app_settings(self) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT key, value, updated_at
+                        FROM app_settings
+                        ORDER BY key ASC
+                        """
+                    )
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config app_settings read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def get_app_setting(self, key: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT key, value, updated_at
+                        FROM app_settings
+                        WHERE key = :key
+                        """
+                    ),
+                    {"key": str(key or "").strip()},
+                ).mappings().first()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config app_setting read unavailable", exc_info=True)
+            return None
+        return dict(row) if row else None
+
+    def upsert_app_setting(self, *, key: str, value: str) -> dict[str, Any]:
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (:key, :value, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = CURRENT_TIMESTAMP
+                    """
+                ),
+                {"key": str(key or "").strip(), "value": str(value)},
+            )
+            row = conn.execute(
+                text("SELECT key, value, updated_at FROM app_settings WHERE key = :key"),
+                {"key": str(key or "").strip()},
+            ).mappings().first()
+        return dict(row) if row else {"key": str(key or "").strip(), "value": str(value)}
+
+    def insert_audit_log(
+        self,
+        *,
+        operator: str,
+        action_type: str,
+        target_type: str,
+        target_id: str,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO admin_operation_logs (
+                        operator, action_type, target_type, target_id,
+                        before_json, after_json, created_at
+                    )
+                    VALUES (
+                        :operator, :action_type, :target_type, :target_id,
+                        :before_json, :after_json, CURRENT_TIMESTAMP
+                    )
+                    """
+                ),
+                {
+                    "operator": str(operator or "").strip(),
+                    "action_type": str(action_type or "").strip(),
+                    "target_type": str(target_type or "").strip(),
+                    "target_id": str(target_id or "").strip(),
+                    "before_json": json.dumps(before or {}, ensure_ascii=False, sort_keys=True, default=str),
+                    "after_json": json.dumps(after or {}, ensure_ascii=False, sort_keys=True, default=str),
+                },
+            )
+
+    def latest_audit_map(self, *, target_type: str, target_ids: list[str]) -> dict[str, dict[str, Any]]:
+        normalized = [str(item or "").strip() for item in target_ids if str(item or "").strip()]
+        if not normalized:
+            return {}
+        placeholders = ", ".join(f":target_{index}" for index, _ in enumerate(normalized))
+        params = {f"target_{index}": value for index, value in enumerate(normalized)}
+        params["target_type"] = str(target_type or "").strip()
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT id, operator, action_type, target_type, target_id, before_json, after_json, created_at
+                        FROM admin_operation_logs
+                        WHERE target_type = :target_type AND target_id IN ({placeholders})
+                        ORDER BY id DESC
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config audit map read unavailable", exc_info=True)
+            return {}
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            target_id = str(row.get("target_id") or "").strip()
+            if target_id and target_id not in result:
+                result[target_id] = dict(row)
+        return result
+
+    def list_audit_logs(self, *, target_type: str = "", limit: int = 20) -> list[dict[str, Any]]:
+        filters = ""
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 200))}
+        if target_type:
+            filters = "WHERE target_type = :target_type"
+            params["target_type"] = str(target_type or "").strip()
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT id, operator, action_type, target_type, target_id, before_json, after_json, created_at
+                        FROM admin_operation_logs
+                        {filters}
+                        ORDER BY id DESC
+                        LIMIT :limit
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config audit log read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def count_admin_users(self) -> int:
+        try:
+            with self._engine.connect() as conn:
+                value = conn.execute(text("SELECT COUNT(*) FROM admin_users")).scalar()
+        except SQLAlchemyError:
+            LOGGER.warning("admin users count unavailable", exc_info=True)
+            return 0
+        return int(value or 0)
+
+    def list_admin_users(self) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
+                            last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                        FROM admin_users
+                        ORDER BY id ASC
+                        """
+                    )
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin users read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def list_admin_user_roles(self, admin_user_ids: list[int]) -> list[dict[str, Any]]:
+        ids = [int(item) for item in admin_user_ids if int(item or 0) > 0]
+        if not ids:
+            return []
+        placeholders = ", ".join(f":id_{index}" for index, _ in enumerate(ids))
+        params = {f"id_{index}": value for index, value in enumerate(ids)}
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT admin_user_id, role_code
+                        FROM admin_user_roles
+                        WHERE admin_user_id IN ({placeholders})
+                        ORDER BY admin_user_id ASC, role_code ASC, id ASC
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin user roles read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def get_admin_user(self, user_id: int) -> dict[str, Any] | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT
+                        id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
+                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                    FROM admin_users
+                    WHERE id = :id
+                    """
+                ),
+                {"id": int(user_id or 0)},
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def get_admin_user_by_wecom_userid(self, wecom_userid: str) -> dict[str, Any] | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT
+                        id, wecom_userid, wecom_corpid, display_name, is_active, auth_source,
+                        last_login_at, created_at, updated_at, updated_by, login_enabled, admin_level
+                    FROM admin_users
+                    WHERE wecom_userid = :wecom_userid
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """
+                ),
+                {"wecom_userid": str(wecom_userid or "").strip()},
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def upsert_admin_user(self, payload: dict[str, Any]) -> dict[str, Any]:
+        user_id = int(payload.get("id") or 0)
+        if user_id:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE admin_users
+                        SET wecom_userid = :wecom_userid,
+                            wecom_corpid = :wecom_corpid,
+                            display_name = :display_name,
+                            is_active = :is_active,
+                            auth_source = :auth_source,
+                            updated_at = CURRENT_TIMESTAMP,
+                            updated_by = :updated_by,
+                            login_enabled = :login_enabled,
+                            admin_level = :admin_level
+                        WHERE id = :id
+                        """
+                    ),
+                    {**payload, "id": user_id},
+                )
+            return self.get_admin_user(user_id) or {}
+        existing = self.get_admin_user_by_wecom_userid(str(payload.get("wecom_userid") or ""))
+        if existing:
+            payload = {**payload, "id": existing["id"]}
+            return self.upsert_admin_user(payload)
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO admin_users (
+                        wecom_userid, wecom_corpid, display_name, is_active, auth_source,
+                        updated_at, updated_by, login_enabled, admin_level
+                    )
+                    VALUES (
+                        :wecom_userid, :wecom_corpid, :display_name, :is_active, :auth_source,
+                        CURRENT_TIMESTAMP, :updated_by, :login_enabled, :admin_level
+                    )
+                    RETURNING id
+                    """
+                ),
+                payload,
+            ).mappings().first()
+        return self.get_admin_user(int((row or {}).get("id") or 0)) or {}
+
+    def replace_admin_user_roles(self, *, admin_user_id: int, role_codes: list[str]) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(text("DELETE FROM admin_user_roles WHERE admin_user_id = :id"), {"id": int(admin_user_id)})
+            for role_code in role_codes:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO admin_user_roles (admin_user_id, role_code, created_at)
+                        VALUES (:admin_user_id, :role_code, CURRENT_TIMESTAMP)
+                        ON CONFLICT(admin_user_id, role_code) DO NOTHING
+                        """
+                    ),
+                    {"admin_user_id": int(admin_user_id), "role_code": str(role_code or "").strip()},
+                )
+
+    def list_admin_login_audit(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            a.id, a.admin_user_id, a.login_type, a.login_result, a.ip, a.user_agent, a.created_at,
+                            u.wecom_userid, u.display_name
+                        FROM admin_login_audit a
+                        LEFT JOIN admin_users u ON u.id = a.admin_user_id
+                        ORDER BY a.id DESC
+                        LIMIT :limit
+                        """
+                    ),
+                    {"limit": max(1, min(int(limit), 200))},
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin login audit read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]

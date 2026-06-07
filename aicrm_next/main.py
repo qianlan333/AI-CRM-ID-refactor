@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
 from .admin_auth.api import router as admin_auth_router
+from .admin_config.api import router as admin_config_router
 from .admin_auth import reset_admin_auth_fixture_state
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(platform_router)
     app.include_router(admin_auth_router)
+    app.include_router(admin_config_router)
     app.include_router(post_legacy_deferred_router)
     app.include_router(common_operation_members_router)
     app.include_router(channel_entry_router)
