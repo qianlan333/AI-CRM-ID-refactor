@@ -76,7 +76,7 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_miniprogram_library_workspace": "/admin/miniprogram-library",
         "api.admin_attachment_library_workspace": "/admin/attachment-library",
         "api.admin_config": "/admin/config",
-        "api.admin_config_home": "/admin/config",
+        "api.admin_config_app_settings": "/admin/config/app-settings",
         "api.admin_api_docs": "/admin/api-docs",
         "api.admin_console_api_docs": "/admin/api-docs",
         "api.admin_console_jobs": "/admin/jobs",

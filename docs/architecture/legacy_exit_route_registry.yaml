@@ -1632,45 +1632,45 @@ routes:
   - route_id: setup_wizard_family
     path_pattern: /setup/wizard*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_config
+    runtime_owner: admin_config
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_automation_program_setup_ui_redesign.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Setup wizard compatibility routes.
+    legacy_source: none
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_config_next.py
+    rollback_owner: aicrm_next.admin_config
+    notes: Next-native setup wizard state/save routes; repeated saves are idempotent and do not trigger external calls.
   - route_id: admin_config_page_family
     path_pattern: /admin/config*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_config
+    runtime_owner: admin_config
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_config.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Admin config compatibility pages.
+    legacy_source: none
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_config_next.py
+    rollback_owner: aicrm_next.admin_config
+    notes: Next-native admin config pages backed by app_settings, admin_users, and admin_operation_logs.
   - route_id: admin_config_api_family
     path_pattern: /api/admin/config*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_config
+    runtime_owner: admin_config
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_config.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Admin config compatibility APIs.
+    legacy_source: none
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_config_next.py
+    rollback_owner: aicrm_next.admin_config
+    notes: Next-native admin config APIs; app setting writes are audited and never call external services.
   - route_id: admin_runtime_config_page
     path_pattern: /admin/runtime-config
     methods: [GET]

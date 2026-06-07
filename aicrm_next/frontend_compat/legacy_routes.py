@@ -98,11 +98,6 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/image-library",
     "/admin/miniprogram-library",
     "/admin/attachment-library",
-    "/admin/config",
-    "/admin/config/app-settings",
-    "/admin/config/login-access",
-    "/admin/config/checklist",
-    "/setup/wizard",
     "/admin/api-docs",
 ]
 
@@ -1475,15 +1470,6 @@ def admin_dashboard_shell_context() -> dict:
 @router.get("/admin/logout", name="api.admin_logout")
 def admin_logout_stub() -> dict:
     return {"ok": True, "status": "stubbed"}
-
-
-@router.api_route("/admin/config", methods=_ALL_METHODS, name="api.admin_config")
-@router.api_route("/admin/config/{path:path}", methods=_ALL_METHODS, name="api.admin_config_legacy_path")
-@router.api_route("/api/admin/config/{path:path}", methods=_ALL_METHODS, name="api.admin_config_legacy_api_path")
-@router.api_route("/setup/wizard", methods=_ALL_METHODS, name="api.setup_wizard")
-@router.api_route("/setup/wizard/save", methods=_ALL_METHODS, name="api.setup_wizard_save")
-async def admin_config_legacy_facade(request: Request) -> Response:
-    return await forward_to_legacy_flask(request)
 
 
 @router.get("/admin/runtime-config", name="api.admin_runtime_config")
