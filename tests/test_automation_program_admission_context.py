@@ -1,122 +1,79 @@
 from __future__ import annotations
 
-from flask import Flask, has_app_context
-
+from aicrm_next.automation_engine.audience_transition.domain import AudienceTransitionEvent
+from aicrm_next.automation_engine.audience_transition.integration_gateway import (
+    OperationTaskRealtimeTriggerGateway,
+    admit_channel_contact_to_program_with_runtime,
+)
 from aicrm_next.automation_engine.automation_program_admission import (
     AutomationAdmissionCommand,
     AutomationProgramAdmissionService,
     OperationTaskRealtimeTriggerService,
-    run_audience_entered_operation_tasks,
 )
-from aicrm_next.automation_engine.audience_transition.domain import AudienceTransitionEvent
 
 
-def _install_legacy_app(monkeypatch):
-    app = Flask(__name__)
-    monkeypatch.setattr("aicrm_next.integration_gateway.legacy_automation_facade._legacy_app", lambda: app)
-    return app
+def test_channel_admission_gateway_uses_next_service(monkeypatch):
+    calls: list[AutomationAdmissionCommand] = []
 
+    def fake_admit(self, command: AutomationAdmissionCommand):
+        calls.append(command)
+        return {
+            "admission_status": "accepted",
+            "source_status": "next_command",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
 
-def test_channel_admission_enters_legacy_app_context(monkeypatch):
-    _install_legacy_app(monkeypatch)
-    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(AutomationProgramAdmissionService, "admit", fake_admit)
 
-    class AdmissionRuntime:
-        @staticmethod
-        def admit_channel_contact_to_program(
-            program_id,
-            channel_id,
-            binding_id,
-            external_contact_id,
-            *,
-            follow_user_userid="",
-            trigger_payload=None,
-            trigger_time=None,
-            trigger_type="qrcode_enter",
-        ):
-            calls.append(
-                {
-                    "has_app_context": has_app_context(),
-                    "program_id": program_id,
-                    "channel_id": channel_id,
-                    "binding_id": binding_id,
-                    "external_contact_id": external_contact_id,
-                    "follow_user_userid": follow_user_userid,
-                    "trigger_payload": trigger_payload,
-                    "trigger_time": trigger_time,
-                    "trigger_type": trigger_type,
-                }
-            )
-            return {"admission_status": "admitted", "admission_attempt": {"id": 123}}
-
-    monkeypatch.setattr(
-        "aicrm_next.automation_engine.automation_program_admission._automation_conversion_domain_module",
-        lambda name: AdmissionRuntime,
+    result = admit_channel_contact_to_program_with_runtime(
+        program_id=1,
+        channel_id=2,
+        binding_id=3,
+        external_contact_id=" ext-1 ",
+        follow_user_userid="owner-1",
+        trigger_payload={"state": "qr"},
+        trigger_type="qrcode_enter",
     )
 
-    assert not has_app_context()
-    result = AutomationProgramAdmissionService().admit(
+    assert result == {
+        "admission_status": "accepted",
+        "source_status": "next_command",
+        "fallback_used": False,
+        "real_external_call_executed": False,
+    }
+    assert calls == [
         AutomationAdmissionCommand(
             program_id=1,
             channel_id=2,
             binding_id=3,
-            external_contact_id=" ext-1 ",
+            external_contact_id="ext-1",
             follow_user_userid="owner-1",
             trigger_payload={"state": "qr"},
-            trigger_time="2026-06-06T15:07:39+08:00",
+            trigger_type="qrcode_enter",
         )
-    )
-
-    assert result["admission_status"] == "admitted"
-    assert result["audit"] == {"id": 123}
-    assert result["source_status"] == "next_command"
-    assert calls == [
-        {
-            "has_app_context": True,
-            "program_id": 1,
-            "channel_id": 2,
-            "binding_id": 3,
-            "external_contact_id": "ext-1",
-            "follow_user_userid": "owner-1",
-            "trigger_payload": {"state": "qr"},
-            "trigger_time": "2026-06-06T15:07:39+08:00",
-            "trigger_type": "qrcode_enter",
-        }
     ]
 
 
-def test_realtime_trigger_enters_legacy_app_context(monkeypatch):
-    _install_legacy_app(monkeypatch)
+def test_realtime_trigger_service_uses_next_runner(monkeypatch):
     calls: list[dict[str, object]] = []
 
-    class OperationTaskRuntime:
-        @staticmethod
-        def run_audience_entered_operation_tasks(
-            *,
-            member_id,
-            audience_code,
-            audience_entry_id=0,
-            now=None,
-            operator_id="operation_task_event",
-        ):
-            calls.append(
-                {
-                    "has_app_context": has_app_context(),
-                    "member_id": member_id,
-                    "audience_code": audience_code,
-                    "audience_entry_id": audience_entry_id,
-                    "now": now,
-                    "operator_id": operator_id,
-                }
-            )
-            return {"created_execution_count": 1, "created_job_count": 1}
+    def fake_run_audience_entered_operation_tasks(**kwargs):
+        calls.append(kwargs)
+        return {
+            "ok": True,
+            "ran": 1,
+            "enqueued_count": 1,
+            "source_status": "next_command",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
 
     monkeypatch.setattr(
-        "aicrm_next.automation_engine.automation_program_admission._automation_conversion_domain_module",
-        lambda name: OperationTaskRuntime,
+        "aicrm_next.automation_engine.automation_program_admission.run_audience_entered_operation_tasks",
+        fake_run_audience_entered_operation_tasks,
     )
 
-    assert not has_app_context()
     result = OperationTaskRealtimeTriggerService().trigger(
         AudienceTransitionEvent(
             member_id=42,
@@ -126,55 +83,54 @@ def test_realtime_trigger_enters_legacy_app_context(monkeypatch):
             audience_entry_id=77,
             audience_code="operating",
             entry_reason="audience_entry_rule_passed",
-            entry_source="questionnaire_submission",
-            operator_id="questionnaire_sync",
+            entry_source="program_admission",
+            operator_id="qrcode_enter",
         )
     )
 
-    assert result == {"created_execution_count": 1, "created_job_count": 1}
+    assert result["source_status"] == "next_command"
+    assert result["fallback_used"] is False
+    assert result["real_external_call_executed"] is False
     assert calls == [
         {
-            "has_app_context": True,
             "member_id": 42,
             "audience_code": "operating",
             "audience_entry_id": 77,
-            "now": None,
-            "operator_id": "questionnaire_sync",
+            "operator_id": "qrcode_enter",
+            "entry_source": "program_admission",
         }
     ]
 
 
-def test_realtime_facade_enters_legacy_app_context(monkeypatch):
-    _install_legacy_app(monkeypatch)
-    calls: list[dict[str, object]] = []
-
-    class OperationTaskRuntime:
-        @staticmethod
-        def run_audience_entered_operation_tasks(**kwargs):
-            calls.append({"has_app_context": has_app_context(), **kwargs})
-            return {"created_job_count": 1}
-
-    monkeypatch.setattr(
-        "aicrm_next.automation_engine.automation_program_admission._automation_conversion_domain_module",
-        lambda name: OperationTaskRuntime,
-    )
-
-    assert not has_app_context()
-    result = run_audience_entered_operation_tasks(
+def test_realtime_gateway_uses_next_service(monkeypatch):
+    event = AudienceTransitionEvent(
         member_id=51,
-        audience_code="operating",
+        external_userid="ext-51",
+        program_id=5,
+        source_channel_id=6,
         audience_entry_id=88,
-        operator_id="manual_stage_change",
+        audience_code="operating",
+        entry_reason="audience_entry_rule_passed",
+        entry_source="manual_stage_change",
+        operator_id="operator-1",
     )
+    calls: list[AudienceTransitionEvent] = []
 
-    assert result == {"created_job_count": 1}
-    assert calls == [
-        {
-            "has_app_context": True,
-            "member_id": 51,
-            "audience_code": "operating",
-            "audience_entry_id": 88,
-            "now": None,
-            "operator_id": "manual_stage_change",
+    def fake_trigger(self, received_event: AudienceTransitionEvent):
+        calls.append(received_event)
+        return {
+            "ok": True,
+            "ran": 1,
+            "source_status": "next_command",
+            "fallback_used": False,
+            "real_external_call_executed": False,
         }
-    ]
+
+    monkeypatch.setattr(OperationTaskRealtimeTriggerService, "trigger", fake_trigger)
+
+    result = OperationTaskRealtimeTriggerGateway().trigger(event)
+
+    assert result["source_status"] == "next_command"
+    assert result["fallback_used"] is False
+    assert result["real_external_call_executed"] is False
+    assert calls == [event]

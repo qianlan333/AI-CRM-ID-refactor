@@ -1954,6 +1954,13 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
         "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
         "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - path_pattern: /admin/questionnaires*external-push-logs*\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: ''\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
         "    replacement_status: locked\n",
         encoding="utf-8",
     )
@@ -1969,6 +1976,13 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
         "  - route_pattern: /api/admin/questionnaires/{questionnaire_id}/export\n"
         "    current_runtime_owner: next_command\n"
         "    production_behavior: next_command\n"
+        "    legacy_fallback_allowed: false\n"
+        "    adapter_mode: real_blocked\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
+        "  - route_pattern: /admin/questionnaires*external-push-logs*\n"
+        "    current_runtime_owner: next_native\n"
+        "    production_behavior: next_native\n"
         "    legacy_fallback_allowed: false\n"
         "    adapter_mode: real_blocked\n"
         "    delete_status: deletion_locked\n"
@@ -2775,6 +2789,21 @@ def test_audience_transition_imports_are_not_wecom_allowlisted() -> None:
     }
 
     assert checker.WECOM_IMPORT_ALLOWLIST.isdisjoint(audience_transition_paths)
+
+
+def test_channel_admission_runtime_does_not_import_legacy_services() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "aicrm_next/automation_engine/automation_program_admission.py").read_text(encoding="utf-8")
+
+    forbidden = (
+        "importlib",
+        "wecom_ability_service",
+        "admission_service",
+        "operation_task_service",
+        "_with_legacy_app_context",
+    )
+
+    assert all(marker not in source for marker in forbidden)
 
 
 def test_group_ops_action_port_is_not_legacy_allowlisted() -> None:

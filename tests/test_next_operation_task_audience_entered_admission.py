@@ -288,7 +288,7 @@ def test_audience_entered_behavior_layered_uses_program_member_segment_snapshot(
 
         item = get_db().execute(
             """
-            SELECT segment_key, content_text, status
+            SELECT segment_key, rendered_content_text, status
             FROM automation_operation_task_execution_item
             WHERE execution_id = ?
             LIMIT 1
@@ -297,7 +297,7 @@ def test_audience_entered_behavior_layered_uses_program_member_segment_snapshot(
         ).fetchone()
         assert item
         assert item["segment_key"] == "between_2_9"
-        assert item["content_text"] == "behavior layered content"
+        assert item["rendered_content_text"] == "behavior layered content"
         assert item["status"] == "queued"
 
 
@@ -427,14 +427,6 @@ def test_audience_entered_invalid_active_task_records_diagnostics_and_replay_req
 
 def test_admission_persists_behavior_segment_from_questionnaire_mobile_snapshot(app, monkeypatch):
     with app.app_context():
-        monkeypatch.setattr(
-            "wecom_ability_service.domains.automation_conversion.message_activity_client.get_message_activity_db_status",
-            lambda: {"configured": True},
-        )
-        monkeypatch.setattr(
-            "wecom_ability_service.domains.automation_conversion.message_activity_client.query_message_activity_counts",
-            lambda: [{"phone_match_key": "139_9001", "message_count": 5}],
-        )
         program_id, channel, binding_id = _setup_admission_case("next_rt_behavior_snapshot_admission")
         questionnaire = create_choice_questionnaire("next_rt_behavior_snapshot_admission_q")
         external_contact_id = "wm_next_rt_behavior_snapshot"
@@ -473,6 +465,14 @@ def test_admission_persists_behavior_segment_from_questionnaire_mobile_snapshot(
             ),
         )
         get_db().commit()
+        monkeypatch.setattr(
+            "aicrm_next.automation_engine.automation_program_admission.get_message_activity_db_status",
+            lambda: {"configured": True},
+        )
+        monkeypatch.setattr(
+            "aicrm_next.automation_engine.automation_program_admission.query_message_activity_counts",
+            lambda: [{"phone_match_key": "139_9001", "message_count": 5}],
+        )
 
         admitted = admit_channel_contact_to_program(
             program_id,
