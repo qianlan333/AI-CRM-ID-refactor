@@ -156,13 +156,13 @@ def _production_env(monkeypatch):
 def _patch_next_repo(monkeypatch, repo):
     from aicrm_next.customer_read_model import application
 
-    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: repo)
+    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda *args, **kwargs: repo)
 
 
 def _patch_live_source_repo(monkeypatch, repo):
     from aicrm_next.customer_read_model import application
 
-    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda: repo)
+    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda *args, **kwargs: repo)
 
 
 def test_next_primary_list_detail_timeline_and_recent_messages_do_not_call_legacy(monkeypatch):
@@ -369,7 +369,7 @@ def test_customer_context_closes_internally_created_repositories(monkeypatch):
 
     assert payload["ok"] is True
     assert payload["source_status"] == "next_read_model"
-    assert len(created_repositories) == 3
+    assert len(created_repositories) == 1
     assert all(repo.closed for repo in created_repositories)
 
 

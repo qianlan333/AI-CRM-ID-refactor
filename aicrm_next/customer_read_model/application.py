@@ -206,10 +206,11 @@ def _list_filters(query: ListCustomersRequest) -> JsonDict:
     }
 
 
-def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Exception) -> JsonDict:
+def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
-    repo = build_customer_live_source_repository()
+    owned_repo = repo is None
+    repo = repo or build_customer_live_source_repository()
     try:
         filters = _list_filters(query)
         rows = [list_item_projection(item) for item in repo.list_customers(filters, limit=None, offset=0)]
@@ -234,13 +235,15 @@ def _list_customers_live_source_payload(query: ListCustomersRequest, exc: Except
             ),
         }
     finally:
-        _close_repository(repo)
+        if owned_repo:
+            _close_repository(repo)
 
 
-def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exception) -> JsonDict:
+def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
-    repo = build_customer_live_source_repository()
+    owned_repo = repo is None
+    repo = repo or build_customer_live_source_repository()
     try:
         customer = repo.get_customer(query.external_userid)
         if not customer:
@@ -258,13 +261,15 @@ def _customer_detail_live_source_payload(query: CustomerDetailRequest, exc: Exce
             ),
         }
     finally:
-        _close_repository(repo)
+        if owned_repo:
+            _close_repository(repo)
 
 
-def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: Exception) -> JsonDict:
+def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
-    repo = build_customer_live_source_repository()
+    owned_repo = repo is None
+    repo = repo or build_customer_live_source_repository()
     try:
         if not repo.customer_exists(query.external_userid):
             raise NotFoundError("customer not found")
@@ -292,13 +297,15 @@ def _customer_timeline_live_source_payload(query: CustomerTimelineRequest, exc: 
             ),
         }
     finally:
-        _close_repository(repo)
+        if owned_repo:
+            _close_repository(repo)
 
 
-def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exception) -> JsonDict:
+def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exception, repo: CustomerReadRepository | None = None) -> JsonDict:
     if not _customer_read_model_live_source_fallback_enabled():
         raise exc
-    repo = build_customer_live_source_repository()
+    owned_repo = repo is None
+    repo = repo or build_customer_live_source_repository()
     try:
         if not repo.customer_exists(query.external_userid):
             raise NotFoundError("customer not found")
@@ -320,7 +327,8 @@ def _recent_messages_live_source_payload(query: RecentMessagesRequest, exc: Exce
             ),
         }
     finally:
-        _close_repository(repo)
+        if owned_repo:
+            _close_repository(repo)
 
 
 def _normalize_bool_filter(value: str | None) -> bool | None:
@@ -335,10 +343,17 @@ def _normalize_bool_filter(value: str | None) -> bool | None:
 
 
 class ListCustomersQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        contacts_adapter=None,
+        projection_gateway=None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo
         self._contacts_adapter = contacts_adapter
         self._projection_gateway = projection_gateway
+        self._live_source_repo = live_source_repo
 
     def execute(self, query: ListCustomersRequest) -> JsonDict:
         if _production_customer_data_required():
@@ -368,7 +383,7 @@ class ListCustomersQuery:
                 }
             except Exception as exc:
                 try:
-                    return _list_customers_live_source_payload(query, exc)
+                    return _list_customers_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
@@ -445,10 +460,17 @@ class ListCustomersQuery:
 
 
 class GetCustomerDetailQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        contacts_adapter=None,
+        projection_gateway=None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo
         self._contacts_adapter = contacts_adapter
         self._projection_gateway = projection_gateway
+        self._live_source_repo = live_source_repo
 
     def execute(self, query: CustomerDetailRequest) -> JsonDict:
         if _production_customer_data_required():
@@ -467,7 +489,7 @@ class GetCustomerDetailQuery:
                 raise
             except Exception as exc:
                 try:
-                    return _customer_detail_live_source_payload(query, exc)
+                    return _customer_detail_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
@@ -506,9 +528,15 @@ class GetCustomerDetailQuery:
 
 
 class GetCustomerTimelineQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, projection_gateway=None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        projection_gateway=None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo
         self._projection_gateway = projection_gateway
+        self._live_source_repo = live_source_repo
 
     def execute(self, query: CustomerTimelineRequest) -> JsonDict:
         if _production_customer_data_required():
@@ -529,7 +557,7 @@ class GetCustomerTimelineQuery:
                 raise
             except Exception as exc:
                 try:
-                    return _customer_timeline_live_source_payload(query, exc)
+                    return _customer_timeline_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
@@ -587,10 +615,17 @@ class GetCustomerTimelineQuery:
 
 
 class ListRecentMessagesQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None, archive_adapter=None, projection_gateway=None) -> None:
+    def __init__(
+        self,
+        repo: CustomerReadRepository | None = None,
+        archive_adapter=None,
+        projection_gateway=None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo
         self._archive_adapter = archive_adapter
         self._projection_gateway = projection_gateway
+        self._live_source_repo = live_source_repo
 
     def execute(self, query: RecentMessagesRequest) -> JsonDict:
         if _production_customer_data_required():
@@ -609,7 +644,7 @@ class ListRecentMessagesQuery:
                 raise
             except Exception as exc:
                 try:
-                    return _recent_messages_live_source_payload(query, exc)
+                    return _recent_messages_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
@@ -801,34 +836,30 @@ def _admin_profile_tags_payload(customer: JsonDict, *, source_status: str) -> Js
 
 
 class GetCustomerContextQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+    def __init__(self, repo: CustomerReadRepository | None = None, live_source_repo: CustomerReadRepository | None = None) -> None:
         self._repo = repo
+        self._live_source_repo = live_source_repo
 
-    def _resolve_fixture_external_userid(self, query: CustomerContextRequest) -> str:
+    def _resolve_fixture_external_userid(self, query: CustomerContextRequest, repo: CustomerReadRepository) -> str:
         external_userid = str(query.external_userid or query.user_id or "").strip()
         if external_userid:
             return external_userid
         mobile = str(query.mobile or "").strip()
         if not mobile:
             raise NotFoundError("external_userid is required")
-        repo = self._repo or build_customer_read_model_repository()
-        try:
-            matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
-            if not matches or not str(matches[0].get("external_userid") or "").strip():
-                raise NotFoundError("customer not found")
-            return str(matches[0]["external_userid"])
-        finally:
-            if self._repo is None:
-                _close_repository(repo)
+        matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
+        if not matches or not str(matches[0].get("external_userid") or "").strip():
+            raise NotFoundError("customer not found")
+        return str(matches[0]["external_userid"])
 
-    def _resolve_production_external_userid(self, query: CustomerContextRequest) -> str:
+    def _resolve_production_external_userid(self, query: CustomerContextRequest, repo: CustomerReadRepository) -> str:
         external_userid = str(query.external_userid or query.user_id or "").strip()
         if external_userid:
             return external_userid
         mobile = str(query.mobile or "").strip()
         if not mobile:
             raise NotFoundError("external_userid is required")
-        payload = ListCustomersQuery(self._repo)(ListCustomersRequest(mobile=mobile, limit=1, offset=0))
+        payload = ListCustomersQuery(repo, live_source_repo=self._live_source_repo)(ListCustomersRequest(mobile=mobile, limit=1, offset=0))
         if not payload.get("ok"):
             raise RuntimeError(str(payload.get("page_error") or payload.get("error_code") or "customer read model unavailable"))
         rows = list(payload.get("customers") or payload.get("items") or [])
@@ -840,17 +871,19 @@ class GetCustomerContextQuery:
         from aicrm_next.shared.runtime import production_data_ready
 
         if production_data_ready():
+            repo: CustomerReadRepository | None = None
             try:
-                external_userid = self._resolve_production_external_userid(query)
-                detail = GetCustomerDetailQuery(self._repo)(CustomerDetailRequest(external_userid=external_userid))
+                repo = self._repo or build_customer_read_model_repository()
+                external_userid = self._resolve_production_external_userid(query, repo)
+                detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(CustomerDetailRequest(external_userid=external_userid))
                 if not detail.get("ok"):
                     raise RuntimeError(str(detail.get("page_error") or detail.get("error_code") or "customer detail unavailable"))
-                timeline_payload = GetCustomerTimelineQuery(self._repo)(
+                timeline_payload = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
                     CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
                 )
                 if not timeline_payload.get("ok"):
                     raise RuntimeError(str(timeline_payload.get("page_error") or timeline_payload.get("error_code") or "customer timeline unavailable"))
-                messages_payload = ListRecentMessagesQuery(self._repo)(
+                messages_payload = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
                     RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
                 )
                 if not messages_payload.get("ok"):
@@ -877,15 +910,18 @@ class GetCustomerContextQuery:
             except Exception as exc:
                 fallback_external_userid = str(query.external_userid or query.user_id or "")
                 return _production_unavailable_payload(fallback_external_userid, exc)
+            finally:
+                if self._repo is None and repo is not None:
+                    _close_repository(repo)
 
-        external_userid = self._resolve_fixture_external_userid(query)
         repo = self._repo or build_customer_read_model_repository()
         try:
-            detail = GetCustomerDetailQuery(repo)(CustomerDetailRequest(external_userid=external_userid))
-            timeline = GetCustomerTimelineQuery(repo)(
+            external_userid = self._resolve_fixture_external_userid(query, repo)
+            detail = GetCustomerDetailQuery(repo, live_source_repo=self._live_source_repo)(CustomerDetailRequest(external_userid=external_userid))
+            timeline = GetCustomerTimelineQuery(repo, live_source_repo=self._live_source_repo)(
                 CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
             )
-            messages = ListRecentMessagesQuery(repo)(
+            messages = ListRecentMessagesQuery(repo, live_source_repo=self._live_source_repo)(
                 RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
             )
             return _customer_context_payload(

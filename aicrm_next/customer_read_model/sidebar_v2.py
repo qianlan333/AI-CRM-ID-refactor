@@ -4,15 +4,16 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aicrm_next.commerce.application import ListProductsQuery
-from aicrm_next.customer_read_model.application import GetCustomerContextQuery, ListRecentMessagesQuery
-from aicrm_next.customer_read_model.dto import CustomerContextRequest, RecentMessagesRequest
-from aicrm_next.customer_read_model.repo import build_customer_live_source_repository
+from aicrm_next.customer_read_model.application import GetCustomerContextQuery, _close_repository
+from aicrm_next.customer_read_model.dto import CustomerContextRequest
+from aicrm_next.customer_read_model.repo import CustomerReadRepository, build_customer_live_source_repository
 from aicrm_next.media_library.application import GetImageThumbnailQuery, GetMediaItemQuery, ListMediaItemsQuery
 from aicrm_next.media_library.variants import decode_image_base64
+from aicrm_next.shared.db_session import get_engine
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.runtime import raw_database_url
 from aicrm_next.shared.signed_context import append_ctx_query, build_sidebar_product_context_token
@@ -118,17 +119,9 @@ def _database_url() -> str:
     return url
 
 
-def _sqlalchemy_url(url: str) -> str:
-    if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://") :]
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://") :]
-    return url
-
-
 class SidebarV2SqlRepository:
     def __init__(self, engine: Engine | None = None) -> None:
-        self._engine = engine or create_engine(_sqlalchemy_url(_database_url()), future=True)
+        self._engine = engine or get_engine(database_url=_database_url())
 
     def get_profile_fields(self, external_userid: str) -> dict[str, Any] | None:
         return self._one(
@@ -404,8 +397,16 @@ def _resolve_customer_payload(
 
 
 class SidebarWorkbenchReadModel:
-    def __init__(self, repo: SidebarV2SqlRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: SidebarV2SqlRepository | None = None,
+        *,
+        context_query: GetCustomerContextQuery | None = None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo or SidebarV2SqlRepository()
+        self._context_query = context_query or GetCustomerContextQuery()
+        self._live_source_repo = live_source_repo
 
     def __call__(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
         normalized_external = _text(external_userid)
@@ -451,15 +452,17 @@ class SidebarWorkbenchReadModel:
 
     def _context(self, external_userid: str) -> tuple[dict[str, Any], dict[str, Any]]:
         try:
-            payload = GetCustomerContextQuery()(
+            payload = self._context_query(
                 CustomerContextRequest(external_userid=external_userid, recent_message_limit=20, timeline_limit=20)
             )
             if (payload or {}).get("ok", True) and payload.get("customer"):
                 return dict(payload or {}), {"context_source_status": payload.get("source_status") or "next_read_model"}
         except Exception:
             pass
+        repo = self._live_source_repo
+        owned_repo = repo is None
         try:
-            repo = build_customer_live_source_repository()
+            repo = repo or build_customer_live_source_repository()
             customer = repo.get_customer(external_userid)
             if not customer:
                 return {}, {"context_source_status": "missing"}
@@ -477,6 +480,9 @@ class SidebarWorkbenchReadModel:
             )
         except Exception as exc:
             return {}, {"context_source_status": "error", "context_error": str(exc).strip() or exc.__class__.__name__}
+        finally:
+            if owned_repo:
+                _close_repository(repo)
 
     def _overlay_paid_order_mobile(self, customer: dict[str, Any], diagnostics: dict[str, Any]) -> None:
         if customer.get("is_bound") or _text(customer.get("mobile")):
@@ -510,11 +516,23 @@ class SidebarWorkbenchReadModel:
 
 
 class SidebarQuestionnaireReadModel:
-    def __init__(self, repo: SidebarV2SqlRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: SidebarV2SqlRepository | None = None,
+        *,
+        context_query: GetCustomerContextQuery | None = None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo or SidebarV2SqlRepository()
+        self._context_query = context_query
+        self._live_source_repo = live_source_repo
 
     def __call__(self, *, external_userid: str) -> dict[str, Any]:
-        customer, diagnostics = SidebarWorkbenchReadModel(self._repo).customer_with_overlay(external_userid=external_userid)
+        customer, diagnostics = SidebarWorkbenchReadModel(
+            self._repo,
+            context_query=self._context_query,
+            live_source_repo=self._live_source_repo,
+        ).customer_with_overlay(external_userid=external_userid)
         rows = self._repo.list_questionnaire_answers(external_userid=_text(external_userid), mobile=_text(customer.get("mobile")))
         return _with_route_owner({"ok": True, "questionnaires": self._group(rows), "diagnostics": diagnostics})
 
@@ -676,8 +694,16 @@ class SidebarOtherStaffMessagesReadModel:
 
 
 class SidebarCommerceReadModel:
-    def __init__(self, repo: SidebarV2SqlRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: SidebarV2SqlRepository | None = None,
+        *,
+        context_query: GetCustomerContextQuery | None = None,
+        live_source_repo: CustomerReadRepository | None = None,
+    ) -> None:
         self._repo = repo or SidebarV2SqlRepository()
+        self._context_query = context_query
+        self._live_source_repo = live_source_repo
 
     def products(self, *, external_userid: str, owner_userid: str = "", bind_by_userid: str = "") -> dict[str, Any]:
         normalized_external = _text(external_userid)
@@ -708,7 +734,11 @@ class SidebarCommerceReadModel:
         )
 
     def orders(self, *, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
-        customer, diagnostics = SidebarWorkbenchReadModel(self._repo).customer_with_overlay(
+        customer, diagnostics = SidebarWorkbenchReadModel(
+            self._repo,
+            context_query=self._context_query,
+            live_source_repo=self._live_source_repo,
+        ).customer_with_overlay(
             external_userid=external_userid,
             owner_userid=owner_userid,
         )
