@@ -4,7 +4,7 @@ import os
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, TypedDict
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -28,6 +28,16 @@ class _EngineCacheKey:
 
 _ENGINE_CACHE: dict[_EngineCacheKey, Engine] = {}
 _SESSION_FACTORY_CACHE: dict[_EngineCacheKey, sessionmaker[Session]] = {}
+
+
+class PoolSettings(TypedDict):
+    database_scheme: str
+    is_sqlite: bool
+    application_name: str
+    pool_size: int
+    max_overflow: int
+    pool_timeout: float
+    pool_recycle: int
 
 
 def _env_int(name: str, *, default: int) -> int:
@@ -62,6 +72,10 @@ def _is_sqlite_url(database_url: str) -> bool:
     return database_url.startswith(("sqlite://", "sqlite+pysqlite://"))
 
 
+def _database_scheme(database_url: str) -> str:
+    return database_url.split("://", 1)[0] if "://" in database_url else ""
+
+
 def _cache_key(database_url: str | None = None, settings: Settings | None = None) -> _EngineCacheKey:
     return _EngineCacheKey(
         database_url=get_sqlalchemy_database_url(database_url, settings),
@@ -71,6 +85,24 @@ def _cache_key(database_url: str | None = None, settings: Settings | None = None
         pool_recycle=_env_int("DB_POOL_RECYCLE", default=1800),
         application_name=str(os.getenv("DB_APPLICATION_NAME") or "aicrm-next-web").strip() or "aicrm-next-web",
     )
+
+
+def _pool_settings_from_key(key: _EngineCacheKey) -> PoolSettings:
+    return {
+        "database_scheme": _database_scheme(key.database_url),
+        "is_sqlite": _is_sqlite_url(key.database_url),
+        "application_name": key.application_name,
+        "pool_size": key.pool_size,
+        "max_overflow": key.max_overflow,
+        "pool_timeout": key.pool_timeout,
+        "pool_recycle": key.pool_recycle,
+    }
+
+
+def get_pool_settings(database_url: str | None = None, settings: Settings | None = None) -> PoolSettings:
+    """Return non-sensitive pool settings for diagnostics and tests."""
+
+    return _pool_settings_from_key(_cache_key(database_url, settings))
 
 
 def get_engine(database_url: str | None = None, settings: Settings | None = None) -> Engine:
@@ -91,6 +123,17 @@ def get_engine(database_url: str | None = None, settings: Settings | None = None
                 "connect_args": {"application_name": key.application_name},
             }
         )
+    pool_settings = _pool_settings_from_key(key)
+    LOGGER.info(
+        "initializing SQLAlchemy engine application_name=%s pool_size=%s max_overflow=%s pool_timeout=%s pool_recycle=%s database_scheme=%s is_sqlite=%s",
+        pool_settings["application_name"],
+        pool_settings["pool_size"],
+        pool_settings["max_overflow"],
+        pool_settings["pool_timeout"],
+        pool_settings["pool_recycle"],
+        pool_settings["database_scheme"],
+        pool_settings["is_sqlite"],
+    )
     engine = create_engine(key.database_url, **kwargs)
     _ENGINE_CACHE[key] = engine
     return engine
