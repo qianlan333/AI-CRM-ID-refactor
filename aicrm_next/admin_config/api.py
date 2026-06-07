@@ -18,6 +18,7 @@ from .application import (
     McpToolSettingSaveCommand,
     SetupWizardSaveCommand,
     SetupWizardStateService,
+    SignupConversionConfigSaveCommand,
     _bool,
     _text,
 )
@@ -114,6 +115,11 @@ def admin_config_home(request: Request):
     )
 
 
+@router.get("/admin/config/wecom-tags", name="api.admin_config_wecom_tags", response_class=HTMLResponse)
+def admin_config_wecom_tags():
+    return _redirect("/admin/wecom-tags")
+
+
 @router.get("/admin/config/app-settings", name="api.admin_config_app_settings", response_class=HTMLResponse)
 def admin_config_app_settings(request: Request):
     query = _text(request.query_params.get("q"))
@@ -208,6 +214,34 @@ async def api_admin_config_save_mcp_tool(request: Request):
     return {
         "ok": True,
         "item": saved,
+        "source_status": "next_command",
+        "fallback_used": False,
+        "real_external_call_executed": False,
+    }
+
+
+@router.get("/api/admin/config/marketing-automation/signup-conversion", name="api.admin_config_signup_conversion")
+def api_admin_config_signup_conversion() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "config": AdminConfigReadService().get_signup_conversion_config(),
+        "source_status": "next_read_model",
+        "fallback_used": False,
+    }
+
+
+@router.put("/api/admin/config/marketing-automation/signup-conversion", name="api.admin_config_save_signup_conversion")
+async def api_admin_config_save_signup_conversion(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        return JSONResponse({"ok": False, "error": "payload must be an object"}, status_code=400)
+    try:
+        saved = SignupConversionConfigSaveCommand().execute(payload, operator=_operator_from_request(request, payload=payload))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return {
+        "ok": True,
+        "config": saved,
         "source_status": "next_command",
         "fallback_used": False,
         "real_external_call_executed": False,
