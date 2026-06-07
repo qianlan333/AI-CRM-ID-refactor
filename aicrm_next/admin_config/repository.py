@@ -284,6 +284,256 @@ class AdminConfigRepository:
             )
         return self.get_mcp_tool_setting(payload["tool_name"]) or payload
 
+    def get_marketing_automation_config(self, automation_key: str) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            id,
+                            automation_key,
+                            automation_name,
+                            target_event,
+                            channel_type,
+                            status,
+                            do_not_start_after_hour,
+                            config_payload_json,
+                            created_at,
+                            updated_at
+                        FROM marketing_automation_configs
+                        WHERE automation_key = :automation_key
+                        """
+                    ),
+                    {"automation_key": str(automation_key or "").strip()},
+                ).mappings().first()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config marketing automation config read unavailable", exc_info=True)
+            return None
+        return dict(row) if row else None
+
+    def list_marketing_automation_question_rules(self, automation_config_id: int) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT
+                            id,
+                            automation_config_id,
+                            questionnaire_id,
+                            question_id,
+                            rule_code,
+                            rule_name,
+                            answer_match_type,
+                            answer_match_value_json,
+                            score_delta,
+                            segment_hint,
+                            stage_hint,
+                            is_active,
+                            sort_order,
+                            rule_payload_json,
+                            created_at,
+                            updated_at
+                        FROM marketing_automation_question_rules
+                        WHERE automation_config_id = :automation_config_id
+                          AND is_active = TRUE
+                        ORDER BY sort_order ASC, id ASC
+                        """
+                    ),
+                    {"automation_config_id": int(automation_config_id or 0)},
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config marketing automation rules read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def get_questionnaire(self, questionnaire_id: int) -> dict[str, Any] | None:
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT id, name, title, is_disabled, created_at, updated_at
+                        FROM questionnaires
+                        WHERE id = :questionnaire_id
+                        """
+                    ),
+                    {"questionnaire_id": int(questionnaire_id or 0)},
+                ).mappings().first()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config questionnaire lookup unavailable", exc_info=True)
+            return None
+        return dict(row) if row else None
+
+    def list_questionnaire_questions(self, questionnaire_id: int) -> list[dict[str, Any]]:
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT id, questionnaire_id, type, title, required, sort_order
+                        FROM questionnaire_questions
+                        WHERE questionnaire_id = :questionnaire_id
+                        ORDER BY sort_order ASC, id ASC
+                        """
+                    ),
+                    {"questionnaire_id": int(questionnaire_id or 0)},
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config questionnaire questions read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def list_questionnaire_options(self, question_ids: list[int]) -> list[dict[str, Any]]:
+        ids = [int(item) for item in question_ids if int(item or 0) > 0]
+        if not ids:
+            return []
+        placeholders = ", ".join(f":id_{index}" for index, _ in enumerate(ids))
+        params = {f"id_{index}": value for index, value in enumerate(ids)}
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        f"""
+                        SELECT id, question_id, option_text, sort_order
+                        FROM questionnaire_options
+                        WHERE question_id IN ({placeholders})
+                        ORDER BY question_id ASC, sort_order ASC, id ASC
+                        """
+                    ),
+                    params,
+                ).mappings().all()
+        except SQLAlchemyError:
+            LOGGER.warning("admin config questionnaire options read unavailable", exc_info=True)
+            return []
+        return [dict(row) for row in rows]
+
+    def upsert_marketing_automation_config(
+        self,
+        *,
+        automation_key: str,
+        automation_name: str,
+        target_event: str,
+        channel_type: str,
+        status: str,
+        do_not_start_after_hour: int,
+        config_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = {
+            "automation_key": str(automation_key or "").strip(),
+            "automation_name": str(automation_name or "").strip(),
+            "target_event": str(target_event or "").strip(),
+            "channel_type": str(channel_type or "").strip(),
+            "status": str(status or "").strip(),
+            "do_not_start_after_hour": int(do_not_start_after_hour or 0),
+            "config_payload_json": json.dumps(config_payload or {}, ensure_ascii=False, sort_keys=True, default=str),
+        }
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO marketing_automation_configs (
+                        automation_key,
+                        automation_name,
+                        target_event,
+                        channel_type,
+                        status,
+                        do_not_start_after_hour,
+                        config_payload_json,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        :automation_key,
+                        :automation_name,
+                        :target_event,
+                        :channel_type,
+                        :status,
+                        :do_not_start_after_hour,
+                        :config_payload_json,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    )
+                    ON CONFLICT(automation_key) DO UPDATE SET
+                        automation_name = excluded.automation_name,
+                        target_event = excluded.target_event,
+                        channel_type = excluded.channel_type,
+                        status = excluded.status,
+                        do_not_start_after_hour = excluded.do_not_start_after_hour,
+                        config_payload_json = excluded.config_payload_json,
+                        updated_at = CURRENT_TIMESTAMP
+                    """
+                ),
+                payload,
+            )
+        return self.get_marketing_automation_config(payload["automation_key"]) or payload
+
+    def replace_marketing_automation_question_rules(
+        self,
+        *,
+        automation_config_id: int,
+        questionnaire_id: int,
+        rules: list[dict[str, Any]],
+    ) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM marketing_automation_question_rules WHERE automation_config_id = :automation_config_id"),
+                {"automation_config_id": int(automation_config_id or 0)},
+            )
+            for index, rule in enumerate(rules, start=1):
+                question_id = int(rule.get("questionnaire_question_id") or rule.get("question_id") or 0)
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO marketing_automation_question_rules (
+                            automation_config_id,
+                            questionnaire_id,
+                            question_id,
+                            rule_code,
+                            rule_name,
+                            answer_match_type,
+                            answer_match_value_json,
+                            score_delta,
+                            segment_hint,
+                            stage_hint,
+                            is_active,
+                            sort_order,
+                            rule_payload_json,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            :automation_config_id,
+                            :questionnaire_id,
+                            :question_id,
+                            :rule_code,
+                            :rule_name,
+                            'any_of',
+                            :answer_match_value_json,
+                            0,
+                            '',
+                            '',
+                            TRUE,
+                            :sort_order,
+                            :rule_payload_json,
+                            CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP
+                        )
+                        """
+                    ),
+                    {
+                        "automation_config_id": int(automation_config_id or 0),
+                        "questionnaire_id": int(questionnaire_id or 0),
+                        "question_id": question_id,
+                        "rule_code": str(rule.get("rule_code") or f"question-{question_id}"),
+                        "rule_name": str(rule.get("rule_name") or rule.get("question_title") or f"question-{question_id}"),
+                        "answer_match_value_json": json.dumps(rule.get("hit_option_ids_json") or [], ensure_ascii=False, default=str),
+                        "sort_order": int(rule.get("sort_order") or index),
+                        "rule_payload_json": json.dumps(rule.get("rule_payload") or {"questionnaire_id": int(questionnaire_id or 0)}, ensure_ascii=False, default=str),
+                    },
+                )
+
     def count_admin_users(self) -> int:
         try:
             with self._engine.connect() as conn:

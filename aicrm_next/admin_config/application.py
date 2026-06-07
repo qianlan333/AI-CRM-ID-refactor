@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token
 
@@ -15,6 +16,23 @@ from .settings import SENSITIVE_KEYS, mask_value
 TARGET_APP_SETTING = "app_setting"
 TARGET_ADMIN_USER = "admin_user"
 TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
+TARGET_MARKETING_AUTOMATION_CONFIG = "marketing_automation_config"
+DEFAULT_SIGNUP_CONVERSION_KEY = "signup_conversion_v1"
+DEFAULT_MARKETING_AUTOMATION_NAME = "自动化转化问卷初判"
+DEFAULT_MARKETING_TARGET_EVENT = "signup_success"
+DEFAULT_MARKETING_CHANNEL_TYPE = "text_message"
+DEFAULT_MARKETING_CORE_THRESHOLD = 3
+DEFAULT_MARKETING_TOP_THRESHOLD = 4
+DEFAULT_MARKETING_DAY_START_HOUR = 9
+DEFAULT_MARKETING_QUIET_HOUR_START = 23
+DEFAULT_MARKETING_TIMEZONE = "Asia/Shanghai"
+DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL = {
+    "new_user": 7,
+    "inactive_normal": 7,
+    "inactive_focus": 7,
+    "active_normal": 7,
+    "active_focus": 7,
+}
 
 ROLE_LABELS = {
     "super_admin": "超级管理员",
@@ -108,6 +126,55 @@ def _validate_known_setting(key: str, value: str) -> str:
         except ValueError as exc:
             raise ValueError("WECHAT_PAY_PRODUCT_CATALOG_JSON 必须是合法 JSON") from exc
     return normalized
+
+
+def _json_loads(value: Any, *, default: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    text = _text(value)
+    if not text:
+        return default
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
+def _positive_int(value: Any, *, field_name: str, allow_none: bool = False) -> int | None:
+    text = _text(value)
+    if not text and allow_none:
+        return None
+    return _normalize_int(text if text else value, field_name=field_name, minimum=1)
+
+
+def _bounded_int(value: Any, *, field_name: str, default: int, minimum: int, maximum: int | None = None) -> int:
+    text = _text(value)
+    number = _normalize_int(text if text else default, field_name=field_name, minimum=minimum)
+    if maximum is not None and number > maximum:
+        raise ValueError(f"{field_name} 不能大于 {maximum}")
+    return number
+
+
+def _normalize_timezone(value: Any) -> str:
+    timezone = _text(value) or DEFAULT_MARKETING_TIMEZONE
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError("timezone is invalid") from exc
+    return timezone
+
+
+def _normalize_silent_thresholds(value: Any) -> dict[str, int]:
+    raw = value if isinstance(value, dict) else {}
+    result: dict[str, int] = {}
+    for pool_key, default_value in DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL.items():
+        result[pool_key] = _bounded_int(
+            raw.get(pool_key),
+            field_name=f"silent_threshold_days_by_pool.{pool_key}",
+            default=default_value,
+            minimum=1,
+        )
+    return result
 
 
 def _default_mcp_tool_defs() -> list[dict[str, Any]]:
@@ -323,6 +390,117 @@ class AdminConfigReadService:
                 {**item, "action_label": _audit_action_label(item["action_type"])}
                 for item in self._recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)
             ],
+        }
+
+    def _marketing_default_config(self, automation_key: str = DEFAULT_SIGNUP_CONVERSION_KEY) -> dict[str, Any]:
+        return {
+            "automation_key": _text(automation_key) or DEFAULT_SIGNUP_CONVERSION_KEY,
+            "automation_name": DEFAULT_MARKETING_AUTOMATION_NAME,
+            "target_event": DEFAULT_MARKETING_TARGET_EVENT,
+            "channel_type": DEFAULT_MARKETING_CHANNEL_TYPE,
+            "enabled": True,
+            "questionnaire_id": None,
+            "questionnaire_missing": False,
+            "missing_questionnaire_id": None,
+            "core_threshold": DEFAULT_MARKETING_CORE_THRESHOLD,
+            "top_threshold": DEFAULT_MARKETING_TOP_THRESHOLD,
+            "day_start_hour": DEFAULT_MARKETING_DAY_START_HOUR,
+            "quiet_hour_start": DEFAULT_MARKETING_QUIET_HOUR_START,
+            "timezone": DEFAULT_MARKETING_TIMEZONE,
+            "silent_threshold_days_by_pool": dict(DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL),
+            "question_rules": [],
+            "configured": False,
+            "created_at": "",
+            "updated_at": "",
+        }
+
+    def _questionnaire_rule_context(self, questionnaire_id: int | None) -> tuple[dict[int, dict[str, Any]], dict[int, dict[int, dict[str, Any]]]]:
+        if not questionnaire_id:
+            return {}, {}
+        questions = self.repo.list_questionnaire_questions(int(questionnaire_id))
+        question_map = {int(item.get("id") or 0): dict(item) for item in questions}
+        option_map: dict[int, dict[int, dict[str, Any]]] = {}
+        for option in self.repo.list_questionnaire_options(list(question_map.keys())):
+            question_id = int(option.get("question_id") or 0)
+            option_id = int(option.get("id") or 0)
+            if question_id and option_id:
+                option_map.setdefault(question_id, {})[option_id] = dict(option)
+        return question_map, option_map
+
+    def _serialize_marketing_rule(
+        self,
+        row: dict[str, Any],
+        *,
+        question_map: dict[int, dict[str, Any]],
+        option_map: dict[int, dict[int, dict[str, Any]]],
+    ) -> dict[str, Any]:
+        question_id = int(row.get("question_id") or row.get("questionnaire_question_id") or 0)
+        hit_option_ids = [
+            int(item)
+            for item in _json_loads(row.get("answer_match_value_json") or row.get("hit_option_ids_json"), default=[])
+            if _text(item)
+        ]
+        question = question_map.get(question_id, {})
+        available_options = option_map.get(question_id, {})
+        return {
+            "id": int(row.get("id") or 0),
+            "questionnaire_id": int(row.get("questionnaire_id") or 0) or None,
+            "questionnaire_question_id": question_id,
+            "question_title": _text(question.get("title")) or _text(row.get("rule_name")),
+            "question_type": _text(question.get("type")),
+            "hit_option_ids_json": hit_option_ids,
+            "hit_options": [
+                {"id": option_id, "option_text": _text(available_options.get(option_id, {}).get("option_text"))}
+                for option_id in hit_option_ids
+            ],
+            "sort_order": int(row.get("sort_order") or 0),
+        }
+
+    def get_signup_conversion_config(self, *, automation_key: str = DEFAULT_SIGNUP_CONVERSION_KEY) -> dict[str, Any]:
+        key = _text(automation_key) or DEFAULT_SIGNUP_CONVERSION_KEY
+        defaults = self._marketing_default_config(key)
+        row = self.repo.get_marketing_automation_config(key)
+        if not row:
+            return defaults
+        payload = dict(_json_loads(row.get("config_payload_json"), default={}) or {})
+        questionnaire_id = _positive_int(payload.get("questionnaire_id"), field_name="questionnaire_id", allow_none=True)
+        questionnaire_missing = bool(questionnaire_id and not self.repo.get_questionnaire(int(questionnaire_id)))
+        question_map, option_map = self._questionnaire_rule_context(None if questionnaire_missing else questionnaire_id)
+        return {
+            **defaults,
+            "automation_key": _text(row.get("automation_key")) or key,
+            "automation_name": _text(row.get("automation_name")) or DEFAULT_MARKETING_AUTOMATION_NAME,
+            "target_event": _text(row.get("target_event")) or DEFAULT_MARKETING_TARGET_EVENT,
+            "channel_type": _text(row.get("channel_type")) or DEFAULT_MARKETING_CHANNEL_TYPE,
+            "enabled": _text(row.get("status")).lower() == "active",
+            "questionnaire_id": None if questionnaire_missing else questionnaire_id,
+            "questionnaire_missing": questionnaire_missing,
+            "missing_questionnaire_id": questionnaire_id if questionnaire_missing else None,
+            "core_threshold": _bounded_int(payload.get("core_threshold"), field_name="core_threshold", default=DEFAULT_MARKETING_CORE_THRESHOLD, minimum=0),
+            "top_threshold": _bounded_int(payload.get("top_threshold"), field_name="top_threshold", default=DEFAULT_MARKETING_TOP_THRESHOLD, minimum=0),
+            "day_start_hour": _bounded_int(
+                payload.get("day_start_hour"),
+                field_name="day_start_hour",
+                default=DEFAULT_MARKETING_DAY_START_HOUR,
+                minimum=0,
+                maximum=23,
+            ),
+            "quiet_hour_start": _bounded_int(
+                row.get("do_not_start_after_hour"),
+                field_name="quiet_hour_start",
+                default=DEFAULT_MARKETING_QUIET_HOUR_START,
+                minimum=0,
+                maximum=23,
+            ),
+            "timezone": _normalize_timezone(payload.get("timezone")),
+            "silent_threshold_days_by_pool": _normalize_silent_thresholds(payload.get("silent_threshold_days_by_pool")),
+            "question_rules": [
+                self._serialize_marketing_rule(item, question_map=question_map, option_map=option_map)
+                for item in self.repo.list_marketing_automation_question_rules(int(row.get("id") or 0))
+            ],
+            "configured": True,
+            "created_at": _text(row.get("created_at")),
+            "updated_at": _text(row.get("updated_at")),
         }
 
     def _audit_meta_map_for_type(self, target_type: str, target_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -597,3 +775,135 @@ class McpToolSettingSaveCommand:
             "show_sample_args": _bool(saved.get("show_sample_args")),
             "show_sample_output": _bool(saved.get("show_sample_output")),
         }
+
+
+class SignupConversionConfigSaveCommand:
+    def __init__(self, repo: AdminConfigRepository | None = None) -> None:
+        self.repo = repo or AdminConfigRepository()
+
+    def _normalize_rules(
+        self,
+        rules: Any,
+        *,
+        questionnaire_id: int,
+        question_map: dict[int, dict[str, Any]],
+        option_map: dict[int, dict[int, dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        if not isinstance(rules, list):
+            raise ValueError("question_rules must be an array")
+        if not rules:
+            raise ValueError("question_rules must contain at least one item")
+        normalized: list[dict[str, Any]] = []
+        seen_question_ids: set[int] = set()
+        for index, item in enumerate(rules, start=1):
+            if not isinstance(item, dict):
+                raise ValueError("question rule must be an object")
+            question_id = _positive_int(item.get("questionnaire_question_id"), field_name="questionnaire_question_id")
+            assert question_id is not None
+            if question_id in seen_question_ids:
+                raise ValueError("question_rules cannot contain duplicate questionnaire_question_id")
+            seen_question_ids.add(question_id)
+            question = question_map.get(question_id)
+            if not question:
+                raise ValueError(f"question {question_id} does not belong to questionnaire {questionnaire_id}")
+            if _text(question.get("type")) not in {"single_choice", "multi_choice"}:
+                raise ValueError(f"question {question_id} does not support option matching")
+            available_options = option_map.get(question_id, {})
+            hit_option_ids = [int(option_id) for option_id in item.get("hit_option_ids_json") or [] if _text(option_id)]
+            invalid_option_ids = [option_id for option_id in hit_option_ids if option_id not in available_options]
+            if invalid_option_ids:
+                raise ValueError(f"option {invalid_option_ids[0]} does not belong to question {question_id}")
+            normalized.append(
+                {
+                    "questionnaire_question_id": int(question_id),
+                    "hit_option_ids_json": hit_option_ids,
+                    "sort_order": _bounded_int(item.get("sort_order"), field_name="sort_order", default=index, minimum=1),
+                    "rule_code": f"question-{question_id}",
+                    "rule_name": _text(question.get("title")) or f"question-{question_id}",
+                    "rule_payload": {"questionnaire_id": int(questionnaire_id)},
+                }
+            )
+        normalized.sort(key=lambda item: (item["sort_order"], item["questionnaire_question_id"]))
+        return normalized
+
+    def execute(self, payload: dict[str, Any], *, operator: str = "crm_console", automation_key: str = DEFAULT_SIGNUP_CONVERSION_KEY) -> dict[str, Any]:
+        raw_payload = dict(payload or {})
+        key = _text(automation_key) or DEFAULT_SIGNUP_CONVERSION_KEY
+        read_service = AdminConfigReadService(self.repo)
+        before = read_service.get_signup_conversion_config(automation_key=key)
+        questionnaire_id = _positive_int(raw_payload.get("questionnaire_id", before.get("questionnaire_id")), field_name="questionnaire_id")
+        assert questionnaire_id is not None
+        if not self.repo.get_questionnaire(int(questionnaire_id)):
+            raise ValueError("questionnaire not found")
+        question_map, option_map = read_service._questionnaire_rule_context(int(questionnaire_id))
+        core_threshold = _bounded_int(
+            raw_payload.get("core_threshold", before.get("core_threshold")),
+            field_name="core_threshold",
+            default=DEFAULT_MARKETING_CORE_THRESHOLD,
+            minimum=0,
+        )
+        top_threshold = _bounded_int(
+            raw_payload.get("top_threshold", before.get("top_threshold")),
+            field_name="top_threshold",
+            default=DEFAULT_MARKETING_TOP_THRESHOLD,
+            minimum=0,
+        )
+        if top_threshold < core_threshold:
+            raise ValueError("top_threshold must be >= core_threshold")
+        day_start_hour = _bounded_int(
+            raw_payload.get("day_start_hour", before.get("day_start_hour")),
+            field_name="day_start_hour",
+            default=DEFAULT_MARKETING_DAY_START_HOUR,
+            minimum=0,
+            maximum=23,
+        )
+        quiet_hour_start = _bounded_int(
+            raw_payload.get("quiet_hour_start", before.get("quiet_hour_start")),
+            field_name="quiet_hour_start",
+            default=DEFAULT_MARKETING_QUIET_HOUR_START,
+            minimum=0,
+            maximum=23,
+        )
+        if day_start_hour >= quiet_hour_start:
+            raise ValueError("day_start_hour must be < quiet_hour_start")
+        timezone = _normalize_timezone(raw_payload.get("timezone", before.get("timezone")))
+        silent_thresholds = _normalize_silent_thresholds(raw_payload.get("silent_threshold_days_by_pool", before.get("silent_threshold_days_by_pool")))
+        rules = self._normalize_rules(
+            raw_payload.get("question_rules", before.get("question_rules")),
+            questionnaire_id=int(questionnaire_id),
+            question_map=question_map,
+            option_map=option_map,
+        )
+        enabled = _bool(raw_payload.get("enabled", before.get("enabled")))
+        saved_row = self.repo.upsert_marketing_automation_config(
+            automation_key=key,
+            automation_name=DEFAULT_MARKETING_AUTOMATION_NAME,
+            target_event=DEFAULT_MARKETING_TARGET_EVENT,
+            channel_type=DEFAULT_MARKETING_CHANNEL_TYPE,
+            status="active" if enabled else "disabled",
+            do_not_start_after_hour=quiet_hour_start,
+            config_payload={
+                "questionnaire_id": int(questionnaire_id),
+                "core_threshold": core_threshold,
+                "top_threshold": top_threshold,
+                "day_start_hour": day_start_hour,
+                "timezone": timezone,
+                "silent_threshold_days_by_pool": silent_thresholds,
+            },
+        )
+        self.repo.replace_marketing_automation_question_rules(
+            automation_config_id=int(saved_row.get("id") or 0),
+            questionnaire_id=int(questionnaire_id),
+            rules=rules,
+        )
+        after = read_service.get_signup_conversion_config(automation_key=key)
+        if before != after:
+            self.repo.insert_audit_log(
+                operator=_text(operator) or "crm_console",
+                action_type="update" if before.get("configured") else "create",
+                target_type=TARGET_MARKETING_AUTOMATION_CONFIG,
+                target_id=key,
+                before=before,
+                after=after,
+            )
+        return after
