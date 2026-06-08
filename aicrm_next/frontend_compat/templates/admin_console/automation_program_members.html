@@ -30,21 +30,11 @@
 {% set program_id = program.get("id") or payload.get("program_id") %}
 
 <section class="members-page">
-  {% if workspace_tabs %}
-  <nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
-    {% for item in workspace_tabs %}
-    <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
-      <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
-    </a>
-    {% endfor %}
-  </nav>
-  {% endif %}
-
   <section class="admin-card">
     <div class="members-toolbar">
       <div>
         <h2 class="members-title">{{ stage_label }} - 全量用户</h2>
-        <p class="members-muted">当前方案成员明细，stage={{ stage_key }}。</p>
+        <p class="members-muted">当前方案成员明细。</p>
       </div>
       <div class="members-count">{{ total }}</div>
     </div>
@@ -99,8 +89,16 @@
 
   <section class="members-actions">
     <a class="members-action" href="{{ url_for('api.admin_automation_program_overview', program_id=program_id) }}">返回数据概览</a>
-    <a class="members-action{% if not pagination.get('has_prev') %} is-disabled{% endif %}" href="{{ pagination.get('prev_url') or '#' }}">上一页</a>
-    <a class="members-action{% if not pagination.get('has_next') %} is-disabled{% endif %}" href="{{ pagination.get('next_url') or '#' }}">下一页</a>
+    {% if pagination.get('has_prev') %}
+    <a class="members-action" href="{{ pagination.get('prev_url') }}">上一页</a>
+    {% else %}
+    <span class="members-action is-disabled">上一页</span>
+    {% endif %}
+    {% if pagination.get('has_next') %}
+    <a class="members-action" href="{{ pagination.get('next_url') }}">下一页</a>
+    {% else %}
+    <span class="members-action is-disabled">下一页</span>
+    {% endif %}
   </section>
 </section>
 {% endblock %}

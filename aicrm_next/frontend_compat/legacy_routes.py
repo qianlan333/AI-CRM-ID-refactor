@@ -931,6 +931,13 @@ def _overview_workspace(request: Request, program: dict[str, object], summary: d
         workspace = {"program": program, "summary": summary, "page_error": str(exc)}
     workspace["program"] = workspace.get("program") or program
     workspace["summary"] = workspace.get("summary") or summary
+    workspace["all_members_url"] = _admin_path_for(
+        "api.admin_automation_program_members",
+        program_id=program_id,
+        stage="all",
+        page=1,
+        page_size=20,
+    )
     return workspace
 
 
@@ -988,6 +995,7 @@ def admin_automation_program_overview(request: Request, program_id: int) -> Resp
                 {"label": str(program.get("program_name") or f"方案 {program_id}")},
             ],
             "overview_workspace": _overview_workspace(request, program, summary),
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "overview"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "overview"),
             "program_context": _automation_program_context(request, program, active_key="overview"),
             "admin_action_token": "",
@@ -1046,6 +1054,7 @@ def admin_automation_program_members(request: Request, program_id: int) -> Respo
                 {"label": str(members_payload.get("stage_label") or "成员明细")},
             ],
             "members_payload": members_payload,
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "overview"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "overview"),
             "program_context": _automation_program_context(request, program, active_key="overview"),
             "admin_action_token": "",
@@ -1357,6 +1366,7 @@ async def admin_automation_program_entry_channels(request: Request, program_id: 
                 },
                 {"label": "入口渠道"},
             ],
+            "page_header_tabs": _automation_program_workspace_tabs(request, program_id, "entry_channels"),
             "workspace_tabs": _automation_program_workspace_tabs(request, program_id, "entry_channels"),
             "program_context": _automation_program_context(request, program, active_key="entry_channels"),
             "entry_channels_payload": jsonable_encoder(
