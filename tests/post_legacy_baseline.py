@@ -34,7 +34,7 @@ ADMIN_PAGE_CASES: tuple[PageCase, ...] = (
     PageCase("login", "/login", "aicrm_next.admin_auth"),
     PageCase("admin_dashboard", "/admin", "aicrm_next.admin_shell"),
     PageCase("route_registry", "/admin/system/routes", "aicrm_next.platform_foundation"),
-    PageCase("customers", "/admin/customers", "aicrm_next.frontend_compat"),
+    PageCase("customers", "/admin/customers", "aicrm_next.customer_read_model"),
     PageCase("customer_detail", "/admin/customers/wx_ext_001", "aicrm_next.frontend_compat"),
     PageCase("user_ops", "/admin/user-ops", "aicrm_next.frontend_compat"),
     PageCase("questionnaires", "/admin/questionnaires", "aicrm_next.frontend_compat"),

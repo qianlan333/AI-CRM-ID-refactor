@@ -38,6 +38,7 @@ from .customer_tags.api import write_router as customer_tags_write_router
 from .customer_tags.admin_pages import router as customer_tags_admin_pages_router
 from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
 from .customer_tags.live_mutation import reset_wecom_tag_live_mutation_fixture_state
+from .customer_read_model.admin_pages import router as customer_admin_pages_router
 from .customer_read_model.api import router as customer_router
 from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
@@ -163,6 +164,7 @@ def create_app() -> FastAPI:
     app.include_router(customer_tags_write_router)
     app.include_router(cloud_orchestrator_router)
     app.include_router(customer_router)
+    app.include_router(customer_admin_pages_router)
     app.include_router(customer_tags_router)
     app.include_router(user_ops_router)
     app.include_router(mcp_router)

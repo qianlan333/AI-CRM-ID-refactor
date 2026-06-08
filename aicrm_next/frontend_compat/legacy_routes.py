@@ -14,8 +14,7 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
-from aicrm_next.customer_read_model.application import GetAdminCustomerProfileQuery, ListCustomersQuery
-from aicrm_next.customer_read_model.dto import ListCustomersRequest
+from aicrm_next.customer_read_model.application import GetAdminCustomerProfileQuery
 from aicrm_next.admin_shell import (
     admin_path_for as _admin_path_for,
     shell_context as _shell_context,
@@ -25,10 +24,8 @@ router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE = "客户列表暂不可用：生产客户读源正在同步或数据库连接繁忙，请稍后刷新。"
 
 LEGACY_FRONTEND_ROUTES = [
-    "/admin/customers",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/hxc-dashboard",
@@ -62,36 +59,6 @@ def _real_data_context(context: dict, *, payload: dict, title: str, summary: str
     if payload.get("page_error"):
         context["page_error"] = payload["page_error"]
     return context
-
-
-def _admin_customer_payload_from_list_result(
-    *,
-    result: dict,
-    keyword: str,
-    owner: str,
-    mobile: str,
-    tag: str,
-    limit: int,
-    offset: int,
-) -> tuple[dict, str]:
-    unavailable = not result.get("ok", True) or result.get("source_status") == "production_unavailable"
-    page_error = ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE if unavailable else ""
-    customers = [] if unavailable else list(result.get("customers") or result.get("items") or [])
-    total = 0 if unavailable else int(result.get("total") or result.get("count") or len(customers))
-    return (
-        {
-            "filters": {"keyword": keyword, "owner": owner, "mobile": mobile, "tag": tag},
-            "customers": customers,
-            "pagination": {
-                "total": total,
-                "has_prev": offset > 0,
-                "has_next": offset + limit < total,
-                "prev_offset": max(offset - limit, 0),
-                "next_offset": offset + limit,
-            },
-        },
-        page_error,
-    )
 
 
 def _customer_profile_initial_section(tab: str) -> str:
@@ -143,39 +110,6 @@ def _customer_profile_urls(external_userid: str) -> dict[str, str]:
         "automation_unmark_won": "/api/admin/automation-conversion/member/unmark-won",
         "automation_push_openclaw": "/api/admin/automation-conversion/member/push-openclaw",
     }
-
-
-@router.get("/admin/customers", name="api.admin_console_customers")
-def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile: str = "", tag: str = "", offset: int = 0):
-    limit = 50
-    offset = max(int(offset or 0), 0)
-    customer_query = ListCustomersRequest(
-        owner_userid=owner or None,
-        tag=tag or None,
-        mobile=mobile or None,
-        keyword=keyword or None,
-        limit=limit,
-        offset=offset,
-    )
-    result = ListCustomersQuery()(customer_query)
-    customer_payload, page_error = _admin_customer_payload_from_list_result(
-        result=result,
-        keyword=keyword,
-        owner=owner,
-        mobile=mobile,
-        tag=tag,
-        limit=limit,
-        offset=offset,
-    )
-    context = _shell_context(
-        request=request,
-        page_title="客户激活 / 客户列表",
-        page_summary="查看客户列表、筛选客户并打开客户档案。",
-        active_endpoint="api.admin_console_customers",
-    )
-    context["page_error"] = page_error
-    context["customer_payload"] = customer_payload
-    return templates.TemplateResponse(request, "admin_console/customers.html", context)
 
 
 @router.get("/admin/customers/{external_userid}", name="api.admin_console_customer_detail")

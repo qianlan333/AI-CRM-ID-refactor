@@ -101,6 +101,26 @@ def test_wecom_tags_page_uses_full_management_workspace(monkeypatch):
 
 
 def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
+    import aicrm_next.customer_read_model.admin_pages as customer_admin_pages
+
+    class FakeListCustomersQuery:
+        def __call__(self, query):
+            return {
+                "ok": True,
+                "customers": [
+                    {
+                        "external_userid": "real_ext_001",
+                        "customer_name": "真实客户甲",
+                        "owner_display_name": "真实负责人",
+                        "owner_userid": "owner_real",
+                        "mobile": "138****0000",
+                    }
+                ],
+                "total": 1,
+            }
+
+    monkeypatch.setattr(customer_admin_pages, "ListCustomersQuery", FakeListCustomersQuery)
+
     response = _client(monkeypatch).get("/admin/customers")
 
     assert response.status_code == 200
@@ -108,26 +128,26 @@ def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
         assert marker not in response.text
 
 
-def test_customer_page_uses_production_facade_when_database_ready(monkeypatch):
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+def test_customer_page_uses_native_read_model_when_data_is_available(monkeypatch):
+    import aicrm_next.customer_read_model.admin_pages as customer_admin_pages
 
-    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    class FakeListCustomersQuery:
+        def __call__(self, query):
+            return {
+                "ok": True,
+                "customers": [
+                    {
+                        "external_userid": "real_ext_001",
+                        "customer_name": "真实客户甲",
+                        "owner_display_name": "真实负责人",
+                        "owner_userid": "owner_real",
+                        "mobile": "138****0000",
+                    }
+                ],
+                "total": 23709,
+            }
 
-    def fake_list_customers(query):
-        return {
-            "customers": [
-                {
-                    "external_userid": "real_ext_001",
-                    "customer_name": "真实客户甲",
-                    "owner_display_name": "真实负责人",
-                    "owner_userid": "owner_real",
-                    "mobile": "138****0000",
-                }
-            ],
-            "total": 23709,
-        }
-
-    monkeypatch.setattr(legacy_routes, "list_customers_via_legacy", fake_list_customers)
+    monkeypatch.setattr(customer_admin_pages, "ListCustomersQuery", FakeListCustomersQuery)
 
     response = _client(monkeypatch).get("/admin/customers")
 
