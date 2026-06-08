@@ -18,6 +18,7 @@ from scripts.check_no_new_legacy import (
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
+    check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
@@ -96,6 +97,74 @@ def test_group_ops_message_content_guard_accepts_minimal_native_files(tmp_path: 
     _write_group_ops_message_content_files(tmp_path)
 
     assert check_group_ops_message_content_native(tmp_path) == []
+
+
+def _write_group_ops_material_resolver_files(
+    root: Path,
+    *,
+    gateway: str = (
+        "from .material_resolver import build_group_ops_material_resolver\n"
+        "def resolve_group_ops_content_package_materials(content_package):\n"
+        "    return build_group_ops_material_resolver().resolve_content_package_materials(content_package)\n"
+    ),
+    resolver: str = (
+        "class GroupOpsMaterialResolver:\n"
+        "    def resolve_content_package_materials(self, content_package):\n"
+        "        return [], []\n"
+        "def build_group_ops_material_resolver():\n"
+        "    return GroupOpsMaterialResolver()\n"
+    ),
+) -> None:
+    gateway_path = root / "aicrm_next/automation_engine/group_ops/integration_gateway.py"
+    resolver_path = root / "aicrm_next/automation_engine/group_ops/material_resolver.py"
+    gateway_path.parent.mkdir(parents=True, exist_ok=True)
+    gateway_path.write_text(gateway, encoding="utf-8")
+    resolver_path.write_text(resolver, encoding="utf-8")
+
+
+def test_group_ops_material_checker_flags_gateway_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        gateway="from wecom_ability_service.domains import image_library\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_gateway_legacy_import" in codes
+
+
+def test_group_ops_material_checker_flags_resolver_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        resolver="from wecom_ability_service.domains import attachment_library\nclass GroupOpsMaterialResolver: pass\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_resolver_legacy_import" in codes
+
+
+def test_group_ops_material_checker_flags_direct_http(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        resolver=(
+            "class GroupOpsMaterialResolver:\n"
+            "    def resolve_content_package_materials(self, content_package):\n"
+            "        requests.get('https://example.invalid')\n"
+            "def build_group_ops_material_resolver():\n"
+            "    return GroupOpsMaterialResolver()\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_resolver_direct_http" in codes
+
+
+def test_group_ops_material_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(tmp_path)
+
+    assert check_group_ops_material_resolver_native(tmp_path) == []
 
 
 def _write_wecom_group_adapter_files(

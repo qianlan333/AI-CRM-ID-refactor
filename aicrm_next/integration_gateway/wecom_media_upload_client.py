@@ -185,7 +185,42 @@ class WeComMediaUploadClient:
             )
         return payload
 
+    def upload_attachment(self, file_name: str, file_bytes: bytes, content_type: str) -> JsonDict:
+        token = self.get_access_token()
+        try:
+            response = self.http_post(
+                f"{self.api_base}/cgi-bin/media/upload_attachment",
+                params={"access_token": token, "media_type": "file", "attachment_type": 1},
+                files={"media": (_text(file_name) or "attachment.bin", file_bytes, _text(content_type) or "application/octet-stream")},
+                timeout=self.timeout,
+            )
+            payload = self._json_payload(response, stage="upload_attachment")
+        except WeComMediaUploadClientError:
+            raise
+        except Exception as exc:
+            raise WeComMediaUploadClientError(
+                f"wecom media attachment upload failed: {exc}",
+                stage="upload_attachment",
+                error_code="wecom_media_http_error",
+            ) from exc
+
+        errcode = int(payload.get("errcode") or 0)
+        if errcode != 0:
+            raise WeComMediaUploadClientError(
+                "wecom media attachment upload failed",
+                stage="upload_attachment",
+                error_code="wecom_media_upload_failed",
+                payload=payload,
+            )
+        if not _text(payload.get("media_id")):
+            raise WeComMediaUploadClientError(
+                "wecom media attachment upload failed: empty media_id",
+                stage="upload_attachment",
+                error_code="wecom_media_upload_failed",
+                payload=payload,
+            )
+        return payload
+
 
 def build_wecom_media_upload_client() -> WeComMediaUploadClient:
     return WeComMediaUploadClient()
-
