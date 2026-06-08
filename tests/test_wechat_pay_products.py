@@ -856,6 +856,36 @@ def test_next_product_admin_share_modal_renders_link_qr_and_download():
     assert 'window.prompt("商品链接"' not in template
 
 
+def test_next_product_editor_uses_v5_collapsed_modules_and_real_actions():
+    template = (
+        REPO_ROOT
+        / "aicrm_next"
+        / "commerce"
+        / "templates"
+        / "wechat_products.html"
+    ).read_text(encoding="utf-8")
+
+    module_titles = ["售卖信息", "页面素材", "购买后动作", "外部推送"]
+    positions = [template.index(f"<h2>{title}</h2>") for title in module_titles]
+    assert positions == sorted(positions)
+
+    assert 'id="afterActionPanel" hidden' in template
+    assert 'id="externalPushPanel" hidden' in template
+    assert 'id="afterActionExpand"' in template
+    assert 'id="externalPushExpand"' in template
+    assert 'id="externalPushEnabled" type="button" role="switch"' in template
+    assert "配置购买后动作" not in template
+    assert "配置外部推送" not in template
+    assert "completionRedirectEnabled" not in template
+    assert "completionRedirectLeadHint" not in template
+    assert "product_code: productCode" in template
+    assert "product: { code: productCode }" in template
+    assert 'copyShareLinkBtn' in template
+    assert 'openSharePreviewBtn' in template
+    assert 'loadShareInfo()' in template
+    assert "/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share" in template
+
+
 def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):
     _configure_pay(app, tmp_path)
     app.config["SECRET_KEY"] = "wechat-pay-product-intro-secret"
