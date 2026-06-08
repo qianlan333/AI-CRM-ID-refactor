@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
@@ -18,6 +20,14 @@ def test_questionnaire_admin_list_page_exposes_next_read_status_without_facade()
     assert "hxc-activation-v1" in html
     assert "data-action=\"duplicate\"" in html
     assert "downloadQuestionnaireData" in html
+    assert "data-admin-shell-source=\"next_admin_shell\"" in html
+
+
+def test_questionnaire_admin_ui_alias_redirects_to_canonical_route() -> None:
+    response = TestClient(create_app()).get("/admin/questionnaires/ui", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/admin/questionnaires"
 
 
 def test_questionnaire_admin_new_page_is_readonly_shell_without_write_execution() -> None:
@@ -37,3 +47,20 @@ def test_questionnaire_admin_detail_page_uses_next_read_model_editor_payload() -
     assert "黄小璨激活问卷" in response.text
     assert "hxc-activation-v1" in response.text
     assert "复制问卷" in response.text
+
+
+def test_questionnaire_admin_pages_are_removed_from_frontend_compat_routes() -> None:
+    from aicrm_next.frontend_compat.legacy_routes import LEGACY_FRONTEND_ROUTES
+
+    assert "/admin/questionnaires" not in LEGACY_FRONTEND_ROUTES
+    assert "/admin/questionnaires/new" not in LEGACY_FRONTEND_ROUTES
+    assert "/admin/questionnaires/{questionnaire_id}" not in LEGACY_FRONTEND_ROUTES
+
+
+def test_questionnaire_admin_templates_live_in_questionnaire_bundle() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    assert (root / "aicrm_next/questionnaire/templates/admin_console/questionnaires.html").exists()
+    assert (root / "aicrm_next/questionnaire/templates/admin_questionnaires.html").exists()
+    assert not (root / "aicrm_next/frontend_compat/templates/admin_console/questionnaires.html").exists()
+    assert not (root / "aicrm_next/frontend_compat/templates/admin_questionnaires.html").exists()

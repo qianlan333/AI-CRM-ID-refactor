@@ -1667,12 +1667,12 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
 def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
-    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/questionnaire/admin_pages.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     questionnaire_api.parent.mkdir(parents=True)
-    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True, exist_ok=True)
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
@@ -1687,7 +1687,7 @@ def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_pat
         "    return {'fallback_used': True}\n",
         encoding="utf-8",
     )
-    frontend_routes.write_text(
+    admin_pages.write_text(
         "def admin_questionnaires():\n"
         "    return {'fallback_used': True}\n",
         encoding="utf-8",
@@ -1730,19 +1730,19 @@ def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_pat
 def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_routes(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
-    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/questionnaire/admin_pages.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     questionnaire_api.parent.mkdir(parents=True)
-    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True, exist_ok=True)
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
     read_routes = [
-        ("/admin/questionnaires", "frontend_compat", "frontend_compat"),
-        ("/admin/questionnaires/new", "frontend_compat", "frontend_compat"),
-        ("/admin/questionnaires/{questionnaire_id}", "frontend_compat", "frontend_compat"),
+        ("/admin/questionnaires", "next_native", "next_native"),
+        ("/admin/questionnaires/new", "next_native", "next_native"),
+        ("/admin/questionnaires/{questionnaire_id}", "next_native", "next_native"),
         ("/api/admin/questionnaires", "next_native", "next"),
         ("/api/admin/questionnaires/{questionnaire_id}", "next_native", "next"),
         ("/api/admin/questionnaires/{questionnaire_id}/questions", "next_native", "next"),
@@ -1769,8 +1769,10 @@ def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_rout
         "    return {'fallback_used': False}\n",
         encoding="utf-8",
     )
-    frontend_routes.write_text(
+    admin_pages.write_text(
         "def admin_questionnaires():\n"
+        "    return {'fallback_used': False}\n"
+        "def admin_questionnaires_legacy_ui_alias():\n"
         "    return {'fallback_used': False}\n"
         "def admin_questionnaire_new():\n"
         "    return {'fallback_used': False}\n"
