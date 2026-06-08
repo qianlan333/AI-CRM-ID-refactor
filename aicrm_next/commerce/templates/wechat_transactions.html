@@ -191,7 +191,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="commerce-admin" data-next-commerce-admin="wechat-pay-transactions">
+<div class="commerce-admin" data-next-commerce-admin="{{ payment_provider }}-transactions">
   {% if detail_error %}
   <section class="admin-card">
     <div class="commerce-card-body">
@@ -205,26 +205,47 @@
       <div class="admin-card-head">
         <div>
           <h2>订单详情</h2>
-          <p>展示微信侧交易单号和运营核对字段。</p>
+          <p>展示{{ payment_provider_label }}订单号、客户、金额、状态和回调摘要。</p>
         </div>
-        <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/transactions">返回列表</a>
+        <a class="admin-button admin-button--ghost" href="{{ '/admin/alipay/transactions' if payment_provider == 'alipay' else '/admin/wechat-pay/transactions' }}">返回列表</a>
       </div>
       <div class="commerce-card-body">
         <div class="commerce-kv">
-          <div class="commerce-kv-label">微信单号</div><div class="commerce-kv-value commerce-mono">{{ detail_order.transaction_id }}</div>
+          <div class="commerce-kv-label">商户单号</div><div class="commerce-kv-value commerce-mono">{{ detail_order.merchant_order_no }}</div>
+          <div class="commerce-kv-label">{{ provider_platform_no_label }}</div><div class="commerce-kv-value commerce-mono">{{ detail_order.platform_transaction_no }}</div>
           <div class="commerce-kv-label">订单创建时间</div><div class="commerce-kv-value">{{ detail_order.created_at }}</div>
+          <div class="commerce-kv-label">支付时间</div><div class="commerce-kv-value">{{ detail_order.paid_at or "-" }}</div>
           <div class="commerce-kv-label">付款人</div><div class="commerce-kv-value">{{ detail_order.payer_name }}</div>
           <div class="commerce-kv-label">手机号</div><div class="commerce-kv-value">{{ detail_order.mobile or "未记录" }}</div>
-          <div class="commerce-kv-label">客户身份</div><div class="commerce-kv-value">{{ detail_order.userid or detail_order.external_userid or "-" }}</div>
+          <div class="commerce-kv-label">客户身份</div><div class="commerce-kv-value">{{ detail_order.userid or detail_order.external_userid or detail_order.unionid or "-" }}</div>
           <div class="commerce-kv-label">商品</div><div class="commerce-kv-value">{{ detail_order.product_name }} / {{ detail_order.product_code }}</div>
           <div class="commerce-kv-label">金额</div><div class="commerce-kv-value">¥{{ detail_order.amount_yuan }} {{ detail_order.currency }}</div>
           <div class="commerce-kv-label">状态</div><div class="commerce-kv-value"><span class="commerce-pill {{ detail_order.status }}">{{ detail_order.status_label }}</span></div>
+          <div class="commerce-kv-label">原始状态</div><div class="commerce-kv-value">{{ detail_order.raw_status or "-" }} / {{ detail_order.provider_status or "-" }}</div>
           <div class="commerce-kv-label">已退款</div><div class="commerce-kv-value">¥{{ detail_order.refunded_amount_yuan }}</div>
           <div class="commerce-kv-label">退款处理中</div><div class="commerce-kv-value">¥{{ detail_order.active_refund_amount_yuan }}</div>
           <div class="commerce-kv-label">可退款</div><div class="commerce-kv-value">¥{{ detail_order.refundable_amount_yuan }}</div>
+          <div class="commerce-kv-label">回调摘要</div>
+          <div class="commerce-kv-value">
+            {{ detail_order.callback_summary.latest_event_type }} · {{ detail_order.callback_summary.latest_provider_status }}
+            <div class="commerce-sub">事件 {{ detail_order.callback_summary.event_count }} 条；notify={{ "有" if detail_order.callback_summary.notify_payload_present else "无" }}；return={{ "有" if detail_order.callback_summary.return_payload_present else "无" }}</div>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>时间</th><th>事件</th><th>状态</th></tr></thead>
+            <tbody>
+              {% for event in detail_order.timeline %}
+              <tr><td>{{ event.time or "-" }}</td><td>{{ event.event }}</td><td>{{ event.status or "-" }}</td></tr>
+              {% else %}
+              <tr><td colspan="3" class="commerce-muted">暂无事件时间线。</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
+    {% if payment_provider == "wechat" %}
     <section class="admin-card">
       <div class="admin-card-head">
         <div>
@@ -262,17 +283,20 @@
         {% endif %}
       </div>
     </section>
+    {% endif %}
   </div>
   {% else %}
   <section class="admin-card">
     <div class="admin-card-head">
       <div>
         <h2>筛选</h2>
-        <p>默认查看最近 30 天，按订单创建时间倒序；可按商品、手机号、客户身份或微信单号筛选。</p>
+        <p>默认查看最近 30 天，按订单创建时间倒序；可按商品、手机号、客户身份或{{ provider_platform_no_label }}筛选。</p>
       </div>
       <div class="admin-form-actions">
         <button class="admin-button admin-button--primary" id="searchBtn" type="button">查询</button>
+        {% if export_api_url %}
         <button class="admin-button admin-button--secondary" id="exportBtn" type="button">导出筛选结果</button>
+        {% endif %}
         <button class="admin-button admin-button--ghost" id="resetBtn" type="button">重置</button>
       </div>
     </div>
@@ -280,7 +304,7 @@
       <div class="commerce-filter-grid">
         <label class="commerce-field" for="mobile"><span>手机号</span><input id="mobile" placeholder="输入手机号"></label>
         <label class="commerce-field" for="identity"><span>客户身份</span><input id="identity" placeholder="输入客户 ID 或外部联系人 ID"></label>
-        <label class="commerce-field" for="transaction"><span>微信单号</span><input id="transaction" placeholder="输入微信支付单号"></label>
+        <label class="commerce-field" for="transaction"><span>{{ provider_platform_no_label }}</span><input id="transaction" placeholder="输入{{ provider_platform_no_label }}"></label>
         <label class="commerce-field" for="product">
           <span>商品</span>
           <select id="product"><option value="">全部商品</option>{% for product in product_options %}<option value="{{ product.product_code }}">{{ product.product_name }}</option>{% endfor %}</select>
@@ -289,7 +313,7 @@
         <label class="commerce-field" for="createdTo"><span>订单创建结束</span><input id="createdTo" type="datetime-local" value="{{ default_filters.created_to }}"></label>
         <label class="commerce-field" for="status">
           <span>状态</span>
-          <select id="status"><option value="">全部</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="refund_processing">退款处理中</option><option value="partial_refunded">部分退款</option><option value="full_refunded">全额退款</option><option value="failed">支付失败</option></select>
+          <select id="status"><option value="">全部</option>{% for item in status_options %}<option value="{{ item.value }}">{{ item.label }}</option>{% endfor %}</select>
         </label>
       </div>
       <div class="commerce-toast" id="notice"></div>
@@ -309,7 +333,7 @@
     <div class="commerce-card-body">
       <div class="admin-table-wrap commerce-table-wrap">
         <table class="admin-table commerce-table">
-          <thead><tr><th>订单创建时间</th><th>微信单号</th><th>付款人 / 客户身份</th><th>商品</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th>订单创建时间</th><th>商户单号 / {{ provider_platform_no_label }}</th><th>付款人 / 客户身份</th><th>商品</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
           <tbody id="rows">
             <tr><td colspan="7" class="commerce-muted">正在加载订单...</td></tr>
           </tbody>
@@ -328,6 +352,8 @@
 
 {% block scripts_extra %}
 <script>
+  const listApiUrl = {{ list_api_url|tojson }};
+  const exportApiUrl = {{ export_api_url|tojson }};
   const state = {offset: 0, total: 0, limit: 20};
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value || "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -391,8 +417,8 @@
     function render(items) {
       $("rows").innerHTML = items.map((row) => `<tr>
         <td>${esc(row.created_at)}</td>
-        <td><span class="commerce-mono">${esc(row.transaction_id)}</span></td>
-        <td><div class="commerce-strong">${esc(row.payer_name)}</div><div class="commerce-sub">${esc(row.mobile || "未记录手机号")} · ${esc(row.userid || row.external_userid || "-")}</div></td>
+        <td><span class="commerce-mono">${esc(row.merchant_order_no || row.out_trade_no || row.id)}</span><div class="commerce-sub">${esc(row.platform_transaction_no || row.transaction_id)}</div></td>
+        <td><div class="commerce-strong">${esc(row.payer_name)}</div><div class="commerce-sub">${esc(row.mobile || "未记录手机号")} · ${esc(row.userid || row.external_userid || row.unionid || "-")}</div></td>
         <td><div class="commerce-strong">${esc(row.product_name)}</div><div class="commerce-sub">${esc(row.product_code)}</div></td>
         <td class="commerce-strong">¥${esc(row.amount_yuan)}</td>
         <td><span class="commerce-pill ${esc(row.status)}">${esc(row.status_label)}</span></td>
@@ -403,7 +429,7 @@
     async function load() {
       $("summary").textContent = "正在加载订单...";
       renderLoading();
-      const response = await fetch(`/api/admin/wechat-pay/orders?${params().toString()}`);
+      const response = await fetch(`${listApiUrl}?${params().toString()}`);
       const data = await response.json();
       if (!data.ok) {
         $("summary").textContent = data.error || data.detail || "加载失败";
@@ -428,9 +454,9 @@
     });
     $("prevBtn").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); load(); });
     $("nextBtn").addEventListener("click", () => { state.offset += state.limit; load(); });
-    $("exportBtn").addEventListener("click", async () => {
+    if ($("exportBtn") && exportApiUrl) $("exportBtn").addEventListener("click", async () => {
       $("notice").textContent = "正在生成导出文件...";
-      const response = await fetch("/api/admin/wechat-pay/order-exports", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({filters: filters(), format: "csv"})});
+      const response = await fetch(exportApiUrl, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({filters: filters(), format: "csv"})});
       if (!response.ok) { $("notice").textContent = "导出失败"; return; }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);

@@ -68,8 +68,6 @@ def legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_broadcast_jobs": "/admin/broadcast-jobs",
         "api.admin_console_jobs_action": "/admin/jobs/actions",
         "api.admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
-        "api.admin_wechat_pay_transaction_detail_page": "/admin/wechat-pay/transactions/"
-        + str(path_params.get("order_id", "")).strip(),
         "api.admin_wechat_pay_products_page": "/admin/wechat-pay/products",
         "api.admin_alipay_transactions_page": "/admin/alipay/transactions",
         "api.admin_image_library_workspace": "/admin/image-library",

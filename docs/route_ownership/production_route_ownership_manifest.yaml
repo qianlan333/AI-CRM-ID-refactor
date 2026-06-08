@@ -399,14 +399,25 @@ routes:
   - route_pattern: /admin/wechat-pay/transactions
     methods: [GET]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    current_runtime_owner: next
+    production_behavior: readonly_transaction_page
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Admin transaction page is readonly; payment/provider side effects remain blocked.
+    delete_ready: true
+    checker: tests/test_commerce_admin_transaction_detail.py
+    notes: WeChat transaction list/detail pages are served by aicrm_next.commerce read models; no frontend_compat shell, no legacy forward, and no provider call on page load.
+  - route_pattern: /admin/alipay/transactions
+    methods: [GET]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: readonly_transaction_page
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: true
+    checker: tests/test_commerce_admin_transaction_detail.py
+    notes: Alipay transaction page is served by the same readonly commerce transaction model; compat shell removed and provider calls remain blocked.
   - route_pattern: /admin/image-library
     methods: [GET]
     capability_owner: aicrm_next.media_library

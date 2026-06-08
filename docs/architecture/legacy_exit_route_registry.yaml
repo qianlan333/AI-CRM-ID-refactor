@@ -1325,30 +1325,30 @@ routes:
     path_pattern: /admin/wechat-pay/transactions*
     methods: [GET]
     capability_owner: aicrm_next.commerce
-    runtime_owner: frontend_compat
+    runtime_owner: next_commerce_page
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
+    legacy_source: removed
     external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_wechat_pay_admin_transactions.py
+    adapter_mode: readonly
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_commerce_admin_transaction_detail.py
     rollback_owner: aicrm_next.commerce
-    notes: WeChat Pay admin transaction pages.
+    notes: WeChat Pay admin transaction list/detail pages are served by aicrm_next.commerce read models; no legacy forward and no payment provider call.
   - route_id: commerce_alipay_transactions_page
     path_pattern: /admin/alipay/transactions
     methods: [GET]
     capability_owner: aicrm_next.commerce
-    runtime_owner: frontend_compat
+    runtime_owner: next_commerce_page
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
+    legacy_source: removed
     external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_alipay_pay_h5.py
+    adapter_mode: readonly
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_commerce_admin_transaction_detail.py
     rollback_owner: aicrm_next.commerce
-    notes: Alipay admin transactions page.
+    notes: Alipay admin transactions page is served by the same aicrm_next.commerce readonly transaction model; compat shell removed.
   - route_id: ai_assist_api_family
     path_pattern: /api/ai-assist*
     methods: [GET, POST]
