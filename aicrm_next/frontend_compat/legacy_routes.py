@@ -82,9 +82,6 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/automation-conversion/programs/{program_id}/overview",
     "/admin/automation-conversion/programs/{program_id}/members",
     "/admin/automation-conversion/programs/{program_id}/copy",
-    "/admin/automation-conversion/group-ops/ui",
-    "/admin/automation-conversion/group-ops/plans/{plan_id}",
-    "/admin/automation-conversion/group-ops/groups/ui",
     "/admin/automation-conversion/programs/{program_id}/entry-channels",
     "/admin/wechat-pay/products",
     "/admin/image-library",
@@ -1144,36 +1141,6 @@ async def admin_automation_program_archive(request: Request, program_id: int) ->
     return await _automation_program_status_redirect(request, program_id, "archived")
 
 
-def _group_ops_page_context(
-    request: Request,
-    *,
-    page_title: str,
-    page_summary: str,
-    page_mode: str,
-    plan_id: int | None = None,
-) -> dict:
-    context = _shell_context(
-        request=request,
-        page_title=page_title,
-        page_summary=page_summary,
-        active_endpoint="api.admin_group_ops_ui",
-    )
-    context.update(
-        {
-            "breadcrumbs": [
-                {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
-                {"label": "群运营计划", "href": request.url_for("api.admin_group_ops_ui")},
-            ],
-            "group_ops_page_mode": page_mode,
-            "group_ops_plan_id": int(plan_id or 0),
-            "page_actions": [],
-        }
-    )
-    if page_mode != "list":
-        context["breadcrumbs"].append({"label": page_title})
-    return context
-
-
 def _channel_form_payload(request: Request, *, channel: dict | None) -> dict:
     del request
     is_edit = bool(channel)
@@ -1190,40 +1157,6 @@ def _channel_form_payload(request: Request, *, channel: dict | None) -> dict:
             "wecom_tags": "/api/admin/wecom/tags",
         },
     }
-
-
-@router.get("/admin/automation-conversion/group-ops/ui", name="api.admin_group_ops_ui")
-def admin_group_ops_ui(request: Request):
-    context = _group_ops_page_context(
-        request,
-        page_title="群运营计划",
-        page_summary="按计划管理客户群运营内容。",
-        page_mode="list",
-    )
-    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
-
-
-@router.get("/admin/automation-conversion/group-ops/plans/{plan_id:int}", name="api.admin_group_ops_plan_detail")
-def admin_group_ops_plan_detail(request: Request, plan_id: int):
-    context = _group_ops_page_context(
-        request,
-        page_title="群运营计划",
-        page_summary="配置运营成员、群包和计划内容。",
-        page_mode="detail",
-        plan_id=plan_id,
-    )
-    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
-
-
-@router.get("/admin/automation-conversion/group-ops/groups/ui", name="api.admin_group_ops_groups_ui")
-def admin_group_ops_groups_ui(request: Request):
-    context = _group_ops_page_context(
-        request,
-        page_title="查看所有群",
-        page_summary="按群名、群主、所属计划和状态查看客户群。",
-        page_mode="groups",
-    )
-    return templates.TemplateResponse(request, "admin_console/group_ops.html", context)
 
 
 @router.get("/admin/channels", name="api.admin_channels_page")
