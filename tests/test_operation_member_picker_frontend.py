@@ -8,11 +8,11 @@ PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_me
 PICKER_CSS = ROOT / "aicrm_next/frontend_compat/static/admin_console/admin_console.css"
 BASE_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/base.html"
 LEGACY_BASE_TEMPLATE = ROOT / "wecom_ability_service/templates/admin_console/base.html"
-GROUP_OPS_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/group_ops.js"
-CHANNEL_FORM = ROOT / "aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html"
-CHANNEL_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js"
-CHANNEL_CENTER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/channel_code_center_next.js"
-CHANNEL_CENTER_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/channel_code_center.html"
+GROUP_OPS_JS = ROOT / "aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.js"
+CHANNEL_FORM = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_form.html"
+CHANNEL_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js"
+CHANNEL_CENTER_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_code_center_next.js"
+CHANNEL_CENTER_TEMPLATE = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_center.html"
 OPERATIONS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/operations.html"
 JOBS_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/jobs.html"
 ADMIN_JOBS_TEMPLATE = ROOT / "aicrm_next/admin_jobs/templates/admin_console/jobs.html"
@@ -132,7 +132,9 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
         assert "value:" in source
         assert "onSelect:" in source
         assert "selectedUserId:" not in source
+    for source in [group_ops, operations, jobs, admin_jobs]:
         assert "onConfirm:" not in source
+    assert "AICRMWeComTagPicker.open" in channel_js
     assert 'scope: "group_ops"' in group_ops
     assert "page_size: 100" in group_ops
     for source in [channel_js, operations, jobs, admin_jobs]:
