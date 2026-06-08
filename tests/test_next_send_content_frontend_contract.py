@@ -7,10 +7,11 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console"
 AUTOMATION_STATIC = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console"
+AUTOMATION_TEMPLATES = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console"
 TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
 HXC_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "hxc_dashboard.html"
-CHANNEL_FORM_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "channel_code_form.html"
-GROUP_OPS_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "group_ops.html"
+CHANNEL_FORM_TEMPLATE = AUTOMATION_TEMPLATES / "channel_code_form.html"
+GROUP_OPS_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "group_ops" / "templates" / "admin_console" / "group_ops.html"
 CLOUD_CAMPAIGNS_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "cloud_campaigns_workspace.html"
 OPERATION_JS = AUTOMATION_STATIC / "automation_operation_orchestration_panel.js"
 MATERIAL_PICKER_CSS = STATIC / "material_picker.css"

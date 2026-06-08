@@ -16,6 +16,7 @@ from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.admin_pages import router as automation_admin_pages_router
 from .automation_engine.api import router as automation_router
+from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
 from .automation_engine.group_ops.admin_pages import router as group_ops_admin_pages_router
@@ -34,6 +35,7 @@ from .cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from .customer_tags.api import read_router as customer_tags_read_router
 from .customer_tags.api import router as customer_tags_router
 from .customer_tags.api import write_router as customer_tags_write_router
+from .customer_tags.admin_pages import router as customer_tags_admin_pages_router
 from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
 from .customer_tags.live_mutation import reset_wecom_tag_live_mutation_fixture_state
 from .customer_read_model.api import router as customer_router
@@ -59,6 +61,7 @@ from .questionnaire.admin_pages import router as questionnaire_admin_pages_route
 from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
 from .radar_links.api import router as radar_links_router
+from .radar_links.admin_pages import router as radar_links_admin_pages_router
 from .radar_links.repo import reset_radar_links_fixture_state
 from .sidebar_write.api import router as sidebar_write_router
 from .sidebar_write import reset_sidebar_write_fixture_state
@@ -71,6 +74,7 @@ from .questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
 _AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
+_CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
 
 
 def create_app() -> FastAPI:
@@ -133,6 +137,11 @@ def create_app() -> FastAPI:
         name="automation_engine_static",
     )
     app.mount(
+        "/static/customer-tags",
+        StaticFiles(directory=_CUSTOMER_TAGS_DIR / "static"),
+        name="customer_tags_static",
+    )
+    app.mount(
         "/static",
         StaticFiles(directory=_FRONTEND_COMPAT_DIR / "static"),
         name="static",
@@ -160,10 +169,13 @@ def create_app() -> FastAPI:
     app.include_router(message_archive_router)
     app.include_router(questionnaire_admin_pages_router)
     app.include_router(questionnaire_router)
+    app.include_router(radar_links_admin_pages_router)
     app.include_router(radar_links_router)
     app.include_router(auth_wecom_router)
     app.include_router(group_ops_admin_pages_router)
     app.include_router(automation_admin_pages_router)
+    app.include_router(channel_admin_pages_router)
+    app.include_router(customer_tags_admin_pages_router)
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)

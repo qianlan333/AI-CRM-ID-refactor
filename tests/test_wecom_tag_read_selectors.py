@@ -13,12 +13,12 @@ def _read(path: str) -> str:
 
 def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() -> None:
     questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
-    tag_management_template = _read("aicrm_next/frontend_compat/templates/admin_console/config_wecom_tags.html")
-    tag_management = _read("aicrm_next/frontend_compat/static/admin_console/wecom_tag_management.js")
+    tag_management_template = _read("aicrm_next/customer_tags/templates/admin_console/config_wecom_tags.html")
+    tag_management = _read("aicrm_next/customer_tags/static/admin_console/wecom_tag_management.js")
     automation_picker = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js")
     automation_channel_model = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_channel_model.js")
-    channel_pages = _read("aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js")
-    legacy_routes = _read("aicrm_next/frontend_compat/legacy_routes.py")
+    channel_pages = _read("aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js")
+    channel_admin_pages = _read("aicrm_next/automation_engine/channel_admin_pages.py")
 
     assert "fetchJson('/api/admin/wecom/tags')" in questionnaire
     assert 'data-api-tags="/api/admin/wecom/tags"' in tag_management_template
@@ -28,7 +28,7 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
     assert "apiUrls.wecom_tags" in automation_picker
     assert "AutomationAgentConfig.loadWeComTags" in automation_channel_model
     assert "(bootstrap.api_urls || {}).wecom_tags" in channel_pages
-    assert '"wecom_tags": "/api/admin/wecom/tags"' in legacy_routes
+    assert '"wecom_tags": "/api/admin/wecom/tags"' in channel_admin_pages
     assert "SELECT " not in questionnaire
     assert "SELECT " not in automation_picker
     assert "SELECT " not in channel_pages
@@ -56,8 +56,8 @@ def test_unified_business_tag_picker_visible_copy_hides_internal_fields() -> Non
 
 
 def test_channel_entry_tag_uses_unified_single_picker_and_hidden_save_fields() -> None:
-    template = _read("aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html")
-    script = _read("aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js")
+    template = _read("aicrm_next/automation_engine/templates/admin_console/channel_code_form.html")
+    script = _read("aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js")
 
     assert "wecom_tag_picker.css" in template
     assert "wecom_tag_picker.js" in template

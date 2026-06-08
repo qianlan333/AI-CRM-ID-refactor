@@ -16,6 +16,8 @@ STATIC = FRONTEND / "static" / "admin_console"
 TEMPLATES = FRONTEND / "templates" / "admin_console"
 AUTOMATION_STATIC = AUTOMATION / "static" / "admin_console"
 AUTOMATION_TEMPLATES = AUTOMATION / "templates" / "admin_console"
+GROUP_OPS_STATIC = AUTOMATION / "group_ops" / "static" / "admin_console"
+GROUP_OPS_TEMPLATES = AUTOMATION / "group_ops" / "templates" / "admin_console"
 DOC = ROOT / "docs" / "migration" / "send_content_next_surface_inventory.md"
 
 
@@ -26,12 +28,12 @@ SURFACES = {
     ],
     "hxc_dashboard": [TEMPLATES / "hxc_dashboard.html"],
     "channel_welcome": [
-        TEMPLATES / "channel_code_form.html",
-        STATIC / "channel_admission_pages.js",
+        AUTOMATION_TEMPLATES / "channel_code_form.html",
+        AUTOMATION_STATIC / "channel_admission_pages.js",
     ],
     "group_ops_action": [
-        TEMPLATES / "group_ops.html",
-        STATIC / "group_ops.js",
+        GROUP_OPS_TEMPLATES / "group_ops.html",
+        GROUP_OPS_STATIC / "group_ops.js",
     ],
     "campaign_step": [TEMPLATES / "cloud_campaigns_workspace.html"],
 }
