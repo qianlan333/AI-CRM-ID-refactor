@@ -243,7 +243,7 @@ routes:
     replacement_status: locked
     checker: tests/test_cloud_orchestrator_run_due_commands.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Cloud campaign run-due and preview production_compat rollback removed; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics before the safe-mode planner; SideEffectPlan/AuditLedger/ExternalCallAttempt blocked record, adapter_mode=real_blocked, real_external_call_executed=false, campaign_runtime_executed=false, automation_runtime_executed=false, wecom_send_executed=false.
+    notes: Cloud campaign run-due and preview production_compat rollback removed; legacy_flask_facade removed; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics before the safe-mode planner; no legacy Flask forwarding runtime remains; SideEffectPlan/AuditLedger/ExternalCallAttempt blocked record, adapter_mode=real_blocked, real_external_call_executed=false, campaign_runtime_executed=false, automation_runtime_executed=false, wecom_send_executed=false.
   - route_id: cloud_orchestrator_campaigns_write_legacy_family
     path_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
@@ -2091,7 +2091,7 @@ routes:
     replacement_status: locked
     checker: tests/test_automation_conversion_timer_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
-    notes: Reply monitor capture/run-due is Next safe-mode planning only; Next-native internal_run_due_guard owns internal token and dry-run guard semantics; no real capture, no reply runtime, no real send; source_status values are next_reply_monitor_capture_plan and next_reply_monitor_run_due_plan.
+    notes: Reply monitor capture/run-due is Next safe-mode planning only; legacy_flask_facade removed; Next-native internal_run_due_guard owns internal token and dry-run guard semantics; no production_compat fallback; no legacy Flask forwarding runtime remains; no real capture, no reply runtime, no real send; source_status values are next_reply_monitor_capture_plan and next_reply_monitor_run_due_plan.
   - route_id: automation_conversion_jobs_run_due_timer_next_safe_mode
     path_pattern: /api/admin/automation-conversion/jobs/run-due*
     methods: [POST, OPTIONS]
@@ -2105,7 +2105,7 @@ routes:
     replacement_status: locked
     checker: tests/test_automation_conversion_timer_registry_lifecycle.py
     rollback_owner: aicrm_next.automation_engine
-    notes: Automation jobs run-due/preview is Next safe-mode planning only; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; no registered job runtime and no real side effects; source_status values are next_jobs_run_due_preview and next_jobs_run_due_plan.
+    notes: Automation jobs run-due/preview is Next safe-mode planning only; legacy_flask_facade removed; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; no production_compat fallback; no legacy Flask forwarding runtime remains; no registered job runtime and no real side effects; source_status values are next_jobs_run_due_preview and next_jobs_run_due_plan.
   - route_id: automation_workspace_tasks_run_due_next_safe_mode
     path_pattern: /api/admin/automation-conversion/tasks/run-due
     methods: [POST, OPTIONS]

@@ -1149,7 +1149,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Reply monitor capture/run-due is locked to Next safe-mode planning; Next-native internal_run_due_guard owns internal token and dry-run guard semantics; no real capture, no reply runtime, no real send, fallback_used=false, adapter_mode=real_blocked.
+    notes: Reply monitor capture/run-due is locked to Next safe-mode planning; legacy_flask_facade removed; Next-native internal_run_due_guard owns internal token and dry-run guard semantics; no production_compat fallback; no legacy Flask forwarding runtime remains; no real capture, no reply runtime, no real send, fallback_used=false, adapter_mode=real_blocked.
   - route_pattern: /api/admin/automation-conversion/jobs/run-due*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -1163,7 +1163,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Automation jobs run-due/preview is locked to Next safe-mode planning; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; no registered job runtime, no real side effects, fallback_used=false, adapter_mode=real_blocked.
+    notes: Automation jobs run-due/preview is locked to Next safe-mode planning; legacy_flask_facade removed; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; no production_compat fallback; no legacy Flask forwarding runtime remains; no registered job runtime, no real side effects, fallback_used=false, adapter_mode=real_blocked.
   - route_pattern: /api/admin/cloud-orchestrator/campaigns/run-due*
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.ai_assist
@@ -1177,7 +1177,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_next_timer_route_readiness.py
-    notes: Legacy rollback removed; Cloud campaign run-due and preview are locked to Next safe-mode planner only; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; adapter_mode=real_blocked, no real send/runtime, real_external_call_executed=false, campaign_runtime_executed=false, automation_runtime_executed=false, wecom_send_executed=false.
+    notes: Legacy rollback removed; legacy_flask_facade removed; Cloud campaign run-due and preview are locked to Next safe-mode planner only; Next-native internal_run_due_guard owns internal token, dry-run, production allowlist, and scheduled_safe_mode guard semantics; no production_compat fallback; no legacy Flask forwarding runtime remains; adapter_mode=real_blocked, no real send/runtime, real_external_call_executed=false, campaign_runtime_executed=false, automation_runtime_executed=false, wecom_send_executed=false.
   - route_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator

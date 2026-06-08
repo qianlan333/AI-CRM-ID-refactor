@@ -23,6 +23,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_message_content_native,
     check_group_ops_scheduler_duplicate_checker_native,
     check_internal_run_due_guard_native,
+    check_legacy_flask_facade_removed,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
@@ -233,6 +234,63 @@ def test_orphan_legacy_facade_checker_accepts_removed_state(tmp_path: Path) -> N
     runtime_file.write_text("router = object()\n", encoding="utf-8")
 
     assert check_orphan_legacy_facades_removed(tmp_path) == []
+
+
+def test_legacy_flask_facade_checker_flags_file_remaining(tmp_path: Path) -> None:
+    facade = tmp_path / "aicrm_next/integration_gateway/legacy_flask_facade.py"
+    facade.parent.mkdir(parents=True, exist_ok=True)
+    facade.write_text("def forward_to_legacy_flask():\n    return None\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_flask_facade_removed(tmp_path)}
+
+    assert "legacy_flask_facade_file_remaining" in codes
+
+
+def test_legacy_flask_facade_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_text(
+        'LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/integration_gateway/legacy_flask_facade.py")}\n',
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_legacy_flask_facade_removed(tmp_path)}
+
+    assert "legacy_flask_facade_stale_allowlist" in codes
+
+
+def test_legacy_flask_facade_checker_flags_runtime_import(tmp_path: Path) -> None:
+    runtime_file = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.write_text("from aicrm_next.integration_gateway import legacy_flask_facade\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_flask_facade_removed(tmp_path)}
+
+    assert "legacy_flask_facade_runtime_import" in codes
+
+
+def test_legacy_flask_facade_checker_flags_forwarder_symbol(tmp_path: Path) -> None:
+    runtime_file = tmp_path / "aicrm_next/automation_engine/api.py"
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.write_text("def route():\n    return forward_to_legacy_flask()\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_flask_facade_removed(tmp_path)}
+
+    assert "legacy_flask_facade_forwarder_remaining" in codes
+
+
+def test_legacy_flask_facade_checker_accepts_removed_state(tmp_path: Path) -> None:
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    frontend = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    runtime_file = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    frontend.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_text('LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/frontend_compat/legacy_routes.py")}\n', encoding="utf-8")
+    frontend.write_text("def page_shell():\n    return 'frontend compat'\n", encoding="utf-8")
+    runtime_file.write_text("router = object()\n", encoding="utf-8")
+
+    assert check_legacy_flask_facade_removed(tmp_path) == []
 
 
 def _write_internal_run_due_guard_files(
