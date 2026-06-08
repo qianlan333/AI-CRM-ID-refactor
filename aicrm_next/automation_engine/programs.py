@@ -70,13 +70,14 @@ DEFAULT_AUDIENCE_ENTRY_RULES = (
 AUDIENCE_REVIEW_STEP_KEYS = {"order_product", "questionnaire", "conversion_product"}
 AUDIENCE_STAGE_LABELS = {
     "pending_questionnaire": "待填问卷",
-    "operating": "运营中",
-    "converted": "已转化",
-    "order_review": "订单审核",
     "questionnaire_review": "问卷审核",
+    "order_review": "订单审核",
+    "operating": "运营中",
     "conversion_review": "成交审核",
-    "finished": "已结束",
+    "converted": "已转化",
     "exited": "已退出",
+    "finished": "已结束",
+    "unknown": "未识别阶段",
 }
 BEHAVIOR_TIER_LABELS = {
     "lt_2": "少于 2 次互动",
@@ -148,6 +149,7 @@ def _program_summary(program: dict[str, Any], summary: dict[str, Any] | None = N
     publish_status = "full" if full_published else "entry" if entry_published else "unpublished"
     publish_label = "完整自动化已发布" if full_published else "入口已发布" if entry_published else "未发布"
     return {
+        "member_count": int(summary.get("member_count") or 0),
         "channel_count": int(summary.get("channel_count") or 0),
         "workflow_count": int(summary.get("workflow_count") or 0),
         "latest_execution_at": _clean_text(summary.get("latest_execution_at")),
@@ -266,6 +268,7 @@ def _fixture_setup_payload(program_id: int, *, step: str = "basic") -> dict[str,
 def _fixture_payload() -> dict[str, Any]:
     return {
         "ok": True,
+        "route_owner": "ai_crm_next",
         "items": [{"program": deepcopy(_FIXTURE_PROGRAM), "summary": _fixture_summary()}],
         "default_program": {"id": _FIXTURE_PROGRAM["id"], "program_name": _FIXTURE_PROGRAM["program_name"]},
         "total": 1,
@@ -928,6 +931,11 @@ def _segment_row(key: str, label: str, count: int, *, kind: str) -> dict[str, An
     }
 
 
+def _program_member_stage_label(stage_key: str) -> str:
+    normalized = _clean_text(stage_key) or "unknown"
+    return AUDIENCE_STAGE_LABELS.get(normalized, normalized)
+
+
 def _configured_profile_segment_labels(segmentation: dict[str, Any], profile_categories: list[dict[str, Any]]) -> dict[str, str]:
     labels: dict[str, str] = {}
     strategies = dict(segmentation.get("strategies") or {})
@@ -1023,6 +1031,43 @@ def _overview_payload_from_parts(
                 for item in profile_categories
             ],
         },
+    }
+
+
+def _program_members_url(program_id: int, stage_key: str, *, page: int = 1, page_size: int | None = None) -> str:
+    url = f"/admin/automation-conversion/programs/{int(program_id)}/members?stage={_clean_text(stage_key) or 'all'}"
+    if int(page or 1) != 1:
+        url = f"{url}&page={int(page)}"
+    if page_size is not None and int(page_size or 50) != 50:
+        url = f"{url}&page_size={int(page_size)}"
+    return url
+
+
+def _program_data_overview_payload(
+    *,
+    program: dict[str, Any],
+    member_count: int,
+    stage_counts: list[dict[str, Any]],
+    source_status: str = "next_postgres",
+) -> dict[str, Any]:
+    program_id = int(program.get("id") or 0)
+    stage_segments = [
+        {
+            "key": _clean_text(item.get("key")) or "unknown",
+            "label": _program_member_stage_label(_clean_text(item.get("key")) or "unknown"),
+            "count": int(item.get("total") or item.get("count") or 0),
+            "list_url": _program_members_url(program_id, _clean_text(item.get("key")) or "unknown"),
+        }
+        for item in list(stage_counts or [])
+    ]
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "source_status": source_status,
+        "program": program,
+        "summary": {"member_count": int(member_count or 0)},
+        "stage_segments": stage_segments,
+        "all_members_url": _program_members_url(program_id, "all"),
     }
 
 
@@ -1234,6 +1279,7 @@ class PostgresAutomationProgramRepository:
             default = items[0]["program"]
         return {
             "ok": True,
+            "route_owner": "ai_crm_next",
             "items": items,
             "default_program": {"id": default.get("id"), "program_name": default.get("program_name")} if default else {},
             "total": len(items),
@@ -1291,23 +1337,73 @@ class PostgresAutomationProgramRepository:
         if not current:
             raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
         with self._engine.connect() as conn:
-            blocks = self._fetch_config_blocks(conn, int(program_id))
-            segmentation = _payload_from_block(blocks, BLOCK_SEGMENTATION)
-            profile_categories = self._fetch_profile_categories(conn, int(program_id))
-            audience_counts = self._fetch_member_group_counts(conn, int(program_id), "current_audience_code")
-            stage_counts = self._fetch_member_group_counts(conn, int(program_id), "current_stage_code")
-            profile_counts = self._fetch_segment_key_counts(conn, int(program_id), "profile_segment_key")
-            behavior_counts = self._fetch_segment_key_counts(conn, int(program_id), "behavior_tier_key")
-        return _overview_payload_from_parts(
-            program=dict(current.get("program") or {}),
-            summary=dict(current.get("summary") or {}),
-            audience_counts=audience_counts,
+            stage_counts = self._fetch_program_stage_counts(conn, int(program_id))
+        program = dict(current.get("program") or {})
+        member_count = sum(int(item.get("total") or 0) for item in stage_counts)
+        return _program_data_overview_payload(
+            program=program,
+            member_count=member_count,
             stage_counts=stage_counts,
-            profile_counts=profile_counts,
-            behavior_counts=behavior_counts,
-            segmentation=segmentation,
-            profile_categories=profile_categories,
         )
+
+    def get_members_payload(
+        self,
+        program_id: int,
+        *,
+        stage_key: str = "all",
+        page: int = 1,
+        page_size: int = 50,
+        keyword: str | None = None,
+    ) -> dict[str, Any]:
+        current = self.get_program_with_summary(int(program_id))
+        if not current:
+            raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+        normalized_stage = _clean_text(stage_key) or "all"
+        normalized_page = max(int(page or 1), 1)
+        normalized_page_size = min(max(int(page_size or 50), 1), 200)
+        offset = (normalized_page - 1) * normalized_page_size
+        with self._engine.connect() as conn:
+            total = self._count_program_members(
+                conn,
+                int(program_id),
+                stage_key=normalized_stage,
+                keyword=keyword,
+            )
+            rows = self._fetch_program_members(
+                conn,
+                int(program_id),
+                stage_key=normalized_stage,
+                limit=normalized_page_size,
+                offset=offset,
+                keyword=keyword,
+            )
+        stage_label = "全部成员" if normalized_stage == "all" else _program_member_stage_label(normalized_stage)
+        return {
+            "ok": True,
+            "route_owner": "ai_crm_next",
+            "source_status": "next_postgres",
+            "program_id": int(program_id),
+            "program": dict(current.get("program") or {}),
+            "stage_key": normalized_stage,
+            "stage_label": stage_label,
+            "total": total,
+            "page": normalized_page,
+            "page_size": normalized_page_size,
+            "items": rows,
+            "pagination": {
+                "total": total,
+                "page": normalized_page,
+                "page_size": normalized_page_size,
+                "has_prev": normalized_page > 1,
+                "has_next": offset + normalized_page_size < total,
+                "prev_url": _program_members_url(int(program_id), normalized_stage, page=max(normalized_page - 1, 1), page_size=normalized_page_size)
+                if normalized_page > 1
+                else "",
+                "next_url": _program_members_url(int(program_id), normalized_stage, page=normalized_page + 1, page_size=normalized_page_size)
+                if offset + normalized_page_size < total
+                else "",
+            },
+        }
 
     def publish_program(self, program_id: int, *, operator_id: str, scope: str) -> dict[str, Any]:
         payload = self.get_setup_payload(int(program_id), step="publish")
@@ -1800,6 +1896,7 @@ class PostgresAutomationProgramRepository:
                     f"""
                     SELECT
                         p.*,
+                        COALESCE(members.member_count, 0) AS member_count,
                         COALESCE(bindings.channel_count, 0) AS channel_count,
                         COALESCE(workflows.workflow_count, 0) AS workflow_count,
                         COALESCE(operation_tasks.operation_task_count, 0) AS operation_task_count,
@@ -1810,6 +1907,12 @@ class PostgresAutomationProgramRepository:
                         segmentation_block.payload_json AS segmentation_payload,
                         audience_block.payload_json AS audience_payload
                     FROM automation_program p
+                    LEFT JOIN LATERAL (
+                        SELECT COUNT(*) AS member_count
+                        FROM automation_program_member pm
+                        WHERE pm.program_id = p.id
+                          AND pm.in_program = true
+                    ) members ON true
                     LEFT JOIN LATERAL (
                         SELECT COUNT(*) AS channel_count
                         FROM automation_program_channel_binding b
@@ -1908,6 +2011,150 @@ class PostgresAutomationProgramRepository:
             {"program_id": int(program_id)},
         ).mappings().all()
         return [{"key": _clean_text(row.get("key")), "total": int(row.get("total") or 0)} for row in rows]
+
+    def _fetch_program_stage_counts(self, conn: Any, program_id: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    COALESCE(NULLIF(current_stage_code, ''), current_audience_code, 'unknown') AS key,
+                    COUNT(*) AS total
+                FROM automation_program_member
+                WHERE program_id = :program_id
+                  AND in_program = true
+                GROUP BY COALESCE(NULLIF(current_stage_code, ''), current_audience_code, 'unknown')
+                ORDER BY total DESC, key ASC
+                """
+            ),
+            {"program_id": int(program_id)},
+        ).mappings().all()
+        return [{"key": _clean_text(row.get("key")) or "unknown", "total": int(row.get("total") or 0)} for row in rows]
+
+    def _program_members_keyword_sql(self, keyword: str | None) -> tuple[str, dict[str, Any]]:
+        normalized = _clean_text(keyword)
+        if not normalized:
+            return "", {}
+        return (
+            """
+              AND (
+                pm.external_contact_id ILIKE :keyword
+                OR COALESCE(ct.customer_name, '') ILIKE :keyword
+                OR COALESCE(ct.remark, '') ILIKE :keyword
+                OR COALESCE(p.mobile, '') ILIKE :keyword
+                OR COALESCE(am.phone, '') ILIKE :keyword
+              )
+            """,
+            {"keyword": f"%{normalized}%"},
+        )
+
+    def _program_members_join_sql(self) -> str:
+        return """
+            LEFT JOIN contacts ct
+              ON ct.external_userid = pm.external_contact_id
+            LEFT JOIN LATERAL (
+                SELECT id, phone, master_customer_id
+                FROM automation_member am
+                WHERE am.external_contact_id = pm.external_contact_id
+                ORDER BY am.updated_at DESC, am.id DESC
+                LIMIT 1
+            ) am ON true
+            LEFT JOIN people p
+              ON p.id = COALESCE(pm.master_customer_id, am.master_customer_id)
+            LEFT JOIN automation_channel ch
+              ON ch.id = pm.latest_source_channel_id
+        """
+
+    def _count_program_members(self, conn: Any, program_id: int, *, stage_key: str, keyword: str | None = None) -> int:
+        keyword_sql, keyword_params = self._program_members_keyword_sql(keyword)
+        row = conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM automation_program_member pm
+                {self._program_members_join_sql()}
+                WHERE pm.program_id = :program_id
+                  AND pm.in_program = true
+                  AND (
+                    :stage_key = 'all'
+                    OR COALESCE(NULLIF(pm.current_stage_code, ''), pm.current_audience_code, 'unknown') = :stage_key
+                  )
+                {keyword_sql}
+                """
+            ),
+            {"program_id": int(program_id), "stage_key": _clean_text(stage_key) or "all", **keyword_params},
+        ).mappings().first()
+        return int((row or {}).get("total") or 0)
+
+    def _fetch_program_members(
+        self,
+        conn: Any,
+        program_id: int,
+        *,
+        stage_key: str,
+        limit: int,
+        offset: int,
+        keyword: str | None = None,
+    ) -> list[dict[str, Any]]:
+        keyword_sql, keyword_params = self._program_members_keyword_sql(keyword)
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT
+                    pm.id AS program_member_id,
+                    pm.program_id,
+                    pm.external_contact_id,
+                    COALESCE(NULLIF(pm.current_stage_code, ''), pm.current_audience_code, 'unknown') AS stage_key,
+                    pm.current_audience_code,
+                    pm.pool_entered_at,
+                    pm.current_stage_entered_at,
+                    pm.latest_source_channel_id,
+                    ch.channel_name AS latest_source_channel_name,
+                    pm.updated_at,
+                    COALESCE(NULLIF(ct.customer_name, ''), NULLIF(ct.remark, ''), pm.external_contact_id) AS customer_name,
+                    COALESCE(NULLIF(p.mobile, ''), NULLIF(am.phone, '')) AS phone
+                FROM automation_program_member pm
+                {self._program_members_join_sql()}
+                WHERE pm.program_id = :program_id
+                  AND pm.in_program = true
+                  AND (
+                    :stage_key = 'all'
+                    OR COALESCE(NULLIF(pm.current_stage_code, ''), pm.current_audience_code, 'unknown') = :stage_key
+                  )
+                {keyword_sql}
+                ORDER BY pm.updated_at DESC, pm.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {
+                "program_id": int(program_id),
+                "stage_key": _clean_text(stage_key) or "all",
+                "limit": int(limit),
+                "offset": int(offset),
+                **keyword_params,
+            },
+        ).mappings().all()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            stage = _clean_text(item.get("stage_key")) or "unknown"
+            items.append(
+                {
+                    "program_member_id": int(item.get("program_member_id") or 0),
+                    "program_id": int(item.get("program_id") or 0),
+                    "external_contact_id": _clean_text(item.get("external_contact_id")),
+                    "customer_name": _clean_text(item.get("customer_name")),
+                    "phone": _clean_text(item.get("phone")),
+                    "stage_key": stage,
+                    "stage_label": _program_member_stage_label(stage),
+                    "current_audience_code": _clean_text(item.get("current_audience_code")),
+                    "pool_entered_at": _stringify_datetime(item.get("pool_entered_at")),
+                    "current_stage_entered_at": _stringify_datetime(item.get("current_stage_entered_at")),
+                    "latest_source_channel_id": int(item.get("latest_source_channel_id") or 0) or None,
+                    "latest_source_channel_name": _clean_text(item.get("latest_source_channel_name")),
+                    "updated_at": _stringify_datetime(item.get("updated_at")),
+                }
+            )
+        return items
 
     def _fetch_segment_key_counts(self, conn: Any, program_id: int, key: str) -> list[dict[str, Any]]:
         if key not in {"profile_segment_key", "behavior_tier_key"}:
@@ -2468,6 +2715,7 @@ class PostgresAutomationProgramRepository:
         summary = _program_summary(
             program,
             {
+                "member_count": row.get("member_count"),
                 "channel_count": row.get("channel_count"),
                 "workflow_count": row.get("operation_task_count") or row.get("workflow_count"),
                 "latest_execution_at": row.get("latest_execution_at"),
@@ -2548,16 +2796,62 @@ def get_automation_program_overview_payload(program_id: int) -> dict[str, Any]:
         raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
     program = deepcopy(_FIXTURE_PROGRAM)
     program["id"] = int(program_id)
-    return _overview_payload_from_parts(
+    return _program_data_overview_payload(
         program=program,
-        summary=_fixture_summary(),
-        audience_counts=[{"key": "pending_questionnaire", "total": 1}],
-        stage_counts=[{"key": "pending_questionnaire", "total": 1}],
-        profile_counts=[{"key": "unknown", "total": 1}],
-        behavior_counts=[{"key": "unknown", "total": 1}],
-        segmentation=_FIXTURE_SEGMENTATION_BY_PROGRAM.get(int(program_id), {}),
-        profile_categories=[],
+        member_count=0,
+        stage_counts=[],
+        source_status="next_local_preview",
     )
+
+
+def get_automation_program_members_payload(
+    program_id: int,
+    *,
+    stage_key: str = "all",
+    page: int = 1,
+    page_size: int = 50,
+    keyword: str | None = None,
+) -> dict[str, Any]:
+    if production_data_ready():
+        try:
+            return _build_postgres_repository().get_members_payload(
+                int(program_id),
+                stage_key=stage_key,
+                page=page,
+                page_size=page_size,
+                keyword=keyword,
+            )
+        except Exception as exc:  # pragma: no cover - exercised with unavailable production DBs.
+            raise AutomationProgramDataUnavailable(str(exc)) from exc
+    if int(program_id) != int(_FIXTURE_PROGRAM["id"]):
+        raise AutomationProgramDataUnavailable(f"automation program {program_id} not found")
+    normalized_stage = _clean_text(stage_key) or "all"
+    normalized_page = max(int(page or 1), 1)
+    normalized_page_size = min(max(int(page_size or 50), 1), 200)
+    program = deepcopy(_FIXTURE_PROGRAM)
+    program["id"] = int(program_id)
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "source_status": "next_local_preview",
+        "program_id": int(program_id),
+        "program": program,
+        "stage_key": normalized_stage,
+        "stage_label": "全部成员" if normalized_stage == "all" else _program_member_stage_label(normalized_stage),
+        "total": 0,
+        "page": normalized_page,
+        "page_size": normalized_page_size,
+        "items": [],
+        "pagination": {
+            "total": 0,
+            "page": normalized_page,
+            "page_size": normalized_page_size,
+            "has_prev": False,
+            "has_next": False,
+            "prev_url": "",
+            "next_url": "",
+        },
+    }
 
 
 def copy_automation_program(program_id: int, *, operator_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:

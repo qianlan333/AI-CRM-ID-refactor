@@ -58,6 +58,9 @@ from .programs import (
     create_automation_program_operation_task,
     create_automation_program_operation_task_group,
     delete_automation_program_operation_task_group,
+    get_automation_program_members_payload,
+    get_automation_program_overview_payload,
+    list_automation_programs_payload,
     list_automation_program_operation_tasks,
     preview_automation_program_operation_task_audience,
     publish_automation_program_entry,
@@ -190,6 +193,10 @@ _CUSTOMER_WEBHOOK_HEADERS = {
     "X-AICRM-WeCom-Send-Executed": "false",
 }
 _AUTOMATION_READ_MODEL_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+}
+_AUTOMATION_PROGRAM_HEADERS = {
     "X-AICRM-Route-Owner": "ai_crm_next",
     "X-AICRM-Fallback-Used": "false",
 }
@@ -864,6 +871,43 @@ def automation_pools() -> JSONResponse:
         return JSONResponse(AutomationPoolReadModel().execute(), headers=_AUTOMATION_READ_MODEL_HEADERS)
     except Exception as exc:
         _raise_http(exc)
+
+
+@router.get("/api/admin/automation-conversion/programs")
+def automation_programs() -> JSONResponse:
+    try:
+        return JSONResponse(list_automation_programs_payload(), headers=_AUTOMATION_PROGRAM_HEADERS)
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/api/admin/automation-conversion/programs/{program_id}/overview")
+def automation_program_data_overview(program_id: int) -> JSONResponse:
+    try:
+        return JSONResponse(get_automation_program_overview_payload(int(program_id)), headers=_AUTOMATION_PROGRAM_HEADERS)
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/api/admin/automation-conversion/programs/{program_id}/members")
+def automation_program_members(
+    program_id: int,
+    stage: str = "all",
+    page: int = 1,
+    page_size: int = 50,
+    keyword: str | None = None,
+) -> JSONResponse:
+    try:
+        payload = get_automation_program_members_payload(
+            int(program_id),
+            stage_key=stage,
+            page=page,
+            page_size=page_size,
+            keyword=keyword,
+        )
+        return JSONResponse(payload, headers=_AUTOMATION_PROGRAM_HEADERS)
+    except AutomationProgramDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(
