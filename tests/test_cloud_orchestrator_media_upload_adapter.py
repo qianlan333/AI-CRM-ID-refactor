@@ -20,11 +20,37 @@ def _client(monkeypatch) -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
+def _patch_legacy_app_context(monkeypatch) -> dict[str, bool]:
+    context_state = {"entered": False, "active": False}
+
+    class FakeAppContext:
+        def __enter__(self):
+            context_state["entered"] = True
+            context_state["active"] = True
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            context_state["active"] = False
+            return False
+
+    class FakeApp:
+        def app_context(self) -> FakeAppContext:
+            return FakeAppContext()
+
+    monkeypatch.setattr(
+        "aicrm_next.integration_gateway.legacy_flask_facade._legacy_app",
+        lambda: FakeApp(),
+    )
+    return context_state
+
+
 def test_cloud_orchestrator_media_upload_returns_real_wecom_media_id(monkeypatch):
     uploaded: dict[str, object] = {}
+    context_state = _patch_legacy_app_context(monkeypatch)
 
     class FakeClient:
         def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+            assert context_state["active"] is True
             uploaded.update({"file_name": file_name, "file_bytes": file_bytes, "content_type": content_type})
             return "media-real-cloud-001"
 
@@ -62,6 +88,7 @@ def test_cloud_orchestrator_media_upload_returns_real_wecom_media_id(monkeypatch
     assert payload["side_effect_plan"]["adapter_mode"] == "production"
     assert payload["adapter_result"]["side_effect_executed"] is True
     assert uploaded == {"file_name": "probe.png", "file_bytes": PNG_BYTES, "content_type": "image/png"}
+    assert context_state["entered"] is True
 
 
 def test_cloud_orchestrator_media_upload_postgres_mode_defaults_to_real_upload(monkeypatch):
@@ -71,9 +98,11 @@ def test_cloud_orchestrator_media_upload_postgres_mode_defaults_to_real_upload(m
     monkeypatch.delenv("FLASK_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_MODE", raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:5432/aicrm")
+    context_state = _patch_legacy_app_context(monkeypatch)
 
     class FakeClient:
         def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+            assert context_state["active"] is True
             return "media-real-postgres-default"
 
     monkeypatch.setattr(
@@ -90,6 +119,7 @@ def test_cloud_orchestrator_media_upload_postgres_mode_defaults_to_real_upload(m
     assert payload["adapter_mode"] == "production"
     assert payload["media_id"] == "media-real-postgres-default"
     assert payload["dry_run"] is False
+    assert context_state["entered"] is True
 
 
 def test_cloud_orchestrator_media_upload_fake_mode_returns_usable_media_id(monkeypatch):
@@ -110,6 +140,8 @@ def test_cloud_orchestrator_media_upload_fake_mode_returns_usable_media_id(monke
 
 
 def test_cloud_orchestrator_media_upload_wecom_failure_is_controlled_502(monkeypatch):
+    _patch_legacy_app_context(monkeypatch)
+
     class FailingClient:
         def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
             raise RuntimeError("token expired")
