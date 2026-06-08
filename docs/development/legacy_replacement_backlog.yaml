@@ -2796,7 +2796,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "route owner drift guard"]
-    notes: "Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members."
+    notes: "Next exact readonly/write-preview routes only; production_compat fallback for legacy automation members has been removed and must not be restored."
   - id: "LRB-128"
     route_pattern: "/api/customer-automation*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]

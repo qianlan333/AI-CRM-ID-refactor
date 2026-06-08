@@ -1605,7 +1605,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members.
+    notes: Next exact readonly/write-preview routes only; production_compat fallback for legacy automation members has been removed and must not be restored.
   - route_pattern: /api/customer-automation*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
