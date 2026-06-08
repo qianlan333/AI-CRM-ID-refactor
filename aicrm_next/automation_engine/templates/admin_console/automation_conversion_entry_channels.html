@@ -1,8 +1,8 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
+<link rel="stylesheet" href="/static/automation-engine/admin_console/automation_conversion_workspace.css">
+<link rel="stylesheet" href="/static/automation-engine/admin_console/channel_admission_pages.css">
 {% endblock %}
 
 {% block content %}
@@ -101,5 +101,5 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}"></script>
+<script defer src="/static/automation-engine/admin_console/channel_admission_pages.js"></script>
 {% endblock %}

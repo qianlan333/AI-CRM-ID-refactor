@@ -11,15 +11,18 @@ from aicrm_next.send_content.dto import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "aicrm_next" / "frontend_compat"
+AUTOMATION = ROOT / "aicrm_next" / "automation_engine"
 STATIC = FRONTEND / "static" / "admin_console"
 TEMPLATES = FRONTEND / "templates" / "admin_console"
+AUTOMATION_STATIC = AUTOMATION / "static" / "admin_console"
+AUTOMATION_TEMPLATES = AUTOMATION / "templates" / "admin_console"
 DOC = ROOT / "docs" / "migration" / "send_content_next_surface_inventory.md"
 
 
 SURFACES = {
     "automation_operation": [
-        TEMPLATES / "_automation_operation_orchestration_panel.html",
-        STATIC / "automation_operation_orchestration_panel.js",
+        AUTOMATION_TEMPLATES / "_automation_operation_orchestration_panel.html",
+        AUTOMATION_STATIC / "automation_operation_orchestration_panel.js",
     ],
     "hxc_dashboard": [TEMPLATES / "hxc_dashboard.html"],
     "channel_welcome": [

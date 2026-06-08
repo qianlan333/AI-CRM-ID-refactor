@@ -403,7 +403,7 @@ def test_questionnaire_new_page_renders_editor_shell(monkeypatch):
 
 
 def test_automation_conversion_page_uses_next_program_repository_without_fixture_repo(monkeypatch):
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+    import aicrm_next.automation_engine.admin_pages as admin_pages
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -411,7 +411,7 @@ def test_automation_conversion_page_uses_next_program_repository_without_fixture
     monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
     monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "list_automation_programs_payload",
         lambda: {
             "ok": True,
@@ -450,7 +450,7 @@ def test_automation_conversion_page_uses_next_program_repository_without_fixture
 
 
 def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatch):
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+    import aicrm_next.automation_engine.admin_pages as admin_pages
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -473,9 +473,9 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
             "publish_status_label": "入口已发布",
         },
     }
-    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(admin_pages, "get_automation_program_with_summary", lambda program_id: program_data)
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "get_automation_program_overview_payload",
         lambda program_id: {
             **program_data,
@@ -512,7 +512,7 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
 
 
 def test_automation_program_setup_steps_render_configured_data(monkeypatch):
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+    import aicrm_next.automation_engine.admin_pages as admin_pages
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -538,7 +538,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
     setup_payload = {
         **program_data,
         "step": "basic",
-        "steps": legacy_routes.SETUP_STEPS,
+        "steps": admin_pages.SETUP_STEPS,
         "is_default_program": False,
         "basic": {},
         "entry_channel": {"qrcode": {"channel_name": "默认渠道二维码"}},
@@ -703,9 +703,9 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
         },
     }
 
-    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(admin_pages, "get_automation_program_with_summary", lambda program_id: program_data)
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "get_automation_program_setup_payload",
         lambda program_id, *, step="basic": {**setup_payload, "step": step},
     )
@@ -747,7 +747,7 @@ def test_automation_program_setup_steps_render_configured_data(monkeypatch):
 
 
 def test_automation_program_entry_channels_page_uses_next_binding_payload(monkeypatch):
-    from aicrm_next.frontend_compat import legacy_routes
+    import aicrm_next.automation_engine.admin_pages as admin_pages
 
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", raising=False)
@@ -764,9 +764,9 @@ def test_automation_program_entry_channels_page_uses_next_binding_payload(monkey
         },
         "summary": {"channel_count": 2, "workflow_count": 1},
     }
-    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(admin_pages, "get_automation_program_with_summary", lambda program_id: program_data)
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "list_program_channel_bindings_resource",
         lambda program_id: [
             {
@@ -804,7 +804,7 @@ def test_automation_program_entry_channels_page_uses_next_binding_payload(monkey
         ],
     )
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "list_program_entry_candidate_channels",
         lambda program_id: [
             {

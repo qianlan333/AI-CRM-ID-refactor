@@ -178,7 +178,7 @@ entries:
     rollback_path: "Do not restore production compatibility runtime; rollback requires an explicit gated adapter PR."
     delete_condition: "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
     recommended_verification: ["tools/check_next_production_cutover_readiness.py", "read-model parity check", "admin/browser smoke for the current page or API", "legacy fallback rollback check"]
-    notes: "Admin page is Next frontend_compat; write/runtime actions remain guarded separately."
+    notes: "Automation project pages are served by aicrm_next.automation_engine.admin_pages; group ops remains frontend_compat pending P2-12D; write/runtime actions remain guarded separately."
   - id: "LRB-009"
     route_pattern: "/admin/automation-conversion/{path:path}"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]

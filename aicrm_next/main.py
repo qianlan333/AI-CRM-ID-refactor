@@ -14,6 +14,7 @@ from .admin_shell.routes import router as admin_shell_router
 from .admin_auth import reset_admin_auth_fixture_state
 from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
+from .automation_engine.admin_pages import router as automation_admin_pages_router
 from .automation_engine.api import router as automation_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
@@ -69,6 +70,7 @@ from .questionnaire.h5_write import reset_questionnaire_h5_write_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 _GROUP_OPS_DIR = Path(__file__).resolve().parent / "automation_engine" / "group_ops"
+_AUTOMATION_ENGINE_DIR = Path(__file__).resolve().parent / "automation_engine"
 
 
 def create_app() -> FastAPI:
@@ -126,6 +128,11 @@ def create_app() -> FastAPI:
         name="group_ops_static",
     )
     app.mount(
+        "/static/automation-engine",
+        StaticFiles(directory=_AUTOMATION_ENGINE_DIR / "static"),
+        name="automation_engine_static",
+    )
+    app.mount(
         "/static",
         StaticFiles(directory=_FRONTEND_COMPAT_DIR / "static"),
         name="static",
@@ -156,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(radar_links_router)
     app.include_router(auth_wecom_router)
     app.include_router(group_ops_admin_pages_router)
+    app.include_router(automation_admin_pages_router)
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)
