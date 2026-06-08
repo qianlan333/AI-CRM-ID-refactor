@@ -11,18 +11,27 @@ from scripts.check_no_new_legacy import (
     check_automation_member_actions_next_safe_mode,
     check_automation_overview_pools_next_read_model,
     check_automation_workspace_runtime_next_safe_mode,
+    check_ai_assist_external_campaigns_native,
+    check_channel_identity_bridge_native,
     check_cloud_orchestrator_media_upload_closeout_lock,
+    check_cloud_orchestrator_media_upload_native_client,
+    check_cloud_orchestrator_repository_time_helpers_native,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
+    check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
+    check_group_ops_scheduler_duplicate_checker_native,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
+    check_public_product_h5_pay_oauth_native,
+    check_public_product_h5_pay_sidebar_context_native,
     check_public_product_pay_closeout_lock,
+    check_questionnaire_adapters_native_oauth,
     check_route_progress_docs_do_not_drift,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -93,6 +102,148 @@ def test_group_ops_message_content_guard_accepts_minimal_native_files(tmp_path: 
     _write_group_ops_message_content_files(tmp_path)
 
     assert check_group_ops_message_content_native(tmp_path) == []
+
+
+def _write_group_ops_material_resolver_files(
+    root: Path,
+    *,
+    gateway: str = (
+        "from .material_resolver import build_group_ops_material_resolver\n"
+        "def resolve_group_ops_content_package_materials(content_package):\n"
+        "    return build_group_ops_material_resolver().resolve_content_package_materials(content_package)\n"
+    ),
+    resolver: str = (
+        "class GroupOpsMaterialResolver:\n"
+        "    def resolve_content_package_materials(self, content_package):\n"
+        "        return [], []\n"
+        "def build_group_ops_material_resolver():\n"
+        "    return GroupOpsMaterialResolver()\n"
+    ),
+) -> None:
+    gateway_path = root / "aicrm_next/automation_engine/group_ops/integration_gateway.py"
+    resolver_path = root / "aicrm_next/automation_engine/group_ops/material_resolver.py"
+    gateway_path.parent.mkdir(parents=True, exist_ok=True)
+    gateway_path.write_text(gateway, encoding="utf-8")
+    resolver_path.write_text(resolver, encoding="utf-8")
+
+
+def test_group_ops_material_checker_flags_gateway_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        gateway="from wecom_ability_service.domains import image_library\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_gateway_legacy_import" in codes
+
+
+def test_group_ops_material_checker_flags_resolver_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        resolver="from wecom_ability_service.domains import attachment_library\nclass GroupOpsMaterialResolver: pass\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_resolver_legacy_import" in codes
+
+
+def test_group_ops_material_checker_flags_direct_http(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(
+        tmp_path,
+        resolver=(
+            "class GroupOpsMaterialResolver:\n"
+            "    def resolve_content_package_materials(self, content_package):\n"
+            "        requests.get('https://example.invalid')\n"
+            "def build_group_ops_material_resolver():\n"
+            "    return GroupOpsMaterialResolver()\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_group_ops_material_resolver_native(tmp_path)}
+
+    assert "group_ops_material_resolver_direct_http" in codes
+
+
+def test_group_ops_material_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_group_ops_material_resolver_files(tmp_path)
+
+    assert check_group_ops_material_resolver_native(tmp_path) == []
+
+
+def _write_group_ops_scheduler_duplicate_files(
+    root: Path,
+    *,
+    scheduler: str = (
+        "from typing import Callable\n"
+        "from .duplicate_checker import build_group_ops_duplicate_checker\n"
+        "class GroupOpsDueScheduler:\n"
+        "    def __init__(self, *, duplicate_checker: Callable[[str], bool] | None = None):\n"
+        "        self._duplicate_checker = duplicate_checker or build_group_ops_duplicate_checker().exists\n"
+    ),
+    duplicate_checker: str = (
+        "class GroupOpsDuplicateChecker:\n"
+        "    def exists(self, idempotency_key):\n"
+        "        return False\n"
+        "def build_group_ops_duplicate_checker():\n"
+        "    return GroupOpsDuplicateChecker()\n"
+    ),
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+) -> None:
+    scheduler_path = root / "aicrm_next/automation_engine/group_ops/scheduler.py"
+    duplicate_checker_path = root / "aicrm_next/automation_engine/group_ops/duplicate_checker.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    scheduler_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    scheduler_path.write_text(scheduler, encoding="utf-8")
+    duplicate_checker_path.write_text(duplicate_checker, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+
+
+def test_group_ops_scheduler_checker_flags_legacy_broadcast_service(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        scheduler=(
+            "from typing import Callable\n"
+            "from wecom_ability_service.domains.broadcast_jobs import repo\n"
+            "class GroupOpsDueScheduler:\n"
+            "    def __init__(self, *, duplicate_checker: Callable[[str], bool] | None = None):\n"
+            "        self._duplicate_checker = duplicate_checker or repo.exists\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_scheduler_legacy_duplicate_checker" in codes
+
+
+def test_group_ops_duplicate_checker_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        duplicate_checker="from wecom_ability_service.domains.broadcast_jobs import repo\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_duplicate_checker_legacy_import" in codes
+
+
+def test_group_ops_scheduler_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/automation_engine/group_ops/scheduler.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_scheduler_stale_wecom_allowlist" in codes
+
+
+def test_group_ops_scheduler_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(tmp_path)
+
+    assert check_group_ops_scheduler_duplicate_checker_native(tmp_path) == []
 
 
 def _write_wecom_group_adapter_files(
@@ -171,6 +322,130 @@ def test_wecom_group_adapter_guard_accepts_minimal_native_files(tmp_path: Path) 
     _write_wecom_group_adapter_files(tmp_path)
 
     assert check_wecom_group_adapter_native(tmp_path) == []
+
+
+def _write_ai_external_campaign_files(
+    root: Path,
+    *,
+    service_text: str = "from .external_campaigns_repo import build_external_campaign_repository\n",
+    repo_text: str = "from aicrm_next.shared.postgres_connection import get_db\n",
+    registry_text: str | None = None,
+    manifest_text: str | None = None,
+) -> None:
+    service_path = root / "aicrm_next/ai_assist/external_campaigns.py"
+    repo_path = root / "aicrm_next/ai_assist/external_campaigns_repo.py"
+    registry_path = root / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest_path = root / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    service_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    service_path.write_text(service_text, encoding="utf-8")
+    repo_path.write_text(repo_text, encoding="utf-8")
+    registry_path.write_text(
+        registry_text
+        if registry_text is not None
+        else (
+            "routes:\n"
+            "  - route_id: ai_assist_external_campaigns_create\n"
+            "    path_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    runtime_owner: next_command\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+            "  - route_id: ai_assist_external_campaigns_status\n"
+            "    path_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    runtime_owner: next_native\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        manifest_text
+        if manifest_text is not None
+        else (
+            "routes:\n"
+            "  - route_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    current_runtime_owner: next_command\n"
+            "    production_behavior: next_command\n"
+            "    legacy_fallback_allowed: false\n"
+            "    notes: Next create route, no outbound send.\n"
+            "  - route_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    current_runtime_owner: next\n"
+            "    production_behavior: next_exact\n"
+            "    legacy_fallback_allowed: false\n"
+            "    notes: Next readonly status route, no side effects.\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_ai_external_campaign_guard_flags_legacy_orchestration(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        service_text=(
+            "from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\n"
+            "from wecom_ability_service.domains.campaigns import service as campaign_service\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_legacy_import" in codes
+    assert "ai_external_campaigns_legacy_service_orchestration" in codes
+
+
+def test_ai_external_campaign_guard_flags_repo_legacy_import(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        repo_text="from flask import current_app\nfrom wecom_ability_service.db import get_db\n",
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_repo_legacy_import" in codes
+
+
+def test_ai_external_campaign_guard_flags_registry_not_locked(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        registry_text=(
+            "routes:\n"
+            "  - route_id: ai_assist_external_campaigns_create\n"
+            "    path_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    runtime_owner: next_command\n"
+            "    legacy_fallback_allowed: true\n"
+            "    legacy_source: legacy_flask_facade\n"
+            "    delete_status: active\n"
+            "    replacement_status: validating\n"
+            "  - route_id: ai_assist_external_campaigns_status\n"
+            "    path_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    runtime_owner: next_native\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_registry_not_locked" in codes
+
+
+def test_ai_external_campaign_guard_accepts_minimal_native_files(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(tmp_path)
+
+    assert check_ai_assist_external_campaigns_native(tmp_path) == []
 
 
 def _write_route_progress_docs(
@@ -697,6 +972,402 @@ def test_cloud_orchestrator_media_upload_closeout_guard_blocks_rollback(tmp_path
     assert "cloud_media_upload_registry_rollback_lifecycle" in codes
     assert "cloud_media_upload_manifest_legacy_allowed" in codes
     assert "cloud_media_upload_manifest_rollback_lifecycle" in codes
+
+
+def _write_cloud_media_native_files(
+    tmp_path: Path,
+    *,
+    media_upload: str = "from aicrm_next.integration_gateway.wecom_media_upload_client import WeComMediaUploadClientError, build_wecom_media_upload_client\n",
+    native_client: str = "class WeComMediaUploadClient:\n    pass\n",
+    adapter_test: str = "def test_native():\n    pass\n",
+    locked: bool = True,
+) -> None:
+    _write_cloud_media_upload_docs(tmp_path, locked=locked)
+    media_path = tmp_path / "aicrm_next/cloud_orchestrator/media_upload.py"
+    client_path = tmp_path / "aicrm_next/integration_gateway/wecom_media_upload_client.py"
+    test_path = tmp_path / "tests/test_cloud_orchestrator_media_upload_adapter.py"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    client_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_text(media_upload, encoding="utf-8")
+    client_path.write_text(native_client, encoding="utf-8")
+    test_path.write_text(adapter_test, encoding="utf-8")
+
+
+def test_cloud_media_checker_flags_legacy_client_in_media_upload(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(
+        tmp_path,
+        media_upload="from aicrm_next.integration_gateway.legacy_flask_facade import legacy_wecom_client_from_app\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_upload_legacy_client_import" in codes
+
+
+def test_cloud_media_checker_flags_direct_http_in_cloud_orchestrator(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path, media_upload="import requests\nrequests.post('https://example.invalid')\n")
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_upload_direct_http_client" in codes
+
+
+def test_cloud_media_checker_flags_legacy_import_in_native_client(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path, native_client="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_client_legacy_import" in codes
+
+
+def test_cloud_media_checker_flags_legacy_monkeypatch_in_tests(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(
+        tmp_path,
+        adapter_test="monkeypatch.setattr('aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app', lambda: None)\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_tests_legacy_monkeypatch" in codes
+
+
+def test_cloud_media_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path)
+
+    assert check_cloud_orchestrator_media_upload_native_client(tmp_path) == []
+
+
+def _write_cloud_time_helper_files(
+    root: Path,
+    *,
+    repository: str = "from .time_helpers import campaign_step_due_iso\n",
+    time_helper: str = (
+        'DEFAULT_SEND_TIME = "09:00"\n'
+        'DEFAULT_TIMEZONE = "Asia/Shanghai"\n'
+        "def campaign_step_due_iso(*, anchor_date, day_offset, send_time, step_timezone=DEFAULT_TIMEZONE, fallback_to_timezone_today=False):\n"
+        "    return '2026-05-30T09:00:00+08:00'\n"
+    ),
+) -> None:
+    repository_path = root / "aicrm_next/cloud_orchestrator/repository.py"
+    time_helper_path = root / "aicrm_next/cloud_orchestrator/time_helpers.py"
+    repository_path.parent.mkdir(parents=True, exist_ok=True)
+    repository_path.write_text(repository, encoding="utf-8")
+    time_helper_path.write_text(time_helper, encoding="utf-8")
+
+
+def test_cloud_repo_time_helper_checker_flags_wecom_time_helper(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        repository="from wecom_ability_service.domains.campaigns.time_helpers import campaign_step_due_iso\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_repo_legacy_time_helper_import" in codes
+
+
+def test_cloud_repo_time_helper_checker_flags_legacy_runtime_import(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        repository="from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\nfrom flask import current_app\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_repo_legacy_runtime_import" in codes
+
+
+def test_cloud_time_helper_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        time_helper='DEFAULT_SEND_TIME = "09:00"\nDEFAULT_TIMEZONE = "Asia/Shanghai"\nfrom wecom_ability_service.db import get_db\ndef campaign_step_due_iso():\n    return ""\n',
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_time_helper_legacy_import" in codes
+
+
+def test_cloud_time_helper_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(tmp_path)
+
+    assert check_cloud_orchestrator_repository_time_helpers_native(tmp_path) == []
+
+
+def _write_channel_identity_bridge_files(
+    root: Path,
+    *,
+    bridge: str = (
+        "from .identity_bridge_service import build_identity_bridge_service\n"
+        "def sync_external_contact_identity_for_event(event, *, corp_id):\n"
+        "    return build_identity_bridge_service().sync_external_contact_identity_for_event(event, corp_id=corp_id)\n"
+    ),
+    repo: str = "class IdentityBridgeRepository: pass\n",
+    service: str = "class IdentityBridgeService: pass\ndef build_identity_bridge_service():\n    return IdentityBridgeService()\n",
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+    test_file: str = "def test_native():\n    assert True\n",
+) -> None:
+    bridge_path = root / "aicrm_next/channel_entry/identity_bridge.py"
+    repo_path = root / "aicrm_next/channel_entry/identity_bridge_repo.py"
+    service_path = root / "aicrm_next/channel_entry/identity_bridge_service.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    test_path = root / "tests/test_next_channel_identity_bridge.py"
+    bridge_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    bridge_path.write_text(bridge, encoding="utf-8")
+    repo_path.write_text(repo, encoding="utf-8")
+    service_path.write_text(service, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+    test_path.write_text(test_file, encoding="utf-8")
+
+
+def test_channel_identity_checker_flags_bridge_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        bridge=(
+            "from wecom_ability_service.application.identity_contact.commands import "
+            "BindExternalContactMobileFromIdentitySourcesCommand\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_bridge_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_repo_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path, repo="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_repo_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_service_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path, service="from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\n")
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_service_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_stale_wecom_allowlist(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/channel_entry/identity_bridge.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_stale_wecom_allowlist" in codes
+
+
+def test_channel_identity_checker_flags_legacy_test_monkeypatch(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        test_file="monkeypatch.setattr('aicrm_next.channel_entry.identity_bridge._legacy_app', lambda: app)\n",
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_test_legacy_monkeypatch" in codes
+
+
+def test_channel_identity_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path)
+
+    assert check_channel_identity_bridge_native(tmp_path) == []
+
+
+def _write_questionnaire_oauth_files(
+    root: Path,
+    *,
+    adapters: str = (
+        "from .wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n"
+        "class WeChatOAuthAdapter:\n"
+        "    def __init__(self, mode='fake', oauth_client_factory=None):\n"
+        "        self._oauth_client_factory = oauth_client_factory\n"
+    ),
+    client: str = "class WeChatOAuthClient: pass\nclass WeChatOAuthClientError(Exception): pass\n",
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+) -> None:
+    adapters_path = root / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    client_path = root / "aicrm_next/integration_gateway/wechat_oauth_client.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    adapters_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    adapters_path.write_text(adapters, encoding="utf-8")
+    client_path.write_text(client, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+
+
+def test_questionnaire_adapters_checker_flags_legacy_wechat_oauth_import(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(
+        tmp_path,
+        adapters="from wecom_ability_service.infra import wechat_oauth\nexchange = wechat_oauth.exchange_wechat_oauth_code\n",
+    )
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_adapters_legacy_oauth_import" in codes
+
+
+def test_questionnaire_oauth_client_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(tmp_path, client="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_oauth_client_legacy_import" in codes
+
+
+def test_questionnaire_adapters_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/integration_gateway/questionnaire_adapters.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_adapters_stale_wecom_allowlist" in codes
+
+
+def test_questionnaire_adapters_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(tmp_path)
+
+    assert check_questionnaire_adapters_native_oauth(tmp_path) == []
+
+
+def _write_h5_pay_oauth_file(
+    root: Path,
+    *,
+    source: str = (
+        "from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n"
+        "from wecom_ability_service.infra.signed_context import append_ctx_query\n"
+        "_OAUTH_CLIENT_FACTORY = build_wechat_oauth_client\n"
+        "def set_h5_wechat_pay_oauth_client_factory(factory):\n"
+        "    global _OAUTH_CLIENT_FACTORY\n"
+        "    _OAUTH_CLIENT_FACTORY = factory\n"
+    ),
+) -> None:
+    h5_pay_path = root / "aicrm_next/public_product/h5_wechat_pay.py"
+    h5_pay_path.parent.mkdir(parents=True, exist_ok=True)
+    h5_pay_path.write_text(source, encoding="utf-8")
+
+
+def test_public_product_h5_pay_oauth_checker_flags_legacy_oauth_import(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source="from wecom_ability_service.infra.wechat_oauth import exchange_wechat_oauth_code\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_oauth_import" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_requires_native_client(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source=(
+            "_OAUTH_CLIENT_FACTORY = object\n"
+            "def set_h5_wechat_pay_oauth_client_factory(factory):\n"
+            "    pass\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_oauth_native_client_missing" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_requires_injection(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source="from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_oauth_injection_missing" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_allows_remaining_signed_context_imports(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(tmp_path)
+
+    assert check_public_product_h5_pay_oauth_native(tmp_path) == []
+
+
+def _write_h5_pay_sidebar_context_files(
+    root: Path,
+    *,
+    h5_source: str = (
+        "from .signed_context import append_ctx_query, load_sidebar_product_context_token\n"
+        "from .sidebar_order_context import resolve_sidebar_order_context\n"
+    ),
+    signed_source: str = "def load_sidebar_product_context_token(token):\n    return {'ok': False, 'status': 'missing', 'context': {}}\n",
+    sidebar_source: str = "def resolve_sidebar_order_context(**kwargs):\n    return {}\n",
+    checker_source: str = 'WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/public_product/h5_wechat_pay.py")}\n',
+) -> None:
+    public_product_dir = root / "aicrm_next/public_product"
+    public_product_dir.mkdir(parents=True, exist_ok=True)
+    (public_product_dir / "h5_wechat_pay.py").write_text(h5_source, encoding="utf-8")
+    (public_product_dir / "signed_context.py").write_text(signed_source, encoding="utf-8")
+    (public_product_dir / "sidebar_order_context.py").write_text(sidebar_source, encoding="utf-8")
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.write_text(checker_source, encoding="utf-8")
+
+
+def test_public_product_h5_pay_context_checker_flags_legacy_signed_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from wecom_ability_service.infra.signed_context import append_ctx_query\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_signed_context_import" in codes
+
+
+def test_public_product_h5_pay_context_checker_flags_legacy_sidebar_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_sidebar_context_import" in codes
+
+
+def test_public_product_signed_context_checker_flags_flask_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        signed_source="from flask import current_app\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_signed_context_legacy_import" in codes
+
+
+def test_public_product_sidebar_order_context_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        sidebar_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_sidebar_order_context_legacy_import" in codes
+
+
+def test_public_product_context_checker_accepts_native_files_with_stale_allowlist(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(tmp_path)
+
+    assert check_public_product_h5_pay_sidebar_context_native(tmp_path) == []
 
 
 def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:

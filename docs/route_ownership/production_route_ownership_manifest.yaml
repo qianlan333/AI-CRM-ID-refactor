@@ -746,7 +746,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Public questionnaire read routes use Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary; future real OAuth/token exchange enablement requires an explicit gated adapter PR.
+    notes: Public questionnaire read routes use Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary; WeChat OAuth uses Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH, fake/staging modes do not execute real OAuth, and no wecom_ability_service import remains in questionnaire adapters.
   - route_pattern: /api/h5/questionnaires/{slug}/submit
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.questionnaire
@@ -799,7 +799,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Exact OAuth start legacy rollback removed; Next OAuth adapter only with signed state, nonce, expiry, redirect allowlist, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and production real OAuth blocked by default.
+    notes: Exact OAuth start legacy rollback removed; Next OAuth adapter only with signed state, nonce, expiry, redirect allowlist, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, WeChat OAuth uses Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH with no real OAuth default, and production real OAuth blocked by default.
   - route_pattern: /api/h5/wechat/oauth/callback
     methods: [GET, OPTIONS]
     capability_owner: aicrm_next.questionnaire
@@ -813,7 +813,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Exact OAuth callback legacy rollback removed; Next OAuth adapter only with state verification, replay protection, signed questionnaire_h5_identity cookie, AuditLedger, diagnostics on failure, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and production real OAuth blocked by default.
+    notes: Exact OAuth callback legacy rollback removed; Next OAuth adapter only with state verification, replay protection, signed questionnaire_h5_identity cookie, AuditLedger, diagnostics on failure, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, production exchange/userinfo use Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH with no real OAuth default, and production real OAuth blocked by default.
   - route_pattern: /api/h5/wechat/oauth*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.questionnaire
@@ -1191,7 +1191,35 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign read/list/detail/members/steps legacy rollback removed; Next read model only; no real WeCom send, no real storage, and no automation runtime.
+    notes: Campaign read/list/detail/members/steps legacy rollback removed; Next read model only; no real WeCom send, no real storage, and no automation runtime. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
+  - route_pattern: /api/ai-assist/external/campaigns
+    methods: [POST]
+    capability_owner: aicrm_next.ai_assist
+    current_runtime_owner: next_command
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    notes: External campaign create API uses the Next external campaign repository and token guard; it creates pending_review draft campaigns only, does not start campaigns, and does not execute outbound sends.
+  - route_pattern: /api/ai-assist/external/campaigns/{campaign_code}
+    methods: [GET]
+    capability_owner: aicrm_next.ai_assist
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    notes: External campaign status API reads the current DB state through the Next external campaign repository; it has no scheduler or outbound-send side effects.
   - route_pattern: /admin/cloud-orchestrator/campaigns
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1219,7 +1247,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner.
+    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
   - route_pattern: /api/admin/cloud-orchestrator/media/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1233,7 +1261,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Legacy rollback removed; Next Cloud Orchestrator media upload adapter only; returns legacy-compatible media_id by uploading the image through the approved WeCom client gateway and reports wecom_media_upload_executed=true.
+    notes: Uses Next native WeComMediaUploadClient; no legacy_flask_facade, no _legacy_app, and no legacy_wecom_client_from_app. Production contract still returns real WeCom media_id when adapter mode is production and reports wecom_media_upload_executed=true.
   - route_pattern: /api/admin/automation-conversion/programs*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -2216,7 +2244,7 @@ routes:
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
-    notes: WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback is a release rollback, not a legacy runtime fallback.
+    notes: WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback is a release rollback, not a legacy runtime fallback. Channel entry identity bridge uses Next native identity_bridge_service/repository; no _legacy_app, no wecom_ability_service identity commands. Real WeCom detail fetch remains behind channel_entry.wecom_adapter gate. Mobile binding and questionnaire backfill are Next DB operations.
   - route_pattern: /api/wecom/events
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.channel_entry
@@ -2227,7 +2255,7 @@ routes:
     external_side_effect_risk: real_blocked
     delete_ready: false
     checker: tools/check_channel_entry_next_owner.py
-    notes: WeCom event callback is owned by aicrm_next.channel_entry and processes external-contact entry events through the Next pipeline.
+    notes: WeCom event callback is owned by aicrm_next.channel_entry and processes external-contact entry events through the Next pipeline. Channel entry identity bridge uses Next native identity_bridge_service/repository; no _legacy_app, no wecom_ability_service identity commands. Real WeCom detail fetch remains behind channel_entry.wecom_adapter gate. Mobile binding and questionnaire backfill are Next DB operations.
   - route_pattern: /api/admin/channels/runtime-diagnosis
     methods: [GET, POST]
     capability_owner: aicrm_next.channel_entry

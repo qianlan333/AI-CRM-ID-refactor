@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from aicrm_next.integration_gateway.wecom_group_contract import GroupOpsQueueGatewayContract
 from aicrm_next.shared.errors import ContractError
 
+from .duplicate_checker import build_group_ops_duplicate_checker
 from .domain import build_node_group_message_content, clean_text, derive_node_scheduled_time
 from .integration_gateway import resolve_group_ops_content_package_materials
 from .repo import GroupOpsRepository, build_group_ops_repository
@@ -73,21 +74,7 @@ def _content_hash(payload: dict[str, Any]) -> str:
 
 
 def _default_duplicate_checker(idempotency_key: str) -> bool:
-    if not idempotency_key:
-        return False
-    from aicrm_next.shared.postgres_connection import get_db
-
-    row = get_db().execute(
-        """
-        SELECT id
-        FROM broadcast_jobs
-        WHERE idempotency_key = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (idempotency_key,),
-    ).fetchone()
-    return bool(row)
+    return build_group_ops_duplicate_checker().exists(idempotency_key)
 
 
 @dataclass

@@ -35,8 +35,6 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
-    Path("aicrm_next/ai_assist/external_campaigns.py"),
-    Path("aicrm_next/cloud_orchestrator/media_upload.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
@@ -45,12 +43,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/automation_engine/group_ops/integration_gateway.py"),
-    Path("aicrm_next/automation_engine/group_ops/scheduler.py"),
-    Path("aicrm_next/ai_assist/external_campaigns.py"),
-    Path("aicrm_next/channel_entry/identity_bridge.py"),
-    Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
-    Path("aicrm_next/cloud_orchestrator/repository.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
@@ -994,6 +986,330 @@ def check_group_ops_message_content_native(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_group_ops_material_resolver_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    gateway_path = root / "aicrm_next/automation_engine/group_ops/integration_gateway.py"
+    resolver_path = root / "aicrm_next/automation_engine/group_ops/material_resolver.py"
+
+    if gateway_path.exists():
+        text = gateway_path.read_text(encoding="utf-8")
+        rel = str(gateway_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "image_library",
+            "miniprogram_library",
+            "attachment_library",
+            "legacy_flask_facade",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("group_ops_material_gateway_legacy_import", rel, marker))
+        for marker in ("requests.", "httpx"):
+            if marker in text:
+                violations.append(Violation("group_ops_material_gateway_direct_http", rel, marker))
+        if "build_group_ops_material_resolver" not in text:
+            violations.append(Violation("group_ops_material_gateway_not_native", rel, "build_group_ops_material_resolver"))
+    else:
+        violations.append(Violation("group_ops_material_gateway_not_native", str(gateway_path.relative_to(root)), "missing integration_gateway.py"))
+
+    if resolver_path.exists():
+        text = resolver_path.read_text(encoding="utf-8")
+        rel = str(resolver_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "legacy_flask_facade",
+            "flask",
+            "current_app",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("group_ops_material_resolver_legacy_import", rel, marker))
+        for marker in ("requests.", "httpx"):
+            if marker in text:
+                violations.append(Violation("group_ops_material_resolver_direct_http", rel, marker))
+        for marker in (
+            "GroupOpsMaterialResolver",
+            "resolve_content_package_materials",
+            "build_group_ops_material_resolver",
+        ):
+            if marker not in text:
+                violations.append(Violation("group_ops_material_resolver_contract_missing", rel, marker))
+    else:
+        violations.append(Violation("group_ops_material_resolver_contract_missing", str(resolver_path.relative_to(root)), "missing material_resolver.py"))
+
+    return violations
+
+
+def check_group_ops_scheduler_duplicate_checker_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    group_ops_root = root / "aicrm_next" / "automation_engine" / "group_ops"
+    scheduler_path = group_ops_root / "scheduler.py"
+    duplicate_checker_path = group_ops_root / "duplicate_checker.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+
+    legacy_markers = (
+        "wecom_ability_service",
+        "legacy_flask_facade",
+        "legacy_broadcast",
+        "broadcast_jobs.service",
+        "broadcast_jobs import repo",
+        "from wecom_ability_service",
+        "WeComClient.from_app",
+        "current_app",
+    )
+    direct_http_markers = ("requests.", "httpx")
+
+    if scheduler_path.exists():
+        text = scheduler_path.read_text(encoding="utf-8")
+        rel = str(scheduler_path.relative_to(root))
+        for marker in legacy_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_legacy_duplicate_checker", rel, marker))
+        for marker in direct_http_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_direct_http", rel, marker))
+        if "duplicate_checker: Callable[[str], bool] | None = None" not in text or "self._duplicate_checker = duplicate_checker or" not in text:
+            violations.append(
+                Violation(
+                    "group_ops_scheduler_duplicate_injection_missing",
+                    rel,
+                    "scheduler must keep injectable duplicate_checker parameter",
+                )
+            )
+    else:
+        violations.append(Violation("group_ops_scheduler_duplicate_injection_missing", str(scheduler_path.relative_to(root)), "missing scheduler.py"))
+
+    if duplicate_checker_path.exists():
+        text = duplicate_checker_path.read_text(encoding="utf-8")
+        rel = str(duplicate_checker_path.relative_to(root))
+        for marker in legacy_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_duplicate_checker_legacy_import", rel, marker))
+        for marker in direct_http_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_direct_http", rel, marker))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/automation_engine/group_ops/' + 'scheduler.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("group_ops_scheduler_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    return violations
+
+
+def check_channel_identity_bridge_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    channel_root = root / "aicrm_next" / "channel_entry"
+    bridge_path = channel_root / "identity_bridge.py"
+    repo_path = channel_root / "identity_bridge_repo.py"
+    service_path = channel_root / "identity_bridge_service.py"
+    checker_path = root / "scripts" / "check_no_new_legacy.py"
+    test_path = root / "tests" / "test_next_channel_identity_bridge.py"
+
+    if bridge_path.exists():
+        text = bridge_path.read_text(encoding="utf-8")
+        rel = str(bridge_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "_legacy_app",
+            "legacy_flask_facade",
+            "create_app",
+            "with _legacy_app",
+            "current_app",
+            "from flask",
+            "BindExternalContactMobileFromIdentitySourcesCommand",
+            "BuildExternalContactIdentityRecordCommand",
+            "backfill_questionnaire_submissions_for_mobile_binding",
+        ):
+            if marker in text:
+                violations.append(Violation("channel_identity_bridge_legacy_import", rel, marker))
+
+    if repo_path.exists():
+        text = repo_path.read_text(encoding="utf-8")
+        rel = str(repo_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("channel_identity_repo_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("channel_identity_repo_legacy_import", str(repo_path.relative_to(root)), "missing identity_bridge_repo.py"))
+
+    if service_path.exists():
+        text = service_path.read_text(encoding="utf-8")
+        rel = str(service_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "_legacy_app", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("channel_identity_service_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("channel_identity_service_legacy_import", str(service_path.relative_to(root)), "missing identity_bridge_service.py"))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/channel_entry/' + 'identity_bridge.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("channel_identity_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    if test_path.exists():
+        text = test_path.read_text(encoding="utf-8")
+        rel = str(test_path.relative_to(root))
+        for marker in (
+            "identity_bridge._legacy_app",
+            "wecom_ability_service.db",
+            "wecom_ability_service.application.identity_contact",
+        ):
+            if marker in text:
+                violations.append(Violation("channel_identity_test_legacy_monkeypatch", rel, marker))
+
+    return violations
+
+
+def check_questionnaire_adapters_native_oauth(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    adapters_path = root / "aicrm_next" / "integration_gateway" / "questionnaire_adapters.py"
+    client_path = root / "aicrm_next" / "integration_gateway" / "wechat_oauth_client.py"
+    checker_path = root / "scripts" / "check_no_new_legacy.py"
+
+    if adapters_path.exists():
+        text = adapters_path.read_text(encoding="utf-8")
+        rel = str(adapters_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "from wecom_ability_service",
+            "legacy_flask_facade",
+            "wechat_oauth.exchange_wechat_oauth_code",
+            "wechat_oauth.fetch_wechat_userinfo",
+            "current_app",
+            "from flask",
+        ):
+            if marker in text:
+                violations.append(Violation("questionnaire_adapters_legacy_oauth_import", rel, marker))
+        if not all(marker in text for marker in ("build_wechat_oauth_client", "WeChatOAuthClientError", "oauth_client_factory")):
+            violations.append(Violation("questionnaire_adapters_oauth_injection_missing", rel, "native OAuth client injection markers missing"))
+    else:
+        violations.append(Violation("questionnaire_adapters_legacy_oauth_import", str(adapters_path.relative_to(root)), "missing questionnaire_adapters.py"))
+
+    if client_path.exists():
+        text = client_path.read_text(encoding="utf-8")
+        rel = str(client_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("questionnaire_oauth_client_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("questionnaire_oauth_client_legacy_import", str(client_path.relative_to(root)), "missing wechat_oauth_client.py"))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/integration_gateway/' + 'questionnaire_adapters.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("questionnaire_adapters_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    return violations
+
+
+def check_public_product_h5_pay_oauth_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    h5_pay_path = root / "aicrm_next" / "public_product" / "h5_wechat_pay.py"
+
+    if not h5_pay_path.exists():
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_native_client_missing",
+                str(h5_pay_path.relative_to(root)),
+                "missing h5_wechat_pay.py",
+            )
+        )
+        return violations
+
+    text = h5_pay_path.read_text(encoding="utf-8")
+    rel = str(h5_pay_path.relative_to(root))
+    for marker in (
+        "wecom_ability_service.infra.wechat_oauth",
+        "exchange_wechat_oauth_code",
+        "fetch_wechat_userinfo",
+        "WeChatOAuthRequestError",
+    ):
+        if marker in text:
+            violations.append(Violation("public_product_h5_pay_legacy_oauth_import", rel, marker))
+    if not all(marker in text for marker in ("build_wechat_oauth_client", "WeChatOAuthClientError")):
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_native_client_missing",
+                rel,
+                "native WeChat OAuth client markers missing",
+            )
+        )
+    if not any(marker in text for marker in ("set_h5_wechat_pay_oauth_client_factory", "_OAUTH_CLIENT_FACTORY")):
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_injection_missing",
+                rel,
+                "native WeChat OAuth client injection seam missing",
+            )
+        )
+    return violations
+
+
+def check_public_product_h5_pay_sidebar_context_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    public_product_dir = root / "aicrm_next" / "public_product"
+    h5_pay_path = public_product_dir / "h5_wechat_pay.py"
+    signed_context_path = public_product_dir / "signed_context.py"
+    sidebar_context_path = public_product_dir / "sidebar_order_context.py"
+
+    if not h5_pay_path.exists():
+        violations.append(
+            Violation(
+                "public_product_h5_pay_context_native_import_missing",
+                str(h5_pay_path.relative_to(root)),
+                "missing h5_wechat_pay.py",
+            )
+        )
+        return violations
+
+    h5_text = h5_pay_path.read_text(encoding="utf-8")
+    h5_rel = str(h5_pay_path.relative_to(root))
+    if "wecom_ability_service.infra.signed_context" in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_legacy_signed_context_import",
+                h5_rel,
+                "wecom_ability_service.infra.signed_context",
+            )
+        )
+    if "wecom_ability_service.domains.wechat_pay.sidebar_context" in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_legacy_sidebar_context_import",
+                h5_rel,
+                "wecom_ability_service.domains.wechat_pay.sidebar_context",
+            )
+        )
+    if "from .signed_context import" not in h5_text or "from .sidebar_order_context import" not in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_context_native_import_missing",
+                h5_rel,
+                "native sidebar context imports missing",
+            )
+        )
+
+    legacy_helper_markers = ("wecom_ability_service", "flask", "current_app", "legacy_flask_facade")
+    for helper_path, code in (
+        (signed_context_path, "public_product_signed_context_legacy_import"),
+        (sidebar_context_path, "public_product_sidebar_order_context_legacy_import"),
+    ):
+        helper_rel = str(helper_path.relative_to(root))
+        if not helper_path.exists():
+            violations.append(Violation("public_product_h5_pay_context_native_import_missing", helper_rel, "native helper missing"))
+            continue
+        helper_text = helper_path.read_text(encoding="utf-8")
+        for marker in legacy_helper_markers:
+            if marker in helper_text:
+                violations.append(Violation(code, helper_rel, marker))
+
+    return violations
+
+
 def check_wecom_group_adapter_native(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     adapter_path = root / "aicrm_next/integration_gateway/wecom_group_adapter.py"
@@ -1033,6 +1349,95 @@ def check_wecom_group_adapter_native(root: Path = ROOT) -> list[Violation]:
         ):
             if marker in client_text:
                 violations.append(Violation("wecom_group_client_legacy_import", rel, marker))
+
+    return violations
+
+
+def check_ai_assist_external_campaigns_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    service_path = root / "aicrm_next/ai_assist/external_campaigns.py"
+    repo_path = root / "aicrm_next/ai_assist/external_campaigns_repo.py"
+
+    if service_path.exists():
+        service_text = service_path.read_text(encoding="utf-8")
+        rel = str(service_path.relative_to(root))
+        for marker in ("_legacy_app", "legacy_flask_facade", "forward_to_legacy_flask"):
+            if marker in service_text:
+                violations.append(Violation("ai_external_campaigns_legacy_import", rel, marker))
+        for marker in (
+            "wecom_ability_service",
+            "campaign_service",
+            "segment_service",
+            "automation_member_backfill_service",
+            "ensure_campaign_scheduled_jobs",
+        ):
+            if marker in service_text:
+                violations.append(Violation("ai_external_campaigns_legacy_service_orchestration", rel, marker))
+
+    if repo_path.exists():
+        repo_text = repo_path.read_text(encoding="utf-8")
+        rel = str(repo_path.relative_to(root))
+        for marker in (
+            "_legacy_app",
+            "legacy_flask_facade",
+            "wecom_ability_service",
+            "flask",
+            "current_app",
+            "forward_to_legacy_flask",
+        ):
+            if marker in repo_text:
+                violations.append(Violation("ai_external_campaigns_repo_legacy_import", rel, marker))
+
+    expected_registry = {
+        "/api/ai-assist/external/campaigns": ("POST",),
+        "/api/ai-assist/external/campaigns/{campaign_code}": ("GET",),
+    }
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    for route_path, methods in expected_registry.items():
+        record = _record_for_path_and_methods(registry_records, "path_pattern", route_path, methods)
+        if record is None:
+            violations.append(Violation("ai_external_campaigns_registry_not_locked", route_path, "missing registry record"))
+            continue
+        if (
+            record.get("legacy_fallback_allowed") is not False
+            or str(record.get("legacy_source") or "") != ""
+            or record.get("delete_status") != "deletion_locked"
+            or record.get("replacement_status") != "locked"
+        ):
+            violations.append(
+                Violation(
+                    "ai_external_campaigns_registry_not_locked",
+                    route_path,
+                    (
+                        f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')} "
+                        f"legacy_source={record.get('legacy_source')} "
+                        f"delete_status={record.get('delete_status')} "
+                        f"replacement_status={record.get('replacement_status')}"
+                    ),
+                )
+            )
+
+    forbidden_manifest_phrases = (
+        "production_compat",
+        "legacy_forward",
+        "legacy facade",
+        "legacy production facade",
+    )
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    for route_path, methods in expected_registry.items():
+        record = _record_for_path_and_methods(manifest_records, "route_pattern", route_path, methods)
+        if record is None:
+            violations.append(Violation("ai_external_campaigns_manifest_stale_legacy", route_path, "missing manifest record"))
+            continue
+        phrase = _contains_forbidden_phrase(record.get("notes"), forbidden_manifest_phrases)
+        if phrase or record.get("legacy_fallback_allowed") is not False:
+            violations.append(
+                Violation(
+                    "ai_external_campaigns_manifest_stale_legacy",
+                    route_path,
+                    phrase or f"legacy_fallback_allowed={record.get('legacy_fallback_allowed')}",
+                )
+            )
 
     return violations
 
@@ -3753,6 +4158,166 @@ def check_cloud_orchestrator_media_upload_closeout_lock(root: Path = ROOT) -> li
     return violations
 
 
+def check_cloud_orchestrator_media_upload_native_client(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    media_upload_path = root / "aicrm_next/cloud_orchestrator/media_upload.py"
+    native_client_path = root / "aicrm_next/integration_gateway/wecom_media_upload_client.py"
+    adapter_test_path = root / "tests/test_cloud_orchestrator_media_upload_adapter.py"
+
+    if media_upload_path.exists():
+        text = media_upload_path.read_text(encoding="utf-8")
+        rel = str(media_upload_path.relative_to(root))
+        for marker in (
+            "legacy_flask_facade",
+            "_legacy_app",
+            "legacy_wecom_client_from_app",
+            "_upload_private_message_image",
+            "wecom_ability_service",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("cloud_media_upload_legacy_client_import", rel, marker))
+        for marker in ("requests.", "httpx", "access_token"):
+            if marker in text:
+                violations.append(Violation("cloud_media_upload_direct_http_client", rel, marker))
+
+    if native_client_path.exists():
+        text = native_client_path.read_text(encoding="utf-8")
+        rel = str(native_client_path.relative_to(root))
+        for marker in (
+            "legacy_flask_facade",
+            "_legacy_app",
+            "legacy_wecom_client_from_app",
+            "wecom_ability_service",
+            "flask",
+            "current_app",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("cloud_media_client_legacy_import", rel, marker))
+
+    if adapter_test_path.exists():
+        text = adapter_test_path.read_text(encoding="utf-8")
+        rel = str(adapter_test_path.relative_to(root))
+        for marker in (
+            "aicrm_next.integration_gateway.legacy_flask_facade._legacy_app",
+            "aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("cloud_media_tests_legacy_monkeypatch", rel, marker))
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    registry_record = next((record for record in registry_records if record.get("route_id") == "cloud_orchestrator_media_upload_adapter"), None)
+    if registry_record is None:
+        violations.append(Violation("cloud_media_registry_not_locked", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, "missing registry record"))
+    elif (
+        registry_record.get("runtime_owner") != "next_adapter"
+        or registry_record.get("legacy_fallback_allowed") is not False
+        or str(registry_record.get("legacy_source") or "") != ""
+        or registry_record.get("delete_status") != "deletion_locked"
+        or registry_record.get("replacement_status") != "locked"
+    ):
+        violations.append(
+            Violation(
+                "cloud_media_registry_not_locked",
+                CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE,
+                (
+                    f"runtime_owner={registry_record.get('runtime_owner')} "
+                    f"legacy_fallback_allowed={registry_record.get('legacy_fallback_allowed')} "
+                    f"legacy_source={registry_record.get('legacy_source')} "
+                    f"delete_status={registry_record.get('delete_status')} "
+                    f"replacement_status={registry_record.get('replacement_status')}"
+                ),
+            )
+        )
+
+    manifest_records = _load_yaml_records(root / "docs/route_ownership/production_route_ownership_manifest.yaml", "routes")
+    manifest_record = _record_for_path_and_methods(manifest_records, "route_pattern", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, ("POST", "OPTIONS"))
+    if manifest_record is None:
+        violations.append(Violation("cloud_media_manifest_not_locked", CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE, "missing manifest record"))
+    elif (
+        manifest_record.get("current_runtime_owner") != "next"
+        or manifest_record.get("production_behavior") != "next_adapter_real_upload"
+        or manifest_record.get("legacy_fallback_allowed") is not False
+        or manifest_record.get("delete_status") != "deletion_locked"
+        or manifest_record.get("replacement_status") != "locked"
+    ):
+        violations.append(
+            Violation(
+                "cloud_media_manifest_not_locked",
+                CLOUD_ORCHESTRATOR_MEDIA_UPLOAD_ROUTE,
+                (
+                    f"current_runtime_owner={manifest_record.get('current_runtime_owner')} "
+                    f"production_behavior={manifest_record.get('production_behavior')} "
+                    f"legacy_fallback_allowed={manifest_record.get('legacy_fallback_allowed')} "
+                    f"delete_status={manifest_record.get('delete_status')} "
+                    f"replacement_status={manifest_record.get('replacement_status')}"
+                ),
+            )
+        )
+
+    return violations
+
+
+def check_cloud_orchestrator_repository_time_helpers_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    repository_path = root / "aicrm_next/cloud_orchestrator/repository.py"
+    time_helper_path = root / "aicrm_next/cloud_orchestrator/time_helpers.py"
+
+    if repository_path.exists():
+        text = repository_path.read_text(encoding="utf-8")
+        rel = str(repository_path.relative_to(root))
+        if "wecom_ability_service.domains.campaigns.time_helpers" in text:
+            violations.append(
+                Violation(
+                    "cloud_repo_legacy_time_helper_import",
+                    rel,
+                    "wecom_ability_service.domains.campaigns.time_helpers",
+                )
+            )
+        for marker in (
+            "from wecom_ability_service",
+            "wecom_ability_service",
+            "legacy_flask_facade",
+            "current_app",
+        ):
+            if marker in text:
+                violations.append(Violation("cloud_repo_legacy_runtime_import", rel, marker))
+        if "from .time_helpers import" not in text or "campaign_step_due_iso" not in text:
+            violations.append(
+                Violation(
+                    "cloud_repo_time_helper_not_next",
+                    rel,
+                    "repository.py must import campaign_step_due_iso from .time_helpers",
+                )
+            )
+    else:
+        violations.append(Violation("cloud_repo_time_helper_not_next", str(repository_path.relative_to(root)), "missing repository.py"))
+
+    if time_helper_path.exists():
+        text = time_helper_path.read_text(encoding="utf-8")
+        rel = str(time_helper_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "legacy_flask_facade",
+            "flask",
+            "current_app",
+        ):
+            if marker in text:
+                violations.append(Violation("cloud_time_helper_legacy_import", rel, marker))
+        for marker in (
+            'DEFAULT_SEND_TIME = "09:00"',
+            'DEFAULT_TIMEZONE = "Asia/Shanghai"',
+            "def campaign_step_due_iso",
+        ):
+            if marker not in text:
+                violations.append(Violation("cloud_time_helper_contract_missing", rel, marker))
+    else:
+        violations.append(Violation("cloud_time_helper_contract_missing", str(time_helper_path.relative_to(root)), "missing time_helpers.py"))
+
+    return violations
+
+
 def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -5198,7 +5763,7 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
     api_path = root / "aicrm_next/customer_tags/api.py"
     live_mutation_path = root / "aicrm_next/customer_tags/live_mutation.py"
     commands_path = root / "aicrm_next/customer_tags/mutation_commands.py"
-    questionnaire_path = root / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    questionnaire_path = root / "aicrm_next" / "integration_gateway" / "questionnaire_adapters.py"
     compat_path = root / "aicrm_next/production_compat/api.py"
 
     if compat_path.exists():
@@ -5640,7 +6205,14 @@ def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
         + check_group_ops_message_content_native(ROOT)
+        + check_group_ops_material_resolver_native(ROOT)
+        + check_group_ops_scheduler_duplicate_checker_native(ROOT)
+        + check_channel_identity_bridge_native(ROOT)
+        + check_questionnaire_adapters_native_oauth(ROOT)
+        + check_public_product_h5_pay_oauth_native(ROOT)
+        + check_public_product_h5_pay_sidebar_context_native(ROOT)
         + check_wecom_group_adapter_native(ROOT)
+        + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
@@ -5663,6 +6235,8 @@ def run_checks(*, strict: bool) -> dict:
         + check_provider_payment_closeout_lock(ROOT)
         + check_payment_wildcard_final_closeout_lock(ROOT)
         + check_cloud_orchestrator_media_upload_closeout_lock(ROOT)
+        + check_cloud_orchestrator_media_upload_native_client(ROOT)
+        + check_cloud_orchestrator_repository_time_helpers_native(ROOT)
         + check_cloud_orchestrator_campaign_read_closeout_lock(ROOT)
         + check_cloud_orchestrator_campaign_write_next_commandbus(ROOT)
         + check_cloud_orchestrator_run_due_next_safe_mode(ROOT)

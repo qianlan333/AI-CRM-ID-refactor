@@ -43,6 +43,8 @@ SAFE_OAUTH_SOURCE_STATUSES = {
     "missing_config",
     "adapter_error",
     "production_guard_failed",
+    "next_oauth_adapter",
+    "state_error",
 }
 
 LOCAL_FIXTURE_ROUTES = [

@@ -60,13 +60,7 @@ def test_campaign_read_requests_do_not_touch_legacy_forward(monkeypatch):
 
     from aicrm_next.production_compat import api as production_api
 
-    calls: list[str] = []
-
-    async def fake_forward(*args, **kwargs):
-        calls.append("legacy_forward")
-        raise AssertionError("Next campaign read should not forward to legacy")
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+    assert not hasattr(production_api, "forward_to_legacy_flask")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for path in [
@@ -78,5 +72,9 @@ def test_campaign_read_requests_do_not_touch_legacy_forward(monkeypatch):
         response = client.get(path)
         assert response.status_code == 200
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-
-    assert calls == []
+        assert response.headers["X-AICRM-Fallback-Used"] == "false"
+        assert "X-AICRM-Compatibility-Facade" not in response.headers
+        body = response.json()
+        assert body["source_status"] == "next_cloud_orchestrator_campaign_read"
+        assert body["fallback_used"] is False
+        assert body["route_owner"] == "ai_crm_next"

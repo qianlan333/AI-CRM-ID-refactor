@@ -26,7 +26,10 @@ def test_cloud_orchestrator_media_upload_registry_is_next_adapter_locked():
     assert record["adapter_mode"] == "production"
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
-    assert "Legacy rollback removed" in record["notes"]
+    assert "Next native WeComMediaUploadClient" in record["notes"]
+    assert "no legacy_flask_facade" in record["notes"]
+    assert "no _legacy_app" in record["notes"]
+    assert "no legacy_wecom_client_from_app" in record["notes"]
     assert "wecom_media_upload_executed=true" in record["notes"]
 
 
@@ -44,5 +47,8 @@ def test_cloud_orchestrator_media_upload_manifest_is_next_adapter_locked():
     assert record["delete_ready"] is True
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
-    assert "Legacy rollback removed" in record["notes"]
+    assert "Next native WeComMediaUploadClient" in record["notes"]
+    assert "no legacy_flask_facade" in record["notes"]
+    assert "no _legacy_app" in record["notes"]
+    assert "no legacy_wecom_client_from_app" in record["notes"]
     assert "wecom_media_upload_executed=true" in record["notes"]
