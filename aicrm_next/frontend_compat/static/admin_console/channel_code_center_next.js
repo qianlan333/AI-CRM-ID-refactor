@@ -123,20 +123,6 @@
     return Boolean(channel.qrcode_asset_id) && ["active", "generated"].includes(String(channel.qrcode_status || ""));
   }
 
-  function qrcodeStatusLabel(channel) {
-    const value = String(channel.qrcode_status || "");
-    return {
-      active: "二维码可用",
-      generated: "二维码可用",
-      not_generated: "未生成二维码",
-      legacy_untracked: "需重新生成",
-      stale: "需重新生成",
-      quarantined: "已隔离",
-      revoked: "已失效",
-      retired: "已退休",
-    }[value] || "需检查二维码";
-  }
-
   function bootstrapUrls() {
     const node = root.querySelector("[data-channel-bootstrap]");
     if (!node) return {};
@@ -173,11 +159,10 @@
           <span class="channel-pill ${channel.welcome_message_configured ? "is-ok" : ""}">${channel.welcome_message_configured ? "欢迎语" : "无欢迎语"}</span>
           <span class="channel-pill">${escapeHtml(channel.welcome_attachment_count || 0)} 素材</span>
           <span class="channel-pill ${channel.entry_tag_configured ? "is-ok" : ""}">${channel.entry_tag_configured ? "标签" : "无标签"}</span>
-          ${link ? "" : `<span class="channel-pill ${qrcodeReady(channel) ? "is-ok" : ""}">${escapeHtml(qrcodeStatusLabel(channel))}</span>`}
         </td>
         <td>${escapeHtml(channel.channel_contact_count || 0)}</td>
         <td>${bound}</td>
-        <td>
+        <td class="channel-action-cell">
           <div class="channel-row-actions">
             ${action}
             <button class="admin-button admin-button--ghost" type="button" data-open-channel-drawer>查看</button>

@@ -58,7 +58,7 @@
             <th>欢迎/素材/标签</th>
             <th>渠道用户</th>
             <th>绑定自动化运营</th>
-            <th>操作</th>
+            <th class="channel-actions-heading" aria-label="行操作"></th>
           </tr>
         </thead>
         <tbody data-channel-list>
@@ -80,5 +80,5 @@
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/channel_code_center_next.js') }}?v=channel-center-name-only-20260528"></script>
+<script defer src="{{ url_for('static', filename='admin_console/channel_code_center_next.js') }}?v=remove-recent-entry-20260608"></script>
 {% endblock %}
