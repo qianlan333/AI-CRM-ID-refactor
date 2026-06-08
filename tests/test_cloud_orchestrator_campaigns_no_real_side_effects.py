@@ -37,13 +37,7 @@ def test_campaign_get_routes_do_not_call_legacy_forward_or_runtime(monkeypatch):
 
     from aicrm_next.production_compat import api as production_api
 
-    calls: list[str] = []
-
-    async def fake_forward(*args, **kwargs):
-        calls.append("legacy_forward")
-        raise AssertionError("campaign read route should not use production_compat")
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+    assert not hasattr(production_api, "forward_to_legacy_flask")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     paths = [
@@ -55,9 +49,14 @@ def test_campaign_get_routes_do_not_call_legacy_forward_or_runtime(monkeypatch):
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200
-        assert response.json()["real_external_call_executed"] is False
-
-    assert calls == []
+        assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+        assert response.headers["X-AICRM-Fallback-Used"] == "false"
+        assert "X-AICRM-Compatibility-Facade" not in response.headers
+        payload = response.json()
+        assert payload["source_status"] == "next_cloud_orchestrator_campaign_read"
+        assert payload["route_owner"] == "ai_crm_next"
+        assert payload["fallback_used"] is False
+        assert payload["real_external_call_executed"] is False
 
 
 def test_campaign_read_response_contract_marks_no_external_execution(monkeypatch):
