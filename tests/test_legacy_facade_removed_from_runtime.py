@@ -21,8 +21,7 @@ def test_legacy_forwarder_is_not_reachable_through_production_compat_runtime(mon
 
 
 def test_production_compat_and_main_do_not_reference_legacy_facade() -> None:
-    for relative in ("aicrm_next/production_compat/api.py", "aicrm_next/main.py"):
-        source = (ROOT / relative).read_text(encoding="utf-8")
-        assert "forward_to_legacy_flask" not in source
-        assert "legacy_flask_facade" not in source
-
+    assert not (ROOT / "aicrm_next/production_compat/api.py").exists()
+    source = (ROOT / "aicrm_next/main.py").read_text(encoding="utf-8")
+    assert "forward_to_legacy_flask" not in source
+    assert "legacy_flask_facade" not in source

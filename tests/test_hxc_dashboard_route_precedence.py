@@ -18,12 +18,9 @@ def _client(monkeypatch) -> TestClient:
 
 
 def test_hxc_routes_precede_production_compat_facade(monkeypatch) -> None:
-    import aicrm_next.production_compat.api as production_api
 
     async def forbidden_forward(request):
         raise AssertionError(f"legacy facade should not handle {request.method} {request.url.path}")
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", forbidden_forward)
     client = _client(monkeypatch)
 
     responses = [

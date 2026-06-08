@@ -28,6 +28,7 @@ from scripts.check_no_new_legacy import (
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
+    check_production_compat_removed,
     check_public_product_h5_pay_legacy_closeout,
     check_public_product_h5_pay_oauth_native,
     check_public_product_h5_pay_sidebar_context_native,
@@ -103,6 +104,48 @@ def test_group_ops_message_content_guard_accepts_minimal_native_files(tmp_path: 
     _write_group_ops_message_content_files(tmp_path)
 
     assert check_group_ops_message_content_native(tmp_path) == []
+
+
+def test_production_compat_checker_flags_remaining_api_file(tmp_path: Path) -> None:
+    compat = tmp_path / "aicrm_next/production_compat/api.py"
+    compat.parent.mkdir(parents=True, exist_ok=True)
+    compat.write_text("router = object()\nwildcard_router = object()\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_production_compat_removed(tmp_path)}
+
+    assert "production_compat_api_file_remaining" in codes
+
+
+def test_production_compat_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_text('LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/production_compat/api.py")}\n', encoding="utf-8")
+
+    codes = {violation.code for violation in check_production_compat_removed(tmp_path)}
+
+    assert "production_compat_stale_allowlist" in codes
+
+
+def test_production_compat_checker_flags_main_include(tmp_path: Path) -> None:
+    main = tmp_path / "aicrm_next/main.py"
+    main.parent.mkdir(parents=True, exist_ok=True)
+    main.write_text("from aicrm_next.production_compat.api import router\napp.include_router(router)\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_production_compat_removed(tmp_path)}
+
+    assert "production_compat_main_include_remaining" in codes
+    assert "production_compat_runtime_import_remaining" in codes
+
+
+def test_production_compat_checker_accepts_removed_state(tmp_path: Path) -> None:
+    main = tmp_path / "aicrm_next/main.py"
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    main.parent.mkdir(parents=True, exist_ok=True)
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    main.write_text("app = object()\n", encoding="utf-8")
+    checker.write_text("LEGACY_IMPORT_ALLOWLIST = set()\nAPI_SIDE_EFFECT_ALLOWLIST = set()\n", encoding="utf-8")
+
+    assert check_production_compat_removed(tmp_path) == []
 
 
 def _write_group_ops_material_resolver_files(

@@ -44,10 +44,6 @@ def test_run_due_routes_do_not_forward_to_legacy_or_execute_runtime(monkeypatch)
     monkeypatch.delenv("AICRM_NEXT_FORCE_PRODUCTION_DATA", raising=False)
     reset_campaign_read_fixture_state()
     reset_run_due_fixture_state()
-
-    from aicrm_next.production_compat import api as production_api
-
-    assert not hasattr(production_api, "forward_to_legacy_flask")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for path in [

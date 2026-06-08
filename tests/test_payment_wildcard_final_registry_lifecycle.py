@@ -50,15 +50,4 @@ def test_payment_final_manifest_records_are_locked() -> None:
 
 
 def test_production_compat_has_no_remaining_routes() -> None:
-    source = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-
-    assert "forward_to_legacy_flask" not in source
-    assert "legacy_flask_facade" not in source
-    assert ".api_route(" not in source
-    for route in [
-        "/api/admin/wechat-pay/{path:path}",
-        "/api/admin/alipay/{path:path}",
-        "/api/h5/wechat-pay/{path:path}",
-        "/api/h5/alipay/{path:path}",
-    ]:
-        assert route not in source
+    assert not (ROOT / "aicrm_next/production_compat/api.py").exists()

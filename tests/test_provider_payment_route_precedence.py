@@ -43,14 +43,4 @@ def test_provider_payment_routes_precede_production_compat_when_facade_enabled(m
 
 
 def test_production_compat_source_has_no_public_provider_payment_wildcards() -> None:
-    text = (Path(__file__).resolve().parents[1] / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-
-    assert "/api/wechat-pay/{path:path}" not in text
-    assert "/api/alipay/{path:path}" not in text
-    for removed in [
-        "/api/admin/wechat-pay/{path:path}",
-        "/api/admin/alipay/{path:path}",
-        "/api/h5/wechat-pay/{path:path}",
-        "/api/h5/alipay/{path:path}",
-    ]:
-        assert removed not in text
+    assert not (Path(__file__).resolve().parents[1] / "aicrm_next/production_compat/api.py").exists()

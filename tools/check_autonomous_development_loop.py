@@ -388,7 +388,8 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
 def _validate_runtime_fallback_scope(changed: set[str], blockers: list[str]) -> None:
     if "aicrm_next/production_compat/api.py" not in changed:
         return
-    text = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
+    compat_path = ROOT / "aicrm_next/production_compat/api.py"
+    text = compat_path.read_text(encoding="utf-8") if compat_path.exists() else ""
     stale_channel_routes = sorted(route for route in REMOVED_CHANNEL_FALLBACK_STRINGS if route in text)
     if stale_channel_routes:
         blockers.append(f"selected channel production_compat fallback routes must be removed: {stale_channel_routes}")

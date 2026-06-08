@@ -59,10 +59,6 @@ def test_campaign_write_requests_use_next_exact_route_without_legacy_forward(mon
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     reset_campaign_read_fixture_state()
     reset_campaign_write_fixture_state()
-
-    from aicrm_next.production_compat import api as production_api
-
-    assert not hasattr(production_api, "forward_to_legacy_flask")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     response = client.post(
