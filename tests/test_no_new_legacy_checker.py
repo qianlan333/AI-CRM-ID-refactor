@@ -20,6 +20,7 @@ from scripts.check_no_new_legacy import (
     check_customer_read_model_legacy_deletion,
     check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
+    check_group_ops_scheduler_duplicate_checker_native,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
@@ -165,6 +166,80 @@ def test_group_ops_material_checker_accepts_native_minimal_files(tmp_path: Path)
     _write_group_ops_material_resolver_files(tmp_path)
 
     assert check_group_ops_material_resolver_native(tmp_path) == []
+
+
+def _write_group_ops_scheduler_duplicate_files(
+    root: Path,
+    *,
+    scheduler: str = (
+        "from typing import Callable\n"
+        "from .duplicate_checker import build_group_ops_duplicate_checker\n"
+        "class GroupOpsDueScheduler:\n"
+        "    def __init__(self, *, duplicate_checker: Callable[[str], bool] | None = None):\n"
+        "        self._duplicate_checker = duplicate_checker or build_group_ops_duplicate_checker().exists\n"
+    ),
+    duplicate_checker: str = (
+        "class GroupOpsDuplicateChecker:\n"
+        "    def exists(self, idempotency_key):\n"
+        "        return False\n"
+        "def build_group_ops_duplicate_checker():\n"
+        "    return GroupOpsDuplicateChecker()\n"
+    ),
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+) -> None:
+    scheduler_path = root / "aicrm_next/automation_engine/group_ops/scheduler.py"
+    duplicate_checker_path = root / "aicrm_next/automation_engine/group_ops/duplicate_checker.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    scheduler_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    scheduler_path.write_text(scheduler, encoding="utf-8")
+    duplicate_checker_path.write_text(duplicate_checker, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+
+
+def test_group_ops_scheduler_checker_flags_legacy_broadcast_service(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        scheduler=(
+            "from typing import Callable\n"
+            "from wecom_ability_service.domains.broadcast_jobs import repo\n"
+            "class GroupOpsDueScheduler:\n"
+            "    def __init__(self, *, duplicate_checker: Callable[[str], bool] | None = None):\n"
+            "        self._duplicate_checker = duplicate_checker or repo.exists\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_scheduler_legacy_duplicate_checker" in codes
+
+
+def test_group_ops_duplicate_checker_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        duplicate_checker="from wecom_ability_service.domains.broadcast_jobs import repo\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_duplicate_checker_legacy_import" in codes
+
+
+def test_group_ops_scheduler_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/automation_engine/group_ops/scheduler.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_group_ops_scheduler_duplicate_checker_native(tmp_path)}
+
+    assert "group_ops_scheduler_stale_wecom_allowlist" in codes
+
+
+def test_group_ops_scheduler_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_group_ops_scheduler_duplicate_files(tmp_path)
+
+    assert check_group_ops_scheduler_duplicate_checker_native(tmp_path) == []
 
 
 def _write_wecom_group_adapter_files(

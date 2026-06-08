@@ -43,7 +43,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/automation_engine/group_ops/scheduler.py"),
     Path("aicrm_next/channel_entry/identity_bridge.py"),
     Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
 }
@@ -1039,6 +1038,64 @@ def check_group_ops_material_resolver_native(root: Path = ROOT) -> list[Violatio
                 violations.append(Violation("group_ops_material_resolver_contract_missing", rel, marker))
     else:
         violations.append(Violation("group_ops_material_resolver_contract_missing", str(resolver_path.relative_to(root)), "missing material_resolver.py"))
+
+    return violations
+
+
+def check_group_ops_scheduler_duplicate_checker_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    group_ops_root = root / "aicrm_next" / "automation_engine" / "group_ops"
+    scheduler_path = group_ops_root / "scheduler.py"
+    duplicate_checker_path = group_ops_root / "duplicate_checker.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+
+    legacy_markers = (
+        "wecom_ability_service",
+        "legacy_flask_facade",
+        "legacy_broadcast",
+        "broadcast_jobs.service",
+        "broadcast_jobs import repo",
+        "from wecom_ability_service",
+        "WeComClient.from_app",
+        "current_app",
+    )
+    direct_http_markers = ("requests.", "httpx")
+
+    if scheduler_path.exists():
+        text = scheduler_path.read_text(encoding="utf-8")
+        rel = str(scheduler_path.relative_to(root))
+        for marker in legacy_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_legacy_duplicate_checker", rel, marker))
+        for marker in direct_http_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_direct_http", rel, marker))
+        if "duplicate_checker: Callable[[str], bool] | None = None" not in text or "self._duplicate_checker = duplicate_checker or" not in text:
+            violations.append(
+                Violation(
+                    "group_ops_scheduler_duplicate_injection_missing",
+                    rel,
+                    "scheduler must keep injectable duplicate_checker parameter",
+                )
+            )
+    else:
+        violations.append(Violation("group_ops_scheduler_duplicate_injection_missing", str(scheduler_path.relative_to(root)), "missing scheduler.py"))
+
+    if duplicate_checker_path.exists():
+        text = duplicate_checker_path.read_text(encoding="utf-8")
+        rel = str(duplicate_checker_path.relative_to(root))
+        for marker in legacy_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_duplicate_checker_legacy_import", rel, marker))
+        for marker in direct_http_markers:
+            if marker in text:
+                violations.append(Violation("group_ops_scheduler_direct_http", rel, marker))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/automation_engine/group_ops/' + 'scheduler.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("group_ops_scheduler_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
 
     return violations
 
@@ -5939,6 +5996,7 @@ def run_checks(*, strict: bool) -> dict:
         scan_source_tree(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
+        + check_group_ops_scheduler_duplicate_checker_native(ROOT)
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
