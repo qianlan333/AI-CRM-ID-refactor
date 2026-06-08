@@ -257,6 +257,119 @@ def test_public_h5_create_order_returns_existing_paid_order(monkeypatch) -> None
     assert payload["order"]["status"] == "paid"
 
 
+def test_public_h5_create_order_does_not_reuse_paid_order_from_mismatched_sidebar_context(monkeypatch) -> None:
+    from aicrm_next.public_product import h5_wechat_pay
+    from aicrm_next.commerce.wechat_pay_client import WeChatPayClientConfig
+
+    queries: list[tuple[str, tuple]] = []
+
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def commit(self):
+            return None
+
+        def execute(self, query, params=()):
+            queries.append((query, tuple(params)))
+            if "FROM wechat_pay_orders" in query:
+                assert "op_current" in params
+                assert "ext_already_paid" not in params
+                return Cursor(None)
+            if "INSERT INTO wechat_pay_orders" in query:
+                return Cursor(
+                    {
+                        "id": 10,
+                        "out_trade_no": params[0],
+                        "product_code": "test-product",
+                        "product_name": "测试商品",
+                        "amount_total": 990,
+                        "currency": "CNY",
+                        "status": "created",
+                        "trade_state": "",
+                        "payer_openid": "op_current",
+                        "external_userid": "ext_already_paid",
+                    }
+                )
+            if "UPDATE wechat_pay_orders" in query and "prepay_id" in query:
+                return Cursor(
+                    {
+                        "id": 10,
+                        "out_trade_no": params[-1],
+                        "product_code": "test-product",
+                        "product_name": "测试商品",
+                        "amount_total": 990,
+                        "currency": "CNY",
+                        "status": "paying",
+                        "trade_state": "",
+                        "payer_openid": "op_current",
+                        "external_userid": "ext_already_paid",
+                    }
+                )
+            return Cursor(None)
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def create_jsapi_transaction(self, payload):
+            return {"prepay_id": "wx_prepay_123"}
+
+        def build_jsapi_pay_params(self, prepay_id):
+            return {"package": f"prepay_id={prepay_id}"}
+
+    monkeypatch.setattr(h5_wechat_pay, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "_require_payment_ready",
+        lambda: WeChatPayClientConfig(
+            app_id="app",
+            mch_id="mch",
+            api_v3_key="api-v3-key",
+            private_key_path="/tmp/key.pem",
+            merchant_serial_no="serial",
+        ),
+    )
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "resolve_sidebar_order_context",
+        lambda **kwargs: {
+            "context_status": "valid",
+            "context_source": "signed_sidebar_product_link",
+            "external_userid": "ext_already_paid",
+            "owner_userid": "HuangYouCan",
+            "mobile_source": "",
+            "mobile": "",
+        },
+    )
+    monkeypatch.setattr(h5_wechat_pay, "WeChatPayClient", FakeClient)
+    client = _client(monkeypatch)
+    client.cookies.set(h5_wechat_pay.COOKIE_NAME, h5_wechat_pay._signed_blob({"openid": "op_current"}))
+
+    response = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        json={"product_code": "test-product", "ctx": "ctx-for-other-external"},
+        headers={"User-Agent": "MicroMessenger"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "already_paid" not in payload
+    assert payload["order"]["status"] == "paying"
+    assert payload["pay_params"]["package"] == "prepay_id=wx_prepay_123"
+    assert any("INSERT INTO wechat_pay_orders" in query for query, _ in queries)
+
+
 def test_public_h5_paid_order_lookup_accepts_product_code_alias() -> None:
     from aicrm_next.public_product.h5_wechat_pay import _paid_order_for_product_identity
 
@@ -282,3 +395,30 @@ def test_public_h5_paid_order_lookup_accepts_product_code_alias() -> None:
     assert "subscription_trial_month" in captured["params"]
     assert "prd_20260518095708_9f77db" in captured["params"]
     assert "op_alias" in captured["params"]
+
+
+def test_public_h5_paid_order_lookup_prefers_payment_identity_over_sidebar_external_userid() -> None:
+    from aicrm_next.public_product.h5_wechat_pay import _paid_order_for_product_identity
+
+    captured = {}
+
+    class Cursor:
+        def fetchone(self):
+            return None
+
+    class FakeConn:
+        def execute(self, query, params=()):
+            captured["query"] = query
+            captured["params"] = tuple(params)
+            return Cursor()
+
+    _paid_order_for_product_identity(
+        FakeConn(),
+        product={"product_code": "premium_monthly_trial"},
+        identity={"openid": "op_current", "unionid": "", "external_userid": "ext_from_shared_card"},
+    )
+
+    assert "payer_openid = %s" in captured["query"]
+    assert "external_userid = %s" not in captured["query"]
+    assert "op_current" in captured["params"]
+    assert "ext_from_shared_card" not in captured["params"]
