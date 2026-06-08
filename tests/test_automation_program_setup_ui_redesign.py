@@ -8,11 +8,11 @@ from aicrm_next.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SETUP_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "automation_program_setup_next.html"
-OP_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
-OP_JS = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "automation_operation_orchestration_panel.js"
-CHANNEL_JS = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "channel_admission_pages.js"
-LEGACY_ROUTES = ROOT / "aicrm_next" / "frontend_compat" / "legacy_routes.py"
+SETUP_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "automation_program_setup_next.html"
+OP_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
+OP_JS = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console" / "automation_operation_orchestration_panel.js"
+CHANNEL_JS = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console" / "channel_admission_pages.js"
+ADMIN_PAGES = ROOT / "aicrm_next" / "automation_engine" / "admin_pages.py"
 
 
 def _read(path: Path) -> str:
@@ -20,7 +20,8 @@ def _read(path: Path) -> str:
 
 
 def _client_with_setup(monkeypatch) -> TestClient:
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+    import aicrm_next.automation_engine.admin_pages as automation_admin_pages
+    from aicrm_next.automation_engine.programs import SETUP_STEPS
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -41,7 +42,7 @@ def _client_with_setup(monkeypatch) -> TestClient:
     setup_payload = {
         **program_data,
         "step": "basic",
-        "steps": legacy_routes.SETUP_STEPS,
+        "steps": SETUP_STEPS,
         "is_default_program": False,
         "basic": {},
         "entry": {
@@ -113,8 +114,12 @@ def _client_with_setup(monkeypatch) -> TestClient:
         },
     }
 
-    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
-    monkeypatch.setattr(legacy_routes, "get_automation_program_setup_payload", lambda program_id, *, step="basic": {**setup_payload, "step": step})
+    monkeypatch.setattr(automation_admin_pages, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(
+        automation_admin_pages,
+        "get_automation_program_setup_payload",
+        lambda program_id, *, step="basic": {**setup_payload, "step": step},
+    )
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
@@ -165,7 +170,7 @@ def test_entry_step_exposes_real_channel_binding_controls(monkeypatch) -> None:
 def test_segmentation_step_matches_dense_builder_contract(monkeypatch) -> None:
     html = _setup_page(_client_with_setup(monkeypatch), "segmentation")
     template = _read(SETUP_TEMPLATE)
-    routes = _read(LEGACY_ROUTES)
+    routes = _read(ADMIN_PAGES)
 
     assert "分类说明" not in html
     assert "默认方式" not in html

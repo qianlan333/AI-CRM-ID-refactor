@@ -113,13 +113,13 @@ def admin_path_for(name: str, **path_params: object) -> str:
     program_route_map = {
         "api.admin_automation_program_setup": "setup",
         "api.admin_automation_program_overview": "overview",
+        "api.admin_automation_program_members": "members",
         "api.admin_automation_program_update": "update",
         "api.admin_automation_program_copy_form": "copy",
         "api.admin_automation_program_copy": "copy",
         "api.admin_automation_program_pause": "pause",
         "api.admin_automation_program_activate": "activate",
         "api.admin_automation_program_archive": "archive",
-        "api.admin_automation_program_members": "members",
         "api.admin_automation_program_entry_channels": "entry-channels",
     }
     if name in program_route_map and program_id:

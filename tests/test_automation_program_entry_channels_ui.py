@@ -4,9 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SETUP_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "automation_program_setup_next.html"
-ENTRY_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "automation_conversion_entry_channels.html"
-CHANNEL_JS = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "channel_admission_pages.js"
+SETUP_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "automation_program_setup_next.html"
+ENTRY_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "automation_conversion_entry_channels.html"
+CHANNEL_JS = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console" / "channel_admission_pages.js"
 
 
 def test_setup_entry_step_reuses_entry_channel_binding_js():

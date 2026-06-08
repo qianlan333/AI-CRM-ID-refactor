@@ -1908,6 +1908,7 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
     admin_write = tmp_path / "aicrm_next/questionnaire/admin_write.py"
+    admin_pages = tmp_path / "aicrm_next/questionnaire/admin_pages.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
@@ -1940,6 +1941,14 @@ def test_questionnaire_admin_write_guard_allows_locked_next_commandbus(tmp_path:
     admin_write.write_text(
         "def execute():\n"
         "    return {'fallback_used': False, 'real_external_call_executed': False}\n",
+        encoding="utf-8",
+    )
+    admin_pages.write_text(
+        'route = "/admin/questionnaires/external-push-logs"\n'
+        "QuestionnaireExternalPushLogReadService = object\n"
+        "QuestionnaireExternalPushRetryService = object\n"
+        "QuestionnaireExternalPushRetryCommand = object\n"
+        "QuestionnaireExternalPushRetryBatchCommand = object\n",
         encoding="utf-8",
     )
     registry.write_text(
