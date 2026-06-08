@@ -52,3 +52,19 @@ def test_public_h5_questionnaire_manifest_is_final_locked() -> None:
     assert record["delete_ready"] is True
     assert record["delete_status"] == "deletion_locked"
     assert record["replacement_status"] == "locked"
+
+
+def test_questionnaire_auxiliary_admin_read_routes_are_locked_next_native() -> None:
+    registry = {record["route_id"]: record for record in _records("docs/architecture/legacy_exit_route_registry.yaml") if record.get("route_id")}
+
+    for route_id in (
+        "questionnaire_admin_share_out_of_scope",
+        "questionnaire_admin_latest_submit_debug_out_of_scope",
+    ):
+        record = registry[route_id]
+        assert record["legacy_fallback_allowed"] is False
+        assert record["runtime_owner"] == "next_native"
+        assert record["legacy_source"] == ""
+        assert record["delete_status"] == "deletion_locked"
+        assert record["replacement_status"] == "locked"
+        assert record["checker"] == "tests/test_questionnaire_admin_read_registry_lifecycle.py"

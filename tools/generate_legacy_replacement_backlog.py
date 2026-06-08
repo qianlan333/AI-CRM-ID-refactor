@@ -68,7 +68,7 @@ ALLOWED_PHASES = {
     "keep_guarded_until_adapter_ready",
 }
 ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}
-ALLOWED_SIDE_EFFECT_RISKS = {"none", "guarded", "real_blocked"}
+ALLOWED_SIDE_EFFECT_RISKS = {"none", "guarded", "low", "medium", "high", "real_blocked"}
 REAL_ALLOWED_VALUES = {
     "allowed",
     "enabled",
@@ -80,6 +80,30 @@ REAL_ALLOWED_VALUES = {
     "true",
 }
 FALLBACK_REQUIRED_BEHAVIORS = {"legacy_forward", "scheduled_safe_mode", "fake_adapter", "guarded_preview"}
+NO_FALLBACK_RUNTIME_OWNERS = {
+    "next",
+    "ai_crm_next",
+    "next_native",
+    "next_command",
+    "next_adapter",
+    "next_exact",
+    "next_read_model",
+    "next_read_model_only",
+    "readonly_transaction_page",
+    "archived_no_runtime",
+}
+NO_FALLBACK_PRODUCTION_BEHAVIORS = {
+    "next",
+    "next_native",
+    "next_admin_shell",
+    "next_command",
+    "next_adapter",
+    "next_exact",
+    "next_read_model",
+    "next_read_model_only",
+    "readonly_transaction_page",
+    "archived_no_runtime",
+}
 DAILY_BUSINESS_KEYWORDS = (
     "admin",
     "customers",
@@ -260,6 +284,12 @@ def infer_daily_business_critical(route: dict[str, Any]) -> bool:
 
 
 def _continuity_requirement(route: dict[str, Any]) -> str:
+    if route.get("legacy_fallback_allowed") is False:
+        return (
+            "Current route is documented with no legacy fallback. Preserve the current owner and production behavior, "
+            "do not restore production_compat or legacy facade fallback, and verify the route does not regress to 404, "
+            "500, empty-data false success, fixture/local_contract success, or accidental external side effects."
+        )
     if not infer_daily_business_critical(route):
         return "Planning only; preserve current behavior and do not promote fixture/local_contract data into production success paths."
     return (
@@ -270,6 +300,19 @@ def _continuity_requirement(route: dict[str, Any]) -> str:
 
 
 def _replacement_strategy(route: dict[str, Any]) -> str:
+    owner = _normalize(route.get("current_runtime_owner"))
+    behavior = _normalize(route.get("production_behavior"))
+    legacy_fallback_allowed = route.get("legacy_fallback_allowed") is True
+    if not legacy_fallback_allowed and "frontend_compat" in owner:
+        return (
+            "Treat this as a frontend_compat page-shell migration candidate only; business APIs remain Next-owned. "
+            "Do not classify it as legacy Flask fallback."
+        )
+    if not legacy_fallback_allowed and (owner in NO_FALLBACK_RUNTIME_OWNERS or behavior in NO_FALLBACK_PRODUCTION_BEHAVIORS):
+        return (
+            "Keep the current Next-owned route owner accurate, run the declared checker and smoke tests, "
+            "and prevent registry/backlog drift. Do not add legacy fallback."
+        )
     category = classify_replacement_category(route)
     if category in {"readonly", "shell_or_navigation"}:
         return "Build or harden a Next native read model/page first, compare parity, then narrow fallback only after smoke passes."
@@ -283,6 +326,11 @@ def _replacement_strategy(route: dict[str, Any]) -> str:
 
 
 def _fallback_required_until(route: dict[str, Any]) -> str:
+    if route.get("legacy_fallback_allowed") is False:
+        return (
+            "No legacy fallback is required or allowed for this manifest entry; keep route owner checks current and "
+            "do not restore production_compat or legacy facade fallback."
+        )
     behavior = _normalize(route.get("production_behavior"))
     if behavior == "next_exact" and not route.get("legacy_fallback_allowed"):
         return "No legacy fallback required for this manifest entry; keep route owner checks in place."
@@ -298,7 +346,7 @@ def _rollback_path(route: dict[str, Any]) -> str:
 def _delete_condition(route: dict[str, Any]) -> str:
     if route.get("legacy_fallback_allowed"):
         return "Delete or narrow legacy fallback only after production parity, checker, smoke, observability, and rollback acceptance are complete."
-    return "No legacy fallback delete action; keep manifest owner current."
+    return "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
 
 
 def _recommended_verification(route: dict[str, Any]) -> list[str]:
@@ -312,7 +360,10 @@ def _recommended_verification(route: dict[str, Any]) -> list[str]:
         checks.extend(["fake/staging-disabled adapter check", "assert real external call is not enabled"])
     elif category == "timer_or_automation_execution":
         checks.extend(["dry-run or preview smoke", "allowlist and audit guard check"])
-    checks.append("legacy fallback rollback check")
+    if route.get("legacy_fallback_allowed"):
+        checks.append("legacy fallback rollback check")
+    else:
+        checks.append("route owner drift guard")
     return checks
 
 
@@ -346,11 +397,13 @@ def build_backlog_entry(route: dict[str, Any], index: int = 0) -> dict[str, Any]
 def build_backlog(routes: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "version": 1,
-        "status": "planning_only_no_runtime_change",
+        "status": "current_progress_snapshot_no_runtime_change",
         "source_manifest": "docs/route_ownership/production_route_ownership_manifest.yaml",
         "business_continuity": (
-            "This backlog does not change runtime behavior, delete fallback, enable real external calls, or allow "
-            "fixture/local_contract data in production success paths."
+            "This is the current progress snapshot generated from production_route_ownership_manifest.yaml. It does "
+            "not change runtime behavior, restore legacy fallback, enable real external calls, or allow "
+            "fixture/local_contract data in production success paths. If a route has legacy_fallback_allowed=false, "
+            "the backlog must not require continuing fallback."
         ),
         "entries": [build_backlog_entry(route, index) for index, route in enumerate(routes)],
     }
@@ -411,6 +464,7 @@ def _top_ten(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def render_backlog_markdown(backlog: dict[str, Any]) -> str:
     entries = list(backlog["entries"])
+    has_legacy_fallback = any(entry.get("legacy_fallback_allowed") is True for entry in entries)
     by_owner: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_phase: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in entries:
@@ -418,9 +472,9 @@ def render_backlog_markdown(backlog: dict[str, Any]) -> str:
         by_phase[entry["replacement_phase"]].append(entry)
 
     lines = [
-        "# Legacy Replacement Backlog",
+        "# Legacy Replacement Backlog - Current Progress Snapshot",
         "",
-        "Status: Phase 2 planning only. This document does not change runtime behavior, remove fallback, narrow production_compat, enable timers, or open real external calls.",
+        "Status: Current progress snapshot, no runtime change. This document is generated from the production route ownership manifest and must stay synchronized with the route registry and checker.",
         "",
         "## Replacement Principles",
         "",
@@ -432,15 +486,14 @@ def render_backlog_markdown(backlog: dict[str, Any]) -> str:
         "## Business Continuity",
         "",
         "- Do not interrupt current production daily use.",
-        "- Do not delete current fallback.",
-        "- Do not remove current production_compat routes.",
+        "- Do not restore production_compat or legacy facade fallback.",
         "- Do not enable real external calls.",
         "- Do not let fixture/local_contract data enter production success paths.",
-        "- Every daily-business-critical replacement must keep fallback until parity, checker, smoke, and rollback conditions are satisfied.",
-        "",
-        "## Summary By Capability Owner",
-        "",
+        "- Keep route registry, manifest, and generated backlog synchronized.",
     ]
+    if has_legacy_fallback:
+        lines.append("- Routes that still explicitly allow fallback must keep fallback until parity, checker, smoke, and rollback conditions are satisfied.")
+    lines.extend(["", "## Summary By Capability Owner", ""])
     for owner in sorted(by_owner):
         owner_entries = by_owner[owner]
         priorities = Counter(entry["priority"] for entry in owner_entries)
@@ -468,7 +521,7 @@ def render_backlog_markdown(backlog: dict[str, Any]) -> str:
                 f"- priority: `{entry['priority']}` / `{entry['replacement_phase']}` / `{entry['replacement_category']}`",
                 "- why first: read-only or shell/navigation path, no external side effect, fixture is blocked in production, and checker is already declared.",
                 f"- continuity: {entry['business_continuity_requirement']}",
-                f"- fallback until: {entry['fallback_required_until']}",
+                f"- owner/drift guard: {entry['fallback_required_until']}",
                 "- verification: " + "; ".join(entry["recommended_verification"]),
                 "",
             ]

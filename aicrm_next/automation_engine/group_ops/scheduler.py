@@ -75,9 +75,19 @@ def _content_hash(payload: dict[str, Any]) -> str:
 def _default_duplicate_checker(idempotency_key: str) -> bool:
     if not idempotency_key:
         return False
-    from wecom_ability_service.domains.broadcast_jobs import repo as broadcast_queue_repo
+    from aicrm_next.shared.postgres_connection import get_db
 
-    return bool(broadcast_queue_repo.fetch_job_by_idempotency_key(idempotency_key))
+    row = get_db().execute(
+        """
+        SELECT id
+        FROM broadcast_jobs
+        WHERE idempotency_key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (idempotency_key,),
+    ).fetchone()
+    return bool(row)
 
 
 @dataclass
