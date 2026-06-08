@@ -8,9 +8,10 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from aicrm_next.integration_gateway.legacy_flask_facade import build_legacy_private_message_request_payload
 from aicrm_next.send_content.application import NormalizeSendContentPackageCommand
 from aicrm_next.shared.errors import ContractError
+
+from .message_content import build_group_ops_private_message_request_payload
 
 PLAN_TYPES = {"standard", "webhook"}
 PLAN_TYPE_ALIASES = {
@@ -300,7 +301,7 @@ def normalize_message_content(
     if sender:
         payload["sender"] = clean_text(sender)
     try:
-        normalized, _image_count = build_legacy_private_message_request_payload(payload)
+        normalized, _image_count = build_group_ops_private_message_request_payload(payload)
     except ValueError as exc:
         raise ContractError(str(exc)) from exc
     if not normalized.get("text") and not normalized.get("attachments"):

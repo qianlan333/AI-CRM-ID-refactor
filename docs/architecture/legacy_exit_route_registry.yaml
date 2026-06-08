@@ -935,28 +935,28 @@ routes:
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
     legacy_fallback_allowed: false
-    legacy_source: legacy_questionnaire_facade
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tools/check_production_route_resolution.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Admin share payload route is inventoried only; not part of group 8 questionnaire admin write CommandBus replacement.
+    notes: Admin share payload route uses Next questionnaire detail/share queries only; no legacy_questionnaire_facade and no production_compat fallback.
   - route_id: questionnaire_admin_latest_submit_debug_out_of_scope
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/latest-submit-debug
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
     runtime_owner: next_native
     legacy_fallback_allowed: false
-    legacy_source: legacy_questionnaire_facade
+    legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tools/check_production_route_resolution.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Admin latest submit debug route is inventoried only; not part of group 8 questionnaire admin write CommandBus replacement.
+    notes: Admin latest-submit-debug route uses LatestSubmitDebugQuery only; no legacy_questionnaire_facade and no production_compat fallback.
   - route_id: questionnaire_public_h5_out_of_scope
     path_pattern: /api/h5/questionnaires*
     methods: [GET, OPTIONS]

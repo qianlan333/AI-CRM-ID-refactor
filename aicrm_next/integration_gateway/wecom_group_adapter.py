@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
-from typing import Any
+from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
+from aicrm_next.shared.postgres_connection import get_db
 
 from .audit import record_audit_event
+from .wecom_customer_group_client import WeComCustomerGroupClient, WeComCustomerGroupClientError
 from .wecom_group_contract import Json
 
 WECOM_GROUP_CHAT_ID_LIST_FIELD = "chat_id_list"
@@ -39,10 +42,16 @@ def _requested_chat_ids(payload: dict[str, Any]) -> list[str]:
 class WeComGroupMessageAdapter:
     adapter_name = "WeComGroupMessageAdapter"
 
-    def __init__(self, *, mode: str | None = None) -> None:
+    def __init__(self, *, mode: str | None = None, client_factory: Callable[[], Any] | None = None) -> None:
         self.mode = (mode or _mode()).strip().lower()
         if self.mode not in {"disabled", "fake", "staging", "production"}:
             self.mode = "disabled"
+        self._client_factory = client_factory
+
+    def _client(self) -> Any:
+        if self._client_factory is not None:
+            return self._client_factory()
+        return WeComCustomerGroupClient()
 
     def create_group_message_task(self, payload: dict[str, Any], *, idempotency_key: str = "") -> Json:
         normalized = self._build_wecom_payload(payload)
@@ -120,9 +129,25 @@ class WeComGroupMessageAdapter:
                 "error_code": "production_guard_failed",
                 "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE is not enabled",
             }
-        from .legacy_flask_facade import legacy_wecom_client_from_app
-
-        result = legacy_wecom_client_from_app().create_group_message_task(normalized)
+        try:
+            result = self._client().create_group_message_task(normalized)
+        except WeComCustomerGroupClientError as exc:
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "create_group_message_task",
+                "idempotency_key": idempotency_key,
+                "target": target,
+                "result": exc.payload if exc.payload else {},
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": True,
+                "exact_target_required": True,
+                "exact_target_verified": False,
+                "requested_chat_ids": requested_chat_ids,
+                "error_code": exc.error_code or "wecom_group_message_client_error",
+                "error_message": str(exc),
+            }
         errcode = int(result.get("errcode") or 0) if isinstance(result, dict) else -1
         msgid = str((result or {}).get("msgid") or "").strip() if isinstance(result, dict) else ""
         failed_chat_ids = [
@@ -323,10 +348,16 @@ def _normalize_group_chat_detail(detail: dict[str, Any], *, fallback_owner_useri
 class WeComGroupAssetAdapter:
     adapter_name = "WeComGroupAssetAdapter"
 
-    def __init__(self, *, mode: str | None = None) -> None:
+    def __init__(self, *, mode: str | None = None, client_factory: Callable[[], Any] | None = None) -> None:
         self.mode = (mode or _mode()).strip().lower()
         if self.mode not in {"disabled", "fake", "staging", "production"}:
             self.mode = "disabled"
+        self._client_factory = client_factory
+
+    def _client(self) -> Any:
+        if self._client_factory is not None:
+            return self._client_factory()
+        return WeComCustomerGroupClient()
 
     def list_group_chats(self, *, owner_userid: str, limit: int = 100, cursor: str = "") -> Json:
         owner = str(owner_userid or "").strip()
@@ -387,11 +418,22 @@ class WeComGroupAssetAdapter:
             "cursor": str(cursor or ""),
             "limit": page_size,
         }
-        from .legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
-
-        with _legacy_app().app_context():
-            client = legacy_wecom_client_from_app()
+        try:
+            client = self._client()
             list_result = client.list_group_chats(list_payload)
+        except WeComCustomerGroupClientError as exc:
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "list_group_chats",
+                "groups": [],
+                "next_cursor": "",
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": True,
+                "error_code": exc.error_code or "wecom_group_sync_client_error",
+                "error_message": str(exc),
+            }
         groups: list[dict[str, Any]] = []
         warnings: list[str] = []
         skipped_count = 0
@@ -401,15 +443,15 @@ class WeComGroupAssetAdapter:
                 skipped_count += 1
                 warnings.append("skipped group chat without chat_id")
                 continue
-            detail = self.get_group_chat(chat_id, owner_userid=owner)
-            if detail.get("ok") and detail.get("group"):
-                group = dict(detail["group"])
+            try:
+                detail_result = client.get_group_chat(chat_id, need_name=1)
+                group = _normalize_group_chat_detail(detail_result, fallback_owner_userid=owner)
                 skipped_count += int(group.pop("skipped_member_count", 0) or 0)
                 warnings.extend([str(item) for item in group.pop("warnings", []) if str(item or "").strip()])
                 groups.append(group)
-            else:
+            except WeComCustomerGroupClientError as exc:
                 skipped_count += 1
-                warnings.append(str(detail.get("error_message") or f"skipped group chat {chat_id}").strip())
+                warnings.append(str(exc) or f"skipped group chat {chat_id}")
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -474,10 +516,20 @@ class WeComGroupAssetAdapter:
                 "error_code": "production_guard_failed",
                 "error_message": "AICRM_ENABLE_REAL_WECOM_GROUP_SYNC is not enabled",
             }
-        from .legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
-
-        with _legacy_app().app_context():
-            result = legacy_wecom_client_from_app().get_group_chat(chat, need_name=need_name)
+        try:
+            result = self._client().get_group_chat(chat, need_name=need_name)
+        except WeComCustomerGroupClientError as exc:
+            return {
+                "ok": False,
+                "adapter": self.adapter_name,
+                "mode": self.mode,
+                "operation": "get_group_chat",
+                "group": {},
+                "audit_id": audit["audit_id"],
+                "side_effect_executed": True,
+                "error_code": exc.error_code or "wecom_group_sync_client_error",
+                "error_message": str(exc),
+            }
         return {
             "ok": True,
             "adapter": self.adapter_name,
@@ -495,10 +547,25 @@ class WeComGroupChatSyncAdapter(WeComGroupAssetAdapter):
     adapter_name = "WeComGroupChatSyncAdapter"
 
 
-class LegacyBroadcastJobQueueGateway:
-    def __init__(self, *, legacy_app_factory=None, enqueue_job_fn=None) -> None:
-        self._legacy_app_factory = legacy_app_factory
-        self._enqueue_job_fn = enqueue_job_fn
+def _json_dumps(value: Any, *, default: Any) -> str:
+    return json.dumps(value if value is not None else default, ensure_ascii=False)
+
+
+def _decode_payload(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except ValueError:
+            return {}
+    return {}
+
+
+class NextGroupOpsQueueGateway:
+    def __init__(self, *, insert_job_fn: Callable[..., int] | None = None) -> None:
+        self._insert_job_fn = insert_job_fn
 
     def enqueue_group_message(
         self,
@@ -512,72 +579,107 @@ class LegacyBroadcastJobQueueGateway:
         content_summary: str,
         created_by: str = "group_ops_webhook",
     ) -> int:
-        def _enqueue() -> int:
-            if self._enqueue_job_fn is None:
-                from .legacy_flask_facade import legacy_broadcast_enqueue_job
-
-                enqueue_job = legacy_broadcast_enqueue_job
-            else:
-                enqueue_job = self._enqueue_job_fn
-
-            payload = dict(content_payload or {})
-            payload["channel"] = "wecom_customer_group"
-            payload["chat_ids"] = [str(item or "").strip() for item in chat_ids if str(item or "").strip()]
-            payload["sender"] = str(owner_userid or "").strip()
-            return enqueue_job(
-                source_type="workflow",
-                source_table="automation_group_ops_plans",
-                source_id=str(source_id or plan_id),
-                idempotency_key=f"group_ops:{source_id or plan_id}:{scheduled_at or ''}",
-                business_domain="group_ops",
-                channel="wecom_customer_group",
-                target_kind="chat_id" if payload["chat_ids"] else "dynamic",
-                scheduled_for=scheduled_at,
-                target_external_userids=[],
-                target_summary=f"{len(payload['chat_ids'])} customer groups",
-                content_type="wecom_customer_group",
-                content_payload=payload,
-                content_summary=str(content_summary or "")[:500],
-                created_by=created_by,
-                allow_empty_targets=True,
+        cleaned_chat_ids = [str(item or "").strip() for item in chat_ids if str(item or "").strip()]
+        payload = dict(content_payload or {})
+        payload["channel"] = "wecom_customer_group"
+        payload["chat_ids"] = cleaned_chat_ids
+        payload["sender"] = str(owner_userid or "").strip()
+        source_ref = str(source_id or plan_id)
+        idempotency_key = f"group_ops:{source_id or plan_id}:{scheduled_at or ''}"
+        fields = {
+            "source_type": "workflow",
+            "source_table": "automation_group_ops_plans",
+            "source_id": source_ref,
+            "idempotency_key": idempotency_key,
+            "business_domain": "group_ops",
+            "channel": "wecom_customer_group",
+            "target_kind": "chat_id" if cleaned_chat_ids else "dynamic",
+            "scheduled_for": scheduled_at,
+            "target_external_userids": [],
+            "target_count": 0,
+            "target_summary": f"{len(cleaned_chat_ids)} customer groups",
+            "content_type": "wecom_customer_group",
+            "content_payload": payload,
+            "content_summary": str(content_summary or "")[:500],
+            "created_by": created_by,
+        }
+        if self._insert_job_fn is not None:
+            return int(self._insert_job_fn(**fields) or 0)
+        db = get_db()
+        row = db.execute(
+            """
+            INSERT INTO broadcast_jobs (
+                source_type, source_id, source_table, scheduled_for, priority, batch_key,
+                business_domain, idempotency_key, channel, target_kind, retry_policy_json, metadata_json,
+                status, requires_approval,
+                target_external_userids, target_count, target_summary,
+                content_type, content_payload, content_summary,
+                trace_id, created_by
+            ) VALUES (
+                ?, ?, ?, ?, 100, '',
+                ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb),
+                'queued', FALSE,
+                CAST(? AS jsonb), ?, ?,
+                ?, CAST(? AS jsonb), ?,
+                ?, ?
             )
+            ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> '' DO NOTHING
+            RETURNING id
+            """,
+            (
+                fields["source_type"],
+                fields["source_id"],
+                fields["source_table"],
+                fields["scheduled_for"],
+                fields["business_domain"],
+                fields["idempotency_key"],
+                fields["channel"],
+                fields["target_kind"],
+                _json_dumps({}, default={}),
+                _json_dumps({}, default={}),
+                _json_dumps(fields["target_external_userids"], default=[]),
+                fields["target_count"],
+                fields["target_summary"],
+                fields["content_type"],
+                _json_dumps(fields["content_payload"], default={}),
+                fields["content_summary"],
+                fields["idempotency_key"],
+                fields["created_by"],
+            ),
+        ).fetchone()
+        db.commit()
+        return int((row or {}).get("id") or 0)
 
-        if self._legacy_app_factory is None:
-            from .legacy_flask_facade import _legacy_app
 
-            app = _legacy_app()
-        else:
-            app = self._legacy_app_factory()
-        with app.app_context():
-            return _enqueue()
-
-
-class LegacyGroupOpsQueueStatsGateway:
-    def __init__(self, *, legacy_app_factory=None, list_jobs_fn=None) -> None:
-        self._legacy_app_factory = legacy_app_factory
+class NextGroupOpsQueueStatsGateway:
+    def __init__(self, *, list_jobs_fn: Callable[[], list[dict[str, Any]]] | None = None) -> None:
         self._list_jobs_fn = list_jobs_fn
 
     def count_group_ops_queue(self) -> int:
-        def _list() -> list[dict[str, Any]]:
-            if self._list_jobs_fn is not None:
-                return list(self._list_jobs_fn())
-            from wecom_ability_service.domains.broadcast_jobs.service import list_jobs
-
-            return list(list_jobs(statuses=["queued", "waiting_approval", "claimed"], source_types=["workflow"], limit=1000, offset=0))
-
-        if self._legacy_app_factory is None:
-            from .legacy_flask_facade import _legacy_app
-
-            app = _legacy_app()
+        if self._list_jobs_fn is not None:
+            rows = list(self._list_jobs_fn())
         else:
-            app = self._legacy_app_factory()
-        with app.app_context():
-            count = 0
-            for job in _list():
-                payload = job.get("content_payload") if isinstance(job.get("content_payload"), dict) else {}
-                if job.get("source_table") == "automation_group_ops_plans" or payload.get("channel") == "wecom_customer_group":
-                    count += 1
-            return count
+            rows = list(
+                get_db()
+                .execute(
+                    """
+                    SELECT source_table, content_payload
+                    FROM broadcast_jobs
+                    WHERE status IN (?, ?, ?)
+                      AND source_type = ?
+                    ORDER BY id DESC
+                    LIMIT 1000
+                    """,
+                    ("queued", "waiting_approval", "claimed", "workflow"),
+                )
+                .fetchall()
+            )
+        count = 0
+        for job in rows:
+            payload = _decode_payload(job.get("content_payload"))
+            if job.get("source_table") == "automation_group_ops_plans" or payload.get("channel") == "wecom_customer_group":
+                count += 1
+        return count
 
 
 def build_wecom_group_message_adapter() -> WeComGroupMessageAdapter:
@@ -592,9 +694,9 @@ def build_wecom_group_chat_sync_adapter() -> WeComGroupAssetAdapter:
     return build_wecom_group_asset_adapter()
 
 
-def build_group_ops_queue_gateway() -> LegacyBroadcastJobQueueGateway:
-    return LegacyBroadcastJobQueueGateway()
+def build_group_ops_queue_gateway() -> NextGroupOpsQueueGateway:
+    return NextGroupOpsQueueGateway()
 
 
-def build_group_ops_queue_stats_gateway() -> LegacyGroupOpsQueueStatsGateway:
-    return LegacyGroupOpsQueueStatsGateway()
+def build_group_ops_queue_stats_gateway() -> NextGroupOpsQueueStatsGateway:
+    return NextGroupOpsQueueStatsGateway()

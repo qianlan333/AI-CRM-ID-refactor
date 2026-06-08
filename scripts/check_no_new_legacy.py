@@ -35,13 +35,11 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
-    Path("aicrm_next/automation_engine/group_ops/domain.py"),
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/cloud_orchestrator/media_upload.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
-    Path("aicrm_next/integration_gateway/wecom_group_adapter.py"),
 }
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
@@ -52,7 +50,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("aicrm_next/ai_assist/external_campaigns.py"),
     Path("aicrm_next/channel_entry/identity_bridge.py"),
     Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
-    Path("aicrm_next/integration_gateway/wecom_group_adapter.py"),
     Path("aicrm_next/cloud_orchestrator/repository.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {
@@ -952,6 +949,94 @@ def scan_source_tree(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def _file_contains_any(path: Path, markers: tuple[str, ...]) -> list[str]:
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    return [marker for marker in markers if marker in text]
+
+
+def check_group_ops_message_content_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    domain_path = root / "aicrm_next/automation_engine/group_ops/domain.py"
+    message_content_path = root / "aicrm_next/automation_engine/group_ops/message_content.py"
+    legacy_facade_path = root / "aicrm_next/integration_gateway/legacy_flask_facade.py"
+
+    for marker in _file_contains_any(
+        domain_path,
+        (
+            "legacy_flask_facade",
+            "build_legacy_private_message_request_payload",
+            "wecom_ability_service.domains.tasks.private_message",
+        ),
+    ):
+        violations.append(Violation("group_ops_domain_legacy_message_builder", str(domain_path.relative_to(root)), marker))
+
+    for marker in _file_contains_any(
+        message_content_path,
+        (
+            "legacy_flask_facade",
+            "wecom_ability_service",
+            "build_legacy_private_message_request_payload",
+        ),
+    ):
+        violations.append(Violation("group_ops_message_content_legacy_import", str(message_content_path.relative_to(root)), marker))
+
+    for marker in _file_contains_any(
+        legacy_facade_path,
+        (
+            "def legacy_private_message_module",
+            "def build_legacy_private_message_request_payload",
+        ),
+    ):
+        violations.append(Violation("legacy_flask_facade_private_message_wrapper_remaining", str(legacy_facade_path.relative_to(root)), marker))
+
+    return violations
+
+
+def check_wecom_group_adapter_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    adapter_path = root / "aicrm_next/integration_gateway/wecom_group_adapter.py"
+    client_path = root / "aicrm_next/integration_gateway/wecom_customer_group_client.py"
+
+    if adapter_path.exists():
+        adapter_text = adapter_path.read_text(encoding="utf-8")
+        rel = str(adapter_path.relative_to(root))
+        for marker in ("legacy_flask_facade", "_legacy_app"):
+            if marker in adapter_text:
+                violations.append(Violation("wecom_group_adapter_legacy_facade_import", rel, marker))
+        for marker in ("legacy_wecom_client_from_app", "wecom_ability_service"):
+            if marker in adapter_text:
+                violations.append(Violation("wecom_group_adapter_legacy_wecom_client", rel, marker))
+        for marker in (
+            "legacy_broadcast_enqueue_job",
+            "legacy_broadcast_jobs_service",
+            "LegacyBroadcastJobQueueGateway",
+            "LegacyGroupOpsQueueStatsGateway",
+        ):
+            if marker in adapter_text:
+                violations.append(Violation("wecom_group_adapter_legacy_broadcast_gateway", rel, marker))
+        if "def build_group_ops_queue_gateway" in adapter_text and "return NextGroupOpsQueueGateway()" not in adapter_text:
+            violations.append(Violation("wecom_group_queue_builder_not_next", rel, "build_group_ops_queue_gateway must return NextGroupOpsQueueGateway"))
+        if "def build_group_ops_queue_stats_gateway" in adapter_text and "return NextGroupOpsQueueStatsGateway()" not in adapter_text:
+            violations.append(Violation("wecom_group_queue_stats_builder_not_next", rel, "build_group_ops_queue_stats_gateway must return NextGroupOpsQueueStatsGateway"))
+
+    if client_path.exists():
+        client_text = client_path.read_text(encoding="utf-8")
+        rel = str(client_path.relative_to(root))
+        for marker in (
+            "legacy_flask_facade",
+            "wecom_ability_service",
+            "flask",
+            "current_app",
+            "WeComClient.from_app",
+        ):
+            if marker in client_text:
+                violations.append(Violation("wecom_group_client_legacy_import", rel, marker))
+
+    return violations
+
+
 def check_customer_read_model_legacy_deletion(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     customer_read_root = root / "aicrm_next/customer_read_model"
@@ -1123,6 +1208,124 @@ def _load_yaml_records(path: Path, key: str) -> list[dict]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     records = payload.get(key) or []
     return [record for record in records if isinstance(record, dict)]
+
+
+def _load_yaml_payload(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _contains_forbidden_phrase(value: object, phrases: tuple[str, ...]) -> str | None:
+    text = str(value or "").lower()
+    for phrase in phrases:
+        if phrase.lower() in text:
+            return phrase
+    return None
+
+
+def check_route_progress_docs_do_not_drift(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    registry_path = root / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest_path = root / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    backlog_path = root / "docs/development/legacy_replacement_backlog.yaml"
+    registry_records = _load_yaml_records(registry_path, "routes")
+    manifest_records = _load_yaml_records(manifest_path, "routes")
+    backlog_payload = _load_yaml_payload(backlog_path)
+    backlog_entries = [entry for entry in backlog_payload.get("entries") or [] if isinstance(entry, dict)]
+
+    stale_legacy_sources = {
+        "legacy_questionnaire_facade",
+        "legacy_automation_facade",
+        "legacy_sidebar_read_facade",
+        "legacy_flask_facade",
+        "production_compat",
+    }
+    next_no_fallback_owners = {"next_native", "next_command", "next_adapter", "next_read_model", "next_runtime_plan"}
+    stale_registry_note_phrases = (
+        "remain legacy-forwarded",
+        "through the legacy production facade",
+        "production mode reads",
+        "Keep legacy fallback until",
+        "legacy production facade",
+    )
+    stale_manifest_archived_phrases = (
+        "remain legacy-forwarded",
+        "legacy-forwarded",
+        "legacy production facade",
+    )
+    backlog_keep_legacy_fields = (
+        "business_continuity_requirement",
+        "replacement_strategy",
+        "fallback_required_until",
+        "delete_condition",
+        "notes",
+    )
+    manifest_compare_fields = (
+        "current_runtime_owner",
+        "production_behavior",
+        "legacy_fallback_allowed",
+        "fixture_allowed_in_production",
+        "external_side_effect_risk",
+        "checker",
+        "notes",
+    )
+
+    for record in registry_records:
+        label = str(record.get("path_pattern") or record.get("route_id") or "<unknown>")
+        if (
+            record.get("legacy_fallback_allowed") is False
+            and record.get("runtime_owner") in next_no_fallback_owners
+            and record.get("legacy_source") in stale_legacy_sources
+        ):
+            violations.append(Violation("route_progress_stale_legacy_source", label, f"legacy_source={record.get('legacy_source')}"))
+        if record.get("legacy_fallback_allowed") is False:
+            phrase = _contains_forbidden_phrase(record.get("notes"), stale_registry_note_phrases)
+            if phrase:
+                violations.append(Violation("route_progress_stale_legacy_note", label, phrase))
+
+    for record in manifest_records:
+        label = str(record.get("route_pattern") or "<unknown>")
+        if record.get("legacy_fallback_allowed") is False and record.get("production_behavior") == "archived_no_runtime":
+            phrase = _contains_forbidden_phrase(record.get("notes"), stale_manifest_archived_phrases)
+            if phrase:
+                violations.append(Violation("route_progress_manifest_archived_legacy_note", label, phrase))
+
+    if backlog_payload.get("status") != "current_progress_snapshot_no_runtime_change":
+        violations.append(Violation("route_progress_backlog_status_stale", str(backlog_path.relative_to(root)), f"status={backlog_payload.get('status')}"))
+
+    manifest_by_pattern: dict[str, list[dict]] = {}
+    for record in manifest_records:
+        manifest_by_pattern.setdefault(str(record.get("route_pattern") or ""), []).append(record)
+
+    for entry in backlog_entries:
+        label = str(entry.get("route_pattern") or entry.get("id") or "<unknown>")
+        if entry.get("legacy_fallback_allowed") is False:
+            for field in backlog_keep_legacy_fields:
+                if "Keep legacy fallback until" in str(entry.get(field) or ""):
+                    violations.append(Violation("route_progress_backlog_false_fallback_keeps_legacy", label, field))
+
+        candidates = manifest_by_pattern.get(str(entry.get("route_pattern") or ""), [])
+        if not candidates:
+            continue
+        matching_manifest = None
+        entry_methods = tuple(entry.get("methods") or [])
+        for candidate in candidates:
+            if tuple(candidate.get("methods") or []) == entry_methods:
+                matching_manifest = candidate
+                break
+        if matching_manifest is None and len(candidates) == 1:
+            matching_manifest = candidates[0]
+        if matching_manifest is None or any(entry.get(field) != matching_manifest.get(field) for field in manifest_compare_fields):
+            drift_fields = [
+                field
+                for field in manifest_compare_fields
+                if matching_manifest is None or entry.get(field) != matching_manifest.get(field)
+            ]
+            violations.append(Violation("route_progress_backlog_manifest_drift", label, ",".join(drift_fields)))
+
+    return violations
 
 
 def check_messages_broad_wildcard_deletion(root: Path = ROOT) -> list[Violation]:
@@ -5436,6 +5639,8 @@ def check_post_legacy_architecture_freeze(root: Path = ROOT) -> list[Violation]:
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
+        + check_group_ops_message_content_native(ROOT)
+        + check_wecom_group_adapter_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
@@ -5470,6 +5675,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_final_legacy_exit_cleanup(ROOT)
         + check_post_legacy_deferred_api_cleanup(ROOT)
         + check_post_legacy_architecture_freeze(ROOT)
+        + check_route_progress_docs_do_not_drift(ROOT)
     )
     route_report = build_route_check_report(strict=strict)
     for item in route_report["blockers"]:

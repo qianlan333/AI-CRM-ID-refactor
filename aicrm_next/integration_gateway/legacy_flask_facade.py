@@ -98,30 +98,12 @@ def legacy_automation_conversion_module() -> Any:
 
 
 @lru_cache(maxsize=1)
-def legacy_private_message_module() -> Any:
-    return _legacy_import_module(".domains.tasks.private_message")
-
-
-@lru_cache(maxsize=1)
 def legacy_wecom_client_module() -> Any:
     return _legacy_import_module(".wecom_client")
 
 
-@lru_cache(maxsize=1)
-def legacy_broadcast_jobs_service() -> Any:
-    return _legacy_import_module(".domains.broadcast_jobs.service")
-
-
-def build_legacy_private_message_request_payload(payload: dict[str, Any]) -> Any:
-    return legacy_private_message_module().build_private_message_request_payload(payload)
-
-
 def legacy_wecom_client_from_app() -> Any:
     return legacy_wecom_client_module().WeComClient.from_app()
-
-
-def legacy_broadcast_enqueue_job(**kwargs: Any) -> int:
-    return int(legacy_broadcast_jobs_service().enqueue_job(**kwargs))
 
 
 def _filtered_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:

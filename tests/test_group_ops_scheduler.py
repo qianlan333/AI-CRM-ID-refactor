@@ -108,6 +108,48 @@ def test_active_standard_plan_due_node_enqueues_broadcast_job():
     assert "attachments" in call["content_payload"]
 
 
+def test_group_ops_scheduler_uses_next_queue_gateway_payload_contract():
+    from aicrm_next.automation_engine.group_ops.scheduler import run_group_ops_due_scheduler
+    from aicrm_next.integration_gateway.wecom_group_adapter import NextGroupOpsQueueGateway
+
+    captured: dict[str, Any] = {}
+
+    def fake_insert_job(**kwargs):
+        captured.update(kwargs)
+        return 4321
+
+    repo = FakeGroupOpsRepo(
+        plans=[_plan(owner_userid="owner_live")],
+        groups={1: [_group("chat_001"), _group("chat_002")]},
+        nodes={
+            1: [
+                _node(
+                    text_content="hello exact groups",
+                    attachments=[{"msgtype": "image", "image": {"media_id": "img_001"}}],
+                )
+            ]
+        },
+    )
+    queue = NextGroupOpsQueueGateway(insert_job_fn=fake_insert_job)
+
+    summary = run_group_ops_due_scheduler(
+        repo=repo,
+        queue_gateway=queue,
+        duplicate_checker=lambda key: False,
+        now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc),
+        operator="pytest-scheduler",
+    )
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    assert captured["channel"] == "wecom_customer_group"
+    assert captured["target_kind"] == "chat_id"
+    assert captured["content_payload"]["channel"] == "wecom_customer_group"
+    assert captured["content_payload"]["chat_ids"] == ["chat_001", "chat_002"]
+    assert captured["content_payload"]["sender"] == "owner_live"
+    assert captured["content_payload"]["text"]["content"] == "hello exact groups"
+    assert captured["content_payload"]["attachments"] == [{"msgtype": "image", "image": {"media_id": "img_001"}}]
+
+
 def test_group_ops_due_at_uses_business_timezone():
     repo = FakeGroupOpsRepo(
         plans=[_plan(created_at="2026-05-29T05:05:00+00:00")],
@@ -276,6 +318,49 @@ def test_group_ops_content_package_text_enqueues():
 
     assert summary["group_ops_enqueued_jobs"] == 1
     assert queue.calls[0]["content_payload"]["text"]["content"] == "package hello group"
+
+
+def test_group_ops_content_package_text_and_resolved_attachments_enqueue(monkeypatch):
+    from aicrm_next.automation_engine.group_ops import scheduler
+
+    def fake_resolve(content_package):
+        assert content_package["content_text"] == "package hello group"
+        return (
+            [{"msgtype": "file", "file": {"media_id": "file-media-001"}}],
+            ["img-media-001"],
+        )
+
+    monkeypatch.setattr(scheduler, "resolve_group_ops_content_package_materials", fake_resolve)
+    repo = FakeGroupOpsRepo(
+        plans=[_plan()],
+        groups={1: [_group()]},
+        nodes={
+            1: [
+                _node(
+                    text_content="",
+                    attachments=[],
+                    content_package_json={
+                        "content_text": "package hello group",
+                        "image_library_ids": [1],
+                        "miniprogram_library_ids": [],
+                        "attachment_library_ids": [2],
+                    },
+                )
+            ]
+        },
+    )
+
+    summary, queue = _run(repo, now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc))
+
+    assert summary["group_ops_enqueued_jobs"] == 1
+    content_payload = queue.calls[0]["content_payload"]
+    assert content_payload["text"]["content"] == "package hello group"
+    assert content_payload["sender"] == "owner_001"
+    assert content_payload["channel"] == "wecom_customer_group"
+    assert content_payload["attachments"] == [
+        {"msgtype": "file", "file": {"media_id": "file-media-001"}},
+        {"msgtype": "image", "image": {"media_id": "img-media-001"}},
+    ]
 
 
 def test_group_ops_text_and_attachment_enqueues():

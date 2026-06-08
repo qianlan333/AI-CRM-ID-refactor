@@ -113,7 +113,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Automation conversion detail/setup pages and actions remain legacy-forwarded while the list shell is Next-owned.
+    notes: Archived wildcard inventory only. Exact automation conversion pages and actions are owned by aicrm_next.automation_engine admin_pages or exact Next API records; no production_compat fallback is restored here. Keep this broad record only as non-runtime ownership history until exact route inventory fully replaces it.
   - route_pattern: /admin/jobs
     methods: [GET]
     capability_owner: aicrm_next.admin_jobs
@@ -1244,7 +1244,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program setup/workspace APIs are still served by the legacy production facade while Next owns the readonly list shell.
+    notes: Archived wildcard inventory only. Exact program setup/workspace API ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/profile-segment-templates*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1255,7 +1255,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operations workspace still loads profile segment template options from the legacy production facade.
+    notes: Archived wildcard inventory only. Exact profile segment template ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/agents*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1288,7 +1288,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Agent run detail APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact agent run detail ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/agent-replay
     methods: [GET, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1299,7 +1299,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Agent replay API remains legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact agent replay ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/agent-orchestration*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1310,7 +1310,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Agent orchestration APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact agent orchestration ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/action-templates*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1321,7 +1321,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operations action-template APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact action-template ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/task-groups*
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1357,7 +1357,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operation task APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact operation task ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/workflows*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1368,7 +1368,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program workflow APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact workflow ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/workflow-nodes*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1390,7 +1390,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program operations dashboard API remains legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact dashboard ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/executions*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
@@ -1401,7 +1401,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program execution workspace APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact execution workspace ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -1426,7 +1426,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Program execution item APIs remain legacy-forwarded during the workspace cutover.
+    notes: Archived wildcard inventory only. Exact execution item ownership is documented by narrower Next route records; no production_compat fallback is restored here.
   - route_pattern: /api/admin/automation-conversion/member
     methods: [GET, HEAD]
     capability_owner: aicrm_next.automation_engine

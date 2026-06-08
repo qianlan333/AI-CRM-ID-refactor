@@ -54,7 +54,7 @@ def test_generator_builds_backlog_from_manifest() -> None:
     _generator, routes, backlog = _manifest_and_backlog()
 
     assert routes
-    assert backlog["status"] == "planning_only_no_runtime_change"
+    assert backlog["status"] == "current_progress_snapshot_no_runtime_change"
     assert len(backlog["entries"]) == len(routes)
 
 
@@ -135,7 +135,35 @@ def test_daily_business_critical_routes_have_business_continuity_requirement() -
 
     assert critical_entries
     assert all(entry["business_continuity_requirement"] for entry in critical_entries)
-    assert all("do not interrupt" in entry["business_continuity_requirement"].lower() for entry in critical_entries)
+    assert all("does not regress" in entry["business_continuity_requirement"].lower() for entry in critical_entries)
+
+
+def test_no_fallback_entries_do_not_keep_legacy_fallback_until() -> None:
+    _generator, _routes, backlog = _manifest_and_backlog()
+    checked_fields = (
+        "business_continuity_requirement",
+        "replacement_strategy",
+        "fallback_required_until",
+        "delete_condition",
+    )
+
+    no_fallback_entries = [entry for entry in backlog["entries"] if entry["legacy_fallback_allowed"] is False]
+
+    assert no_fallback_entries
+    for entry in no_fallback_entries:
+        for field in checked_fields:
+            assert "Keep legacy fallback until" not in entry[field], (entry["route_pattern"], field)
+
+
+def test_current_generated_backlog_files_are_fresh() -> None:
+    result = subprocess.run(
+        [sys.executable, str(GENERATOR_PATH), "--check"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_fixture_allowed_in_production_true_fails_checker(tmp_path: Path) -> None:

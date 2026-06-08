@@ -15,12 +15,15 @@ from scripts.check_no_new_legacy import (
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
+    check_group_ops_message_content_native,
+    check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
     check_public_product_pay_closeout_lock,
+    check_route_progress_docs_do_not_drift,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
     check_questionnaire_h5_submit_next_commandbus,
@@ -33,6 +36,287 @@ from scripts.check_no_new_legacy import (
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
+
+
+def _write_group_ops_message_content_files(
+    root: Path,
+    *,
+    domain: str = "from .message_content import build_group_ops_private_message_request_payload\n",
+    message_content: str = "def build_group_ops_private_message_request_payload(payload):\n    return payload, 0\n",
+    legacy_facade: str = "def legacy_wecom_client_from_app():\n    return None\n",
+) -> None:
+    domain_path = root / "aicrm_next/automation_engine/group_ops/domain.py"
+    message_content_path = root / "aicrm_next/automation_engine/group_ops/message_content.py"
+    legacy_facade_path = root / "aicrm_next/integration_gateway/legacy_flask_facade.py"
+    domain_path.parent.mkdir(parents=True, exist_ok=True)
+    message_content_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_facade_path.parent.mkdir(parents=True, exist_ok=True)
+    domain_path.write_text(domain, encoding="utf-8")
+    message_content_path.write_text(message_content, encoding="utf-8")
+    legacy_facade_path.write_text(legacy_facade, encoding="utf-8")
+
+
+def test_group_ops_message_content_guard_flags_domain_legacy_builder(tmp_path: Path) -> None:
+    _write_group_ops_message_content_files(
+        tmp_path,
+        domain="from aicrm_next.integration_gateway.legacy_flask_facade import build_legacy_private_message_request_payload\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_message_content_native(tmp_path)}
+
+    assert "group_ops_domain_legacy_message_builder" in codes
+
+
+def test_group_ops_message_content_guard_flags_message_content_legacy_import(tmp_path: Path) -> None:
+    _write_group_ops_message_content_files(
+        tmp_path,
+        message_content="from wecom_ability_service.domains.tasks.private_message import build_private_message_request_payload\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_message_content_native(tmp_path)}
+
+    assert "group_ops_message_content_legacy_import" in codes
+
+
+def test_group_ops_message_content_guard_flags_legacy_facade_wrapper(tmp_path: Path) -> None:
+    _write_group_ops_message_content_files(
+        tmp_path,
+        legacy_facade="def build_legacy_private_message_request_payload(payload):\n    return payload\n",
+    )
+
+    codes = {violation.code for violation in check_group_ops_message_content_native(tmp_path)}
+
+    assert "legacy_flask_facade_private_message_wrapper_remaining" in codes
+
+
+def test_group_ops_message_content_guard_accepts_minimal_native_files(tmp_path: Path) -> None:
+    _write_group_ops_message_content_files(tmp_path)
+
+    assert check_group_ops_message_content_native(tmp_path) == []
+
+
+def _write_wecom_group_adapter_files(
+    root: Path,
+    *,
+    adapter: str | None = None,
+    client: str | None = None,
+) -> None:
+    adapter_path = root / "aicrm_next/integration_gateway/wecom_group_adapter.py"
+    client_path = root / "aicrm_next/integration_gateway/wecom_customer_group_client.py"
+    adapter_path.parent.mkdir(parents=True, exist_ok=True)
+    adapter_path.write_text(
+        adapter
+        if adapter is not None
+        else (
+            "class NextGroupOpsQueueGateway:\n"
+            "    pass\n"
+            "class NextGroupOpsQueueStatsGateway:\n"
+            "    pass\n"
+            "def build_group_ops_queue_gateway():\n"
+            "    return NextGroupOpsQueueGateway()\n"
+            "def build_group_ops_queue_stats_gateway():\n"
+            "    return NextGroupOpsQueueStatsGateway()\n"
+        ),
+        encoding="utf-8",
+    )
+    client_path.write_text(client if client is not None else "class WeComCustomerGroupClient:\n    pass\n", encoding="utf-8")
+
+
+def test_wecom_group_adapter_guard_flags_legacy_client_import(tmp_path: Path) -> None:
+    _write_wecom_group_adapter_files(
+        tmp_path,
+        adapter="from .legacy_flask_facade import legacy_wecom_client_from_app\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_group_adapter_native(tmp_path)}
+
+    assert codes & {"wecom_group_adapter_legacy_wecom_client", "wecom_group_adapter_legacy_facade_import"}
+
+
+def test_wecom_group_adapter_guard_flags_legacy_broadcast_gateway(tmp_path: Path) -> None:
+    _write_wecom_group_adapter_files(tmp_path, adapter="class LegacyBroadcastJobQueueGateway:\n    pass\n")
+
+    codes = {violation.code for violation in check_wecom_group_adapter_native(tmp_path)}
+
+    assert "wecom_group_adapter_legacy_broadcast_gateway" in codes
+
+
+def test_wecom_group_adapter_guard_flags_client_legacy_import(tmp_path: Path) -> None:
+    _write_wecom_group_adapter_files(tmp_path, client="from flask import current_app\n")
+
+    codes = {violation.code for violation in check_wecom_group_adapter_native(tmp_path)}
+
+    assert "wecom_group_client_legacy_import" in codes
+
+
+def test_wecom_group_adapter_guard_flags_non_next_builder(tmp_path: Path) -> None:
+    _write_wecom_group_adapter_files(
+        tmp_path,
+        adapter=(
+            "class NextGroupOpsQueueStatsGateway:\n"
+            "    pass\n"
+            "def build_group_ops_queue_gateway():\n"
+            "    return LegacyBroadcastJobQueueGateway()\n"
+            "def build_group_ops_queue_stats_gateway():\n"
+            "    return NextGroupOpsQueueStatsGateway()\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_wecom_group_adapter_native(tmp_path)}
+
+    assert "wecom_group_queue_builder_not_next" in codes
+
+
+def test_wecom_group_adapter_guard_accepts_minimal_native_files(tmp_path: Path) -> None:
+    _write_wecom_group_adapter_files(tmp_path)
+
+    assert check_wecom_group_adapter_native(tmp_path) == []
+
+
+def _write_route_progress_docs(
+    root: Path,
+    *,
+    registry: str | None = None,
+    manifest: str | None = None,
+    backlog: str | None = None,
+) -> None:
+    registry_path = root / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest_path = root / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    backlog_path = root / "docs/development/legacy_replacement_backlog.yaml"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    backlog_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(registry if registry is not None else "routes: []\n", encoding="utf-8")
+    manifest_path.write_text(manifest if manifest is not None else "routes: []\n", encoding="utf-8")
+    backlog_path.write_text(
+        backlog
+        if backlog is not None
+        else "version: 1\nstatus: current_progress_snapshot_no_runtime_change\nentries: []\n",
+        encoding="utf-8",
+    )
+
+
+def test_route_progress_checker_flags_stale_registry_legacy_source(tmp_path: Path) -> None:
+    _write_route_progress_docs(
+        tmp_path,
+        registry=(
+            "routes:\n"
+            "  - route_id: stale_questionnaire\n"
+            "    path_pattern: /api/admin/questionnaires/1/share\n"
+            "    runtime_owner: next_native\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: legacy_questionnaire_facade\n"
+            "    notes: no legacy fallback\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_route_progress_docs_do_not_drift(tmp_path)}
+
+    assert "route_progress_stale_legacy_source" in codes
+
+
+def test_route_progress_checker_flags_archived_manifest_legacy_note(tmp_path: Path) -> None:
+    _write_route_progress_docs(
+        tmp_path,
+        manifest=(
+            "routes:\n"
+            "  - route_pattern: /admin/automation-conversion/{path:path}\n"
+            "    methods: [GET]\n"
+            "    current_runtime_owner: next\n"
+            "    production_behavior: archived_no_runtime\n"
+            "    legacy_fallback_allowed: false\n"
+            "    notes: detail pages remain legacy-forwarded\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_route_progress_docs_do_not_drift(tmp_path)}
+
+    assert "route_progress_manifest_archived_legacy_note" in codes
+
+
+def test_route_progress_checker_flags_stale_backlog_status(tmp_path: Path) -> None:
+    _write_route_progress_docs(tmp_path, backlog="version: 1\nstatus: final_cleanup_frozen\nentries: []\n")
+
+    codes = {violation.code for violation in check_route_progress_docs_do_not_drift(tmp_path)}
+
+    assert "route_progress_backlog_status_stale" in codes
+
+
+def test_route_progress_checker_flags_backlog_manifest_drift(tmp_path: Path) -> None:
+    manifest = (
+        "routes:\n"
+        "  - route_pattern: /api/example\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    fixture_allowed_in_production: false\n"
+        "    external_side_effect_risk: none\n"
+        "    checker: tests/test_example.py\n"
+        "    notes: manifest note\n"
+    )
+    backlog = (
+        "version: 1\n"
+        "status: current_progress_snapshot_no_runtime_change\n"
+        "entries:\n"
+        "  - id: LRB-001\n"
+        "    route_pattern: /api/example\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: archived_no_runtime\n"
+        "    legacy_fallback_allowed: false\n"
+        "    fixture_allowed_in_production: false\n"
+        "    external_side_effect_risk: none\n"
+        "    checker: tests/test_example.py\n"
+        "    notes: stale note\n"
+    )
+    _write_route_progress_docs(tmp_path, manifest=manifest, backlog=backlog)
+
+    codes = {violation.code for violation in check_route_progress_docs_do_not_drift(tmp_path)}
+
+    assert "route_progress_backlog_manifest_drift" in codes
+
+
+def test_route_progress_checker_accepts_minimal_current_docs(tmp_path: Path) -> None:
+    registry = (
+        "routes:\n"
+        "  - route_id: current_example\n"
+        "    path_pattern: /api/example\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    legacy_source: \"\"\n"
+        "    notes: no legacy fallback\n"
+    )
+    manifest = (
+        "routes:\n"
+        "  - route_pattern: /api/example\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    fixture_allowed_in_production: false\n"
+        "    external_side_effect_risk: none\n"
+        "    checker: tests/test_example.py\n"
+        "    notes: current note\n"
+    )
+    backlog = (
+        "version: 1\n"
+        "status: current_progress_snapshot_no_runtime_change\n"
+        "entries:\n"
+        "  - id: LRB-001\n"
+        "    route_pattern: /api/example\n"
+        "    methods: [GET]\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_exact\n"
+        "    legacy_fallback_allowed: false\n"
+        "    fixture_allowed_in_production: false\n"
+        "    external_side_effect_risk: none\n"
+        "    checker: tests/test_example.py\n"
+        "    notes: current note\n"
+    )
+    _write_route_progress_docs(tmp_path, registry=registry, manifest=manifest, backlog=backlog)
+
+    assert check_route_progress_docs_do_not_drift(tmp_path) == []
 
 
 def test_no_new_legacy_checker_flags_disallowed_legacy_import(tmp_path: Path) -> None:
