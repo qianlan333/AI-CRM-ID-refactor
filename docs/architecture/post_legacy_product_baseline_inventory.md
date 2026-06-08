@@ -18,7 +18,7 @@ This inventory is the first post-Legacy Product baseline after production compat
 | Page | Route | Owner | Expected status | API dependencies | Baseline note |
 | --- | --- | --- | --- | --- | --- |
 | Login | `/login` | `aicrm_next.admin_auth` | 200 | `/login` POST | Next auth shell; WeCom SSO stays blocked by default. |
-| Admin dashboard | `/admin` | `aicrm_next.frontend_compat` | 200 | `/api/admin/dashboard/shell-context` | Next-rendered shell over Next APIs. |
+| Admin dashboard | `/admin` | `aicrm_next.admin_shell` | 200 | `/api/admin/dashboard/shell-context` | Native Next admin shell, navigation, dashboard shell context, and `/admin/logout` compatibility redirect. |
 | Route registry | `/admin/system/routes` | `aicrm_next.platform_foundation` | 200 | `/api/admin/system/routes` | Ownership and lifecycle source of truth page. |
 | Customers | `/admin/customers` | `aicrm_next.customer_read_model` | 200 | `/api/customers` | Next customer read model only. |
 | Customer detail | `/admin/customers/wx_ext_001` | `aicrm_next.customer_read_model` | 200 | `/api/customers/{external_userid}`, `/api/customers/{external_userid}/timeline`, `/api/admin/automation-conversion/member` | Detail page reads customer and automation context without compat fallback. |
@@ -61,11 +61,11 @@ These routes were auto-discovered from the FastAPI app after #1040/#1042. They a
 | Channels | `/admin/channels`, `/admin/channels/new`, `/admin/channels/{channel_id}/edit` | `aicrm_next.frontend_compat` over `aicrm_next.automation_engine` APIs | Active; channel API URLs are validated by static URL alignment. |
 | Automation conversion | `/admin/automation-conversion`, `/admin/automation-conversion/programs/{program_id}/setup`, `/admin/automation-conversion/group-ops/ui` | `aicrm_next.frontend_compat` over `aicrm_next.automation_engine` APIs | Active/deferred by sub-surface; URL alignment is checked and side effects remain planned/blocked. |
 | Cloud orchestrator shell | `/admin/cloud-orchestrator`, `/admin/cloud-orchestrator/observability` | `aicrm_next.frontend_compat` | Active shell; observability/audit JSON APIs are closed by `docs/architecture/post_legacy_deferred_api_cleanup_inventory.md`. |
-| Admin config/runtime/API docs | `/admin/config`, `/admin/runtime-config`, `/admin/api-docs` | `aicrm_next.admin_config` for config, `aicrm_next.frontend_compat` for runtime/API docs | Active support/admin surfaces; no production_compat router involvement. |
+| Admin config/runtime/API docs | `/admin/config`, `/admin/config/app-settings`, `/admin/config/login-access`, `/admin/config/checklist`, `/setup/wizard`, `/admin/runtime-config`, `/admin/api-docs` | `aicrm_next.admin_config` for config, `aicrm_next.frontend_compat` for runtime/API docs | Active support/admin surfaces; no production_compat router involvement. |
 | Questionnaire external push logs | `/admin/questionnaires/external-push-logs`, `/admin/questionnaires/{questionnaire_id}/external-push-logs` | `aicrm_next.questionnaire` | Next-native log read and retry command surface; retry defaults to SideEffectPlan only and real external delivery remains gated. |
 | Radar links | `/admin/radar-links`, `/admin/radar-links/new`, `/admin/radar-links/{link_id}/edit`, `/admin/radar-links/{link_id}/detail` | `aicrm_next.frontend_compat` over `aicrm_next.radar_links` APIs | Active; export/events URLs resolve to Next routes. |
 | Alipay admin | `/admin/alipay/transactions` | `aicrm_next.commerce` | Active payment admin surface served by the shared readonly transaction model; provider behavior remains fake/blocked by default. |
-| Logout | `/admin/logout` | `aicrm_next.frontend_compat` | Active support route. |
+| Logout compatibility redirect | `/admin/logout` | `aicrm_next.admin_shell` | Redirects to canonical `/logout`. |
 
 ## API Contract Matrix
 

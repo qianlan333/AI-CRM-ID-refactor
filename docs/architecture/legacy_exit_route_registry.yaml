@@ -1447,20 +1447,20 @@ routes:
     checker: tests/test_broadcast_jobs_service.py
     rollback_owner: aicrm_next.admin_jobs
     notes: Broadcast jobs APIs.
-  - route_id: frontend_compat_dashboard_shell_context
+  - route_id: admin_shell_dashboard_shell_context
     path_pattern: /api/admin/dashboard/shell-context
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_shell
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_console_shell.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Admin shell context endpoint.
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_shell_native.py
+    rollback_owner: aicrm_next.admin_shell
+    notes: Native Admin Shell / dashboard shell context endpoint with navigation, loading, empty, and error state metadata.
   - route_id: frontend_compat_wecom_tags_page
     path_pattern: /admin/wecom-tags
     methods: [GET]
@@ -1615,20 +1615,20 @@ routes:
     checker: tests/test_admin_auth_registry_lifecycle.py
     rollback_owner: aicrm_next.admin_auth
     notes: Logout route is Next-owned; clears Next admin session cookie and redirects to /login; legacy rollback removed.
-  - route_id: frontend_compat_admin_logout
+  - route_id: admin_shell_admin_logout_redirect
     path_pattern: /admin/logout
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_shell
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
-    external_side_effect_risk: low
+    external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_console_shell.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Admin logout compatibility page.
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_shell_native.py
+    rollback_owner: aicrm_next.admin_shell
+    notes: Legacy /admin/logout URL redirects to canonical Next /logout and is no longer served by frontend_compat.
   - route_id: setup_wizard_family
     path_pattern: /setup/wizard*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]

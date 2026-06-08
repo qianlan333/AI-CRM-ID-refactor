@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from werkzeug.security import check_password_hash
 
-from aicrm_next.frontend_compat.admin_shell import legacy_url_for
+from aicrm_next.admin_shell import admin_path_for
 
 
 SESSION_COOKIE = "aicrm_next_admin_session"
@@ -117,7 +117,7 @@ def _login_url_for(name: str, **path_params: object) -> str:
         return "/login"
     if name == "api.admin_logout":
         return "/logout"
-    return legacy_url_for(name, **path_params)
+    return admin_path_for(name, **path_params)
 
 
 def authenticate_break_glass(*, username: str, password: str) -> AuthResult:

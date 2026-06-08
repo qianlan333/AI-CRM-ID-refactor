@@ -29,15 +29,17 @@ routes:
     notes: System health endpoint from platform_foundation.
   - route_pattern: /admin
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    capability_owner: aicrm_next.admin_shell
+    current_runtime_owner: next
+    production_behavior: next_admin_shell
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
-    delete_ready: false
-    checker: tools/check_next_admin_ui_data_parity.py
-    notes: Admin shell rendered by Next frontend_compat.
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_admin_shell_native.py
+    notes: Admin shell, navigation, and dashboard shell context are served by aicrm_next.admin_shell; /admin is removed from frontend_compat legacy inventory.
   - route_pattern: /admin/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model

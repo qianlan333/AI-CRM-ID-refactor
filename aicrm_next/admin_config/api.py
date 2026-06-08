@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
-from aicrm_next.frontend_compat.admin_shell import legacy_url_for, shell_context
+from aicrm_next.admin_shell import admin_path_for, shell_context
 
 from .application import (
     AdminConfigReadService,
@@ -65,7 +65,7 @@ def _config_context(
             "page_notice": page_notice,
             "page_error": page_error,
             "admin_action_token": ensure_admin_action_token(),
-            "url_for": legacy_url_for,
+            "url_for": admin_path_for,
         }
     )
     context.update(extra)
@@ -397,7 +397,7 @@ def setup_wizard(request: Request):
         page_summary="按步骤填写企业微信和系统配置信息。",
         active_endpoint="api.admin_config",
     )
-    context.update({"url_for": legacy_url_for, **SetupWizardStateService().build_state()})
+    context.update({"url_for": admin_path_for, **SetupWizardStateService().build_state()})
     return templates.TemplateResponse(request, "admin_console/setup_wizard.html", context)
 
 
@@ -415,9 +415,9 @@ async def setup_wizard_save(request: Request):
         state = state_service.build_state(
             validation_errors=[{"group": "后台安全", "field": "动作令牌", "key": "admin_action_token", "error": token_error}]
         )
-        context.update({"url_for": legacy_url_for, **state})
+        context.update({"url_for": admin_path_for, **state})
         return templates.TemplateResponse(request, "admin_console/setup_wizard.html", context)
     result = SetupWizardSaveCommand().execute(form, operator=_operator_from_request(request, form=form))
     state = state_service.build_state(validation_errors=result["validation_errors"], save_success=bool(result["ok"]))
-    context.update({"url_for": legacy_url_for, **state})
+    context.update({"url_for": admin_path_for, **state})
     return templates.TemplateResponse(request, "admin_console/setup_wizard.html", context)

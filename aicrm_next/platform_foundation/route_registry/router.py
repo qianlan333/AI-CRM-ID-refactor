@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.frontend_compat.admin_shell import shell_context
+from aicrm_next.admin_shell import shell_context
 
 from .checker import build_route_check_report
 from .service import get_route_registry_service
