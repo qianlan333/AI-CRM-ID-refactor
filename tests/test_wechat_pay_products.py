@@ -882,6 +882,9 @@ def test_next_product_editor_uses_v5_collapsed_modules_and_real_actions():
     assert "product: { code: productCode }" in template
     assert 'copyShareLinkBtn' in template
     assert 'openSharePreviewBtn' in template
+    assert template.count('id="productToast"') == 1
+    assert "商品已保存，外部推送保存失败" in template
+    assert "loadShareInfo().catch(() => {})" in template
     assert 'loadShareInfo()' in template
     assert "/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share" in template
 
