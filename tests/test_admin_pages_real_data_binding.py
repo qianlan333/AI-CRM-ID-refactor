@@ -440,11 +440,11 @@ def test_automation_conversion_page_uses_next_program_repository_without_fixture
 
     assert response.status_code == 200
     assert "真实自动化运营方案" in response.text
-    assert "real_program_v1" in response.text
     assert "fixture_repository_blocked_in_production" not in response.text
     assert "next_local_preview" not in response.text
     assert 'href="/admin/automation-conversion/programs/7/setup?step=basic">编辑</a>' in response.text
-    assert 'href="/admin/automation-conversion/programs/7/overview">概览</a>' in response.text
+    assert 'href="/admin/automation-conversion/programs/7/overview">数据概览</a>' in response.text
+    assert 'action="/admin/automation-conversion/programs/7/copy"' in response.text
     assert 'action="/admin/automation-conversion/programs/7/pause"' in response.text
 
 

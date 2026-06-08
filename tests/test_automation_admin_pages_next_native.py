@@ -58,14 +58,14 @@ def test_automation_project_routes_are_removed_from_frontend_compat_inventory() 
         "/admin/automation-conversion/programs/{program_id}/copy",
         "/admin/automation-conversion/programs/{program_id}/entry-channels",
     }
-    pending_group_ops_routes = {
+    migrated_group_ops_routes = {
         "/admin/automation-conversion/group-ops/ui",
         "/admin/automation-conversion/group-ops/plans/{plan_id}",
         "/admin/automation-conversion/group-ops/groups/ui",
     }
 
     assert migrated_routes.isdisjoint(LEGACY_FRONTEND_ROUTES)
-    assert pending_group_ops_routes <= set(LEGACY_FRONTEND_ROUTES)
+    assert migrated_group_ops_routes.isdisjoint(LEGACY_FRONTEND_ROUTES)
 
 
 def test_automation_project_templates_and_static_are_owned_by_automation_engine() -> None:
