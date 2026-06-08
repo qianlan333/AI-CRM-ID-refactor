@@ -8,7 +8,6 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_read_model.application import (
     GetAdminConfigPageQuery,
-    GetAdminFunnelPageQuery,
     GetAdminProductsPageQuery,
     page_row_count,
 )
@@ -24,8 +23,6 @@ templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 LEGACY_FRONTEND_ROUTES = [
-    "/admin/user-ops/ui",
-    "/admin/user-ops",
     "/admin/hxc-dashboard",
     "/admin/hxc-send-config",
     "/admin/cloud-orchestrator",
@@ -57,36 +54,6 @@ def _real_data_context(context: dict, *, payload: dict, title: str, summary: str
     if payload.get("page_error"):
         context["page_error"] = payload["page_error"]
     return context
-
-
-@router.get("/admin/user-ops/ui", name="api.admin_user_ops_ui")
-def admin_user_ops_ui(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="客户激活 / 客户列表",
-        page_summary="客户激活与运营入口读取生产客户、问卷、交易与自动化统计。",
-        active_endpoint="api.admin_console_customers",
-    )
-    payload = GetAdminFunnelPageQuery()()
-    _real_data_context(
-        context,
-        payload=payload,
-        title="客户激活 / 客户列表",
-        summary="生产客户、问卷、订单和自动化成员统计。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
-
-
-@router.get("/admin/user-ops", name="api.admin_user_ops")
-def admin_user_ops_page(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="客户激活 / 客户列表",
-        page_summary="User Ops 读模型与预览能力由 Next-native API 提供。",
-        active_endpoint="api.admin_console_customers",
-    )
-    context.update({"admin_action_token": "", "action_result": {}})
-    return templates.TemplateResponse(request, "admin_console/user_ops.html", context)
 
 
 def _empty_hxc_dashboard_summary() -> dict:

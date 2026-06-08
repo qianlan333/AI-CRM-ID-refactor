@@ -21,6 +21,7 @@ from scripts.check_no_new_legacy import (
     check_customer_detail_admin_page_native,
     check_customer_list_admin_page_native,
     check_customer_read_model_legacy_deletion,
+    check_user_ops_admin_pages_native,
     check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
     check_group_ops_scheduler_duplicate_checker_native,
@@ -2310,6 +2311,129 @@ def test_customer_detail_admin_page_checker_accepts_native_state_and_user_ops_co
     assert check_customer_detail_admin_page_native(tmp_path) == []
 
 
+def _write_valid_user_ops_admin_page_state(tmp_path: Path, *, frontend_source: str = "LEGACY_FRONTEND_ROUTES = []\n") -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/ops_enrollment/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True, exist_ok=True)
+    admin_pages.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text(frontend_source, encoding="utf-8")
+    admin_pages.write_text(
+        "from aicrm_next.admin_read_model.application import GetAdminFunnelPageQuery\n"
+        "@router.get('/admin/user-ops/ui', name=\"api.admin_user_ops_ui\")\n"
+        "def admin_user_ops_ui():\n"
+        "    return 'admin_console/real_data_page.html'\n"
+        "@router.get('/admin/user-ops', name=\"api.admin_user_ops\")\n"
+        "def admin_user_ops_page():\n"
+        "    return 'admin_console/user_ops.html'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router\n"
+        "app.include_router(user_ops_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+
+def test_user_ops_admin_page_checker_flags_frontend_compat_ui_route(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/user-ops/ui']\n",
+    )
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_page_still_in_frontend_compat" in codes
+
+
+def test_user_ops_admin_page_checker_flags_frontend_compat_workspace_route(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/user-ops']\n",
+    )
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_page_still_in_frontend_compat" in codes
+
+
+def test_user_ops_admin_page_checker_flags_frontend_compat_handlers(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(
+        tmp_path,
+        frontend_source=(
+            "@router.get('/admin/user-ops/ui')\n"
+            "def admin_user_ops_ui():\n"
+            "    pass\n"
+            "@router.get('/admin/user-ops')\n"
+            "def admin_user_ops_page():\n"
+            "    pass\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_page_still_in_frontend_compat" in codes
+
+
+def test_user_ops_admin_page_checker_flags_missing_native_module(tmp_path: Path) -> None:
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_admin_pages_missing" in codes
+
+
+def test_user_ops_admin_page_checker_flags_missing_native_route(tmp_path: Path) -> None:
+    admin_pages = tmp_path / "aicrm_next/ops_enrollment/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    admin_pages.parent.mkdir(parents=True)
+    admin_pages.write_text("@router.get('/admin/user-ops/ui', name=\"api.admin_user_ops_ui\")\ndef admin_user_ops_ui(): pass\n", encoding="utf-8")
+    main_py.write_text(
+        "from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router\n"
+        "app.include_router(user_ops_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_admin_page_route_missing" in codes
+
+
+def test_user_ops_admin_page_checker_flags_missing_registration(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = []\n",
+    )
+    (tmp_path / "aicrm_next/main.py").write_text("app.include_router(frontend_compat_router)\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_admin_pages_not_registered" in codes
+
+
+def test_user_ops_admin_page_checker_flags_registration_after_frontend_compat(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = []\n",
+    )
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router\n"
+        "app.include_router(frontend_compat_router)\n"
+        "app.include_router(user_ops_admin_pages_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_user_ops_admin_pages_native(tmp_path)}
+
+    assert "user_ops_admin_pages_registered_after_frontend_compat" in codes
+
+
+def test_user_ops_admin_page_checker_accepts_native_state(tmp_path: Path) -> None:
+    _write_valid_user_ops_admin_page_state(tmp_path)
+
+    assert check_user_ops_admin_pages_native(tmp_path) == []
+
+
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     media_api = tmp_path / "aicrm_next/media_library/api.py"
@@ -3202,8 +3326,13 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
         "  - path_pattern: /api/admin/user-ops*\n"
         "    runtime_owner: next_native\n"
         "    legacy_fallback_allowed: false\n"
+        "  - path_pattern: /admin/user-ops/ui\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - path_pattern: /admin/user-ops\n"
-        "    runtime_owner: frontend_compat\n"
+        "    runtime_owner: next_native\n"
         "    legacy_fallback_allowed: false\n"
         "    delete_status: deletion_locked\n"
         "    replacement_status: locked\n"
@@ -3235,8 +3364,14 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
         "  - route_pattern: /api/admin/user-ops*\n"
         "    production_behavior: next_read_model_only\n"
         "    legacy_fallback_allowed: false\n"
+        "  - route_pattern: /admin/user-ops/ui\n"
+        "    current_runtime_owner: next\n"
+        "    production_behavior: next_read_model_only\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n"
+        "    replacement_status: locked\n"
         "  - route_pattern: /admin/user-ops\n"
-        "    current_runtime_owner: frontend_compat\n"
+        "    current_runtime_owner: next\n"
         "    production_behavior: next_read_model_only\n"
         "    legacy_fallback_allowed: false\n"
         "    delete_status: deletion_locked\n"

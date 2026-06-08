@@ -2571,7 +2571,7 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
                         "user_ops_production_compat_route",
                         str(compat_path.relative_to(root)),
                         route_path,
-                        "User Ops group 6 routes must stay in Next ops_enrollment/frontend_compat and must not be added to production_compat.",
+                        "User Ops group 6 routes must stay in Next ops_enrollment and must not be added to production_compat.",
                     )
                 )
 
@@ -2631,7 +2631,11 @@ def check_user_ops_next_native_preview(root: Path = ROOT) -> list[Violation]:
 
     registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
     registry_by_path = {record.get("path_pattern"): record for record in registry_records}
-    readonly_records = {"/admin/user-ops": "frontend_compat", **{route: "next_native" for route in USER_OPS_READONLY_ROUTES}}
+    readonly_records = {
+        "/admin/user-ops/ui": "next_native",
+        "/admin/user-ops": "next_native",
+        **{route: "next_native" for route in USER_OPS_READONLY_ROUTES},
+    }
     for route_path, expected_owner in readonly_records.items():
         record = registry_by_path.get(route_path)
         if record is None:
@@ -3958,6 +3962,126 @@ def check_customer_detail_admin_page_native(root: Path = ROOT) -> list[Violation
                     "customer_admin_pages_not_registered_before_frontend_compat",
                     str(main_path.relative_to(root)),
                     "customer_admin_pages_router must be registered before frontend_compat_router",
+                )
+            )
+
+    return violations
+
+
+def check_user_ops_admin_pages_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            tree = None
+        for marker in (
+            '"/admin/user-ops/ui"',
+            '"/admin/user-ops"',
+            "@router.get(\"/admin/user-ops/ui\"",
+            "@router.get(\"/admin/user-ops\"",
+            "def admin_user_ops_ui",
+            "def admin_user_ops_page",
+        ):
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "user_ops_page_still_in_frontend_compat",
+                        str(frontend_routes.relative_to(root)),
+                        marker,
+                    )
+                )
+        if tree is not None:
+            constants = _module_list_constants(tree)
+            for route in ("/ADMIN/USER-OPS/UI", "/ADMIN/USER-OPS"):
+                if route in constants.get("LEGACY_FRONTEND_ROUTES", ()):
+                    violations.append(
+                        Violation(
+                            "user_ops_page_still_in_frontend_compat",
+                            str(frontend_routes.relative_to(root)),
+                            f"LEGACY_FRONTEND_ROUTES:{route.lower()}",
+                        )
+                    )
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"admin_user_ops_ui", "admin_user_ops_page"}:
+                    violations.append(
+                        Violation(
+                            "user_ops_page_still_in_frontend_compat",
+                            str(frontend_routes.relative_to(root)),
+                            f"def {node.name}",
+                        )
+                    )
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not decorator.args:
+                        continue
+                    attr = decorator.func
+                    if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                        continue
+                    first = decorator.args[0]
+                    if isinstance(first, ast.Constant) and first.value in {"/admin/user-ops/ui", "/admin/user-ops"}:
+                        violations.append(
+                            Violation(
+                                "user_ops_page_still_in_frontend_compat",
+                                str(frontend_routes.relative_to(root)),
+                                f"@router.get('{first.value}')",
+                            )
+                        )
+
+    admin_pages = root / "aicrm_next/ops_enrollment/admin_pages.py"
+    if not admin_pages.exists():
+        violations.append(
+            Violation(
+                "user_ops_admin_pages_missing",
+                str(admin_pages.relative_to(root)),
+                "missing native User Ops admin page module",
+            )
+        )
+    else:
+        source = admin_pages.read_text(encoding="utf-8")
+        required_markers = (
+            "/admin/user-ops/ui",
+            'name="api.admin_user_ops_ui"',
+            "/admin/user-ops",
+            'name="api.admin_user_ops"',
+            "GetAdminFunnelPageQuery",
+            "admin_console/real_data_page.html",
+            "admin_console/user_ops.html",
+        )
+        for marker in required_markers:
+            if marker not in source:
+                violations.append(
+                    Violation(
+                        "user_ops_admin_page_route_missing",
+                        str(admin_pages.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        native_import = "from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router"
+        native_include = "app.include_router(user_ops_admin_pages_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        if native_import not in source or native_include not in source:
+            violations.append(
+                Violation(
+                    "user_ops_admin_pages_not_registered",
+                    str(main_path.relative_to(root)),
+                    "user_ops_admin_pages_router missing from main.py",
+                )
+            )
+        elif frontend_include in source and source.index(native_include) > source.index(frontend_include):
+            violations.append(
+                Violation(
+                    "user_ops_admin_pages_registered_after_frontend_compat",
+                    str(main_path.relative_to(root)),
+                    "user_ops_admin_pages_router must be registered before frontend_compat_router",
                 )
             )
 
@@ -6914,6 +7038,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
         + check_customer_list_admin_page_native(ROOT)
         + check_customer_detail_admin_page_native(ROOT)
+        + check_user_ops_admin_pages_native(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)

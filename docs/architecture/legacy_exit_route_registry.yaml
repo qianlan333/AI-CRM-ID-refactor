@@ -752,21 +752,35 @@ routes:
     path_pattern: /admin/user-ops*
     methods: [GET]
     capability_owner: aicrm_next.ops_enrollment
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: validating
-    checker: tests/test_user_ops_registry_lifecycle.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_user_ops_admin_pages_native.py
     rollback_owner: aicrm_next.ops_enrollment
-    notes: User Ops admin page family documents the frontend_compat shell; exact /admin/user-ops is deletion_locked below. Other User Ops UI variants remain out of scope.
+    notes: User Ops admin page family is served by aicrm_next.ops_enrollment.admin_pages; frontend_compat route ownership removed while templates, inline JS, DOM ids, and User Ops API contracts are preserved.
+  - route_id: user_ops_admin_ui_page
+    path_pattern: /admin/user-ops/ui
+    methods: [GET]
+    capability_owner: aicrm_next.ops_enrollment
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_user_ops_admin_pages_native.py
+    rollback_owner: aicrm_next.ops_enrollment
+    notes: User Ops real-data entry page is served by aicrm_next.ops_enrollment.admin_pages over GetAdminFunnelPageQuery; frontend_compat route removed and no production_compat fallback.
   - route_id: user_ops_admin_page
     path_pattern: /admin/user-ops
     methods: [GET]
     capability_owner: aicrm_next.ops_enrollment
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
@@ -775,7 +789,7 @@ routes:
     replacement_status: locked
     checker: tests/test_user_ops_registry_lifecycle.py
     rollback_owner: aicrm_next.ops_enrollment
-    notes: User Ops admin page opens through frontend compatibility templates over Next-native APIs, stays 200, and must not redirect to the HXC dashboard or production_compat fallback.
+    notes: User Ops admin page opens through aicrm_next.ops_enrollment.admin_pages over Next-native APIs, stays 200, preserves templates and inline JS, and must not use frontend_compat or production_compat fallback.
   - route_id: identity_resolve_api
     path_pattern: /api/identity/resolve
     methods: [GET]

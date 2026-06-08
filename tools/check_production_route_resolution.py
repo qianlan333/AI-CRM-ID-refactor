@@ -50,6 +50,8 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/messages/wx_ext_001/recent"),
     ("GET", "/admin/customers"),
     ("GET", "/admin/customers/wx_ext_001"),
+    ("GET", "/admin/user-ops/ui"),
+    ("GET", "/admin/user-ops"),
     ("GET", "/api/admin/questionnaires"),
     ("GET", "/admin/questionnaires"),
     ("GET", "/admin/questionnaires/new"),
