@@ -1070,7 +1070,7 @@ def admin_automation_program_members(request: Request, program_id: int) -> Respo
     program = dict(members_payload.get("program") or data.get("program") or {})
     context = _shell_context(
         request=request,
-        page_title=f"{members_payload.get('stage_label') or '成员明细'}",
+        page_title="用户明细 list",
         page_summary="查看当前方案内的真实成员明细。",
         active_endpoint="api.admin_automation_conversion",
     )

@@ -21,9 +21,13 @@
 
 {% block content %}
 {% set payload = members_payload or {} %}
-{% set program = payload.program or {} %}
-{% set items = payload.items or [] %}
-{% set pagination = payload.pagination or {} %}
+{% set program = payload.get("program", {}) %}
+{% set items = payload.get("items", []) %}
+{% set pagination = payload.get("pagination", {}) %}
+{% set stage_label = payload.get("stage_label") or "成员明细" %}
+{% set stage_key = payload.get("stage_key") or "all" %}
+{% set total = payload.get("total") or 0 %}
+{% set program_id = program.get("id") or payload.get("program_id") %}
 
 <section class="members-page">
   {% if workspace_tabs %}
@@ -39,16 +43,16 @@
   <section class="admin-card">
     <div class="members-toolbar">
       <div>
-        <h2 class="members-title">{{ payload.stage_label or "成员明细" }}</h2>
-        <p class="members-muted">当前方案成员明细，stage={{ payload.stage_key or "all" }}。</p>
+        <h2 class="members-title">{{ stage_label }} - 全量用户</h2>
+        <p class="members-muted">当前方案成员明细，stage={{ stage_key }}。</p>
       </div>
-      <div class="members-count">{{ payload.total or 0 }}</div>
+      <div class="members-count">{{ total }}</div>
     </div>
   </section>
 
-  {% if payload.page_error %}
+  {% if payload.get("page_error") %}
   <section class="admin-card">
-    <p class="members-muted">{{ payload.page_error }}</p>
+    <p class="members-muted">{{ payload.get("page_error") }}</p>
   </section>
   {% endif %}
 
@@ -94,9 +98,9 @@
   </section>
 
   <section class="members-actions">
-    <a class="members-action" href="{{ url_for('api.admin_automation_program_overview', program_id=program.id or payload.program_id) }}">返回数据概览</a>
-    <a class="members-action{% if not pagination.has_prev %} is-disabled{% endif %}" href="{{ pagination.prev_url or '#' }}">上一页</a>
-    <a class="members-action{% if not pagination.has_next %} is-disabled{% endif %}" href="{{ pagination.next_url or '#' }}">下一页</a>
+    <a class="members-action" href="{{ url_for('api.admin_automation_program_overview', program_id=program_id) }}">返回数据概览</a>
+    <a class="members-action{% if not pagination.get('has_prev') %} is-disabled{% endif %}" href="{{ pagination.get('prev_url') or '#' }}">上一页</a>
+    <a class="members-action{% if not pagination.get('has_next') %} is-disabled{% endif %}" href="{{ pagination.get('next_url') or '#' }}">下一页</a>
   </section>
 </section>
 {% endblock %}
