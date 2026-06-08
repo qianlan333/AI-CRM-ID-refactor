@@ -345,10 +345,8 @@ def test_automation_conversion_page_renders_cards_and_refresh_urls_from_next_api
 
 def test_overview_api_source_no_longer_imports_legacy_overview_or_pools() -> None:
     api_source = (ROOT / "aicrm_next/automation_engine/api.py").read_text(encoding="utf-8")
-    facade_source = (ROOT / "aicrm_next/integration_gateway/legacy_automation_facade.py").read_text(encoding="utf-8")
 
     assert "get_automation_overview_from_legacy" not in api_source
     assert "list_automation_pools_from_legacy" not in api_source
     assert "LegacyAutomationDataUnavailable" not in api_source
-    assert "get_automation_overview_from_legacy" not in facade_source
-    assert "list_automation_pools_from_legacy" not in facade_source
+    assert not (ROOT / "aicrm_next/integration_gateway/legacy_automation_facade.py").exists()

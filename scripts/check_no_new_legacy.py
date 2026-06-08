@@ -35,8 +35,6 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
-    Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
-    Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py"),
 }
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
@@ -1745,6 +1743,108 @@ def check_production_compat_removed(root: Path = ROOT) -> list[Violation]:
                         "Runtime code must not import the removed production_compat API module.",
                     )
                 )
+    return violations
+
+
+def check_orphan_legacy_facades_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    facade_paths = {
+        "legacy_questionnaire_facade": (
+            root / "aicrm_next/integration_gateway/legacy_questionnaire_facade.py",
+            "orphan_legacy_questionnaire_facade_file_remaining",
+        ),
+        "legacy_automation_facade": (
+            root / "aicrm_next/integration_gateway/legacy_automation_facade.py",
+            "orphan_legacy_automation_facade_file_remaining",
+        ),
+    }
+
+    for _name, (path, code) in facade_paths.items():
+        if path.exists():
+            violations.append(
+                Violation(
+                    code,
+                    str(path.relative_to(root)),
+                    "Remove orphan legacy facade file.",
+                )
+            )
+
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    if checker_path.exists():
+        checker_text = checker_path.read_text(encoding="utf-8")
+        for stale_path in (
+            'Path("aicrm_next/integration_gateway/legacy_' + 'questionnaire_facade.py")',
+            'Path("aicrm_next/integration_gateway/legacy_' + 'automation_facade.py")',
+        ):
+            if stale_path in checker_text:
+                violations.append(
+                    Violation(
+                        "orphan_legacy_facade_stale_allowlist",
+                        str(checker_path.relative_to(root)),
+                        stale_path,
+                        "Remove orphan questionnaire/automation facades from LEGACY_IMPORT_ALLOWLIST.",
+                    )
+                )
+
+    runtime_root = root / "aicrm_next"
+    if runtime_root.exists():
+        for path in runtime_root.rglob("*.py"):
+            if "__pycache__" in path.parts or path in {item[0] for item in facade_paths.values()}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                continue
+            imported_facade = ""
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.endswith(".legacy_questionnaire_facade") or alias.name.endswith(".legacy_automation_facade"):
+                            imported_facade = alias.name
+                            break
+                elif isinstance(node, ast.ImportFrom):
+                    module_name = node.module or ""
+                    if module_name.endswith(".legacy_questionnaire_facade") or module_name.endswith(".legacy_automation_facade"):
+                        imported_facade = module_name
+                    elif module_name == "aicrm_next.integration_gateway":
+                        for alias in node.names:
+                            if alias.name in {"legacy_questionnaire_facade", "legacy_automation_facade"}:
+                                imported_facade = alias.name
+                                break
+                if imported_facade:
+                    break
+            if imported_facade:
+                violations.append(
+                    Violation(
+                        "orphan_legacy_facade_runtime_import",
+                        str(path.relative_to(root)),
+                        imported_facade,
+                        "Runtime code must not import removed orphan legacy facades.",
+                    )
+                )
+
+    registry_records = _load_yaml_records(root / "docs/architecture/legacy_exit_route_registry.yaml", "routes")
+    for record in registry_records:
+        legacy_source = str(record.get("legacy_source") or "").strip()
+        if legacy_source not in {"legacy_questionnaire_facade", "legacy_automation_facade"}:
+            continue
+        delete_status = str(record.get("delete_status") or "").strip()
+        runtime_owner = str(record.get("runtime_owner") or "").strip()
+        legacy_allowed = record.get("legacy_fallback_allowed")
+        if delete_status not in {"legacy_deleted", "deletion_locked", "archived"} or legacy_allowed is True or runtime_owner in {
+            "production_compat",
+            "legacy_forward",
+        }:
+            violations.append(
+                Violation(
+                    "orphan_legacy_facade_registry_active_source",
+                    str(record.get("route_id") or record.get("path_pattern") or "<unknown>"),
+                    f"legacy_source={legacy_source} delete_status={delete_status}",
+                    "Registry must not keep removed orphan facades as active legacy sources.",
+                )
+            )
+
     return violations
 
 
@@ -6358,6 +6458,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_customer_read_model_legacy_deletion(ROOT)
         + check_production_compat_removed(ROOT)
         + check_production_compat_routes(ROOT)
+        + check_orphan_legacy_facades_removed(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)
         + check_sidebar_jssdk_next_adapter(ROOT)
