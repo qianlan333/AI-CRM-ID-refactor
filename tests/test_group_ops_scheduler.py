@@ -378,12 +378,16 @@ def test_group_ops_text_and_attachment_enqueues():
 
 
 def test_group_ops_bad_node_does_not_block_good_node(monkeypatch):
-    from wecom_ability_service.domains import image_library
+    from aicrm_next.automation_engine.group_ops import scheduler
 
-    def fail_resolve(image_id):
-        raise RuntimeError(f"missing image {image_id}")
+    def fail_resolve(content_package):
+        image_ids = content_package.get("image_library_ids") or []
+        if not image_ids:
+            return [], []
+        image_id = int(image_ids[0] or 0)
+        raise RuntimeError(f"image_library_resolve_failed:id={image_id}:missing image {image_id}")
 
-    monkeypatch.setattr(image_library, "resolve_image_media_id", fail_resolve)
+    monkeypatch.setattr(scheduler, "resolve_group_ops_content_package_materials", fail_resolve)
     repo = FakeGroupOpsRepo(
         plans=[_plan()],
         groups={1: [_group()]},
@@ -419,9 +423,18 @@ def test_group_ops_bad_node_does_not_block_good_node(monkeypatch):
 
 
 def test_group_ops_unresolvable_content_package_records_node_error(monkeypatch):
-    from wecom_ability_service.domains import image_library
+    from aicrm_next.automation_engine.group_ops import scheduler
 
-    monkeypatch.setattr(image_library, "resolve_image_media_id", lambda image_id: "")
+    def fake_resolve(content_package):
+        if not (content_package.get("image_library_ids") or []):
+            return [], []
+        raise RuntimeError("image_library_resolve_failed:id=404:empty_media_id")
+
+    monkeypatch.setattr(
+        scheduler,
+        "resolve_group_ops_content_package_materials",
+        fake_resolve,
+    )
     repo = FakeGroupOpsRepo(
         plans=[_plan()],
         groups={1: [_group()]},

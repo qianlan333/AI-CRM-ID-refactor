@@ -195,6 +195,51 @@ class PostgresMediaLibraryRepository:
             raise NotFoundError(f"{kind} item not found")
         return {"ok": True, "deleted": True, "id": int(item_id)}
 
+    def cache_image_media_id(self, item_id: str, media_id: str, expires_at: datetime) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE image_library
+                    SET thumb_media_id = %s,
+                        thumb_media_id_expires_at = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (media_id, expires_at, int(item_id)),
+                )
+            conn.commit()
+
+    def cache_miniprogram_thumb_media_id(self, item_id: str, media_id: str, expires_at: datetime) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE miniprogram_library
+                    SET thumb_media_id = %s,
+                        thumb_media_id_expires_at = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (media_id, expires_at, int(item_id)),
+                )
+            conn.commit()
+
+    def cache_attachment_media_id(self, item_id: str, media_id: str, expires_at: datetime) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE attachment_library
+                    SET media_id = %s,
+                        media_id_expires_at = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (media_id, expires_at, int(item_id)),
+                )
+            conn.commit()
+
     def _list_images(self, *, limit: int, offset: int, filters: dict[str, Any]) -> dict[str, Any]:
         where: list[str] = []
         params: list[Any] = []
@@ -646,6 +691,7 @@ class PostgresMediaLibraryRepository:
                 "title": str(row.get("title") or ""),
                 "thumb_image_id": row.get("thumb_image_id"),
                 "thumb_media_id": str(row.get("thumb_media_id") or ""),
+                "thumb_media_id_expires_at": _iso(row.get("thumb_media_id_expires_at")),
                 "thumb_image_url": str(row.get("thumb_image_url") or ""),
                 "thumb_image_base64": str(row.get("thumb_image_base64") or ""),
                 "enabled": _bool(row.get("enabled")),
@@ -662,6 +708,8 @@ class PostgresMediaLibraryRepository:
             "file_name": str(row.get("file_name") or ""),
             "mime_type": str(row.get("mime_type") or "application/octet-stream"),
             "file_size": int(row.get("file_size") or 0),
+            "media_id": str(row.get("media_id") or ""),
+            "media_id_expires_at": _iso(row.get("media_id_expires_at")),
             "tags": normalize_tags(_json(row.get("tags"), [])),
             "enabled": _bool(row.get("enabled")),
             "created_at": _iso(row.get("created_at")),

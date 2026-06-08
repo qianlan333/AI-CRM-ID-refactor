@@ -42,6 +42,34 @@ def test_wecom_media_client_gettoken_and_upload_image() -> None:
     assert calls["post"][0]["timeout"] == 9
 
 
+def test_wecom_media_client_upload_attachment_path_and_params() -> None:
+    calls: dict[str, list] = {"get": [], "post": []}
+
+    def fake_get(url, *, params, timeout):
+        calls["get"].append({"url": url, "params": params, "timeout": timeout})
+        return {"errcode": 0, "access_token": "token_001", "expires_in": 7200}
+
+    def fake_post(url, *, params, files, timeout):
+        calls["post"].append({"url": url, "params": params, "files": files, "timeout": timeout})
+        return {"errcode": 0, "errmsg": "ok", "media_id": "media_file_001"}
+
+    client = WeComMediaUploadClient(
+        corp_id="corp_001",
+        secret="secret_001",
+        api_base="https://qyapi.example.test",
+        timeout=9,
+        http_get=fake_get,
+        http_post=fake_post,
+    )
+
+    result = client.upload_attachment("guide.pdf", b"pdf-bytes", "application/pdf")
+
+    assert result["media_id"] == "media_file_001"
+    assert calls["post"][0]["url"] == "https://qyapi.example.test/cgi-bin/media/upload_attachment"
+    assert calls["post"][0]["params"] == {"access_token": "token_001", "media_type": "file", "attachment_type": 1}
+    assert calls["post"][0]["files"]["media"] == ("guide.pdf", b"pdf-bytes", "application/pdf")
+
+
 def test_wecom_media_client_missing_config_fails_without_http_call(monkeypatch) -> None:
     for name in (
         "AICRM_WECOM_MEDIA_CORP_ID",

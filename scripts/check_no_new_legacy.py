@@ -43,7 +43,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/automation_engine/group_ops/integration_gateway.py"),
     Path("aicrm_next/automation_engine/group_ops/scheduler.py"),
     Path("aicrm_next/channel_entry/identity_bridge.py"),
     Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
@@ -986,6 +985,60 @@ def check_group_ops_message_content_native(root: Path = ROOT) -> list[Violation]
         ),
     ):
         violations.append(Violation("legacy_flask_facade_private_message_wrapper_remaining", str(legacy_facade_path.relative_to(root)), marker))
+
+    return violations
+
+
+def check_group_ops_material_resolver_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    gateway_path = root / "aicrm_next/automation_engine/group_ops/integration_gateway.py"
+    resolver_path = root / "aicrm_next/automation_engine/group_ops/material_resolver.py"
+
+    if gateway_path.exists():
+        text = gateway_path.read_text(encoding="utf-8")
+        rel = str(gateway_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "image_library",
+            "miniprogram_library",
+            "attachment_library",
+            "legacy_flask_facade",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("group_ops_material_gateway_legacy_import", rel, marker))
+        for marker in ("requests.", "httpx"):
+            if marker in text:
+                violations.append(Violation("group_ops_material_gateway_direct_http", rel, marker))
+        if "build_group_ops_material_resolver" not in text:
+            violations.append(Violation("group_ops_material_gateway_not_native", rel, "build_group_ops_material_resolver"))
+    else:
+        violations.append(Violation("group_ops_material_gateway_not_native", str(gateway_path.relative_to(root)), "missing integration_gateway.py"))
+
+    if resolver_path.exists():
+        text = resolver_path.read_text(encoding="utf-8")
+        rel = str(resolver_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "legacy_flask_facade",
+            "flask",
+            "current_app",
+            "WeComClient.from_app",
+        ):
+            if marker in text:
+                violations.append(Violation("group_ops_material_resolver_legacy_import", rel, marker))
+        for marker in ("requests.", "httpx"):
+            if marker in text:
+                violations.append(Violation("group_ops_material_resolver_direct_http", rel, marker))
+        for marker in (
+            "GroupOpsMaterialResolver",
+            "resolve_content_package_materials",
+            "build_group_ops_material_resolver",
+        ):
+            if marker not in text:
+                violations.append(Violation("group_ops_material_resolver_contract_missing", rel, marker))
+    else:
+        violations.append(Violation("group_ops_material_resolver_contract_missing", str(resolver_path.relative_to(root)), "missing material_resolver.py"))
 
     return violations
 
@@ -5885,6 +5938,7 @@ def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
         + check_group_ops_message_content_native(ROOT)
+        + check_group_ops_material_resolver_native(ROOT)
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
