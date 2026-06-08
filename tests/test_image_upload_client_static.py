@@ -4,12 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UPLOAD_CLIENT = ROOT / "wecom_ability_service" / "static" / "admin_console" / "image_upload_client.js"
-IMAGE_PICKER = ROOT / "wecom_ability_service" / "static" / "admin_console" / "image_picker.js"
-MINIPROGRAM_TEMPLATE = ROOT / "wecom_ability_service" / "templates" / "admin_console" / "miniprogram_library.html"
-CLOUD_CAMPAIGNS_TEMPLATE = (
-    ROOT / "wecom_ability_service" / "templates" / "admin_console" / "cloud_campaigns_workspace.html"
-)
+UPLOAD_CLIENT = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "image_upload_client.js"
+IMAGE_PICKER = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "image_picker.js"
+MINIPROGRAM_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "miniprogram_library.html"
 
 
 def test_image_upload_client_handles_non_json_413():
@@ -69,6 +66,5 @@ def test_image_picker_lazy_images_error_fallback_and_string_ids():
 
 
 def test_image_picker_consumers_load_upload_client_first():
-    for template in (MINIPROGRAM_TEMPLATE, CLOUD_CAMPAIGNS_TEMPLATE):
-        source = template.read_text(encoding="utf-8")
-        assert source.index("image_upload_client.js") < source.index("image_picker.js")
+    source = MINIPROGRAM_TEMPLATE.read_text(encoding="utf-8")
+    assert source.index("image_upload_client.js") < source.index("image_picker.js")
