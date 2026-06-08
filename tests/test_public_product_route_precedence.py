@@ -40,6 +40,4 @@ def test_public_product_routes_precede_production_compat_when_facade_enabled(mon
 
 
 def test_public_product_production_compat_source_has_no_public_product_decorators() -> None:
-    text = (Path(__file__).resolve().parents[1] / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-    for route in ["/p/{path:path}", "/pay/{path:path}", "/api/products/{path:path}"]:
-        assert route not in text
+    assert not (Path(__file__).resolve().parents[1] / "aicrm_next/production_compat/api.py").exists()

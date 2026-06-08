@@ -19,7 +19,7 @@ def _read_optional(path: str) -> str:
 
 def main() -> int:
     blockers: list[str] = []
-    production_compat = _read("aicrm_next/production_compat/api.py")
+    production_compat = _read_optional("aicrm_next/production_compat/api.py")
     if "/wecom/external-contact/callback" in production_compat and "handle_wecom_callback_via_legacy" in production_compat:
         blockers.append("callback route still defaults to handle_wecom_callback_via_legacy")
     if "/api/wecom/events" in production_compat and "handle_wecom_callback_via_legacy" in production_compat:

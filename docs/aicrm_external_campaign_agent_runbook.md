@@ -26,7 +26,7 @@
 
 ### 1.2 后台 Campaign 管理入口
 
-这些能力当前也必须保留，但运行边界已拆分：Campaign read/workspace GET 已锁定到 `aicrm_next.cloud_orchestrator` Next read model，`legacy_fallback_allowed=false`，不会通过 compatibility facade；写入、启动、删除、step mutation 和 run-due 仍是后续组的 out-of-scope 能力，由 `aicrm_next.production_compat` 保留受控 fallback。
+这些能力当前也必须保留，但运行边界已拆分：Campaign read/workspace GET 已锁定到 `aicrm_next.cloud_orchestrator` Next read model，`legacy_fallback_allowed=false`，不会通过 compatibility facade；production_compat empty router 已删除，不再提供 runtime fallback；写入、启动、删除、step mutation 和 run-due 由 Next safe-mode / CommandBus 路径守护。
 
 | 能力 | HTTP 方法 | 路径 | 当前用途 |
 |---|---:|---|---|

@@ -57,10 +57,6 @@ def test_campaign_read_requests_do_not_touch_legacy_forward(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     reset_campaign_read_fixture_state()
-
-    from aicrm_next.production_compat import api as production_api
-
-    assert not hasattr(production_api, "forward_to_legacy_flask")
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for path in [

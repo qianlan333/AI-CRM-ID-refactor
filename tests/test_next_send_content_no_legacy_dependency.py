@@ -37,11 +37,7 @@ def test_automation_send_content_logic_does_not_import_legacy_service() -> None:
 
 
 def test_new_routes_are_not_registered_through_production_compat() -> None:
-    source = _read("aicrm_next/production_compat/api.py")
-    assert "send-content" not in source
-    assert "material-picker" not in source
-    assert "behavior-segment-rules" not in source
-    assert "broadcast-tasks" not in source
+    assert not (ROOT / "aicrm_next/production_compat/api.py").exists()
 
 
 def test_new_tests_do_not_start_old_flask_app() -> None:

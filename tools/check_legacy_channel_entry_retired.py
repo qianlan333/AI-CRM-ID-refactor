@@ -72,7 +72,7 @@ def main() -> int:
     if "qrcode_result = handle_qrcode_enter_from_callback" in background_jobs:
         blockers.append("legacy background_jobs still consumes channel entry callback")
 
-    production_compat = _read("aicrm_next/production_compat/api.py")
+    production_compat = _read_optional("aicrm_next/production_compat/api.py")
     for route in ("/wecom/external-contact/callback", "/api/wecom/events"):
         if route in production_compat:
             blockers.append(f"production_compat still declares {route}")

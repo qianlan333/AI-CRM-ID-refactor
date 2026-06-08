@@ -35,34 +35,4 @@ def test_sidebar_readonly_target_routes_do_not_call_legacy_sidebar_facade() -> N
 
 
 def test_sidebar_readonly_routes_are_not_production_compat_forwards() -> None:
-    source = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-
-    for route in [
-        "/api/sidebar/customer-context",
-        "/api/sidebar/profile",
-        "/api/sidebar/tags",
-        "/api/sidebar/binding-status",
-        "/api/sidebar/contact-binding-status",
-        "/api/sidebar/lead-pool/status",
-        "/api/sidebar/signup-tags/status",
-        "/api/sidebar/marketing-status\", methods=[\"GET",
-        "/api/sidebar/v2/workbench",
-        "/api/sidebar/v2/questionnaires",
-        "/api/sidebar/v2/materials",
-        "/api/sidebar/v2/materials/image/",
-        "/api/sidebar/v2/other-staff-messages",
-        "/api/sidebar/v2/products",
-        "/api/sidebar/v2/orders",
-    ]:
-        assert route not in source
-
-    assert "/api/sidebar/jssdk-config" not in source
-
-    for write_route in [
-        "/api/sidebar/bind-mobile",
-        "/api/sidebar/lead-pool/upsert-class-term",
-        "/api/sidebar/signup-tags/mark",
-        "/api/sidebar/marketing-status/mark-enrolled",
-        "/api/sidebar/v2/materials/send",
-    ]:
-        assert write_route not in source
+    assert not (ROOT / "aicrm_next/production_compat/api.py").exists()

@@ -7,7 +7,6 @@ from tools import check_production_route_resolution as route_checker
 
 
 def test_login_logout_precede_production_compat_facade(monkeypatch) -> None:
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -17,8 +16,6 @@ def test_login_logout_precede_production_compat_facade(monkeypatch) -> None:
 
     async def forbidden_forward(request):
         raise AssertionError(f"legacy facade should not handle {request.method} {request.url.path}")
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", forbidden_forward, raising=False)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for response in [

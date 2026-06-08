@@ -4,8 +4,8 @@ Scope: Legacy Exit group 20 locks Cloud campaign run-due and preview timers to N
 
 Route precedence:
 
-- `aicrm_next.cloud_orchestrator.api` registers exact POST/OPTIONS routes before `aicrm_next.production_compat.api`.
-- `aicrm_next.production_compat.api` no longer registers `/api/admin/cloud-orchestrator/campaigns/run-due` or `/api/admin/cloud-orchestrator/campaigns/run-due/preview`.
+- `aicrm_next.cloud_orchestrator.api` registers exact POST/OPTIONS routes, and production_compat is no longer registered by `aicrm_next.main`.
+- `aicrm_next/production_compat/api.py` has been removed; no production_compat runtime route or fallback remains for `/api/admin/cloud-orchestrator/campaigns/run-due` or `/api/admin/cloud-orchestrator/campaigns/run-due/preview`.
 - Automation timer fallback routes remain production_compat and out-of-scope: `/api/admin/automation-conversion/reply-monitor/run-due`, `/api/admin/automation-conversion/reply-monitor/capture`, `/api/admin/automation-conversion/jobs/run-due`, `/api/admin/automation-conversion/jobs/run-due/preview`.
 
 ## Caller ↔ API ↔ CommandBus ↔ SideEffectPlan Matrix

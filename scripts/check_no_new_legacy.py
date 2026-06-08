@@ -33,7 +33,6 @@ EXCLUDED_DIRS = {
     "scripts",
 }
 LEGACY_IMPORT_ALLOWLIST = {
-    Path("aicrm_next/production_compat/api.py"),
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
     Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
     Path("aicrm_next/integration_gateway/legacy_automation_facade.py"),
@@ -43,9 +42,7 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
 }
-API_SIDE_EFFECT_ALLOWLIST = {
-    Path("aicrm_next/production_compat/api.py"),
-}
+API_SIDE_EFFECT_ALLOWLIST = set()
 SIDE_EFFECT_MARKERS = {
     "dispatch_wecom_task",
     "create_contact_way",
@@ -1545,6 +1542,8 @@ def check_customer_read_model_legacy_deletion(root: Path = ROOT) -> list[Violati
 
 
 def _decorator_route_paths(path: Path) -> list[str]:
+    if not path.exists():
+        return []
     tree = ast.parse(path.read_text(encoding="utf-8"))
     route_paths: list[str] = []
     for node in ast.walk(tree):
@@ -1583,6 +1582,8 @@ def _module_list_constants(tree: ast.AST) -> dict[str, tuple[str, ...]]:
 
 
 def _decorator_route_methods(path: Path) -> list[tuple[str, tuple[str, ...]]]:
+    if not path.exists():
+        return []
     tree = ast.parse(path.read_text(encoding="utf-8"))
     constants = _module_list_constants(tree)
     route_methods: list[tuple[str, tuple[str, ...]]] = []
@@ -1671,6 +1672,79 @@ def check_production_compat_routes(root: Path = ROOT) -> list[Violation]:
             violations.append(Violation("production_compat_route_owner_mismatch", str(compat_path.relative_to(root)), route_path))
         if "{path:path}" in route_path and not entry.legacy_fallback_allowed:
             violations.append(Violation("undocumented_wildcard_fallback", str(compat_path.relative_to(root)), route_path))
+    return violations
+
+
+def check_production_compat_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    compat_path = root / "aicrm_next/production_compat/api.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    main_path = root / "aicrm_next/main.py"
+
+    if compat_path.exists():
+        violations.append(
+            Violation(
+                "production_compat_api_file_remaining",
+                str(compat_path.relative_to(root)),
+                "Remove the empty production_compat router file.",
+            )
+        )
+
+    if checker_path.exists():
+        checker_text = checker_path.read_text(encoding="utf-8")
+        stale_allowlist_marker = 'Path("aicrm_next/production_compat/' + 'api.py")'
+        if stale_allowlist_marker in checker_text:
+            violations.append(
+                Violation(
+                    "production_compat_stale_allowlist",
+                    str(checker_path.relative_to(root)),
+                    stale_allowlist_marker,
+                    "Remove production_compat/api.py from legacy and side-effect allowlists.",
+                )
+            )
+
+    if main_path.exists():
+        main_text = main_path.read_text(encoding="utf-8")
+        for marker in ("production_compat", PROD_COMPAT_ROUTER_NAME, PROD_COMPAT_WILDCARD_ROUTER_NAME):
+            if marker in main_text:
+                violations.append(
+                    Violation(
+                        "production_compat_main_include_remaining",
+                        str(main_path.relative_to(root)),
+                        marker,
+                        "Do not import or include production_compat in the FastAPI app runtime.",
+                    )
+                )
+
+    runtime_root = root / "aicrm_next"
+    if runtime_root.exists():
+        for path in runtime_root.rglob("*.py"):
+            if "__pycache__" in path.parts or path == compat_path:
+                continue
+            text = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                continue
+            imports_removed_module = False
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports_removed_module = any(alias.name == "aicrm_next.production_compat.api" for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    imports_removed_module = node.module == "aicrm_next.production_compat.api" or (
+                        node.module == "aicrm_next.production_compat" and any(alias.name == "api" for alias in node.names)
+                    )
+                if imports_removed_module:
+                    break
+            if imports_removed_module:
+                violations.append(
+                    Violation(
+                        "production_compat_runtime_import_remaining",
+                        str(path.relative_to(root)),
+                        "aicrm_next.production_compat.api",
+                        "Runtime code must not import the removed production_compat API module.",
+                    )
+                )
     return violations
 
 
@@ -6282,6 +6356,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
+        + check_production_compat_removed(ROOT)
         + check_production_compat_routes(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)

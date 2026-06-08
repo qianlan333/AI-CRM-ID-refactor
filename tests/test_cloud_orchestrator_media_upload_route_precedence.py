@@ -28,11 +28,9 @@ def test_cloud_orchestrator_media_upload_resolves_to_next_before_production_comp
 
 
 def test_cloud_orchestrator_media_upload_does_not_call_legacy_forward(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
-    assert not hasattr(production_api, "forward_to_legacy_flask")
 
     response = TestClient(create_app(), raise_server_exceptions=False).options(
         "/api/admin/cloud-orchestrator/media/upload"

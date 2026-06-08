@@ -45,14 +45,4 @@ def test_payment_final_routes_precede_empty_production_compat_when_facade_enable
 
 
 def test_production_compat_source_has_no_payment_wildcards_or_facade() -> None:
-    text = (ROOT / "aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-
-    assert "forward_to_legacy_flask" not in text
-    assert "legacy_flask_facade" not in text
-    for route in [
-        "/api/admin/wechat-pay/{path:path}",
-        "/api/admin/alipay/{path:path}",
-        "/api/h5/wechat-pay/{path:path}",
-        "/api/h5/alipay/{path:path}",
-    ]:
-        assert route not in text
+    assert not (ROOT / "aicrm_next/production_compat/api.py").exists()

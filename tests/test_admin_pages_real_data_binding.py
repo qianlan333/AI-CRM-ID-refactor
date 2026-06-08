@@ -830,7 +830,6 @@ def test_automation_program_entry_channels_page_uses_next_binding_payload(monkey
 
 
 def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -844,8 +843,6 @@ def test_admin_login_route_is_next_owned_when_production_facade_is_enabled(monke
             f"legacy-auth-forwarded:{request.method}:{request.url.path}:{request.url.query}",
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
 
     response = TestClient(create_app(), raise_server_exceptions=False).get(
         "/login?next=/admin/automation-conversion/programs/7/entry-channels"
@@ -878,7 +875,6 @@ def test_automation_program_summary_derives_publish_state_from_next_readiness():
 
 
 def test_admin_wecom_tag_read_routes_stay_next_native(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -897,8 +893,6 @@ def test_admin_wecom_tag_read_routes_stay_next_native(monkeypatch):
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
 
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
-
     client = TestClient(create_app(), raise_server_exceptions=False)
     tags_response = client.get("/api/admin/wecom/tags")
     groups_response = client.get("/api/admin/wecom/tag-groups")
@@ -914,7 +908,6 @@ def test_admin_wecom_tag_read_routes_stay_next_native(monkeypatch):
 
 
 def test_admin_cloud_orchestrator_campaign_write_routes_do_not_forward_to_legacy(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -932,8 +925,6 @@ def test_admin_cloud_orchestrator_campaign_write_routes_do_not_forward_to_legacy
             },
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     next_cases = [
@@ -959,12 +950,11 @@ def test_admin_cloud_orchestrator_campaign_write_routes_do_not_forward_to_legacy
 
     run_due = client.post("/api/admin/cloud-orchestrator/campaigns/run-due", json={})
     assert run_due.status_code == 200
-    assert run_due.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
-    assert run_due.json()["forwarded"] == "POST:/api/admin/cloud-orchestrator/campaigns/run-due:"
+    assert "X-AICRM-Compatibility-Facade" not in run_due.headers
+    assert run_due.json()["fallback_used"] is False
 
 
 def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -984,8 +974,6 @@ def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypat
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
 
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
-
     response = TestClient(create_app(), raise_server_exceptions=False).post(
         "/api/admin/cloud-orchestrator/media/upload",
         files={"image": ("probe.png", b"\x89PNG\r\n\x1a\n", "image/png")},
@@ -1001,7 +989,6 @@ def test_admin_cloud_orchestrator_media_upload_route_uses_next_adapter(monkeypat
 
 
 def test_admin_hxc_dashboard_routes_are_next_owned_when_production_facade_is_enabled(monkeypatch):
-    import aicrm_next.production_compat.api as production_api
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -1018,8 +1005,6 @@ def test_admin_hxc_dashboard_routes_are_next_owned_when_production_facade_is_ena
             },
             headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
         )
-
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     page_response = client.get("/admin/hxc-dashboard")

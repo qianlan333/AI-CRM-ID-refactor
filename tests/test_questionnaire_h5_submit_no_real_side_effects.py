@@ -75,6 +75,4 @@ def test_public_h5_read_source_has_no_legacy_public_identity_helpers() -> None:
 
 
 def test_production_compat_no_longer_registers_h5_submit_or_diagnostics_exact_routes() -> None:
-    text = Path("aicrm_next/production_compat/api.py").read_text(encoding="utf-8")
-    assert '"/api/h5/questionnaires/{slug}/submit"' not in text
-    assert '"/api/h5/questionnaires/{slug}/client-diagnostics"' not in text
+    assert not (Path("aicrm_next/production_compat") / "api.py").exists()

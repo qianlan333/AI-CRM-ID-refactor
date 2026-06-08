@@ -2,7 +2,7 @@ version: 1
 status: manifest_only_no_runtime_change
 notes:
   - AI-CRM Next is the default FastAPI modular monolith runtime.
-  - This manifest documents ownership only; it does not narrow production_compat wildcard routes.
+  - production_compat empty router has been removed; no production_compat runtime route or fallback remains.
   - Real external side effects remain blocked, fake, guarded, or staging-disabled unless separately approved.
 routes:
   - route_pattern: /health
