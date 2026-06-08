@@ -98,6 +98,19 @@
   display: block;
 }
 
+.channel-actions-heading,
+.channel-action-cell {
+  width: 240px;
+}
+
+.channel-action-cell {
+  text-align: right;
+}
+
+.channel-action-cell .channel-row-actions {
+  justify-content: flex-end;
+}
+
 .channel-code {
   margin-top: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
