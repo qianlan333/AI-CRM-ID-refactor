@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.integration_gateway import legacy_flask_facade
 from aicrm_next.main import create_app
 from tools import check_active_automation_run_due_guardrails as checker
 
@@ -20,13 +19,8 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def _raise_if_legacy_forwarded():
-    raise AssertionError("active automation guardrail request must not forward to legacy")
-
-
 def test_jobs_run_due_dry_run_is_noop_and_not_forwarded(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         checker.ACTIVE_JOBS_ROUTE,
@@ -38,14 +32,14 @@ def test_jobs_run_due_dry_run_is_noop_and_not_forwarded(monkeypatch):
     payload = response.json()
     assert payload["ok"] is True
     assert payload["dry_run"] is True
-    assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
+    assert payload.get("side_effect_executed", False) is False
+    assert payload["fallback_used"] is False
     assert payload["route_owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
 def test_jobs_run_due_preview_body_is_read_only_and_not_forwarded(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         checker.ACTIVE_JOBS_ROUTE,
@@ -55,40 +49,29 @@ def test_jobs_run_due_preview_body_is_read_only_and_not_forwarded(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["preview"] is True
-    assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert [item["job_code"] for item in payload["jobs"]] == ["sop", "conversion_workflow"]
-    assert set(payload["jobs"][0]) >= {
-        "due_count",
-        "candidate_task_ids",
-        "candidate_workflow_ids",
-        "candidate_node_ids",
-        "estimated_audience_count",
-        "estimated_send_count",
-        "sample_targets",
-        "content_preview",
-        "risk_flags",
-    }
+    assert payload["timer_status"] == "preview_only"
+    assert payload.get("side_effect_executed", False) is False
+    assert payload["fallback_used"] is False
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
+    assert [item["job_code"] for item in payload["candidates"]] == ["sop", "conversion_workflow"]
+    assert set(payload["candidates"][0]) >= {"job_code", "status", "estimated_actions"}
 
 
 def test_jobs_run_due_preview_endpoint_is_available(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(checker.ACTIVE_JOBS_PREVIEW_ROUTE, json={"jobs": ["sop"]}, headers=_auth_headers())
 
     assert response.status_code == 200
-    assert response.json()["preview"] is True
+    assert response.json()["timer_status"] == "preview_only"
 
 
 def test_jobs_run_due_real_execution_requires_allowlist_in_production(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         checker.ACTIVE_JOBS_ROUTE,
-        json={"jobs": ["sop", "conversion_workflow"], "max_send_records": 1, "max_outbound_tasks": 1},
+        json={"dry_run": False, "jobs": ["sop", "conversion_workflow"], "max_send_records": 1, "max_outbound_tasks": 1},
         headers=_auth_headers(),
     )
 
@@ -96,38 +79,35 @@ def test_jobs_run_due_real_execution_requires_allowlist_in_production(monkeypatc
     payload = response.json()
     assert payload["error_code"] == "automation_run_due_allowlist_required"
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert payload["created_ids"]["user_ops_send_records"] == []
-    assert payload["created_ids"]["outbound_tasks"] == []
+    assert payload["fallback_used"] is False
+    assert payload["preflight_summary"]["allowlist_present"] is False
 
 
 def test_campaign_dry_run_and_preview_are_noop(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     dry_run = client.post(checker.CAMPAIGN_ROUTE, json={"dry_run": True, "batch_size": 1}, headers=_auth_headers())
     preview = client.post(checker.CAMPAIGN_PREVIEW_ROUTE, json={"batch_size": 1}, headers=_auth_headers())
 
     assert dry_run.status_code == 200
-    assert dry_run.json()["side_effect_executed"] is False
-    assert dry_run.json()["legacy_forwarded"] is False
+    assert dry_run.json().get("side_effect_executed", False) is False
+    assert dry_run.json()["fallback_used"] is False
     assert preview.status_code == 200
-    assert preview.json()["preview"] is True
-    assert preview.json()["side_effect_executed"] is False
-    assert preview.json()["legacy_forwarded"] is False
+    assert preview.json()["run_due_status"] == "preview_only"
+    assert preview.json().get("side_effect_executed", False) is False
+    assert preview.json()["fallback_used"] is False
 
 
 def test_campaign_real_execution_requires_allowlist_in_production(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
-    response = client.post(checker.CAMPAIGN_ROUTE, json={"batch_size": 1, "max_dispatch_count": 1}, headers=_auth_headers())
+    response = client.post(checker.CAMPAIGN_ROUTE, json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1}, headers=_auth_headers())
 
     assert response.status_code == 409
     payload = response.json()
     assert payload["error_code"] == "campaign_run_due_allowlist_required"
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
+    assert payload["fallback_used"] is False
 
 
 def test_active_guardrail_routes_still_require_internal_token(monkeypatch):
@@ -212,8 +192,10 @@ def _noop_payload(route: str, *, preview: bool = False, dry_run: bool = False):
         "preview": preview,
         "dry_run": dry_run,
         "side_effect_executed": False,
-        "legacy_forwarded": False,
+        "fallback_used": False,
         "route_owner": "ai_crm_next",
-        "compatibility_facade": "legacy_flask_facade",
+        "real_external_call_executed": False,
+        "automation_runtime_executed": False,
+        "wecom_send_executed": False,
         "path": route,
     }

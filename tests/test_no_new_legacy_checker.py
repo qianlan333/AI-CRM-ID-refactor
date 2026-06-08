@@ -22,6 +22,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
     check_group_ops_scheduler_duplicate_checker_native,
+    check_internal_run_due_guard_native,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
@@ -232,6 +233,82 @@ def test_orphan_legacy_facade_checker_accepts_removed_state(tmp_path: Path) -> N
     runtime_file.write_text("router = object()\n", encoding="utf-8")
 
     assert check_orphan_legacy_facades_removed(tmp_path) == []
+
+
+def _write_internal_run_due_guard_files(
+    root: Path,
+    *,
+    guard: str = "def maybe_guard_internal_run_due_request():\n    return None\n",
+    automation_api: str = (
+        "from aicrm_next.platform_foundation.internal_run_due_guard import maybe_guard_internal_run_due_request\n"
+        "def api_plan_automation_conversion_jobs_run_due():\n"
+        "    return maybe_guard_internal_run_due_request()\n"
+    ),
+    cloud_api: str = (
+        "from aicrm_next.platform_foundation.internal_run_due_guard import maybe_guard_internal_run_due_request\n"
+        "def api_plan_cloud_campaign_run_due():\n"
+        "    return maybe_guard_internal_run_due_request()\n"
+    ),
+) -> None:
+    guard_path = root / "aicrm_next/platform_foundation/internal_run_due_guard.py"
+    automation_path = root / "aicrm_next/automation_engine/api.py"
+    cloud_path = root / "aicrm_next/cloud_orchestrator/api.py"
+    guard_path.parent.mkdir(parents=True, exist_ok=True)
+    automation_path.parent.mkdir(parents=True, exist_ok=True)
+    cloud_path.parent.mkdir(parents=True, exist_ok=True)
+    guard_path.write_text(guard, encoding="utf-8")
+    automation_path.write_text(automation_api, encoding="utf-8")
+    cloud_path.write_text(cloud_api, encoding="utf-8")
+
+
+def test_internal_run_due_guard_checker_flags_missing_module(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(tmp_path)
+    (tmp_path / "aicrm_next/platform_foundation/internal_run_due_guard.py").unlink()
+
+    codes = {violation.code for violation in check_internal_run_due_guard_native(tmp_path)}
+
+    assert "internal_run_due_guard_missing" in codes
+
+
+def test_internal_run_due_guard_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(
+        tmp_path,
+        guard="from aicrm_next.integration_gateway import legacy_flask_facade\n",
+    )
+
+    codes = {violation.code for violation in check_internal_run_due_guard_native(tmp_path)}
+
+    assert "internal_run_due_guard_legacy_import" in codes
+
+
+def test_internal_run_due_guard_checker_flags_automation_api_missing_guard(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(tmp_path, automation_api="router = object()\n")
+
+    codes = {violation.code for violation in check_internal_run_due_guard_native(tmp_path)}
+
+    assert "automation_timer_guard_not_next_native" in codes
+
+
+def test_internal_run_due_guard_checker_flags_cloud_api_missing_guard(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(tmp_path, cloud_api="router = object()\n")
+
+    codes = {violation.code for violation in check_internal_run_due_guard_native(tmp_path)}
+
+    assert "cloud_run_due_guard_not_next_native" in codes
+
+
+def test_internal_run_due_guard_checker_flags_compatibility_header(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(tmp_path, guard='HEADER = "X-AICRM-Compatibility-Facade"\n')
+
+    codes = {violation.code for violation in check_internal_run_due_guard_native(tmp_path)}
+
+    assert "internal_run_due_guard_compatibility_facade_header" in codes
+
+
+def test_internal_run_due_guard_checker_accepts_native_files(tmp_path: Path) -> None:
+    _write_internal_run_due_guard_files(tmp_path)
+
+    assert check_internal_run_due_guard_native(tmp_path) == []
 
 
 def _write_group_ops_material_resolver_files(

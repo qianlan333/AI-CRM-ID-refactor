@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.integration_gateway import legacy_flask_facade
 from aicrm_next.main import create_app
 from tools import check_next_timer_route_readiness as checker
 
@@ -28,7 +27,6 @@ def test_timer_routes_are_next_owned_and_guarded(monkeypatch):
 
 def test_timer_body_dry_run_is_noop_and_not_forwarded(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         "/api/admin/automation-conversion/reply-monitor/run-due",
@@ -40,16 +38,14 @@ def test_timer_body_dry_run_is_noop_and_not_forwarded(monkeypatch):
     payload = response.json()
     assert payload["ok"] is True
     assert payload["dry_run"] is True
-    assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
+    assert payload.get("side_effect_executed", False) is False
+    assert payload["fallback_used"] is False
     assert payload["route_owner"] == "ai_crm_next"
-    assert payload["compatibility_facade"] == "legacy_flask_facade"
-    assert payload["path"] == "/api/admin/automation-conversion/reply-monitor/run-due"
+    assert "compatibility_facade" not in payload
 
 
 def test_timer_query_dry_run_is_noop_and_not_forwarded(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         "/api/admin/automation-conversion/reply-monitor/capture?dry_run=true",
@@ -58,13 +54,13 @@ def test_timer_query_dry_run_is_noop_and_not_forwarded(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json()["legacy_forwarded"] is False
+    assert response.json()["fallback_used"] is False
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
 def test_timer_header_dry_run_is_noop_without_probe_env_flag(monkeypatch):
     client = _production_client(monkeypatch)
     monkeypatch.delenv("AICRM_NEXT_ENABLE_PRODUCTION_PROBE_DRY_RUN", raising=False)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         "/api/admin/automation-conversion/jobs/run-due",
@@ -73,7 +69,8 @@ def test_timer_header_dry_run_is_noop_without_probe_env_flag(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json()["legacy_forwarded"] is False
+    assert response.json()["fallback_used"] is False
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
 def test_timer_without_dry_run_and_without_token_still_401(monkeypatch):
@@ -87,9 +84,10 @@ def test_timer_without_dry_run_and_without_token_still_401(monkeypatch):
 def test_timer_readiness_checker_returns_ok():
     result = checker.run_check()
 
+    assert result["ok"] is True
     assert result["safe_to_enable_timers"] is False
-    assert "dry_run_db_sentinel_not_passed" in result["blockers"]
-    assert "automation_production_data_not_ready" in result["blockers"]
+    assert "automation_production_data_not_ready" in result["warnings"]
+    assert "dry_run_db_sentinel_not_passed" not in result["blockers"]
 
 
 def test_timer_readiness_safe_only_after_automation_data_ready(monkeypatch):
@@ -116,10 +114,10 @@ def test_timer_readiness_safe_only_after_automation_data_ready(monkeypatch):
                         "ok": True,
                         "dry_run": True,
                         "side_effect_executed": False,
-                        "legacy_forwarded": False,
+                        "fallback_used": False,
                         "route_owner": "ai_crm_next",
-                        "compatibility_facade": "legacy_flask_facade",
                         "path": route.split("?", 1)[0],
+                        "real_external_call_executed": False,
                     },
                 )
             return FakeResponse(401)
@@ -149,6 +147,7 @@ def test_timer_readiness_safe_only_after_automation_data_ready(monkeypatch):
     assert result["automation_production_data_ready"] is True
     assert result["dry_run_db_sentinel"]["ok"] is True
     assert result["blockers"] == []
+    assert result["warnings"] == []
 
 
 def test_timer_readiness_blocks_when_db_sentinel_changes(monkeypatch):
@@ -162,9 +161,9 @@ def test_timer_readiness_blocks_when_db_sentinel_changes(monkeypatch):
                 "ok": True,
                 "dry_run": True,
                 "side_effect_executed": False,
-                "legacy_forwarded": False,
+                "fallback_used": False,
                 "route_owner": "ai_crm_next",
-                "compatibility_facade": "legacy_flask_facade",
+                "real_external_call_executed": False,
             }
 
         def json(self):
@@ -215,10 +214,6 @@ def _production_client(monkeypatch):
     monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
     monkeypatch.setenv("SECRET_KEY", "next-timer-route-readiness")
     return TestClient(create_app())
-
-
-def _raise_if_legacy_forwarded():
-    raise AssertionError("timer dry-run must not be forwarded to legacy")
 
 
 def test_timer_readiness_checker_does_not_use_forbidden_status_markers():

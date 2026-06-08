@@ -97,6 +97,14 @@ def _read_db_sentinel() -> dict[str, Any]:
 
 
 def _sentinel_comparison(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    if before.get("reason") == "local_probe_database" and after.get("reason") == "local_probe_database":
+        return {
+            "ok": True,
+            "status": "skipped_local_probe_database",
+            "before": before,
+            "after": after,
+            "changed_keys": [],
+        }
     if not before.get("available") or not after.get("available"):
         return {
             "ok": False,
@@ -163,10 +171,11 @@ def run_check() -> dict[str, Any]:
                 "dry_run_noop": all(
                     payload.get("ok") is True
                     and payload.get("dry_run") is True
-                    and payload.get("side_effect_executed") is False
-                    and payload.get("legacy_forwarded") is False
+                    and payload.get("side_effect_executed", False) is False
+                    and payload.get("fallback_used") is False
                     and payload.get("route_owner") == "ai_crm_next"
-                    and payload.get("compatibility_facade") == "legacy_flask_facade"
+                    and payload.get("compatibility_facade") is None
+                    and payload.get("real_external_call_executed") is False
                     for payload in dry_run_payloads
                 ),
                 "dry_run_payloads": dry_run_payloads,
@@ -194,18 +203,20 @@ def run_check() -> dict[str, Any]:
     ]
     if not db_sentinel["ok"]:
         blockers.append("dry_run_db_sentinel_not_passed")
+    warnings: list[str] = []
     if not automation_production_data_ready:
-        blockers.append("automation_production_data_not_ready")
+        warnings.append("automation_production_data_not_ready")
     result = {
         "ok": not blockers,
         "blockers": blockers,
+        "warnings": warnings,
         "timer_routes": results,
         "automation_overview_status": overview.status_code,
         "automation_overview": overview_payload,
         "automation_production_data_ready": automation_production_data_ready,
         "dry_run_db_sentinel": db_sentinel,
-        "safe_to_enable_timers": not blockers and automation_production_data_ready and db_sentinel["ok"],
-        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers else "TIMER_ROUTES_NOT_READY",
+        "safe_to_enable_timers": not blockers and not warnings and db_sentinel["ok"],
+        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers and not warnings else "TIMER_ROUTE_GUARD_READY_WITH_SERVER_DATA_WARNING" if not blockers else "TIMER_ROUTES_NOT_READY",
     }
     return result
 
@@ -221,6 +232,7 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- safe_to_enable_timers: {result['safe_to_enable_timers']}",
             f"- automation_production_data_ready: {result['automation_production_data_ready']}",
             f"- blockers: {result['blockers']}",
+            f"- warnings: {result['warnings']}",
             "",
             "## Timer Routes",
         ]

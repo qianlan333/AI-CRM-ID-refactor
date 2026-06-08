@@ -1974,6 +1974,83 @@ def check_route_progress_docs_do_not_drift(root: Path = ROOT) -> list[Violation]
     return violations
 
 
+def check_internal_run_due_guard_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    guard_path = root / "aicrm_next/platform_foundation/internal_run_due_guard.py"
+    automation_api_path = root / "aicrm_next/automation_engine/api.py"
+    cloud_api_path = root / "aicrm_next/cloud_orchestrator/api.py"
+
+    if not guard_path.exists():
+        violations.append(
+            Violation(
+                "internal_run_due_guard_missing",
+                str(guard_path.relative_to(root)),
+                "missing guard module",
+                "Add the Next-native internal run-due guard module.",
+            )
+        )
+    else:
+        guard_source = guard_path.read_text(encoding="utf-8")
+        for marker in ("legacy_flask_facade", "wecom_ability_service", "production_compat", "from flask", "current_app"):
+            if marker in guard_source:
+                violations.append(
+                    Violation(
+                        "internal_run_due_guard_legacy_import",
+                        str(guard_path.relative_to(root)),
+                        marker,
+                        "Keep internal run-due guard Next-native with no legacy or Flask imports.",
+                    )
+                )
+        if "X-AICRM-Compatibility-Facade" in guard_source:
+            violations.append(
+                Violation(
+                    "internal_run_due_guard_compatibility_facade_header",
+                    str(guard_path.relative_to(root)),
+                    "X-AICRM-Compatibility-Facade",
+                    "Next-native guard responses must not emit compatibility facade headers.",
+                )
+            )
+
+    for api_path, code in (
+        (automation_api_path, "automation_timer_guard_not_next_native"),
+        (cloud_api_path, "cloud_run_due_guard_not_next_native"),
+    ):
+        if not api_path.exists():
+            violations.append(Violation(code, str(api_path.relative_to(root)), "missing api module"))
+            continue
+        source = api_path.read_text(encoding="utf-8")
+        if "maybe_guard_internal_run_due_request" not in source or "aicrm_next.platform_foundation.internal_run_due_guard" not in source:
+            violations.append(
+                Violation(
+                    code,
+                    str(api_path.relative_to(root)),
+                    "maybe_guard_internal_run_due_request",
+                    "Run-due POST routes must use the Next-native internal guard.",
+                )
+            )
+        for marker in ("legacy_flask_facade", "forward_to_legacy_flask"):
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "internal_run_due_guard_legacy_import",
+                        str(api_path.relative_to(root)),
+                        marker,
+                        "Run-due route code must not import or call legacy_flask_facade.",
+                    )
+                )
+        if "X-AICRM-Compatibility-Facade" in source:
+            violations.append(
+                Violation(
+                    "internal_run_due_guard_compatibility_facade_header",
+                    str(api_path.relative_to(root)),
+                    "X-AICRM-Compatibility-Facade",
+                    "Run-due route code must not emit compatibility facade headers.",
+                )
+            )
+
+    return violations
+
+
 def check_messages_broad_wildcard_deletion(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
     compat_path = root / "aicrm_next/production_compat/api.py"
@@ -6459,6 +6536,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_production_compat_removed(ROOT)
         + check_production_compat_routes(ROOT)
         + check_orphan_legacy_facades_removed(ROOT)
+        + check_internal_run_due_guard_native(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)
         + check_sidebar_jssdk_next_adapter(ROOT)

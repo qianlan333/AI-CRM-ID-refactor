@@ -14,6 +14,7 @@ from aicrm_next.admin_jobs.routes import (
     ensure_admin_action_token,
 )
 from aicrm_next.admin_shell import shell_context
+from aicrm_next.platform_foundation.internal_run_due_guard import maybe_guard_internal_run_due_request
 
 from .application import (
     ApproveCloudPlanCommand,
@@ -233,7 +234,17 @@ def _bool_payload(value: Any, *, default: bool) -> bool:
 async def _run_due_payload(request: Request) -> dict[str, Any]:
     payload = await _request_payload(request)
     merged = dict(payload or {})
-    for key in ("batch_size", "dry_run", "force_plan", "now"):
+    for key in (
+        "batch_size",
+        "dry_run",
+        "force_plan",
+        "now",
+        "preview",
+        "scheduled_safe_mode",
+        "allow_campaign_ids",
+        "expected_due_count",
+        "due_count",
+    ):
         if key not in merged and key in request.query_params:
             merged[key] = request.query_params.get(key)
     return merged
@@ -429,6 +440,14 @@ def api_cloud_campaign_run_due_preview_options() -> JSONResponse:
 async def api_preview_cloud_campaign_run_due(request: Request) -> JSONResponse:
     try:
         payload = await _run_due_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due/preview",
+            route_kind="cloud_campaign_run_due_preview",
+        )
+        if guard_response is not None:
+            return guard_response
         command = PreviewCloudCampaignRunDueCommand(
             **_run_due_common(
                 request,
@@ -445,6 +464,14 @@ async def api_preview_cloud_campaign_run_due(request: Request) -> JSONResponse:
 async def api_plan_cloud_campaign_run_due(request: Request) -> JSONResponse:
     try:
         payload = await _run_due_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due",
+            route_kind="cloud_campaign_run_due",
+        )
+        if guard_response is not None:
+            return guard_response
         common = _run_due_common(request, payload, "/api/admin/cloud-orchestrator/campaigns/run-due")
         if _bool_payload(payload.get("preview"), default=False):
             command = PreviewCloudCampaignRunDueCommand(**common)

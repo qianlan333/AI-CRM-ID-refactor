@@ -40,17 +40,19 @@ def test_run_due_module_has_no_legacy_scheduler_send_or_http_clients():
 
 def test_run_due_routes_do_not_forward_to_legacy_or_execute_runtime(monkeypatch):
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "test-token")
     monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
     monkeypatch.delenv("AICRM_NEXT_FORCE_PRODUCTION_DATA", raising=False)
     reset_campaign_read_fixture_state()
     reset_run_due_fixture_state()
     client = TestClient(create_app(), raise_server_exceptions=False)
+    headers = {"Authorization": "Bearer test-token"}
 
     for path in [
         "/api/admin/cloud-orchestrator/campaigns/run-due/preview",
         "/api/admin/cloud-orchestrator/campaigns/run-due",
     ]:
-        response = client.post(path, json={"batch_size": 10})
+        response = client.post(path, json={"batch_size": 10, "dry_run": True}, headers=headers)
         assert response.status_code == 200
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
         assert response.headers["X-AICRM-Fallback-Used"] == "false"
