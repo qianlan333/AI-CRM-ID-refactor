@@ -3002,6 +3002,7 @@ def _write_automation_overview_pools_guard_fixture(tmp_path: Path, *, locked: bo
         if not locked
         else ""
     )
+    overview_branch = legacy_branch or "return JSONResponse(AutomationOverviewReadModel().execute(), headers={'X-AICRM-Fallback-Used': 'false'})"
     api.write_text(
         "from fastapi import APIRouter\n"
         "from starlette.responses import JSONResponse\n"
@@ -3009,7 +3010,7 @@ def _write_automation_overview_pools_guard_fixture(tmp_path: Path, *, locked: bo
         "router = APIRouter()\n"
         "@router.get('/api/admin/automation-conversion/overview')\n"
         "def overview():\n"
-        f"    {legacy_branch if legacy_branch else 'return JSONResponse(AutomationOverviewReadModel().execute(), headers={\"X-AICRM-Fallback-Used\": \"false\"})'}\n"
+        f"    {overview_branch}\n"
         "@router.get('/api/admin/automation-conversion/pools')\n"
         "def pools():\n"
         "    return JSONResponse(AutomationPoolReadModel().execute(), headers={'X-AICRM-Fallback-Used': 'false'})\n",
