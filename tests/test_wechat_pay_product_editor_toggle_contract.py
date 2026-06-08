@@ -16,3 +16,5 @@ def test_product_editor_toggles_are_persisted_business_enablement_controls() -> 
     assert 'const enabled = afterActionEnabled && afterActionMode === "redirect";' in text
     assert "setExternalPushActive(Boolean(externalPush.enabled));" in text
     assert "enabled: Boolean(externalPush.enabled)," in text
+    assert "externalPushEnabled" not in text
+    assert "支付成功外推" not in text

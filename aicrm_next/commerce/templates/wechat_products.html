@@ -268,13 +268,6 @@
           <div class="product-module-panel" id="externalPushPanel" hidden>
             <div class="product-field-grid">
               <div class="product-field">
-                <label>支付成功外推</label>
-                <div class="product-collapse-control" style="justify-content:flex-start;">
-                  <button class="product-switch" id="externalPushEnabled" type="button" role="switch" aria-checked="false" aria-label="开启支付成功外推"></button>
-                  <span id="externalPushEnabledText">关闭</span>
-                </div>
-              </div>
-              <div class="product-field">
                 <label for="externalPushUrl">推送地址</label>
                 <input id="externalPushUrl" placeholder="https://hooks.example.com/...">
               </div>
@@ -405,12 +398,6 @@
   function setExternalPushActive(enabled) {
     externalPush.enabled = Boolean(enabled);
     setPanelSwitch("externalPushExpand", "externalPushPanel", externalPush.enabled, "externalPushStateText");
-    setExternalPushEnabled(externalPush.enabled);
-  }
-  function setExternalPushEnabled(enabled) {
-    setSwitch($("externalPushEnabled"), enabled);
-    const label = $("externalPushEnabledText");
-    if (label) label.textContent = enabled ? "开启" : "关闭";
   }
   function selectAfterActionMode(modeName) {
     afterActionMode = modeName === "redirect" ? "redirect" : "lead";
@@ -730,7 +717,6 @@
 
   $("afterActionExpand")?.addEventListener("click", () => setAfterActionEnabled(!afterActionEnabled));
   $("externalPushExpand")?.addEventListener("click", () => setExternalPushActive(!externalPush.enabled));
-  $("externalPushEnabled")?.addEventListener("click", () => setExternalPushActive(!externalPush.enabled));
   document.querySelectorAll("[data-after-mode]").forEach(option => {
     option.addEventListener("click", () => selectAfterActionMode(option.dataset.afterMode));
   });
