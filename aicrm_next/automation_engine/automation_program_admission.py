@@ -937,9 +937,18 @@ class AutomationEntryAuditWriter:
         return dict(result.get("admission_attempt") or {})
 
 
-class QuestionnaireExternalPushConfigPlanner:
+class AutomationEntrySideEffectPlanner:
     def plan(self, result: dict[str, Any]) -> dict[str, Any]:
-        return {"planned": False, "reason": "no_external_push_for_channel_admission", "admission_status": result.get("admission_status")}
+        return {
+            "planned": False,
+            "reason": "no_real_external_call_for_channel_admission",
+            "admission_status": result.get("admission_status"),
+            "realtime_operation_tasks_enqueued_count": _int(result.get("realtime_operation_tasks_enqueued_count")),
+            "real_external_call_executed": False,
+        }
+
+
+QuestionnaireExternalPushConfigPlanner = AutomationEntrySideEffectPlanner
 
 
 class AutomationProgramAdmissionService:
@@ -947,10 +956,19 @@ class AutomationProgramAdmissionService:
         self,
         *,
         audit_writer: AutomationEntryAuditWriter | None = None,
-        external_push_planner: QuestionnaireExternalPushConfigPlanner | None = None,
+        external_push_planner: AutomationEntrySideEffectPlanner | None = None,
     ) -> None:
         self._audit_writer = audit_writer or AutomationEntryAuditWriter()
-        self._external_push_planner = external_push_planner or QuestionnaireExternalPushConfigPlanner()
+        self._external_push_planner = external_push_planner or AutomationEntrySideEffectPlanner()
+
+    def _complete_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(result or {})
+        payload.setdefault("source_status", "next_command")
+        payload.setdefault("fallback_used", False)
+        payload.setdefault("real_external_call_executed", False)
+        payload["audit"] = self._audit_writer.from_result(payload)
+        payload["external_push_plan"] = self._external_push_planner.plan(payload)
+        return payload
 
     def admit(self, command: AutomationAdmissionCommand) -> dict[str, Any]:
         trigger_payload = dict(command.trigger_payload or {})
@@ -960,15 +978,17 @@ class AutomationProgramAdmissionService:
         program = _fetchone("SELECT * FROM automation_program WHERE id = ? LIMIT 1", (int(command.program_id),))
         allowed, allow_reason = _program_entry_allowed(program, int(command.program_id))
         if not allowed:
-            return _reject_attempt(
-                program_id=int(command.program_id),
-                channel_id=int(command.channel_id),
-                binding_id=int(command.binding_id),
-                external_contact_id=external_contact_id,
-                master_customer_id=master_customer_id,
-                trigger_type=command.trigger_type,
-                trigger_payload=trigger_payload,
-                reason=allow_reason,
+            return self._complete_result(
+                _reject_attempt(
+                    program_id=int(command.program_id),
+                    channel_id=int(command.channel_id),
+                    binding_id=int(command.binding_id),
+                    external_contact_id=external_contact_id,
+                    master_customer_id=master_customer_id,
+                    trigger_type=command.trigger_type,
+                    trigger_payload=trigger_payload,
+                    reason=allow_reason,
+                )
             )
         binding = _fetchone(
             """
@@ -982,42 +1002,48 @@ class AutomationProgramAdmissionService:
             (int(command.binding_id), int(command.program_id), int(command.channel_id)),
         )
         if not binding or _text(binding.get("binding_status")) != "active":
-            return _reject_attempt(
-                program_id=int(command.program_id),
-                channel_id=int(command.channel_id),
-                binding_id=int(command.binding_id),
-                external_contact_id=external_contact_id,
-                master_customer_id=master_customer_id,
-                trigger_type=command.trigger_type,
-                trigger_payload=trigger_payload,
-                reason="binding_not_active",
+            return self._complete_result(
+                _reject_attempt(
+                    program_id=int(command.program_id),
+                    channel_id=int(command.channel_id),
+                    binding_id=int(command.binding_id),
+                    external_contact_id=external_contact_id,
+                    master_customer_id=master_customer_id,
+                    trigger_type=command.trigger_type,
+                    trigger_payload=trigger_payload,
+                    reason="binding_not_active",
+                )
             )
         binding["entry_rule_json"] = _json_loads(binding.get("entry_rule_json"), default={})
         if not bool(binding.get("auto_enter_pool")):
             manual_status = _text((binding.get("entry_rule_json") or {}).get("auto_enter_disabled_status")) or ADMISSION_MANUAL_REVIEW
             if manual_status not in {ADMISSION_MANUAL_REVIEW, ADMISSION_REJECTED}:
                 manual_status = ADMISSION_MANUAL_REVIEW
-            return _reject_attempt(
-                program_id=int(command.program_id),
-                channel_id=int(command.channel_id),
-                binding_id=int(command.binding_id),
-                external_contact_id=external_contact_id,
-                master_customer_id=master_customer_id,
-                trigger_type=command.trigger_type,
-                trigger_payload=trigger_payload,
-                reason="auto_enter_pool_disabled",
-                status=manual_status,
+            return self._complete_result(
+                _reject_attempt(
+                    program_id=int(command.program_id),
+                    channel_id=int(command.channel_id),
+                    binding_id=int(command.binding_id),
+                    external_contact_id=external_contact_id,
+                    master_customer_id=master_customer_id,
+                    trigger_type=command.trigger_type,
+                    trigger_payload=trigger_payload,
+                    reason="auto_enter_pool_disabled",
+                    status=manual_status,
+                )
             )
         if not external_contact_id and not master_customer_id:
-            return _reject_attempt(
-                program_id=int(command.program_id),
-                channel_id=int(command.channel_id),
-                binding_id=int(command.binding_id),
-                external_contact_id=external_contact_id,
-                master_customer_id=master_customer_id,
-                trigger_type=command.trigger_type,
-                trigger_payload=trigger_payload,
-                reason="identity_missing",
+            return self._complete_result(
+                _reject_attempt(
+                    program_id=int(command.program_id),
+                    channel_id=int(command.channel_id),
+                    binding_id=int(command.binding_id),
+                    external_contact_id=external_contact_id,
+                    master_customer_id=master_customer_id,
+                    trigger_type=command.trigger_type,
+                    trigger_payload=trigger_payload,
+                    reason="identity_missing",
+                )
             )
         existing = _find_program_member(int(command.program_id), external_contact_id)
         if existing and bool(existing.get("in_program")) and _is_channel_enter_trigger(command.trigger_type):
@@ -1061,33 +1087,37 @@ class AutomationProgramAdmissionService:
                 operator_id=_text(command.trigger_type) or "program_admission",
                 entry_source="program_admission",
             )
-            return _with_realtime_operation_task_hook(
-                {
-                    "admission_status": ADMISSION_DUPLICATE_ACTIVE,
-                    "accepted": False,
-                    "reason": "duplicate_active_member",
-                    "program_member": program_member,
-                    "member_id": _int((projection_member or {}).get("id")),
-                    "projection_member": projection_member or {},
-                    "legacy_member": projection_member or {},
-                    "admission_attempt": attempt,
-                },
-                hook,
+            return self._complete_result(
+                _with_realtime_operation_task_hook(
+                    {
+                        "admission_status": ADMISSION_DUPLICATE_ACTIVE,
+                        "accepted": False,
+                        "reason": "duplicate_active_member",
+                        "program_member": program_member,
+                        "member_id": _int((projection_member or {}).get("id")),
+                        "projection_member": projection_member or {},
+                        "legacy_member": projection_member or {},
+                        "admission_attempt": attempt,
+                    },
+                    hook,
+                )
             )
         member_mode = "new"
         if existing and not bool(existing.get("in_program")):
             policy = _reentry_policy(program or {}, binding)
             if policy in {"deny", "manual_review"}:
-                return _reject_attempt(
-                    program_id=int(command.program_id),
-                    channel_id=int(command.channel_id),
-                    binding_id=int(command.binding_id),
-                    external_contact_id=external_contact_id,
-                    master_customer_id=master_customer_id,
-                    trigger_type=command.trigger_type,
-                    trigger_payload=trigger_payload,
-                    reason=f"reentry_{policy}",
-                    status=ADMISSION_MANUAL_REVIEW if policy == "manual_review" else ADMISSION_REJECTED,
+                return self._complete_result(
+                    _reject_attempt(
+                        program_id=int(command.program_id),
+                        channel_id=int(command.channel_id),
+                        binding_id=int(command.binding_id),
+                        external_contact_id=external_contact_id,
+                        master_customer_id=master_customer_id,
+                        trigger_type=command.trigger_type,
+                        trigger_payload=trigger_payload,
+                        reason=f"reentry_{policy}",
+                        status=ADMISSION_MANUAL_REVIEW if policy == "manual_review" else ADMISSION_REJECTED,
+                    )
                 )
             member_mode = policy
         elif existing:
@@ -1198,9 +1228,7 @@ class AutomationProgramAdmissionService:
             },
             hook,
         )
-        payload["audit"] = self._audit_writer.from_result(payload)
-        payload["external_push_plan"] = self._external_push_planner.plan(payload)
-        return payload
+        return self._complete_result(payload)
 
 
 def admit_channel_contact_to_program(
@@ -2013,12 +2041,28 @@ def run_audience_entered_operation_tasks(
         results.append(_materialize_event_task_execution(task=task, entry=entry, operator_id=operator_id))
     get_db().commit()
     enqueued_count = sum(_int(item.get("enqueued_count")) for item in results)
+    queued_jobs = [
+        {
+            "task_id": _int(item.get("task_id")),
+            "audience_entry_id": _int(item.get("audience_entry_id")),
+            "execution_id": _text(item.get("execution_id")),
+        }
+        for item in results
+        if _int(item.get("enqueued_count")) > 0
+    ]
     return {
         "ok": True,
         "ran": len([item for item in results if _text(item.get("reason")) != "existing_execution"]),
         "enqueued_count": enqueued_count,
         "results": results,
         "reason": "" if results else "no_matching_audience_entered_tasks",
+        "side_effect_plan": {
+            "planned": bool(queued_jobs),
+            "effect_type": "operation_task.broadcast_job",
+            "queued_job_count": enqueued_count,
+            "items": queued_jobs,
+            "real_external_call_executed": False,
+        },
         "source_status": "next_command",
         "fallback_used": False,
         "real_external_call_executed": False,

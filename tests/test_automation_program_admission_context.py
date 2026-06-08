@@ -5,6 +5,7 @@ from aicrm_next.automation_engine.audience_transition.integration_gateway import
     OperationTaskRealtimeTriggerGateway,
     admit_channel_contact_to_program_with_runtime,
 )
+from aicrm_next.automation_engine.audience_transition.application import trigger_realtime_operation_tasks_for_event
 from aicrm_next.automation_engine.automation_program_admission import (
     AutomationAdmissionCommand,
     AutomationProgramAdmissionService,
@@ -134,3 +135,42 @@ def test_realtime_gateway_uses_next_service(monkeypatch):
     assert result["fallback_used"] is False
     assert result["real_external_call_executed"] is False
     assert calls == [event]
+
+
+def test_realtime_trigger_normalizer_preserves_side_effect_plan():
+    event = AudienceTransitionEvent(
+        member_id=52,
+        external_userid="ext-52",
+        program_id=5,
+        source_channel_id=6,
+        audience_entry_id=89,
+        audience_code="operating",
+        entry_reason="audience_entry_rule_passed",
+        entry_source="program_admission",
+        operator_id="operator-1",
+    )
+
+    class FakeGateway:
+        def trigger(self, received_event: AudienceTransitionEvent):
+            assert received_event == event
+            return {
+                "ok": True,
+                "ran": 1,
+                "enqueued_count": 1,
+                "results": [{"task_id": 7, "enqueued_count": 1}],
+                "side_effect_plan": {
+                    "planned": True,
+                    "effect_type": "operation_task.broadcast_job",
+                    "real_external_call_executed": False,
+                },
+            }
+
+    result = trigger_realtime_operation_tasks_for_event(event, gateway=FakeGateway())
+
+    assert result["realtime_operation_tasks_ran"] == 1
+    assert result["realtime_operation_tasks_enqueued_count"] == 1
+    assert result["side_effect_plan"] == {
+        "planned": True,
+        "effect_type": "operation_task.broadcast_job",
+        "real_external_call_executed": False,
+    }
