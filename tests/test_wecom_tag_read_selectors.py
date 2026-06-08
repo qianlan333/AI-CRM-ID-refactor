@@ -12,7 +12,7 @@ def _read(path: str) -> str:
 
 
 def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() -> None:
-    questionnaire = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
+    questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
     tag_management_template = _read("aicrm_next/frontend_compat/templates/admin_console/config_wecom_tags.html")
     tag_management = _read("aicrm_next/frontend_compat/static/admin_console/wecom_tag_management.js")
     automation_picker = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js")
@@ -35,7 +35,7 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
 
 
 def test_questionnaire_tag_selector_treats_degraded_empty_catalog_as_warning() -> None:
-    questionnaire = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
+    questionnaire = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
 
     assert "data.degraded || !state.availableTags.length" in questionnaire
     assert "data.page_error || '当前未获取到企微标签，可稍后重试'" in questionnaire
@@ -72,7 +72,7 @@ def test_channel_entry_tag_uses_unified_single_picker_and_hidden_save_fields() -
 
 
 def test_questionnaire_tags_use_unified_multiple_picker_without_flat_modal() -> None:
-    template = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
+    template = _read("aicrm_next/questionnaire/templates/admin_questionnaires.html")
 
     assert "wecom_tag_picker.css" in template
     assert "wecom_tag_picker.js" in template

@@ -15,6 +15,7 @@ from scripts.check_no_new_legacy import (
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
+    check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
@@ -1667,12 +1668,12 @@ def test_user_ops_next_native_preview_guard_allows_group_6_shape(tmp_path: Path)
 def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
-    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/questionnaire/admin_pages.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     questionnaire_api.parent.mkdir(parents=True)
-    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True, exist_ok=True)
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
@@ -1687,7 +1688,7 @@ def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_pat
         "    return {'fallback_used': True}\n",
         encoding="utf-8",
     )
-    frontend_routes.write_text(
+    admin_pages.write_text(
         "def admin_questionnaires():\n"
         "    return {'fallback_used': True}\n",
         encoding="utf-8",
@@ -1730,19 +1731,19 @@ def test_questionnaire_admin_read_guard_flags_legacy_rollback_and_compat(tmp_pat
 def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_routes(tmp_path: Path) -> None:
     compat = tmp_path / "aicrm_next/production_compat/api.py"
     questionnaire_api = tmp_path / "aicrm_next/questionnaire/api.py"
-    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/questionnaire/admin_pages.py"
     registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
     manifest = tmp_path / "docs/route_ownership/production_route_ownership_manifest.yaml"
     compat.parent.mkdir(parents=True)
     questionnaire_api.parent.mkdir(parents=True)
-    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True, exist_ok=True)
     registry.parent.mkdir(parents=True)
     manifest.parent.mkdir(parents=True)
 
     read_routes = [
-        ("/admin/questionnaires", "frontend_compat", "frontend_compat"),
-        ("/admin/questionnaires/new", "frontend_compat", "frontend_compat"),
-        ("/admin/questionnaires/{questionnaire_id}", "frontend_compat", "frontend_compat"),
+        ("/admin/questionnaires", "next_native", "next_native"),
+        ("/admin/questionnaires/new", "next_native", "next_native"),
+        ("/admin/questionnaires/{questionnaire_id}", "next_native", "next_native"),
         ("/api/admin/questionnaires", "next_native", "next"),
         ("/api/admin/questionnaires/{questionnaire_id}", "next_native", "next"),
         ("/api/admin/questionnaires/{questionnaire_id}/questions", "next_native", "next"),
@@ -1769,8 +1770,10 @@ def test_questionnaire_admin_read_guard_allows_locked_read_and_out_of_scope_rout
         "    return {'fallback_used': False}\n",
         encoding="utf-8",
     )
-    frontend_routes.write_text(
+    admin_pages.write_text(
         "def admin_questionnaires():\n"
+        "    return {'fallback_used': False}\n"
+        "def admin_questionnaires_legacy_ui_alias():\n"
         "    return {'fallback_used': False}\n"
         "def admin_questionnaire_new():\n"
         "    return {'fallback_used': False}\n"
@@ -3091,3 +3094,62 @@ def test_automation_overview_pools_guard_allows_next_read_model_locked(tmp_path:
     _write_automation_overview_pools_guard_fixture(tmp_path, locked=True)
 
     assert check_automation_overview_pools_next_read_model(tmp_path) == []
+
+
+def _write_group_ops_admin_page_guard_fixture(tmp_path: Path, *, locked: bool) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    frontend_template = tmp_path / "aicrm_next/frontend_compat/templates/admin_console/group_ops.html"
+    frontend_css = tmp_path / "aicrm_next/frontend_compat/static/admin_console/group_ops.css"
+    frontend_js = tmp_path / "aicrm_next/frontend_compat/static/admin_console/group_ops.js"
+    native_pages = tmp_path / "aicrm_next/automation_engine/group_ops/admin_pages.py"
+    native_template = tmp_path / "aicrm_next/automation_engine/group_ops/templates/admin_console/group_ops.html"
+    native_css = tmp_path / "aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.css"
+    native_js = tmp_path / "aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.js"
+    main = tmp_path / "aicrm_next/main.py"
+    for path in (frontend_routes, native_pages, native_template, native_css, native_js, main):
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    frontend_routes.write_text(
+        (
+            "LEGACY_FRONTEND_ROUTES = []\n"
+            if locked
+            else "LEGACY_FRONTEND_ROUTES = ['/admin/automation-conversion/group-ops/ui']\n"
+            "def _group_ops_page_context(): pass\n"
+            "def admin_group_ops_ui(): pass\n"
+        ),
+        encoding="utf-8",
+    )
+    native_pages.write_text(
+        '"/admin/automation-conversion/group-ops/ui"\n'
+        '"/admin/automation-conversion/group-ops/plans/{plan_id:int}"\n'
+        '"/admin/automation-conversion/group-ops/groups/ui"\n',
+        encoding="utf-8",
+    )
+    native_template.write_text(
+        "/static/group-ops/admin_console/group_ops.css\n/static/group-ops/admin_console/group_ops.js\n",
+        encoding="utf-8",
+    )
+    native_css.write_text(".group-ops{}\n", encoding="utf-8")
+    native_js.write_text("window.GroupOps = true;\n", encoding="utf-8")
+    main.write_text('group_ops_admin_pages_router\n"/static/group-ops"\n', encoding="utf-8")
+
+    if not locked:
+        for path in (frontend_template, frontend_css, frontend_js):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("legacy group ops asset\n", encoding="utf-8")
+
+
+def test_group_ops_admin_page_guard_flags_frontend_compat_drift(tmp_path: Path) -> None:
+    _write_group_ops_admin_page_guard_fixture(tmp_path, locked=False)
+
+    codes = {violation.code for violation in check_group_ops_admin_pages_next_native(tmp_path)}
+
+    assert "group_ops_admin_page_legacy_route" in codes
+    assert "group_ops_admin_page_legacy_handler" in codes
+    assert "group_ops_admin_page_frontend_asset" in codes
+
+
+def test_group_ops_admin_page_guard_allows_next_native_bundle_locked(tmp_path: Path) -> None:
+    _write_group_ops_admin_page_guard_fixture(tmp_path, locked=True)
+
+    assert check_group_ops_admin_pages_next_native(tmp_path) == []

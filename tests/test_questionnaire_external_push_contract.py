@@ -37,12 +37,11 @@ def test_next_external_push_log_routes_do_not_forward_to_legacy_flask():
     source = (
         Path(__file__).resolve().parents[1]
         / "aicrm_next"
-        / "frontend_compat"
-        / "legacy_routes.py"
+        / "questionnaire"
+        / "admin_pages.py"
     ).read_text(encoding="utf-8")
     start = source.index('"/admin/questionnaires/external-push-logs"')
-    end = source.index('@router.get("/admin/automation-conversion"', start)
-    route_block = source[start:end]
+    route_block = source[start:]
 
     assert "forward_to_legacy_flask" not in route_block
     assert "QuestionnaireExternalPushLogReadService" in source
@@ -69,7 +68,7 @@ def test_next_external_push_log_pages_do_not_use_admin_shell_legacy_endpoint_map
     template_source = (
         root
         / "aicrm_next"
-        / "frontend_compat"
+        / "questionnaire"
         / "templates"
         / "admin_console"
         / "questionnaire_external_push_logs.html"
@@ -114,7 +113,7 @@ def test_external_push_actions_do_not_link_via_retired_flask_endpoint_helpers():
     next_template_source = (
         root
         / "aicrm_next"
-        / "frontend_compat"
+        / "questionnaire"
         / "templates"
         / "admin_console"
         / "questionnaire_external_push_logs.html"
@@ -209,7 +208,7 @@ def test_next_admin_detail_projection_keeps_blank_external_push_values_blank():
 def test_next_questionnaire_editor_does_not_prefill_external_push_defaults():
     root = Path(__file__).resolve().parents[1]
     sources = [
-        root / "aicrm_next" / "frontend_compat" / "templates" / "admin_questionnaires.html",
+        root / "aicrm_next" / "questionnaire" / "templates" / "admin_questionnaires.html",
         root / "wecom_ability_service" / "templates" / "admin_questionnaires.html",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in sources)
@@ -223,7 +222,7 @@ def test_next_questionnaire_editor_does_not_prefill_external_push_defaults():
 def test_questionnaire_editor_exposes_trial_external_push_type():
     root = Path(__file__).resolve().parents[1]
     sources = [
-        root / "aicrm_next" / "frontend_compat" / "templates" / "admin_questionnaires.html",
+        root / "aicrm_next" / "questionnaire" / "templates" / "admin_questionnaires.html",
         root / "wecom_ability_service" / "templates" / "admin_questionnaires.html",
     ]
     for source in sources:
