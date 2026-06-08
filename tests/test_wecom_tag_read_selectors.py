@@ -8,7 +8,7 @@ from aicrm_next.main import create_app
 
 
 def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() -> None:
-    questionnaire = Path("aicrm_next/frontend_compat/templates/admin_questionnaires.html").read_text(encoding="utf-8")
+    questionnaire = Path("aicrm_next/questionnaire/templates/admin_questionnaires.html").read_text(encoding="utf-8")
     tag_management_template = Path("aicrm_next/frontend_compat/templates/admin_console/config_wecom_tags.html").read_text(encoding="utf-8")
     tag_management = Path("aicrm_next/frontend_compat/static/admin_console/wecom_tag_management.js").read_text(encoding="utf-8")
     automation_picker = Path("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js").read_text(encoding="utf-8")
@@ -31,7 +31,7 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
 
 
 def test_questionnaire_tag_selector_treats_degraded_empty_catalog_as_warning() -> None:
-    questionnaire = Path("aicrm_next/frontend_compat/templates/admin_questionnaires.html").read_text(encoding="utf-8")
+    questionnaire = Path("aicrm_next/questionnaire/templates/admin_questionnaires.html").read_text(encoding="utf-8")
 
     assert "data.degraded || !state.availableTags.length" in questionnaire
     assert "data.page_error || '当前未获取到企微标签，可手工填写 tag_id'" in questionnaire

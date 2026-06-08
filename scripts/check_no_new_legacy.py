@@ -1685,7 +1685,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                         "questionnaire_admin_read_production_compat_route",
                         str(compat_path.relative_to(root)),
                         route_path,
-                        "Questionnaire admin read routes must stay in frontend_compat/questionnaire Next read model code, not production_compat.",
+                        "Questionnaire admin read routes must stay in questionnaire Next read model code, not production_compat.",
                     )
                 )
 
@@ -1726,12 +1726,13 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                         )
                     )
 
-    frontend_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
-    if frontend_path.exists():
+    admin_pages_path = root / "aicrm_next/questionnaire/admin_pages.py"
+    if admin_pages_path.exists():
         sources = _function_sources(
-            frontend_path,
+            admin_pages_path,
             {
                 "admin_questionnaires",
+                "admin_questionnaires_legacy_ui_alias",
                 "admin_questionnaire_new",
                 "admin_questionnaire_detail",
                 "_questionnaire_editor_response",
@@ -1751,7 +1752,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                     violations.append(
                         Violation(
                             code,
-                            str(frontend_path.relative_to(root)),
+                            str(admin_pages_path.relative_to(root)),
                             f"{function_name}:{marker}",
                             "Questionnaire admin read pages must stay Next-query/read-model only with no legacy forward, compatibility facade, or fallback_used=true.",
                         )
@@ -1764,7 +1765,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
         if record is None:
             violations.append(Violation("questionnaire_admin_read_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
             continue
-        expected_owner = "frontend_compat" if route_path.startswith("/admin/") else "next_native"
+        expected_owner = "next_native"
         if record.get("runtime_owner") != expected_owner:
             violations.append(Violation("questionnaire_admin_read_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
         if record.get("legacy_fallback_allowed") is not False:
@@ -1944,26 +1945,25 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
                 f"runtime_owner={external_push_record.get('runtime_owner')} legacy_fallback_allowed={external_push_record.get('legacy_fallback_allowed')} legacy_source={external_push_record.get('legacy_source')} adapter_mode={external_push_record.get('adapter_mode')} delete_status={external_push_record.get('delete_status')} replacement_status={external_push_record.get('replacement_status')}",
             )
         )
-    frontend_routes_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
-    if frontend_routes_path.exists():
-        frontend_source = frontend_routes_path.read_text(encoding="utf-8")
+    admin_pages_path = root / "aicrm_next/questionnaire/admin_pages.py"
+    if admin_pages_path.exists():
+        admin_pages_source = admin_pages_path.read_text(encoding="utf-8")
         try:
-            start = frontend_source.index('"/admin/questionnaires/external-push-logs"')
-            end = frontend_source.index('@router.get("/admin/automation-conversion"', start)
-            route_block = frontend_source[start:end]
+            start = admin_pages_source.index('"/admin/questionnaires/external-push-logs"')
+            route_block = admin_pages_source[start:]
         except ValueError:
-            violations.append(Violation("questionnaire_external_push_logs_route_block_missing", str(frontend_routes_path.relative_to(root)), external_push_route))
+            violations.append(Violation("questionnaire_external_push_logs_route_block_missing", str(admin_pages_path.relative_to(root)), external_push_route))
         else:
             if "forward_to_legacy_flask" in route_block:
-                violations.append(Violation("questionnaire_external_push_logs_legacy_forward", str(frontend_routes_path.relative_to(root)), "forward_to_legacy_flask"))
+                violations.append(Violation("questionnaire_external_push_logs_legacy_forward", str(admin_pages_path.relative_to(root)), "forward_to_legacy_flask"))
             for marker in [
                 "QuestionnaireExternalPushLogReadService",
                 "QuestionnaireExternalPushRetryService",
                 "QuestionnaireExternalPushRetryCommand",
                 "QuestionnaireExternalPushRetryBatchCommand",
             ]:
-                if marker not in frontend_source:
-                    violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(frontend_routes_path.relative_to(root)), marker))
+                if marker not in admin_pages_source:
+                    violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(admin_pages_path.relative_to(root)), marker))
 
     shell_endpoint_markers = [
         "api.admin_console_global_questionnaire_external_push_logs",
@@ -1986,7 +1986,7 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
                     )
                 )
 
-    next_template_path = root / "aicrm_next/frontend_compat/templates/admin_console/questionnaire_external_push_logs.html"
+    next_template_path = root / "aicrm_next/questionnaire/templates/admin_console/questionnaire_external_push_logs.html"
     if next_template_path.exists():
         next_template_source = next_template_path.read_text(encoding="utf-8")
         for marker in shell_endpoint_markers:

@@ -6,9 +6,9 @@ from aicrm_next.platform_foundation.route_registry.service import get_route_regi
 
 
 ADMIN_PAGE_ROUTES = {
-    "/admin/questionnaires": "frontend_compat",
-    "/admin/questionnaires/new": "frontend_compat",
-    "/admin/questionnaires/{questionnaire_id}": "frontend_compat",
+    "/admin/questionnaires": "next_native",
+    "/admin/questionnaires/new": "next_native",
+    "/admin/questionnaires/{questionnaire_id}": "next_native",
 }
 
 ADMIN_READ_API_ROUTES = {

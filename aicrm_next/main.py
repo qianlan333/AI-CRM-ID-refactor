@@ -53,6 +53,7 @@ from .platform_foundation.api import router as platform_router
 from .post_legacy_deferred.api import router as post_legacy_deferred_router
 from .post_legacy_deferred import reset_post_legacy_deferred_fixture_state
 from .public_product.api import router as public_product_router
+from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
 from .questionnaire.api import router as questionnaire_router
 from .send_content.api import router as send_content_router
 from .radar_links.api import router as radar_links_router
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(identity_router)
     app.include_router(message_archive_router)
+    app.include_router(questionnaire_admin_pages_router)
     app.include_router(questionnaire_router)
     app.include_router(radar_links_router)
     app.include_router(auth_wecom_router)
