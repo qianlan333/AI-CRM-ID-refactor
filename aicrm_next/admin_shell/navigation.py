@@ -119,6 +119,7 @@ def admin_path_for(name: str, **path_params: object) -> str:
         "api.admin_automation_program_pause": "pause",
         "api.admin_automation_program_activate": "activate",
         "api.admin_automation_program_archive": "archive",
+        "api.admin_automation_program_members": "members",
         "api.admin_automation_program_entry_channels": "entry-channels",
     }
     if name in program_route_map and program_id:

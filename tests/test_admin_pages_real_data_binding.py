@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html import unescape
 
 from fastapi.testclient import TestClient
 
@@ -496,12 +497,15 @@ def test_automation_program_setup_overview_and_copy_render_next_pages(monkeypatc
     assert "基础信息" in setup_response.text
     assert 'action="/admin/automation-conversion/programs/7/update"' in setup_response.text
     assert overview_response.status_code == 200
-    assert "方案概览" in overview_response.text
-    assert "入口已发布" in overview_response.text
-    assert "运行概况" in overview_response.text
-    assert "分层人数" in overview_response.text
-    assert "高意向" in overview_response.text
-    assert "10 次及以上互动" in overview_response.text
+    assert "方案人数统计" in overview_response.text
+    assert "当前方案总人数" in overview_response.text
+    assert "问卷审核" in overview_response.text
+    assert "查看 list" in overview_response.text
+    assert "/admin/automation-conversion/programs/7/members?stage=all&page=1&page_size=20" in unescape(
+        overview_response.text
+    )
+    assert "方案概览" not in overview_response.text
+    assert "运行概况" not in overview_response.text
     assert copy_response.status_code == 200
     assert "复制自动化运营方案" in copy_response.text
     assert 'action="/admin/automation-conversion/programs/7/copy"' in copy_response.text

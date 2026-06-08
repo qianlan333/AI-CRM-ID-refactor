@@ -11,16 +11,6 @@
 {% set bindings = payload.bindings or [] %}
 {% set candidates = payload.candidate_channels or [] %}
 
-{% if workspace_tabs %}
-<nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
-  {% for item in workspace_tabs %}
-  <a class="ac-workspace-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
-    <strong class="ac-workspace-tab__title">{{ item.label }}</strong>
-  </a>
-  {% endfor %}
-</nav>
-{% endif %}
-
 <div
   class="channel-page"
   data-channel-admission-page="entry-channels"

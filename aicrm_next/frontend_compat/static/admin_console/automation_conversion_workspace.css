@@ -492,3 +492,84 @@
   padding: 14px 16px;
   border-radius: 12px;
 }
+
+body.admin-shell {
+  overflow-x: auto;
+}
+
+.admin-layout {
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-width: 1180px;
+}
+
+.admin-sidebar {
+  position: sticky;
+  top: 0;
+  width: 264px;
+  min-height: 100vh;
+}
+
+.admin-main-wrap,
+.admin-topbar {
+  min-width: 0;
+}
+
+.admin-topbar {
+  flex-direction: row;
+}
+
+.admin-topbar-head {
+  flex: 1 1 auto;
+  min-width: 360px;
+}
+
+.admin-topbar-meta {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.setup-topbar-tabs {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.setup-topbar-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #111827;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: none;
+}
+
+.setup-topbar-tab:hover {
+  background: #f8fafc;
+}
+
+.setup-topbar-tab.is-active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1456f0;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .06);
+}
+
+.program-overview,
+.setup-shell,
+.channel-page {
+  min-width: 960px;
+}
+
+.admin-table-wrap,
+.setup-table-wrap,
+.table-wrap {
+  overflow-x: auto;
+}
