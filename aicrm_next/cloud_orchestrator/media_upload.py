@@ -169,15 +169,16 @@ class UploadCloudOrchestratorMediaCommand:
         adapter_mode: str,
     ) -> tuple[str, dict[str, Any]]:
         try:
-            from aicrm_next.integration_gateway.legacy_flask_facade import legacy_wecom_client_from_app
+            from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
 
-            media_id = _text(
-                legacy_wecom_client_from_app()._upload_private_message_image(
-                    file_name,
-                    file_bytes,
-                    content_type,
+            with _legacy_app().app_context():
+                media_id = _text(
+                    legacy_wecom_client_from_app()._upload_private_message_image(
+                        file_name,
+                        file_bytes,
+                        content_type,
+                    )
                 )
-            )
         except Exception as exc:  # pragma: no cover - exact WeCom exception type lives in legacy boundary
             raise CloudOrchestratorMediaUploadError(f"wecom_upload_failed: {exc}") from exc
         if not media_id:
