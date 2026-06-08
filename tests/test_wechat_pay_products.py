@@ -103,8 +103,9 @@ def test_admin_product_management_routes_render_and_mutate(app, client):
 
     list_page = client.get("/admin/wechat-pay/products")
     assert list_page.status_code == 200
-    assert "商品管理" in list_page.get_data(as_text=True)
-    assert "创建商品" in list_page.get_data(as_text=True)
+    list_html = list_page.get_data(as_text=True)
+    assert "商品管理" in list_html
+    assert "创建商品" in list_html
 
     new_page = client.get("/admin/wechat-pay/products/new")
     assert new_page.status_code == 200
@@ -836,6 +837,23 @@ def test_product_editor_rejects_batch_upload_over_slice_limit():
 
     assert "selectedFiles.length > available" in template
     assert "Array.from(files || []).slice(0, available)" not in template
+
+
+def test_next_product_admin_share_modal_renders_link_qr_and_download():
+    template = (
+        REPO_ROOT
+        / "aicrm_next"
+        / "commerce"
+        / "templates"
+        / "wechat_products.html"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="product-share-modal"' in template
+    assert "商品链接" in template
+    assert "商品二维码" in template
+    assert "保存二维码" in template
+    assert "openShareModal(payload.share || {})" in template
+    assert 'window.prompt("商品链接"' not in template
 
 
 def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):
