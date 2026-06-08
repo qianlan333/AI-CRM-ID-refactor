@@ -18,18 +18,19 @@ from aicrm_next.commerce.domain import completion_redirect_projection, safe_comp
 from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
+from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
-from wecom_ability_service.infra.wechat_oauth import WeChatOAuthRequestError, exchange_wechat_oauth_code, fetch_wechat_userinfo
-from wecom_ability_service.infra.signed_context import append_ctx_query, load_sidebar_product_context_token
-from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context
 
+from .signed_context import append_ctx_query, load_sidebar_product_context_token
+from .sidebar_order_context import resolve_sidebar_order_context
 from .service import format_price, get_public_product, product_not_found_payload, route_headers
 
 
 COOKIE_NAME = "wechat_pay_h5_identity"
 STATE_TTL_SECONDS = 600
 LOGGER = logging.getLogger(__name__)
+_OAUTH_CLIENT_FACTORY = build_wechat_oauth_client
 
 
 def _normalized_text(value: Any) -> str:
@@ -52,6 +53,20 @@ def _env_int(name: str, default: int) -> int:
         return int(_env(name) or default)
     except (TypeError, ValueError):
         return int(default)
+
+
+def set_h5_wechat_pay_oauth_client_factory(factory):
+    global _OAUTH_CLIENT_FACTORY
+    _OAUTH_CLIENT_FACTORY = factory
+
+
+def reset_h5_wechat_pay_oauth_client_factory():
+    global _OAUTH_CLIENT_FACTORY
+    _OAUTH_CLIENT_FACTORY = build_wechat_oauth_client
+
+
+def _oauth_client():
+    return _OAUTH_CLIENT_FACTORY()
 
 
 def _secret() -> str:
@@ -189,9 +204,10 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
     if not code:
         return JSONResponse({"ok": False, "error": "code_required"}, status_code=400, headers=route_headers())
     try:
-        oauth_payload = exchange_wechat_oauth_code(app_id=_env("WECHAT_MP_APP_ID"), app_secret=_env("WECHAT_MP_APP_SECRET"), code=code)
-    except WeChatOAuthRequestError as exc:
-        return JSONResponse({"ok": False, "error": str(exc) or "wechat_oauth_failed"}, status_code=502, headers=route_headers())
+        client = _oauth_client()
+        oauth_payload = client.exchange_code(app_id=_env("WECHAT_MP_APP_ID"), app_secret=_env("WECHAT_MP_APP_SECRET"), code=code)
+    except (WeChatOAuthClientError, Exception):
+        return JSONResponse({"ok": False, "error": "wechat_oauth_failed"}, status_code=502, headers=route_headers())
     if oauth_payload.get("errcode") not in (None, 0):
         return JSONResponse({"ok": False, "error": oauth_payload.get("errmsg") or "wechat_oauth_failed"}, status_code=502, headers=route_headers())
     openid = _normalized_text(oauth_payload.get("openid"))
@@ -200,11 +216,11 @@ def payment_oauth_callback(request: Request) -> RedirectResponse | JSONResponse:
     access_token = _normalized_text(oauth_payload.get("access_token"))
     if _wechat_oauth_scope() == "snsapi_userinfo" and access_token and openid:
         try:
-            userinfo = fetch_wechat_userinfo(access_token=access_token, openid=openid)
+            userinfo = client.fetch_userinfo(access_token=access_token, openid=openid)
             if userinfo.get("errcode") in (None, 0):
                 unionid = unionid or _normalized_text(userinfo.get("unionid"))
                 payer_name = _normalized_text(userinfo.get("nickname"))
-        except WeChatOAuthRequestError:
+        except (WeChatOAuthClientError, Exception):
             payer_name = ""
     response = RedirectResponse(_safe_return_url(state_payload.get("return_url")), status_code=302, headers=route_headers())
     response.set_cookie(

@@ -174,21 +174,22 @@ def test_real_radar_oauth_callback_exchanges_code_and_records_unionid(client, mo
     monkeypatch.setenv("WECHAT_MP_APP_ID", "wx-radar-app")
     monkeypatch.setenv("WECHAT_MP_APP_SECRET", "radar-secret")
     monkeypatch.setenv("WECHAT_MP_OAUTH_SCOPE", "snsapi_userinfo")
-    from wecom_ability_service.infra import wechat_oauth
 
-    def fake_exchange_wechat_oauth_code(*, app_id: str, app_secret: str, code: str, timeout: int = 15):
-        assert app_id == "wx-radar-app"
-        assert app_secret == "radar-secret"
-        assert code == "real-code"
-        return {"openid": "openid_real", "access_token": "access-token-real"}
+    from aicrm_next.integration_gateway import questionnaire_adapters
 
-    def fake_fetch_wechat_userinfo(*, access_token: str, openid: str, timeout: int = 15):
-        assert access_token == "access-token-real"
-        assert openid == "openid_real"
-        return {"openid": openid, "unionid": "unionid_real"}
+    class FakeOAuthClient:
+        def exchange_code(self, *, app_id: str, app_secret: str, code: str):
+            assert app_id == "wx-radar-app"
+            assert app_secret == "radar-secret"
+            assert code == "real-code"
+            return {"openid": "openid_real", "access_token": "access-token-real"}
 
-    monkeypatch.setattr(wechat_oauth, "exchange_wechat_oauth_code", fake_exchange_wechat_oauth_code)
-    monkeypatch.setattr(wechat_oauth, "fetch_wechat_userinfo", fake_fetch_wechat_userinfo)
+        def fetch_userinfo(self, *, access_token: str, openid: str):
+            assert access_token == "access-token-real"
+            assert openid == "openid_real"
+            return {"openid": openid, "unionid": "unionid_real"}
+
+    monkeypatch.setattr(questionnaire_adapters, "build_wechat_oauth_client", lambda: FakeOAuthClient())
     link = _create_link(client, auth_required=True)
     landing_response = client.get(f"/r/{link['code']}", follow_redirects=False)
     state = _state_from_oauth_start_location(landing_response.headers["location"])

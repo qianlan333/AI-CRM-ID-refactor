@@ -43,7 +43,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
@@ -1160,6 +1159,153 @@ def check_channel_identity_bridge_native(root: Path = ROOT) -> list[Violation]:
         ):
             if marker in text:
                 violations.append(Violation("channel_identity_test_legacy_monkeypatch", rel, marker))
+
+    return violations
+
+
+def check_questionnaire_adapters_native_oauth(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    adapters_path = root / "aicrm_next" / "integration_gateway" / "questionnaire_adapters.py"
+    client_path = root / "aicrm_next" / "integration_gateway" / "wechat_oauth_client.py"
+    checker_path = root / "scripts" / "check_no_new_legacy.py"
+
+    if adapters_path.exists():
+        text = adapters_path.read_text(encoding="utf-8")
+        rel = str(adapters_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "from wecom_ability_service",
+            "legacy_flask_facade",
+            "wechat_oauth.exchange_wechat_oauth_code",
+            "wechat_oauth.fetch_wechat_userinfo",
+            "current_app",
+            "from flask",
+        ):
+            if marker in text:
+                violations.append(Violation("questionnaire_adapters_legacy_oauth_import", rel, marker))
+        if not all(marker in text for marker in ("build_wechat_oauth_client", "WeChatOAuthClientError", "oauth_client_factory")):
+            violations.append(Violation("questionnaire_adapters_oauth_injection_missing", rel, "native OAuth client injection markers missing"))
+    else:
+        violations.append(Violation("questionnaire_adapters_legacy_oauth_import", str(adapters_path.relative_to(root)), "missing questionnaire_adapters.py"))
+
+    if client_path.exists():
+        text = client_path.read_text(encoding="utf-8")
+        rel = str(client_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("questionnaire_oauth_client_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("questionnaire_oauth_client_legacy_import", str(client_path.relative_to(root)), "missing wechat_oauth_client.py"))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/integration_gateway/' + 'questionnaire_adapters.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("questionnaire_adapters_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    return violations
+
+
+def check_public_product_h5_pay_oauth_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    h5_pay_path = root / "aicrm_next" / "public_product" / "h5_wechat_pay.py"
+
+    if not h5_pay_path.exists():
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_native_client_missing",
+                str(h5_pay_path.relative_to(root)),
+                "missing h5_wechat_pay.py",
+            )
+        )
+        return violations
+
+    text = h5_pay_path.read_text(encoding="utf-8")
+    rel = str(h5_pay_path.relative_to(root))
+    for marker in (
+        "wecom_ability_service.infra.wechat_oauth",
+        "exchange_wechat_oauth_code",
+        "fetch_wechat_userinfo",
+        "WeChatOAuthRequestError",
+    ):
+        if marker in text:
+            violations.append(Violation("public_product_h5_pay_legacy_oauth_import", rel, marker))
+    if not all(marker in text for marker in ("build_wechat_oauth_client", "WeChatOAuthClientError")):
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_native_client_missing",
+                rel,
+                "native WeChat OAuth client markers missing",
+            )
+        )
+    if not any(marker in text for marker in ("set_h5_wechat_pay_oauth_client_factory", "_OAUTH_CLIENT_FACTORY")):
+        violations.append(
+            Violation(
+                "public_product_h5_pay_oauth_injection_missing",
+                rel,
+                "native WeChat OAuth client injection seam missing",
+            )
+        )
+    return violations
+
+
+def check_public_product_h5_pay_sidebar_context_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    public_product_dir = root / "aicrm_next" / "public_product"
+    h5_pay_path = public_product_dir / "h5_wechat_pay.py"
+    signed_context_path = public_product_dir / "signed_context.py"
+    sidebar_context_path = public_product_dir / "sidebar_order_context.py"
+
+    if not h5_pay_path.exists():
+        violations.append(
+            Violation(
+                "public_product_h5_pay_context_native_import_missing",
+                str(h5_pay_path.relative_to(root)),
+                "missing h5_wechat_pay.py",
+            )
+        )
+        return violations
+
+    h5_text = h5_pay_path.read_text(encoding="utf-8")
+    h5_rel = str(h5_pay_path.relative_to(root))
+    if "wecom_ability_service.infra.signed_context" in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_legacy_signed_context_import",
+                h5_rel,
+                "wecom_ability_service.infra.signed_context",
+            )
+        )
+    if "wecom_ability_service.domains.wechat_pay.sidebar_context" in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_legacy_sidebar_context_import",
+                h5_rel,
+                "wecom_ability_service.domains.wechat_pay.sidebar_context",
+            )
+        )
+    if "from .signed_context import" not in h5_text or "from .sidebar_order_context import" not in h5_text:
+        violations.append(
+            Violation(
+                "public_product_h5_pay_context_native_import_missing",
+                h5_rel,
+                "native sidebar context imports missing",
+            )
+        )
+
+    legacy_helper_markers = ("wecom_ability_service", "flask", "current_app", "legacy_flask_facade")
+    for helper_path, code in (
+        (signed_context_path, "public_product_signed_context_legacy_import"),
+        (sidebar_context_path, "public_product_sidebar_order_context_legacy_import"),
+    ):
+        helper_rel = str(helper_path.relative_to(root))
+        if not helper_path.exists():
+            violations.append(Violation("public_product_h5_pay_context_native_import_missing", helper_rel, "native helper missing"))
+            continue
+        helper_text = helper_path.read_text(encoding="utf-8")
+        for marker in legacy_helper_markers:
+            if marker in helper_text:
+                violations.append(Violation(code, helper_rel, marker))
 
     return violations
 
@@ -5617,7 +5763,7 @@ def check_wecom_tag_live_mutation_next_commandbus(root: Path = ROOT) -> list[Vio
     api_path = root / "aicrm_next/customer_tags/api.py"
     live_mutation_path = root / "aicrm_next/customer_tags/live_mutation.py"
     commands_path = root / "aicrm_next/customer_tags/mutation_commands.py"
-    questionnaire_path = root / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    questionnaire_path = root / "aicrm_next" / "integration_gateway" / "questionnaire_adapters.py"
     compat_path = root / "aicrm_next/production_compat/api.py"
 
     if compat_path.exists():
@@ -6062,6 +6208,9 @@ def run_checks(*, strict: bool) -> dict:
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
         + check_channel_identity_bridge_native(ROOT)
+        + check_questionnaire_adapters_native_oauth(ROOT)
+        + check_public_product_h5_pay_oauth_native(ROOT)
+        + check_public_product_h5_pay_sidebar_context_native(ROOT)
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)

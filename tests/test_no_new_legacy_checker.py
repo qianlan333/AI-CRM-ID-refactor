@@ -28,7 +28,10 @@ from scripts.check_no_new_legacy import (
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
+    check_public_product_h5_pay_oauth_native,
+    check_public_product_h5_pay_sidebar_context_native,
     check_public_product_pay_closeout_lock,
+    check_questionnaire_adapters_native_oauth,
     check_route_progress_docs_do_not_drift,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -1176,6 +1179,195 @@ def test_channel_identity_checker_accepts_native_minimal_files(tmp_path: Path) -
     _write_channel_identity_bridge_files(tmp_path)
 
     assert check_channel_identity_bridge_native(tmp_path) == []
+
+
+def _write_questionnaire_oauth_files(
+    root: Path,
+    *,
+    adapters: str = (
+        "from .wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n"
+        "class WeChatOAuthAdapter:\n"
+        "    def __init__(self, mode='fake', oauth_client_factory=None):\n"
+        "        self._oauth_client_factory = oauth_client_factory\n"
+    ),
+    client: str = "class WeChatOAuthClient: pass\nclass WeChatOAuthClientError(Exception): pass\n",
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+) -> None:
+    adapters_path = root / "aicrm_next/integration_gateway/questionnaire_adapters.py"
+    client_path = root / "aicrm_next/integration_gateway/wechat_oauth_client.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    adapters_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    adapters_path.write_text(adapters, encoding="utf-8")
+    client_path.write_text(client, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+
+
+def test_questionnaire_adapters_checker_flags_legacy_wechat_oauth_import(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(
+        tmp_path,
+        adapters="from wecom_ability_service.infra import wechat_oauth\nexchange = wechat_oauth.exchange_wechat_oauth_code\n",
+    )
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_adapters_legacy_oauth_import" in codes
+
+
+def test_questionnaire_oauth_client_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(tmp_path, client="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_oauth_client_legacy_import" in codes
+
+
+def test_questionnaire_adapters_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/integration_gateway/questionnaire_adapters.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_questionnaire_adapters_native_oauth(tmp_path)}
+
+    assert "questionnaire_adapters_stale_wecom_allowlist" in codes
+
+
+def test_questionnaire_adapters_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_questionnaire_oauth_files(tmp_path)
+
+    assert check_questionnaire_adapters_native_oauth(tmp_path) == []
+
+
+def _write_h5_pay_oauth_file(
+    root: Path,
+    *,
+    source: str = (
+        "from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n"
+        "from wecom_ability_service.infra.signed_context import append_ctx_query\n"
+        "_OAUTH_CLIENT_FACTORY = build_wechat_oauth_client\n"
+        "def set_h5_wechat_pay_oauth_client_factory(factory):\n"
+        "    global _OAUTH_CLIENT_FACTORY\n"
+        "    _OAUTH_CLIENT_FACTORY = factory\n"
+    ),
+) -> None:
+    h5_pay_path = root / "aicrm_next/public_product/h5_wechat_pay.py"
+    h5_pay_path.parent.mkdir(parents=True, exist_ok=True)
+    h5_pay_path.write_text(source, encoding="utf-8")
+
+
+def test_public_product_h5_pay_oauth_checker_flags_legacy_oauth_import(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source="from wecom_ability_service.infra.wechat_oauth import exchange_wechat_oauth_code\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_oauth_import" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_requires_native_client(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source=(
+            "_OAUTH_CLIENT_FACTORY = object\n"
+            "def set_h5_wechat_pay_oauth_client_factory(factory):\n"
+            "    pass\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_oauth_native_client_missing" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_requires_injection(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(
+        tmp_path,
+        source="from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_oauth_native(tmp_path)}
+
+    assert "public_product_h5_pay_oauth_injection_missing" in codes
+
+
+def test_public_product_h5_pay_oauth_checker_allows_remaining_signed_context_imports(tmp_path: Path) -> None:
+    _write_h5_pay_oauth_file(tmp_path)
+
+    assert check_public_product_h5_pay_oauth_native(tmp_path) == []
+
+
+def _write_h5_pay_sidebar_context_files(
+    root: Path,
+    *,
+    h5_source: str = (
+        "from .signed_context import append_ctx_query, load_sidebar_product_context_token\n"
+        "from .sidebar_order_context import resolve_sidebar_order_context\n"
+    ),
+    signed_source: str = "def load_sidebar_product_context_token(token):\n    return {'ok': False, 'status': 'missing', 'context': {}}\n",
+    sidebar_source: str = "def resolve_sidebar_order_context(**kwargs):\n    return {}\n",
+    checker_source: str = 'WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/public_product/h5_wechat_pay.py")}\n',
+) -> None:
+    public_product_dir = root / "aicrm_next/public_product"
+    public_product_dir.mkdir(parents=True, exist_ok=True)
+    (public_product_dir / "h5_wechat_pay.py").write_text(h5_source, encoding="utf-8")
+    (public_product_dir / "signed_context.py").write_text(signed_source, encoding="utf-8")
+    (public_product_dir / "sidebar_order_context.py").write_text(sidebar_source, encoding="utf-8")
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.write_text(checker_source, encoding="utf-8")
+
+
+def test_public_product_h5_pay_context_checker_flags_legacy_signed_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from wecom_ability_service.infra.signed_context import append_ctx_query\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_signed_context_import" in codes
+
+
+def test_public_product_h5_pay_context_checker_flags_legacy_sidebar_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_sidebar_context_import" in codes
+
+
+def test_public_product_signed_context_checker_flags_flask_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        signed_source="from flask import current_app\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_signed_context_legacy_import" in codes
+
+
+def test_public_product_sidebar_order_context_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        sidebar_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
+
+    assert "public_product_sidebar_order_context_legacy_import" in codes
+
+
+def test_public_product_context_checker_accepts_native_files_with_stale_allowlist(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(tmp_path)
+
+    assert check_public_product_h5_pay_sidebar_context_native(tmp_path) == []
 
 
 def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:

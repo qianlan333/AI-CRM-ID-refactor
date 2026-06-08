@@ -1366,7 +1366,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "Public questionnaire read routes use Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary; future real OAuth/token exchange enablement requires an explicit gated adapter PR."
+    notes: "Public questionnaire read routes use Next PublicRead, RespondentIdentity, SubmissionStatus, and OAuthConfig services with no production_compat rollback; exact submit and diagnostics POSTs are Next CommandBus primary; WeChat OAuth uses Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH, fake/staging modes do not execute real OAuth, and no wecom_ability_service import remains in questionnaire adapters."
   - id: "LRB-063"
     route_pattern: "/api/h5/questionnaires/{slug}/submit"
     methods: ["POST", "OPTIONS"]
@@ -1454,7 +1454,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_questionnaire_oauth_registry_lifecycle.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "Exact OAuth start legacy rollback removed; Next OAuth adapter only with signed state, nonce, expiry, redirect allowlist, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and production real OAuth blocked by default."
+    notes: "Exact OAuth start legacy rollback removed; Next OAuth adapter only with signed state, nonce, expiry, redirect allowlist, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, WeChat OAuth uses Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH with no real OAuth default, and production real OAuth blocked by default."
   - id: "LRB-067"
     route_pattern: "/api/h5/wechat/oauth/callback"
     methods: ["GET", "OPTIONS"]
@@ -1476,7 +1476,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_questionnaire_oauth_registry_lifecycle.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "Exact OAuth callback legacy rollback removed; Next OAuth adapter only with state verification, replay protection, signed questionnaire_h5_identity cookie, AuditLedger, diagnostics on failure, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, real_external_call_executed=false, and production real OAuth blocked by default."
+    notes: "Exact OAuth callback legacy rollback removed; Next OAuth adapter only with state verification, replay protection, signed questionnaire_h5_identity cookie, AuditLedger, diagnostics on failure, source_status=next_oauth_adapter, route_owner=ai_crm_next, fallback_used=false, production exchange/userinfo use Next native aicrm_next.integration_gateway.wechat_oauth_client, real exchange remains gated by AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH with no real OAuth default, and production real OAuth blocked by default."
   - id: "LRB-068"
     route_pattern: "/api/h5/wechat/oauth*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]

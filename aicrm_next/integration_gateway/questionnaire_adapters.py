@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, urlencode, urlparse
 
 from .audit import record_audit_event
 from .idempotency import get_or_create, make_idempotency_key
 from .questionnaire_contracts import AdapterMode, Json
+from .wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
 
 
 VALID_MODES = {"fake", "disabled", "staging", "production"}
@@ -143,6 +144,10 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
     adapter_name = "WeChatOAuthAdapter"
     production_flag = "AICRM_NEXT_ENABLE_REAL_WECHAT_OAUTH"
 
+    def __init__(self, mode: AdapterMode | str = "fake", oauth_client_factory: Callable[[], Any] | None = None) -> None:
+        super().__init__(mode)
+        self._oauth_client_factory = oauth_client_factory
+
     def build_authorize_url(
         self,
         *,
@@ -275,6 +280,9 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
         }
         return self._adapter_result(ok=True, operation=operation, idempotency_key=idempotency_key, target=target, result=result)
 
+    def _oauth_client(self) -> Any:
+        return self._oauth_client_factory() if self._oauth_client_factory else build_wechat_oauth_client()
+
     def _real_identity_result(
         self,
         *,
@@ -309,9 +317,8 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
                 error_message="WECHAT_MP_APP_ID and WECHAT_MP_APP_SECRET are required for real WeChat OAuth",
             )
         try:
-            from wecom_ability_service.infra import wechat_oauth
-
-            exchange_payload = wechat_oauth.exchange_wechat_oauth_code(app_id=app_id, app_secret=app_secret, code=code)
+            client = self._oauth_client()
+            exchange_payload = client.exchange_code(app_id=app_id, app_secret=app_secret, code=code)
             if self._wechat_error_code(exchange_payload):
                 return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=exchange_payload)
             resolved_openid = str(exchange_payload.get("openid") or openid or "").strip()
@@ -320,11 +327,15 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
             if not resolved_openid:
                 return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=exchange_payload)
             if not resolved_unionid and access_token and self._oauth_scope() == "snsapi_userinfo":
-                userinfo_payload = wechat_oauth.fetch_wechat_userinfo(access_token=access_token, openid=resolved_openid)
+                userinfo_payload = client.fetch_userinfo(access_token=access_token, openid=resolved_openid)
                 if self._wechat_error_code(userinfo_payload):
                     return self._wechat_payload_error(operation=operation, idempotency_key=idempotency_key, target=target, payload=userinfo_payload)
                 resolved_unionid = str(userinfo_payload.get("unionid") or "").strip()
         except Exception as exc:
+            error_message = exc.message if isinstance(exc, WeChatOAuthClientError) else "WeChat OAuth exchange failed"
+            sensitive_values = (code, app_secret, locals().get("access_token", ""))
+            if any(value and str(value) in error_message for value in sensitive_values):
+                error_message = "WeChat OAuth exchange failed"
             return self._adapter_result(
                 ok=False,
                 operation=operation,
@@ -332,7 +343,7 @@ class WeChatOAuthAdapter(_GuardedQuestionnaireAdapter):
                 target=target,
                 side_effect_executed=True,
                 error_code="wechat_oauth_exchange_failed",
-                error_message=str(exc),
+                error_message=error_message,
             )
         result = {
             "openid": resolved_openid,
