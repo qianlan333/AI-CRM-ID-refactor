@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aicrm_next.integration_gateway import legacy_flask_facade
 from aicrm_next.main import create_app
 from tools import check_active_automation_scheduled_safe_mode as checker
 
@@ -20,17 +19,18 @@ def _auth_headers():
     return {"Authorization": "Bearer probe-token"}
 
 
-def _raise_if_legacy_forwarded():
-    raise AssertionError("scheduled safe mode must not forward to legacy")
-
-
 def test_jobs_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         checker.ACTIVE_JOBS_ROUTE,
-        json={"operator": "aicrm-automation-jobs-run-due", "jobs": ["sop", "conversion_workflow"], "scheduled_safe_mode": True},
+        json={
+            "operator": "aicrm-automation-jobs-run-due",
+            "jobs": ["sop", "conversion_workflow"],
+            "dry_run": False,
+            "scheduled_safe_mode": True,
+            "expected_due_count": 0,
+        },
         headers=_auth_headers(),
     )
 
@@ -40,17 +40,22 @@ def test_jobs_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
     assert payload["status"] == "idle"
     assert payload["scheduled_safe_mode"] is True
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert payload["preview"]["estimated_send_count"] == 0
+    assert payload["fallback_used"] is False
+    assert payload["preview"]["candidate_status"] == "explicit_none"
 
 
 def test_campaign_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
     response = client.post(
         checker.CAMPAIGN_ROUTE,
-        json={"operator": "aicrm-campaign-run-due", "batch_size": 200, "scheduled_safe_mode": True},
+        json={
+            "operator": "aicrm-campaign-run-due",
+            "batch_size": 200,
+            "dry_run": False,
+            "scheduled_safe_mode": True,
+            "expected_due_count": 0,
+        },
         headers=_auth_headers(),
     )
 
@@ -58,58 +63,65 @@ def test_campaign_scheduled_safe_mode_no_due_returns_idle_200(monkeypatch):
     payload = response.json()
     assert payload["status"] == "idle"
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert payload["preview"]["estimated_dispatch_count"] == 0
+    assert payload["fallback_used"] is False
+    assert payload["preview"]["candidate_status"] == "explicit_none"
 
 
-def test_jobs_scheduled_safe_mode_due_without_allowlist_returns_blocked_200(monkeypatch):
+def test_jobs_scheduled_safe_mode_due_without_allowlist_returns_blocked_409(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
-    monkeypatch.setattr(legacy_flask_facade, "_active_automation_preview_payload", _synthetic_due_preview)
 
     response = client.post(
         checker.ACTIVE_JOBS_ROUTE,
-        json={"operator": "aicrm-automation-jobs-run-due", "jobs": ["sop", "conversion_workflow"], "scheduled_safe_mode": True},
+        json={
+            "operator": "aicrm-automation-jobs-run-due",
+            "jobs": ["sop", "conversion_workflow"],
+            "dry_run": False,
+            "scheduled_safe_mode": True,
+            "expected_due_count": 1,
+        },
         headers=_auth_headers(),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 409
     payload = response.json()
     assert payload["ok"] is True
     assert payload["status"] == "blocked_not_executed"
     assert payload["manual_action_required"] is True
     assert payload["error_code"] == "active_automation_due_candidates_require_allowlist"
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert payload["preview"]["estimated_send_count"] == 1
+    assert payload["fallback_used"] is False
+    assert payload["preview"]["candidate_status"] == "explicit_present"
 
 
-def test_campaign_scheduled_safe_mode_due_without_allowlist_returns_blocked_200(monkeypatch):
+def test_campaign_scheduled_safe_mode_due_without_allowlist_returns_blocked_409(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
-    monkeypatch.setattr(legacy_flask_facade, "_active_automation_preview_payload", _synthetic_due_preview)
 
     response = client.post(
         checker.CAMPAIGN_ROUTE,
-        json={"operator": "aicrm-campaign-run-due", "batch_size": 200, "scheduled_safe_mode": True},
+        json={
+            "operator": "aicrm-campaign-run-due",
+            "batch_size": 200,
+            "dry_run": False,
+            "scheduled_safe_mode": True,
+            "expected_due_count": 1,
+        },
         headers=_auth_headers(),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 409
     payload = response.json()
     assert payload["status"] == "blocked_not_executed"
     assert payload["error_code"] == "active_automation_due_candidates_require_allowlist"
     assert payload["side_effect_executed"] is False
-    assert payload["legacy_forwarded"] is False
-    assert payload["preview"]["estimated_dispatch_count"] == 1
+    assert payload["fallback_used"] is False
+    assert payload["preview"]["candidate_status"] == "explicit_present"
 
 
 def test_raw_true_execution_without_allowlist_still_returns_409(monkeypatch):
     client = _production_client(monkeypatch)
-    monkeypatch.setattr(legacy_flask_facade, "_legacy_app", _raise_if_legacy_forwarded)
 
-    jobs = client.post(checker.ACTIVE_JOBS_ROUTE, json={"operator": "manual", "jobs": ["sop"]}, headers=_auth_headers())
-    campaign = client.post(checker.CAMPAIGN_ROUTE, json={"operator": "manual", "batch_size": 1}, headers=_auth_headers())
+    jobs = client.post(checker.ACTIVE_JOBS_ROUTE, json={"operator": "manual", "jobs": ["sop"], "dry_run": False}, headers=_auth_headers())
+    campaign = client.post(checker.CAMPAIGN_ROUTE, json={"operator": "manual", "batch_size": 1, "dry_run": False}, headers=_auth_headers())
 
     assert jobs.status_code == 409
     assert jobs.json()["error_code"] == "automation_run_due_allowlist_required"
@@ -142,15 +154,18 @@ def test_checker_detects_sentinel_change(monkeypatch):
     class FakeClient:
         def post(self, route, json=None, headers=None, follow_redirects=False):
             if (json or {}).get("scheduled_safe_mode"):
+                status = 409 if (json or {}).get("expected_due_count") else 200
+                state = "blocked_not_executed" if status == 409 else "idle"
                 return FakeResponse(
-                    200,
+                    status,
                     {
                         "ok": True,
-                        "status": "idle",
+                        "status": state,
                         "scheduled_safe_mode": True,
                         "side_effect_executed": False,
-                        "legacy_forwarded": False,
-                        "preview": {"estimated_send_count": 0, "estimated_dispatch_count": 0},
+                        "fallback_used": False,
+                        "error_code": "active_automation_due_candidates_require_allowlist" if status == 409 else "",
+                        "preview": {"candidate_status": "explicit_present" if status == 409 else "explicit_none"},
                     },
                 )
             return FakeResponse(409, {"error_code": "automation_run_due_allowlist_required"})
@@ -198,48 +213,3 @@ class _NoopContext:
 
     def __exit__(self, *args):
         return False
-
-
-def _synthetic_due_preview(path: str, payload: dict):
-    if path == checker.ACTIVE_JOBS_ROUTE:
-        return {
-            "ok": True,
-            "preview": True,
-            "side_effect_executed": False,
-            "legacy_forwarded": False,
-            "route_owner": "ai_crm_next",
-            "compatibility_facade": "legacy_flask_facade",
-            "path": path,
-            "jobs": [
-                {
-                    "job_code": "sop",
-                    "due_count": 1,
-                    "candidate_task_ids": [101],
-                    "candidate_workflow_ids": [],
-                    "candidate_node_ids": [],
-                    "estimated_audience_count": 1,
-                    "estimated_send_count": 1,
-                    "sample_targets": [{"id": "sample"}],
-                    "content_preview": ["sample"],
-                    "risk_flags": ["synthetic_due_candidate"],
-                }
-            ],
-            "total_due_count": 1,
-            "estimated_send_count": 1,
-        }
-    return {
-        "ok": True,
-        "preview": True,
-        "side_effect_executed": False,
-        "legacy_forwarded": False,
-        "route_owner": "ai_crm_next",
-        "compatibility_facade": "legacy_flask_facade",
-        "path": path,
-        "batch_size": 1,
-        "campaigns": [{"campaign_id": 201}],
-        "due_count": 1,
-        "estimated_dispatch_count": 1,
-        "sample_targets": [{"id": "sample"}],
-        "content_preview": ["sample"],
-        "risk_flags": ["synthetic_due_candidate"],
-    }

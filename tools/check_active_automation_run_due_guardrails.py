@@ -144,11 +144,11 @@ def _noop_payload_ok(payload: dict[str, Any], *, expected_preview: bool | None =
         return False
     if payload.get("side_effect_executed", False) is not False:
         return False
-    if payload.get("legacy_forwarded", False) is not False:
+    if payload.get("fallback_used") is not False:
         return False
     if payload.get("route_owner") != "ai_crm_next":
         return False
-    if payload.get("compatibility_facade", "legacy_flask_facade") != "legacy_flask_facade":
+    if payload.get("compatibility_facade") is not None:
         return False
     if payload.get("real_external_call_executed") is not False:
         return False
@@ -232,14 +232,14 @@ def run_check() -> dict[str, Any]:
         jobs_preview_endpoint = client.post(ACTIVE_JOBS_PREVIEW_ROUTE, json={"jobs": ["sop", "conversion_workflow"]}, headers=headers)
         jobs_without_allowlist = client.post(
             ACTIVE_JOBS_ROUTE,
-            json={"jobs": ["sop", "conversion_workflow"], "max_send_records": 1, "max_outbound_tasks": 1, "operator": "checker"},
+            json={"dry_run": False, "jobs": ["sop", "conversion_workflow"], "max_send_records": 1, "max_outbound_tasks": 1, "operator": "checker"},
             headers=headers,
         )
 
         campaign_dry_run = client.post(CAMPAIGN_ROUTE, json={"dry_run": True, "batch_size": 1}, headers=headers)
         campaign_preview = client.post(CAMPAIGN_ROUTE, json={"preview": True, "batch_size": 1}, headers=headers)
         campaign_preview_endpoint = client.post(CAMPAIGN_PREVIEW_ROUTE, json={"batch_size": 1}, headers=headers)
-        campaign_without_allowlist = client.post(CAMPAIGN_ROUTE, json={"batch_size": 1, "max_dispatch_count": 1}, headers=headers)
+        campaign_without_allowlist = client.post(CAMPAIGN_ROUTE, json={"dry_run": False, "batch_size": 1, "max_dispatch_count": 1}, headers=headers)
 
         sentinel_after = _read_db_sentinel()
 

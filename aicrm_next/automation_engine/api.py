@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from aicrm_next.platform_foundation.internal_run_due_guard import maybe_guard_internal_run_due_request
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .application import (
@@ -269,7 +270,20 @@ async def _timer_payload(request: Request) -> dict[str, Any]:
         merged = dict(payload)
     else:
         raise AutomationTimerInputError("payload must be an object")
-    for key in ("limit", "batch_size", "jobs", "job_codes", "dry_run"):
+    for key in (
+        "limit",
+        "batch_size",
+        "jobs",
+        "job_codes",
+        "dry_run",
+        "preview",
+        "scheduled_safe_mode",
+        "allow_task_ids",
+        "allow_workflow_ids",
+        "allow_node_ids",
+        "expected_due_count",
+        "due_count",
+    ):
         if key not in merged and key in request.query_params:
             merged[key] = request.query_params.get(key)
     return merged
@@ -768,6 +782,14 @@ async def api_plan_automation_conversion_reply_monitor_capture(request: Request)
     source_status = "next_reply_monitor_capture_plan"
     try:
         payload = await _timer_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/automation-conversion/reply-monitor/capture",
+            route_kind="automation_reply_monitor_capture",
+        )
+        if guard_response is not None:
+            return guard_response
         command = PlanReplyMonitorCaptureCommand(
             **_timer_common(
                 request,
@@ -791,6 +813,14 @@ async def api_plan_automation_conversion_reply_monitor_run_due(request: Request)
     source_status = "next_reply_monitor_run_due_plan"
     try:
         payload = await _timer_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/automation-conversion/reply-monitor/run-due",
+            route_kind="automation_reply_monitor_run_due",
+        )
+        if guard_response is not None:
+            return guard_response
         command = PlanReplyMonitorRunDueCommand(
             **_timer_common(
                 request,
@@ -814,6 +844,14 @@ async def api_preview_automation_conversion_jobs_run_due(request: Request) -> JS
     source_status = "next_jobs_run_due_preview"
     try:
         payload = await _timer_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/automation-conversion/jobs/run-due/preview",
+            route_kind="automation_jobs_run_due_preview",
+        )
+        if guard_response is not None:
+            return guard_response
         command = PreviewAutomationJobsRunDueCommand(
             **_timer_common(
                 request,
@@ -837,6 +875,14 @@ async def api_plan_automation_conversion_jobs_run_due(request: Request) -> JSONR
     source_status = "next_jobs_run_due_plan"
     try:
         payload = await _timer_payload(request)
+        guard_response = maybe_guard_internal_run_due_request(
+            request=request,
+            payload=payload,
+            source_route="/api/admin/automation-conversion/jobs/run-due",
+            route_kind="automation_jobs_run_due",
+        )
+        if guard_response is not None:
+            return guard_response
         command_cls = PreviewAutomationJobsRunDueCommand if bool(payload.get("preview")) else PlanAutomationJobsRunDueCommand
         source_status = "next_jobs_run_due_preview" if bool(payload.get("preview")) else source_status
         command = command_cls(

@@ -113,62 +113,6 @@ def _json(response) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _synthetic_due_preview(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if path == ACTIVE_JOBS_ROUTE:
-        return {
-            "ok": True,
-            "preview": True,
-            "side_effect_executed": False,
-            "legacy_forwarded": False,
-            "route_owner": "ai_crm_next",
-            "compatibility_facade": "legacy_flask_facade",
-            "path": path,
-            "jobs": [
-                {
-                    "job_code": "sop",
-                    "due_count": 1,
-                    "candidate_task_ids": [101],
-                    "candidate_workflow_ids": [],
-                    "candidate_node_ids": [],
-                    "estimated_audience_count": 1,
-                    "estimated_send_count": 1,
-                    "sample_targets": [{"id": "sample"}],
-                    "content_preview": ["sample"],
-                    "risk_flags": ["synthetic_due_candidate"],
-                }
-            ],
-            "total_due_count": 1,
-            "estimated_send_count": 1,
-        }
-    return {
-        "ok": True,
-        "preview": True,
-        "side_effect_executed": False,
-        "legacy_forwarded": False,
-        "route_owner": "ai_crm_next",
-        "compatibility_facade": "legacy_flask_facade",
-        "path": path,
-        "batch_size": 1,
-        "campaigns": [{"campaign_id": 201}],
-        "due_count": 1,
-        "estimated_dispatch_count": 1,
-        "sample_targets": [{"id": "sample"}],
-        "content_preview": ["sample"],
-        "risk_flags": ["synthetic_due_candidate"],
-    }
-
-
-def _with_synthetic_due(client: TestClient, route: str, payload: dict[str, Any], headers: dict[str, str]):
-    from aicrm_next.integration_gateway import legacy_flask_facade
-
-    original = legacy_flask_facade._active_automation_preview_payload
-    legacy_flask_facade._active_automation_preview_payload = _synthetic_due_preview
-    try:
-        return client.post(route, json=payload, headers=headers, follow_redirects=False)
-    finally:
-        legacy_flask_facade._active_automation_preview_payload = original
-
-
 def _docs_payloads_ready() -> tuple[bool, list[str]]:
     content = (ROOT / "docs" / "active_automation_reenable_runbook.md").read_text(encoding="utf-8")
     blockers: list[str] = []
@@ -188,37 +132,61 @@ def run_check() -> dict[str, Any]:
 
         jobs_idle = client.post(
             ACTIVE_JOBS_ROUTE,
-            json={"operator": "aicrm-automation-jobs-run-due", "jobs": ["sop", "conversion_workflow"], "scheduled_safe_mode": True},
+            json={
+                "operator": "aicrm-automation-jobs-run-due",
+                "jobs": ["sop", "conversion_workflow"],
+                "dry_run": False,
+                "scheduled_safe_mode": True,
+                "expected_due_count": 0,
+            },
             headers=headers,
             follow_redirects=False,
         )
         campaign_idle = client.post(
             CAMPAIGN_ROUTE,
-            json={"operator": "aicrm-campaign-run-due", "batch_size": 200, "scheduled_safe_mode": True},
+            json={
+                "operator": "aicrm-campaign-run-due",
+                "batch_size": 200,
+                "dry_run": False,
+                "scheduled_safe_mode": True,
+                "expected_due_count": 0,
+            },
             headers=headers,
             follow_redirects=False,
         )
-        jobs_due_blocked = _with_synthetic_due(
-            client,
+        jobs_due_blocked = client.post(
             ACTIVE_JOBS_ROUTE,
-            {"operator": "aicrm-automation-jobs-run-due", "jobs": ["sop", "conversion_workflow"], "scheduled_safe_mode": True},
-            headers,
+            json={
+                "operator": "aicrm-automation-jobs-run-due",
+                "jobs": ["sop", "conversion_workflow"],
+                "dry_run": False,
+                "scheduled_safe_mode": True,
+                "expected_due_count": 1,
+            },
+            headers=headers,
+            follow_redirects=False,
         )
-        campaign_due_blocked = _with_synthetic_due(
-            client,
+        campaign_due_blocked = client.post(
             CAMPAIGN_ROUTE,
-            {"operator": "aicrm-campaign-run-due", "batch_size": 200, "scheduled_safe_mode": True},
-            headers,
+            json={
+                "operator": "aicrm-campaign-run-due",
+                "batch_size": 200,
+                "dry_run": False,
+                "scheduled_safe_mode": True,
+                "expected_due_count": 1,
+            },
+            headers=headers,
+            follow_redirects=False,
         )
         jobs_raw_without_allowlist = client.post(
             ACTIVE_JOBS_ROUTE,
-            json={"operator": "manual", "jobs": ["sop", "conversion_workflow"]},
+            json={"operator": "manual", "jobs": ["sop", "conversion_workflow"], "dry_run": False},
             headers=headers,
             follow_redirects=False,
         )
         campaign_raw_without_allowlist = client.post(
             CAMPAIGN_ROUTE,
-            json={"operator": "manual", "batch_size": 1},
+            json={"operator": "manual", "batch_size": 1, "dry_run": False},
             headers=headers,
             follow_redirects=False,
         )
@@ -241,15 +209,15 @@ def run_check() -> dict[str, Any]:
         payload = responses[key]["payload"]
         if responses[key]["status"] != 200 or payload.get("status") != "idle":
             blockers.append(f"{key}_not_idle_200")
-        if payload.get("side_effect_executed") is not False or payload.get("legacy_forwarded") is not False:
+        if payload.get("side_effect_executed") is not False or payload.get("fallback_used") is not False or payload.get("compatibility_facade") is not None:
             blockers.append(f"{key}_not_noop")
     for key in ("jobs_due_blocked", "campaign_due_blocked"):
         payload = responses[key]["payload"]
-        if responses[key]["status"] != 200 or payload.get("status") != "blocked_not_executed":
-            blockers.append(f"{key}_not_blocked_200")
+        if responses[key]["status"] != 409 or payload.get("status") != "blocked_not_executed":
+            blockers.append(f"{key}_not_blocked_409")
         if payload.get("error_code") != "active_automation_due_candidates_require_allowlist":
             blockers.append(f"{key}_missing_error_code")
-        if payload.get("side_effect_executed") is not False or payload.get("legacy_forwarded") is not False:
+        if payload.get("side_effect_executed") is not False or payload.get("fallback_used") is not False or payload.get("compatibility_facade") is not None:
             blockers.append(f"{key}_not_noop")
     if responses["jobs_raw_without_allowlist"]["status"] != 409:
         blockers.append("jobs_raw_without_allowlist_not_409")
@@ -268,7 +236,7 @@ def run_check() -> dict[str, Any]:
         "responses": responses,
         "scheduled_safe_mode_idle_ok": all(responses[key]["status"] == 200 and responses[key]["payload"].get("status") == "idle" for key in ("jobs_idle", "campaign_idle")),
         "scheduled_safe_mode_blocked_ok": all(
-            responses[key]["status"] == 200 and responses[key]["payload"].get("status") == "blocked_not_executed"
+            responses[key]["status"] == 409 and responses[key]["payload"].get("status") == "blocked_not_executed"
             for key in ("jobs_due_blocked", "campaign_due_blocked")
         ),
         "raw_true_execution_without_allowlist_still_409": responses["jobs_raw_without_allowlist"]["status"] == 409
