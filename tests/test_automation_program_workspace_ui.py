@@ -10,12 +10,14 @@ from aicrm_next.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_CSS = ROOT / "aicrm_next/frontend_compat/static/admin_console/automation_conversion_workspace.css"
-SETUP_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/automation_program_setup_next.html"
+BASE_TEMPLATE = ROOT / "aicrm_next/automation_engine/templates/admin_console/base.html"
+ADMIN_PAGES = ROOT / "aicrm_next/automation_engine/admin_pages.py"
+WORKSPACE_CSS = ROOT / "aicrm_next/automation_engine/static/admin_console/automation_conversion_workspace.css"
+SETUP_TEMPLATE = ROOT / "aicrm_next/automation_engine/templates/admin_console/automation_program_setup_next.html"
 
 
 def _client(monkeypatch) -> TestClient:
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+    import aicrm_next.automation_engine.admin_pages as admin_pages
 
     monkeypatch.setenv("AICRM_NEXT_ENV", "production")
     monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
@@ -36,7 +38,7 @@ def _client(monkeypatch) -> TestClient:
     setup_payload = {
         **program_data,
         "step": "basic",
-        "steps": legacy_routes.SETUP_STEPS,
+        "steps": admin_pages.SETUP_STEPS,
         "is_default_program": False,
         "basic": {},
         "entry": {
@@ -142,20 +144,20 @@ def _client(monkeypatch) -> TestClient:
         }
     ]
 
-    monkeypatch.setattr(legacy_routes, "get_automation_program_with_summary", lambda program_id: program_data)
-    monkeypatch.setattr(legacy_routes, "get_automation_program_overview_payload", lambda program_id: dict(overview_payload))
+    monkeypatch.setattr(admin_pages, "get_automation_program_with_summary", lambda program_id: program_data)
+    monkeypatch.setattr(admin_pages, "get_automation_program_overview_payload", lambda program_id: dict(overview_payload))
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "get_automation_program_setup_payload",
         lambda program_id, *, step="basic": {**setup_payload, "step": step},
     )
     monkeypatch.setattr(
-        legacy_routes,
+        admin_pages,
         "get_automation_program_members_payload",
         lambda program_id, *, stage_key, page, page_size, keyword=None: members_payloads.get(stage_key, members_payloads["all"]),
     )
-    monkeypatch.setattr(legacy_routes, "list_program_channel_bindings_resource", lambda program_id: bindings)
-    monkeypatch.setattr(legacy_routes, "list_program_entry_candidate_channels", lambda program_id: candidates)
+    monkeypatch.setattr(admin_pages, "list_program_channel_bindings_resource", lambda program_id: bindings)
+    monkeypatch.setattr(admin_pages, "list_program_entry_candidate_channels", lambda program_id: candidates)
 
     return TestClient(create_app(), raise_server_exceptions=False)
 
@@ -177,11 +179,24 @@ def test_workspace_header_tabs_are_real_links_and_have_one_active_state(monkeypa
     for _, (path, active_label) in pages.items():
         html = client.get(path).text
         assert "setup-topbar-tabs" in html
+        assert "data-program-workspace-switcher" in html
         assert _active_tab(html) == active_label
         assert 'href="/admin/automation-conversion/programs/1/overview"' in html
         assert 'href="/admin/automation-conversion/programs/1/setup"' in html
         assert 'href="/admin/automation-conversion/programs/1/entry-channels"' in html
         assert 'href="#"' not in html
+
+
+def test_workspace_routes_promote_tabs_into_shell_header() -> None:
+    admin_pages = ADMIN_PAGES.read_text(encoding="utf-8")
+    base = BASE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert '"page_header_tabs": _automation_program_workspace_tabs(request, program_id, "overview")' in admin_pages
+    assert '"page_header_tabs": _automation_program_workspace_tabs(request, program_id, "setup")' in admin_pages
+    assert '"page_header_tabs": _automation_program_workspace_tabs(request, program_id, "entry_channels")' in admin_pages
+    assert admin_pages.count('"page_header_tabs": _automation_program_workspace_tabs(request, program_id, "overview")') >= 2
+    assert "fallback_workspace_tabs = workspace_tabs" in base
+    assert "header_tabs = explicit_header_tabs if explicit_header_tabs else fallback_workspace_tabs" in base
 
 
 def test_overview_uses_one_metric_row_structure_and_real_member_links(monkeypatch) -> None:

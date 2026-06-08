@@ -66,7 +66,9 @@
     <div class="admin-main-wrap">
       {% set page_header_visible = show_page_header if show_page_header is defined else True %}
       {% set topbar_actions = page_actions if page_actions is defined else [] %}
-      {% set header_tabs = page_header_tabs if page_header_tabs is defined else [] %}
+      {% set explicit_header_tabs = page_header_tabs if page_header_tabs is defined else [] %}
+      {% set fallback_workspace_tabs = workspace_tabs if workspace_tabs is defined else [] %}
+      {% set header_tabs = explicit_header_tabs if explicit_header_tabs else fallback_workspace_tabs %}
       {% if page_header_visible or show_shell_meta or topbar_actions or header_tabs %}
       <header class="admin-topbar">
         {% if page_header_visible %}
@@ -94,7 +96,7 @@
         {% if topbar_actions or header_tabs or _show_env_chip or _show_health_chip %}
         <div class="admin-topbar-meta">
           {% if header_tabs %}
-          <nav class="setup-topbar-tabs" aria-label="自动化运营方案导航">
+          <nav class="setup-topbar-tabs" aria-label="自动化运营方案导航" data-program-workspace-switcher>
             {% for item in header_tabs %}
             <a class="setup-topbar-tab{% if item.active %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
             {% endfor %}
