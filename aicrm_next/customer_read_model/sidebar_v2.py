@@ -173,6 +173,41 @@ class SidebarV2SqlRepository:
             {"external_userid": external_userid},
         )
 
+    def get_contact_binding_status(self, external_userid: str) -> dict[str, Any]:
+        row = self._one(
+            """
+            SELECT
+                b.external_userid,
+                b.person_id,
+                b.first_bound_by_userid,
+                b.first_owner_userid,
+                b.last_owner_userid,
+                b.created_at,
+                b.updated_at,
+                p.mobile,
+                p.third_party_user_id
+            FROM external_contact_bindings b
+            JOIN people p ON p.id = b.person_id
+            WHERE b.external_userid = :external_userid
+            """,
+            {"external_userid": external_userid},
+        )
+        if not row:
+            return {"is_bound": False, "external_userid": external_userid}
+        return {
+            "is_bound": True,
+            "external_userid": _text(row.get("external_userid")),
+            "person_id": row.get("person_id"),
+            "mobile": _text(row.get("mobile")),
+            "third_party_user_id": _text(row.get("third_party_user_id")),
+            "first_bound_by_userid": _text(row.get("first_bound_by_userid")),
+            "first_owner_userid": _text(row.get("first_owner_userid")),
+            "last_owner_userid": _text(row.get("last_owner_userid")),
+            "owner_userid": _text(row.get("last_owner_userid") or row.get("first_owner_userid")),
+            "created_at": _text(row.get("created_at")),
+            "updated_at": _text(row.get("updated_at")),
+        }
+
     def get_bindable_wechat_pay_order_mobile(self, external_userid: str) -> dict[str, Any] | None:
         rows = self._all(
             """
@@ -379,8 +414,8 @@ def _resolve_customer_payload(
         or _text(contacts_row.get("owner_userid"))
         or _text(identity_row.get("follow_user_userid"))
     )
-    mobile = _text(customer.get("mobile")) or _text(customer_binding.get("mobile")) or _text(binding.get("mobile"))
-    is_bound = bool(customer_binding.get("is_bound")) or bool(binding.get("is_bound")) or bool(mobile)
+    mobile = _text(binding.get("mobile")) or _text(customer.get("mobile")) or _text(customer_binding.get("mobile"))
+    is_bound = bool(binding.get("is_bound")) or bool(customer_binding.get("is_bound")) or bool(mobile)
     payload = {
         "display_name": display_name,
         "avatar_text": display_name[:1] if display_name else "",
@@ -389,9 +424,16 @@ def _resolve_customer_payload(
         "external_userid": _text(external_userid),
         "owner_userid": resolved_owner,
     }
+    context_binding = dict(context.get("binding") or {})
+    if not binding:
+        binding_source = "none"
+    elif context_binding and binding == context_binding:
+        binding_source = "context.binding"
+    else:
+        binding_source = "fresh_binding_status"
     diagnostics = {
         "display_name_source": display_name_source,
-        "binding_source": "context.binding" if context.get("binding") else ("next_binding_status" if binding else "none"),
+        "binding_source": binding_source,
     }
     return payload, diagnostics
 
@@ -414,11 +456,11 @@ class SidebarWorkbenchReadModel:
             raise ValueError("external_userid is required")
         normalized_owner = _text(owner_userid)
         context, context_diagnostics = self._context(normalized_external)
-        binding = dict(context.get("binding") or {})
         contact = self._repo.get_contact_snapshot(normalized_external) or {}
         identity = self._repo.get_external_identity_snapshot(normalized_external) or {}
         profile = self._repo.get_profile_fields(normalized_external) or {}
-        if not context.get("customer") and not contact and not identity and not profile:
+        binding = self._repo.get_contact_binding_status(normalized_external)
+        if not context.get("customer") and not contact and not identity and not profile and not binding.get("is_bound"):
             raise NotFoundError("customer not found")
         customer, resolution = _resolve_customer_payload(
             context=context,

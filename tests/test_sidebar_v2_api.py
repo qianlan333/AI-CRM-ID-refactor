@@ -97,6 +97,93 @@ def test_sidebar_v2_workbench_resolves_display_name_from_contacts_or_identity_ma
     assert identity_only_payload["diagnostics"]["display_name_source"] == "wecom_external_contact_identity_map.name"
 
 
+def _seed_mobile_binding(external_userid: str, mobile: str = "18906252970", owner_userid: str = "owner_current") -> None:
+    db = get_db()
+    person_id = db.execute(
+        """
+        INSERT INTO people (mobile, third_party_user_id)
+        VALUES (?, '')
+        ON CONFLICT (mobile) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+        """,
+        (mobile,),
+    ).fetchone()["id"]
+    db.execute(
+        """
+        INSERT INTO external_contact_bindings (
+            external_userid, person_id, first_bound_by_userid,
+            first_owner_userid, last_owner_userid
+        ) VALUES (?, ?, 'questionnaire_submit', ?, ?)
+        ON CONFLICT (external_userid) DO UPDATE SET
+            person_id = EXCLUDED.person_id,
+            last_owner_userid = EXCLUDED.last_owner_userid,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (external_userid, person_id, owner_userid, owner_userid),
+    )
+    db.commit()
+
+
+def test_sidebar_v2_workbench_uses_fresh_binding_after_customer_context_failure(client, app, monkeypatch):
+    from aicrm_next.customer_read_model import sidebar_v2 as sidebar_read_model
+
+    external_userid = "wm_context_failed_but_bound"
+
+    class FailingContextQuery:
+        def __call__(self, request):
+            raise RuntimeError("customer read model transaction aborted")
+
+    monkeypatch.setattr(sidebar_read_model, "GetCustomerContextQuery", lambda: FailingContextQuery())
+    monkeypatch.setattr(sidebar_read_model, "build_customer_live_source_repository", lambda: (_ for _ in ()).throw(RuntimeError("live source shares aborted transaction")))
+    with app.app_context():
+        _seed_contact(external_userid)
+        _seed_mobile_binding(external_userid)
+
+    response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": external_userid})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["customer"]["is_bound"] is True
+    assert payload["customer"]["mobile"] == "18906252970"
+    assert payload["diagnostics"]["context_source_status"] == "error"
+    assert payload["diagnostics"]["binding_source"] == "fresh_binding_status"
+
+
+def test_sidebar_v2_workbench_fresh_binding_overrides_stale_unbound_context(client, app, monkeypatch):
+    from aicrm_next.customer_read_model import sidebar_v2 as sidebar_read_model
+
+    external_userid = "wm_stale_context_but_bound"
+
+    class StaleContextQuery:
+        def __call__(self, request):
+            return {
+                "ok": True,
+                "customer": {
+                    "display_name": "陈旧上下文姓名",
+                    "owner_userid": "owner_current",
+                    "binding": {"is_bound": False, "mobile": "", "binding_status": "unbound"},
+                },
+                "binding": {"is_bound": False, "mobile": "", "binding_status": "unbound"},
+                "timeline": {"items": []},
+                "recent_messages": [],
+            }
+
+    monkeypatch.setattr(sidebar_read_model, "GetCustomerContextQuery", lambda: StaleContextQuery())
+    with app.app_context():
+        _seed_contact(external_userid)
+        _seed_mobile_binding(external_userid, "18906252970")
+
+    response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": external_userid})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["customer"]["display_name"] == "月朗"
+    assert payload["customer"]["is_bound"] is True
+    assert payload["customer"]["mobile"] == "18906252970"
+    assert payload["diagnostics"]["context_source_status"] == "next_read_model"
+    assert payload["diagnostics"]["binding_source"] == "fresh_binding_status"
+
+
 def test_sidebar_v2_profile_put_accepts_free_text_source_and_industry(client):
     response = client.put(
         "/api/sidebar/v2/profile",

@@ -127,6 +127,13 @@ class FailingClosableCustomerReadRepository:
         raise RuntimeError("relation customer_list_index_next does not exist")
 
 
+class FailingDetailClosableCustomerReadRepository(ClosableNextCustomerReadRepository):
+    def get_customer(self, external_userid: str):
+        raise RuntimeError("relation customer_detail_snapshot_next does not exist")
+
+    get_customer_detail = get_customer
+
+
 class ClosableLiveSourceCustomerReadRepository(FakeLiveSourceCustomerReadRepository):
     def __init__(self) -> None:
         super().__init__()
@@ -390,6 +397,25 @@ def test_customer_list_closes_primary_and_live_source_repositories(monkeypatch):
 
     assert payload["ok"] is True
     assert payload["source_status"] == "live_source_fallback"
+    assert primary_repo.closed is True
+    assert live_source_repo.closed is True
+
+
+def test_customer_detail_primary_query_failure_closes_before_live_source_fallback(monkeypatch):
+    from aicrm_next.customer_read_model import application
+    from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
+
+    _production_env(monkeypatch)
+    primary_repo = FailingDetailClosableCustomerReadRepository()
+    live_source_repo = ClosableLiveSourceCustomerReadRepository()
+    monkeypatch.setattr(application, "build_customer_read_model_repository", lambda: primary_repo)
+    monkeypatch.setattr(application, "build_customer_live_source_repository", lambda: live_source_repo)
+
+    payload = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid="wx_ext_001"))
+
+    assert payload["ok"] is True
+    assert payload["source_status"] == "live_source_fallback"
+    assert payload["customer"]["external_userid"] == "wx_ext_001"
     assert primary_repo.closed is True
     assert live_source_repo.closed is True
 
