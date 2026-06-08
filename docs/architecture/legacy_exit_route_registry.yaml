@@ -131,7 +131,7 @@ routes:
     replacement_status: locked
     checker: tests/test_hxc_dashboard_registry_lifecycle.py
     rollback_owner: aicrm_next.hxc_dashboard
-    notes: /admin/hxc-dashboard and /admin/hxc-send-config are served before production_compat; no legacy page fallback remains.
+    notes: Shadowed frontend_compat handlers removed; /admin/hxc-dashboard and /admin/hxc-send-config are served by aicrm_next.hxc_dashboard before frontend_compat registration with no route path or business API change.
   - route_id: hxc_dashboard_refresh_next_command
     path_pattern: /api/admin/hxc-dashboard/refresh
     methods: [POST, OPTIONS]
@@ -220,7 +220,7 @@ routes:
     path_pattern: /admin/cloud-orchestrator/campaigns
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
-    runtime_owner: frontend_compat over Next read APIs
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
@@ -2682,7 +2682,7 @@ lifecycle_items:
     rollback_plan: sample item; no production decision
     status: planned
     production_decision: excluded
-    notes: test-only lifecycle sample, not used for deletion decision
+    notes: Shadowed frontend_compat handler removed; campaign workspace page is served by aicrm_next.cloud_orchestrator before frontend_compat registration with no route path or business API change.
     sample: true
   - legacy_item_id: sample_questionnaire_public_submit
     capability_owner: aicrm_next.questionnaire
@@ -2699,7 +2699,7 @@ lifecycle_items:
     rollback_plan: sample item; no production decision
     status: validating
     production_decision: excluded
-    notes: test-only lifecycle sample, not used for deletion decision
+    notes: Shadowed frontend_compat handler removed; product management page is served by aicrm_next.commerce before frontend_compat registration with no route path or business API change.
     sample: true
   - legacy_item_id: sample_payment_admin_products
     capability_owner: aicrm_next.commerce

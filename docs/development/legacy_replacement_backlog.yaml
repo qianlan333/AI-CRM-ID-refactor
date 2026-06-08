@@ -750,7 +750,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_production_route_resolution.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "Product management list page is served by aicrm_next.commerce and reads the native commerce repository."
+    notes: "Shadowed frontend_compat handler removed; product management list page is served by aicrm_next.commerce before frontend_compat registration with no route path or business API change."
   - id: "LRB-035"
     route_pattern: "/admin/wechat-pay/products*"
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]
@@ -2180,7 +2180,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_production_route_resolution.py", "read-model parity check", "admin/browser smoke for the current page or API", "route owner drift guard"]
-    notes: "Campaign workspace page is locked to the Next shell over Next campaign read APIs; write controls call Next CommandBus and only produce AuditLedger/SideEffectPlan evidence; no real send/runtime."
+    notes: "Shadowed frontend_compat handler removed; campaign workspace page is served by aicrm_next.cloud_orchestrator before frontend_compat registration while write controls stay on Next CommandBus; no route path or business API change."
   - id: "LRB-100"
     route_pattern: "/api/admin/cloud-orchestrator/campaigns*"
     methods: ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
@@ -4358,7 +4358,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_hxc_dashboard_pages.py", "read-model parity check", "admin/browser smoke for the current page or API", "route owner drift guard"]
-    notes: "HXC dashboard page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed."
+    notes: "Shadowed frontend_compat handler removed; HXC dashboard page is served by aicrm_next.hxc_dashboard before frontend_compat registration with no route path or business API change."
   - id: "LRB-199"
     route_pattern: "/admin/hxc-send-config"
     methods: ["GET"]
@@ -4380,7 +4380,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_hxc_dashboard_pages.py", "read-model parity check", "admin/browser smoke for the current page or API", "route owner drift guard"]
-    notes: "HXC send-config page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed."
+    notes: "Shadowed frontend_compat handler removed; HXC send-config page is served by aicrm_next.hxc_dashboard before frontend_compat registration with no route path or business API change."
   - id: "LRB-200"
     route_pattern: "/api/admin/hxc-dashboard"
     methods: ["GET"]
