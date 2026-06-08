@@ -873,7 +873,9 @@ def test_next_product_editor_uses_v5_collapsed_modules_and_real_actions():
     assert 'id="externalPushPanel" hidden' in template
     assert 'id="afterActionExpand"' in template
     assert 'id="externalPushExpand"' in template
-    assert 'id="externalPushEnabled" type="button" role="switch"' in template
+    assert 'id="externalPushEnabled" type="button" role="switch"' not in template
+    assert "支付成功外推" not in template
+    assert "enabled: Boolean(externalPush.enabled)," in template
     assert "配置购买后动作" not in template
     assert "配置外部推送" not in template
     assert "completionRedirectEnabled" not in template
