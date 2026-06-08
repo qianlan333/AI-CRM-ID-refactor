@@ -1191,7 +1191,35 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign read/list/detail/members/steps legacy rollback removed; Next read model only; no real WeCom send, no real storage, and no automation runtime.
+    notes: Campaign read/list/detail/members/steps legacy rollback removed; Next read model only; no real WeCom send, no real storage, and no automation runtime. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
+  - route_pattern: /api/ai-assist/external/campaigns
+    methods: [POST]
+    capability_owner: aicrm_next.ai_assist
+    current_runtime_owner: next_command
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    notes: External campaign create API uses the Next external campaign repository and token guard; it creates pending_review draft campaigns only, does not start campaigns, and does not execute outbound sends.
+  - route_pattern: /api/ai-assist/external/campaigns/{campaign_code}
+    methods: [GET]
+    capability_owner: aicrm_next.ai_assist
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    notes: External campaign status API reads the current DB state through the Next external campaign repository; it has no scheduler or outbound-send side effects.
   - route_pattern: /admin/cloud-orchestrator/campaigns
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1219,7 +1247,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner.
+    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send, no campaign execute, and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
   - route_pattern: /api/admin/cloud-orchestrator/media/upload
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1233,7 +1261,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Legacy rollback removed; Next Cloud Orchestrator media upload adapter only; returns legacy-compatible media_id by uploading the image through the approved WeCom client gateway and reports wecom_media_upload_executed=true.
+    notes: Uses Next native WeComMediaUploadClient; no legacy_flask_facade, no _legacy_app, and no legacy_wecom_client_from_app. Production contract still returns real WeCom media_id when adapter mode is production and reports wecom_media_upload_executed=true.
   - route_pattern: /api/admin/automation-conversion/programs*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

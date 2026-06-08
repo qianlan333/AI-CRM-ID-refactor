@@ -5,9 +5,13 @@ import hashlib
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from aicrm_next.integration_gateway.media_adapters import WeComMediaAdapter
+from aicrm_next.integration_gateway.wecom_media_upload_client import (
+    WeComMediaUploadClientError,
+    build_wecom_media_upload_client,
+)
 from aicrm_next.shared import runtime
 
 SOURCE_STATUS = "next_cloud_orchestrator_media_upload"
@@ -81,6 +85,7 @@ class UploadCloudOrchestratorMediaCommand:
     source_route: str = "/api/admin/cloud-orchestrator/media/upload"
     trace_id: str = ""
     dry_run: bool = True
+    client_factory: Callable[[], Any] | None = None
 
     def __call__(self, *, file_name: str, file_bytes: bytes, content_type: str) -> dict[str, Any]:
         normalized_name = _text(file_name) or "cloud-orchestrator-image.png"
@@ -169,18 +174,21 @@ class UploadCloudOrchestratorMediaCommand:
         adapter_mode: str,
     ) -> tuple[str, dict[str, Any]]:
         try:
-            from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app, legacy_wecom_client_from_app
-
-            with _legacy_app().app_context():
-                media_id = _text(
-                    legacy_wecom_client_from_app()._upload_private_message_image(
-                        file_name,
-                        file_bytes,
-                        content_type,
-                    )
-                )
-        except Exception as exc:  # pragma: no cover - exact WeCom exception type lives in legacy boundary
+            client = self.client_factory() if self.client_factory is not None else build_wecom_media_upload_client()
+            result = client.upload_image(file_name, file_bytes, content_type)
+        except WeComMediaUploadClientError as exc:
+            raise CloudOrchestratorMediaUploadError(
+                f"wecom_upload_failed: {exc.error_code}:{exc.stage}"
+            ) from exc
+        except Exception as exc:
             raise CloudOrchestratorMediaUploadError(f"wecom_upload_failed: {exc}") from exc
+        try:
+            errcode = int(result.get("errcode") or 0)
+        except (TypeError, ValueError):
+            errcode = -1
+        if errcode != 0:
+            raise CloudOrchestratorMediaUploadError(f"wecom_upload_failed: errcode={errcode}")
+        media_id = _text(result.get("media_id"))
         if not media_id:
             raise CloudOrchestratorMediaUploadError("wecom_upload_failed: empty media_id")
         return media_id, {
@@ -203,6 +211,7 @@ def build_upload_command(
     actor_id: str = "",
     actor_type: str = "admin",
     trace_id: str = "",
+    client_factory: Callable[[], Any] | None = None,
 ) -> UploadCloudOrchestratorMediaCommand:
     command_id = "cmd_cloud_media_" + uuid.uuid4().hex
     key = _text(idempotency_key) or command_id
@@ -212,6 +221,7 @@ def build_upload_command(
         actor_id=_text(actor_id) or "admin_ui",
         actor_type=_text(actor_type) or "admin",
         trace_id=_text(trace_id),
+        client_factory=client_factory,
     )
 
 

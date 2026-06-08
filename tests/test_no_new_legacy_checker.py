@@ -11,7 +11,10 @@ from scripts.check_no_new_legacy import (
     check_automation_member_actions_next_safe_mode,
     check_automation_overview_pools_next_read_model,
     check_automation_workspace_runtime_next_safe_mode,
+    check_ai_assist_external_campaigns_native,
     check_cloud_orchestrator_media_upload_closeout_lock,
+    check_cloud_orchestrator_media_upload_native_client,
+    check_cloud_orchestrator_repository_time_helpers_native,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
     check_customer_read_model_legacy_deletion,
@@ -171,6 +174,130 @@ def test_wecom_group_adapter_guard_accepts_minimal_native_files(tmp_path: Path) 
     _write_wecom_group_adapter_files(tmp_path)
 
     assert check_wecom_group_adapter_native(tmp_path) == []
+
+
+def _write_ai_external_campaign_files(
+    root: Path,
+    *,
+    service_text: str = "from .external_campaigns_repo import build_external_campaign_repository\n",
+    repo_text: str = "from aicrm_next.shared.postgres_connection import get_db\n",
+    registry_text: str | None = None,
+    manifest_text: str | None = None,
+) -> None:
+    service_path = root / "aicrm_next/ai_assist/external_campaigns.py"
+    repo_path = root / "aicrm_next/ai_assist/external_campaigns_repo.py"
+    registry_path = root / "docs/architecture/legacy_exit_route_registry.yaml"
+    manifest_path = root / "docs/route_ownership/production_route_ownership_manifest.yaml"
+    service_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    service_path.write_text(service_text, encoding="utf-8")
+    repo_path.write_text(repo_text, encoding="utf-8")
+    registry_path.write_text(
+        registry_text
+        if registry_text is not None
+        else (
+            "routes:\n"
+            "  - route_id: ai_assist_external_campaigns_create\n"
+            "    path_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    runtime_owner: next_command\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+            "  - route_id: ai_assist_external_campaigns_status\n"
+            "    path_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    runtime_owner: next_native\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        manifest_text
+        if manifest_text is not None
+        else (
+            "routes:\n"
+            "  - route_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    current_runtime_owner: next_command\n"
+            "    production_behavior: next_command\n"
+            "    legacy_fallback_allowed: false\n"
+            "    notes: Next create route, no outbound send.\n"
+            "  - route_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    current_runtime_owner: next\n"
+            "    production_behavior: next_exact\n"
+            "    legacy_fallback_allowed: false\n"
+            "    notes: Next readonly status route, no side effects.\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_ai_external_campaign_guard_flags_legacy_orchestration(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        service_text=(
+            "from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\n"
+            "from wecom_ability_service.domains.campaigns import service as campaign_service\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_legacy_import" in codes
+    assert "ai_external_campaigns_legacy_service_orchestration" in codes
+
+
+def test_ai_external_campaign_guard_flags_repo_legacy_import(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        repo_text="from flask import current_app\nfrom wecom_ability_service.db import get_db\n",
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_repo_legacy_import" in codes
+
+
+def test_ai_external_campaign_guard_flags_registry_not_locked(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(
+        tmp_path,
+        registry_text=(
+            "routes:\n"
+            "  - route_id: ai_assist_external_campaigns_create\n"
+            "    path_pattern: /api/ai-assist/external/campaigns\n"
+            "    methods: [POST]\n"
+            "    runtime_owner: next_command\n"
+            "    legacy_fallback_allowed: true\n"
+            "    legacy_source: legacy_flask_facade\n"
+            "    delete_status: active\n"
+            "    replacement_status: validating\n"
+            "  - route_id: ai_assist_external_campaigns_status\n"
+            "    path_pattern: /api/ai-assist/external/campaigns/{campaign_code}\n"
+            "    methods: [GET]\n"
+            "    runtime_owner: next_native\n"
+            "    legacy_fallback_allowed: false\n"
+            "    legacy_source: \"\"\n"
+            "    delete_status: deletion_locked\n"
+            "    replacement_status: locked\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_ai_assist_external_campaigns_native(tmp_path)}
+
+    assert "ai_external_campaigns_registry_not_locked" in codes
+
+
+def test_ai_external_campaign_guard_accepts_minimal_native_files(tmp_path: Path) -> None:
+    _write_ai_external_campaign_files(tmp_path)
+
+    assert check_ai_assist_external_campaigns_native(tmp_path) == []
 
 
 def _write_route_progress_docs(
@@ -697,6 +824,127 @@ def test_cloud_orchestrator_media_upload_closeout_guard_blocks_rollback(tmp_path
     assert "cloud_media_upload_registry_rollback_lifecycle" in codes
     assert "cloud_media_upload_manifest_legacy_allowed" in codes
     assert "cloud_media_upload_manifest_rollback_lifecycle" in codes
+
+
+def _write_cloud_media_native_files(
+    tmp_path: Path,
+    *,
+    media_upload: str = "from aicrm_next.integration_gateway.wecom_media_upload_client import WeComMediaUploadClientError, build_wecom_media_upload_client\n",
+    native_client: str = "class WeComMediaUploadClient:\n    pass\n",
+    adapter_test: str = "def test_native():\n    pass\n",
+    locked: bool = True,
+) -> None:
+    _write_cloud_media_upload_docs(tmp_path, locked=locked)
+    media_path = tmp_path / "aicrm_next/cloud_orchestrator/media_upload.py"
+    client_path = tmp_path / "aicrm_next/integration_gateway/wecom_media_upload_client.py"
+    test_path = tmp_path / "tests/test_cloud_orchestrator_media_upload_adapter.py"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    client_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_text(media_upload, encoding="utf-8")
+    client_path.write_text(native_client, encoding="utf-8")
+    test_path.write_text(adapter_test, encoding="utf-8")
+
+
+def test_cloud_media_checker_flags_legacy_client_in_media_upload(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(
+        tmp_path,
+        media_upload="from aicrm_next.integration_gateway.legacy_flask_facade import legacy_wecom_client_from_app\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_upload_legacy_client_import" in codes
+
+
+def test_cloud_media_checker_flags_direct_http_in_cloud_orchestrator(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path, media_upload="import requests\nrequests.post('https://example.invalid')\n")
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_upload_direct_http_client" in codes
+
+
+def test_cloud_media_checker_flags_legacy_import_in_native_client(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path, native_client="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_client_legacy_import" in codes
+
+
+def test_cloud_media_checker_flags_legacy_monkeypatch_in_tests(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(
+        tmp_path,
+        adapter_test="monkeypatch.setattr('aicrm_next.integration_gateway.legacy_flask_facade.legacy_wecom_client_from_app', lambda: None)\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_media_upload_native_client(tmp_path)}
+
+    assert "cloud_media_tests_legacy_monkeypatch" in codes
+
+
+def test_cloud_media_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_cloud_media_native_files(tmp_path)
+
+    assert check_cloud_orchestrator_media_upload_native_client(tmp_path) == []
+
+
+def _write_cloud_time_helper_files(
+    root: Path,
+    *,
+    repository: str = "from .time_helpers import campaign_step_due_iso\n",
+    time_helper: str = (
+        'DEFAULT_SEND_TIME = "09:00"\n'
+        'DEFAULT_TIMEZONE = "Asia/Shanghai"\n'
+        "def campaign_step_due_iso(*, anchor_date, day_offset, send_time, step_timezone=DEFAULT_TIMEZONE, fallback_to_timezone_today=False):\n"
+        "    return '2026-05-30T09:00:00+08:00'\n"
+    ),
+) -> None:
+    repository_path = root / "aicrm_next/cloud_orchestrator/repository.py"
+    time_helper_path = root / "aicrm_next/cloud_orchestrator/time_helpers.py"
+    repository_path.parent.mkdir(parents=True, exist_ok=True)
+    repository_path.write_text(repository, encoding="utf-8")
+    time_helper_path.write_text(time_helper, encoding="utf-8")
+
+
+def test_cloud_repo_time_helper_checker_flags_wecom_time_helper(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        repository="from wecom_ability_service.domains.campaigns.time_helpers import campaign_step_due_iso\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_repo_legacy_time_helper_import" in codes
+
+
+def test_cloud_repo_time_helper_checker_flags_legacy_runtime_import(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        repository="from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\nfrom flask import current_app\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_repo_legacy_runtime_import" in codes
+
+
+def test_cloud_time_helper_checker_flags_legacy_import(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(
+        tmp_path,
+        time_helper='DEFAULT_SEND_TIME = "09:00"\nDEFAULT_TIMEZONE = "Asia/Shanghai"\nfrom wecom_ability_service.db import get_db\ndef campaign_step_due_iso():\n    return ""\n',
+    )
+
+    codes = {violation.code for violation in check_cloud_orchestrator_repository_time_helpers_native(tmp_path)}
+
+    assert "cloud_time_helper_legacy_import" in codes
+
+
+def test_cloud_time_helper_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_cloud_time_helper_files(tmp_path)
+
+    assert check_cloud_orchestrator_repository_time_helpers_native(tmp_path) == []
 
 
 def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:

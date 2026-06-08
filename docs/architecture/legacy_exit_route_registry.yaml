@@ -214,7 +214,7 @@ routes:
     replacement_status: locked
     checker: tests/test_cloud_orchestrator_campaigns_read_routes.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Campaign list/detail/members/steps read legacy rollback removed; Next read model only; no real WeCom send and no automation runtime.
+    notes: Campaign list/detail/members/steps read legacy rollback removed; Next read model only; no real WeCom send and no automation runtime. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
   - route_id: cloud_orchestrator_campaigns_page
     path_pattern: /admin/cloud-orchestrator/campaigns
     methods: [GET]
@@ -256,7 +256,7 @@ routes:
     replacement_status: locked
     checker: tests/test_cloud_orchestrator_campaign_write_commands.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner.
+    notes: Campaign write controls approve/reject/start/pause/delete/batch-start/step mutation are deletion_locked on Next CommandBus, AuditLedger, and SideEffectPlan; production_compat rollback removed; start/batch-start adapter_mode real_blocked with no real WeCom send and no automation runtime. run-due is separately deletion_locked on the Next safe-mode planner. Cloud repository uses Next native aicrm_next.cloud_orchestrator.time_helpers; no wecom_ability_service.domains.campaigns.time_helpers import remains. Business-compatible legacy_campaign source_type remains data compatibility only, not Flask/runtime fallback.
   - route_id: cloud_orchestrator_admin_family
     path_pattern: /admin/cloud-orchestrator*
     methods: [GET]
@@ -298,7 +298,7 @@ routes:
     replacement_status: locked
     checker: tests/test_cloud_orchestrator_media_upload_adapter.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Legacy rollback removed; Next media upload adapter owns Cloud Orchestrator image uploads; production uses the approved WeCom client gateway to return a real temporary image media_id and reports wecom_media_upload_executed=true.
+    notes: Uses Next native WeComMediaUploadClient; no legacy_flask_facade, no _legacy_app, and no legacy_wecom_client_from_app. Production contract still returns real WeCom media_id when adapter mode is production and reports wecom_media_upload_executed=true.
   - route_id: media_library_admin_pages_family
     path_pattern: /admin/*-library
     methods: [GET]
@@ -1358,11 +1358,39 @@ routes:
     legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_ai_assist_external_campaigns.py
     rollback_owner: aicrm_next.ai_assist
-    notes: AI assist external campaign APIs.
+    notes: AI assist API family remains Next-owned; exact external campaign create/status routes are locked below.
+  - route_id: ai_assist_external_campaigns_create
+    path_pattern: /api/ai-assist/external/campaigns
+    methods: [POST]
+    capability_owner: aicrm_next.ai_assist
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    rollback_owner: aicrm_next.ai_assist
+    notes: External campaign create API uses Next external campaign repository; no _legacy_app, no wecom_ability_service service orchestration, no production_compat fallback, and no real outbound send.
+  - route_id: ai_assist_external_campaigns_status
+    path_pattern: /api/ai-assist/external/campaigns/{campaign_code}
+    methods: [GET]
+    capability_owner: aicrm_next.ai_assist
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_ai_assist_external_campaigns.py
+    rollback_owner: aicrm_next.ai_assist
+    notes: External campaign status API uses Next external campaign repository; no _legacy_app, no wecom_ability_service service orchestration, no production_compat fallback, no scheduler side effects, and no real outbound send.
   - route_id: ai_assist_admin_contract
     path_pattern: /api/admin/ai-assist*
     methods: [GET]
@@ -1372,11 +1400,11 @@ routes:
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_ai_assist_external_campaigns.py
     rollback_owner: aicrm_next.ai_assist
-    notes: AI assist admin contract APIs.
+    notes: AI assist admin contract APIs are Next-owned.
   - route_id: send_content_admin_api_family
     path_pattern: /api/admin/send-content*
     methods: [POST]
