@@ -447,7 +447,7 @@ def _paid_order_for_product_identity(conn: Any, *, product: dict[str, Any], iden
         identity_clauses.append("unionid = %s")
         params.append(unionid)
     external_userid = _normalized_text(identity.get("external_userid"))
-    if external_userid:
+    if external_userid and not identity_clauses:
         identity_clauses.append("external_userid = %s")
         params.append(external_userid)
     if not product_codes or not identity_clauses:
