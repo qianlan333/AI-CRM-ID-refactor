@@ -154,18 +154,31 @@ routes:
   - route_pattern: /admin/user-ops*
     methods: [GET]
     capability_owner: aicrm_next.ops_enrollment
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: false
     checker: tests/test_user_ops_registry_lifecycle.py
-    notes: User Ops group 6 admin page opens through Next frontend_compat and reads Next-native User Ops APIs; no production_compat fallback and no real external calls.
+    notes: User Ops admin page family is served by aicrm_next.ops_enrollment.admin_pages while reusing existing templates and inline JS; User Ops APIs remain owned by ops_enrollment.api; no frontend_compat page route remains.
+  - route_pattern: /admin/user-ops/ui
+    methods: [GET]
+    capability_owner: aicrm_next.ops_enrollment
+    current_runtime_owner: next
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_user_ops_admin_pages_native.py
+    notes: User Ops real-data entry page is served by aicrm_next.ops_enrollment.admin_pages over GetAdminFunnelPageQuery; frontend_compat route removed and no production_compat fallback.
   - route_pattern: /admin/user-ops
     methods: [GET]
     capability_owner: aicrm_next.ops_enrollment
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
@@ -174,7 +187,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_user_ops_registry_lifecycle.py
-    notes: User Ops admin page is deletion_locked on the Next frontend_compat shell over Next-native APIs; it must stay 200 and must not use production_compat fallback.
+    notes: User Ops admin page is served by aicrm_next.ops_enrollment.admin_pages while preserving templates, inline JS, DOM ids, and API strings; no frontend_compat page route or production_compat fallback.
   - route_pattern: /api/admin/user-ops*
     methods: [GET, POST, OPTIONS, HEAD]
     capability_owner: aicrm_next.ops_enrollment

@@ -52,6 +52,7 @@ from .media_library.admin_pages import router as media_library_admin_pages_route
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
 from .message_archive.api import router as message_archive_router
+from .ops_enrollment.admin_pages import router as user_ops_admin_pages_router
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
@@ -167,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(customer_admin_pages_router)
     app.include_router(customer_tags_router)
     app.include_router(user_ops_router)
+    app.include_router(user_ops_admin_pages_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
     app.include_router(message_archive_router)

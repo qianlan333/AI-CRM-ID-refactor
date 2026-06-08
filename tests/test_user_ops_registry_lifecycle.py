@@ -37,15 +37,16 @@ def test_user_ops_readonly_routes_are_deletion_locked_next_native_without_handle
 
 def test_user_ops_admin_page_is_locked_without_hxc_redirect_fallback() -> None:
     service = get_route_registry_service()
-    entry = service.find_route("/admin/user-ops", {"GET"})
+    for path in ("/admin/user-ops/ui", "/admin/user-ops"):
+        entry = service.find_route(path, {"GET"})
 
-    assert entry is not None
-    assert entry.capability_owner == "aicrm_next.ops_enrollment"
-    assert entry.runtime_owner == "frontend_compat"
-    assert entry.legacy_fallback_allowed is False
-    assert entry.delete_status == "deletion_locked"
-    assert entry.replacement_status == "locked"
-    assert "must not redirect to the HXC dashboard" in entry.notes
+        assert entry is not None
+        assert entry.capability_owner == "aicrm_next.ops_enrollment"
+        assert entry.runtime_owner == "next_native"
+        assert entry.legacy_fallback_allowed is False
+        assert entry.delete_status == "deletion_locked"
+        assert entry.replacement_status == "locked"
+        assert "ops_enrollment.admin_pages" in entry.notes
 
 
 def test_user_ops_preview_routes_are_next_command_deletion_locked() -> None:
@@ -76,10 +77,16 @@ def test_user_ops_manifest_distinguishes_readonly_and_preview_routes() -> None:
     assert readonly["delete_ready"] is False
 
     admin_page = by_route["/admin/user-ops"]
-    assert admin_page["current_runtime_owner"] == "frontend_compat"
+    assert admin_page["current_runtime_owner"] == "next"
     assert admin_page["legacy_fallback_allowed"] is False
     assert admin_page["delete_status"] == "deletion_locked"
     assert admin_page["replacement_status"] == "locked"
+
+    admin_ui_page = by_route["/admin/user-ops/ui"]
+    assert admin_ui_page["current_runtime_owner"] == "next"
+    assert admin_ui_page["legacy_fallback_allowed"] is False
+    assert admin_ui_page["delete_status"] == "deletion_locked"
+    assert admin_ui_page["replacement_status"] == "locked"
 
     for route in READONLY_ROUTES:
         record = by_route[route]
