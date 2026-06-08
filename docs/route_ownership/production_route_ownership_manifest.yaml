@@ -43,14 +43,16 @@ routes:
   - route_pattern: /admin/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next_native
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: true
-    checker: tools/check_next_production_runtime_gaps.py
-    notes: Customer read legacy facade removed; Next read model is the only production read path. Missing production read model data returns production_unavailable.
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_customer_admin_list_pages_native.py
+    notes: Customer list admin page is served by aicrm_next.customer_read_model.admin_pages and reads the Next read model only; frontend_compat removed for the list page. Customer detail remains frontend_compat pending P2-B2. Missing production read model data returns production_unavailable.
   - route_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire

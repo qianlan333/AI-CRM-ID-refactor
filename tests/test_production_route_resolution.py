@@ -36,6 +36,8 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/customers") == "aicrm_next.customer_read_model.api"
     assert _owner_for(samples, "GET", "/api/messages/wx_ext_001/recent") == "next"
     assert _endpoint_for(samples, "GET", "/api/messages/wx_ext_001/recent") == "aicrm_next.customer_read_model.api"
+    assert _owner_for(samples, "GET", "/admin/customers") == "next"
+    assert _endpoint_for(samples, "GET", "/admin/customers") == "aicrm_next.customer_read_model.admin_pages"
     assert _owner_for(samples, "POST", "/api/admin/cloud-orchestrator/media/upload") == "next"
     assert _endpoint_for(samples, "POST", "/api/admin/cloud-orchestrator/media/upload") == "aicrm_next.cloud_orchestrator.api"
     assert _owner_for(samples, "GET", "/admin/cloud-orchestrator/campaigns") == "next"

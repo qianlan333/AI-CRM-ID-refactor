@@ -55,7 +55,7 @@ The checker imports the FastAPI app with final Legacy Exit guards enabled. It ve
 - production compatibility route count remains zero;
 - legacy fallback route count remains zero;
 - real external side-effect routes are not marked as real production behavior;
-- `/admin/customers` and `/admin/questionnaires` are production readonly facade
-  paths and do not allow fixture data in production;
+- `/admin/customers` and `/admin/questionnaires` are Next read-model/admin
+  page shell paths and do not allow fixture data in production;
 - `/mcp` is owned by `aicrm_next.integration_gateway` and not by
   `openclaw_service`.
