@@ -1,9 +1,4 @@
-"""Backfill missing mobile bindings from WeCom identity sources.
-
-This replays the same identity bridge used by the Next WeCom callback for
-historical rows: external_userid -> unionid/openid -> paid order/questionnaire
-mobile -> external_contact_bindings.
-"""
+"""Backfill missing mobile bindings from WeCom identity sources."""
 from __future__ import annotations
 
 import argparse
@@ -16,22 +11,15 @@ except ModuleNotFoundError:
 
 ensure_repo_root_on_path()
 
-from wecom_ability_service import create_app
-from wecom_ability_service.application.identity_contact.commands import (
-    BindExternalContactMobileFromIdentitySourcesCommand,
-)
-from wecom_ability_service.application.identity_contact.dto import (
-    BindExternalContactMobileFromIdentitySourcesCommandDTO,
-)
-from wecom_ability_service.db import get_db
-from wecom_ability_service.domains.identity import repo as identity_repo
-from wecom_ability_service.domains.questionnaire.service import (
-    backfill_questionnaire_submissions_for_mobile_binding,
-)
+from aicrm_next.channel_entry.identity_bridge_repo import build_identity_bridge_repository
+from aicrm_next.channel_entry.identity_bridge_service import build_identity_bridge_service
+from aicrm_next.shared.runtime import raw_database_url
 
 
 def _mask_mobile(value: Any) -> str:
     digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) == 13 and digits.startswith("86"):
+        digits = digits[2:]
     if len(digits) < 7:
         return ""
     return f"{digits[:3]}****{digits[-4:]}"
@@ -53,22 +41,9 @@ def _public_result(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _resolve_owner_userid(external_userid: str) -> str:
-    row = get_db().execute(
-        """
-        SELECT follow_user_userid
-        FROM wecom_external_contact_identity_map
-        WHERE external_userid = ?
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 1
-        """,
-        (external_userid,),
-    ).fetchone()
-    return str((row or {}).get("follow_user_userid") or "").strip()
-
-
 def _dry_run_external_userid(external_userid: str) -> dict[str, Any]:
-    candidate = identity_repo.get_unique_mobile_candidate_from_identity_sources(external_userid)
+    repo = build_identity_bridge_repository()
+    candidate = repo.get_unique_mobile_candidate_from_identity_sources(external_userid)
     if not candidate:
         return {"external_userid": external_userid, "status": "skipped", "reason": "no_single_candidate"}
     return {
@@ -79,17 +54,17 @@ def _dry_run_external_userid(external_userid: str) -> dict[str, Any]:
 
 
 def _execute_external_userid(external_userid: str) -> dict[str, Any]:
-    owner_userid = _resolve_owner_userid(external_userid)
-    binding = BindExternalContactMobileFromIdentitySourcesCommand()(
-        BindExternalContactMobileFromIdentitySourcesCommandDTO(
-            external_userid=external_userid,
-            owner_userid=owner_userid,
-            bind_by_userid=owner_userid or "identity_mobile_bridge_backfill",
-        )
+    repo = build_identity_bridge_repository()
+    service = build_identity_bridge_service(repository=repo)
+    owner_userid = repo.resolve_binding_owner_userid(external_userid)
+    binding = service.bind_mobile_from_identity_sources(
+        external_userid,
+        owner_userid=owner_userid,
+        bind_by_userid=owner_userid or "identity_mobile_bridge_backfill",
     )
     questionnaire_backfill: dict[str, Any] = {"status": "skipped", "reason": "mobile_not_bound"}
     if str((binding or {}).get("mobile") or "").strip() and str((binding or {}).get("status") or "").strip() in {"bound", "already_bound"}:
-        questionnaire_backfill = backfill_questionnaire_submissions_for_mobile_binding(
+        questionnaire_backfill = repo.backfill_questionnaire_submissions_for_mobile_binding(
             external_userid=external_userid,
             mobile=str(binding.get("mobile") or "").strip(),
             follow_user_userid=owner_userid,
@@ -103,9 +78,10 @@ def _execute_external_userid(external_userid: str) -> dict[str, Any]:
 
 
 def run_backfill(*, execute: bool, limit: int, external_userids: list[str] | None = None) -> dict[str, Any]:
+    repo = build_identity_bridge_repository()
     targets = [value.strip() for value in (external_userids or []) if value.strip()]
     if not targets:
-        targets = identity_repo.list_unbound_external_userids_with_identity_sources(limit=limit)
+        targets = repo.list_unbound_external_userids_with_identity_sources(limit=limit)
     results: list[dict[str, Any]] = []
     for external_userid in targets[: max(1, int(limit or 500))]:
         result = _execute_external_userid(external_userid) if execute else _dry_run_external_userid(external_userid)
@@ -135,13 +111,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    app = create_app()
-    with app.app_context():
-        payload = run_backfill(
-            execute=bool(args.execute),
-            limit=int(args.limit or 500),
-            external_userids=list(args.external_userid or []),
+    if not raw_database_url():
+        print_json(
+            {
+                "ok": False,
+                "error": "DATABASE_URL required",
+                "mode": "execute" if args.execute else "dry_run",
+                "target_count": 0,
+                "processed_count": 0,
+                "summary": {},
+                "results": [],
+            },
+            indent=args.indent,
         )
+        return 2
+    payload = run_backfill(
+        execute=bool(args.execute),
+        limit=int(args.limit or 500),
+        external_userids=list(args.external_userid or []),
+    )
     print_json(payload, indent=args.indent)
     return 0
 

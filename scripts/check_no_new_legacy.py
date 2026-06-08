@@ -43,7 +43,6 @@ WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
     Path("aicrm_next/public_product/h5_wechat_pay.py"),
-    Path("aicrm_next/channel_entry/identity_bridge.py"),
     Path("aicrm_next/integration_gateway/questionnaire_adapters.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {
@@ -1096,6 +1095,71 @@ def check_group_ops_scheduler_duplicate_checker_native(root: Path = ROOT) -> lis
         allowlist_marker = 'Path("aicrm_next/automation_engine/group_ops/' + 'scheduler.py")'
         if allowlist_marker in text:
             violations.append(Violation("group_ops_scheduler_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    return violations
+
+
+def check_channel_identity_bridge_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    channel_root = root / "aicrm_next" / "channel_entry"
+    bridge_path = channel_root / "identity_bridge.py"
+    repo_path = channel_root / "identity_bridge_repo.py"
+    service_path = channel_root / "identity_bridge_service.py"
+    checker_path = root / "scripts" / "check_no_new_legacy.py"
+    test_path = root / "tests" / "test_next_channel_identity_bridge.py"
+
+    if bridge_path.exists():
+        text = bridge_path.read_text(encoding="utf-8")
+        rel = str(bridge_path.relative_to(root))
+        for marker in (
+            "wecom_ability_service",
+            "_legacy_app",
+            "legacy_flask_facade",
+            "create_app",
+            "with _legacy_app",
+            "current_app",
+            "from flask",
+            "BindExternalContactMobileFromIdentitySourcesCommand",
+            "BuildExternalContactIdentityRecordCommand",
+            "backfill_questionnaire_submissions_for_mobile_binding",
+        ):
+            if marker in text:
+                violations.append(Violation("channel_identity_bridge_legacy_import", rel, marker))
+
+    if repo_path.exists():
+        text = repo_path.read_text(encoding="utf-8")
+        rel = str(repo_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("channel_identity_repo_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("channel_identity_repo_legacy_import", str(repo_path.relative_to(root)), "missing identity_bridge_repo.py"))
+
+    if service_path.exists():
+        text = service_path.read_text(encoding="utf-8")
+        rel = str(service_path.relative_to(root))
+        for marker in ("wecom_ability_service", "legacy_flask_facade", "_legacy_app", "flask", "current_app"):
+            if marker in text:
+                violations.append(Violation("channel_identity_service_legacy_import", rel, marker))
+    else:
+        violations.append(Violation("channel_identity_service_legacy_import", str(service_path.relative_to(root)), "missing identity_bridge_service.py"))
+
+    if checker_path.exists():
+        text = checker_path.read_text(encoding="utf-8")
+        allowlist_marker = 'Path("aicrm_next/channel_entry/' + 'identity_bridge.py")'
+        if allowlist_marker in text:
+            violations.append(Violation("channel_identity_stale_wecom_allowlist", str(checker_path.relative_to(root)), allowlist_marker))
+
+    if test_path.exists():
+        text = test_path.read_text(encoding="utf-8")
+        rel = str(test_path.relative_to(root))
+        for marker in (
+            "identity_bridge._legacy_app",
+            "wecom_ability_service.db",
+            "wecom_ability_service.application.identity_contact",
+        ):
+            if marker in text:
+                violations.append(Violation("channel_identity_test_legacy_monkeypatch", rel, marker))
 
     return violations
 
@@ -5997,6 +6061,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
+        + check_channel_identity_bridge_native(ROOT)
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)

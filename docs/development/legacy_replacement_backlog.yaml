@@ -3940,7 +3940,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_channel_entry_next_owner.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback is a release rollback, not a legacy runtime fallback."
+    notes: "WeCom external-contact callback is owned by aicrm_next.channel_entry; rollback is a release rollback, not a legacy runtime fallback. Channel entry identity bridge uses Next native identity_bridge_service/repository; no _legacy_app, no wecom_ability_service identity commands. Real WeCom detail fetch remains behind channel_entry.wecom_adapter gate. Mobile binding and questionnaire backfill are Next DB operations."
   - id: "LRB-180"
     route_pattern: "/api/wecom/events"
     methods: ["GET", "POST", "OPTIONS", "HEAD"]
@@ -3962,7 +3962,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_channel_entry_next_owner.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
-    notes: "WeCom event callback is owned by aicrm_next.channel_entry and processes external-contact entry events through the Next pipeline."
+    notes: "WeCom event callback is owned by aicrm_next.channel_entry and processes external-contact entry events through the Next pipeline. Channel entry identity bridge uses Next native identity_bridge_service/repository; no _legacy_app, no wecom_ability_service identity commands. Real WeCom detail fetch remains behind channel_entry.wecom_adapter gate. Mobile binding and questionnaire backfill are Next DB operations."
   - id: "LRB-181"
     route_pattern: "/api/admin/channels/runtime-diagnosis"
     methods: ["GET", "POST"]

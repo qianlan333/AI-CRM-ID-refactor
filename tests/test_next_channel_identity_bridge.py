@@ -4,8 +4,8 @@ from aicrm_next.channel_entry.identity_bridge import ensure_external_contact_ide
 from aicrm_next.channel_entry.application import process_wecom_external_contact_event
 from aicrm_next.channel_entry.schemas import ProcessWeComExternalContactEventCommand
 from aicrm_next.channel_entry.wecom_adapter import get_wecom_adapter, set_wecom_adapter
+from aicrm_next.shared.postgres_connection import get_db
 from scripts.run_identity_mobile_bridge_backfill import run_backfill
-from wecom_ability_service.db import get_db
 
 
 class DetailAdapter:
@@ -37,7 +37,6 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
         "aicrm_next.channel_entry.application.process_channel_entry",
         lambda command: {"handled": False, "reason": "channel_entry_not_under_test"},
     )
-    monkeypatch.setattr("aicrm_next.channel_entry.identity_bridge._legacy_app", lambda: app)
     previous_adapter = get_wecom_adapter()
     set_wecom_adapter(DetailAdapter())
     try:
@@ -171,8 +170,7 @@ def test_next_external_contact_callback_syncs_identity_and_binds_orphan_mobile(a
         set_wecom_adapter(previous_adapter)
 
 
-def test_sidebar_identity_refresh_binds_missing_identity_on_access(app, monkeypatch):
-    monkeypatch.setattr("aicrm_next.channel_entry.identity_bridge._legacy_app", lambda: app)
+def test_sidebar_identity_refresh_binds_missing_identity_on_access(app):
     previous_adapter = get_wecom_adapter()
     set_wecom_adapter(DetailAdapter())
     try:
