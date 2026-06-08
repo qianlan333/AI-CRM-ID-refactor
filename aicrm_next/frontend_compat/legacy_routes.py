@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -9,13 +8,10 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.shared.runtime import production_data_ready
-from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
 from aicrm_next.admin_read_model.application import (
     GetAdminConfigPageQuery,
     GetAdminFunnelPageQuery,
     GetAdminProductsPageQuery,
-    GetAdminTransactionsPageQuery,
     page_row_count,
 )
 from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
@@ -91,10 +87,7 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/automation-conversion/group-ops/plans/{plan_id}",
     "/admin/automation-conversion/group-ops/groups/ui",
     "/admin/automation-conversion/programs/{program_id}/entry-channels",
-    "/admin/wechat-pay/transactions",
-    "/admin/wechat-pay/transactions/{order_id}",
     "/admin/wechat-pay/products",
-    "/admin/alipay/transactions",
     "/admin/image-library",
     "/admin/miniprogram-library",
     "/admin/attachment-library",
@@ -1365,30 +1358,6 @@ async def admin_automation_program_entry_channels(request: Request, program_id: 
     return templates.TemplateResponse(request, "admin_console/automation_conversion_entry_channels.html", context)
 
 
-@router.get("/admin/wechat-pay/transactions", name="api.admin_wechat_pay_transactions_page")
-async def admin_wechat_pay_transactions(request: Request) -> Response:
-    context = _shell_context(
-        request=request,
-        page_title="微信支付交易管理",
-        page_summary="按订单创建时间展示生产微信支付订单；不触发支付外呼。",
-        active_endpoint="api.admin_wechat_pay_transactions_page",
-    )
-    _real_data_context(
-        context,
-        payload=GetAdminTransactionsPageQuery()(),
-        title="交易管理",
-        summary="生产 wechat_pay_orders 只读列表，包含商户单号、微信单号、客户、商品、金额和状态。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
-
-
-@router.get("/admin/wechat-pay/transactions/{order_id}", name="api.admin_wechat_pay_transaction_detail_page")
-async def admin_wechat_pay_transaction_detail(request: Request, order_id: int) -> Response:
-    if production_data_ready():
-        return await forward_to_legacy_flask(request)
-    return RedirectResponse(_legacy_url_for("api.admin_wechat_pay_transactions_page"), status_code=302)
-
-
 @router.get("/admin/wechat-pay/products", name="api.admin_wechat_pay_products_page")
 def admin_wechat_pay_products(request: Request):
     context = _shell_context(
@@ -1402,23 +1371,6 @@ def admin_wechat_pay_products(request: Request):
         payload=GetAdminProductsPageQuery()(),
         title="商品管理",
         summary="生产 wechat_pay_products 与 page slices 只读列表。",
-    )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
-
-
-@router.get("/admin/alipay/transactions", name="api.admin_alipay_transactions_page")
-def admin_alipay_transactions(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="支付宝交易管理",
-        page_summary="查看支付宝交易兼容入口；外部支付动作仍受 adapter guard 保护。",
-        active_endpoint="api.admin_alipay_transactions_page",
-    )
-    _real_data_context(
-        context,
-        payload=GetAdminTransactionsPageQuery()(),
-        title="支付宝交易兼容入口",
-        summary="当前交易页展示统一生产订单只读视图；不触发支付外呼。",
     )
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 

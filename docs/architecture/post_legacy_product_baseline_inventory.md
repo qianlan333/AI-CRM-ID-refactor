@@ -64,7 +64,7 @@ These routes were auto-discovered from the FastAPI app after #1040/#1042. They a
 | Admin config/runtime/API docs | `/admin/config`, `/admin/runtime-config`, `/admin/api-docs` | `aicrm_next.admin_config` for config, `aicrm_next.frontend_compat` for runtime/API docs | Active support/admin surfaces; no production_compat router involvement. |
 | Questionnaire external push logs | `/admin/questionnaires/external-push-logs`, `/admin/questionnaires/{questionnaire_id}/external-push-logs` | `aicrm_next.questionnaire` | Next-native log read and retry command surface; retry defaults to SideEffectPlan only and real external delivery remains gated. |
 | Radar links | `/admin/radar-links`, `/admin/radar-links/new`, `/admin/radar-links/{link_id}/edit`, `/admin/radar-links/{link_id}/detail` | `aicrm_next.frontend_compat` over `aicrm_next.radar_links` APIs | Active; export/events URLs resolve to Next routes. |
-| Alipay admin | `/admin/alipay/transactions` | `aicrm_next.frontend_compat` over `aicrm_next.commerce` APIs | Active payment admin surface; provider behavior remains fake/blocked by default. |
+| Alipay admin | `/admin/alipay/transactions` | `aicrm_next.commerce` | Active payment admin surface served by the shared readonly transaction model; provider behavior remains fake/blocked by default. |
 | Logout | `/admin/logout` | `aicrm_next.frontend_compat` | Active support route. |
 
 ## API Contract Matrix

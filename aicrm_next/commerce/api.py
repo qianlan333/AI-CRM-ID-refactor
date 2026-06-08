@@ -16,9 +16,14 @@ from .admin_transactions import (
     default_filters,
     create_wechat_refund_request,
     export_orders_csv,
-    get_wechat_admin_order,
     list_wechat_admin_orders,
     list_wechat_product_options,
+)
+from .admin_transaction_detail import (
+    CommerceAdminTransactionDetailReadModel,
+    CommerceAdminTransactionListReadModel,
+    PaymentProviderStatusMapper,
+    provider_config,
 )
 from .external_push_admin import (
     ExternalPushAdminError,
@@ -32,9 +37,7 @@ from .application import (
     GetOrderQuery,
     GetProductQuery,
     GetPublicProductQuery,
-    GetTransactionQuery,
     ListProductsQuery,
-    ListTransactionsQuery,
     NotifyPaymentCommand,
     PaymentReturnCommand,
     SetProductEnabledCommand,
@@ -319,6 +322,45 @@ def _share_payload(request: Request, product: dict) -> dict:
     }
 
 
+def _transaction_admin_context(request: Request, *, provider: str, detail_order: dict | None = None, detail_error: str = "") -> dict:
+    config = provider_config(provider)
+    page_title = f"{config.provider_label}交易管理" if not detail_order else f"{config.provider_label}订单详情"
+    page_summary = (
+        f"按订单创建时间检索{config.provider_label}订单，查看商户单号、平台单号、商品、客户、金额、状态与回调摘要。"
+        if not detail_order
+        else f"核对{config.provider_label}订单状态、客户身份、回调摘要与事件时间线。"
+    )
+    active_endpoint = "api.admin_alipay_transactions_page" if provider == "alipay" else "api.admin_wechat_pay_transactions_page"
+    context = shell_context(
+        request=request,
+        page_title=page_title,
+        page_summary=page_summary,
+        active_endpoint=active_endpoint,
+    )
+    list_href = str(request.url_for(active_endpoint))
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": f"{config.provider_label}交易管理", "href": list_href if detail_order or detail_error else ""},
+    ]
+    if detail_order or detail_error:
+        context["breadcrumbs"].append({"label": "订单详情"})
+    context.update(
+        {
+            "payment_provider": provider,
+            "payment_provider_label": config.provider_label,
+            "provider_platform_no_label": config.platform_no_label,
+            "list_api_url": config.api_path,
+            "export_api_url": "/api/admin/wechat-pay/order-exports" if provider == "wechat" else "",
+            "default_filters": default_filters(),
+            "status_options": [{"value": key, "label": label} for key, label in PaymentProviderStatusMapper.LABELS.items()],
+            "product_options": list_wechat_product_options() if provider == "wechat" else [],
+            "detail_order": detail_order,
+            "detail_error": detail_error,
+        }
+    )
+    return context
+
+
 @router.get("/admin/wechat-pay/products", response_class=HTMLResponse, name="api.admin_wechat_pay_products_page")
 def admin_wechat_pay_products_page(request: Request):
     try:
@@ -379,56 +421,36 @@ def admin_wechat_pay_product_edit_page(request: Request, product_id: str):
 
 @router.get("/admin/wechat-pay/transactions", response_class=HTMLResponse, name="api.admin_wechat_pay_transactions_page")
 def admin_wechat_transactions_page(request: Request):
-    context = shell_context(
-        request=request,
-        page_title="微信支付交易管理",
-        page_summary="按订单创建时间检索微信支付订单、导出筛选结果，并进入详情页查看订单与退款状态。",
-        active_endpoint="api.admin_wechat_pay_transactions_page",
-    )
-    context["breadcrumbs"] = [
-        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
-        {"label": "交易管理"},
-    ]
-    context.update(
-        {
-            "default_filters": default_filters(),
-            "product_options": list_wechat_product_options(),
-        }
-    )
     return templates.TemplateResponse(
         request,
         "wechat_transactions.html",
-        context,
+        _transaction_admin_context(request, provider="wechat"),
     )
 
 
 @router.get("/admin/wechat-pay/transactions/{order_id}", response_class=HTMLResponse, name="api.admin_wechat_pay_transaction_detail_page")
 def admin_wechat_transaction_detail_page(request: Request, order_id: str) -> Response:
-    order = get_wechat_admin_order(order_id)
-    context = shell_context(
-        request=request,
-        page_title="微信支付订单详情",
-        page_summary="核对订单状态、退款金额，并提交退款申请。",
-        active_endpoint="api.admin_wechat_pay_transactions_page",
-    )
-    context["breadcrumbs"] = [
-        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
-        {"label": "交易管理", "href": request.url_for("api.admin_wechat_pay_transactions_page")},
-        {"label": "订单详情"},
-    ]
-    context.update(
-        {
-            "detail_order": order,
-            "detail_error": "" if order else "订单不存在",
-            "default_filters": default_filters(),
-            "product_options": list_wechat_product_options(),
-        }
-    )
+    try:
+        order = CommerceAdminTransactionDetailReadModel("wechat").execute(order_id)["transaction"]
+        status_code = 200
+        context = _transaction_admin_context(request, provider="wechat", detail_order=order)
+    except NotFoundError:
+        status_code = 404
+        context = _transaction_admin_context(request, provider="wechat", detail_error="订单不存在")
     return templates.TemplateResponse(
         request,
         "wechat_transactions.html",
         context,
-        status_code=200 if order else 404,
+        status_code=status_code,
+    )
+
+
+@router.get("/admin/alipay/transactions", response_class=HTMLResponse, name="api.admin_alipay_transactions_page")
+def admin_alipay_transactions_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "wechat_transactions.html",
+        _transaction_admin_context(request, provider="alipay"),
     )
 
 
@@ -875,7 +897,7 @@ def list_wechat_transactions(
     offset: int = 0,
 ) -> dict:
     return _payment_final_payload(
-        ListTransactionsQuery("wechat")(
+        CommerceAdminTransactionListReadModel("wechat").execute(
             _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
             limit=limit,
             offset=offset,
@@ -886,7 +908,7 @@ def list_wechat_transactions(
 @router.get("/api/admin/wechat-pay/transactions/{order_no}")
 def get_wechat_transaction(order_no: str) -> dict:
     try:
-        return _payment_final_payload(GetTransactionQuery("wechat")(order_no))
+        return _payment_final_payload(CommerceAdminTransactionDetailReadModel("wechat").execute(order_no))
     except Exception as exc:
         _raise_http(exc)
 
@@ -924,7 +946,7 @@ def list_alipay_transactions(
     offset: int = 0,
 ) -> dict:
     return _payment_final_payload(
-        ListTransactionsQuery("alipay")(
+        CommerceAdminTransactionListReadModel("alipay").execute(
             _transaction_filters(payment_status, product_code, mobile, external_userid, date_from, date_to),
             limit=limit,
             offset=offset,
@@ -935,7 +957,7 @@ def list_alipay_transactions(
 @router.get("/api/admin/alipay/transactions/{order_no}")
 def get_alipay_transaction(order_no: str) -> dict:
     try:
-        return _payment_final_payload(GetTransactionQuery("alipay")(order_no))
+        return _payment_final_payload(CommerceAdminTransactionDetailReadModel("alipay").execute(order_no))
     except Exception as exc:
         _raise_http(exc)
 
