@@ -1969,6 +1969,20 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
             ]:
                 if marker not in admin_pages_source:
                     violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(admin_pages_path.relative_to(root)), marker))
+    else:
+        violations.append(Violation("questionnaire_external_push_logs_native_page_missing", str(admin_pages_path.relative_to(root)), external_push_route))
+
+    frontend_routes_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes_path.exists():
+        frontend_source = frontend_routes_path.read_text(encoding="utf-8")
+        if "/admin/questionnaires/external-push-logs" in frontend_source:
+            violations.append(
+                Violation(
+                    "questionnaire_external_push_logs_frontend_compat_route",
+                    str(frontend_routes_path.relative_to(root)),
+                    external_push_route,
+                )
+            )
 
     shell_endpoint_markers = [
         "api.admin_console_global_questionnaire_external_push_logs",

@@ -225,16 +225,15 @@ def test_questionnaire_editor_nests_production_questions_for_legacy_editor(monke
 def test_questionnaire_external_push_log_routes_use_next_native_handlers(monkeypatch):
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "aicrm_next" / "frontend_compat" / "legacy_routes.py").read_text(
-        encoding="utf-8"
-    )
-    start = source.index('"/admin/questionnaires/external-push-logs"')
-    end = source.index('@router.get("/admin/automation-conversion"', start)
-    route_block = source[start:end]
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "aicrm_next" / "questionnaire" / "admin_pages.py").read_text(encoding="utf-8")
+    legacy_source = (root / "aicrm_next" / "frontend_compat" / "legacy_routes.py").read_text(encoding="utf-8")
 
-    assert "forward_to_legacy_flask" not in route_block
+    assert "forward_to_legacy_flask" not in source
+    assert '"/admin/questionnaires/external-push-logs"' in source
     assert "QuestionnaireExternalPushLogReadService" in source
     assert "QuestionnaireExternalPushRetryService" in source
+    assert "/admin/questionnaires/external-push-logs" not in legacy_source
 
 
 def test_wechat_pay_transactions_page_uses_legacy_management_when_database_ready(monkeypatch):

@@ -34,18 +34,27 @@ def test_questionnaire_external_push_application_contract_is_importable():
 
 
 def test_next_external_push_log_routes_do_not_forward_to_legacy_flask():
-    source = (
-        Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[1]
+    native_source = (
+        root
         / "aicrm_next"
         / "questionnaire"
         / "admin_pages.py"
     ).read_text(encoding="utf-8")
-    start = source.index('"/admin/questionnaires/external-push-logs"')
-    route_block = source[start:]
+    legacy_source = (
+        root
+        / "aicrm_next"
+        / "frontend_compat"
+        / "legacy_routes.py"
+    ).read_text(encoding="utf-8")
+    start = native_source.index('"/admin/questionnaires/external-push-logs"')
+    route_block = native_source[start:]
 
     assert "forward_to_legacy_flask" not in route_block
-    assert "QuestionnaireExternalPushLogReadService" in source
-    assert "QuestionnaireExternalPushRetryService" in source
+    assert '"/admin/questionnaires/external-push-logs"' in native_source
+    assert "QuestionnaireExternalPushLogReadService" in native_source
+    assert "QuestionnaireExternalPushRetryService" in native_source
+    assert "/admin/questionnaires/external-push-logs" not in legacy_source
 
 
 def test_next_external_push_log_pages_do_not_use_admin_shell_legacy_endpoint_mapping():
