@@ -241,6 +241,10 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         column = "trade_no" if provider == "alipay" else "transaction_id"
         where.append(f"COALESCE(o.{column}, '') ILIKE %s")
         params.append(f"%{transaction}%")
+    order_no = _text(filters.get("order_no") or filters.get("out_trade_no"))
+    if order_no:
+        where.append("COALESCE(o.out_trade_no, '') ILIKE %s")
+        params.append(f"%{order_no}%")
     created_from = _text(filters.get("created_from") or filters.get("date_from"))
     if created_from:
         where.append("o.created_at >= %s")
@@ -365,6 +369,9 @@ def _postgres_get(provider: str, identifier: str) -> dict[str, Any] | None:
 def _fixture_list(provider: str, filters: dict[str, Any], *, limit: int, offset: int) -> dict[str, Any]:
     payload = ListTransactionsQuery(provider)(filters, limit=limit, offset=offset)
     items = [_present(provider, row) for row in payload.get("items", [])]
+    order_no = _text(filters.get("order_no") or filters.get("out_trade_no"))
+    if order_no:
+        items = [item for item in items if order_no in _text(item.get("out_trade_no") or item.get("order_no") or item.get("merchant_order_no"))]
     status_filter = _text(filters.get("status") or filters.get("payment_status"))
     if status_filter in PaymentProviderStatusMapper.LABELS:
         items = [item for item in items if item["status"] == status_filter]

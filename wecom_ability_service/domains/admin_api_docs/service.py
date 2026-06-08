@@ -1244,6 +1244,12 @@ def _build_markdown_data(groups: list[dict]) -> dict:
 
 
 def build_api_docs_view_model() -> dict:
+    try:
+        from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model as build_next_api_docs_view_model
+
+        return build_next_api_docs_view_model()
+    except Exception:
+        pass
     groups = _api_endpoint_groups()
     return {
         "endpoint_groups": groups,

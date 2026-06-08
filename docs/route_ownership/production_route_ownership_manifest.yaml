@@ -1722,6 +1722,132 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     notes: Final production_compat wildcard rollback removed; known admin Alipay transaction paths are exact Next routes, unknown/deprecated children return controlled 410, and real provider calls are blocked.
+  - route_pattern: /api/admin/orders*
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin unified order list/detail/item routes are Next-owned read APIs backed by commerce read models; session auth is required and no provider side effect is enabled.
+  - route_pattern: /api/admin/payments
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin payment流水 route is a Next-owned read API derived from unified commerce orders; session auth is required and no provider side effect is enabled.
+  - route_pattern: /api/admin/refunds
+    methods: [GET, POST, HEAD, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next_payment_admin
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin refund list/request route is Next-owned; WeChat refund uses the guarded local request path, Alipay returns provider_refund_not_supported, and no unsupported provider call is enabled.
+  - route_pattern: /api/admin/customers/{external_userid}/orders
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Customer commerce order association route is a Next-owned read API that applies the external_userid filter to unified commerce orders; no provider side effect is enabled.
+  - route_pattern: /api/admin/customers/{external_userid}/commerce-summary
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Customer commerce summary route is a Next-owned read API calculated from unified commerce orders; no provider side effect is enabled.
+  - route_pattern: /api/admin/webhooks/events
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin webhook event troubleshooting route is a Next-owned read API; missing event tables return warnings instead of fallback or external calls.
+  - route_pattern: /api/admin/webhooks/replay
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next_payment_admin
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: high
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: real_blocked
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin webhook replay route is a Next-owned troubleshooting command; dry_run defaults true and non dry-run replay returns webhook_replay_not_supported unless a safe local replay path exists.
+  - route_pattern: /api/admin/exports
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next_payment_admin
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin export creation route is a Next-owned in-memory job command for this slice; external object storage export is not enabled.
+  - route_pattern: /api/admin/exports/{job_id}
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin export result route is a Next-owned read API returning JSON with CSV content text for in-memory jobs; external object storage download is not enabled.
   - route_pattern: /api/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.public_product
@@ -1988,6 +2114,34 @@ routes:
     delete_ready: false
     checker: tools/check_sidebar_profile_next_owner_readiness.py
     notes: Next exact readonly customer profile tags owner; broad profile subpath production_compat fallback is removed.
+  - route_pattern: /api/admin/customers/{external_userid}/business-profile
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin customer business profile route is a Next-owned read API that returns only tags, recent messages, and questionnaire answers; order and commerce summary data stay on separate commerce routes.
+  - route_pattern: /api/admin/identity*
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.identity_contact
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_admin_p0_commerce_api.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin identity resolve and link routes are Next-owned read wrappers around identity_contact query logic; unsupported lookup hints return warnings or structured not_found, with no external call enabled.
   - route_pattern: /api/sidebar/bind-mobile
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.sidebar_write

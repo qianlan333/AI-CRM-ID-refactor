@@ -43,6 +43,7 @@ _PATH_LABELS = {
     "logout": "退出登录",
     "callback": "回调",
     "events": "事件接收",
+    "links": "身份链路",
     "customers": "客户",
     "timeline": "时间线",
     "messages": "消息",
@@ -80,6 +81,8 @@ _PATH_LABELS = {
     "sync": "同步",
     "run-due": "执行到期任务",
     "webhooks": "Webhook",
+    "business-profile": "客户商业档案",
+    "commerce-summary": "商业摘要",
     "wecom": "企微",
     "tags": "标签",
     "tag-groups": "标签组",
@@ -93,6 +96,9 @@ _PATH_LABELS = {
     "alipay": "支付宝",
     "products": "商品",
     "orders": "订单",
+    "payments": "支付",
+    "refunds": "退款",
+    "exports": "数据导出",
     "checkout": "下单",
     "notify": "支付通知",
     "ai-assist": "AI 助手",
@@ -196,9 +202,15 @@ def _group_id_for(path: str) -> str:
         or path.startswith("/api/messages/")
         or path.startswith("/api/sidebar/")
         or path.startswith("/api/identity/")
+        or path.startswith("/api/admin/identity/")
+        or path.startswith("/api/admin/customers/")
         or path.startswith("/api/admin/customers/profile")
     ):
         return "customer-identity-sidebar"
+    if path.startswith("/api/admin/webhooks"):
+        return "auth-callback"
+    if path.startswith("/api/admin/exports"):
+        return "system-mcp"
     if path.startswith("/api/admin/channels") or path.startswith("/api/admin/channel-welcome-materials"):
         return "channels"
     if path.startswith("/api/admin/questionnaires") or path.startswith("/api/h5/questionnaires") or path.startswith("/api/h5/wechat/oauth"):
@@ -220,6 +232,9 @@ def _group_id_for(path: str) -> str:
     if (
         path.startswith("/api/admin/wechat-pay")
         or path.startswith("/api/admin/alipay")
+        or path.startswith("/api/admin/orders")
+        or path.startswith("/api/admin/payments")
+        or path.startswith("/api/admin/refunds")
         or path.startswith("/api/products")
         or path.startswith("/p/")
         or path.startswith("/pay/")
@@ -427,6 +442,8 @@ def _auth_for(method: str, path: str, route: APIRoute) -> str:
         return "session"
     if path == "/mcp":
         return "bearer"
+    if path.startswith("/api/admin/webhooks"):
+        return "session"
     if (
         path.startswith("/api/h5/questionnaires")
         or path.startswith("/api/h5/wechat/oauth")

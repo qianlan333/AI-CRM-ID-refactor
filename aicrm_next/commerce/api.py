@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Path as PathParam, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -25,6 +25,18 @@ from .admin_transaction_detail import (
     PaymentProviderStatusMapper,
     provider_config,
 )
+from .admin_exports import create_export_job, get_export_job
+from .admin_refunds import list_refunds as list_unified_refunds
+from .admin_refunds import request_refund as request_unified_refund
+from .admin_unified_orders import (
+    customer_commerce_summary,
+    get_order as get_unified_order,
+    list_customer_orders,
+    list_order_items as list_unified_order_items,
+    list_orders as list_unified_orders,
+    list_payments as list_unified_payments,
+)
+from .admin_webhooks import list_webhook_events, replay_webhook
 from .external_push_admin import (
     ExternalPushAdminError,
     list_order_external_push_state,
@@ -59,6 +71,21 @@ def _raise_http(exc: Exception) -> None:
     if isinstance(exc, ContractError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _admin_api_error(*, error_code: str, message: str, source_status: str, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error_code": error_code,
+            "message": message,
+            "route_owner": "ai_crm_next",
+            "source_status": source_status,
+            "fallback_used": False,
+        },
+        status_code=status_code,
+        headers=_payment_final_headers(),
+    )
 
 
 def _checkout_order_headers(*, order_create_executed: str = "false") -> dict[str, str]:
@@ -883,6 +910,317 @@ def _transaction_filters(
         "date_from": date_from,
         "date_to": date_to,
     }
+
+
+def _unified_order_filters(**kwargs) -> dict:
+    return {key: value for key, value in kwargs.items() if value not in {None, ""}}
+
+
+@router.get(
+    "/api/admin/orders",
+    summary="后台统一订单列表",
+    description="Session Cookie 后台接口，聚合微信和支付宝订单。provider=all 时分别读取两侧 CommerceAdminTransactionListReadModel 后按 created_at 倒序合并。",
+)
+def list_admin_orders(
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+    status: str | None = Query(None, description="统一订单状态过滤"),
+    payment_status: str | None = Query(None, description="支付状态过滤，兼容 status"),
+    product_code: str | None = Query(None, description="商品编码"),
+    mobile: str | None = Query(None, description="客户手机号模糊过滤"),
+    external_userid: str | None = Query(None, description="企业微信 external_userid"),
+    identity: str | None = Query(None, description="身份关键字，兼容 external_userid"),
+    transaction_id: str | None = Query(None, description="平台交易号"),
+    platform_transaction_no: str | None = Query(None, description="平台交易号别名"),
+    order_no: str | None = Query(None, description="商户订单号"),
+    out_trade_no: str | None = Query(None, description="商户订单号别名"),
+    created_from: str | None = Query(None, description="订单创建开始时间"),
+    created_to: str | None = Query(None, description="订单创建结束时间"),
+    date_from: str | None = Query(None, description="订单创建开始时间别名"),
+    date_to: str | None = Query(None, description="订单创建结束时间别名"),
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> dict:
+    try:
+        return _payment_final_payload(
+            list_unified_orders(
+                provider=provider,
+                filters=_unified_order_filters(
+                    status=status,
+                    payment_status=payment_status,
+                    product_code=product_code,
+                    mobile=mobile,
+                    external_userid=external_userid,
+                    identity=identity,
+                    transaction_id=transaction_id,
+                    platform_transaction_no=platform_transaction_no,
+                    order_no=order_no,
+                    out_trade_no=out_trade_no,
+                    created_from=created_from,
+                    created_to=created_to,
+                    date_from=date_from,
+                    date_to=date_to,
+                ),
+                limit=limit,
+                offset=offset,
+            ),
+            source_status="next_admin_orders",
+        )
+    except ValueError as exc:
+        return _admin_api_error(error_code="invalid_request", message=str(exc), source_status="next_admin_orders", status_code=400)
+
+
+@router.get(
+    "/api/admin/orders/{order_no}",
+    summary="后台统一订单详情",
+    description="按商户订单号或平台交易号查询统一订单详情。provider=auto 时先查微信，再查支付宝；404 返回结构化 not_found。",
+)
+def get_admin_order(
+    order_no: str = PathParam(..., description="商户订单号、订单 ID 或平台交易号"),
+    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay，默认 auto"),
+) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(get_unified_order(order_no, provider=provider), source_status="next_admin_order_detail")), headers=_payment_final_headers())
+    except Exception:
+        return _admin_api_error(error_code="not_found", message="order not found", source_status="next_admin_order_detail", status_code=404)
+
+
+@router.get(
+    "/api/admin/orders/{order_no}/items",
+    summary="后台订单行项目",
+    description="返回订单商品明细。当前没有独立 order_items 表时，从订单详情派生单行 item；未来可替换为真实行项目表。",
+)
+def get_admin_order_items(
+    order_no: str = PathParam(..., description="商户订单号、订单 ID 或平台交易号"),
+    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay，默认 auto"),
+) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(list_unified_order_items(order_no, provider=provider), source_status="next_admin_order_items")), headers=_payment_final_headers())
+    except Exception:
+        return _admin_api_error(error_code="not_found", message="order not found", source_status="next_admin_order_items", status_code=404)
+
+
+@router.get(
+    "/api/admin/payments",
+    summary="后台支付流水列表",
+    description="Session Cookie 后台接口，复用统一订单列表逻辑，以支付流水视角返回 payments。",
+)
+def list_admin_payments(
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+    status: str | None = Query(None, description="支付状态过滤"),
+    payment_status: str | None = Query(None, description="支付状态过滤别名"),
+    product_code: str | None = Query(None, description="商品编码"),
+    mobile: str | None = Query(None, description="客户手机号模糊过滤"),
+    external_userid: str | None = Query(None, description="企业微信 external_userid"),
+    identity: str | None = Query(None, description="身份关键字，兼容 external_userid"),
+    transaction_id: str | None = Query(None, description="平台交易号"),
+    platform_transaction_no: str | None = Query(None, description="平台交易号别名"),
+    order_no: str | None = Query(None, description="商户订单号"),
+    out_trade_no: str | None = Query(None, description="商户订单号别名"),
+    created_from: str | None = Query(None, description="订单创建开始时间"),
+    created_to: str | None = Query(None, description="订单创建结束时间"),
+    paid_from: str | None = Query(None, description="支付完成开始时间"),
+    paid_to: str | None = Query(None, description="支付完成结束时间"),
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> dict:
+    try:
+        return _payment_final_payload(
+            list_unified_payments(
+                provider=provider,
+                filters=_unified_order_filters(
+                    status=status,
+                    payment_status=payment_status,
+                    product_code=product_code,
+                    mobile=mobile,
+                    external_userid=external_userid,
+                    identity=identity,
+                    transaction_id=transaction_id,
+                    platform_transaction_no=platform_transaction_no,
+                    order_no=order_no,
+                    out_trade_no=out_trade_no,
+                    created_from=created_from,
+                    created_to=created_to,
+                    paid_from=paid_from,
+                    paid_to=paid_to,
+                ),
+                limit=limit,
+                offset=offset,
+            ),
+            source_status="next_admin_payments",
+        )
+    except ValueError as exc:
+        return _admin_api_error(error_code="invalid_request", message=str(exc), source_status="next_admin_payments", status_code=400)
+
+
+@router.get(
+    "/api/admin/refunds",
+    summary="后台退款列表",
+    description="Session Cookie 后台接口。PostgreSQL 模式优先查 wechat_pay_refunds；支付宝退款表不存在时返回空列表和 warnings，不报 500。",
+)
+def list_admin_refunds(
+    provider: str = Query("all", description="退款 provider，可取 all/wechat/alipay，默认 all"),
+    order_no: str | None = Query(None, description="商户订单号"),
+    out_trade_no: str | None = Query(None, description="商户订单号别名"),
+    transaction_id: str | None = Query(None, description="平台交易号"),
+    refund_id: str | None = Query(None, description="平台退款单号"),
+    out_refund_no: str | None = Query(None, description="商户退款单号"),
+    status: str | None = Query(None, description="退款状态"),
+    created_from: str | None = Query(None, description="退款创建开始时间"),
+    created_to: str | None = Query(None, description="退款创建结束时间"),
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> dict:
+    return _payment_final_payload(
+        list_unified_refunds(
+            provider=provider,
+            filters=_unified_order_filters(
+                order_no=order_no,
+                out_trade_no=out_trade_no,
+                transaction_id=transaction_id,
+                refund_id=refund_id,
+                out_refund_no=out_refund_no,
+                status=status,
+                created_from=created_from,
+                created_to=created_to,
+            ),
+            limit=limit,
+            offset=offset,
+        ),
+        source_status="next_admin_refunds",
+    )
+
+
+@router.post(
+    "/api/admin/refunds",
+    summary="后台统一退款申请",
+    description="统一退款入口。provider=wechat 复用 create_wechat_refund_request；provider=alipay 在本阶段返回结构化 provider_refund_not_supported。",
+)
+def create_admin_refund(payload: dict = Body(..., description="退款申请 JSON，包含 provider/order_no/refund_amount_total/reason/transaction_id_confirmation/checked/operator")) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(request_unified_refund(payload), source_status="next_admin_refund_request")), headers=_payment_final_headers())
+    except ValueError as exc:
+        if str(exc) == "provider_refund_not_supported":
+            return _admin_api_error(
+                error_code="provider_refund_not_supported",
+                message="alipay refund is not supported in this slice",
+                source_status="next_refund_admin",
+                status_code=400,
+            )
+        return _admin_api_error(error_code="invalid_refund_request", message=str(exc), source_status="next_admin_refund_request", status_code=400)
+    except Exception as exc:
+        return _admin_api_error(error_code="refund_request_failed", message=str(exc), source_status="next_admin_refund_request", status_code=400)
+
+
+@router.get(
+    "/api/admin/customers/{external_userid}/orders",
+    summary="客户订单列表",
+    description="按 external_userid 查询客户名下订单，复用统一订单查询逻辑，不返回商业档案其它维度。",
+)
+def get_admin_customer_orders(
+    external_userid: str = PathParam(..., description="企业微信 external_userid"),
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+    status: str | None = Query(None, description="订单状态"),
+    product_code: str | None = Query(None, description="商品编码"),
+    limit: int = Query(20, description="分页条数，默认 20，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> dict:
+    return _payment_final_payload(
+        list_customer_orders(external_userid, provider=provider, status=status, product_code=product_code, limit=limit, offset=offset),
+        source_status="next_customer_orders",
+    )
+
+
+@router.get(
+    "/api/admin/customers/{external_userid}/commerce-summary",
+    summary="客户商业摘要",
+    description="基于客户订单列表计算订单数、支付金额、退款金额和最近商品等摘要，不引入外部依赖。",
+)
+def get_admin_customer_commerce_summary(
+    external_userid: str = PathParam(..., description="企业微信 external_userid"),
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+) -> dict:
+    return _payment_final_payload(customer_commerce_summary(external_userid, provider=provider), source_status="next_customer_commerce_summary")
+
+
+@router.get(
+    "/api/admin/webhooks/events",
+    summary="后台 Webhook 事件排障列表",
+    description="后台排障接口，不是外部 webhook callback。PostgreSQL 模式读取微信/支付宝支付事件表；表不存在时返回 warnings 而不是 500。",
+)
+def list_admin_webhook_events(
+    source: str = Query("all", description="事件来源，可取 all/wechat-pay/alipay/wecom/customer-automation"),
+    event_type: str | None = Query(None, description="事件类型"),
+    order_no: str | None = Query(None, description="商户订单号"),
+    out_trade_no: str | None = Query(None, description="商户订单号别名"),
+    transaction_id: str | None = Query(None, description="平台交易号"),
+    status: str | None = Query(None, description="平台状态"),
+    created_from: str | None = Query(None, description="事件创建开始时间"),
+    created_to: str | None = Query(None, description="事件创建结束时间"),
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> dict:
+    return _payment_final_payload(
+        list_webhook_events(
+            source=source,
+            filters=_unified_order_filters(
+                event_type=event_type,
+                order_no=order_no,
+                out_trade_no=out_trade_no,
+                transaction_id=transaction_id,
+                status=status,
+                created_from=created_from,
+                created_to=created_to,
+            ),
+            limit=limit,
+            offset=offset,
+        ),
+        source_status="next_admin_webhook_events",
+    )
+
+
+@router.post(
+    "/api/admin/webhooks/replay",
+    summary="后台 Webhook 重放排障",
+    description="后台排障接口，不是外部 webhook callback。默认 dry_run=true，不产生业务副作用；dry_run=false 如无法安全重放则返回 webhook_replay_not_supported。",
+)
+def replay_admin_webhook(payload: dict = Body(..., description="Webhook replay JSON，包含 source/event_id/dry_run/operator")) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(replay_webhook(payload), source_status="next_admin_webhook_replay")), headers=_payment_final_headers())
+    except RuntimeError:
+        return _admin_api_error(
+            error_code="webhook_replay_not_supported",
+            message="webhook replay is not supported for non dry_run in this slice",
+            source_status="next_admin_webhook_replay",
+            status_code=400,
+        )
+    except LookupError as exc:
+        return _admin_api_error(error_code="not_found", message=str(exc), source_status="next_admin_webhook_replay", status_code=404)
+
+
+@router.post(
+    "/api/admin/exports",
+    summary="创建后台导出任务",
+    description="创建轻量同步导出任务。本阶段不接外部对象存储；没有持久化 export job 存储时使用模块级内存 store，并标注 next_export_in_memory。",
+)
+def create_admin_export(payload: dict = Body(..., description="导出任务 JSON，resource 支持 orders/payments/refunds/customer_business_profile，format 支持 csv")) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(create_export_job(payload), source_status="next_admin_exports")), headers=_payment_final_headers())
+    except ValueError as exc:
+        return _admin_api_error(error_code="invalid_export_request", message=str(exc), source_status="next_admin_exports", status_code=400)
+
+
+@router.get(
+    "/api/admin/exports/{job_id}",
+    summary="获取后台导出任务结果",
+    description="返回导出任务 JSON 结果，包含 content_text 或 content_base64。本阶段不新增单独 download endpoint。",
+)
+def get_admin_export(
+    job_id: str = PathParam(..., description="导出任务 job_id"),
+) -> JSONResponse:
+    try:
+        return JSONResponse(jsonable_encoder(_payment_final_payload(get_export_job(job_id), source_status="next_admin_export_result")), headers=_payment_final_headers())
+    except LookupError:
+        return _admin_api_error(error_code="not_found", message="export job not found", source_status="next_admin_export_result", status_code=404)
 
 
 @router.get("/api/admin/wechat-pay/transactions")

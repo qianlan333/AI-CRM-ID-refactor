@@ -104,6 +104,17 @@ class FixtureCustomerReadRepository:
                     "stage_key": "trial/activated_focus",
                     "recommended_action": "跟进正式课报名",
                     "signals": ["recent_reply", "high_intent_tag"],
+                    "matched_questions": [
+                        {
+                            "questionnaire_id": "questionnaire_fixture_001",
+                            "questionnaire_title": "黄小璨报名问卷",
+                            "submission_id": "submission_fixture_001",
+                            "submitted_at": "2026-05-18T09:30:00+08:00",
+                            "question_id": "q_goal",
+                            "question": "孩子当前英语学习目标是什么？",
+                            "answer": "希望提升表达自信",
+                        }
+                    ],
                 },
                 "contact": {
                     "external_userid": "wx_ext_001",
