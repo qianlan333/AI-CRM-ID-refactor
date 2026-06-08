@@ -132,6 +132,7 @@
             <button class="admin-button admin-button--ghost" id="copyShareLinkBtn" type="button">复制链接</button>
             <button class="admin-button admin-button--ghost" id="openSharePreviewBtn" type="button">打开预览</button>
             <button class="admin-button admin-button--primary" type="submit">保存商品</button>
+            <span class="product-toast" id="productToast"></span>
           </div>
         </div>
 
@@ -318,9 +319,6 @@
           </div>
         </div>
 
-        <div class="product-actions" style="padding-top:18px;">
-          <span class="product-toast" id="productToast"></span>
-        </div>
       </form>
     </section>
   </div>
@@ -763,11 +761,16 @@
       );
       product = saved.product || product;
       if (mode === "edit") {
-        externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readExternalPushBody()) })).config || externalPush;
+        let externalPushError = null;
+        try {
+          externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readExternalPushBody()) })).config || externalPush;
+        } catch (error) {
+          externalPushError = error;
+        }
         fillExternalPush();
-        await loadShareInfo();
+        loadShareInfo().catch(() => {});
         $("productEditTitle").textContent = product.title || product.name || "编辑商品";
-        showToast("已保存");
+        showToast(externalPushError ? `商品已保存，外部推送保存失败：${externalPushError.message || "请求失败"}` : "已保存");
       } else {
         window.location.href = `/admin/wechat-pay/products/${encodeURIComponent(product.id)}/edit`;
       }
