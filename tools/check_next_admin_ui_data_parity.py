@@ -157,12 +157,12 @@ def _static_production_data_contracts_ready() -> tuple[bool, list[str]]:
         source = path.read_text(encoding="utf-8")
         if "production_data_ready()" not in source:
             blockers.append(f"{name}:missing_production_data_ready_guard")
-    automation_facade = (ROOT / "aicrm_next" / "integration_gateway" / "legacy_automation_facade.py").read_text(encoding="utf-8")
-    if '"source_status": "production_postgres"' not in automation_facade and "'source_status': 'production_postgres'" not in automation_facade:
-        blockers.append("automation_facade_missing_production_postgres_source_status")
-    questionnaire_facade = (ROOT / "aicrm_next" / "integration_gateway" / "legacy_questionnaire_facade.py").read_text(encoding="utf-8")
-    if '"source_status": "production_postgres"' not in questionnaire_facade and "'source_status': 'production_postgres'" not in questionnaire_facade:
-        blockers.append("questionnaire_facade_missing_production_postgres_source_status")
+    for facade in (
+        ROOT / "aicrm_next" / "integration_gateway" / "legacy_automation_facade.py",
+        ROOT / "aicrm_next" / "integration_gateway" / "legacy_questionnaire_facade.py",
+    ):
+        if facade.exists():
+            blockers.append(f"{facade.name}:orphan_legacy_facade_should_be_removed")
     return not blockers, blockers
 
 

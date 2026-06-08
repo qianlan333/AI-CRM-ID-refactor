@@ -26,6 +26,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_admin_pages_next_native,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
+    check_orphan_legacy_facades_removed,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
     check_production_compat_removed,
@@ -146,6 +147,91 @@ def test_production_compat_checker_accepts_removed_state(tmp_path: Path) -> None
     checker.write_text("LEGACY_IMPORT_ALLOWLIST = set()\nAPI_SIDE_EFFECT_ALLOWLIST = set()\n", encoding="utf-8")
 
     assert check_production_compat_removed(tmp_path) == []
+
+
+def test_orphan_legacy_facade_checker_flags_questionnaire_file(tmp_path: Path) -> None:
+    facade = tmp_path / "aicrm_next/integration_gateway/legacy_questionnaire_facade.py"
+    facade.parent.mkdir(parents=True, exist_ok=True)
+    facade.write_text("LEGACY_COMPATIBILITY_BOUNDARY = 'legacy_questionnaire_facade'\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_orphan_legacy_facades_removed(tmp_path)}
+
+    assert "orphan_legacy_questionnaire_facade_file_remaining" in codes
+
+
+def test_orphan_legacy_facade_checker_flags_automation_file(tmp_path: Path) -> None:
+    facade = tmp_path / "aicrm_next/integration_gateway/legacy_automation_facade.py"
+    facade.parent.mkdir(parents=True, exist_ok=True)
+    facade.write_text("LEGACY_COMPATIBILITY_BOUNDARY = 'legacy_automation_facade'\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_orphan_legacy_facades_removed(tmp_path)}
+
+    assert "orphan_legacy_automation_facade_file_remaining" in codes
+
+
+def test_orphan_legacy_facade_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_text(
+        'LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/integration_gateway/legacy_questionnaire_facade.py")}\n',
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_orphan_legacy_facades_removed(tmp_path)}
+
+    assert "orphan_legacy_facade_stale_allowlist" in codes
+
+
+def test_orphan_legacy_facade_checker_flags_runtime_import(tmp_path: Path) -> None:
+    runtime_file = tmp_path / "aicrm_next/questionnaire/api.py"
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.write_text("from aicrm_next.integration_gateway import legacy_questionnaire_facade\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_orphan_legacy_facades_removed(tmp_path)}
+
+    assert "orphan_legacy_facade_runtime_import" in codes
+
+
+def test_orphan_legacy_facade_checker_flags_registry_active_source(tmp_path: Path) -> None:
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: stale_questionnaire_facade\n"
+        "    path_pattern: /api/admin/questionnaires\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_source: legacy_questionnaire_facade\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: active\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_orphan_legacy_facades_removed(tmp_path)}
+
+    assert "orphan_legacy_facade_registry_active_source" in codes
+
+
+def test_orphan_legacy_facade_checker_accepts_removed_state(tmp_path: Path) -> None:
+    checker = tmp_path / "scripts/check_no_new_legacy.py"
+    registry = tmp_path / "docs/architecture/legacy_exit_route_registry.yaml"
+    runtime_file = tmp_path / "aicrm_next/questionnaire/api.py"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_text("LEGACY_IMPORT_ALLOWLIST = set()\n", encoding="utf-8")
+    registry.write_text(
+        "routes:\n"
+        "  - route_id: questionnaire_next\n"
+        "    path_pattern: /api/admin/questionnaires\n"
+        "    runtime_owner: next_native\n"
+        "    legacy_source: ''\n"
+        "    legacy_fallback_allowed: false\n"
+        "    delete_status: deletion_locked\n",
+        encoding="utf-8",
+    )
+    runtime_file.write_text("router = object()\n", encoding="utf-8")
+
+    assert check_orphan_legacy_facades_removed(tmp_path) == []
 
 
 def _write_group_ops_material_resolver_files(

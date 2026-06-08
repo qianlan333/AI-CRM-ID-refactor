@@ -943,7 +943,7 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Admin share payload route uses Next questionnaire detail/share queries only; no legacy_questionnaire_facade and no production_compat fallback.
+    notes: Admin share payload route uses Next questionnaire detail/share queries only; orphan legacy_questionnaire_facade removed, no runtime caller, no production_compat fallback.
   - route_id: questionnaire_admin_latest_submit_debug_out_of_scope
     path_pattern: /api/admin/questionnaires/{questionnaire_id}/latest-submit-debug
     methods: [GET]
@@ -957,7 +957,7 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Admin latest-submit-debug route uses LatestSubmitDebugQuery only; no legacy_questionnaire_facade and no production_compat fallback.
+    notes: Admin latest-submit-debug route uses LatestSubmitDebugQuery only; orphan legacy_questionnaire_facade removed, no runtime caller, no production_compat fallback.
   - route_id: questionnaire_public_h5_out_of_scope
     path_pattern: /api/h5/questionnaires*
     methods: [GET, OPTIONS]

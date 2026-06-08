@@ -1468,7 +1468,7 @@ routes:
     checker: tests/test_automation_member_actions_registry_lifecycle.py
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Member detail exact route is Next read-model only; legacy automation facade fallback removed; fallback_used=false.
+    notes: Member detail exact route is Next read-model only; orphan legacy automation facade removed, no runtime caller, no production_compat fallback; fallback_used=false.
   - route_pattern: /api/admin/automation-conversion/member/put-in-pool
     methods: [POST, OPTIONS]
     capability_owner: aicrm_next.automation_engine
@@ -1605,7 +1605,7 @@ routes:
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members.
+    notes: Next exact readonly/write-preview routes only; production_compat fallback for legacy automation members has been removed and must not be restored.
   - route_pattern: /api/customer-automation*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

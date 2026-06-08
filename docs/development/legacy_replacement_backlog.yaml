@@ -2576,7 +2576,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_automation_member_actions_registry_lifecycle.py", "read-model parity check", "admin/browser smoke for the current page or API", "route owner drift guard"]
-    notes: "Member detail exact route is Next read-model only; legacy automation facade fallback removed; fallback_used=false."
+    notes: "Member detail exact route is Next read-model only; orphan legacy automation facade removed, no runtime caller, no production_compat fallback; fallback_used=false."
   - id: "LRB-118"
     route_pattern: "/api/admin/automation-conversion/member/put-in-pool"
     methods: ["POST", "OPTIONS"]
@@ -2796,7 +2796,7 @@ entries:
     rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tools/check_production_route_resolution.py", "contract test for write validation", "idempotency and rollback smoke", "route owner drift guard"]
-    notes: "Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members."
+    notes: "Next exact readonly/write-preview routes only; production_compat fallback for legacy automation members has been removed and must not be restored."
   - id: "LRB-128"
     route_pattern: "/api/customer-automation*"
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]

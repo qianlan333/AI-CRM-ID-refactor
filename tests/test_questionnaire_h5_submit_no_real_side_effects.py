@@ -61,10 +61,10 @@ def test_public_h5_read_source_has_no_legacy_public_identity_helpers() -> None:
             "aicrm_next/questionnaire/api.py",
             "aicrm_next/questionnaire/application.py",
             "aicrm_next/questionnaire/public_access.py",
-            "aicrm_next/integration_gateway/legacy_questionnaire_facade.py",
             "aicrm_next/integration_gateway/legacy_flask_facade.py",
         ]
     )
+    assert not (Path("aicrm_next/integration_gateway") / "legacy_questionnaire_facade.py").exists()
     for marker in [
         "get_public_questionnaire_from_legacy",
         "get_public_questionnaire_submission_status_from_legacy",

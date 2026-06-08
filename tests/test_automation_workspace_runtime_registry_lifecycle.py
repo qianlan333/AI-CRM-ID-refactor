@@ -52,6 +52,15 @@ def test_workspace_runtime_manifest_records_are_locked_and_broad_families_remain
         assert record["delete_status"] == "deletion_locked"
         assert record["replacement_status"] == "locked"
 
-    assert records["/api/admin/automation-conversion/tasks*"]["legacy_fallback_allowed"] is True
-    assert records["/api/admin/automation-conversion/execution-items*"]["legacy_fallback_allowed"] is True
+    broad_tasks = records["/api/admin/automation-conversion/tasks*"]
+    assert broad_tasks["current_runtime_owner"] == "next"
+    assert broad_tasks["production_behavior"] == "archived_no_runtime"
+    assert broad_tasks["legacy_fallback_allowed"] is False
+    assert "no production_compat fallback is restored" in str(broad_tasks.get("notes") or "")
+
+    broad_execution_items = records["/api/admin/automation-conversion/execution-items*"]
+    assert broad_execution_items["current_runtime_owner"] == "next"
+    assert broad_execution_items["production_behavior"] == "archived_no_runtime"
+    assert broad_execution_items["legacy_fallback_allowed"] is False
+    assert "no production_compat fallback is restored" in str(broad_execution_items.get("notes") or "")
     assert "/api/admin/automation-conversion/member*" not in records
