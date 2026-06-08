@@ -8,6 +8,7 @@ from typing import Any
 from aicrm_next.customer_read_model.application import GetCustomerContextQuery
 from aicrm_next.customer_read_model.dto import CustomerContextRequest
 
+from ...db import get_db
 from ...application.identity_contact.commands import BindExternalContactIdentityCommand
 from ...application.identity_contact.dto import BindExternalContactIdentityCommandDTO, GetContactBindingStatusQueryDTO
 from ...application.identity_contact.queries import GetContactBindingStatusQuery
@@ -91,33 +92,63 @@ def _mask_mobile(value: Any) -> str:
     return f"{text[:3]}****{text[-4:]}"
 
 
+def _rollback_request_db_transaction(diagnostics: dict[str, Any] | None, reason: str) -> None:
+    try:
+        get_db().rollback()
+    except Exception as exc:
+        if diagnostics is not None:
+            diagnostics["request_db_rollback_status"] = "failed"
+            diagnostics["request_db_rollback_error"] = str(exc).strip() or exc.__class__.__name__
+        return
+    if diagnostics is not None:
+        diagnostics["request_db_rollback_status"] = "rolled_back"
+        diagnostics["request_db_rollback_reason"] = reason
+
+
 def _context(external_userid: str, diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         payload = GetCustomerContextQuery()(
             CustomerContextRequest(external_userid=external_userid, recent_message_limit=20, timeline_limit=20)
         )
     except Exception as exc:
+        _rollback_request_db_transaction(diagnostics, "customer_context_exception")
         if diagnostics is not None:
             diagnostics["context_source_status"] = "error"
             diagnostics["context_error"] = str(exc).strip() or exc.__class__.__name__
         return {}
     if not (payload or {}).get("ok", True):
+        _rollback_request_db_transaction(diagnostics, "customer_context_not_ok")
         if diagnostics is not None:
             diagnostics["context_source_status"] = "not_ok"
-            diagnostics["context_error"] = _text((payload or {}).get("error"))
+            diagnostics["context_error"] = _text((payload or {}).get("error") or (payload or {}).get("page_error") or (payload or {}).get("error_code"))
         return {}
     if diagnostics is not None:
         diagnostics["context_source_status"] = "ready" if payload else "empty"
     return dict(payload or {})
 
 
-def _binding_status(external_userid: str, owner_userid: str = "") -> dict[str, Any]:
+def _binding_status(external_userid: str, owner_userid: str = "", diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
-        return GetContactBindingStatusQuery()(
+        binding = GetContactBindingStatusQuery()(
             GetContactBindingStatusQueryDTO(external_userid=external_userid, owner_userid=owner_userid)
         )
-    except Exception:
+    except Exception as exc:
+        _rollback_request_db_transaction(diagnostics, "binding_status_exception")
+        if diagnostics is not None:
+            diagnostics["fresh_binding_status"] = "error"
+            diagnostics["fresh_binding_error"] = str(exc).strip() or exc.__class__.__name__
         return {}
+    if diagnostics is not None:
+        diagnostics["fresh_binding_status"] = "bound" if binding.get("is_bound") or _text(binding.get("mobile")) else "unbound"
+    return binding
+
+
+def _resolve_binding(context: dict[str, Any], external_userid: str, owner_userid: str, diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
+    context_binding = dict(context.get("binding") or {})
+    fresh_binding = _binding_status(external_userid, owner_userid, diagnostics)
+    if fresh_binding.get("is_bound") or _text(fresh_binding.get("mobile")):
+        return fresh_binding
+    return context_binding or fresh_binding
 
 
 def _avatar_text(display_name: str) -> str:
@@ -272,7 +303,7 @@ def get_sidebar_workbench(*, external_userid: str, owner_userid: str = "") -> di
     normalized_owner = _text(owner_userid)
     diagnostics: dict[str, Any] = {}
     context = _context(normalized_external_userid, diagnostics)
-    binding = dict(context.get("binding") or {}) or _binding_status(normalized_external_userid, normalized_owner)
+    binding = _resolve_binding(context, normalized_external_userid, normalized_owner, diagnostics)
     customer = _customer_payload(context, binding, normalized_external_userid, normalized_owner, diagnostics)
     binding = _ensure_wechat_pay_order_mobile_binding(
         external_userid=normalized_external_userid,
@@ -368,7 +399,7 @@ def get_questionnaires(*, external_userid: str) -> dict[str, Any]:
         raise ValueError("external_userid is required")
     diagnostics: dict[str, Any] = {}
     context = _context(normalized_external_userid, diagnostics)
-    binding = dict(context.get("binding") or {}) or _binding_status(normalized_external_userid, "")
+    binding = _resolve_binding(context, normalized_external_userid, "", diagnostics)
     customer = _customer_payload(context, binding, normalized_external_userid, "", diagnostics)
     diagnostics["backfill_status"] = _backfill_questionnaire_submissions_for_customer(customer)
     try:
@@ -522,7 +553,7 @@ def get_other_staff_messages(*, external_userid: str, current_userid: str = "", 
         messages = list((payload or {}).get("messages") or [])
     except LookupError:
         messages = []
-    binding = _binding_status(normalized_external_userid, "")
+    binding = _binding_status(normalized_external_userid, "", diagnostics)
     current_staff = {
         _text(current_userid),
         _text(binding.get("owner_userid")),
@@ -649,7 +680,7 @@ def get_orders(*, external_userid: str, owner_userid: str = "") -> dict[str, Any
         raise ValueError("external_userid is required")
     diagnostics: dict[str, Any] = {}
     context = _context(normalized_external_userid, diagnostics)
-    binding = dict(context.get("binding") or {}) or _binding_status(normalized_external_userid, _text(owner_userid))
+    binding = _resolve_binding(context, normalized_external_userid, _text(owner_userid), diagnostics)
     customer = _customer_payload(context, binding, normalized_external_userid, _text(owner_userid), diagnostics)
     binding = _ensure_wechat_pay_order_mobile_binding(
         external_userid=normalized_external_userid,

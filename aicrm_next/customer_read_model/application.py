@@ -81,6 +81,11 @@ def _close_repository(repo: CustomerReadRepository | None) -> None:
             LOGGER.warning("failed to close customer read repository session", exc_info=True)
 
 
+def _read_model_primary_failed(exc: Exception, repo: CustomerReadRepository | None) -> None:
+    _close_repository(repo)
+    LOGGER.warning("customer read model primary failed; switching to live source fallback: %s", exc)
+
+
 def _diagnostics(
     *,
     source_status: str,
@@ -481,26 +486,29 @@ class GetCustomerDetailQuery:
 
     def execute(self, query: CustomerDetailRequest) -> JsonDict:
         if _production_customer_data_required():
+            repo: CustomerReadRepository | None = None
             try:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                try:
-                    customer = repo.get_customer(query.external_userid)
-                    if not customer:
-                        raise NotFoundError("customer not found")
-                finally:
-                    if self._repo is None:
-                        _close_repository(repo)
+                customer = repo.get_customer(query.external_userid)
+                if not customer:
+                    raise NotFoundError("customer not found")
             except NotFoundError:
                 raise
             except Exception as exc:
+                if self._repo is None:
+                    _read_model_primary_failed(exc, repo)
+                    repo = None
                 try:
                     return _customer_detail_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
                     return _customer_detail_unavailable_payload(query.external_userid, exc)
+            finally:
+                if self._repo is None:
+                    _close_repository(repo)
             return {
                 "ok": True,
                 "customer": detail_projection(customer),
@@ -547,28 +555,31 @@ class GetCustomerTimelineQuery:
 
     def execute(self, query: CustomerTimelineRequest) -> JsonDict:
         if _production_customer_data_required():
+            repo: CustomerReadRepository | None = None
             try:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                try:
-                    if not repo.customer_exists(query.external_userid):
-                        raise NotFoundError("customer not found")
-                    items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
-                    total = len(items)
-                    page = items[query.offset : query.offset + query.limit]
-                finally:
-                    if self._repo is None:
-                        _close_repository(repo)
+                if not repo.customer_exists(query.external_userid):
+                    raise NotFoundError("customer not found")
+                items = repo.list_timeline(query.external_userid, {"event_type": query.event_type or ""}, limit=None, offset=0)
+                total = len(items)
+                page = items[query.offset : query.offset + query.limit]
             except NotFoundError:
                 raise
             except Exception as exc:
+                if self._repo is None:
+                    _read_model_primary_failed(exc, repo)
+                    repo = None
                 try:
                     return _customer_timeline_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
                     return _customer_timeline_unavailable_payload(query, exc)
+            finally:
+                if self._repo is None:
+                    _close_repository(repo)
             return {
                 "ok": True,
                 "timeline": {
@@ -636,26 +647,29 @@ class ListRecentMessagesQuery:
 
     def execute(self, query: RecentMessagesRequest) -> JsonDict:
         if _production_customer_data_required():
+            repo: CustomerReadRepository | None = None
             try:
                 if not _customer_read_model_next_primary_enabled():
                     raise RuntimeError("customer read model next primary disabled")
                 repo = self._repo or build_customer_read_model_repository()
-                try:
-                    if not repo.customer_exists(query.external_userid):
-                        raise NotFoundError("customer not found")
-                    messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
-                finally:
-                    if self._repo is None:
-                        _close_repository(repo)
+                if not repo.customer_exists(query.external_userid):
+                    raise NotFoundError("customer not found")
+                messages = repo.list_recent_messages(query.external_userid, limit=query.limit)
             except NotFoundError:
                 raise
             except Exception as exc:
+                if self._repo is None:
+                    _read_model_primary_failed(exc, repo)
+                    repo = None
                 try:
                     return _recent_messages_live_source_payload(query, exc, self._live_source_repo)
                 except NotFoundError:
                     raise
                 except Exception:
                     return _recent_messages_unavailable_payload(query, exc)
+            finally:
+                if self._repo is None:
+                    _close_repository(repo)
             return {
                 "ok": True,
                 "messages": messages,

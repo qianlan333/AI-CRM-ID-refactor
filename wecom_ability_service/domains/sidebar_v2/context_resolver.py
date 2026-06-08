@@ -50,8 +50,8 @@ def resolve_customer_payload(
         or _text(contacts_row.get("owner_userid"))
         or _text(identity_row.get("follow_user_userid"))
     )
-    mobile = _text(customer.get("mobile")) or _text(customer_binding.get("mobile")) or _text(binding.get("mobile"))
-    is_bound = bool(customer_binding.get("is_bound")) or bool(binding.get("is_bound")) or bool(mobile)
+    mobile = _text(binding.get("mobile")) or _text(customer.get("mobile")) or _text(customer_binding.get("mobile"))
+    is_bound = bool(binding.get("is_bound")) or bool(customer_binding.get("is_bound")) or bool(mobile)
     payload = {
         "display_name": display_name,
         "avatar_text": display_name[:1] if display_name else "",
@@ -60,8 +60,15 @@ def resolve_customer_payload(
         "external_userid": _text(external_userid),
         "owner_userid": resolved_owner,
     }
+    context_binding = dict(context.get("binding") or {})
+    if not binding:
+        binding_source = "none"
+    elif context_binding and binding == context_binding:
+        binding_source = "context.binding"
+    else:
+        binding_source = "fresh_binding_status"
     diagnostics = {
         "display_name_source": display_name_source,
-        "binding_source": "context.binding" if context.get("binding") else ("legacy_binding_status" if binding else "none"),
+        "binding_source": binding_source,
     }
     return payload, diagnostics
