@@ -425,42 +425,42 @@ routes:
   - route_pattern: /admin/image-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    current_runtime_owner: next
+    production_behavior: next_native_page_render
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: true
     delete_status: deletion_locked
     replacement_status: locked
-    checker: tests/test_media_library_next_contract.py
-    notes: Admin image library page is frontend_compat over Next APIs; page shell performs no external calls and Media Library group 16 production_compat rollback is removed and locked.
+    checker: tests/test_media_library_admin_pages_native.py
+    notes: Admin image library page is served by aicrm_next.media_library.admin_pages while reusing existing templates/static assets; APIs remain owned by media_library.api, no frontend_compat page route remains, no production_compat fallback, and page load performs no external calls.
   - route_pattern: /admin/miniprogram-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    current_runtime_owner: next
+    production_behavior: next_native_page_render
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: true
     delete_status: deletion_locked
     replacement_status: locked
-    checker: tests/test_media_library_next_contract.py
-    notes: Admin miniprogram library page is frontend_compat over Next APIs; thumbnail references go through image library routes, production_compat rollback is removed, and real WeCom media calls remain blocked.
+    checker: tests/test_media_library_admin_pages_native.py
+    notes: Admin miniprogram library page is served by aicrm_next.media_library.admin_pages while reusing existing templates/static assets; thumbnail references go through media_library.api, no frontend_compat page route remains, no production_compat fallback, and real WeCom media calls remain blocked.
   - route_pattern: /admin/attachment-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    current_runtime_owner: next
+    production_behavior: next_native_page_render
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: none
     delete_ready: true
     delete_status: deletion_locked
     replacement_status: locked
-    checker: tests/test_media_library_next_contract.py
-    notes: Admin attachment library page is frontend_compat over Next APIs; page shell performs no external calls, production_compat rollback is removed, and upload commands return SideEffectPlan.
+    checker: tests/test_media_library_admin_pages_native.py
+    notes: Admin attachment library page is served by aicrm_next.media_library.admin_pages while reusing existing templates/static assets; APIs remain owned by media_library.api, no frontend_compat page route remains, no production_compat fallback, and upload commands return SideEffectPlan.
   - route_pattern: /api/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model

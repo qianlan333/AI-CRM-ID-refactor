@@ -188,7 +188,7 @@ MEDIA_LIBRARY_API_PREFIXES = (
     "/api/admin/miniprogram-library",
 )
 MEDIA_LIBRARY_REGISTRY_FAMILIES = (
-    ("media_library_admin_pages_family", "/admin/*-library", ("GET",), "frontend_compat over Next APIs", "none"),
+    ("media_library_admin_pages_family", "/admin/*-library", ("GET",), "next_native_page_shell", "none"),
     ("media_library_image_read_family", "/api/admin/image-library*", ("GET",), "next_native", "local"),
     ("media_library_image_command_family", "/api/admin/image-library*", ("POST", "PUT", "DELETE", "OPTIONS"), "next_storage_adapter", "local / fake / real_blocked"),
     ("media_library_attachment_read_family", "/api/admin/attachment-library*", ("GET",), "next_native", "local"),
@@ -3705,6 +3705,71 @@ def _is_media_library_route_path(route_path: str) -> bool:
     return route_path in MEDIA_LIBRARY_PAGE_ROUTES or any(route_path.startswith(prefix) for prefix in MEDIA_LIBRARY_API_PREFIXES)
 
 
+def check_media_library_admin_pages_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        for marker in (
+            "/admin/image-library",
+            "/admin/miniprogram-library",
+            "/admin/attachment-library",
+            "admin_image_library",
+            "admin_miniprogram_library",
+            "admin_attachment_library",
+        ):
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "media_library_page_still_in_frontend_compat",
+                        str(frontend_routes.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    admin_pages = root / "aicrm_next/media_library/admin_pages.py"
+    if not admin_pages.exists():
+        violations.append(
+            Violation(
+                "media_library_admin_pages_missing",
+                str(admin_pages.relative_to(root)),
+                "missing native media library admin page module",
+            )
+        )
+    else:
+        source = admin_pages.read_text(encoding="utf-8")
+        for route in MEDIA_LIBRARY_PAGE_ROUTES:
+            if route not in source:
+                violations.append(
+                    Violation(
+                        "media_library_admin_pages_route_missing",
+                        str(admin_pages.relative_to(root)),
+                        route,
+                    )
+                )
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        native_import = "from .media_library.admin_pages import router as media_library_admin_pages_router"
+        native_include = "app.include_router(media_library_admin_pages_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        missing_registration = native_import not in source or native_include not in source
+        if not missing_registration and frontend_include in source:
+            missing_registration = source.index(native_include) > source.index(frontend_include)
+        if missing_registration:
+            violations.append(
+                Violation(
+                    "media_library_admin_pages_not_registered",
+                    str(main_path.relative_to(root)),
+                    "media_library_admin_pages_router must be registered before frontend_compat_router",
+                )
+            )
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -3784,7 +3849,7 @@ def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
         if record is None:
             violations.append(Violation("media_library_manifest_missing", "docs/route_ownership/production_route_ownership_manifest.yaml", route_path))
             continue
-        expected_owner = "frontend_compat" if route_path in MEDIA_LIBRARY_PAGE_ROUTES else "next"
+        expected_owner = "next"
         if record.get("current_runtime_owner") != expected_owner:
             violations.append(Violation("media_library_manifest_owner", route_path, f"current_runtime_owner={record.get('current_runtime_owner')}"))
         if record.get("legacy_fallback_allowed") is not False:
@@ -6653,6 +6718,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_read_next_native(ROOT)
         + check_wecom_tag_write_next_commandbus(ROOT)
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
+        + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
         + check_admin_auth_login_closeout_lock(ROOT)

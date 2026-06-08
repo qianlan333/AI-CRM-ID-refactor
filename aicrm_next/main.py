@@ -47,6 +47,7 @@ from .identity_contact.api import router as identity_router
 from .identity_contact.sidebar_jssdk import router as sidebar_jssdk_router
 from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
 from .integration_gateway.api import router as mcp_router
+from .media_library.admin_pages import router as media_library_admin_pages_router
 from .media_library.api import router as media_library_router
 from .media_library.repo import reset_media_library_fixture_state
 from .message_archive.api import router as message_archive_router
@@ -179,6 +180,7 @@ def create_app() -> FastAPI:
     app.include_router(automation_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)
+    app.include_router(media_library_admin_pages_router)
     app.include_router(ai_assist_router)
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)

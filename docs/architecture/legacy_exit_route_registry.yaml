@@ -304,16 +304,16 @@ routes:
     path_pattern: /admin/*-library
     methods: [GET]
     capability_owner: aicrm_next.media_library
-    runtime_owner: frontend_compat over Next APIs
+    runtime_owner: next_native_page_shell
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
     replacement_status: locked
-    checker: tests/test_media_library_next_contract.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Covers image, miniprogram, and attachment library admin pages rendered by frontend_compat templates over Next APIs; production_compat rollback is removed and locked for Media Library group 16.
+    checker: tests/test_media_library_admin_pages_native.py
+    rollback_owner: aicrm_next.media_library
+    notes: Covers image, miniprogram, and attachment library admin pages served by aicrm_next.media_library.admin_pages while reusing existing templates/static assets; APIs remain owned by media_library.api, frontend_compat page routes are removed, and production_compat rollback is removed and locked for Media Library group 16.
   - route_id: media_library_image_read_family
     path_pattern: /api/admin/image-library*
     methods: [GET]

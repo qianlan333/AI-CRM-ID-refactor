@@ -26,6 +26,7 @@ from scripts.check_no_new_legacy import (
     check_legacy_flask_facade_removed,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
+    check_media_library_admin_pages_native,
     check_media_library_closeout_lock,
     check_messages_broad_wildcard_deletion,
     check_orphan_legacy_facades_removed,
@@ -1860,10 +1861,10 @@ def _write_media_library_docs(tmp_path: Path, *, locked: bool = True) -> None:
     legacy_source = '""' if locked else "production_compat"
     delete_status = "deletion_locked" if locked else "next_primary_with_legacy_rollback"
     replacement_status = "locked" if locked else "validating"
-    page_owner = "frontend_compat over Next APIs" if locked else "production_compat"
+    page_owner = "next_native_page_shell" if locked else "production_compat"
     read_owner = "next_native" if locked else "production_compat"
     command_owner = "next_storage_adapter" if locked else "production_compat"
-    manifest_page_owner = "frontend_compat" if locked else "production_compat"
+    manifest_page_owner = "next" if locked else "production_compat"
     manifest_api_owner = "next" if locked else "production_compat"
     manifest_behavior = "fake_adapter" if locked else "legacy_forward"
     delete_ready = "true" if locked else "false"
@@ -2011,6 +2012,77 @@ def _write_media_library_docs(tmp_path: Path, *, locked: bool = True) -> None:
         "- Real WeCom media upload.\n",
         encoding="utf-8",
     )
+
+
+def test_media_library_admin_pages_checker_flags_frontend_compat_route(tmp_path: Path) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/media_library/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True)
+    frontend_routes.write_text("LEGACY_FRONTEND_ROUTES = ['/admin/image-library']\n", encoding="utf-8")
+    admin_pages.write_text(
+        "@router.get('/admin/image-library')\n"
+        "@router.get('/admin/miniprogram-library')\n"
+        "@router.get('/admin/attachment-library')\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .media_library.admin_pages import router as media_library_admin_pages_router\n"
+        "app.include_router(media_library_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_media_library_admin_pages_native(tmp_path)}
+
+    assert "media_library_page_still_in_frontend_compat" in codes
+
+
+def test_media_library_admin_pages_checker_flags_missing_native_module(tmp_path: Path) -> None:
+    codes = {violation.code for violation in check_media_library_admin_pages_native(tmp_path)}
+
+    assert "media_library_admin_pages_missing" in codes
+
+
+def test_media_library_admin_pages_checker_flags_missing_registration(tmp_path: Path) -> None:
+    admin_pages = tmp_path / "aicrm_next/media_library/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    admin_pages.parent.mkdir(parents=True)
+    admin_pages.write_text(
+        "@router.get('/admin/image-library')\n"
+        "@router.get('/admin/miniprogram-library')\n"
+        "@router.get('/admin/attachment-library')\n",
+        encoding="utf-8",
+    )
+    main_py.write_text("app.include_router(frontend_compat_router)\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_media_library_admin_pages_native(tmp_path)}
+
+    assert "media_library_admin_pages_not_registered" in codes
+
+
+def test_media_library_admin_pages_checker_accepts_native_state(tmp_path: Path) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/media_library/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True)
+    frontend_routes.write_text("LEGACY_FRONTEND_ROUTES = ['/admin/api-docs']\n", encoding="utf-8")
+    admin_pages.write_text(
+        "@router.get('/admin/image-library')\n"
+        "@router.get('/admin/miniprogram-library')\n"
+        "@router.get('/admin/attachment-library')\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .media_library.admin_pages import router as media_library_admin_pages_router\n"
+        "app.include_router(media_library_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    assert check_media_library_admin_pages_native(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:

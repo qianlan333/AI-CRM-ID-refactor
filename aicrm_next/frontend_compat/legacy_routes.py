@@ -37,9 +37,6 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/cloud-orchestrator/campaigns",
     "/admin/cloud-orchestrator/observability",
     "/admin/wechat-pay/products",
-    "/admin/image-library",
-    "/admin/miniprogram-library",
-    "/admin/attachment-library",
     "/admin/api-docs",
 ]
 
@@ -399,39 +396,6 @@ def admin_wechat_pay_products(request: Request):
         summary="生产 wechat_pay_products 与 page slices 只读列表。",
     )
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
-
-
-@router.get("/admin/image-library", name="api.admin_image_library_workspace")
-def admin_image_library(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="图片素材库",
-        page_summary="集中维护可被群发 / 卡片 / 自动化欢迎语等场景引用的图片，支持上传和外链。",
-        active_endpoint="api.admin_image_library_workspace",
-    )
-    return templates.TemplateResponse(request, "admin_console/image_library.html", context)
-
-
-@router.get("/admin/miniprogram-library", name="api.admin_miniprogram_library_workspace")
-def admin_miniprogram_library(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="小程序素材库",
-        page_summary="维护群发和自动化可复用的小程序卡片。",
-        active_endpoint="api.admin_miniprogram_library_workspace",
-    )
-    return templates.TemplateResponse(request, "admin_console/miniprogram_library.html", context)
-
-
-@router.get("/admin/attachment-library", name="api.admin_attachment_library_workspace")
-def admin_attachment_library(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="附件素材库",
-        page_summary="维护 PDF、附件和课程资料等可复用素材。",
-        active_endpoint="api.admin_attachment_library_workspace",
-    )
-    return templates.TemplateResponse(request, "admin_console/attachment_library.html", context)
 
 
 @router.get("/admin/runtime-config", name="api.admin_runtime_config")
