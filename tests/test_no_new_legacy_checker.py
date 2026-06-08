@@ -12,6 +12,7 @@ from scripts.check_no_new_legacy import (
     check_automation_overview_pools_next_read_model,
     check_automation_workspace_runtime_next_safe_mode,
     check_ai_assist_external_campaigns_native,
+    check_channel_identity_bridge_native,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_media_upload_native_client,
     check_cloud_orchestrator_repository_time_helpers_native,
@@ -1089,6 +1090,92 @@ def test_cloud_time_helper_checker_accepts_native_minimal_files(tmp_path: Path) 
     _write_cloud_time_helper_files(tmp_path)
 
     assert check_cloud_orchestrator_repository_time_helpers_native(tmp_path) == []
+
+
+def _write_channel_identity_bridge_files(
+    root: Path,
+    *,
+    bridge: str = (
+        "from .identity_bridge_service import build_identity_bridge_service\n"
+        "def sync_external_contact_identity_for_event(event, *, corp_id):\n"
+        "    return build_identity_bridge_service().sync_external_contact_identity_for_event(event, corp_id=corp_id)\n"
+    ),
+    repo: str = "class IdentityBridgeRepository: pass\n",
+    service: str = "class IdentityBridgeService: pass\ndef build_identity_bridge_service():\n    return IdentityBridgeService()\n",
+    checker: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+    test_file: str = "def test_native():\n    assert True\n",
+) -> None:
+    bridge_path = root / "aicrm_next/channel_entry/identity_bridge.py"
+    repo_path = root / "aicrm_next/channel_entry/identity_bridge_repo.py"
+    service_path = root / "aicrm_next/channel_entry/identity_bridge_service.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    test_path = root / "tests/test_next_channel_identity_bridge.py"
+    bridge_path.parent.mkdir(parents=True, exist_ok=True)
+    checker_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    bridge_path.write_text(bridge, encoding="utf-8")
+    repo_path.write_text(repo, encoding="utf-8")
+    service_path.write_text(service, encoding="utf-8")
+    checker_path.write_text(checker, encoding="utf-8")
+    test_path.write_text(test_file, encoding="utf-8")
+
+
+def test_channel_identity_checker_flags_bridge_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        bridge=(
+            "from wecom_ability_service.application.identity_contact.commands import "
+            "BindExternalContactMobileFromIdentitySourcesCommand\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_bridge_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_repo_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path, repo="from flask import current_app\nfrom wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_repo_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_service_legacy_import(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path, service="from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app\n")
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_service_legacy_import" in codes
+
+
+def test_channel_identity_checker_flags_stale_wecom_allowlist(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        checker='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/channel_entry/identity_bridge.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_stale_wecom_allowlist" in codes
+
+
+def test_channel_identity_checker_flags_legacy_test_monkeypatch(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(
+        tmp_path,
+        test_file="monkeypatch.setattr('aicrm_next.channel_entry.identity_bridge._legacy_app', lambda: app)\n",
+    )
+
+    codes = {violation.code for violation in check_channel_identity_bridge_native(tmp_path)}
+
+    assert "channel_identity_test_legacy_monkeypatch" in codes
+
+
+def test_channel_identity_checker_accepts_native_minimal_files(tmp_path: Path) -> None:
+    _write_channel_identity_bridge_files(tmp_path)
+
+    assert check_channel_identity_bridge_native(tmp_path) == []
 
 
 def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:

@@ -218,12 +218,12 @@
               <div class="product-module-step">3</div>
               <div class="product-module-copy">
                 <h2>购买后动作</h2>
-                <p>默认收起。需要设置跳转或引流时打开。</p>
+                <p>开关开启后，支付后的引流或跳转配置才会生效。</p>
               </div>
             </div>
             <div class="product-collapse-control">
-              <span>展开配置</span>
-              <button class="product-switch" id="afterActionExpand" type="button" role="switch" aria-checked="false" aria-label="展开购买后动作配置"></button>
+              <span id="afterActionStateText">未启用</span>
+              <button class="product-switch" id="afterActionExpand" type="button" role="switch" aria-checked="false" aria-label="启用购买后动作配置"></button>
             </div>
           </div>
           <div class="product-module-panel" id="afterActionPanel" hidden>
@@ -256,12 +256,12 @@
               <div class="product-module-step">4</div>
               <div class="product-module-copy">
                 <h2>外部推送</h2>
-                <p>默认收起。需要订单 webhook 时打开。</p>
+                <p>开关开启后，订单 webhook 外推才会生效。</p>
               </div>
             </div>
             <div class="product-collapse-control">
-              <span>展开配置</span>
-              <button class="product-switch" id="externalPushExpand" type="button" role="switch" aria-checked="false" aria-label="展开外部推送配置"></button>
+              <span id="externalPushStateText">未启用</span>
+              <button class="product-switch" id="externalPushExpand" type="button" role="switch" aria-checked="false" aria-label="启用外部推送配置"></button>
             </div>
           </div>
           <div class="product-module-panel" id="externalPushPanel" hidden>
@@ -372,6 +372,7 @@
   let dragId = "";
   let activeShareUrl = "";
   let shareInfo = null;
+  let afterActionEnabled = Boolean(product.completion_redirect_enabled || product.lead_channel_id);
   let afterActionMode = product.completion_redirect_enabled ? "redirect" : "lead";
 
   function $(id) { return document.getElementById(id); }
@@ -390,13 +391,23 @@
   function switchIsOn(button) {
     return button?.getAttribute("aria-checked") === "true";
   }
-  function togglePanel(buttonId, panelId) {
+  function setPanelSwitch(buttonId, panelId, enabled, labelId, onText = "已启用", offText = "未启用") {
     const button = $(buttonId);
     const panel = $(panelId);
     if (!button || !panel) return;
-    const next = !switchIsOn(button);
-    setSwitch(button, next);
-    panel.hidden = !next;
+    setSwitch(button, enabled);
+    panel.hidden = !enabled;
+    const label = $(labelId);
+    if (label) label.textContent = enabled ? onText : offText;
+  }
+  function setAfterActionEnabled(enabled) {
+    afterActionEnabled = Boolean(enabled);
+    setPanelSwitch("afterActionExpand", "afterActionPanel", afterActionEnabled, "afterActionStateText");
+  }
+  function setExternalPushActive(enabled) {
+    externalPush.enabled = Boolean(enabled);
+    setPanelSwitch("externalPushExpand", "externalPushPanel", externalPush.enabled, "externalPushStateText");
+    setExternalPushEnabled(externalPush.enabled);
   }
   function setExternalPushEnabled(enabled) {
     setSwitch($("externalPushEnabled"), enabled);
@@ -498,12 +509,13 @@
     $("productDescription").value = product.description || "";
     $("leadChannel").value = String(product.lead_channel_id || 0);
     $("completionRedirectUrl").value = product.completion_redirect_url || "";
+    setAfterActionEnabled(Boolean(product.completion_redirect_enabled || product.lead_channel_id));
     selectAfterActionMode(product.completion_redirect_enabled ? "redirect" : "lead");
     renderSlices();
   }
 
   function completionRedirectPayload() {
-    const enabled = afterActionMode === "redirect";
+    const enabled = afterActionEnabled && afterActionMode === "redirect";
     const url = String($("completionRedirectUrl").value || "").trim();
     const isSafeInternalPath = /^\/(?!\/)[^\s\\]*$/.test(url);
     if (enabled && !url) throw new Error("请填写跳转链接");
@@ -526,7 +538,7 @@
       enabled: $("productStatus").value === "active",
       buy_button_text: $("buyButtonText").value.trim() || "立即购买",
       require_mobile: $("requireMobile").value === "true",
-      lead_channel_id: afterActionMode === "lead" ? (Number($("leadChannel").value || 0) || null) : null,
+      lead_channel_id: afterActionEnabled && afterActionMode === "lead" ? (Number($("leadChannel").value || 0) || null) : null,
       ...completionRedirectPayload(),
       slices: (product.slices || []).map((slice, index) => ({ image_library_id: Number(slice.image_library_id), sort_order: index + 1 }))
     };
@@ -596,7 +608,7 @@
       $("externalPushSection").hidden = true;
       return;
     }
-    setExternalPushEnabled(Boolean(externalPush.enabled));
+    setExternalPushActive(Boolean(externalPush.enabled));
     $("externalPushUrl").value = externalPush.webhook_url || "";
     $("externalPushType").value = externalPush.push_type || "";
     $("externalPushExpiresAtTs").value = externalPush.expires_at_ts == null ? "" : externalPush.expires_at_ts;
@@ -615,7 +627,7 @@
     });
     const numberOrNull = id => $(id).value.trim() ? Number($(id).value.trim()) : null;
     return {
-      enabled: switchIsOn($("externalPushEnabled")),
+      enabled: Boolean(externalPush.enabled),
       webhook_url: $("externalPushUrl").value.trim(),
       push_type: $("externalPushType").value.trim(),
       expires_at_ts: numberOrNull("externalPushExpiresAtTs"),
@@ -718,9 +730,9 @@
     event.target.value = "";
   });
 
-  $("afterActionExpand")?.addEventListener("click", () => togglePanel("afterActionExpand", "afterActionPanel"));
-  $("externalPushExpand")?.addEventListener("click", () => togglePanel("externalPushExpand", "externalPushPanel"));
-  $("externalPushEnabled")?.addEventListener("click", () => setExternalPushEnabled(!switchIsOn($("externalPushEnabled"))));
+  $("afterActionExpand")?.addEventListener("click", () => setAfterActionEnabled(!afterActionEnabled));
+  $("externalPushExpand")?.addEventListener("click", () => setExternalPushActive(!externalPush.enabled));
+  $("externalPushEnabled")?.addEventListener("click", () => setExternalPushActive(!externalPush.enabled));
   document.querySelectorAll("[data-after-mode]").forEach(option => {
     option.addEventListener("click", () => selectAfterActionMode(option.dataset.afterMode));
   });
