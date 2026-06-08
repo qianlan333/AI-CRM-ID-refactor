@@ -128,12 +128,6 @@ def production_probe_env():
 
 
 def _client() -> TestClient:
-    try:
-        from aicrm_next.integration_gateway import legacy_flask_facade
-
-        legacy_flask_facade._legacy_app.cache_clear()
-    except Exception:
-        pass
     module = importlib.import_module("aicrm_next.main")
     return TestClient(module.create_app())
 

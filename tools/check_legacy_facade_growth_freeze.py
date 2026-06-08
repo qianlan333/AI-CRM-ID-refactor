@@ -11,7 +11,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
-ALLOWED_LEGACY_IMPORT_BOUNDARY = Path("aicrm_next/integration_gateway/legacy_flask_facade.py")
+REMOVED_LEGACY_IMPORT_BOUNDARY = Path("aicrm_next/integration_gateway/legacy_flask_facade.py")
 ALLOWED_DIRECT_LEGACY_IMPORTS = {
     (
         "aicrm_next/integration_gateway/wecom_group_adapter.py",
@@ -25,17 +25,8 @@ REQUIRED_DOCS = [
 ]
 FORBIDDEN_IMPORT_ROOTS = ("wecom_ability_service", "openclaw_service")
 IMPORTLIB_CONTEXT_KEYWORDS = ("wecom", "ability_service", "openclaw", "legacy_flask")
-REQUIRED_MANIFEST_CATEGORIES = {
-    "current_runtime_owner": {"production_compat"},
-    "production_behavior": {
-        "legacy_forward",
-        "readonly_facade",
-        "guarded_preview",
-        "fake_adapter",
-        "scheduled_safe_mode",
-    },
-}
-ALLOWED_SIDE_EFFECT_RISKS = {"none", "guarded", "real_blocked"}
+REQUIRED_MANIFEST_CATEGORIES: dict[str, set[str]] = {}
+ALLOWED_SIDE_EFFECT_RISKS = {"none", "guarded", "real_blocked", "low", "medium", "high"}
 FORBIDDEN_REAL_ALLOWED_VALUES = {
     "allow_real",
     "allowed",
@@ -115,6 +106,15 @@ def _context_for(source: str, lineno: int, radius: int = 2) -> str:
 def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     allowed_dynamic_imports: list[dict[str, Any]] = []
+    removed_boundary_path = root / REMOVED_LEGACY_IMPORT_BOUNDARY
+    if removed_boundary_path.exists():
+        findings.append(
+            {
+                "path": REMOVED_LEGACY_IMPORT_BOUNDARY.as_posix(),
+                "line": 1,
+                "reason": "removed_legacy_import_boundary_file_remaining",
+            }
+        )
     for path in _py_files(root, "aicrm_next"):
         relpath = Path(_rel(path, root))
         source = _read(path)
@@ -124,7 +124,6 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
             findings.append({"path": relpath.as_posix(), "line": exc.lineno or 1, "reason": "python_parse_error"})
             continue
 
-        is_allowed_boundary = relpath == ALLOWED_LEGACY_IMPORT_BOUNDARY
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -156,16 +155,7 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
                 segment = ast.get_source_segment(source, node) or _line_for(source, node.lineno)
                 lower_context = _context_for(source, node.lineno).lower()
                 relevant = any(keyword in lower_context for keyword in IMPORTLIB_CONTEXT_KEYWORDS)
-                if is_allowed_boundary:
-                    if relevant:
-                        allowed_dynamic_imports.append(
-                            {
-                                "path": relpath.as_posix(),
-                                "line": node.lineno,
-                                "match": segment.strip(),
-                            }
-                        )
-                elif relevant:
+                if relevant:
                     findings.append(
                         {
                             "path": relpath.as_posix(),
@@ -185,7 +175,7 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
                         or "openclaw_service" in lower_value
                         or ("wecom_" in lower_segment and "ability_service" in lower_segment)
                     )
-                    if looks_like_split_legacy and not is_allowed_boundary:
+                    if looks_like_split_legacy:
                         findings.append(
                             {
                                 "path": relpath.as_posix(),
@@ -195,19 +185,10 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
                             }
                         )
 
-    boundary_exists = (root / ALLOWED_LEGACY_IMPORT_BOUNDARY).exists()
-    if not boundary_exists:
-        findings.append(
-            {
-                "path": ALLOWED_LEGACY_IMPORT_BOUNDARY.as_posix(),
-                "line": 1,
-                "reason": "allowed_legacy_import_boundary_missing",
-            }
-        )
     return {
         "ok": not findings,
         "findings": findings,
-        "allowed_dynamic_import_boundary": ALLOWED_LEGACY_IMPORT_BOUNDARY.as_posix(),
+        "removed_dynamic_import_boundary": REMOVED_LEGACY_IMPORT_BOUNDARY.as_posix(),
         "allowed_dynamic_imports": allowed_dynamic_imports,
     }
 
@@ -417,7 +398,7 @@ def build_report(root: Path = ROOT, manifest_path: Path | None = None) -> dict[s
         "overall": "PASS" if ok else "FAIL",
         "blockers": blockers,
         "checks": checks,
-        "recommendation": "READY_FOR_PHASE7_BASELINE_IMPORT_CLEANUP_ACCEPTANCE" if ok else "FIX_BLOCKERS",
+        "recommendation": "READY_FOR_LEGACY_FACADE_REMOVAL_ACCEPTANCE" if ok else "FIX_BLOCKERS",
     }
 
 

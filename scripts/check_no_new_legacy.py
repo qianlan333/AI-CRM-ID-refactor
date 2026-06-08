@@ -34,7 +34,6 @@ EXCLUDED_DIRS = {
 }
 LEGACY_IMPORT_ALLOWLIST = {
     Path("aicrm_next/frontend_compat/legacy_routes.py"),
-    Path("aicrm_next/integration_gateway/legacy_flask_facade.py"),
 }
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
@@ -1844,6 +1843,110 @@ def check_orphan_legacy_facades_removed(root: Path = ROOT) -> list[Violation]:
                     "Registry must not keep removed orphan facades as active legacy sources.",
                 )
             )
+
+    return violations
+
+
+def check_legacy_flask_facade_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    facade_path = root / "aicrm_next/integration_gateway/legacy_flask_facade.py"
+    checker_path = root / "scripts/check_no_new_legacy.py"
+
+    if facade_path.exists():
+        violations.append(
+            Violation(
+                "legacy_flask_facade_file_remaining",
+                str(facade_path.relative_to(root)),
+                "Remove the legacy Flask forwarding facade file.",
+            )
+        )
+
+    if checker_path.exists():
+        checker_text = checker_path.read_text(encoding="utf-8")
+        stale_allowlist_marker = 'Path("aicrm_next/integration_gateway/legacy_' + 'flask_facade.py")'
+        if stale_allowlist_marker in checker_text:
+            violations.append(
+                Violation(
+                    "legacy_flask_facade_stale_allowlist",
+                    str(checker_path.relative_to(root)),
+                    stale_allowlist_marker,
+                    "Remove legacy_flask_facade.py from LEGACY_IMPORT_ALLOWLIST.",
+                )
+            )
+
+    runtime_root = root / "aicrm_next"
+    frontend_page_shell = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if runtime_root.exists():
+        for path in runtime_root.rglob("*.py"):
+            if "__pycache__" in path.parts or path in {facade_path, frontend_page_shell}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                continue
+
+            imported_facade = ""
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.endswith(".legacy_flask_facade"):
+                            imported_facade = alias.name
+                            break
+                elif isinstance(node, ast.ImportFrom):
+                    module_name = node.module or ""
+                    if module_name.endswith(".legacy_flask_facade"):
+                        imported_facade = module_name
+                    elif module_name == "aicrm_next.integration_gateway":
+                        for alias in node.names:
+                            if alias.name == "legacy_flask_facade":
+                                imported_facade = alias.name
+                                break
+                if imported_facade:
+                    break
+
+            if imported_facade:
+                violations.append(
+                    Violation(
+                        "legacy_flask_facade_runtime_import",
+                        str(path.relative_to(root)),
+                        imported_facade,
+                        "Runtime code must not import removed legacy_flask_facade.",
+                    )
+                )
+
+            for marker in ("forward_to_legacy_flask", "_legacy_app", "legacy_wecom_client_from_app"):
+                if marker in text:
+                    violations.append(
+                        Violation(
+                            "legacy_flask_facade_forwarder_remaining",
+                            str(path.relative_to(root)),
+                            marker,
+                            "Runtime code must not retain legacy Flask facade forwarding symbols.",
+                        )
+                    )
+
+    for rel_dir in (
+        "aicrm_next/automation_engine",
+        "aicrm_next/cloud_orchestrator",
+        "aicrm_next/platform_foundation",
+    ):
+        base = root / rel_dir
+        if not base.exists():
+            continue
+        for path in base.rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "X-AICRM-Compatibility-Facade" in text:
+                violations.append(
+                    Violation(
+                        "legacy_compatibility_facade_header_remaining",
+                        str(path.relative_to(root)),
+                        "X-AICRM-Compatibility-Facade",
+                        "Guarded Next-native route modules must not emit legacy compatibility facade headers.",
+                    )
+                )
 
     return violations
 
@@ -6536,6 +6639,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_production_compat_removed(ROOT)
         + check_production_compat_routes(ROOT)
         + check_orphan_legacy_facades_removed(ROOT)
+        + check_legacy_flask_facade_removed(ROOT)
         + check_internal_run_due_guard_native(ROOT)
         + check_messages_broad_wildcard_deletion(ROOT)
         + check_sidebar_readonly_closeout_lock(ROOT)

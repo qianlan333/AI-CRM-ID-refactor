@@ -58,10 +58,9 @@
 
 - 新功能默认使用 AI-CRM Next native implementation。
 - 不要 Next 兼容层补丁；要完全基于 Next 架构做开发。若老版本能力需要兼容，以 `https://github.com/qianlan333/siyuan-crm` 为行为参考迁移重写到 Next 架构，而不是保留旧实现或新增兼容绕行。
-- legacy facade 只能作为 production compatibility / rollback / hotfix 边界。
-- 修改 `production_compat` 必须同步 route ownership manifest 和 checker。
-- 禁止任何绕过 import guard 的动态 legacy import；唯一例外是
-  `aicrm_next/integration_gateway/legacy_flask_facade.py`。
+- legacy facade / `production_compat` runtime 已移除，不允许作为 production compatibility / rollback / hotfix 边界恢复。
+- 禁止恢复 `production_compat`。
+- 禁止任何绕过 import guard 的动态 legacy import。
 
 ## G. Retired Legacy Runtime
 
