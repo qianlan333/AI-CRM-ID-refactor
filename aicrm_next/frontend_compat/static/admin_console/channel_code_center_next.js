@@ -177,7 +177,6 @@
         </td>
         <td>${escapeHtml(channel.channel_contact_count || 0)}</td>
         <td>${bound}</td>
-        <td>${escapeHtml(channel.latest_channel_entered_at || "-")}</td>
         <td>
           <div class="channel-row-actions">
             ${action}
@@ -196,10 +195,10 @@
       }
       const channels = Array.isArray(data.channels) ? data.channels : [];
       updateMetrics(channels);
-      list.innerHTML = channels.length ? channels.map(renderRow).join("") : '<tr><td colspan="8">暂无渠道。</td></tr>';
+      list.innerHTML = channels.length ? channels.map(renderRow).join("") : '<tr><td colspan="7">暂无渠道。</td></tr>';
     })
     .catch(() => {
-      list.innerHTML = '<tr><td colspan="8">渠道加载失败，请稍后重试。</td></tr>';
+      list.innerHTML = '<tr><td colspan="7">渠道加载失败，请稍后重试。</td></tr>';
     });
 
   search?.addEventListener("input", () => {
@@ -258,8 +257,8 @@
       const contacts = (contactsResult.data || {}).contacts || [];
       const bindings = (bindingsResult.data || {}).bindings || [];
       const contactRows = contacts.length
-        ? contacts.map((item) => `<tr><td>${escapeHtml(item.display_name || item.name || item.external_contact_id || "-")}</td><td>${escapeHtml(item.enter_count || 0)}</td><td>${escapeHtml(item.last_channel_entered_at || "-")}</td></tr>`).join("")
-        : '<tr><td colspan="3">暂无渠道用户。</td></tr>';
+        ? contacts.map((item) => `<tr><td>${escapeHtml(item.display_name || item.name || item.external_contact_id || "-")}</td><td>${escapeHtml(item.enter_count || 0)}</td></tr>`).join("")
+        : '<tr><td colspan="2">暂无渠道用户。</td></tr>';
       const bindingText = bindings.length
         ? bindings.map((item) => `${escapeHtml(item.program_name || item.program_id || "-")} / ${escapeHtml(statusLabel(item.binding_status))}`).join("<br>")
         : "独立使用";
@@ -267,7 +266,7 @@
         <p><strong>${escapeHtml(row.querySelector("strong")?.textContent || "")}</strong></p>
         <p class="channel-muted">当前绑定自动化运营状态：${bindingText}</p>
         <h3>渠道用户列表</h3>
-        <table class="admin-table channel-table"><thead><tr><th>客户</th><th>进入次数</th><th>最近进入</th></tr></thead><tbody>${contactRows}</tbody></table>`;
+        <table class="admin-table channel-table"><thead><tr><th>客户</th><th>进入次数</th></tr></thead><tbody>${contactRows}</tbody></table>`;
     });
   });
 
