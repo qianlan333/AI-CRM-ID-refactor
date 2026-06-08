@@ -42,6 +42,7 @@ def _normalise_trigger_result(event: AudienceTransitionEvent, result: dict[str, 
             "realtime_operation_tasks_results": results,
             "realtime_operation_tasks_error": "" if result.get("ok", True) else str(result.get("error") or result.get("reason") or ""),
             "realtime_operation_tasks_reason": str(result.get("reason") or ""),
+            "side_effect_plan": dict(result.get("side_effect_plan") or {}),
         }
     )
     return payload

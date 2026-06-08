@@ -148,6 +148,9 @@ def test_next_program_admission_triggers_audience_entered_operation_task(app):
         assert result["realtime_operation_tasks_ran"] == 1
         assert result["realtime_operation_tasks_enqueued_count"] == 1
         assert result["realtime_operation_tasks_results"][0]["execution_id"] == f"actask-event-{task['id']}-{result['audience_entry_id']}"
+        assert result["realtime_task_hook"]["side_effect_plan"]["planned"] is True
+        assert result["realtime_task_hook"]["side_effect_plan"]["real_external_call_executed"] is False
+        assert result["external_push_plan"]["real_external_call_executed"] is False
         assert _execution_count(task["id"], result["audience_entry_id"]) == 1
         assert _job_count(task["id"], result["audience_entry_id"]) == 1
 
@@ -603,6 +606,36 @@ def test_next_program_admission_realtime_hook_does_not_trigger_inactive_task(app
         assert result["realtime_task_hook"]["ok"] is True
         assert result["realtime_operation_tasks_ran"] == 0
         assert result["realtime_operation_tasks_enqueued_count"] == 0
+        assert table_count("automation_operation_task_execution", "task_id = ?", (int(task["id"]),)) == 0
+        assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 0
+
+
+def test_next_program_admission_rejects_closed_program_without_realtime_side_effects(app):
+    with app.app_context():
+        program_id = create_program("next_rt_closed_program_guard", status="archived")
+        channel = create_channel("next_rt_closed_program_guard_channel", program_id=program_id)
+        binding_id = _bind(program_id, int(channel["id"]))
+        save_audience_entry_rule(program_id, disabled_entry_rule())
+        task = _create_audience_entered_task(program_id, name="Closed program must not run")
+
+        result = admit_channel_contact_to_program(
+            program_id,
+            int(channel["id"]),
+            binding_id,
+            "wm_next_rt_closed_program",
+            trigger_time=T1,
+        )
+
+        assert result["admission_status"] == "rejected"
+        assert result["accepted"] is False
+        assert result["reason"] == "program_archived"
+        assert result["source_status"] == "next_command"
+        assert result["fallback_used"] is False
+        assert result["real_external_call_executed"] is False
+        assert result["audit"]["entry_reason"] == "program_archived"
+        assert result["external_push_plan"]["planned"] is False
+        assert result["external_push_plan"]["real_external_call_executed"] is False
+        assert table_count("automation_program_member", "program_id = ?", (program_id,)) == 0
         assert table_count("automation_operation_task_execution", "task_id = ?", (int(task["id"]),)) == 0
         assert table_count("broadcast_jobs", "source_type = 'operation_task'") == 0
 
