@@ -310,7 +310,7 @@ def test_overview_and_pool_apis_are_next_read_model_without_legacy_facade(monkey
     assert {item["pool_key"]: item["count"] for item in pools.json()["pools"]}["pending_questionnaire"] == 1
 
 
-def test_automation_conversion_page_renders_cards_and_refresh_urls_from_next_api(
+def test_automation_conversion_page_renders_next_native_program_list_without_legacy_facade(
     monkeypatch: pytest.MonkeyPatch, automation_engine
 ) -> None:
     monkeypatch.setenv("AICRM_NEXT_FORCE_PRODUCTION_DATA", "true")
@@ -330,16 +330,10 @@ def test_automation_conversion_page_renders_cards_and_refresh_urls_from_next_api
     html = response.text
 
     assert response.status_code == 200
-    assert 'data-overview-api-url="/api/admin/automation-conversion/overview"' in html
-    assert 'data-pools-api-url="/api/admin/automation-conversion/pools"' in html
-    assert "池子统计" in html
-    assert "运营中人群" in html
-    assert "focus" in html
-    assert "normal" in html
-    assert "今日新增" in html
-    assert 'data-automation-overview-card="operating_total"' in html
-    assert 'data-automation-pool-card="operating"' in html
-    assert "消息活跃状态" in html
+    assert response.headers.get("X-AICRM-Compatibility-Facade") is None
+    assert "客户管理后台" in html
+    assert "方案列表" in html
+    assert "每个方案人数按 automation_program_member 的 program_id 独立统计。" in html
     assert "X-AICRM-Compatibility-Facade" not in html
 
 

@@ -66,5 +66,7 @@ def test_workspace_runtime_exact_routes_are_now_separately_locked():
         assert record["replacement_status"] == "locked"
 
     broad_tasks = manifest_records["/api/admin/automation-conversion/tasks*"]
-    assert broad_tasks["current_runtime_owner"] == "production_compat"
-    assert broad_tasks["legacy_fallback_allowed"] is True
+    assert broad_tasks["current_runtime_owner"] == "next"
+    assert broad_tasks["production_behavior"] == "archived_no_runtime"
+    assert broad_tasks["legacy_fallback_allowed"] is False
+    assert "no production_compat fallback is restored" in str(broad_tasks.get("notes") or "")
