@@ -3,16 +3,16 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
 from fastapi.responses import JSONResponse
 
-from aicrm_next.integration_gateway.legacy_flask_facade import _legacy_app
+from .external_campaigns_repo import ExternalCampaignRepository
+from .external_campaigns_repo import build_external_campaign_repository
 
 JsonDict = dict[str, Any]
-_TABLE_COLUMNS_CACHE: dict[str, set[str]] = {}
 
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 _TOKEN_KEYS = ("AICRM_EXTERNAL_CAMPAIGN_TOKEN", "AUTOMATION_INTERNAL_API_TOKEN")
@@ -293,94 +293,20 @@ def _normalize_recipients(payload: JsonDict) -> list[JsonDict]:
     return cleaned
 
 
-def _row_dict(row: Any) -> JsonDict:
-    return dict(row) if row else {}
+def _build_repo(repo: ExternalCampaignRepository | None) -> ExternalCampaignRepository:
+    return repo or build_external_campaign_repository()
 
 
-def _table_columns(table_name: str) -> set[str]:
-    if table_name in _TABLE_COLUMNS_CACHE:
-        return _TABLE_COLUMNS_CACHE[table_name]
-    from wecom_ability_service.db import get_db
-
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
-            (table_name,),
-        )
-        rows = cur.fetchall() or []
-        columns = {_text(row["column_name"]) for row in rows if _text(row["column_name"])}
-        if columns:
-            _TABLE_COLUMNS_CACHE[table_name] = columns
-            return columns
-    except Exception:
-        db.rollback()
-    try:
-        cur.execute(f"PRAGMA table_info({table_name})")
-        columns = {_text(row["name"]) for row in cur.fetchall() or [] if _text(row["name"])}
-        _TABLE_COLUMNS_CACHE[table_name] = columns
-        return columns
-    except Exception:
-        db.rollback()
-    return set()
-
-
-def _fetch_user_ops_pool_current_row(cur: Any, external_userid: str) -> JsonDict:
-    cur.execute(
-        """
-        SELECT *
-        FROM user_ops_pool_current
-        WHERE external_userid = ?
-        LIMIT 1
-        """,
-        (external_userid,),
-    )
-    return _row_dict(cur.fetchone())
-
-
-def _fetch_automation_member_row(cur: Any, external_userid: str) -> JsonDict:
-    cur.execute(
-        """
-        SELECT id, external_contact_id, owner_staff_id
-        FROM automation_member
-        WHERE external_contact_id = ?
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 1
-        """,
-        (external_userid,),
-    )
-    return _row_dict(cur.fetchone())
-
-
-def _fetch_contact_row(cur: Any, external_userid: str) -> JsonDict:
-    cur.execute(
-        """
-        SELECT external_userid, owner_userid, customer_name, remark
-        FROM contacts
-        WHERE external_userid = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (external_userid,),
-    )
-    return _row_dict(cur.fetchone())
-
-
-def _lookup_target(*, external_userid: str, owner_userid: str, strict_owner_match: bool) -> JsonDict:
-    from wecom_ability_service.db import get_db
-
-    db = get_db()
-    cur = db.cursor()
-    pool_current = _fetch_user_ops_pool_current_row(cur, external_userid)
-    member = _fetch_automation_member_row(cur, external_userid)
-    contact: JsonDict = {}
-    try:
-        contact = _fetch_contact_row(cur, external_userid)
-    except Exception:
-        db.rollback()
-        contact = {}
-
+def _lookup_target(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    strict_owner_match: bool,
+    repo: ExternalCampaignRepository,
+) -> JsonDict:
+    pool_current = repo.fetch_user_ops_pool_current_row(external_userid)
+    member = repo.fetch_automation_member_row(external_userid)
+    contact = repo.fetch_contact_row(external_userid)
     contact_owner = _text(contact.get("owner_userid"))
     if strict_owner_match and contact_owner and contact_owner != owner_userid:
         raise ExternalCampaignError(
@@ -409,98 +335,6 @@ def _lookup_target(*, external_userid: str, owner_userid: str, strict_owner_matc
     }
 
 
-def _backfill_source_for_external_userid(cur: Any, external_userid: str) -> JsonDict:
-    contact: JsonDict = {}
-    pool_current: JsonDict = {}
-    try:
-        contact = _fetch_contact_row(cur, external_userid)
-    except Exception:
-        from wecom_ability_service.db import get_db
-
-        get_db().rollback()
-        contact = {}
-    try:
-        pool_current = _fetch_user_ops_pool_current_row(cur, external_userid)
-    except Exception:
-        from wecom_ability_service.db import get_db
-
-        get_db().rollback()
-        pool_current = {}
-    if not contact and not pool_current:
-        from wecom_ability_service.domains.automation_conversion import automation_member_backfill_service
-
-        candidate = automation_member_backfill_service.get_sidebar_binding_campaign_candidate(external_userid)
-        if candidate is None:
-            return {}
-        return {
-            "source": "sidebar_binding",
-            "external_userid": external_userid,
-            "owner_userid": candidate.owner_staff_id,
-            "customer_name": candidate.customer_name,
-            "mobile": candidate.phone,
-            "contact": {},
-            "pool_current": {},
-        }
-    source = "contacts" if contact else "user_ops_pool_current"
-    owner = _text((contact if contact else pool_current).get("owner_userid"))
-    if not owner:
-        owner = _text(pool_current.get("owner_userid"))
-    return {
-        "source": source,
-        "external_userid": external_userid,
-        "owner_userid": owner,
-        "customer_name": _text(contact.get("customer_name")) or _text(pool_current.get("customer_name")),
-        "remark": _text(contact.get("remark")),
-        "mobile": _text(pool_current.get("mobile")),
-        "contact": contact,
-        "pool_current": pool_current,
-    }
-
-
-def _insert_automation_member_from_backfill_source(
-    cur: Any,
-    *,
-    external_userid: str,
-    owner_userid: str,
-    source: JsonDict,
-) -> None:
-    columns = _table_columns("automation_member")
-    values: JsonDict = {
-        "external_contact_id": external_userid,
-        "phone": _text(source.get("mobile")),
-        "owner_staff_id": owner_userid,
-        "in_pool": True,
-        "current_pool": "operating",
-        "current_audience_code": "operating",
-        "source_type": "external_campaign_backfill",
-        "joined_at": "CURRENT_TIMESTAMP_TEXT",
-        "created_at": "CURRENT_TIMESTAMP",
-        "updated_at": "CURRENT_TIMESTAMP",
-    }
-    insert_columns = [column for column in values if column in columns or not columns]
-    if "external_contact_id" not in insert_columns:
-        raise RuntimeError("automation_member.external_contact_id column is required")
-
-    placeholders = []
-    params: list[Any] = []
-    for column in insert_columns:
-        value = values[column]
-        if value == "CURRENT_TIMESTAMP":
-            placeholders.append("CURRENT_TIMESTAMP")
-        elif value == "CURRENT_TIMESTAMP_TEXT":
-            placeholders.append("CAST(CURRENT_TIMESTAMP AS TEXT)")
-        else:
-            placeholders.append("?")
-            params.append(value)
-    cur.execute(
-        f"""
-        INSERT INTO automation_member ({", ".join(insert_columns)})
-        VALUES ({", ".join(placeholders)})
-        """,
-        tuple(params),
-    )
-
-
 def backfill_automation_members_for_external_campaign(
     *,
     owner_userid: str,
@@ -508,9 +342,10 @@ def backfill_automation_members_for_external_campaign(
     operator: str = "",
     dry_run: bool = True,
     allow_owner_mismatch: bool = False,
+    repo: ExternalCampaignRepository | None = None,
 ) -> JsonDict:
-    from wecom_ability_service.db import get_db
-
+    owns_repo = repo is None
+    repository = _build_repo(repo)
     normalized_owner = _text(owner_userid)
     seen: set[str] = set()
     targets = []
@@ -519,81 +354,20 @@ def backfill_automation_members_for_external_campaign(
         if normalized and normalized not in seen:
             seen.add(normalized)
             targets.append(normalized)
-
-    db = get_db()
-    cur = db.cursor()
-    results: list[JsonDict] = []
-    for external_userid in targets:
-        existing = _fetch_automation_member_row(cur, external_userid)
-        if existing:
-            results.append(
-                {
-                    "external_userid": external_userid,
-                    "status": "exists",
-                    "source": "automation_member",
-                    "automation_member_id": int(existing.get("id") or 0),
-                    "owner_userid": _text(existing.get("owner_staff_id")),
-                }
-            )
-            continue
-
-        source = _backfill_source_for_external_userid(cur, external_userid)
-        if not source:
-            results.append(
-                {
-                    "external_userid": external_userid,
-                    "status": "unresolved",
-                    "source": "",
-                    "owner_userid": "",
-                }
-            )
-            continue
-
-        source_owner = _text(source.get("owner_userid"))
-        if source_owner and normalized_owner and source_owner != normalized_owner and not allow_owner_mismatch:
-            results.append(
-                {
-                    "external_userid": external_userid,
-                    "status": "owner_mismatch",
-                    "source": _text(source.get("source")),
-                    "owner_userid": source_owner,
-                    "requested_owner_userid": normalized_owner,
-                    "customer_name": _text(source.get("customer_name")),
-                }
-            )
-            continue
-
-        result = {
-            "external_userid": external_userid,
-            "status": "would_insert" if dry_run else "inserted",
-            "source": _text(source.get("source")),
-            "owner_userid": source_owner or normalized_owner,
-            "requested_owner_userid": normalized_owner,
-            "customer_name": _text(source.get("customer_name")),
-            "operator": _text(operator),
-            "target": source,
-        }
-        if not dry_run:
-            if _text(source.get("source")) == "sidebar_binding":
-                from wecom_ability_service.domains.automation_conversion import automation_member_backfill_service
-
-                automation_member_backfill_service.ensure_campaign_member_from_sidebar_binding(
-                    external_userid,
-                    dry_run=False,
-                    commit=False,
-                )
-            else:
-                _insert_automation_member_from_backfill_source(
-                    cur,
-                    external_userid=external_userid,
-                    owner_userid=source_owner or normalized_owner,
-                    source=source,
-                )
-        results.append(result)
+    results = [
+        repository.ensure_automation_member_for_external_campaign(
+            external_userid=external_userid,
+            owner_userid=normalized_owner,
+            operator=operator,
+            dry_run=dry_run,
+            allow_owner_mismatch=allow_owner_mismatch,
+        )
+        for external_userid in targets
+    ]
     if dry_run:
-        db.rollback()
-    else:
-        db.commit()
+        repository.rollback()
+    elif owns_repo:
+        repository.commit()
     status_counts = {status: sum(1 for item in results if item["status"] == status) for status in sorted({item["status"] for item in results})}
     return {
         "ok": True,
@@ -611,54 +385,57 @@ def backfill_automation_members_for_external_campaign(
     }
 
 
-def _existing_campaign_response(campaign_code: str) -> JsonDict | None:
-    from wecom_ability_service.domains.campaigns import scheduler as campaign_scheduler
-    from wecom_ability_service.domains.campaigns import service as campaign_service
-
-    existing = campaign_service.get_campaign(campaign_code=campaign_code)
+def _existing_campaign_response(campaign_code: str, *, repo: ExternalCampaignRepository) -> JsonDict | None:
+    existing = repo.get_campaign_by_code(campaign_code)
     if not existing:
         return None
-    scheduled_jobs = _count_open_campaign_jobs(campaign_id=int(existing["id"]))
-    if _text(existing.get("run_status")) == "active":
-        campaign_scheduler.ensure_campaign_scheduled_jobs(campaign_id=int(existing["id"]))
-        scheduled_jobs = _count_open_campaign_jobs(campaign_id=int(existing["id"]))
     return {
         "campaign_code": campaign_code,
         "campaign_id": int(existing["id"]),
         "status": "exists",
         "review_status": _text(existing.get("review_status")),
         "run_status": _text(existing.get("run_status")),
-        "scheduled_jobs": scheduled_jobs,
+        "scheduled_jobs": repo.count_open_campaign_jobs(campaign_id=int(existing["id"])),
     }
 
 
-def _count_open_campaign_jobs(*, campaign_id: int) -> int:
-    from wecom_ability_service.db import get_db
-
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT COUNT(*) AS job_count
-        FROM broadcast_jobs
-        WHERE source_type = 'campaign'
-          AND source_id LIKE ?
-          AND status IN ('waiting_approval', 'queued', 'claimed')
-        """,
-        (f"{int(campaign_id)}:%",),
-    )
-    row = cur.fetchone()
-    return int(row["job_count"] or 0) if row else 0
-
-
-def _cleanup_campaign_after_failed_create(*, campaign_id: int) -> JsonDict:
-    from wecom_ability_service.domains.campaigns import service as campaign_service
-
+def _cleanup_campaign_after_failed_create(*, campaign_id: int, repo: ExternalCampaignRepository) -> JsonDict:
     try:
-        result = campaign_service.delete_campaign(campaign_id=int(campaign_id))
+        result = repo.delete_campaign(campaign_id=int(campaign_id))
+        repo.commit()
         return {"cleanup_ok": True, "cleanup_result": result}
-    except Exception as exc:  # pragma: no cover - defensive cleanup path
+    except Exception as exc:
+        try:
+            repo.rollback()
+        except Exception:
+            pass
         return {"cleanup_ok": False, "cleanup_error": str(exc)}
+
+
+def _campaign_identity(
+    *,
+    payload: JsonDict,
+    recipient: JsonDict,
+    owner_userid: str,
+    group_code: str,
+    timezone_name: str,
+) -> tuple[list[JsonDict], datetime, str, str, str]:
+    external_userid = _text(recipient["external_userid"])
+    steps = _normalize_step_list(
+        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
+        payload,
+        recipient,
+        timezone_name=timezone_name,
+    )
+    first_dt = _parse_local_datetime(steps[0]["scheduled_for"], default_timezone=timezone_name)
+    anchor_date = first_dt.date().isoformat()
+    fingerprint = _hash_payload(payload.get("idempotency_key"), group_code, owner_userid, external_userid, anchor_date, steps)
+    campaign_code = _text(recipient.get("campaign_code")) or _text(payload.get("campaign_code"))
+    if campaign_code and len(_normalize_recipients(payload)) > 1:
+        campaign_code = f"{campaign_code}_{fingerprint[:8]}"
+    campaign_code = campaign_code or f"camp_ext_{fingerprint}"
+    trace_id = _text(payload.get("trace_id")) or f"ext-campaign-{fingerprint}"
+    return steps, first_dt, campaign_code, trace_id, fingerprint
 
 
 def _create_single_recipient_campaign(
@@ -671,114 +448,85 @@ def _create_single_recipient_campaign(
     group_label: str,
     timezone_name: str,
     strict_owner_match: bool,
+    repo: ExternalCampaignRepository,
 ) -> JsonDict:
-    from wecom_ability_service.domains.campaigns import service as campaign_service
-    from wecom_ability_service.domains.segments import service as segment_service
-
     external_userid = _text(recipient["external_userid"])
-    steps = _normalize_step_list(
-        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
-        payload,
-        recipient,
+    steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
+        payload=payload,
+        recipient=recipient,
+        owner_userid=owner_userid,
+        group_code=group_code,
         timezone_name=timezone_name,
     )
-    first_dt = _parse_local_datetime(steps[0]["scheduled_for"], default_timezone=timezone_name)
-    anchor_date = first_dt.date().isoformat()
-    fingerprint = _hash_payload(
-        payload.get("idempotency_key"),
-        group_code,
-        owner_userid,
-        external_userid,
-        anchor_date,
-        steps,
-    )
-    campaign_code = _text(recipient.get("campaign_code")) or _text(payload.get("campaign_code"))
-    if campaign_code and len(_normalize_recipients(payload)) > 1:
-        campaign_code = f"{campaign_code}_{fingerprint[:8]}"
-    campaign_code = campaign_code or f"camp_ext_{fingerprint}"
-    trace_id = _text(payload.get("trace_id")) or f"ext-campaign-{fingerprint}"
-    existing = _existing_campaign_response(campaign_code)
+    existing = _existing_campaign_response(campaign_code, repo=repo)
     if existing:
         existing["external_userid"] = external_userid
         return existing
-
     try:
         target = _lookup_target(
             external_userid=external_userid,
             owner_userid=owner_userid,
             strict_owner_match=strict_owner_match,
+            repo=repo,
         )
     except ExternalCampaignError as exc:
         raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
+
+    anchor_date = first_dt.date().isoformat()
     segment_code = f"seg_ext_{fingerprint}"
-    segment = segment_service.get_segment(segment_code=segment_code)
-    if not segment:
-        segment = segment_service.create_segment(
+    campaign_id = 0
+    try:
+        segment = repo.create_or_update_external_segment(
             segment_code=segment_code,
             display_name=f"{group_label} · {external_userid}",
-            description="External token protected one-recipient campaign segment.",
-            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
-            sql_params={"external_userid": external_userid},
-            source_type="external_campaign",
-            tags=("external_campaign", owner_userid),
-            operator=operator,
-            session_id=_text(payload.get("session_id")),
-            activate=True,
-        )
-    elif _text(segment.get("source_type")) == "external_campaign":
-        segment = segment_service.update_segment(
-            segment_code=segment_code,
-            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
-            sql_params={"external_userid": external_userid},
-            operator=operator,
-        )
-    if int(segment.get("cached_headcount") or 0) != 1:
-        raise ExternalCampaignError(
-            "target_headcount_invalid",
-            status_code=409,
-            message=f"target_headcount_invalid:{external_userid}:{segment.get('cached_headcount')}",
-            phase="target_lookup",
             external_userid=external_userid,
             owner_userid=owner_userid,
-            group_code=group_code,
-            campaign_code=campaign_code,
-            trace_id=trace_id,
+            sql_query=_ONE_RECIPIENT_SEGMENT_SQL,
+            sql_params={"external_userid": external_userid},
+            operator=operator,
+            session_id=_text(payload.get("session_id")),
         )
-
-    display_name = (
-        _text(recipient.get("display_name"))
-        or f"{group_label} · {external_userid} · {anchor_date}"
-    )
-    campaign = campaign_service.create_campaign_draft(
-        campaign_code=campaign_code,
-        display_name=display_name,
-        intent=_text(payload.get("intent")) or group_label,
-        anchor_mode="campaign_start_date",
-        anchor_date=anchor_date,
-        owner_userid=owner_userid,
-        operator=operator,
-        session_id=_text(payload.get("session_id")),
-        trace_id=trace_id,
-        metadata={
-            "source": "external_token_api",
-            "group_code": group_code,
-            "group_label": group_label,
-            "external_userid": external_userid,
-            "owner_userid": owner_userid,
-            "idempotency_key": _text(payload.get("idempotency_key")),
-            "contact": target.get("contact") or {},
-        },
-    )
-    campaign_id = int(campaign["id"])
-    try:
-        campaign_segment = campaign_service.add_segment_to_campaign(
+        if int(segment.get("cached_headcount") or 0) != 1:
+            raise ExternalCampaignError(
+                "target_headcount_invalid",
+                status_code=409,
+                message=f"target_headcount_invalid:{external_userid}:{segment.get('cached_headcount')}",
+                phase="target_lookup",
+                external_userid=external_userid,
+                owner_userid=owner_userid,
+                group_code=group_code,
+                campaign_code=campaign_code,
+                trace_id=trace_id,
+            )
+        display_name = _text(recipient.get("display_name")) or f"{group_label} · {external_userid} · {anchor_date}"
+        campaign = repo.create_campaign_draft(
+            campaign_code=campaign_code,
+            display_name=display_name,
+            intent=_text(payload.get("intent")) or group_label,
+            anchor_date=anchor_date,
+            owner_userid=owner_userid,
+            operator=operator,
+            session_id=_text(payload.get("session_id")),
+            trace_id=trace_id,
+            metadata={
+                "source": "external_token_api",
+                "group_code": group_code,
+                "group_label": group_label,
+                "external_userid": external_userid,
+                "owner_userid": owner_userid,
+                "idempotency_key": _text(payload.get("idempotency_key")),
+                "contact": target.get("contact") or {},
+            },
+        )
+        campaign_id = int(campaign["id"])
+        campaign_segment = repo.add_segment_to_campaign(
             campaign_id=campaign_id,
             segment_code=segment_code,
             priority=int(payload.get("priority") or 100),
             label=_text(recipient.get("label")) or external_userid,
         )
         for step in steps:
-            campaign_service.add_step_to_campaign(
+            repo.add_step_to_campaign(
                 campaign_id=campaign_id,
                 campaign_segment_id=int(campaign_segment["id"]),
                 step_index=int(step["step_index"]),
@@ -786,14 +534,15 @@ def _create_single_recipient_campaign(
                 content_text=_text(step["content_text"]),
                 content_payload=step["content_payload"],
                 send_time=_text(step["send_time"]),
-                timezone=_text(step["timezone"]) or timezone_name,
+                timezone_name=_text(step["timezone"]) or timezone_name,
                 stop_on_reply=bool(step["stop_on_reply"]),
                 skip_if_recently_touched_days=int(step["skip_if_recently_touched_days"]),
                 agent_run_id=_text(payload.get("agent_run_id")),
             )
-        allocation = campaign_service.allocate_campaign_members(campaign_id=campaign_id)
+        allocation = repo.allocate_campaign_members(campaign_id=campaign_id)
         if int(allocation.get("allocated") or 0) != 1:
-            cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id)
+            repo.rollback()
+            cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id, repo=repo)
             raise ExternalCampaignError(
                 "campaign_member_allocation_failed",
                 status_code=409,
@@ -807,17 +556,15 @@ def _create_single_recipient_campaign(
                 group_code=group_code,
                 campaign_code=campaign_code,
                 trace_id=trace_id,
-                details={
-                    "allocation": allocation,
-                    "allocation_errors": allocation.get("errors") or [],
-                    **cleanup,
-                },
+                details={"allocation": allocation, "allocation_errors": allocation.get("errors") or [], **cleanup},
             )
-        submitted = campaign_service.submit_campaign_for_review(campaign_id=campaign_id, operator=operator)
+        submitted = repo.submit_campaign_for_review(campaign_id=campaign_id, operator=operator)
+        repo.commit()
     except ExternalCampaignError:
         raise
     except Exception as exc:
-        cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id)
+        repo.rollback()
+        cleanup = _cleanup_campaign_after_failed_create(campaign_id=campaign_id, repo=repo) if campaign_id else {}
         raise ExternalCampaignError(
             "campaign_create_failed",
             status_code=500,
@@ -830,7 +577,7 @@ def _create_single_recipient_campaign(
             trace_id=trace_id,
             details=cleanup,
         ) from exc
-    scheduled_jobs = _count_open_campaign_jobs(campaign_id=int(submitted["id"]))
+
     return {
         "campaign_code": campaign_code,
         "campaign_id": int(submitted["id"]),
@@ -842,7 +589,7 @@ def _create_single_recipient_campaign(
         "anchor_date": anchor_date,
         "first_scheduled_for": first_dt.isoformat(),
         "step_count": len(steps),
-        "scheduled_jobs": scheduled_jobs,
+        "scheduled_jobs": repo.count_open_campaign_jobs(campaign_id=int(submitted["id"])),
         "requires_human_review": True,
     }
 
@@ -856,35 +603,23 @@ def _preview_single_recipient_campaign(
     group_label: str,
     timezone_name: str,
     strict_owner_match: bool,
+    repo: ExternalCampaignRepository,
     target_override: JsonDict | None = None,
 ) -> JsonDict:
     external_userid = _text(recipient["external_userid"])
-    steps = _normalize_step_list(
-        recipient.get("steps") if isinstance(recipient.get("steps"), list) else payload.get("steps"),
-        payload,
-        recipient,
+    steps, first_dt, campaign_code, trace_id, fingerprint = _campaign_identity(
+        payload=payload,
+        recipient=recipient,
+        owner_userid=owner_userid,
+        group_code=group_code,
         timezone_name=timezone_name,
     )
-    first_dt = _parse_local_datetime(steps[0]["scheduled_for"], default_timezone=timezone_name)
-    anchor_date = first_dt.date().isoformat()
-    fingerprint = _hash_payload(
-        payload.get("idempotency_key"),
-        group_code,
-        owner_userid,
-        external_userid,
-        anchor_date,
-        steps,
-    )
-    campaign_code = _text(recipient.get("campaign_code")) or _text(payload.get("campaign_code"))
-    if campaign_code and len(_normalize_recipients(payload)) > 1:
-        campaign_code = f"{campaign_code}_{fingerprint[:8]}"
-    campaign_code = campaign_code or f"camp_ext_{fingerprint}"
-    trace_id = _text(payload.get("trace_id")) or f"ext-campaign-{fingerprint}"
     try:
         target = target_override or _lookup_target(
             external_userid=external_userid,
             owner_userid=owner_userid,
             strict_owner_match=strict_owner_match,
+            repo=repo,
         )
     except ExternalCampaignError as exc:
         raise exc.add_context(group_code=group_code, campaign_code=campaign_code, trace_id=trace_id) from exc
@@ -892,7 +627,7 @@ def _preview_single_recipient_campaign(
         "campaign_code": campaign_code,
         "external_userid": external_userid,
         "segment_code": f"seg_ext_{fingerprint}",
-        "anchor_date": anchor_date,
+        "anchor_date": first_dt.date().isoformat(),
         "first_scheduled_for": first_dt.isoformat(),
         "step_count": len(steps),
         "steps": [
@@ -907,7 +642,7 @@ def _preview_single_recipient_campaign(
         "contact": target.get("contact") or {},
         "target_source": _text(target.get("source")),
         "automation_member_backfill": target.get("automation_member_backfill") or {},
-        "would_create": _existing_campaign_response(campaign_code) is None,
+        "would_create": _existing_campaign_response(campaign_code, repo=repo) is None,
     }
 
 
@@ -922,6 +657,7 @@ def _auto_backfill_for_recipients(
     operator: str,
     dry_run: bool,
     allow_owner_mismatch: bool,
+    repo: ExternalCampaignRepository,
 ) -> tuple[list[JsonDict], JsonDict, dict[str, JsonDict]]:
     external_userids = [_text(recipient.get("external_userid")) for recipient in recipients]
     backfill = backfill_automation_members_for_external_campaign(
@@ -930,6 +666,7 @@ def _auto_backfill_for_recipients(
         operator=operator,
         dry_run=dry_run,
         allow_owner_mismatch=allow_owner_mismatch,
+        repo=repo,
     )
     by_external = {_text(item.get("external_userid")): item for item in backfill.get("results") or []}
     allowed_statuses = {"exists", "would_insert"} if dry_run else {"exists", "inserted"}
@@ -955,11 +692,7 @@ def _auto_backfill_for_recipients(
         else:
             skipped.append(_public_backfill_result(result))
     public_results = [_public_backfill_result(item) for item in backfill.get("results") or []]
-    backfill_summary = {
-        key: value
-        for key, value in backfill.items()
-        if key not in {"results"}
-    }
+    backfill_summary = {key: value for key, value in backfill.items() if key not in {"results"}}
     backfill_summary["results"] = public_results
     backfill_summary["resolved_count"] = len(resolved_recipients)
     backfill_summary["skipped_count"] = len(skipped)
@@ -973,9 +706,10 @@ def _auto_backfill_for_recipients(
     }, target_overrides
 
 
-def create_external_campaigns(payload: JsonDict) -> JsonDict:
+def create_external_campaigns(payload: JsonDict, repo: ExternalCampaignRepository | None = None) -> JsonDict:
     if not isinstance(payload, dict):
         raise ExternalCampaignError("json object body is required")
+    repository = _build_repo(repo)
     owner_userid = _text(payload.get("owner_userid") or payload.get("sender"))
     if not owner_userid:
         raise ExternalCampaignError("owner_userid/sender is required")
@@ -988,59 +722,63 @@ def create_external_campaigns(payload: JsonDict) -> JsonDict:
     dry_run = _truthy(payload.get("dry_run")) or _truthy(payload.get("preview"))
     auto_backfill = _truthy(payload.get("auto_backfill_automation_member"))
 
+    backfill_response: JsonDict = {}
+    target_overrides: dict[str, JsonDict] = {}
+    effective_recipients = recipients
+    if auto_backfill:
+        effective_recipients, backfill_response, target_overrides = _auto_backfill_for_recipients(
+            recipients=recipients,
+            owner_userid=owner_userid,
+            operator=operator,
+            dry_run=dry_run,
+            allow_owner_mismatch=not strict_owner_match,
+            repo=repository,
+        )
+    if dry_run:
+        previews = [
+            _preview_single_recipient_campaign(
+                payload=payload,
+                recipient=recipient,
+                owner_userid=owner_userid,
+                group_code=group_code,
+                group_label=group_label,
+                timezone_name=timezone_name,
+                strict_owner_match=strict_owner_match,
+                repo=repository,
+                target_override=target_overrides.get(_text(recipient.get("external_userid"))),
+            )
+            for recipient in effective_recipients
+        ]
+        repository.rollback()
+        return {
+            "ok": True,
+            "dry_run": True,
+            "side_effect_executed": False,
+            "route_owner": "ai_crm_next",
+            "source": "external_token_api",
+            "group_code": group_code,
+            "group_label": group_label,
+            "owner_userid": owner_userid,
+            "recipient_count": len(previews),
+            "campaigns": previews,
+            **backfill_response,
+        }
+
     created: list[JsonDict] = []
-    with _legacy_app().app_context():
-        backfill_response: JsonDict = {}
-        target_overrides: dict[str, JsonDict] = {}
-        effective_recipients = recipients
-        if auto_backfill:
-            effective_recipients, backfill_response, target_overrides = _auto_backfill_for_recipients(
-                recipients=recipients,
+    for recipient in effective_recipients:
+        created.append(
+            _create_single_recipient_campaign(
+                payload=payload,
+                recipient=recipient,
                 owner_userid=owner_userid,
                 operator=operator,
-                dry_run=dry_run,
-                allow_owner_mismatch=not strict_owner_match,
+                group_code=group_code,
+                group_label=group_label,
+                timezone_name=timezone_name,
+                strict_owner_match=strict_owner_match,
+                repo=repository,
             )
-        if dry_run:
-            previews = [
-                _preview_single_recipient_campaign(
-                    payload=payload,
-                    recipient=recipient,
-                    owner_userid=owner_userid,
-                    group_code=group_code,
-                    group_label=group_label,
-                    timezone_name=timezone_name,
-                    strict_owner_match=strict_owner_match,
-                    target_override=target_overrides.get(_text(recipient.get("external_userid"))),
-                )
-                for recipient in effective_recipients
-            ]
-            return {
-                "ok": True,
-                "dry_run": True,
-                "side_effect_executed": False,
-                "route_owner": "ai_crm_next",
-                "source": "external_token_api",
-                "group_code": group_code,
-                "group_label": group_label,
-                "owner_userid": owner_userid,
-                "recipient_count": len(previews),
-                "campaigns": previews,
-                **backfill_response,
-            }
-        for recipient in effective_recipients:
-            created.append(
-                _create_single_recipient_campaign(
-                    payload=payload,
-                    recipient=recipient,
-                    owner_userid=owner_userid,
-                    operator=operator,
-                    group_code=group_code,
-                    group_label=group_label,
-                    timezone_name=timezone_name,
-                    strict_owner_match=strict_owner_match,
-                )
-            )
+        )
     return {
         "ok": True,
         "route_owner": "ai_crm_next",
@@ -1059,10 +797,7 @@ def create_external_campaigns_response(payload: JsonDict, headers: Mapping[str, 
     failure = _auth_failure(headers)
     if failure is not None:
         error, status_code = failure
-        return JSONResponse(
-            {"ok": False, "error": error, "route_owner": "ai_crm_next"},
-            status_code=status_code,
-        )
+        return JSONResponse({"ok": False, "error": error, "route_owner": "ai_crm_next"}, status_code=status_code)
     try:
         return create_external_campaigns(payload)
     except ExternalCampaignError as exc:
@@ -1072,10 +807,7 @@ def create_external_campaigns_response(payload: JsonDict, headers: Mapping[str, 
                 trace_id=_text(payload.get("trace_id")),
                 owner_userid=_text(payload.get("owner_userid") or payload.get("sender")),
             )
-        return JSONResponse(
-            exc.to_response(),
-            status_code=exc.status_code,
-        )
+        return JSONResponse(exc.to_response(), status_code=exc.status_code)
     except Exception as exc:
         return JSONResponse(
             {"ok": False, "error": "internal_error", "message": str(exc), "route_owner": "ai_crm_next"},
@@ -1083,43 +815,35 @@ def create_external_campaigns_response(payload: JsonDict, headers: Mapping[str, 
         )
 
 
-def get_external_campaign_status(campaign_code: str) -> JsonDict:
+def get_external_campaign_status(campaign_code: str, repo: ExternalCampaignRepository | None = None) -> JsonDict:
     normalized_code = _text(campaign_code)
     if not normalized_code:
         raise ExternalCampaignError("campaign_code is required")
-    with _legacy_app().app_context():
-        from wecom_ability_service.domains.campaigns import service as campaign_service
-
-        campaign = campaign_service.get_campaign(campaign_code=normalized_code)
-        if not campaign:
-            raise ExternalCampaignError("campaign_not_found", status_code=404)
-        overview = campaign_service.assemble_campaign_overview(campaign_id=int(campaign["id"]))
-        return {
-            "ok": True,
-            "route_owner": "ai_crm_next",
-            "campaign": overview.get("campaign") or campaign,
-            "segments": overview.get("segments") or [],
-            "member_status_counts": overview.get("member_status_counts") or {},
-            "total_members": int(overview.get("total_members") or 0),
-            "scheduled_jobs": _count_open_campaign_jobs(campaign_id=int(campaign["id"])),
-        }
+    repository = _build_repo(repo)
+    campaign = repository.get_campaign_by_code(normalized_code)
+    if not campaign:
+        raise ExternalCampaignError("campaign_not_found", status_code=404)
+    overview = repository.assemble_campaign_overview(campaign_id=int(campaign["id"]))
+    return {
+        "ok": True,
+        "route_owner": "ai_crm_next",
+        "campaign": overview.get("campaign") or campaign,
+        "segments": overview.get("segments") or [],
+        "member_status_counts": overview.get("member_status_counts") or {},
+        "total_members": int(overview.get("total_members") or 0),
+        "scheduled_jobs": repository.count_open_campaign_jobs(campaign_id=int(campaign["id"])),
+    }
 
 
 def get_external_campaign_status_response(campaign_code: str, headers: Mapping[str, Any]) -> JsonDict | JSONResponse:
     failure = _auth_failure(headers)
     if failure is not None:
         error, status_code = failure
-        return JSONResponse(
-            {"ok": False, "error": error, "route_owner": "ai_crm_next"},
-            status_code=status_code,
-        )
+        return JSONResponse({"ok": False, "error": error, "route_owner": "ai_crm_next"}, status_code=status_code)
     try:
         return get_external_campaign_status(campaign_code)
     except ExternalCampaignError as exc:
-        return JSONResponse(
-            exc.to_response(),
-            status_code=exc.status_code,
-        )
+        return JSONResponse(exc.to_response(), status_code=exc.status_code)
     except Exception as exc:
         return JSONResponse(
             {"ok": False, "error": "internal_error", "message": str(exc), "route_owner": "ai_crm_next"},

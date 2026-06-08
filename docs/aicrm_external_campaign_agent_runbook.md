@@ -22,6 +22,8 @@
 
 这两个接口挂在 `aicrm_next` FastAPI 应用下，响应里会带 `route_owner=ai_crm_next`。
 
+外部 Campaign API 当前由 Next 原生 repository 和 service orchestration 拥有。创建接口只做 token guard、目标读取、必要的 automation member 回填、单人 segment/campaign/step/member 草稿创建和提交人工审核；不会启动 Campaign，不会创建真实发送任务，也不会调用 WeCom。状态查询只读取当前 DB 状态，不触发 scheduler 或任何写入副作用。
+
 ### 1.2 后台 Campaign 管理入口
 
 这些能力当前也必须保留，但运行边界已拆分：Campaign read/workspace GET 已锁定到 `aicrm_next.cloud_orchestrator` Next read model，`legacy_fallback_allowed=false`，不会通过 compatibility facade；写入、启动、删除、step mutation 和 run-due 仍是后续组的 out-of-scope 能力，由 `aicrm_next.production_compat` 保留受控 fallback。
