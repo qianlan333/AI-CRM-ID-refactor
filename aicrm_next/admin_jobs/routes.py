@@ -36,7 +36,7 @@ from .notification_settings import (
     upsert_feishu_notification_setting,
     validate_feishu_webhook,
 )
-from .shell import legacy_url_for, shell_context
+from aicrm_next.admin_shell import admin_path_for, shell_context
 
 router = APIRouter()
 
@@ -147,7 +147,7 @@ def _jobs_context(request: Request, *, page_notice: str = "", page_error: str = 
             "page_error": page_error,
             "action_result": action_result or {},
             "admin_action_token": ensure_admin_action_token(),
-            "url_for": legacy_url_for,
+            "url_for": admin_path_for,
         }
     )
     return context
@@ -312,7 +312,7 @@ def admin_broadcast_jobs(request: Request):
             "status_options": payload["status_options"],
             "source_type_options": payload["source_type_options"],
             "admin_action_token": ensure_admin_action_token(),
-            "url_for": legacy_url_for,
+            "url_for": admin_path_for,
         }
     )
     return templates.TemplateResponse(request, "admin_console/broadcast_jobs.html", context)

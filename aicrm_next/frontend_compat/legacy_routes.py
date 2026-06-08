@@ -46,9 +46,8 @@ from aicrm_next.questionnaire.external_push_logs import (
     QuestionnaireExternalPushRetryCommand,
     QuestionnaireExternalPushRetryService,
 )
-from .admin_shell import (
-    legacy_url_for as _legacy_url_for,
-    nav_items as _nav_items,
+from aicrm_next.admin_shell import (
+    admin_path_for as _admin_path_for,
     shell_context as _shell_context,
 )
 
@@ -59,7 +58,6 @@ _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 ADMIN_CUSTOMERS_UNAVAILABLE_MESSAGE = "客户列表暂不可用：生产客户读源正在同步或数据库连接繁忙，请稍后刷新。"
 
 LEGACY_FRONTEND_ROUTES = [
-    "/admin",
     "/admin/customers",
     "/admin/questionnaires",
     "/admin/questionnaires/new",
@@ -212,37 +210,6 @@ def _questionnaire_editor_response(
             "page_error": page_error,
         },
     )
-
-
-@router.get("/admin", name="api.admin_console_dashboard")
-def admin_dashboard(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="自动化运营",
-        page_summary="AI-CRM Next 后台总览，生产数据通过 PostgreSQL 与兼容 facade 提供。",
-        active_endpoint="api.admin_automation_conversion",
-    )
-    context.update(
-        {
-            "system_status": {
-                "cards": [
-                    {"label": "FastAPI", "value": "ok", "description": "Next 后端可响应后台 shell。", "tone": "ok"},
-                    {"label": "Frontend parity", "value": "live", "description": "后台 shell 已切换为分组导航与生产数据入口。", "tone": "ok"},
-                ]
-            },
-            "dashboard_cards": [
-                {"label": "客户", "value": "postgres", "description": "客户列表走生产 PostgreSQL。", "href": request.url_for("api.admin_console_customers")},
-                {"label": "自动化运营", "value": "postgres", "description": "自动化运营页优先使用生产数据。", "href": request.url_for("api.admin_automation_conversion")},
-            ],
-            "todo_total": 0,
-            "todo_groups": [],
-            "quick_links": [
-                {"label": "客户激活 / 客户列表", "description": "查看客户列表和激活状态。", "href": request.url_for("api.admin_console_customers")},
-                {"label": "AI 助手", "description": "进入 AI 助手兼容入口。", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
-            ],
-        }
-    )
-    return templates.TemplateResponse(request, "admin_console/dashboard.html", context)
 
 
 def _admin_customer_payload_from_list_result(
@@ -511,7 +478,7 @@ def admin_hxc_send_config(request: Request):
 @router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
 def admin_cloud_orchestrator(request: Request):
     return RedirectResponse(
-        url=_legacy_url_for("api.admin_cloud_orchestrator_plans_workspace"),
+        url=_admin_path_for("api.admin_cloud_orchestrator_plans_workspace"),
         status_code=302,
     )
 
@@ -843,7 +810,7 @@ def _automation_program_workspace_tabs(request: Request, program_id: int, active
             "key": key,
             "label": label,
             "summary": "",
-            "href": _legacy_url_for(endpoint, program_id=int(program_id)),
+            "href": _admin_path_for(endpoint, program_id=int(program_id)),
             "active": key == active_key,
         }
         for key, label, endpoint in tabs
@@ -858,13 +825,13 @@ def _automation_program_context(request: Request, program: dict[str, object], *,
         "program_name": str(program.get("program_name") or ""),
         "description": str(program.get("description") or ""),
         "status": str(program.get("status") or "draft"),
-        "list_href": _legacy_url_for("api.admin_automation_conversion"),
-        "overview_href": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
-        "update_href": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
-        "copy_href": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
-        "activate_href": _legacy_url_for("api.admin_automation_program_activate", program_id=program_id),
-        "pause_href": _legacy_url_for("api.admin_automation_program_pause", program_id=program_id),
-        "archive_href": _legacy_url_for("api.admin_automation_program_archive", program_id=program_id),
+        "list_href": _admin_path_for("api.admin_automation_conversion"),
+        "overview_href": _admin_path_for("api.admin_automation_program_overview", program_id=program_id),
+        "update_href": _admin_path_for("api.admin_automation_program_update", program_id=program_id),
+        "copy_href": _admin_path_for("api.admin_automation_program_copy", program_id=program_id),
+        "activate_href": _admin_path_for("api.admin_automation_program_activate", program_id=program_id),
+        "pause_href": _admin_path_for("api.admin_automation_program_pause", program_id=program_id),
+        "archive_href": _admin_path_for("api.admin_automation_program_archive", program_id=program_id),
         "active_key": active_key,
     }
 
@@ -915,12 +882,12 @@ def _setup_workspace(request: Request, program: dict[str, object], summary: dict
     workspace["program"] = workspace.get("program") or program
     workspace["summary"] = workspace.get("summary") or summary
     workspace["urls"] = {
-        "base": _legacy_url_for("api.admin_automation_program_setup", program_id=program_id),
-        "overview": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
-        "entry_channels": _legacy_url_for("api.admin_automation_program_entry_channels", program_id=program_id),
-        "update": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
-        "copy": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
-        "basic": _legacy_url_for("api.admin_automation_program_update", program_id=program_id),
+        "base": _admin_path_for("api.admin_automation_program_setup", program_id=program_id),
+        "overview": _admin_path_for("api.admin_automation_program_overview", program_id=program_id),
+        "entry_channels": _admin_path_for("api.admin_automation_program_entry_channels", program_id=program_id),
+        "update": _admin_path_for("api.admin_automation_program_update", program_id=program_id),
+        "copy": _admin_path_for("api.admin_automation_program_copy", program_id=program_id),
+        "basic": _admin_path_for("api.admin_automation_program_update", program_id=program_id),
         "segmentation": f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
         "audience_entry_rule": f"/api/admin/automation-conversion/programs/{program_id}/setup/audience-entry-rule",
         "publish_full": f"/api/admin/automation-conversion/programs/{program_id}/publish-full",
@@ -1056,8 +1023,8 @@ def admin_automation_program_copy_form(request: Request, program_id: int) -> Res
                 {"label": "复制方案"},
             ],
             "copy_source_program": program,
-            "copy_action": _legacy_url_for("api.admin_automation_program_copy", program_id=program_id),
-            "cancel_href": _legacy_url_for("api.admin_automation_program_overview", program_id=program_id),
+            "copy_action": _admin_path_for("api.admin_automation_program_copy", program_id=program_id),
+            "cancel_href": _admin_path_for("api.admin_automation_program_overview", program_id=program_id),
             "admin_action_token": "",
         }
     )
@@ -1078,7 +1045,7 @@ async def admin_automation_program_copy(request: Request, program_id: int) -> Re
     copied_program = dict(copied.get("program") or {})
     copied_id = int(copied_program.get("id") or 0)
     return RedirectResponse(
-        _legacy_url_for("api.admin_automation_program_setup", program_id=copied_id, step="basic"),
+        _admin_path_for("api.admin_automation_program_setup", program_id=copied_id, step="basic"),
         status_code=303,
     )
 
@@ -1098,7 +1065,7 @@ async def admin_automation_program_update(request: Request, program_id: int) -> 
     )
     next_url = str(form.get("next") or "").strip()
     if not next_url or not next_url.startswith("/"):
-        next_url = _legacy_url_for("api.admin_automation_program_setup", program_id=program_id, step="basic")
+        next_url = _admin_path_for("api.admin_automation_program_setup", program_id=program_id, step="basic")
     return RedirectResponse(next_url, status_code=303)
 
 
@@ -1107,7 +1074,7 @@ async def _automation_program_status_redirect(request: Request, program_id: int,
     update_automation_program_status(int(program_id), status=status, operator_id="admin")
     next_url = str(form.get("next") or "").strip()
     if not next_url or not next_url.startswith("/"):
-        next_url = _legacy_url_for("api.admin_automation_conversion")
+        next_url = _admin_path_for("api.admin_automation_conversion")
     return RedirectResponse(next_url, status_code=303)
 
 
@@ -1406,22 +1373,6 @@ def admin_attachment_library(request: Request):
         active_endpoint="api.admin_attachment_library_workspace",
     )
     return templates.TemplateResponse(request, "admin_console/attachment_library.html", context)
-
-
-@router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")
-def admin_dashboard_shell_context() -> dict:
-    return {
-        "ok": True,
-        "environment": {"tone": "dev", "label": "AI-CRM Next"},
-        "health": {"state": "ok", "label": "OK", "detail": "frontend compat shell"},
-        "navigation": _nav_items(""),
-        "nav_groups": _nav_items(""),
-    }
-
-
-@router.get("/admin/logout", name="api.admin_logout")
-def admin_logout_stub() -> dict:
-    return {"ok": True, "status": "stubbed"}
 
 
 @router.get("/admin/runtime-config", name="api.admin_runtime_config")

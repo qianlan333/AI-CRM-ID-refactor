@@ -60,6 +60,8 @@ def test_next_external_push_log_pages_do_not_use_admin_shell_legacy_endpoint_map
         root / "aicrm_next" / "admin_jobs" / "shell.py",
     ]
     for path in shell_sources:
+        if not path.exists():
+            continue
         source = path.read_text(encoding="utf-8")
         for marker in retired_endpoint_markers:
             assert marker not in source

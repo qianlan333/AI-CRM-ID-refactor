@@ -22,7 +22,7 @@ def test_admin_config_routes_are_served_by_next_admin_config(monkeypatch, tmp_pa
         raise AssertionError(f"{request.url.path} must not forward to legacy Flask")
 
     monkeypatch.setattr(legacy_routes, "GetAdminConfigPageQuery", ExplodingRuntimeConfigQuery)
-    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask, raising=False)
 
     client = _client(monkeypatch, tmp_path)
 

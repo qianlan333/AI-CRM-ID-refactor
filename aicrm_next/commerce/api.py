@@ -9,7 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from aicrm_next.frontend_compat.admin_shell import shell_context
+from aicrm_next.admin_shell import shell_context
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .admin_transactions import (

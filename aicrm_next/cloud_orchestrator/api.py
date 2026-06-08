@@ -13,7 +13,7 @@ from aicrm_next.admin_jobs.routes import (
     _request_payload,
     ensure_admin_action_token,
 )
-from aicrm_next.frontend_compat.admin_shell import shell_context
+from aicrm_next.admin_shell import shell_context
 
 from .application import (
     ApproveCloudPlanCommand,

@@ -111,6 +111,7 @@ _AUTH_LABEL_MD = {
 
 def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]:
     from aicrm_next.ai_assist.api import router as ai_assist_router
+    from aicrm_next.admin_shell.routes import router as admin_shell_router
     from aicrm_next.automation_engine.api import router as automation_router
     from aicrm_next.automation_engine.channels_api import router as automation_channels_router
     from aicrm_next.cloud_orchestrator.api import router as cloud_orchestrator_router
@@ -129,6 +130,7 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
 
     routers = [
         platform_router,
+        admin_shell_router,
         automation_channels_router,
         customer_router,
         customer_tags_read_router,

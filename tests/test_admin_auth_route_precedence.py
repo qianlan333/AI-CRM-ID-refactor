@@ -18,7 +18,7 @@ def test_login_logout_precede_production_compat_facade(monkeypatch) -> None:
     async def forbidden_forward(request):
         raise AssertionError(f"legacy facade should not handle {request.method} {request.url.path}")
 
-    monkeypatch.setattr(production_api, "forward_to_legacy_flask", forbidden_forward)
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", forbidden_forward, raising=False)
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for response in [
