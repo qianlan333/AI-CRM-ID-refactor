@@ -3863,6 +3863,107 @@ def check_customer_list_admin_page_native(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_customer_detail_admin_page_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name == "admin_customer_detail_page":
+                violations.append(
+                    Violation(
+                        "customer_detail_page_still_in_frontend_compat",
+                        str(frontend_routes.relative_to(root)),
+                        "def admin_customer_detail_page",
+                    )
+                )
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call) or not decorator.args:
+                    continue
+                attr = decorator.func
+                if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                    continue
+                first = decorator.args[0]
+                if isinstance(first, ast.Constant) and first.value == "/admin/customers/{external_userid}":
+                    violations.append(
+                        Violation(
+                            "customer_detail_page_still_in_frontend_compat",
+                            str(frontend_routes.relative_to(root)),
+                            "@router.get('/admin/customers/{external_userid}')",
+                        )
+                    )
+        for marker in (
+            "_customer_profile_initial_section",
+            "_customer_detail_payload_from_profile_result",
+            "_customer_profile_urls",
+            "GetAdminCustomerProfileQuery",
+            "customer_profile_urls",
+        ):
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "customer_detail_helper_still_in_frontend_compat",
+                        str(frontend_routes.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    admin_pages = root / "aicrm_next/customer_read_model/admin_pages.py"
+    if not admin_pages.exists():
+        violations.append(
+            Violation(
+                "customer_detail_admin_page_missing",
+                str(admin_pages.relative_to(root)),
+                "missing native customer admin page module",
+            )
+        )
+    else:
+        source = admin_pages.read_text(encoding="utf-8")
+        required_markers = (
+            "/admin/customers/{external_userid}",
+            'name="api.admin_console_customer_detail"',
+            "_customer_profile_initial_section",
+            "_customer_detail_payload_from_profile_result",
+            "_customer_profile_urls",
+            "GetAdminCustomerProfileQuery",
+            "admin_console/customer_detail.html",
+            "admin_console/placeholder.html",
+        )
+        for marker in required_markers:
+            if marker not in source:
+                violations.append(
+                    Violation(
+                        "customer_detail_admin_page_route_missing",
+                        str(admin_pages.relative_to(root)),
+                        marker,
+                    )
+                )
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        native_import = "from .customer_read_model.admin_pages import router as customer_admin_pages_router"
+        native_include = "app.include_router(customer_admin_pages_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        missing_registration = native_import not in source or native_include not in source
+        if not missing_registration and frontend_include in source:
+            missing_registration = source.index(native_include) > source.index(frontend_include)
+        if missing_registration:
+            violations.append(
+                Violation(
+                    "customer_admin_pages_not_registered_before_frontend_compat",
+                    str(main_path.relative_to(root)),
+                    "customer_admin_pages_router must be registered before frontend_compat_router",
+                )
+            )
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -6812,6 +6913,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_tag_write_next_commandbus(ROOT)
         + check_wecom_tag_live_mutation_next_commandbus(ROOT)
         + check_customer_list_admin_page_native(ROOT)
+        + check_customer_detail_admin_page_native(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
