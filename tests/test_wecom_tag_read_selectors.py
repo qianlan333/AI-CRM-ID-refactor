@@ -7,14 +7,18 @@ from fastapi.testclient import TestClient
 from aicrm_next.main import create_app
 
 
+def _read(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+
 def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() -> None:
-    questionnaire = Path("aicrm_next/frontend_compat/templates/admin_questionnaires.html").read_text(encoding="utf-8")
-    tag_management_template = Path("aicrm_next/frontend_compat/templates/admin_console/config_wecom_tags.html").read_text(encoding="utf-8")
-    tag_management = Path("aicrm_next/frontend_compat/static/admin_console/wecom_tag_management.js").read_text(encoding="utf-8")
-    automation_picker = Path("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js").read_text(encoding="utf-8")
-    automation_channel_model = Path("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_channel_model.js").read_text(encoding="utf-8")
-    channel_pages = Path("aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js").read_text(encoding="utf-8")
-    legacy_routes = Path("aicrm_next/frontend_compat/legacy_routes.py").read_text(encoding="utf-8")
+    questionnaire = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
+    tag_management_template = _read("aicrm_next/frontend_compat/templates/admin_console/config_wecom_tags.html")
+    tag_management = _read("aicrm_next/frontend_compat/static/admin_console/wecom_tag_management.js")
+    automation_picker = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js")
+    automation_channel_model = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_channel_model.js")
+    channel_pages = _read("aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js")
+    legacy_routes = _read("aicrm_next/frontend_compat/legacy_routes.py")
 
     assert "fetchJson('/api/admin/wecom/tags')" in questionnaire
     assert 'data-api-tags="/api/admin/wecom/tags"' in tag_management_template
@@ -31,13 +35,69 @@ def test_questionnaire_and_adjacent_selectors_read_unified_tag_catalog_source() 
 
 
 def test_questionnaire_tag_selector_treats_degraded_empty_catalog_as_warning() -> None:
-    questionnaire = Path("aicrm_next/frontend_compat/templates/admin_questionnaires.html").read_text(encoding="utf-8")
+    questionnaire = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
 
     assert "data.degraded || !state.availableTags.length" in questionnaire
-    assert "data.page_error || '当前未获取到企微标签，可手工填写 tag_id'" in questionnaire
+    assert "data.page_error || '当前未获取到企微标签，可稍后重试'" in questionnaire
     assert "tagCatalogMessageEl.className = 'inline-alert warning'" in questionnaire
     assert "tagCatalogMessageEl.className = 'inline-alert error'" in questionnaire
     assert "extractErrorMessage(data)" in questionnaire
+
+
+def test_unified_business_tag_picker_visible_copy_hides_internal_fields() -> None:
+    picker = _read("aicrm_next/frontend_compat/static/admin_console/wecom_tag_picker.js")
+    visible_block = picker[picker.index("overlay.innerHTML = `") : picker.index("document.body.appendChild")]
+
+    for forbidden in ["tag_id", "entry_tag_id", "et_", "使用人数", "人", "保存 tag_id", "先选择标签组"]:
+        assert forbidden not in visible_block
+
+    for expected in ["暂无标签组", "暂无标签", "没有匹配结果", "已选：", "清空", "取消", "确认选择"]:
+        assert expected in picker
+
+
+def test_channel_entry_tag_uses_unified_single_picker_and_hidden_save_fields() -> None:
+    template = _read("aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html")
+    script = _read("aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js")
+
+    assert "wecom_tag_picker.css" in template
+    assert "wecom_tag_picker.js" in template
+    assert "data-resource-picker-results" not in template
+    assert "channel-resource-picker" not in script
+    assert "AICRMWeComTagPicker.open" in script
+    assert 'mode: "single"' in script
+    assert 'name="entry_tag_id"' in template
+    assert 'name="entry_tag_name"' in template
+    assert 'name="entry_tag_group_name"' in template
+    assert 'data-id="' not in script
+
+
+def test_questionnaire_tags_use_unified_multiple_picker_without_flat_modal() -> None:
+    template = _read("aicrm_next/frontend_compat/templates/admin_questionnaires.html")
+
+    assert "wecom_tag_picker.css" in template
+    assert "wecom_tag_picker.js" in template
+    assert "AICRMWeComTagPicker.open" in template
+    assert "mode: 'multiple'" in template
+    assert "applyTagSelection(target" in template
+    assert "tag_codes" in template
+    assert "tag-modal-overlay" not in template
+    assert "tag-selected-panel" not in template
+    assert "tag-chip-grid" not in template
+    assert "保存 tag_id" not in template
+    assert "实际保存 tag_id" not in template
+
+
+def test_automation_default_entry_tag_uses_unified_single_picker() -> None:
+    picker = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_tag_picker.js")
+    channel_model = _read("aicrm_next/frontend_compat/static/admin_console/automation_agent_config_channel_model.js")
+
+    assert "AICRMWeComTagPicker.open" in picker
+    assert 'mode: "single"' in picker
+    assert "catalog: { items: state.availableTags }" in picker
+    assert "ac-config-tag-chip" not in picker
+    assert "保存时只写入 tag_id" not in picker
+    assert "手工填写 tag_id" not in picker
+    assert "entry_tag_id: selectedTagId" in channel_model
 
 
 def test_sidebar_signup_tags_status_is_not_a_tag_catalog_selector() -> None:
