@@ -29,13 +29,13 @@ def test_customer_list_admin_page_renders_from_native_shell() -> None:
     assert _endpoint_module("/admin/customers") == "aicrm_next.customer_read_model.admin_pages"
 
 
-def test_customer_list_removed_from_frontend_compat_inventory_but_detail_and_user_ops_remain() -> None:
+def test_customer_list_removed_from_frontend_compat_inventory_but_user_ops_remains() -> None:
     legacy_routes = set(LEGACY_FRONTEND_ROUTES)
 
     assert "/admin/customers" not in legacy_routes
     assert "/admin/user-ops" in legacy_routes
     assert "/admin/user-ops/ui" in legacy_routes
-    assert _endpoint_module("/admin/customers/{external_userid}") == "aicrm_next.frontend_compat.legacy_routes"
+    assert _endpoint_module("/admin/customers/{external_userid}") == "aicrm_next.customer_read_model.admin_pages"
 
 
 def test_customer_list_page_degrades_when_read_model_unavailable(monkeypatch) -> None:

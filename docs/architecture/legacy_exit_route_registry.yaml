@@ -598,16 +598,16 @@ routes:
     path_pattern: /admin/customers*
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
-    runtime_owner: mixed_native_list_frontend_compat_detail
+    runtime_owner: next_native_page_shell
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
     delete_status: deletion_locked
     replacement_status: locked
-    checker: tests/test_customer_admin_list_pages_native.py
+    checker: tests/test_customer_detail_admin_page_native.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: /admin/customers list page is served by aicrm_next.customer_read_model.admin_pages over the Next read model; /admin/customers/{external_userid} detail remains frontend_compat pending P2-B2. Customer read legacy facade removed; no legacy fallback. Missing production read model data returns production_unavailable.
+    notes: /admin/customers list and /admin/customers/{external_userid} detail pages are served by aicrm_next.customer_read_model.admin_pages over the Next read model; frontend_compat removed for the customer admin page family. User Ops remains frontend_compat pending P2-B3. Customer read legacy facade removed; no legacy fallback. Missing production read model data returns production_unavailable.
   - route_id: user_ops_admin_api_family
     path_pattern: /api/admin/user-ops*
     methods: [GET, POST, OPTIONS]

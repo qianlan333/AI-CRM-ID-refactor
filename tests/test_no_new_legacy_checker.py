@@ -18,6 +18,7 @@ from scripts.check_no_new_legacy import (
     check_cloud_orchestrator_repository_time_helpers_native,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
+    check_customer_detail_admin_page_native,
     check_customer_list_admin_page_native,
     check_customer_read_model_legacy_deletion,
     check_group_ops_material_resolver_native,
@@ -2144,7 +2145,7 @@ def test_customer_list_admin_page_checker_flags_missing_registration(tmp_path: P
     assert "customer_list_admin_pages_not_registered" in codes
 
 
-def test_customer_list_admin_page_checker_accepts_native_state_and_detail_compat(tmp_path: Path) -> None:
+def test_customer_list_admin_page_checker_accepts_native_state_and_user_ops_compat(tmp_path: Path) -> None:
     frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
     admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
     main_py = tmp_path / "aicrm_next/main.py"
@@ -2152,8 +2153,8 @@ def test_customer_list_admin_page_checker_accepts_native_state_and_detail_compat
     admin_pages.parent.mkdir(parents=True)
     frontend_routes.write_text(
         "LEGACY_FRONTEND_ROUTES = ['/admin/user-ops']\n"
-        "@router.get('/admin/customers/{external_userid}')\n"
-        "def admin_customer_detail_page():\n"
+        "@router.get('/admin/user-ops')\n"
+        "def admin_user_ops_page():\n"
         "    pass\n",
         encoding="utf-8",
     )
@@ -2173,6 +2174,140 @@ def test_customer_list_admin_page_checker_accepts_native_state_and_detail_compat
     )
 
     assert check_customer_list_admin_page_native(tmp_path) == []
+
+
+def test_customer_detail_admin_page_checker_flags_frontend_compat_route(tmp_path: Path) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True)
+    frontend_routes.write_text(
+        "@router.get('/admin/customers/{external_userid}', name='api.admin_console_customer_detail')\n"
+        "def admin_customer_detail_page():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    admin_pages.write_text(
+        "from .application import GetAdminCustomerProfileQuery\n"
+        "@router.get('/admin/customers/{external_userid}', name=\"api.admin_console_customer_detail\")\n"
+        "def admin_customer_detail_page():\n"
+        "    _customer_profile_initial_section('tags')\n"
+        "    _customer_detail_payload_from_profile_result({}, legacy_tab='')\n"
+        "    _customer_profile_urls('ext')\n"
+        "    return 'admin_console/customer_detail.html admin_console/placeholder.html'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .customer_read_model.admin_pages import router as customer_admin_pages_router\n"
+        "app.include_router(customer_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_customer_detail_admin_page_native(tmp_path)}
+
+    assert "customer_detail_page_still_in_frontend_compat" in codes
+
+
+def test_customer_detail_admin_page_checker_flags_frontend_compat_helper(tmp_path: Path) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True)
+    frontend_routes.write_text("def _customer_profile_urls(external_userid):\n    return {}\n", encoding="utf-8")
+    admin_pages.write_text(
+        "from .application import GetAdminCustomerProfileQuery\n"
+        "@router.get('/admin/customers/{external_userid}', name=\"api.admin_console_customer_detail\")\n"
+        "def admin_customer_detail_page():\n"
+        "    _customer_profile_initial_section('tags')\n"
+        "    _customer_detail_payload_from_profile_result({}, legacy_tab='')\n"
+        "    _customer_profile_urls('ext')\n"
+        "    return 'admin_console/customer_detail.html admin_console/placeholder.html'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .customer_read_model.admin_pages import router as customer_admin_pages_router\n"
+        "app.include_router(customer_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_customer_detail_admin_page_native(tmp_path)}
+
+    assert "customer_detail_helper_still_in_frontend_compat" in codes
+
+
+def test_customer_detail_admin_page_checker_flags_missing_native_route(tmp_path: Path) -> None:
+    admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    admin_pages.parent.mkdir(parents=True)
+    admin_pages.write_text("@router.get('/admin/customers', name=\"api.admin_console_customers\")\ndef admin_customers(): pass\n", encoding="utf-8")
+    main_py.write_text(
+        "from .customer_read_model.admin_pages import router as customer_admin_pages_router\n"
+        "app.include_router(customer_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_customer_detail_admin_page_native(tmp_path)}
+
+    assert "customer_detail_admin_page_route_missing" in codes
+
+
+def test_customer_detail_admin_page_checker_flags_missing_registration_order(tmp_path: Path) -> None:
+    admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    admin_pages.parent.mkdir(parents=True)
+    admin_pages.write_text(
+        "from .application import GetAdminCustomerProfileQuery\n"
+        "@router.get('/admin/customers/{external_userid}', name=\"api.admin_console_customer_detail\")\n"
+        "def admin_customer_detail_page():\n"
+        "    _customer_profile_initial_section('tags')\n"
+        "    _customer_detail_payload_from_profile_result({}, legacy_tab='')\n"
+        "    _customer_profile_urls('ext')\n"
+        "    return 'admin_console/customer_detail.html admin_console/placeholder.html'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text("app.include_router(frontend_compat_router)\napp.include_router(customer_admin_pages_router)\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_customer_detail_admin_page_native(tmp_path)}
+
+    assert "customer_admin_pages_not_registered_before_frontend_compat" in codes
+
+
+def test_customer_detail_admin_page_checker_accepts_native_state_and_user_ops_compat(tmp_path: Path) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/customer_read_model/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    frontend_routes.parent.mkdir(parents=True)
+    admin_pages.parent.mkdir(parents=True)
+    frontend_routes.write_text(
+        "LEGACY_FRONTEND_ROUTES = ['/admin/user-ops']\n"
+        "@router.get('/admin/user-ops')\n"
+        "def admin_user_ops_page():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    admin_pages.write_text(
+        "from .application import GetAdminCustomerProfileQuery\n"
+        "@router.get('/admin/customers/{external_userid}', name=\"api.admin_console_customer_detail\")\n"
+        "def admin_customer_detail_page():\n"
+        "    _customer_profile_initial_section('tags')\n"
+        "    _customer_detail_payload_from_profile_result({}, legacy_tab='')\n"
+        "    _customer_profile_urls('ext')\n"
+        "    return 'admin_console/customer_detail.html admin_console/placeholder.html'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "from .customer_read_model.admin_pages import router as customer_admin_pages_router\n"
+        "app.include_router(customer_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    assert check_customer_detail_admin_page_native(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:
