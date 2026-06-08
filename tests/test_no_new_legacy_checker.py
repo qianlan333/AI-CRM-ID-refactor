@@ -28,6 +28,7 @@ from scripts.check_no_new_legacy import (
     check_messages_broad_wildcard_deletion,
     check_payment_wildcard_final_closeout_lock,
     check_post_legacy_architecture_freeze,
+    check_public_product_h5_pay_legacy_closeout,
     check_public_product_h5_pay_oauth_native,
     check_public_product_h5_pay_sidebar_context_native,
     check_public_product_pay_closeout_lock,
@@ -756,7 +757,7 @@ def test_public_product_guard_allows_next_h5_wechat_pay_markers(tmp_path: Path) 
     h5_pay = tmp_path / "aicrm_next/public_product/h5_wechat_pay.py"
     h5_pay.parent.mkdir(parents=True)
     h5_pay.write_text(
-        "from wecom_ability_service.infra.wechat_oauth import exchange_wechat_oauth_code\n"
+        "from aicrm_next.integration_gateway.wechat_oauth_client import build_wechat_oauth_client\n"
         "from aicrm_next.commerce.wechat_pay_client import WeChatPayClient\n"
         "def create_jsapi_order_response():\n"
         "    access_token = ''\n"
@@ -1368,6 +1369,73 @@ def test_public_product_context_checker_accepts_native_files_with_stale_allowlis
     _write_h5_pay_sidebar_context_files(tmp_path)
 
     assert check_public_product_h5_pay_sidebar_context_native(tmp_path) == []
+
+
+def _h5_pay_closeout_native_source() -> str:
+    return (
+        "from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client\n"
+        "from .signed_context import append_ctx_query, load_sidebar_product_context_token\n"
+        "from .sidebar_order_context import resolve_sidebar_order_context\n"
+        "_OAUTH_CLIENT_FACTORY = build_wechat_oauth_client\n"
+    )
+
+
+def test_public_product_h5_pay_closeout_flags_any_wecom_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from wecom_ability_service.infra.signed_context import append_ctx_query\n",
+        checker_source="WECOM_IMPORT_ALLOWLIST = set()\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_legacy_closeout(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_import" in codes
+
+
+def test_public_product_h5_pay_closeout_flags_legacy_oauth_import(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source=_h5_pay_closeout_native_source() + "exchange_wechat_oauth_code = object()\n",
+        checker_source="WECOM_IMPORT_ALLOWLIST = set()\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_legacy_closeout(tmp_path)}
+
+    assert "public_product_h5_pay_legacy_import" in codes
+
+
+def test_public_product_h5_pay_closeout_flags_missing_native_imports(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source="from .signed_context import append_ctx_query\n",
+        checker_source="WECOM_IMPORT_ALLOWLIST = set()\n",
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_legacy_closeout(tmp_path)}
+
+    assert "public_product_h5_pay_native_import_missing" in codes
+
+
+def test_public_product_h5_pay_closeout_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source=_h5_pay_closeout_native_source(),
+        checker_source='WECOM_IMPORT_ALLOWLIST = {Path("aicrm_next/public_product/h5_wechat_pay.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_public_product_h5_pay_legacy_closeout(tmp_path)}
+
+    assert "public_product_h5_pay_stale_wecom_allowlist" in codes
+
+
+def test_public_product_h5_pay_closeout_accepts_native_files(tmp_path: Path) -> None:
+    _write_h5_pay_sidebar_context_files(
+        tmp_path,
+        h5_source=_h5_pay_closeout_native_source(),
+        checker_source="WECOM_IMPORT_ALLOWLIST = set()\n",
+    )
+
+    assert check_public_product_h5_pay_legacy_closeout(tmp_path) == []
 
 
 def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, compat_get: bool = False) -> None:
