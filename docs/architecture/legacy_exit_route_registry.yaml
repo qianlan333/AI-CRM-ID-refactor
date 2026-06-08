@@ -2342,7 +2342,7 @@ routes:
     replacement_status: locked
     checker: tests/test_public_product_registry_lifecycle.py
     rollback_owner: aicrm_next.public_product
-    notes: Public pay landing is Next-owned; displays controlled blocked payment state and never creates orders or calls payment providers.
+    notes: Public pay landing is Next-owned. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks. No production_compat fallback.
   - route_id: public_product_api_next_contract
     path_pattern: /api/products/{path:path}
     methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
@@ -2552,7 +2552,7 @@ routes:
     replacement_status: locked
     checker: tests/test_payment_wildcard_final_registry_lifecycle.py
     rollback_owner: ""
-    notes: Final production_compat wildcard rollback removed; legacy H5 WeChat Pay paths are controlled 410 and public checkout/order/provider APIs are the replacement.
+    notes: Final production_compat wildcard rollback removed. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks.
   - route_id: h5_alipay_wildcard_final_closeout
     path_pattern: /api/h5/alipay/{path:path}
     methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]

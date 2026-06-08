@@ -42,7 +42,6 @@ LEGACY_IMPORT_ALLOWLIST = {
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
-    Path("aicrm_next/public_product/h5_wechat_pay.py"),
 }
 API_SIDE_EFFECT_ALLOWLIST = {
     Path("aicrm_next/production_compat/api.py"),
@@ -328,7 +327,7 @@ PUBLIC_PRODUCT_PAY_DIRECT_MARKERS = {
 }
 PUBLIC_PRODUCT_PAY_DIRECT_MARKER_ALLOWLIST = {
     Path("aicrm_next/public_product/api.py"): {"create_jsapi_order"},
-    Path("aicrm_next/public_product/h5_wechat_pay.py"): {"WeChatPay", "access_token", "create_jsapi_order"},
+    Path("aicrm_next/public_product") / "h5_wechat_pay.py": {"WeChatPay", "access_token", "create_jsapi_order"},
 }
 PUBLIC_PRODUCT_PAY_TRUE_MARKERS = {
     '"fallback_used": True': "public_product_fallback_true",
@@ -1306,6 +1305,74 @@ def check_public_product_h5_pay_sidebar_context_native(root: Path = ROOT) -> lis
         for marker in legacy_helper_markers:
             if marker in helper_text:
                 violations.append(Violation(code, helper_rel, marker))
+
+    return violations
+
+
+def check_public_product_h5_pay_legacy_closeout(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    public_product_dir = root / "aicrm_next" / "public_product"
+    h5_pay_path = public_product_dir / "h5_wechat_pay.py"
+    signed_context_path = public_product_dir / "signed_context.py"
+    sidebar_context_path = public_product_dir / "sidebar_order_context.py"
+    checker_path = root / "scripts" / "check_no_new_legacy.py"
+
+    if not h5_pay_path.exists():
+        violations.append(
+            Violation(
+                "public_product_h5_pay_native_import_missing",
+                str(h5_pay_path.relative_to(root)),
+                "missing h5_wechat_pay.py",
+            )
+        )
+        return violations
+
+    h5_text = h5_pay_path.read_text(encoding="utf-8")
+    h5_rel = str(h5_pay_path.relative_to(root))
+    for marker in (
+        "wecom_ability_service",
+        "legacy_flask_facade",
+        "forward_to_legacy_flask",
+        "production_compat",
+        "from flask",
+        "current_app",
+        "exchange_wechat_oauth_code",
+        "fetch_wechat_userinfo",
+        "WeChatOAuthRequestError",
+        "wecom_ability_service.infra.signed_context",
+        "wecom_ability_service.domains.wechat_pay.sidebar_context",
+    ):
+        if marker in h5_text:
+            violations.append(Violation("public_product_h5_pay_legacy_import", h5_rel, marker))
+
+    for marker in (
+        "build_wechat_oauth_client",
+        "WeChatOAuthClientError",
+        "from .signed_context import",
+        "from .sidebar_order_context import",
+    ):
+        if marker not in h5_text:
+            violations.append(Violation("public_product_h5_pay_native_import_missing", h5_rel, marker))
+
+    helper_markers = ("wecom_ability_service", "flask", "current_app", "legacy_flask_facade")
+    for helper_path, code in (
+        (signed_context_path, "public_product_signed_context_legacy_import"),
+        (sidebar_context_path, "public_product_sidebar_order_context_legacy_import"),
+    ):
+        helper_rel = str(helper_path.relative_to(root))
+        if not helper_path.exists():
+            violations.append(Violation("public_product_h5_pay_native_import_missing", helper_rel, "native helper missing"))
+            continue
+        helper_text = helper_path.read_text(encoding="utf-8")
+        for marker in helper_markers:
+            if marker in helper_text:
+                violations.append(Violation(code, helper_rel, marker))
+
+    if checker_path.exists():
+        checker_text = checker_path.read_text(encoding="utf-8")
+        stale_marker = 'Path("aicrm_next/public_product/' + 'h5_wechat_pay.py")'
+        if stale_marker in checker_text:
+            violations.append(Violation("public_product_h5_pay_stale_wecom_allowlist", str(checker_path.relative_to(root)), stale_marker))
 
     return violations
 
@@ -6211,6 +6278,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_questionnaire_adapters_native_oauth(ROOT)
         + check_public_product_h5_pay_oauth_native(ROOT)
         + check_public_product_h5_pay_sidebar_context_native(ROOT)
+        + check_public_product_h5_pay_legacy_closeout(ROOT)
         + check_wecom_group_adapter_native(ROOT)
         + check_ai_assist_external_campaigns_native(ROOT)
         + check_customer_read_model_legacy_deletion(ROOT)
