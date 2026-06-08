@@ -462,3 +462,33 @@ def test_group_ops_unresolvable_content_package_records_node_error(monkeypatch):
     assert summary["errors"][0]["scope"] == "group_ops_node"
     assert summary["errors"][0]["node_id"] == 9
     assert "image_library_resolve_failed:id=404" in summary["errors"][0]["error"]
+
+
+def test_scheduler_injected_duplicate_checker_still_wins():
+    repo = FakeGroupOpsRepo(plans=[_plan()], groups={1: [_group()]}, nodes={1: [_node()]})
+    queue = RecordingQueueGateway()
+
+    from aicrm_next.automation_engine.group_ops.scheduler import run_group_ops_due_scheduler
+
+    summary = run_group_ops_due_scheduler(
+        repo=repo,
+        queue_gateway=queue,
+        duplicate_checker=lambda key: True,
+        now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc),
+        operator="pytest-scheduler",
+    )
+
+    assert summary["group_ops_enqueued_jobs"] == 0
+    assert summary["group_ops_skipped_duplicate"] == 1
+    assert queue.calls == []
+
+
+def test_scheduler_default_duplicate_checker_has_no_legacy_imports():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "aicrm_next/automation_engine/group_ops/scheduler.py").read_text(encoding="utf-8")
+
+    assert "wecom_ability_service" not in source
+    assert "broadcast_jobs.service" not in source
+    assert "legacy_flask_facade" not in source
