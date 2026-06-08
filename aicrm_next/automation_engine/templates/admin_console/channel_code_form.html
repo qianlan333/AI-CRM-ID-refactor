@@ -1,9 +1,10 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
+<link rel="stylesheet" href="/static/automation-engine/admin_console/channel_admission_pages.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/material_picker.css') }}?v=send-content-preview-ux-20260527">
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/send_content_composer.css') }}?v=send-content-preview-ux-20260527">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/wecom_tag_picker.css') }}?v=unified-tag-picker-20260608">
 {% endblock %}
 
 {% block content %}
@@ -155,33 +156,12 @@
     </div>
   </section>
 
-  <aside class="channel-modal" data-resource-picker-modal hidden>
-    <div class="channel-modal__panel">
-      <div class="admin-card-head admin-card-head--tight">
-        <div>
-          <h2 data-resource-picker-title>预览并选择</h2>
-          <p data-resource-picker-subtitle>从已同步的企微标签组中选择，保存时只写入标签编号。</p>
-        </div>
-        <button class="channel-drawer__close" type="button" data-close-resource-picker>关闭</button>
-      </div>
-      <div class="channel-form-grid">
-        <label class="admin-field">
-          <span>搜索</span>
-          <input type="search" data-resource-picker-search placeholder="搜索名称">
-        </label>
-      </div>
-      <div class="channel-material-list" data-resource-picker-results></div>
-      <div class="channel-actions channel-actions--right">
-        <button class="admin-button admin-button--primary" type="button" data-confirm-resource-picker>确认选择</button>
-      </div>
-    </div>
-  </aside>
-
 </div>
 {% endblock %}
 
 {% block scripts_extra %}
 <script defer src="{{ url_for('static', filename='admin_console/material_picker.js') }}?v=send-content-preview-ux-20260527"></script>
 <script defer src="{{ url_for('static', filename='admin_console/send_content_composer.js') }}?v=send-content-preview-ux-20260527"></script>
-<script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}?v=send-content-preview-ux-20260527"></script>
+<script defer src="{{ url_for('static', filename='admin_console/wecom_tag_picker.js') }}?v=unified-tag-picker-20260608"></script>
+<script defer src="/static/automation-engine/admin_console/channel_admission_pages.js?v=send-content-preview-ux-20260527"></script>
 {% endblock %}

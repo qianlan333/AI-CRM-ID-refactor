@@ -15,8 +15,8 @@ from aicrm_next.main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
-OPERATION_JS = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console" / "automation_operation_orchestration_panel.js"
+TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
+OPERATION_JS = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console" / "automation_operation_orchestration_panel.js"
 
 
 def _read(path: Path) -> str:
@@ -122,7 +122,7 @@ def test_operation_setup_agent_options_are_next_postgres_backed_under_production
         ),
     )
 
-    source = (ROOT / "aicrm_next" / "frontend_compat" / "legacy_routes.py").read_text(encoding="utf-8")
+    source = (ROOT / "aicrm_next" / "automation_engine" / "admin_pages.py").read_text(encoding="utf-8")
     assert '"agents_options": f"/api/admin/automation-conversion/agents/options?program_id={program_id}&limit=200"' in source
 
     client = TestClient(app)

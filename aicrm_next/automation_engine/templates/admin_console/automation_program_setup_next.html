@@ -1,13 +1,10 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/channel_admission_pages.css') }}">
+<link rel="stylesheet" href="/static/automation-engine/admin_console/automation_conversion_workspace.css">
+<link rel="stylesheet" href="/static/automation-engine/admin_console/channel_admission_pages.css">
 <style>
-  .setup-shell { display: grid; gap: 14px; max-width: 1800px; min-width: 0; margin: 0 auto; }
-  .setup-topbar-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; box-shadow: 0 8px 18px rgba(15,23,42,.04); }
-  .setup-topbar-tab { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border-radius: 9px; color: #111827; font-weight: 800; text-decoration: none; }
-  .setup-topbar-tab.is-active { background: #eff6ff; color: #1456f0; box-shadow: inset 0 0 0 1px #bfdbfe; }
+  .setup-shell { display: grid; gap: 14px; max-width: 1800px; min-width: 960px; margin: 0 auto; }
   .setup-panel h2, .setup-panel h3 { margin: 0; color: #111827; }
   .setup-muted { margin: 0; color: #64748b; line-height: 1.62; }
   .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
@@ -98,11 +95,6 @@
   .setup-feedback.is-success { background: #ecfdf3; color: #166534; }
   .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
   .setup-footer-side { display: flex; gap: 10px; flex-wrap: wrap; }
-  @media (max-width: 1080px) {
-    .setup-steps, .setup-form-grid, .setup-summary-grid, .setup-two-col, .setup-check-grid, .setup-category-grid, .setup-category-list, .setup-audience-row, .setup-seg-toolbar { grid-template-columns: 1fr; }
-    .setup-panel-head { align-items: stretch; flex-direction: column; }
-    .setup-footer { align-items: stretch; flex-direction: column; }
-  }
 </style>
 {% endblock %}
 
@@ -576,7 +568,7 @@
   </footer>
 </section>
 {% if current_step == "entry" %}
-<script defer src="{{ url_for('static', filename='admin_console/channel_admission_pages.js') }}"></script>
+<script defer src="/static/automation-engine/admin_console/channel_admission_pages.js"></script>
 {% endif %}
 {% if current_step == "segmentation" %}
 <script>

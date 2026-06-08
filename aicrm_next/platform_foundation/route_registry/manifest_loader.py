@@ -31,7 +31,7 @@ def _runtime_owner(record: dict[str, Any]) -> str:
         return "next_adapter"
     if owner == "next_command" or behavior == "next_command":
         return "next_command"
-    if owner in {"next", "ai_crm_next"} or owner.startswith("aicrm_next."):
+    if owner in {"next", "ai_crm_next", "next_native"} or owner.startswith("aicrm_next."):
         return "next_native"
     if owner == "frontend_compat":
         return "frontend_compat"

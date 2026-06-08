@@ -23,7 +23,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `aicrm_next.admin_jobs`: 2 routes; P3=2
 - `aicrm_next.admin_shell`: 1 routes; P2=1
 - `aicrm_next.ai_assist`: 1 routes; P3=1
-- `aicrm_next.automation_engine`: 40 routes; P0=4, P1=5, P2=26, P3=5
+- `aicrm_next.automation_engine`: 40 routes; P0=4, P1=4, P2=27, P3=5
 - `aicrm_next.channel_entry`: 6 routes; P1=3, P2=3
 - `aicrm_next.cloud_orchestrator`: 6 routes; P0=1, P2=4, P3=1
 - `aicrm_next.commerce`: 13 routes; P2=13
@@ -45,9 +45,9 @@ Status: Current progress snapshot, no runtime change. This document is generated
 
 ## Summary By Replacement Phase
 
-- `keep_guarded_until_adapter_ready`: 67 routes; blocked_or_guarded=67
+- `keep_guarded_until_adapter_ready`: 68 routes; blocked_or_guarded=68
 - `phase_3_readonly`: 30 routes; readonly=29, shell_or_navigation=1
-- `phase_4_internal_write`: 10 routes; internal_write=1, readonly=8, shell_or_navigation=1
+- `phase_4_internal_write`: 9 routes; internal_write=1, readonly=8
 - `phase_5_external_adapter`: 82 routes; adapter_contract=9, external_side_effect=73
 - `phase_6_timer_automation`: 10 routes; timer_or_automation_execution=10
 
@@ -152,7 +152,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `LRB-005` `/admin/questionnaires`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.questionnaire`
 - `LRB-006` `/admin/questionnaires/new`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.questionnaire`
 - `LRB-007` `/admin/questionnaires/{questionnaire_id}`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.questionnaire`
-- `LRB-008` `/admin/automation-conversion`: `P1` / `phase_4_internal_write` / `shell_or_navigation` / owner `aicrm_next.automation_engine`
+- `LRB-008` `/admin/automation-conversion`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.automation_engine`
 - `LRB-009` `/admin/automation-conversion/{path:path}`: `P2` / `keep_guarded_until_adapter_ready` / `blocked_or_guarded` / owner `aicrm_next.automation_engine`
 - `LRB-010` `/admin/jobs`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.admin_jobs`
 - `LRB-011` `/admin/broadcast-jobs`: `P3` / `phase_6_timer_automation` / `timer_or_automation_execution` / owner `aicrm_next.admin_jobs`

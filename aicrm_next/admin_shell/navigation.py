@@ -106,11 +106,14 @@ def admin_path_for(name: str, **path_params: object) -> str:
         return "/admin/automation-conversion/group-ops/plans/" + str(path_params.get("plan_id", "")).strip()
     if name == "api.admin_wechat_pay_transaction_detail_page":
         return "/admin/wechat-pay/transactions/" + str(path_params.get("order_id", "")).strip()
+    if name == "api.admin_console_questionnaire_detail":
+        return "/admin/questionnaires/" + str(path_params.get("questionnaire_id", "")).strip()
 
     program_id = str(path_params.get("program_id") or "").strip()
     program_route_map = {
         "api.admin_automation_program_setup": "setup",
         "api.admin_automation_program_overview": "overview",
+        "api.admin_automation_program_members": "members",
         "api.admin_automation_program_update": "update",
         "api.admin_automation_program_copy_form": "copy",
         "api.admin_automation_program_copy": "copy",

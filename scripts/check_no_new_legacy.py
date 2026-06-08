@@ -187,6 +187,11 @@ WECOM_TAG_LIVE_MUTATION_ROUTES = (
     ("/api/admin/wecom/tags/live/unmark", ("POST", "OPTIONS"), "next_command", "next_command"),
 )
 WECOM_TAG_LIVE_MUTATION_EXACT_ROUTES = {route for route, _methods, _owner, _behavior in WECOM_TAG_LIVE_MUTATION_ROUTES}
+GROUP_OPS_ADMIN_PAGE_ROUTES = (
+    "/admin/automation-conversion/group-ops/ui",
+    "/admin/automation-conversion/group-ops/plans/{plan_id}",
+    "/admin/automation-conversion/group-ops/groups/ui",
+)
 MEDIA_LIBRARY_PAGE_ROUTES = (
     "/admin/image-library",
     "/admin/attachment-library",
@@ -1888,7 +1893,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                         "questionnaire_admin_read_production_compat_route",
                         str(compat_path.relative_to(root)),
                         route_path,
-                        "Questionnaire admin read routes must stay in frontend_compat/questionnaire Next read model code, not production_compat.",
+                        "Questionnaire admin read routes must stay in questionnaire Next read model code, not production_compat.",
                     )
                 )
 
@@ -1929,12 +1934,13 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                         )
                     )
 
-    frontend_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
-    if frontend_path.exists():
+    admin_pages_path = root / "aicrm_next/questionnaire/admin_pages.py"
+    if admin_pages_path.exists():
         sources = _function_sources(
-            frontend_path,
+            admin_pages_path,
             {
                 "admin_questionnaires",
+                "admin_questionnaires_legacy_ui_alias",
                 "admin_questionnaire_new",
                 "admin_questionnaire_detail",
                 "_questionnaire_editor_response",
@@ -1954,7 +1960,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
                     violations.append(
                         Violation(
                             code,
-                            str(frontend_path.relative_to(root)),
+                            str(admin_pages_path.relative_to(root)),
                             f"{function_name}:{marker}",
                             "Questionnaire admin read pages must stay Next-query/read-model only with no legacy forward, compatibility facade, or fallback_used=true.",
                         )
@@ -1967,7 +1973,7 @@ def check_questionnaire_admin_read_next_native(root: Path = ROOT) -> list[Violat
         if record is None:
             violations.append(Violation("questionnaire_admin_read_registry_missing", "docs/architecture/legacy_exit_route_registry.yaml", route_path))
             continue
-        expected_owner = "frontend_compat" if route_path.startswith("/admin/") else "next_native"
+        expected_owner = "next_native"
         if record.get("runtime_owner") != expected_owner:
             violations.append(Violation("questionnaire_admin_read_registry_owner", route_path, f"runtime_owner={record.get('runtime_owner')}"))
         if record.get("legacy_fallback_allowed") is not False:
@@ -2147,26 +2153,39 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
                 f"runtime_owner={external_push_record.get('runtime_owner')} legacy_fallback_allowed={external_push_record.get('legacy_fallback_allowed')} legacy_source={external_push_record.get('legacy_source')} adapter_mode={external_push_record.get('adapter_mode')} delete_status={external_push_record.get('delete_status')} replacement_status={external_push_record.get('replacement_status')}",
             )
         )
-    frontend_routes_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
-    if frontend_routes_path.exists():
-        frontend_source = frontend_routes_path.read_text(encoding="utf-8")
+    admin_pages_path = root / "aicrm_next/questionnaire/admin_pages.py"
+    if admin_pages_path.exists():
+        admin_pages_source = admin_pages_path.read_text(encoding="utf-8")
         try:
-            start = frontend_source.index('"/admin/questionnaires/external-push-logs"')
-            end = frontend_source.index('@router.get("/admin/automation-conversion"', start)
-            route_block = frontend_source[start:end]
+            start = admin_pages_source.index('"/admin/questionnaires/external-push-logs"')
+            route_block = admin_pages_source[start:]
         except ValueError:
-            violations.append(Violation("questionnaire_external_push_logs_route_block_missing", str(frontend_routes_path.relative_to(root)), external_push_route))
+            violations.append(Violation("questionnaire_external_push_logs_route_block_missing", str(admin_pages_path.relative_to(root)), external_push_route))
         else:
             if "forward_to_legacy_flask" in route_block:
-                violations.append(Violation("questionnaire_external_push_logs_legacy_forward", str(frontend_routes_path.relative_to(root)), "forward_to_legacy_flask"))
+                violations.append(Violation("questionnaire_external_push_logs_legacy_forward", str(admin_pages_path.relative_to(root)), "forward_to_legacy_flask"))
             for marker in [
                 "QuestionnaireExternalPushLogReadService",
                 "QuestionnaireExternalPushRetryService",
                 "QuestionnaireExternalPushRetryCommand",
                 "QuestionnaireExternalPushRetryBatchCommand",
             ]:
-                if marker not in frontend_source:
-                    violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(frontend_routes_path.relative_to(root)), marker))
+                if marker not in admin_pages_source:
+                    violations.append(Violation("questionnaire_external_push_logs_next_service_missing", str(admin_pages_path.relative_to(root)), marker))
+    else:
+        violations.append(Violation("questionnaire_external_push_logs_native_page_missing", str(admin_pages_path.relative_to(root)), external_push_route))
+
+    frontend_routes_path = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes_path.exists():
+        frontend_source = frontend_routes_path.read_text(encoding="utf-8")
+        if "/admin/questionnaires/external-push-logs" in frontend_source:
+            violations.append(
+                Violation(
+                    "questionnaire_external_push_logs_frontend_compat_route",
+                    str(frontend_routes_path.relative_to(root)),
+                    external_push_route,
+                )
+            )
 
     shell_endpoint_markers = [
         "api.admin_console_global_questionnaire_external_push_logs",
@@ -2189,7 +2208,7 @@ def check_questionnaire_admin_write_next_commandbus(root: Path = ROOT) -> list[V
                     )
                 )
 
-    next_template_path = root / "aicrm_next/frontend_compat/templates/admin_console/questionnaire_external_push_logs.html"
+    next_template_path = root / "aicrm_next/questionnaire/templates/admin_console/questionnaire_external_push_logs.html"
     if next_template_path.exists():
         next_template_source = next_template_path.read_text(encoding="utf-8")
         for marker in shell_endpoint_markers:
@@ -4757,6 +4776,63 @@ def check_automation_overview_pools_next_read_model(root: Path = ROOT) -> list[V
     return violations
 
 
+def check_group_ops_admin_pages_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    native_pages = root / "aicrm_next/automation_engine/group_ops/admin_pages.py"
+    native_template = root / "aicrm_next/automation_engine/group_ops/templates/admin_console/group_ops.html"
+    native_static = root / "aicrm_next/automation_engine/group_ops/static/admin_console"
+    main_path = root / "aicrm_next/main.py"
+
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        for route in GROUP_OPS_ADMIN_PAGE_ROUTES:
+            if route in source:
+                violations.append(Violation("group_ops_admin_page_legacy_route", str(frontend_routes.relative_to(root)), route))
+        for marker in ("def _group_ops_page_context", "def admin_group_ops_ui", "def admin_group_ops_plan_detail", "def admin_group_ops_groups_ui"):
+            if marker in source:
+                violations.append(Violation("group_ops_admin_page_legacy_handler", str(frontend_routes.relative_to(root)), marker))
+
+    retired_frontend_assets = (
+        root / "aicrm_next/frontend_compat/templates/admin_console/group_ops.html",
+        root / "aicrm_next/frontend_compat/static/admin_console/group_ops.css",
+        root / "aicrm_next/frontend_compat/static/admin_console/group_ops.js",
+    )
+    for path in retired_frontend_assets:
+        if path.exists():
+            violations.append(Violation("group_ops_admin_page_frontend_asset", str(path.relative_to(root)), "retired asset still present"))
+
+    required_native_paths = (
+        native_pages,
+        native_template,
+        native_static / "group_ops.css",
+        native_static / "group_ops.js",
+    )
+    for path in required_native_paths:
+        if not path.exists():
+            violations.append(Violation("group_ops_admin_page_native_asset_missing", str(path.relative_to(root)), "missing native group ops page bundle file"))
+
+    if native_pages.exists():
+        source = native_pages.read_text(encoding="utf-8")
+        for route in GROUP_OPS_ADMIN_PAGE_ROUTES:
+            if route.replace("{plan_id}", "{plan_id:int}") not in source and route not in source:
+                violations.append(Violation("group_ops_admin_page_native_route_missing", str(native_pages.relative_to(root)), route))
+
+    if native_template.exists():
+        template = native_template.read_text(encoding="utf-8")
+        if "/static/group-ops/admin_console/group_ops.css" not in template or "/static/group-ops/admin_console/group_ops.js" not in template:
+            violations.append(Violation("group_ops_admin_page_native_static_path", str(native_template.relative_to(root)), "group ops page static path must use native bundle"))
+
+    if main_path.exists():
+        main_source = main_path.read_text(encoding="utf-8")
+        if "group_ops_admin_pages_router" not in main_source:
+            violations.append(Violation("group_ops_admin_page_router_not_mounted", str(main_path.relative_to(root)), "group_ops_admin_pages_router"))
+        if '"/static/group-ops"' not in main_source:
+            violations.append(Violation("group_ops_admin_page_static_not_mounted", str(main_path.relative_to(root)), "/static/group-ops"))
+
+    return violations
+
+
 def check_customer_automation_webhook_next_safe_mode(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -5594,6 +5670,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_automation_workspace_runtime_next_safe_mode(ROOT)
         + check_automation_member_actions_next_safe_mode(ROOT)
         + check_automation_overview_pools_next_read_model(ROOT)
+        + check_group_ops_admin_pages_next_native(ROOT)
         + check_customer_automation_webhook_next_safe_mode(ROOT)
         + check_final_legacy_exit_cleanup(ROOT)
         + check_post_legacy_deferred_api_cleanup(ROOT)

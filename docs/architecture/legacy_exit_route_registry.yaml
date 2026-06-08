@@ -793,7 +793,7 @@ routes:
     path_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
@@ -802,12 +802,12 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire admin list page reads Next-native questionnaire queries; admin read legacy rollback removed; Next read model only.
+    notes: Questionnaire admin list page is owned by aicrm_next.questionnaire.admin_pages and reads Next-native questionnaire queries; admin read legacy rollback removed; Next read model only.
   - route_id: questionnaire_admin_new_page
     path_pattern: /admin/questionnaires/new
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
@@ -816,12 +816,12 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire new editor shell is read-only; admin read legacy rollback removed; no create/update writes execute here.
+    notes: Questionnaire new editor page is owned by aicrm_next.questionnaire.admin_pages; admin read legacy rollback removed; no create/update writes execute while rendering the page.
   - route_id: questionnaire_admin_detail_page
     path_pattern: /admin/questionnaires/{questionnaire_id}
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    runtime_owner: frontend_compat
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
@@ -830,7 +830,7 @@ routes:
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
     rollback_owner: aicrm_next.questionnaire
-    notes: Questionnaire detail/editor page reads Next-native questionnaire queries; admin read legacy rollback removed; controlled production_unavailable when production read model is unavailable.
+    notes: Questionnaire detail/editor page is owned by aicrm_next.questionnaire.admin_pages and reads Next-native questionnaire queries; admin read legacy rollback removed; controlled production_unavailable when production read model is unavailable.
   - route_id: questionnaire_admin_list_api
     path_pattern: /api/admin/questionnaires
     methods: [GET]

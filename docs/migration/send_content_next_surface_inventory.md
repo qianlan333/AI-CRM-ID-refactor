@@ -38,12 +38,13 @@ Outer business pages own strategy, audience, sender, schedule, approval, and rou
 - `aicrm_next/frontend_compat/static/admin_console/send_content_composer.css`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.js`
 - `aicrm_next/frontend_compat/static/admin_console/material_picker.css`
-- `aicrm_next/frontend_compat/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/automation_engine/templates/admin_console/_automation_operation_orchestration_panel.html`
+- `aicrm_next/automation_engine/static/admin_console/automation_operation_orchestration_panel.js`
 - `aicrm_next/frontend_compat/templates/admin_console/hxc_dashboard.html`
-- `aicrm_next/frontend_compat/templates/admin_console/channel_code_form.html`
-- `aicrm_next/frontend_compat/static/admin_console/channel_admission_pages.js`
-- `aicrm_next/frontend_compat/templates/admin_console/group_ops.html`
-- `aicrm_next/frontend_compat/static/admin_console/group_ops.js`
+- `aicrm_next/automation_engine/templates/admin_console/channel_code_form.html`
+- `aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js`
+- `aicrm_next/automation_engine/group_ops/templates/admin_console/group_ops.html`
+- `aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.js`
 - `aicrm_next/frontend_compat/templates/admin_console/cloud_campaigns_workspace.html`
 
 ## Migrated

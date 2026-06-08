@@ -5,13 +5,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "aicrm_next" / "frontend_compat"
+AUTOMATION = ROOT / "aicrm_next" / "automation_engine"
 STATIC = FRONTEND / "static" / "admin_console"
 TEMPLATES = FRONTEND / "templates" / "admin_console"
-OPERATION_PANEL = TEMPLATES / "_automation_operation_orchestration_panel.html"
-OPERATION_JS = STATIC / "automation_operation_orchestration_panel.js"
+AUTOMATION_STATIC = AUTOMATION / "static" / "admin_console"
+AUTOMATION_TEMPLATES = AUTOMATION / "templates" / "admin_console"
+GROUP_OPS_STATIC = AUTOMATION / "group_ops" / "static" / "admin_console"
+GROUP_OPS_TEMPLATES = AUTOMATION / "group_ops" / "templates" / "admin_console"
+OPERATION_PANEL = AUTOMATION_TEMPLATES / "_automation_operation_orchestration_panel.html"
+OPERATION_JS = AUTOMATION_STATIC / "automation_operation_orchestration_panel.js"
 HXC_TEMPLATE = TEMPLATES / "hxc_dashboard.html"
-GROUP_OPS_TEMPLATE = TEMPLATES / "group_ops.html"
-CHANNEL_TEMPLATE = TEMPLATES / "channel_code_form.html"
+GROUP_OPS_TEMPLATE = GROUP_OPS_TEMPLATES / "group_ops.html"
+CHANNEL_TEMPLATE = AUTOMATION_TEMPLATES / "channel_code_form.html"
 CAMPAIGN_TEMPLATE = TEMPLATES / "cloud_campaigns_workspace.html"
 
 
@@ -73,10 +78,10 @@ def test_migrated_business_pages_do_not_direct_fetch_material_libraries() -> Non
         (OPERATION_PANEL, _read(OPERATION_JS)),
         (HXC_TEMPLATE, ""),
         (CAMPAIGN_TEMPLATE, ""),
-        (GROUP_OPS_TEMPLATE, _read(STATIC / "group_ops.js")),
+        (GROUP_OPS_TEMPLATE, _read(GROUP_OPS_STATIC / "group_ops.js")),
         (
             CHANNEL_TEMPLATE,
-            _read(FRONTEND / "static" / "admin_console" / "channel_admission_pages.js"),
+            _read(AUTOMATION_STATIC / "channel_admission_pages.js"),
         ),
     ]
     direct_fetch_markers = [

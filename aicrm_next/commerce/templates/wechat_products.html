@@ -9,11 +9,23 @@
   .product-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px; border-radius: 999px; background: #eef2f7; color: #475569; font-size: 12px; font-weight: 800; }
   .product-pill.active { background: #e7f8ee; color: #0f7a43; }
   .product-pill.draft { background: #fff4d6; color: #8a5a00; }
-  .product-editor { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
-  .product-form { display: grid; gap: 18px; }
-  .product-section { display: grid; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-  .product-section:last-child { border-bottom: 0; padding-bottom: 0; }
-  .product-section h2 { margin: 0; font-size: 16px; }
+  .product-editor { display: grid; gap: 18px; align-items: start; }
+  .product-edit-top { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+  .product-edit-title { display: grid; gap: 4px; min-width: 0; }
+  .product-edit-title h1 { margin: 0; overflow: hidden; color: var(--text); font-size: 22px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+  .product-edit-title p { margin: 0; color: var(--muted); font-size: 13px; font-weight: 800; }
+  .product-form { display: grid; gap: 0; }
+  .product-module { overflow: hidden; border-bottom: 1px solid var(--line); }
+  .product-module:last-of-type { border-bottom: 0; }
+  .product-module-head { min-height: 74px; display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 18px 0; }
+  .product-module-title { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .product-module-step { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: #eef2f7; color: #475569; font-weight: 900; }
+  .product-module-copy { display: grid; gap: 3px; min-width: 0; }
+  .product-module-copy h2 { margin: 0; color: var(--text); font-size: 16px; line-height: 1.25; }
+  .product-module-copy p { margin: 0; color: var(--muted); font-size: 13px; font-weight: 750; line-height: 1.35; }
+  .product-module-body { display: grid; gap: 14px; padding: 0 0 18px; }
+  .product-module-panel { display: grid; gap: 14px; padding: 0 0 18px; }
+  .product-module-panel[hidden] { display: none !important; }
   .product-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
   .product-field { display: flex; flex-direction: column; gap: 8px; }
   .product-field label { color: var(--muted); font-size: 13px; font-weight: 800; }
@@ -29,10 +41,27 @@
   .product-slices { display: grid; gap: 10px; }
   .product-slice { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }
   .product-drag { display: grid; place-items: center; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; cursor: grab; color: var(--muted); font-weight: 900; }
+  .product-upload-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px; border: 1px dashed var(--line); border-radius: 10px; background: #fffdf8; }
+  .product-upload-copy { display: grid; gap: 3px; }
+  .product-upload-copy strong { color: var(--text); }
   .product-side { position: sticky; top: 16px; display: grid; gap: 12px; }
   .product-qr { width: 220px; height: 220px; justify-self: center; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fff; }
   .product-share-link { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; }
   .product-param-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) auto; gap: 8px; }
+  .product-collapse-control { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; font-weight: 850; white-space: nowrap; }
+  .product-switch { position: relative; width: 46px; height: 26px; border: 0; border-radius: 999px; background: #d0d5dd; cursor: pointer; transition: background .18s ease; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .06); }
+  .product-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .24); transition: transform .18s ease; }
+  .product-switch[aria-checked="true"] { background: #2563eb; }
+  .product-switch[aria-checked="true"]::after { transform: translateX(20px); }
+  .product-switch:focus-visible { outline: 3px solid rgba(37, 99, 235, .22); outline-offset: 3px; }
+  .product-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .product-option { min-height: 74px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fffdf8; text-align: left; cursor: pointer; }
+  .product-option strong { display: block; margin-bottom: 5px; color: var(--text); font: inherit; font-weight: 900; }
+  .product-option span { color: var(--muted); font-size: 12px; font-weight: 750; line-height: 1.35; }
+  .product-option.active { border-color: #93c5fd; background: #eff6ff; box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); }
+  .product-advanced { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .product-advanced summary { padding: 13px 14px; background: #f8fafc; color: var(--text); cursor: pointer; font-weight: 900; }
+  .product-advanced-body { display: grid; gap: 14px; padding: 14px; border-top: 1px solid var(--line); }
   #product-share-modal[hidden] { display: none !important; }
   .product-share-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, 0.34); }
   .product-share-panel { width: min(520px, 100%); overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: 0 24px 72px rgba(15, 23, 42, 0.22); }
@@ -44,7 +73,7 @@
   .product-share-input { min-width: 0; height: 42px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; color: var(--text); padding: 0 12px; }
   .product-share-qr-wrap { display: grid; justify-items: center; gap: 10px; }
   .product-share-qr { width: 220px; height: 220px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 12px; }
-  @media (max-width: 980px) { .product-editor, .product-field-grid, .product-share-row { grid-template-columns: 1fr; } .product-side { position: static; } }
+  @media (max-width: 980px) { .product-edit-top, .product-field-grid, .product-option-grid, .product-share-row, .product-upload-row { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; } .product-side { position: static; } }
 </style>
 {% endblock %}
 
@@ -93,138 +122,207 @@
   <div class="product-editor">
     <section class="admin-card">
       <form class="product-form" id="productForm">
-        <div class="product-section">
-          <h2>商品基础信息</h2>
-          <div class="product-field-grid">
-            <div class="product-field">
-              <label for="productCode">商品编码</label>
-              <input id="productCode" class="product-mono" required minlength="3" maxlength="80" autocomplete="off" {% if product_page_mode == "edit" %}readonly{% endif %}>
-            </div>
-            <div class="product-field">
-              <label for="productTitle">商品名称</label>
-              <input id="productTitle" required maxlength="120" autocomplete="off">
-            </div>
-            <div class="product-field">
-              <label for="productPrice">价格</label>
-              <input id="productPrice" type="number" min="0" step="0.01" required>
-            </div>
-            <div class="product-field">
-              <label for="productStatus">状态</label>
-              <select id="productStatus">
-                <option value="active">已上架</option>
-                <option value="draft">草稿</option>
-                <option value="disabled">已下架</option>
-              </select>
-            </div>
-            <div class="product-field">
-              <label for="buyButtonText">磁吸按钮话术</label>
-              <input id="buyButtonText" maxlength="24" autocomplete="off">
-            </div>
-            <div class="product-field">
-              <label for="requireMobile">手机号要求</label>
-              <select id="requireMobile">
-                <option value="false">不要求</option>
-                <option value="true">要求填写</option>
-              </select>
-            </div>
-            <div class="product-field product-wide">
-              <label for="productDescription">描述</label>
-              <textarea id="productDescription"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <div class="product-section">
-          <h2>支付后引流渠道码</h2>
-          <div class="product-field">
-            <label for="leadChannel">引流渠道码</label>
-            <select id="leadChannel"></select>
-          </div>
-          <div class="product-toast" id="completionRedirectLeadHint" style="display:none;">当前已开启完成后跳转，支付成功后将不会自动弹出引流二维码。</div>
-        </div>
-
-        <div class="product-section">
-          <h2>报名完成后跳转</h2>
-          <div class="product-toast">开启后，用户完成商品报名/支付成功后将直接跳转到指定链接，不再弹出引流二维码。关闭后保持原有二维码引流逻辑。</div>
-          <div class="product-field-grid">
-            <div class="product-field product-wide">
-              <label><input id="completionRedirectEnabled" type="checkbox"> 开启完成后跳转</label>
-            </div>
-            <div class="product-field product-wide">
-              <label for="completionRedirectUrl">跳转链接</label>
-              <input id="completionRedirectUrl" placeholder="https://example.com/welcome">
-              <div class="product-toast">建议填写 https 链接。开启后该链接优先级高于支付后引流二维码。</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="product-section" id="externalPushSection">
-          <h2>外部推送</h2>
-          <div class="product-field-grid">
-            <div class="product-field">
-              <label for="externalPushEnabled">开启状态</label>
-              <select id="externalPushEnabled"><option value="false">关闭</option><option value="true">开启</option></select>
-            </div>
-            <div class="product-field">
-              <label for="externalPushUrl">推送地址</label>
-              <input id="externalPushUrl" placeholder="https://hooks.example.com/...">
-            </div>
-            <div class="product-field">
-              <label for="externalPushType">type</label>
-              <input id="externalPushType" placeholder="paid_notify">
-            </div>
-            <div class="product-field">
-              <label for="externalPushExpiresAtTs">expires_at_ts</label>
-              <input id="externalPushExpiresAtTs" type="number" step="1">
-            </div>
-            <div class="product-field">
-              <label for="externalPushDay">day</label>
-              <input id="externalPushDay" type="number" step="1">
-            </div>
-            <div class="product-field">
-              <label for="externalPushFrequency">frequency</label>
-              <input id="externalPushFrequency" type="number" step="1">
-            </div>
-            <div class="product-field product-wide">
-              <label for="externalPushRemark">remark</label>
-              <textarea id="externalPushRemark"></textarea>
-            </div>
-          </div>
-          <div class="product-field">
-            <label>自定义参数</label>
-            <div id="externalPushParams" class="product-slices"></div>
-            <button class="admin-button admin-button--ghost" id="addExternalPushParam" type="button">新增参数</button>
+        <div class="product-edit-top">
+          <div class="product-edit-title">
+            <h1 id="productEditTitle">编辑商品</h1>
+            <p>客户管理后台 / 商品管理 / 编辑商品</p>
           </div>
           <div class="product-actions">
-            <button class="admin-button admin-button--ghost" id="testExternalPushBtn" type="button">测试推送</button>
-            <span class="product-toast" id="externalPushResult"></span>
+            <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products">返回列表</a>
+            <button class="admin-button admin-button--ghost" id="copyShareLinkBtn" type="button">复制链接</button>
+            <button class="admin-button admin-button--ghost" id="openSharePreviewBtn" type="button">打开预览</button>
+            <button class="admin-button admin-button--primary" type="submit">保存商品</button>
           </div>
         </div>
 
-        <div class="product-section">
-          <h2>全景贴图长图切片</h2>
-          <div class="product-actions">
-            <label class="admin-button admin-button--ghost">
-              上传切片
-              <input id="sliceInput" type="file" accept="image/png,image/jpeg" multiple style="display:none">
-            </label>
-            <span class="product-toast">最多 10 张，保存后生效</span>
+        <div class="product-module" id="saleInfoModule">
+          <div class="product-module-head">
+            <div class="product-module-title">
+              <div class="product-module-step">1</div>
+              <div class="product-module-copy">
+                <h2>售卖信息</h2>
+                <p>只保留影响用户下单的核心字段。</p>
+              </div>
+            </div>
           </div>
-          <div class="product-slices" id="sliceList"></div>
+          <div class="product-module-body">
+            <div class="product-field-grid">
+              <div class="product-field">
+                <label for="productTitle">商品名称</label>
+                <input id="productTitle" required maxlength="120" autocomplete="off">
+              </div>
+              <div class="product-field">
+                <label for="productPrice">价格</label>
+                <input id="productPrice" type="number" min="0" step="0.01" required>
+              </div>
+              <div class="product-field">
+                <label for="buyButtonText">购买按钮文案</label>
+                <input id="buyButtonText" maxlength="24" autocomplete="off">
+              </div>
+              <div class="product-field">
+                <label for="requireMobile">手机号要求</label>
+                <select id="requireMobile">
+                  <option value="false">不要求</option>
+                  <option value="true">要求填写</option>
+                </select>
+              </div>
+              <div class="product-field">
+                <label for="productStatus">商品状态</label>
+                <select id="productStatus">
+                  <option value="active">已上架</option>
+                  <option value="draft">草稿</option>
+                  <option value="disabled">已下架</option>
+                </select>
+              </div>
+              <div class="product-field">
+                <label for="productCode">商品编码</label>
+                <input id="productCode" class="product-mono" required minlength="3" maxlength="80" autocomplete="off" {% if product_page_mode == "edit" %}readonly{% endif %}>
+              </div>
+              <div class="product-field product-wide">
+                <label for="productDescription">商品描述</label>
+                <textarea id="productDescription"></textarea>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="product-actions">
-          <button class="admin-button admin-button--primary" type="submit">保存商品</button>
-          <a class="admin-button admin-button--ghost" href="/admin/wechat-pay/products">返回列表</a>
+        <div class="product-module" id="mediaModule">
+          <div class="product-module-head">
+            <div class="product-module-title">
+              <div class="product-module-step">2</div>
+              <div class="product-module-copy">
+                <h2>页面素材</h2>
+                <p>商品页长图切片。上传、排序、删除集中在这里。</p>
+              </div>
+            </div>
+            <div class="product-toast" id="sliceCount">0 / 10 张</div>
+          </div>
+          <div class="product-module-body">
+            <div class="product-upload-row">
+              <div class="product-upload-copy">
+                <strong>上传长图切片</strong>
+                <span class="product-toast">支持 PNG / JPG，最多 10 张；拖拽排序后保存生效。</span>
+              </div>
+              <label class="admin-button admin-button--ghost">
+                上传图片
+                <input id="sliceInput" type="file" accept="image/png,image/jpeg" multiple style="display:none">
+              </label>
+            </div>
+            <div class="product-slices" id="sliceList"></div>
+          </div>
+        </div>
+
+        <div class="product-module" id="afterActionModule">
+          <div class="product-module-head">
+            <div class="product-module-title">
+              <div class="product-module-step">3</div>
+              <div class="product-module-copy">
+                <h2>购买后动作</h2>
+                <p>默认收起。需要设置跳转或引流时打开。</p>
+              </div>
+            </div>
+            <div class="product-collapse-control">
+              <span>展开配置</span>
+              <button class="product-switch" id="afterActionExpand" type="button" role="switch" aria-checked="false" aria-label="展开购买后动作配置"></button>
+            </div>
+          </div>
+          <div class="product-module-panel" id="afterActionPanel" hidden>
+            <div class="product-option-grid" role="group" aria-label="购买后动作模式">
+              <button class="product-option" data-after-mode="lead" type="button">
+                <strong>支付后展示引流二维码</strong>
+                <span>用户支付成功后看到已绑定的引流渠道码。</span>
+              </button>
+              <button class="product-option" data-after-mode="redirect" type="button">
+                <strong>支付完成后直接跳转</strong>
+                <span>用户完成报名/支付后直接进入指定链接。</span>
+              </button>
+            </div>
+            <div class="product-field-grid">
+              <div class="product-field">
+                <label for="leadChannel">引流渠道码</label>
+                <select id="leadChannel"></select>
+              </div>
+              <div class="product-field">
+                <label for="completionRedirectUrl">跳转链接</label>
+                <input id="completionRedirectUrl" placeholder="https://example.com/welcome">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="product-module" id="externalPushSection">
+          <div class="product-module-head">
+            <div class="product-module-title">
+              <div class="product-module-step">4</div>
+              <div class="product-module-copy">
+                <h2>外部推送</h2>
+                <p>默认收起。需要订单 webhook 时打开。</p>
+              </div>
+            </div>
+            <div class="product-collapse-control">
+              <span>展开配置</span>
+              <button class="product-switch" id="externalPushExpand" type="button" role="switch" aria-checked="false" aria-label="展开外部推送配置"></button>
+            </div>
+          </div>
+          <div class="product-module-panel" id="externalPushPanel" hidden>
+            <div class="product-field-grid">
+              <div class="product-field">
+                <label>支付成功外推</label>
+                <div class="product-collapse-control" style="justify-content:flex-start;">
+                  <button class="product-switch" id="externalPushEnabled" type="button" role="switch" aria-checked="false" aria-label="开启支付成功外推"></button>
+                  <span id="externalPushEnabledText">关闭</span>
+                </div>
+              </div>
+              <div class="product-field">
+                <label for="externalPushUrl">推送地址</label>
+                <input id="externalPushUrl" placeholder="https://hooks.example.com/...">
+              </div>
+              <div class="product-field product-wide">
+                <label for="externalPushRemark">备注</label>
+                <textarea id="externalPushRemark"></textarea>
+              </div>
+            </div>
+            <details class="product-advanced">
+              <summary>高级参数</summary>
+              <div class="product-advanced-body">
+                <div class="product-field-grid">
+                  <div class="product-field">
+                    <label for="externalPushType">push_type</label>
+                    <input id="externalPushType" placeholder="paid_notify">
+                  </div>
+                  <div class="product-field">
+                    <label for="externalPushExpiresAtTs">expires_at_ts</label>
+                    <input id="externalPushExpiresAtTs" type="number" step="1">
+                  </div>
+                  <div class="product-field">
+                    <label for="externalPushDay">day</label>
+                    <input id="externalPushDay" type="number" step="1">
+                  </div>
+                  <div class="product-field">
+                    <label for="externalPushFrequency">frequency</label>
+                    <input id="externalPushFrequency" type="number" step="1">
+                  </div>
+                </div>
+                <div class="product-field">
+                  <label>custom_params</label>
+                  <div id="externalPushParams" class="product-slices"></div>
+                  <button class="admin-button admin-button--ghost" id="addExternalPushParam" type="button">新增参数</button>
+                </div>
+              </div>
+            </details>
+            <div class="product-actions">
+              <button class="admin-button admin-button--ghost" id="testExternalPushBtn" type="button">测试推送</button>
+              <span class="product-toast">测试前会先保存当前外推配置。</span>
+              <span class="product-toast" id="externalPushResult"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="product-actions" style="padding-top:18px;">
           <span class="product-toast" id="productToast"></span>
         </div>
       </form>
     </section>
-
-    <aside class="admin-card product-side">
-      <h2 style="margin:0;font-size:16px;">扫码预览</h2>
-      <div id="sharePreview" class="product-toast">保存商品后生成扫码预览</div>
-    </aside>
   </div>
   {% endif %}
 
@@ -273,6 +371,8 @@
   let leadChannels = [{ channel_id: 0, channel_name: "不配置引流渠道码", selectable: true }];
   let dragId = "";
   let activeShareUrl = "";
+  let shareInfo = null;
+  let afterActionMode = product.completion_redirect_enabled ? "redirect" : "lead";
 
   function $(id) { return document.getElementById(id); }
   function esc(value) { return String(value == null ? "" : value).replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])); }
@@ -282,6 +382,32 @@
   function productDisplayName(value) { return String(value || "商品").trim() || "商品"; }
   function safeQrDownloadName(value) {
     return `${productDisplayName(value).replace(/[\\/:*?"<>|]+/g, "_")}二维码.svg`;
+  }
+  function setSwitch(button, enabled) {
+    if (!button) return;
+    button.setAttribute("aria-checked", enabled ? "true" : "false");
+  }
+  function switchIsOn(button) {
+    return button?.getAttribute("aria-checked") === "true";
+  }
+  function togglePanel(buttonId, panelId) {
+    const button = $(buttonId);
+    const panel = $(panelId);
+    if (!button || !panel) return;
+    const next = !switchIsOn(button);
+    setSwitch(button, next);
+    panel.hidden = !next;
+  }
+  function setExternalPushEnabled(enabled) {
+    setSwitch($("externalPushEnabled"), enabled);
+    const label = $("externalPushEnabledText");
+    if (label) label.textContent = enabled ? "开启" : "关闭";
+  }
+  function selectAfterActionMode(modeName) {
+    afterActionMode = modeName === "redirect" ? "redirect" : "lead";
+    document.querySelectorAll("[data-after-mode]").forEach(option => {
+      option.classList.toggle("active", option.dataset.afterMode === afterActionMode);
+    });
   }
   async function copyText(text) {
     const value = String(text || "");
@@ -364,38 +490,35 @@
     if (!$("productForm")) return;
     $("productCode").value = product.product_code || "";
     $("productTitle").value = product.title || product.name || "";
+    $("productEditTitle").textContent = product.title || product.name || "编辑商品";
     $("productPrice").value = money(product.price_cents || product.amount_total);
     $("productStatus").value = product.status || (product.enabled ? "active" : "disabled");
     $("buyButtonText").value = product.buy_button_text || product.cta_text || "立即购买";
     $("requireMobile").value = product.require_mobile ? "true" : "false";
     $("productDescription").value = product.description || "";
     $("leadChannel").value = String(product.lead_channel_id || 0);
-    $("completionRedirectEnabled").checked = Boolean(product.completion_redirect_enabled);
     $("completionRedirectUrl").value = product.completion_redirect_url || "";
-    syncCompletionRedirectHint();
+    selectAfterActionMode(product.completion_redirect_enabled ? "redirect" : "lead");
     renderSlices();
   }
 
-  function syncCompletionRedirectHint() {
-    const hint = $("completionRedirectLeadHint");
-    if (hint) hint.style.display = $("completionRedirectEnabled")?.checked ? "block" : "none";
-  }
-
   function completionRedirectPayload() {
-    const enabled = Boolean($("completionRedirectEnabled").checked);
+    const enabled = afterActionMode === "redirect";
     const url = String($("completionRedirectUrl").value || "").trim();
     const isSafeInternalPath = /^\/(?!\/)[^\s\\]*$/.test(url);
     if (enabled && !url) throw new Error("请填写跳转链接");
-    if (url && !/^https:\/\/[^/\s?#]+/i.test(url) && !isSafeInternalPath) throw new Error("跳转链接格式不合法");
+    if (enabled && !/^https:\/\/[^/\s?#]+/i.test(url) && !isSafeInternalPath) throw new Error("跳转链接格式不合法");
     return {
       completion_redirect_enabled: enabled,
-      completion_redirect_url: url
+      completion_redirect_url: enabled ? url : ""
     };
   }
 
   function readProductBody() {
+    const productCode = $("productCode").value.trim();
     return {
-      product: { code: $("productCode").value.trim() },
+      product_code: productCode,
+      product: { code: productCode },
       title: $("productTitle").value.trim(),
       description: $("productDescription").value.trim(),
       price_cents: cents($("productPrice").value),
@@ -403,7 +526,7 @@
       enabled: $("productStatus").value === "active",
       buy_button_text: $("buyButtonText").value.trim() || "立即购买",
       require_mobile: $("requireMobile").value === "true",
-      lead_channel_id: Number($("leadChannel").value || 0) || null,
+      lead_channel_id: afterActionMode === "lead" ? (Number($("leadChannel").value || 0) || null) : null,
       ...completionRedirectPayload(),
       slices: (product.slices || []).map((slice, index) => ({ image_library_id: Number(slice.image_library_id), sort_order: index + 1 }))
     };
@@ -424,6 +547,8 @@
     const target = $("sliceList");
     if (!target) return;
     const slices = product.slices || [];
+    const count = $("sliceCount");
+    if (count) count.textContent = `${slices.length} / 10 张`;
     if (!slices.length) {
       target.innerHTML = '<div class="product-toast">暂无贴图切片</div>';
       return;
@@ -471,7 +596,7 @@
       $("externalPushSection").hidden = true;
       return;
     }
-    $("externalPushEnabled").value = externalPush.enabled ? "true" : "false";
+    setExternalPushEnabled(Boolean(externalPush.enabled));
     $("externalPushUrl").value = externalPush.webhook_url || "";
     $("externalPushType").value = externalPush.push_type || "";
     $("externalPushExpiresAtTs").value = externalPush.expires_at_ts == null ? "" : externalPush.expires_at_ts;
@@ -490,7 +615,7 @@
     });
     const numberOrNull = id => $(id).value.trim() ? Number($(id).value.trim()) : null;
     return {
-      enabled: $("externalPushEnabled").value === "true",
+      enabled: switchIsOn($("externalPushEnabled")),
       webhook_url: $("externalPushUrl").value.trim(),
       push_type: $("externalPushType").value.trim(),
       expires_at_ts: numberOrNull("externalPushExpiresAtTs"),
@@ -501,18 +626,11 @@
     };
   }
 
-  async function renderSharePreview() {
-    const target = $("sharePreview");
-    if (!target || !product.id) return;
-    try {
-      const payload = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share`);
-      const share = payload.share || {};
-      target.innerHTML = `<img class="product-qr" src="${esc(share.qr_data_url || "")}" alt="商品二维码">
-        <input class="product-share-link" value="${esc(share.url || "")}" readonly>
-        <a class="admin-button admin-button--ghost" href="${esc(share.url || "#")}" target="_blank" rel="noreferrer">打开页面</a>`;
-    } catch (error) {
-      target.textContent = "扫码预览生成失败";
-    }
+  async function loadShareInfo() {
+    if (!product.id) return null;
+    const payload = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share`);
+    shareInfo = payload.share || null;
+    return shareInfo;
   }
 
   async function uploadSlices(files) {
@@ -536,17 +654,17 @@
 
   async function initEditor() {
     if (!$("productForm")) return;
-    const channels = await api("/api/admin/wechat-pay/products/lead-channels").catch(() => ({ items: leadChannels }));
+    const channels = await api("/api/admin/wechat-pay/products/lead-channels");
     leadChannels = channels.items || leadChannels;
     renderLeadChannels();
     if (mode === "edit" && product.id) {
       const detail = await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}`);
       product = detail.product || product;
-      externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`).catch(() => ({ config: externalPush }))).config || externalPush;
+      externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`)).config || externalPush;
+      await loadShareInfo();
     }
     fillForm();
     fillExternalPush();
-    renderSharePreview();
   }
 
   document.addEventListener("click", async event => {
@@ -600,7 +718,29 @@
     event.target.value = "";
   });
 
-  $("completionRedirectEnabled")?.addEventListener("change", syncCompletionRedirectHint);
+  $("afterActionExpand")?.addEventListener("click", () => togglePanel("afterActionExpand", "afterActionPanel"));
+  $("externalPushExpand")?.addEventListener("click", () => togglePanel("externalPushExpand", "externalPushPanel"));
+  $("externalPushEnabled")?.addEventListener("click", () => setExternalPushEnabled(!switchIsOn($("externalPushEnabled"))));
+  document.querySelectorAll("[data-after-mode]").forEach(option => {
+    option.addEventListener("click", () => selectAfterActionMode(option.dataset.afterMode));
+  });
+  $("copyShareLinkBtn")?.addEventListener("click", async () => {
+    try {
+      const share = await loadShareInfo();
+      await copyText(share?.url || "");
+    } catch (error) {
+      showToast(error.message || "复制失败");
+    }
+  });
+  $("openSharePreviewBtn")?.addEventListener("click", async () => {
+    try {
+      const share = await loadShareInfo();
+      if (!share?.url) throw new Error("当前商品还没有可预览链接");
+      window.open(share.url, "_blank", "noopener");
+    } catch (error) {
+      showToast(error.message || "打开预览失败");
+    }
+  });
   $("product-share-close")?.addEventListener("click", closeShareModal);
   $("product-share-copy")?.addEventListener("click", () => {
     copyText(activeShareUrl).catch(error => showToast(error.message || "复制失败"));
@@ -625,7 +765,8 @@
       if (mode === "edit") {
         externalPush = (await api(`/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/external-push`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readExternalPushBody()) })).config || externalPush;
         fillExternalPush();
-        renderSharePreview();
+        await loadShareInfo();
+        $("productEditTitle").textContent = product.title || product.name || "编辑商品";
         showToast("已保存");
       } else {
         window.location.href = `/admin/wechat-pay/products/${encodeURIComponent(product.id)}/edit`;

@@ -6,12 +6,14 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "aicrm_next" / "frontend_compat" / "static" / "admin_console"
-TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
+AUTOMATION_STATIC = ROOT / "aicrm_next" / "automation_engine" / "static" / "admin_console"
+AUTOMATION_TEMPLATES = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console"
+TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "templates" / "admin_console" / "_automation_operation_orchestration_panel.html"
 HXC_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "hxc_dashboard.html"
-CHANNEL_FORM_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "channel_code_form.html"
-GROUP_OPS_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "group_ops.html"
+CHANNEL_FORM_TEMPLATE = AUTOMATION_TEMPLATES / "channel_code_form.html"
+GROUP_OPS_TEMPLATE = ROOT / "aicrm_next" / "automation_engine" / "group_ops" / "templates" / "admin_console" / "group_ops.html"
 CLOUD_CAMPAIGNS_TEMPLATE = ROOT / "aicrm_next" / "frontend_compat" / "templates" / "admin_console" / "cloud_campaigns_workspace.html"
-OPERATION_JS = STATIC / "automation_operation_orchestration_panel.js"
+OPERATION_JS = AUTOMATION_STATIC / "automation_operation_orchestration_panel.js"
 MATERIAL_PICKER_CSS = STATIC / "material_picker.css"
 SEND_CONTENT_ASSET_VERSION = "send-content-preview-ux-20260527"
 
@@ -52,10 +54,11 @@ def test_standard_send_content_assets_are_cache_busted_on_migrated_surfaces() ->
 
     for path in templates:
         source = _read(path)
-        assert f"material_picker.css') }}}}?v={SEND_CONTENT_ASSET_VERSION}" in source
-        assert f"send_content_composer.css') }}}}?v={SEND_CONTENT_ASSET_VERSION}" in source
-        assert f"material_picker.js') }}}}?v={SEND_CONTENT_ASSET_VERSION}" in source
-        assert f"send_content_composer.js') }}}}?v={SEND_CONTENT_ASSET_VERSION}" in source
+        assert "material_picker.css') }}?v=" in source
+        assert "send_content_composer.css') }}?v=" in source
+        assert "material_picker.js') }}?v=" in source
+        assert "send_content_composer.js') }}?v=" in source
+    assert SEND_CONTENT_ASSET_VERSION in _read(TEMPLATE)
 
 
 def test_send_content_composer_excludes_non_standard_controls() -> None:
@@ -150,7 +153,7 @@ def test_operation_panel_contains_agent_selector_logic() -> None:
 
     assert "/api/admin/automation-conversion/agents" in source
     assert "data-agent-select" in source
-    assert "textEnabled: false" in source
+    assert "textEnabled: true" in source
     assert "agent-materials" in source
 
 

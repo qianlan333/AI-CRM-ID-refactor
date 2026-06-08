@@ -512,37 +512,29 @@
   }
 
   function setupEntryTagPicker() {
-    const modal = root.querySelector("[data-resource-picker-modal]");
-    if (!modal) return;
-    const list = root.querySelector("[data-resource-picker-results]");
-    const title = root.querySelector("[data-resource-picker-title]");
-    const subtitle = root.querySelector("[data-resource-picker-subtitle]");
-    const search = root.querySelector("[data-resource-picker-search]");
+    const openButton = root.querySelector("[data-open-tag-picker]");
+    if (!openButton) return;
     const tagSelected = root.querySelector("[data-tag-selected]");
     const tagIdInput = root.querySelector("[data-entry-tag-id]");
     const tagNameInput = root.querySelector("[data-entry-tag-name]");
     const tagGroupInput = root.querySelector("[data-entry-tag-group-name]");
-    const pickerState = { selectedTagId: "", items: [] };
+    const pickerState = { catalog: null, failed: false };
 
-    const fetchTags = (keyword) => {
+    const fetchTagCatalog = () => {
+      if (pickerState.catalog) return Promise.resolve(pickerState.catalog);
       const apiUrl = (bootstrap.api_urls || {}).wecom_tags || "/api/admin/wecom/tags";
       return apiJson(apiUrl, { method: "GET" }).then(({ data }) => {
-        const query = String(keyword || "").trim().toLowerCase();
-        return (Array.isArray(data.items) ? data.items : [])
-          .filter((item) => {
-            if (!query) return true;
-            return [item.group_name, item.tag_name, item.tag_id].join(" ").toLowerCase().includes(query);
-          })
-          .map((item) => ({
-            id: item.tag_id,
-            type: "tag",
-            name: item.tag_name || item.tag_id,
-            description: item.group_name || "未分组",
-            tag_id: item.tag_id,
-            tag_name: item.tag_name || item.tag_id,
-            group_name: item.group_name || "",
-          }));
-      }).catch(() => []);
+        pickerState.catalog = {
+          groups: Array.isArray(data.groups) ? data.groups : [],
+          items: Array.isArray(data.items) ? data.items : [],
+        };
+        pickerState.failed = false;
+        return pickerState.catalog;
+      }).catch(() => {
+        pickerState.catalog = { groups: [], items: [] };
+        pickerState.failed = true;
+        return pickerState.catalog;
+      });
     };
 
     const renderSelectedMaterials = () => {
@@ -551,63 +543,47 @@
         const tagName = String(tagNameInput?.value || "").trim();
         const groupName = String(tagGroupInput?.value || "").trim();
         tagSelected.innerHTML = tagId
-          ? '<button type="button" class="channel-material-chip" data-remove-picked="tag" data-id="' + escapeHtml(tagId) + '">' + escapeHtml((groupName ? groupName + " / " : "") + (tagName || tagId)) + ' ×</button>'
+          ? '<button type="button" class="channel-material-chip" data-remove-picked="tag">' + escapeHtml((groupName ? groupName + " / " : "") + (tagName || "已选择标签")) + ' ×</button>'
           : '<span class="channel-muted">暂未选择标签</span>';
       }
     };
 
-    const renderPickerRows = () => {
-      const rows = pickerState.items.map((item) => {
-        const value = String(item.tag_id);
-        const checked = pickerState.selectedTagId === value ? "checked" : "";
-        const meta = item.description || "未分组";
-        return '<label class="channel-material-row channel-material-row--preview">' +
-          '<input type="radio" name="channel-resource-picker" data-resource-checkbox value="' + escapeHtml(value) + '" ' + checked + '>' +
-          '<strong>' + escapeHtml(item.name || item.title || value || "-") + '</strong>' +
-          '<span>' + escapeHtml(meta) + '</span>' +
-          '</label>';
-      });
-      list.innerHTML = rows.length ? rows.join("") : '<p class="channel-muted">没有匹配结果。</p>';
-    };
-
-    const loadPickerItems = () => {
-      const keyword = search?.value || "";
-      list.innerHTML = '<p class="channel-muted">正在加载...</p>';
-      fetchTags(keyword).then((items) => {
-        pickerState.items = items;
-        renderPickerRows();
-      });
-    };
-
     const openPicker = () => {
-      pickerState.items = [];
-      pickerState.selectedTagId = String(tagIdInput?.value || "");
-      if (search) search.value = "";
-      title.textContent = "预览并选择标签";
-      subtitle.textContent = "从已同步的企微标签组中选择，保存时只写入标签编号。";
-      modal.hidden = false;
-      loadPickerItems();
+      if (!window.AICRMWeComTagPicker) {
+        toast("标签选择器加载失败，请刷新后重试");
+        return;
+      }
+      fetchTagCatalog().then((catalog) => {
+        const currentValue = String(tagIdInput?.value || "").trim()
+          ? {
+              tag_id: tagIdInput.value,
+              tag_name: tagNameInput?.value || "",
+              group_name: tagGroupInput?.value || "",
+            }
+          : null;
+        window.AICRMWeComTagPicker.open({
+          title: "选择入渠标签",
+          mode: "single",
+          value: currentValue,
+          catalog,
+          allowManual: pickerState.failed,
+          onConfirm: (tag) => {
+            if (tagIdInput) tagIdInput.value = tag?.tag_id || "";
+            if (tagNameInput) tagNameInput.value = tag?.tag_name || "";
+            if (tagGroupInput) tagGroupInput.value = tag?.group_name || "";
+            renderSelectedMaterials();
+          },
+          onClear: () => {
+            if (tagIdInput) tagIdInput.value = "";
+            if (tagNameInput) tagNameInput.value = "";
+            if (tagGroupInput) tagGroupInput.value = "";
+            renderSelectedMaterials();
+          },
+        });
+      });
     };
 
-    root.querySelector("[data-open-tag-picker]")?.addEventListener("click", openPicker);
-    root.querySelector("[data-close-resource-picker]")?.addEventListener("click", () => {
-      modal.hidden = true;
-    });
-    search?.addEventListener("input", loadPickerItems);
-    root.querySelector("[data-confirm-resource-picker]")?.addEventListener("click", () => {
-      const checked = modal.querySelector("[data-resource-checkbox]:checked");
-      const item = pickerState.items.find((candidate) => String(candidate.tag_id) === String(checked?.value || ""));
-      if (tagIdInput) tagIdInput.value = item?.tag_id || "";
-      if (tagNameInput) tagNameInput.value = item?.tag_name || "";
-      if (tagGroupInput) tagGroupInput.value = item?.group_name || "";
-      modal.hidden = true;
-      renderSelectedMaterials();
-    });
-    modal.addEventListener("change", (event) => {
-      const checkbox = event.target.closest("[data-resource-checkbox]");
-      if (!checkbox) return;
-      pickerState.selectedTagId = checkbox.value;
-    });
+    openButton.addEventListener("click", openPicker);
     root.addEventListener("click", (event) => {
       const button = event.target.closest("[data-remove-picked]");
       if (!button) return;

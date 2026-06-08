@@ -54,7 +54,7 @@ routes:
   - route_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next_native
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
@@ -63,11 +63,11 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
-    notes: Questionnaire admin list page reads Next-native questionnaire read model only; admin read legacy rollback removed; fixture/local_contract is not allowed in production.
+    notes: Questionnaire admin list page is owned by aicrm_next.questionnaire.admin_pages and reads Next-native questionnaire read model only; admin read legacy rollback removed; fixture/local_contract is not allowed in production.
   - route_pattern: /admin/questionnaires/new
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next_native
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
@@ -76,11 +76,11 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
-    notes: Admin questionnaire new editor shell is rendered by Next frontend_compat; admin read legacy rollback removed; it does not execute create/update writes, and production writes remain out of scope.
+    notes: Admin questionnaire new editor shell is rendered by aicrm_next.questionnaire.admin_pages; admin read legacy rollback removed; it does not execute create/update writes while loading the page.
   - route_pattern: /admin/questionnaires/{questionnaire_id}
     methods: [GET]
     capability_owner: aicrm_next.questionnaire
-    current_runtime_owner: frontend_compat
+    current_runtime_owner: next_native
     production_behavior: next_read_model_only
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
@@ -89,18 +89,20 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_questionnaire_admin_read_registry_lifecycle.py
-    notes: Admin questionnaire detail/editor page loads through Next-native read model only; admin read legacy rollback removed; read-model failures return controlled production_unavailable.
+    notes: Admin questionnaire detail/editor page is rendered by aicrm_next.questionnaire.admin_pages and loads through Next-native read model only; admin read legacy rollback removed; read-model failures return controlled production_unavailable.
   - route_pattern: /admin/automation-conversion
     methods: [GET]
     capability_owner: aicrm_next.automation_engine
-    current_runtime_owner: frontend_compat
-    production_behavior: readonly_facade
+    current_runtime_owner: next
+    production_behavior: next_native_page_render
     legacy_fallback_allowed: false
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
-    delete_ready: false
-    checker: tools/check_next_production_cutover_readiness.py
-    notes: Admin page is Next frontend_compat; write/runtime actions remain guarded separately.
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_automation_admin_pages_next_native.py
+    notes: P2-12C automation project list page is served by aicrm_next.automation_engine.admin_pages and removed from frontend_compat legacy route inventory; write/runtime actions remain guarded separately.
   - route_pattern: /admin/automation-conversion/{path:path}
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine
