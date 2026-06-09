@@ -14,6 +14,7 @@ from wecom_ability_service.domains.admin_auth.auth_runtime import (
 )
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import admin_service as wechat_pay_admin_service
+from aicrm_next.commerce import admin_transactions as next_wechat_admin_transactions
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -155,6 +156,48 @@ def test_wechat_pay_admin_repairs_utf8_mojibake_payer_name_snapshot():
 
     assert presented["payer_name"] == "曾德钧"
     assert presented["identity"] == "曾德钧 / 18675597381 / HuangYouCan"
+
+
+def test_next_wechat_pay_admin_repairs_utf8_mojibake_payer_name_snapshot():
+    row = {
+        "id": 1,
+        "created_at": "2026-06-09 13:41:05",
+        "transaction_id": "4200003181202606097097565241",
+        "payer_name_snapshot": "æ›¾å¾·é’§",
+        "mobile_snapshot": "18875125771",
+        "userid_snapshot": "HuangYouCan",
+        "external_userid": "",
+        "product_code": "subscription_monthly",
+        "product_name": "黄小璨订阅版-月付",
+        "amount_total": 1990,
+        "status": "paid",
+        "trade_state": "SUCCESS",
+    }
+
+    presented = next_wechat_admin_transactions._present_order(row)
+
+    assert presented["payer_name"] == "曾德钧"
+
+
+def test_next_wechat_pay_admin_repairs_emoji_mojibake_payer_name_snapshot():
+    row = {
+        "id": 1,
+        "created_at": "2026-06-09 13:39:38",
+        "transaction_id": "4200003068202606093581720573",
+        "payer_name_snapshot": "AuroraðŸŒŸ",
+        "mobile_snapshot": "15873389131",
+        "userid_snapshot": "",
+        "external_userid": "orSqJ5sDYFX2LpC769_gQSdiwjc8",
+        "product_code": "premium_monthly_trial",
+        "product_name": "黄小璨月度会员私教版",
+        "amount_total": 6900,
+        "status": "paid",
+        "trade_state": "SUCCESS",
+    }
+
+    presented = next_wechat_admin_transactions._present_order(row)
+
+    assert presented["payer_name"] == "Aurora🌟"
 
 
 def test_wechat_pay_admin_product_filter(app, client):
