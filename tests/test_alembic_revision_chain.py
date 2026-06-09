@@ -84,6 +84,7 @@ def test_alembic_revision_ids_fit_default_version_table() -> None:
     assert "0012_hxc_growth_cols" in revisions
     assert "0024_cloud_plan_approval" in revisions
     assert "0028_owner_excel_sessions" in revisions
+    assert "0029_user_ops_prod_tables" in revisions
 
 
 def test_alembic_chain_keeps_0014_parent_available() -> None:
@@ -92,6 +93,12 @@ def test_alembic_chain_keeps_0014_parent_available() -> None:
     assert "0013" in revisions
     assert revisions["0014"]["down_revision"] == "0013"
     assert revisions["0013"]["down_revision"] == "0012_wechat_pay_products"
+
+
+def test_user_ops_production_tables_migration_is_current_head() -> None:
+    revisions = _migration_revisions()
+
+    assert revisions["0029_user_ops_prod_tables"]["down_revision"] == "0028_owner_excel_sessions"
 
 
 def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
@@ -152,3 +159,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
+            assert "0029_user_ops_prod_tables" in heads[0]
