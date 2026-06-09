@@ -202,7 +202,7 @@ def test_legacy_reject_postgres_contract_cancels_execution_chain():
     assert "UPDATE campaign_members" in source
     assert "next_due_at = NULL" in source
     assert "UPDATE broadcast_jobs bj" in source
-    assert "bj.source_id LIKE (campaign_id::text || ':%')" in source
+    assert "bj.source_id LIKE (campaign_id::text || ':%%')" in source
     assert "status = ANY(%s)" in source
     assert "WHERE \"\"\" + _LEGACY_GROUP_KEY_SQL + \"\"\" = %s\n                    RETURNING *" not in source
 
