@@ -264,7 +264,8 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
     mobile = _text(filters.get("mobile") or filters.get("mobile_snapshot"))
     if mobile:
         if provider == "wechat_shop":
-            where.append("1 = 0")
+            where.append("COALESCE(o.buyer_mobile, '') ILIKE %s")
+            params.append(f"%{mobile}%")
         else:
             where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
             params.append(f"%{mobile}%")
@@ -346,7 +347,7 @@ def _postgres_order_select(provider: str) -> str:
     if provider == "wechat_shop":
         return """
             o.id, o.order_id, o.order_id AS out_trade_no, o.transaction_id, o.product_name, o.product_code,
-            o.amount_total, o.currency, o.openid, o.unionid, o.business_status, o.status_code,
+            o.amount_total, o.currency, o.buyer_mobile, o.openid, o.unionid, o.business_status, o.status_code,
             o.deal_recorded, o.returned_recorded, o.raw_order_json AS notify_payload_json,
             o.refunded_amount_total, '' AS refund_status, o.on_aftersale_order_count,
             o.paid_at, o.created_at, o.updated_at, 0 AS active_refund_amount_total

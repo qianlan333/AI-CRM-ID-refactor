@@ -4101,6 +4101,7 @@ CREATE TABLE IF NOT EXISTS wechat_shop_orders (
     currency TEXT NOT NULL DEFAULT 'CNY',
     transaction_id TEXT NOT NULL DEFAULT '',
     payment_method INTEGER,
+    buyer_mobile TEXT NOT NULL DEFAULT '',
     openid TEXT NOT NULL DEFAULT '',
     unionid TEXT NOT NULL DEFAULT '',
     product_name TEXT NOT NULL DEFAULT '',
@@ -4135,6 +4136,10 @@ ON wechat_shop_orders (business_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_transaction_id
 ON wechat_shop_orders (transaction_id)
 WHERE transaction_id <> '';
+
+CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_buyer_mobile
+ON wechat_shop_orders (buyer_mobile)
+WHERE buyer_mobile <> '';
 
 CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_openid
 ON wechat_shop_orders (openid)

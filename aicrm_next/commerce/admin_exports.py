@@ -34,7 +34,7 @@ def _orders_csv(filters: dict[str, Any]) -> str:
     payload = list_orders(provider=_text(filters.get("provider") or "all"), filters=filters, limit=100, offset=0)
     return _write_csv(
         list(payload.get("items") or []),
-        ["provider", "order_no", "transaction_id", "product_code", "product_name", "amount_total", "amount_yuan", "currency", "status", "created_at", "paid_at"],
+        ["provider", "order_no", "transaction_id", "mobile", "product_code", "product_name", "amount_total", "amount_yuan", "currency", "status", "created_at", "paid_at"],
     )
 
 
@@ -42,7 +42,7 @@ def _payments_csv(filters: dict[str, Any]) -> str:
     payload = list_payments(provider=_text(filters.get("provider") or "all"), filters=filters, limit=100, offset=0)
     return _write_csv(
         list(payload.get("payments") or []),
-        ["provider", "order_no", "transaction_id", "amount_total", "currency", "payment_status", "paid_at", "raw_status", "provider_status"],
+        ["provider", "order_no", "transaction_id", "mobile", "amount_total", "currency", "payment_status", "paid_at", "raw_status", "provider_status"],
     )
 
 

@@ -1434,6 +1434,7 @@ def _ensure_postgres_wechat_shop_tables(db) -> None:
             currency TEXT NOT NULL DEFAULT 'CNY',
             transaction_id TEXT NOT NULL DEFAULT '',
             payment_method INTEGER,
+            buyer_mobile TEXT NOT NULL DEFAULT '',
             openid TEXT NOT NULL DEFAULT '',
             unionid TEXT NOT NULL DEFAULT '',
             product_name TEXT NOT NULL DEFAULT '',
@@ -1464,14 +1465,29 @@ def _ensure_postgres_wechat_shop_tables(db) -> None:
         "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS returned_recorded BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS business_status TEXT NOT NULL DEFAULT 'pending'",
         "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS refunded_amount_total INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS buyer_mobile TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS raw_order_json JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT ''",
     ):
         db.execute(stmt)
+    db.execute(
+        """
+        UPDATE wechat_shop_orders
+        SET buyer_mobile = COALESCE(
+            NULLIF(raw_order_json #>> '{order,order_detail,delivery_info,address_info,virtual_order_tel_number}', ''),
+            NULLIF(raw_order_json #>> '{order,order_detail,delivery_info,address_info,purchaser_tel_number}', ''),
+            NULLIF(raw_order_json #>> '{order,order_detail,delivery_info,address_info,tel_number}', ''),
+            ''
+        )
+        WHERE COALESCE(buyer_mobile, '') = ''
+          AND raw_order_json IS NOT NULL
+        """
+    )
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_wechat_shop_orders_order_id ON wechat_shop_orders (order_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_provider_created ON wechat_shop_orders (provider, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_business_status_created ON wechat_shop_orders (business_status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_transaction_id ON wechat_shop_orders (transaction_id) WHERE transaction_id <> ''")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_buyer_mobile ON wechat_shop_orders (buyer_mobile) WHERE buyer_mobile <> ''")
     db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_openid ON wechat_shop_orders (openid) WHERE openid <> ''")
     db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_unionid ON wechat_shop_orders (unionid) WHERE unionid <> ''")
     db.execute(
