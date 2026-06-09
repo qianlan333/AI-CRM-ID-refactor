@@ -1,7 +1,7 @@
 """wechat_pay_products - 商品管理与长图切片.
 
 Revision ID: 0012_wechat_pay_products
-Revises: 0012_hxc_dashboard_v6_growth_columns
+Revises: 0012_hxc_growth_cols
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from alembic import op
 
 
 revision = "0012_wechat_pay_products"
-down_revision = "0012_hxc_dashboard_v6_growth_columns"
+down_revision = "0012_hxc_growth_cols"
 branch_labels = None
 depends_on = None
 
