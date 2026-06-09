@@ -74,9 +74,9 @@ def fake_wecom_post(url, params=None, json=None, timeout=None):
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         RELEASE_SHA="contract-release-sha",
         MCP_BEARER_TOKEN="mcp-token",

@@ -1200,6 +1200,71 @@ def check_wecom_legacy_usage_freeze(
     return violations
 
 
+def _fixture_block(source: str, fixture_name: str) -> str:
+    marker = f"def {fixture_name}("
+    start = source.find(marker)
+    if start < 0:
+        return ""
+    line_start = source.rfind("\n", 0, start) + 1
+    next_start = len(source)
+    for candidate in ("\n@pytest.fixture", "\ndef test_", "\ndef "):
+        pos = source.find(candidate, start + len(marker))
+        if pos >= 0:
+            next_start = min(next_start, pos + 1)
+    return source[line_start:next_start]
+
+
+def check_test_fixture_legacy_boundaries(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    conftest_path = root / "tests/conftest.py"
+    if not conftest_path.exists():
+        return violations
+    text = conftest_path.read_text(encoding="utf-8")
+    rel = str(conftest_path.relative_to(root))
+
+    app_block = _fixture_block(text, "app")
+    if "wecom_ability_service" in app_block:
+        violations.append(
+            Violation(
+                "default_test_app_fixture_uses_legacy",
+                rel,
+                "def app",
+                "Default test app fixture must be Next-native; use legacy_app for Flask legacy tests.",
+            )
+        )
+    client_block = _fixture_block(text, "client")
+    if "test_client(" in client_block or "legacy_app" in client_block or "legacy_client" in client_block:
+        violations.append(
+            Violation(
+                "default_test_client_fixture_uses_legacy",
+                rel,
+                "def client",
+                "Default test client fixture must be Next-native; use legacy_client for Flask legacy tests.",
+            )
+        )
+    for fixture_name in ("next_app", "next_client"):
+        block = _fixture_block(text, fixture_name)
+        if "wecom_ability_service" in block:
+            violations.append(
+                Violation(
+                    "next_test_fixture_imports_legacy",
+                    rel,
+                    f"def {fixture_name}",
+                    "Next test fixtures must not import or construct the legacy Flask package.",
+                )
+            )
+    if "def legacy_app(" not in text or "def legacy_client(" not in text:
+        violations.append(
+            Violation(
+                "legacy_test_fixture_not_explicit",
+                rel,
+                "legacy_app/legacy_client",
+                "Legacy Flask test fixtures must be explicitly named.",
+            )
+        )
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -7767,6 +7832,7 @@ def run_checks(*, strict: bool) -> dict:
         scan_source_tree(ROOT)
         + check_startup_legacy_closeout(ROOT)
         + check_wecom_legacy_usage_freeze(ROOT)
+        + check_test_fixture_legacy_boundaries(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)

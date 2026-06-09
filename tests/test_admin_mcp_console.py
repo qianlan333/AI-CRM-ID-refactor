@@ -9,9 +9,9 @@ from wecom_ability_service.domains.admin_auth import save_admin_user
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         MCP_BEARER_TOKEN="mcp-token",
         SECRET_KEY="test-secret-key",

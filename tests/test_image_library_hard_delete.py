@@ -27,9 +27,9 @@ _TINY_PNG_BYTES = base64.b64decode(
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         MCP_BEARER_TOKEN="mcp-token",
         AUTOMATION_INTERNAL_API_TOKEN="internal-token",

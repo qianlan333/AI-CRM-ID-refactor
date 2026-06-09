@@ -7,10 +7,10 @@ import pytest
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
     receipts_path = tmp_path / "temporary-webhook-receiver.jsonl"
-    with build_pg_test_app(tmp_path, TEMP_WEBHOOK_RECEIPTS_PATH=str(receipts_path)) as app:
+    with build_legacy_pg_test_app(tmp_path, TEMP_WEBHOOK_RECEIPTS_PATH=str(receipts_path)) as app:
         yield app
 
 

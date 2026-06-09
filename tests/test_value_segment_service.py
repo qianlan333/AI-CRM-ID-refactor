@@ -11,9 +11,9 @@ from wecom_ability_service.services import evaluate_customer_value_segment, save
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         yield app
 
 

@@ -54,6 +54,7 @@ from scripts.check_no_new_legacy import (
     check_sidebar_readonly_closeout_lock,
     check_sidebar_jssdk_next_adapter,
     check_startup_legacy_closeout,
+    check_test_fixture_legacy_boundaries,
     check_support_pages_native,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
@@ -335,6 +336,108 @@ def test_wecom_legacy_freeze_non_deploy_scripts_removed_from_allowlist() -> None
     }
 
     assert retired_scripts.isdisjoint(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
+
+
+def _write_fixture_boundary_conftest(tmp_path: Path, source: str) -> None:
+    conftest = tmp_path / "tests/conftest.py"
+    conftest.parent.mkdir(parents=True, exist_ok=True)
+    conftest.write_text(source, encoding="utf-8")
+
+
+def test_test_fixture_boundaries_flag_default_app_legacy_import(tmp_path: Path) -> None:
+    _write_fixture_boundary_conftest(
+        tmp_path,
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def app():\n"
+        "    from wecom_ability_service import create_app\n"
+        "    return create_app()\n"
+        "@pytest.fixture\n"
+        "def legacy_app():\n"
+        "    from wecom_ability_service import create_app\n"
+        "    return create_app()\n"
+        "@pytest.fixture\n"
+        "def legacy_client(legacy_app):\n"
+        "    return legacy_app.test_client()\n",
+    )
+
+    codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
+
+    assert "default_test_app_fixture_uses_legacy" in codes
+
+
+def test_test_fixture_boundaries_flag_default_client_legacy_dependency(tmp_path: Path) -> None:
+    _write_fixture_boundary_conftest(
+        tmp_path,
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def app(next_app):\n"
+        "    return next_app\n"
+        "@pytest.fixture\n"
+        "def client(app):\n"
+        "    return app.test_client()\n"
+        "@pytest.fixture\n"
+        "def legacy_app():\n"
+        "    pass\n"
+        "@pytest.fixture\n"
+        "def legacy_client(legacy_app):\n"
+        "    return legacy_app.test_client()\n",
+    )
+
+    codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
+
+    assert "default_test_client_fixture_uses_legacy" in codes
+
+
+def test_test_fixture_boundaries_allow_explicit_legacy_fixtures(tmp_path: Path) -> None:
+    _write_fixture_boundary_conftest(
+        tmp_path,
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def next_app():\n"
+        "    from aicrm_next.main import create_app\n"
+        "    return create_app()\n"
+        "@pytest.fixture\n"
+        "def next_client(next_app):\n"
+        "    from fastapi.testclient import TestClient\n"
+        "    return TestClient(next_app)\n"
+        "@pytest.fixture\n"
+        "def app(next_app):\n"
+        "    return next_app\n"
+        "@pytest.fixture\n"
+        "def client(next_client):\n"
+        "    return next_client\n"
+        "@pytest.fixture\n"
+        "def legacy_app():\n"
+        "    from wecom_ability_service import create_app\n"
+        "    return create_app()\n"
+        "@pytest.fixture\n"
+        "def legacy_client(legacy_app):\n"
+        "    return legacy_app.test_client()\n",
+    )
+
+    assert check_test_fixture_legacy_boundaries(tmp_path) == []
+
+
+def test_test_fixture_boundaries_flag_next_fixture_legacy_import(tmp_path: Path) -> None:
+    _write_fixture_boundary_conftest(
+        tmp_path,
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def next_client():\n"
+        "    import wecom_ability_service\n"
+        "    return wecom_ability_service.create_app().test_client()\n"
+        "@pytest.fixture\n"
+        "def legacy_app():\n"
+        "    pass\n"
+        "@pytest.fixture\n"
+        "def legacy_client(legacy_app):\n"
+        "    return legacy_app.test_client()\n",
+    )
+
+    codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
+
+    assert "next_test_fixture_imports_legacy" in codes
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

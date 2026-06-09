@@ -12,10 +12,10 @@ from wecom_ability_service.domains.admin_auth import save_admin_user
 
 @pytest.fixture()
 def app(tmp_path):
-    """PG-only：用顶层 build_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
-    from tests.conftest import build_pg_test_app
+    """PG-only：用顶层 build_legacy_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         AUTOMATION_INTERNAL_API_TOKEN="internal-token",
         SECRET_KEY="test-secret-key",

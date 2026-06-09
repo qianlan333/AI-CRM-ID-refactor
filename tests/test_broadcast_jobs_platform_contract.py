@@ -10,9 +10,9 @@ from wecom_ability_service.domains.broadcast_jobs import service as queue_servic
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         yield app
 
 
