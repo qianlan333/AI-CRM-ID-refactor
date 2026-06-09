@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_shell import shell_context
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.share_qr import svg_qr_data_url
 
 from .admin_transactions import (
     default_filters,
@@ -335,24 +336,12 @@ def _product_admin_context(
 def _share_payload(request: Request, product: dict) -> dict:
     product_code = str(product.get("product_code") or "")
     url = str(request.base_url).rstrip("/") + f"/p/{quote(product_code)}"
-    svg = (
-        "<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'>"
-        "<rect width='256' height='256' fill='#ffffff'/>"
-        "<rect x='24' y='24' width='208' height='208' fill='none' stroke='#111827' stroke-width='12'/>"
-        "<text x='128' y='126' text-anchor='middle' font-size='20' font-family='monospace' fill='#111827'>"
-        "PRODUCT"
-        "</text>"
-        "<text x='128' y='158' text-anchor='middle' font-size='14' font-family='monospace' fill='#475569'>"
-        f"{product_code[:18]}"
-        "</text>"
-        "</svg>"
-    )
     return {
         "product_id": str(product.get("id") or ""),
         "product_code": product_code,
         "product_name": str(product.get("title") or ""),
         "url": url,
-        "qr_data_url": "data:image/svg+xml;utf8," + quote(svg),
+        "qr_data_url": svg_qr_data_url(url),
     }
 
 

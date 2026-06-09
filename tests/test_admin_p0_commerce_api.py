@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.admin_config.api_docs_view_model import build_api_docs_view_model
@@ -108,6 +110,23 @@ def test_payments_and_refunds(monkeypatch) -> None:
     assert payload["ok"] is True
     assert payload["refund"]["status"] == "requested"
     assert payload["source_status"] == "next_admin_refund_request"
+
+
+def test_product_share_uses_real_qr_svg(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    products = client.get("/api/admin/wechat-pay/products").json()
+    product = products["items"][0]
+
+    payload = client.get(f"/api/admin/wechat-pay/products/{product['id']}/share").json()
+
+    share = payload["share"]
+    assert share["url"].endswith(f"/p/{product['product_code']}")
+    assert share["qr_data_url"].startswith("data:image/svg+xml;base64,")
+    svg = base64.b64decode(share["qr_data_url"].split(",", 1)[1]).decode("utf-8")
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+    assert "<path" in svg
+    assert "PRODUCT" not in svg
+    assert product["product_code"] not in svg
 
 
 def test_customer_business_profile_orders_and_summary(monkeypatch) -> None:
