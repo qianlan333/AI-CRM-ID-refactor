@@ -1248,6 +1248,20 @@ routes:
     replacement_status: locked
     checker: tests/test_ai_assist_external_campaigns.py
     notes: External campaign status API reads the current DB state through the Next external campaign repository; it has no scheduler or outbound-send side effects.
+  - route_pattern: /admin/cloud-orchestrator
+    methods: [GET]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_cloud_orchestrator_admin_pages_native.py
+    notes: Cloud root redirect is served by Next native cloud_orchestrator.api; frontend_compat removed for Cloud root and no Cloud API or business workflow changed.
   - route_pattern: /admin/cloud-orchestrator/campaigns
     methods: [GET]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -1262,6 +1276,20 @@ routes:
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
     notes: Shadowed frontend_compat handler removed; campaign workspace page is served by aicrm_next.cloud_orchestrator before frontend_compat registration while write controls stay on Next CommandBus; no route path or business API change.
+  - route_pattern: /admin/cloud-orchestrator/observability
+    methods: [GET]
+    capability_owner: aicrm_next.cloud_orchestrator
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_cloud_orchestrator_admin_pages_native.py
+    notes: Cloud observability page is served by Next native cloud_orchestrator.api while preserving template and context; frontend_compat removed for Cloud observability and no Cloud API or business workflow changed.
   - route_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator

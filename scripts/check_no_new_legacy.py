@@ -4180,6 +4180,89 @@ def check_shadowed_frontend_compat_handlers_removed(root: Path = ROOT) -> list[V
     return violations
 
 
+def check_cloud_root_observability_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            tree = None
+
+        route_codes = {
+            "/admin/cloud-orchestrator": "cloud_root_still_in_frontend_compat",
+            "/admin/cloud-orchestrator/observability": "cloud_observability_still_in_frontend_compat",
+        }
+        handler_codes = {
+            "admin_cloud_orchestrator": "cloud_root_still_in_frontend_compat",
+            "admin_cloud_orchestrator_observability": "cloud_observability_still_in_frontend_compat",
+        }
+        endpoint_codes = {
+            "api.admin_cloud_orchestrator_workspace": "cloud_root_still_in_frontend_compat",
+            "api.admin_cloud_orchestrator_observability": "cloud_observability_still_in_frontend_compat",
+        }
+        for marker, code in endpoint_codes.items():
+            if marker in source:
+                violations.append(Violation(code, str(frontend_routes.relative_to(root)), marker))
+
+        if tree is not None:
+            constants = _module_list_constants(tree)
+            for route, code in route_codes.items():
+                if route.upper() in constants.get("LEGACY_FRONTEND_ROUTES", ()):
+                    violations.append(Violation(code, str(frontend_routes.relative_to(root)), f"LEGACY_FRONTEND_ROUTES:{route}"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in handler_codes:
+                    violations.append(Violation(handler_codes[node.name], str(frontend_routes.relative_to(root)), f"def {node.name}"))
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not decorator.args:
+                        continue
+                    attr = decorator.func
+                    if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                        continue
+                    first = decorator.args[0]
+                    if isinstance(first, ast.Constant) and first.value in route_codes:
+                        violations.append(Violation(route_codes[first.value], str(frontend_routes.relative_to(root)), f"@router.get('{first.value}')"))
+
+    cloud_api = root / "aicrm_next/cloud_orchestrator/api.py"
+    if not cloud_api.exists():
+        violations.append(Violation("cloud_root_native_route_missing", str(cloud_api.relative_to(root)), "missing Cloud Orchestrator API module"))
+    else:
+        source = cloud_api.read_text(encoding="utf-8")
+        root_markers = (
+            "/admin/cloud-orchestrator",
+            'name="api.admin_cloud_orchestrator_workspace"',
+            "api.admin_cloud_orchestrator_plans_workspace",
+        )
+        observability_markers = (
+            "/admin/cloud-orchestrator/observability",
+            'name="api.admin_cloud_orchestrator_observability"',
+            "admin_console/cloud_observability.html",
+            "api.admin_cloud_orchestrator_campaigns_workspace",
+        )
+        for marker in root_markers:
+            if marker not in source:
+                violations.append(Violation("cloud_root_native_route_missing", str(cloud_api.relative_to(root)), marker))
+        for marker in observability_markers:
+            if marker not in source:
+                violations.append(Violation("cloud_observability_native_route_missing", str(cloud_api.relative_to(root)), marker))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        cloud_include = "app.include_router(cloud_orchestrator_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        if cloud_include not in source:
+            violations.append(Violation("cloud_root_native_route_missing", str(main_path.relative_to(root)), "cloud_orchestrator_router"))
+        elif frontend_include in source and source.index(cloud_include) > source.index(frontend_include):
+            violations.append(Violation("cloud_router_registered_after_frontend_compat", str(main_path.relative_to(root)), "cloud_orchestrator_router"))
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -7132,6 +7215,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_customer_detail_admin_page_native(ROOT)
         + check_user_ops_admin_pages_native(ROOT)
         + check_shadowed_frontend_compat_handlers_removed(ROOT)
+        + check_cloud_root_observability_native(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
