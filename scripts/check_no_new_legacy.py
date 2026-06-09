@@ -32,9 +32,7 @@ EXCLUDED_DIRS = {
     "wecom_ability_service",
     "scripts",
 }
-LEGACY_IMPORT_ALLOWLIST = {
-    Path("aicrm_next/frontend_compat/legacy_routes.py"),
-}
+LEGACY_IMPORT_ALLOWLIST = set()
 WECOM_IMPORT_ALLOWLIST = {
     Path("app.py"),
     Path("legacy_flask_app.py"),
@@ -4361,22 +4359,12 @@ def check_sidebar_bind_mobile_page_native(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
     frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
-    if not frontend_routes.exists():
-        violations.append(Violation("frontend_compat_manifest_removed_too_early", str(frontend_routes.relative_to(root)), "legacy_routes.py"))
-    else:
+    if frontend_routes.exists():
         source = frontend_routes.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source)
         except SyntaxError:
             tree = None
-
-        required_manifest_markers = (
-            "LEGACY_FRONTEND_ROUTES = []",
-            "/api/frontend-compat/legacy-routes",
-        )
-        for marker in required_manifest_markers:
-            if marker not in source:
-                violations.append(Violation("frontend_compat_manifest_removed_too_early", str(frontend_routes.relative_to(root)), marker))
 
         forbidden_markers = (
             "/sidebar/bind-mobile",
@@ -4432,6 +4420,51 @@ def check_sidebar_bind_mobile_page_native(root: Path = ROOT) -> list[Violation]:
             violations.append(Violation("sidebar_bind_mobile_native_router_not_registered", str(main_path.relative_to(root)), "identity_admin_pages_router"))
         elif frontend_include in source and source.index(admin_include) > source.index(frontend_include):
             violations.append(Violation("sidebar_bind_mobile_native_router_registered_after_frontend_compat", str(main_path.relative_to(root)), "identity_admin_pages_router"))
+
+    return violations
+
+
+def check_frontend_compat_router_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        violations.append(Violation("frontend_compat_router_file_remaining", str(frontend_routes.relative_to(root)), "remove legacy_routes.py"))
+        if "/api/frontend-compat/legacy-routes" in source or "legacy_routes_manifest" in source:
+            violations.append(Violation("frontend_compat_manifest_route_remaining", str(frontend_routes.relative_to(root)), "/api/frontend-compat/legacy-routes"))
+        if "LEGACY_FRONTEND_ROUTES" in source:
+            violations.append(Violation("legacy_frontend_routes_symbol_remaining", str(frontend_routes.relative_to(root)), "LEGACY_FRONTEND_ROUTES"))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        for marker in (
+            "frontend_compat_router",
+            ".frontend_compat.legacy_routes",
+            "include_router(frontend_compat_router)",
+        ):
+            if marker in source:
+                violations.append(Violation("frontend_compat_router_still_registered", str(main_path.relative_to(root)), marker))
+
+    checker_path = root / "scripts/check_no_new_legacy.py"
+    if checker_path.exists():
+        source = checker_path.read_text(encoding="utf-8")
+        stale_allowlist_marker = 'Path("aicrm_next/frontend_compat/' + 'legacy_routes.py")'
+        if stale_allowlist_marker in source:
+            violations.append(Violation("frontend_compat_router_stale_allowlist", str(checker_path.relative_to(root)), stale_allowlist_marker))
+
+    runtime_root = root / "aicrm_next"
+    if runtime_root.exists():
+        for path in runtime_root.rglob("*.py"):
+            if "__pycache__" in path.parts or path == frontend_routes:
+                continue
+            source = path.read_text(encoding="utf-8")
+            relative_path = str(path.relative_to(root))
+            if "/api/frontend-compat/legacy-routes" in source or "legacy_routes_manifest" in source:
+                violations.append(Violation("frontend_compat_manifest_route_remaining", relative_path, "/api/frontend-compat/legacy-routes"))
+            if "LEGACY_FRONTEND_ROUTES" in source:
+                violations.append(Violation("legacy_frontend_routes_symbol_remaining", relative_path, "LEGACY_FRONTEND_ROUTES"))
 
     return violations
 
@@ -7391,6 +7424,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_cloud_root_observability_native(ROOT)
         + check_support_pages_native(ROOT)
         + check_sidebar_bind_mobile_page_native(ROOT)
+        + check_frontend_compat_router_removed(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)

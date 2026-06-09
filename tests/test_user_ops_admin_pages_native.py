@@ -90,10 +90,7 @@ def test_user_ops_admin_page_routes_are_owned_by_native_module() -> None:
 def test_user_ops_pages_removed_from_frontend_compat_inventory() -> None:
     response = _client().get("/api/frontend-compat/legacy-routes")
 
-    assert response.status_code == 200
-    routes = set(response.json()["routes"])
-    assert "/admin/user-ops/ui" not in routes
-    assert "/admin/user-ops" not in routes
+    assert response.status_code == 404
 
 
 def test_user_ops_write_like_routes_remain_no_real_side_effect() -> None:

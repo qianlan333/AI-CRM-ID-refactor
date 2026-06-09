@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from tests.test_admin_config_next import _prepare_client
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _client(monkeypatch, tmp_path):
@@ -12,18 +16,6 @@ def _client(monkeypatch, tmp_path):
 
 
 def test_admin_config_routes_are_served_by_next_admin_config(monkeypatch, tmp_path):
-    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
-
-    class ExplodingRuntimeConfigQuery:
-        def __call__(self):
-            raise AssertionError("/admin/config must not render real_data_page runtime config")
-
-    async def fake_forward_to_legacy_flask(request):
-        raise AssertionError(f"{request.url.path} must not forward to legacy Flask")
-
-    monkeypatch.setattr(legacy_routes, "GetAdminConfigPageQuery", ExplodingRuntimeConfigQuery)
-    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask, raising=False)
-
     client = _client(monkeypatch, tmp_path)
 
     expectations = [
@@ -60,15 +52,7 @@ def test_admin_config_routes_are_served_by_next_admin_config(monkeypatch, tmp_pa
 
 
 def test_admin_config_manifest_no_longer_lists_config_center_as_legacy(monkeypatch, tmp_path):
-    routes = _client(monkeypatch, tmp_path).get("/api/frontend-compat/legacy-routes").json()["routes"]
+    assert not (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").exists()
+    response = _client(monkeypatch, tmp_path).get("/api/frontend-compat/legacy-routes")
 
-    for route in [
-        "/admin/config",
-        "/admin/config/app-settings",
-        "/admin/config/login-access",
-        "/admin/config/checklist",
-        "/admin/config/mcp-tools",
-        "/admin/config/wecom-tags",
-        "/setup/wizard",
-    ]:
-        assert route not in routes
+    assert response.status_code == 404

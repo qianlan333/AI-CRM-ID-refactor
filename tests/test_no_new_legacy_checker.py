@@ -22,6 +22,7 @@ from scripts.check_no_new_legacy import (
     check_customer_detail_admin_page_native,
     check_customer_list_admin_page_native,
     check_customer_read_model_legacy_deletion,
+    check_frontend_compat_router_removed,
     check_user_ops_admin_pages_native,
     check_group_ops_material_resolver_native,
     check_group_ops_message_content_native,
@@ -289,13 +290,10 @@ def test_legacy_flask_facade_checker_flags_forwarder_symbol(tmp_path: Path) -> N
 
 def test_legacy_flask_facade_checker_accepts_removed_state(tmp_path: Path) -> None:
     checker = tmp_path / "scripts/check_no_new_legacy.py"
-    frontend = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
     runtime_file = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
     checker.parent.mkdir(parents=True, exist_ok=True)
-    frontend.parent.mkdir(parents=True, exist_ok=True)
     runtime_file.parent.mkdir(parents=True, exist_ok=True)
-    checker.write_text('LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/frontend_compat/legacy_routes.py")}\n', encoding="utf-8")
-    frontend.write_text("def page_shell():\n    return 'frontend compat'\n", encoding="utf-8")
+    checker.write_text("LEGACY_IMPORT_ALLOWLIST = set()\n", encoding="utf-8")
     runtime_file.write_text("router = object()\n", encoding="utf-8")
 
     assert check_legacy_flask_facade_removed(tmp_path) == []
@@ -2888,21 +2886,98 @@ def test_sidebar_bind_mobile_checker_flags_registered_after_frontend(tmp_path: P
     assert "sidebar_bind_mobile_native_router_registered_after_frontend_compat" in codes
 
 
-def test_sidebar_bind_mobile_checker_flags_manifest_removed_too_early(tmp_path: Path) -> None:
-    _write_valid_sidebar_bind_mobile_page_state(
-        tmp_path,
-        frontend_source="from fastapi import APIRouter\nrouter = APIRouter()\nLEGACY_FRONTEND_ROUTES = []\n",
-    )
-
-    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
-
-    assert "frontend_compat_manifest_removed_too_early" in codes
-
-
 def test_sidebar_bind_mobile_checker_accepts_native_state(tmp_path: Path) -> None:
     _write_valid_sidebar_bind_mobile_page_state(tmp_path)
 
     assert check_sidebar_bind_mobile_page_native(tmp_path) == []
+
+
+def _write_frontend_compat_router_removed_state(tmp_path: Path) -> None:
+    main_py = tmp_path / "aicrm_next/main.py"
+    checker_py = tmp_path / "scripts/check_no_new_legacy.py"
+    runtime_file = tmp_path / "aicrm_next/identity_contact/admin_pages.py"
+    for path in (main_py, checker_py, runtime_file):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    main_py.write_text(
+        "_FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / 'frontend_compat'\n"
+        "app.mount('/static', StaticFiles(directory=_FRONTEND_COMPAT_DIR / 'static'), name='static')\n"
+        "app.include_router(identity_admin_pages_router)\n",
+        encoding="utf-8",
+    )
+    checker_py.write_text("LEGACY_IMPORT_ALLOWLIST = set()\n", encoding="utf-8")
+    runtime_file.write_text("router = object()\n", encoding="utf-8")
+
+
+def test_frontend_compat_router_checker_flags_file_remaining(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    frontend_routes.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text("router = object()\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "frontend_compat_router_file_remaining" in codes
+
+
+def test_frontend_compat_router_checker_flags_main_import(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "from .frontend_compat.legacy_routes import router as frontend_compat_router\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "frontend_compat_router_still_registered" in codes
+
+
+def test_frontend_compat_router_checker_flags_main_include(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text("app.include_router(frontend_compat_router)\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "frontend_compat_router_still_registered" in codes
+
+
+def test_frontend_compat_router_checker_flags_stale_allowlist(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    (tmp_path / "scripts/check_no_new_legacy.py").write_text(
+        'LEGACY_IMPORT_ALLOWLIST = {Path("aicrm_next/frontend_compat/legacy_routes.py")}\n',
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "frontend_compat_router_stale_allowlist" in codes
+
+
+def test_frontend_compat_router_checker_flags_manifest_route(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    frontend_routes.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text("@router.get('/api/frontend-compat/legacy-routes')\ndef legacy_routes_manifest(): pass\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "frontend_compat_manifest_route_remaining" in codes
+
+
+def test_frontend_compat_router_checker_flags_legacy_routes_symbol(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    frontend_routes.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text("LEGACY_FRONTEND_ROUTES = []\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_frontend_compat_router_removed(tmp_path)}
+
+    assert "legacy_frontend_routes_symbol_remaining" in codes
+
+
+def test_frontend_compat_router_checker_accepts_removed_state(tmp_path: Path) -> None:
+    _write_frontend_compat_router_removed_state(tmp_path)
+
+    assert check_frontend_compat_router_removed(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:

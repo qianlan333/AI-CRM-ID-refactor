@@ -21,6 +21,8 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     result = checker.run_check()
     samples = result["resolution_samples"]
 
+    assert all(item["endpoint_module"] != "aicrm_next.frontend_compat.legacy_routes" for item in samples)
+
     for method, path in (
         ("GET", "/login"),
         ("POST", "/login"),
