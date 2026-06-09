@@ -8,7 +8,7 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 - `scripts/**/*.py` may import `wecom_ability_service` only when explicitly listed in `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` in `scripts/check_no_new_legacy.py`.
 - Tests, docs, tools, experiments, and `wecom_ability_service/**` historical references are tracked but do not block this freeze checker.
 - Existing maintenance scripts are migration targets, not precedent for new legacy dependencies.
-- The active external push worker is intentionally unchanged in this freeze step and is the first Phase B migration target.
+- The active external push worker has been migrated to `aicrm_next.external_push`; `scripts/run_external_push_worker.py` must remain outside the legacy maintenance allowlist.
 
 ## Allowlisted Maintenance Scripts
 
@@ -29,7 +29,6 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 | `scripts/run_campaign_scheduler.py` | campaign scheduler | on-demand | Phase B | high |
 | `scripts/run_cloud_orchestrator_scan.py` | cloud orchestrator scan | on-demand | Phase B | medium |
 | `scripts/run_external_contact_sync.py` | external contact sync | on-demand | Phase B | high |
-| `scripts/run_external_push_worker.py` | external push outbox worker | active | Phase B | high |
 | `scripts/run_hxc_dashboard_refresh.py` | HXC dashboard refresh | on-demand | Phase B | medium |
 | `scripts/run_marketing_automation_backfill.py` | marketing automation backfill | on-demand | Phase B | high |
 | `scripts/run_owner_lead_pool_backfill.py` | owner lead-pool backfill | on-demand | Phase B | high |
@@ -40,12 +39,12 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 
 ### Phase B: External push worker Next-native migration
 
-Move `scripts/run_external_push_worker.py` to a Next-native repository/service boundary. Preserve timer behavior and keep real external calls governed by the existing outbox safety contract.
+Status: complete for the active worker. `scripts/run_external_push_worker.py` now calls `aicrm_next.external_push` directly, while the systemd command remains unchanged.
 
 Exit criteria:
 
 - Worker imports no `wecom_ability_service`.
-- Systemd service command remains stable or is updated in a deploy-specific PR.
+- Systemd service command remains stable.
 - External push tests prove no new real external call path is enabled.
 
 ### Phase C: Maintenance scripts migration inventory
@@ -87,4 +86,4 @@ Exit criteria:
 
 ## Recommended Next Step
 
-Start with Phase B: external push worker Next-native migration. It is the only currently deployed production worker that still enters `wecom_ability_service.create_app`, so it should move before broad script cleanup or HTTP/runtime archive work.
+Continue with Phase C: maintenance scripts migration inventory. The deployed external push worker is no longer a legacy package consumer, so the next useful block is classifying and migrating the remaining allowlisted scripts.

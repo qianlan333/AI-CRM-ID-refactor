@@ -238,7 +238,7 @@ def test_wecom_legacy_freeze_flags_allowlist_path_without_import(tmp_path: Path)
     assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_without_import"}
 
 
-def test_wecom_legacy_freeze_allows_current_external_push_worker_allowlist(tmp_path: Path) -> None:
+def test_wecom_legacy_freeze_rejects_external_push_worker_legacy_import(tmp_path: Path) -> None:
     worker = tmp_path / "scripts/run_external_push_worker.py"
     worker.parent.mkdir(parents=True, exist_ok=True)
     worker.write_text(
@@ -247,20 +247,13 @@ def test_wecom_legacy_freeze_allows_current_external_push_worker_allowlist(tmp_p
         encoding="utf-8",
     )
 
-    assert (
-        check_wecom_legacy_usage_freeze(
-            tmp_path,
-            maintenance_allowlist={Path("scripts/run_external_push_worker.py"): "active external push worker"},
-        )
-        == []
-    )
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_script_not_allowlisted" in codes
 
 
-def test_wecom_legacy_freeze_records_current_external_push_worker_allowlist() -> None:
-    reason = LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST[Path("scripts/run_external_push_worker.py")]
-
-    assert "external push worker" in reason
-    assert "Phase B" in reason
+def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:
+    assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

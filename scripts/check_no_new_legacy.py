@@ -51,7 +51,6 @@ LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
     Path("scripts/run_campaign_scheduler.py"): "maintenance campaign scheduler; migrate in Phase B",
     Path("scripts/run_cloud_orchestrator_scan.py"): "maintenance cloud orchestrator scan; migrate in Phase B",
     Path("scripts/run_external_contact_sync.py"): "maintenance external contact sync; migrate in Phase B",
-    Path("scripts/run_external_push_worker.py"): "active external push worker; migrate in Phase B",
     Path("scripts/run_hxc_dashboard_refresh.py"): "maintenance HXC dashboard refresh; migrate in Phase B",
     Path("scripts/run_marketing_automation_backfill.py"): "maintenance marketing automation backfill; migrate in Phase B",
     Path("scripts/run_owner_lead_pool_backfill.py"): "maintenance owner lead-pool backfill; migrate in Phase B",
