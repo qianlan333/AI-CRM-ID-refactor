@@ -557,7 +557,7 @@ class PostgresCloudPlanRepository:
               AND EXISTS (
                   SELECT 1
                   FROM unnest(%s::int[]) AS campaign_id
-                  WHERE bj.source_id LIKE (campaign_id::text || ':%')
+                  WHERE bj.source_id LIKE (campaign_id::text || ':%%')
               )
             RETURNING bj.id
             """,
