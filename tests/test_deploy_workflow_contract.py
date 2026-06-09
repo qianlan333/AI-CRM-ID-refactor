@@ -20,6 +20,7 @@ def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
     assert "python app.py init-db" not in workflow
     assert "init-db-legacy" not in workflow
     assert "alembic stamp head" not in workflow
+    assert "legacy_flask_app" not in workflow
 
 
 def test_production_deploy_stashes_dirty_worktree_before_remote_update():
@@ -45,6 +46,22 @@ def test_production_deploy_installs_dependencies_only_when_requirements_change()
 
     assert fetch_index < reset_index < after_sha_index < requirements_guard_index < pip_install_index < alembic_upgrade_index
     assert "requirements.txt unchanged; skipping pip install" in workflow
+
+
+def test_production_deploy_runs_alembic_upgrade_before_service_restart():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
+    database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
+    pip_install_index = workflow.index("pip install -r requirements.txt")
+    alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
+    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+
+    assert env_source_index < database_url_guard_index < alembic_upgrade_index
+    assert pip_install_index < alembic_upgrade_index < restart_index
+    assert "python3 app.py init-db" not in workflow
+    assert "python app.py init-db" not in workflow
+    assert "alembic stamp head" not in workflow
 
 
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
