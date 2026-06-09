@@ -20,8 +20,8 @@ from aicrm_next.commerce import admin_transactions as next_wechat_admin_transact
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _login_admin(client, *, token: str = "test-admin-action-token") -> str:
-    with client.session_transaction() as sess:
+def _login_admin(legacy_client, *, token: str = "test-admin-action-token") -> str:
+    with legacy_client.session_transaction() as sess:
         sess[ADMIN_SESSION_USER_ID_KEY] = 0
         sess[ADMIN_SESSION_LOGIN_TYPE_KEY] = "break_glass"
         sess[ADMIN_SESSION_BREAK_GLASS_USERNAME_KEY] = "tester"
@@ -92,7 +92,7 @@ def _insert_order(
     return wechat_pay_repo.get_admin_order_by_id(order["id"])
 
 
-def test_wechat_pay_admin_backfills_empty_product_name(app):
+def test_wechat_pay_admin_backfills_empty_product_name(legacy_app):
     order = _insert_order(out_trade_no="WXP_EMPTY_PRODUCT", product_code="vip_course", product_name="")
 
     assert order["product_name"] == "vip_course"
@@ -200,12 +200,12 @@ def test_next_wechat_pay_admin_repairs_emoji_mojibake_payer_name_snapshot():
     assert presented["payer_name"] == "Aurora🌟"
 
 
-def test_wechat_pay_admin_product_filter(app, client):
-    _login_admin(client)
+def test_wechat_pay_admin_product_filter(legacy_app, legacy_client):
+    _login_admin(legacy_client)
     _insert_order(out_trade_no="WXP_PROD_A", product_code="assessment_report_v1", product_name="AI 测评报告")
     _insert_order(out_trade_no="WXP_PROD_B", product_code="vip_course", product_name="会员课程")
 
-    response = client.get("/api/admin/wechat-pay/orders?product_code=vip_course&limit=20")
+    response = legacy_client.get("/api/admin/wechat-pay/orders?product_code=vip_course&limit=20")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -213,8 +213,8 @@ def test_wechat_pay_admin_product_filter(app, client):
     assert [item["product_code"] for item in payload["items"]] == ["vip_course"]
 
 
-def test_wechat_pay_admin_product_filter_accepts_current_code_for_aliased_orders(app, client):
-    _login_admin(client)
+def test_wechat_pay_admin_product_filter_accepts_current_code_for_aliased_orders(legacy_app, legacy_client):
+    _login_admin(legacy_client)
     _insert_order(
         out_trade_no="WXP_ALIAS_PRODUCT",
         product_code="prd_20260518095708_9f77db",
@@ -222,7 +222,7 @@ def test_wechat_pay_admin_product_filter_accepts_current_code_for_aliased_orders
         transaction_id="420000ALIASPRODUCT",
     )
 
-    response = client.get("/api/admin/wechat-pay/orders?product_code=subscription_trial_month&limit=20")
+    response = legacy_client.get("/api/admin/wechat-pay/orders?product_code=subscription_trial_month&limit=20")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -230,7 +230,7 @@ def test_wechat_pay_admin_product_filter_accepts_current_code_for_aliased_orders
     assert [item["product_code"] for item in payload["items"]] == ["subscription_trial_month"]
 
 
-def test_wechat_pay_admin_status_mapping(app):
+def test_wechat_pay_admin_status_mapping(legacy_app):
     _insert_order(out_trade_no="WXP_PENDING", status="paying")
     _insert_order(out_trade_no="WXP_PAID", status="paid", trade_state="SUCCESS", transaction_id="4200000001")
     _insert_order(out_trade_no="WXP_PARTIAL", status="paid", trade_state="SUCCESS", transaction_id="4200000002", refunded_amount_total=1000)
@@ -245,7 +245,7 @@ def test_wechat_pay_admin_status_mapping(app):
     assert status_by_tx["4200000003"] == "全额退款"
 
 
-def test_wechat_pay_admin_status_mapping_shows_refund_processing(app):
+def test_wechat_pay_admin_status_mapping_shows_refund_processing(legacy_app):
     order = _insert_order(
         out_trade_no="WXP_REFUNDING_STATUS",
         amount_total=990,
@@ -304,8 +304,8 @@ def test_wechat_pay_admin_status_filters_align_with_presented_refund_status():
             assert fragment in sql
 
 
-def test_wechat_pay_admin_cursor_pagination(app, client):
-    _login_admin(client)
+def test_wechat_pay_admin_cursor_pagination(legacy_app, legacy_client):
+    _login_admin(legacy_client)
     base = datetime(2026, 5, 16, 12, 0, 0)
     for index in range(21):
         _insert_order(
@@ -314,8 +314,8 @@ def test_wechat_pay_admin_cursor_pagination(app, client):
             created_at=(base - timedelta(minutes=index)).isoformat(),
         )
 
-    first = client.get("/api/admin/wechat-pay/orders?limit=20").get_json()
-    second = client.get(f"/api/admin/wechat-pay/orders?limit=20&cursor={first['next_cursor']}").get_json()
+    first = legacy_client.get("/api/admin/wechat-pay/orders?limit=20").get_json()
+    second = legacy_client.get(f"/api/admin/wechat-pay/orders?limit=20&cursor={first['next_cursor']}").get_json()
 
     assert first["ok"] is True
     assert len(first["items"]) == 20
@@ -325,7 +325,7 @@ def test_wechat_pay_admin_cursor_pagination(app, client):
     assert second["has_more"] is False
 
 
-def test_wechat_pay_admin_displays_created_at_in_beijing_time(app):
+def test_wechat_pay_admin_displays_created_at_in_beijing_time(legacy_app):
     _insert_order(
         out_trade_no="WXP_TZ_DISPLAY",
         transaction_id="420000TZDISPLAY",
@@ -337,8 +337,8 @@ def test_wechat_pay_admin_displays_created_at_in_beijing_time(app):
     assert payload["items"][0]["created_at"] == "2026-05-18 19:27:51"
 
 
-def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fields(app, client):
-    token = _login_admin(client)
+def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fields(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     _insert_order(
         out_trade_no="WXP_EXPORT",
         product_code="vip_course",
@@ -349,7 +349,7 @@ def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fie
         created_at="2026-05-18T12:00:00+08:00",
     )
 
-    response = client.post(
+    response = legacy_client.post(
         "/api/admin/wechat-pay/order-exports",
         json={
             "admin_action_token": token,
@@ -369,15 +369,15 @@ def test_wechat_pay_admin_export_job_saves_filters_json_and_exports_required_fie
     assert row["filters_json"]["product_code"] == "vip_course"
     assert row["status"] == "succeeded"
 
-    download = client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
+    download = legacy_client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
     csv_text = download.data.decode("utf-8-sig")
     assert "客户身份" not in csv_text
     assert csv_text.splitlines()[0] == "订单创建时间,微信单号,手机号,unionid,商品名称,商品编码,金额,状态"
     assert "420000EXPORT,13800138000,unionid_export,会员课程,vip_course,99.00,待支付" in csv_text
 
 
-def test_wechat_pay_admin_export_uses_current_code_for_aliased_product(app, client):
-    token = _login_admin(client)
+def test_wechat_pay_admin_export_uses_current_code_for_aliased_product(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     _insert_order(
         out_trade_no="WXP_ALIAS_EXPORT",
         product_code="prd_20260601055439_3c4f56",
@@ -389,7 +389,7 @@ def test_wechat_pay_admin_export_uses_current_code_for_aliased_product(app, clie
         created_at="2026-06-03T16:55:42+08:00",
     )
 
-    response = client.post(
+    response = legacy_client.post(
         "/api/admin/wechat-pay/order-exports",
         json={
             "admin_action_token": token,
@@ -406,7 +406,7 @@ def test_wechat_pay_admin_export_uses_current_code_for_aliased_product(app, clie
 
     assert response.status_code == 200
     job_id = response.get_json()["job"]["job_id"]
-    download = client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
+    download = legacy_client.get(f"/api/admin/wechat-pay/order-exports/{job_id}/download")
     csv_text = download.data.decode("utf-8-sig")
     assert "prd_20260601055439_3c4f56" not in csv_text
     assert "420000ALIASEXPORT,13681984146,unionid_alias_export,黄小璨月度会员私教版,premium_monthly_trial,69.00,待支付" in csv_text
@@ -459,19 +459,19 @@ def test_next_wechat_pay_present_order_uses_current_code_for_alias():
     assert presented["product_code"] == "subscription_trial_month"
 
 
-def test_wechat_pay_admin_list_does_not_return_refund_action(app, client):
-    _login_admin(client)
+def test_wechat_pay_admin_list_does_not_return_refund_action(legacy_app, legacy_client):
+    _login_admin(legacy_client)
     _insert_order(out_trade_no="WXP_NO_REFUND_ACTION", status="paid", trade_state="SUCCESS", transaction_id="420000REFUNDLESS")
 
-    payload = client.get("/api/admin/wechat-pay/orders?limit=20").get_json()
+    payload = legacy_client.get("/api/admin/wechat-pay/orders?limit=20").get_json()
 
     assert payload["ok"] is True
     assert "refund" not in payload["items"][0]
     assert "refund_url" not in payload["items"][0]
 
 
-def test_wechat_pay_admin_refund_requires_transaction_id_confirmation(app, client):
-    token = _login_admin(client)
+def test_wechat_pay_admin_refund_requires_transaction_id_confirmation(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     order = _insert_order(
         out_trade_no="WXP_REFUND_CONFIRM",
         status="paid",
@@ -479,7 +479,7 @@ def test_wechat_pay_admin_refund_requires_transaction_id_confirmation(app, clien
         transaction_id="420000CONFIRM",
     )
 
-    response = client.post(
+    response = legacy_client.post(
         f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
         json={
             "admin_action_token": token,
@@ -494,8 +494,8 @@ def test_wechat_pay_admin_refund_requires_transaction_id_confirmation(app, clien
     assert "微信单号二次确认不匹配" in response.get_json()["error"]
 
 
-def test_wechat_pay_admin_refund_calls_wechat_pay_and_updates_success(app, client, monkeypatch):
-    token = _login_admin(client)
+def test_wechat_pay_admin_refund_calls_wechat_pay_and_updates_success(legacy_app, legacy_client, monkeypatch):
+    token = _login_admin(legacy_client)
     order = _insert_order(
         out_trade_no="WXP_REFUND_REAL",
         status="paid",
@@ -517,7 +517,7 @@ def test_wechat_pay_admin_refund_calls_wechat_pay_and_updates_success(app, clien
 
     monkeypatch.setattr(wechat_pay_admin_service, "_create_wechat_pay_client", lambda: FakeClient())
 
-    response = client.post(
+    response = legacy_client.post(
         f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
         json={
             "admin_action_token": token,
@@ -546,8 +546,8 @@ def test_wechat_pay_admin_refund_calls_wechat_pay_and_updates_success(app, clien
     }
 
 
-def test_wechat_pay_admin_refund_processing_counts_as_in_flight_amount(app, client, monkeypatch):
-    token = _login_admin(client)
+def test_wechat_pay_admin_refund_processing_counts_as_in_flight_amount(legacy_app, legacy_client, monkeypatch):
+    token = _login_admin(legacy_client)
     order = _insert_order(
         out_trade_no="WXP_REFUND_PROCESSING",
         status="paid",
@@ -568,7 +568,7 @@ def test_wechat_pay_admin_refund_processing_counts_as_in_flight_amount(app, clie
 
     monkeypatch.setattr(wechat_pay_admin_service, "_create_wechat_pay_client", lambda: FakeClient())
 
-    response = client.post(
+    response = legacy_client.post(
         f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
         json={
             "admin_action_token": token,
@@ -588,8 +588,8 @@ def test_wechat_pay_admin_refund_processing_counts_as_in_flight_amount(app, clie
     assert payload["order"]["can_refund"] is False
 
 
-def test_wechat_pay_admin_refund_rejects_amount_over_order_total(app, client, monkeypatch):
-    token = _login_admin(client)
+def test_wechat_pay_admin_refund_rejects_amount_over_order_total(legacy_app, legacy_client, monkeypatch):
+    token = _login_admin(legacy_client)
     order = _insert_order(
         out_trade_no="WXP_REFUND_OVER_TOTAL",
         status="paid",
@@ -607,7 +607,7 @@ def test_wechat_pay_admin_refund_rejects_amount_over_order_total(app, client, mo
 
     monkeypatch.setattr(wechat_pay_admin_service, "_create_wechat_pay_client", lambda: FakeClient())
 
-    response = client.post(
+    response = legacy_client.post(
         f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
         json={
             "admin_action_token": token,
