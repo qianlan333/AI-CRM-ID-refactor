@@ -47,7 +47,7 @@ def test_messages_inventory_search_references_are_explained() -> None:
         "aicrm_next/customer_read_model/api.py",
         "tests/test_api.py",
         "tests/contract/test_crm_contract.py",
-        "tests/test_http_registration_contract.py",
+        "tests/test_messages_exact_routes.py",
         "docs/crm_sensitive_routes.md",
     ]:
         assert required in referenced_files

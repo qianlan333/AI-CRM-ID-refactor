@@ -30,6 +30,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_scheduler_duplicate_checker_native,
     check_internal_run_due_guard_native,
     check_legacy_flask_facade_removed,
+    check_legacy_flask_http_test_retirement,
     check_wecom_group_adapter_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_admin_pages_native,
@@ -438,6 +439,61 @@ def test_test_fixture_boundaries_flag_next_fixture_legacy_import(tmp_path: Path)
     codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
 
     assert "next_test_fixture_imports_legacy" in codes
+
+
+def _write_test_file(tmp_path: Path, name: str, source: str) -> Path:
+    test_file = tmp_path / "tests" / name
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text(source, encoding="utf-8")
+    return test_file
+
+
+def test_legacy_flask_http_test_retirement_flags_http_package_import(tmp_path: Path) -> None:
+    _write_test_file(tmp_path, "test_legacy_http.py", "import wecom_ability_service.http\n")
+
+    codes = {violation.code for violation in check_legacy_flask_http_test_retirement(tmp_path)}
+
+    assert "legacy_http_test_import_remaining" in codes
+
+
+def test_legacy_flask_http_test_retirement_flags_route_registry_import(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_legacy_http_registry.py",
+        "from wecom_ability_service.http import HTTP_ROUTE_MODULES, register_http_routes\n",
+    )
+
+    codes = {violation.code for violation in check_legacy_flask_http_test_retirement(tmp_path)}
+
+    assert "legacy_flask_route_registry_test_remaining" in codes
+
+
+def test_legacy_flask_http_test_retirement_flags_route_owner_header_expectation(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_legacy_route_owner.py",
+        "def test_header(response):\n"
+        "    assert response.headers['X-AICRM-Route-Owner'] == 'legacy_flask'\n"
+        "    assert response.headers['X-AICRM-App'] == 'ai_crm_legacy_flask'\n",
+    )
+
+    codes = {violation.code for violation in check_legacy_flask_http_test_retirement(tmp_path)}
+
+    assert "legacy_flask_header_test_remaining" in codes
+
+
+def test_legacy_flask_http_test_retirement_accepts_next_route_contract(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_channel_entry_next_contract.py",
+        "from aicrm_next.main import create_app\n"
+        "\n"
+        "def test_next_owner():\n"
+        "    routes = {route.path: route.endpoint.__module__ for route in create_app().routes}\n"
+        "    assert routes['/wecom/external-contact/callback'] == 'aicrm_next.channel_entry.api'\n",
+    )
+
+    assert check_legacy_flask_http_test_retirement(tmp_path) == []
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

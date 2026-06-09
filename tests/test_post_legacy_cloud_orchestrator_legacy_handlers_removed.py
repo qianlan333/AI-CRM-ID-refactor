@@ -4,11 +4,9 @@ from pathlib import Path
 
 from aicrm_next.main import create_app as create_next_app
 from aicrm_next.platform_foundation.route_registry.checker import build_route_check_report
-from wecom_ability_service import create_app as create_legacy_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HTTP_INIT = ROOT / "wecom_ability_service/http/__init__.py"
 
 CLOUD_HTTP_MODULES = [
     "cloud_orchestrator_endpoint",
@@ -32,24 +30,6 @@ REPRESENTATIVE_NEXT_ROUTES = {
 def test_cloud_orchestrator_legacy_handler_files_are_removed() -> None:
     for module in CLOUD_HTTP_MODULES:
         assert not (ROOT / "wecom_ability_service/http" / f"{module}.py").exists()
-
-
-def test_cloud_orchestrator_legacy_handlers_are_not_registered_in_flask_http_registry() -> None:
-    http_init = HTTP_INIT.read_text(encoding="utf-8")
-
-    assert "register_cloud_orchestrator_routes" not in http_init
-    for module in CLOUD_HTTP_MODULES:
-        assert module not in http_init
-
-    legacy_app = create_legacy_app({"TESTING": True})
-    route_modules = {
-        rule.rule: getattr(legacy_app.view_functions[rule.endpoint], "__module__", "")
-        for rule in legacy_app.url_map.iter_rules()
-    }
-    retired_modules = {f"wecom_ability_service.http.{module}" for module in CLOUD_HTTP_MODULES}
-    assert not retired_modules.intersection(route_modules.values())
-    assert not any(route.startswith("/admin/cloud-orchestrator") for route in route_modules)
-    assert not any(route.startswith("/api/admin/cloud-orchestrator") for route in route_modules)
 
 
 def test_representative_cloud_orchestrator_routes_remain_next_owned() -> None:

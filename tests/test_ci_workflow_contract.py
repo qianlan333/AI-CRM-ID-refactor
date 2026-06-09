@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 LEGACY_BACKLOG_CHECK = "tools/generate_legacy_replacement_backlog.py --check"
 LEGACY_LAYOUT_TARGETS = (
-    "tests/test_http_registration_contract.py",
     "tests/test_refactor_guardrails.py",
     "tests/test_service_layer_layout.py",
 )
