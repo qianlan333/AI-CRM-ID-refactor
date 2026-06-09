@@ -117,16 +117,3 @@ def test_app_py_legacy_commands_still_hard_error() -> None:
         assert result.returncode != 0
         assert "has been removed. AI-CRM now starts with Next runtime only." in output
         assert "wecom_ability_service" not in output
-
-
-def test_strict_legacy_checker_still_passes() -> None:
-    result = subprocess.run(
-        [sys.executable, "scripts/check_no_new_legacy.py", "--strict"],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert '"ok": true' in result.stdout

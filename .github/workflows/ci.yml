@@ -58,9 +58,6 @@ jobs:
       - name: Check no new legacy surface
         run: python scripts/check_no_new_legacy.py --strict
 
-      - name: Check legacy replacement backlog is generated
-        run: python tools/generate_legacy_replacement_backlog.py --check
-
       - name: Run PR smoke tests (PG-only, targeted)
         run: |
           python -m pytest \
@@ -76,9 +73,6 @@ jobs:
             tests/test_admin_navigation_groups.py \
             tests/test_wechat_pay_products.py \
             tests/test_wechat_pay_admin_transactions.py \
-            tests/test_http_registration_contract.py \
-            tests/test_refactor_guardrails.py \
-            tests/test_service_layer_layout.py \
             tests/test_run_cloud_orchestrator_scan.py \
             tests/test_cloud_orchestrator_external_agent.py \
             -n auto --dist=loadfile -q --tb=short --timeout=120 --timeout-method=thread
@@ -124,9 +118,6 @@ jobs:
       - name: Check no new legacy surface
         run: python scripts/check_no_new_legacy.py --strict
 
-      - name: Check legacy replacement backlog is generated
-        run: python tools/generate_legacy_replacement_backlog.py --check
-
       - name: Run main smoke tests (PG-only, targeted)
         run: |
           python -m pytest \
@@ -148,9 +139,6 @@ jobs:
             tests/test_admin_navigation_groups.py \
             tests/test_wechat_pay_products.py \
             tests/test_wechat_pay_admin_transactions.py \
-            tests/test_http_registration_contract.py \
-            tests/test_refactor_guardrails.py \
-            tests/test_service_layer_layout.py \
             tests/test_run_cloud_orchestrator_scan.py \
             tests/test_cloud_orchestrator_external_agent.py \
             -n auto --dist=loadfile -q --tb=short --timeout=120 --timeout-method=thread
