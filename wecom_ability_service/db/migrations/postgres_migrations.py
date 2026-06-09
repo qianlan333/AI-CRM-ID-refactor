@@ -1400,6 +1400,102 @@ def _ensure_postgres_alipay_pay_tables(db) -> None:
     )
 
 
+def _ensure_postgres_wechat_shop_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_shop_tokens (
+            id BIGSERIAL PRIMARY KEY,
+            appid TEXT NOT NULL UNIQUE,
+            access_token TEXT NOT NULL DEFAULT '',
+            expires_at TIMESTAMPTZ,
+            refreshed_at TIMESTAMPTZ,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_shop_orders (
+            id BIGSERIAL PRIMARY KEY,
+            order_id TEXT NOT NULL UNIQUE,
+            provider TEXT NOT NULL DEFAULT 'wechat_shop',
+            provider_label TEXT NOT NULL DEFAULT '微信小店',
+            deal_recorded BOOLEAN NOT NULL DEFAULT FALSE,
+            returned_recorded BOOLEAN NOT NULL DEFAULT FALSE,
+            business_status TEXT NOT NULL DEFAULT 'pending',
+            status_code INTEGER NOT NULL DEFAULT 0,
+            status_label TEXT NOT NULL DEFAULT '',
+            paid_at TIMESTAMPTZ,
+            returned_at TIMESTAMPTZ,
+            amount_total INTEGER NOT NULL DEFAULT 0,
+            refunded_amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            transaction_id TEXT NOT NULL DEFAULT '',
+            payment_method INTEGER,
+            openid TEXT NOT NULL DEFAULT '',
+            unionid TEXT NOT NULL DEFAULT '',
+            product_name TEXT NOT NULL DEFAULT '',
+            product_code TEXT NOT NULL DEFAULT '',
+            product_count INTEGER NOT NULL DEFAULT 0,
+            deliver_method INTEGER,
+            is_virtual_delivery BOOLEAN NOT NULL DEFAULT FALSE,
+            virtual_account_no TEXT NOT NULL DEFAULT '',
+            virtual_account_type TEXT NOT NULL DEFAULT '',
+            aftersale_order_count INTEGER NOT NULL DEFAULT 0,
+            on_aftersale_order_count INTEGER NOT NULL DEFAULT 0,
+            finish_aftersale_sku_count INTEGER NOT NULL DEFAULT 0,
+            raw_order_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            last_event_type TEXT NOT NULL DEFAULT '',
+            last_event_at TIMESTAMPTZ,
+            synced_at TIMESTAMPTZ,
+            sync_status TEXT NOT NULL DEFAULT 'pending',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    for stmt in (
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'wechat_shop'",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS provider_label TEXT NOT NULL DEFAULT '微信小店'",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS deal_recorded BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS returned_recorded BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS business_status TEXT NOT NULL DEFAULT 'pending'",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS refunded_amount_total INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS raw_order_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE IF EXISTS wechat_shop_orders ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT ''",
+    ):
+        db.execute(stmt)
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_wechat_shop_orders_order_id ON wechat_shop_orders (order_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_provider_created ON wechat_shop_orders (provider, created_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_business_status_created ON wechat_shop_orders (business_status, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_transaction_id ON wechat_shop_orders (transaction_id) WHERE transaction_id <> ''")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_openid ON wechat_shop_orders (openid) WHERE openid <> ''")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_orders_unionid ON wechat_shop_orders (unionid) WHERE unionid <> ''")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_shop_order_events (
+            id BIGSERIAL PRIMARY KEY,
+            event_type TEXT NOT NULL DEFAULT '',
+            order_id TEXT NOT NULL DEFAULT '',
+            wechat_create_time BIGINT,
+            from_user_name TEXT NOT NULL DEFAULT '',
+            to_user_name TEXT NOT NULL DEFAULT '',
+            raw_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            process_status TEXT NOT NULL DEFAULT 'received',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_wechat_shop_order_events_dedupe UNIQUE (event_type, order_id, wechat_create_time)
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_order_events_order ON wechat_shop_order_events (order_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_wechat_shop_order_events_type ON wechat_shop_order_events (event_type, created_at DESC)")
+
+
 def _ensure_postgres_customer_value_segment_tables(db) -> None:
     db.execute(
         """
@@ -2767,6 +2863,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_wechat_pay_tables(db)
     _ensure_postgres_external_push_tables(db)
     _ensure_postgres_alipay_pay_tables(db)
+    _ensure_postgres_wechat_shop_tables(db)
     _ensure_postgres_hxc_dashboard_v6_columns(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)

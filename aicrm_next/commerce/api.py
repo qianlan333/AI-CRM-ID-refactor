@@ -57,6 +57,13 @@ from .application import (
 )
 from .dto import CheckoutRequest, PaymentNotifyRequest, ProductUpsertRequest
 from .repo import build_commerce_repository
+from .wechat_shop_service import (
+    handle_wechat_shop_notify,
+    list_wechat_shop_events,
+    sanitize_wechat_shop_error,
+    sync_wechat_shop_order,
+    verify_echo as verify_wechat_shop_echo,
+)
 
 router = APIRouter()
 _COMMERCE_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -843,6 +850,29 @@ def alipay_notify(payload: PaymentNotifyRequest) -> JSONResponse:
         _raise_http(exc)
 
 
+@router.get("/api/wechat-shop/notify")
+def wechat_shop_notify_verify(request: Request) -> Response:
+    try:
+        text = verify_wechat_shop_echo(dict(request.query_params))
+        return Response(text, media_type="text/plain")
+    except ValueError as exc:
+        return Response(str(exc), media_type="text/plain", status_code=403)
+
+
+@router.post("/api/wechat-shop/notify")
+async def wechat_shop_notify(request: Request) -> Response:
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            return Response("invalid payload", media_type="text/plain", status_code=400)
+        handle_wechat_shop_notify(payload, dict(request.query_params))
+        return Response("success", media_type="text/plain")
+    except ValueError as exc:
+        return Response(str(exc), media_type="text/plain", status_code=400)
+    except Exception:
+        return Response("success", media_type="text/plain")
+
+
 @router.get("/api/alipay/return")
 def alipay_return(order_no: str = "", status: str = "paid") -> JSONResponse:
     try:
@@ -919,10 +949,10 @@ def _unified_order_filters(**kwargs) -> dict:
 @router.get(
     "/api/admin/orders",
     summary="后台统一订单列表",
-    description="Session Cookie 后台接口，聚合微信和支付宝订单。provider=all 时分别读取两侧 CommerceAdminTransactionListReadModel 后按 created_at 倒序合并。",
+    description="Session Cookie 后台接口，聚合微信、支付宝和微信小店订单。provider=all 时分别读取各侧 CommerceAdminTransactionListReadModel 后按 created_at 倒序合并。",
 )
 def list_admin_orders(
-    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay/wechat_shop，默认 all"),
     status: str | None = Query(None, description="统一订单状态过滤"),
     payment_status: str | None = Query(None, description="支付状态过滤，兼容 status"),
     product_code: str | None = Query(None, description="商品编码"),
@@ -972,11 +1002,11 @@ def list_admin_orders(
 @router.get(
     "/api/admin/orders/{order_no}",
     summary="后台统一订单详情",
-    description="按商户订单号或平台交易号查询统一订单详情。provider=auto 时先查微信，再查支付宝；404 返回结构化 not_found。",
+    description="按商户订单号或平台交易号查询统一订单详情。provider=auto 时查询微信、支付宝、微信小店；404 返回结构化 not_found。",
 )
 def get_admin_order(
     order_no: str = PathParam(..., description="商户订单号、订单 ID 或平台交易号"),
-    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay，默认 auto"),
+    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay/wechat_shop，默认 auto"),
 ) -> JSONResponse:
     try:
         return JSONResponse(jsonable_encoder(_payment_final_payload(get_unified_order(order_no, provider=provider), source_status="next_admin_order_detail")), headers=_payment_final_headers())
@@ -991,7 +1021,7 @@ def get_admin_order(
 )
 def get_admin_order_items(
     order_no: str = PathParam(..., description="商户订单号、订单 ID 或平台交易号"),
-    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay，默认 auto"),
+    provider: str = Query("auto", description="支付 provider，可取 auto/wechat/alipay/wechat_shop，默认 auto"),
 ) -> JSONResponse:
     try:
         return JSONResponse(jsonable_encoder(_payment_final_payload(list_unified_order_items(order_no, provider=provider), source_status="next_admin_order_items")), headers=_payment_final_headers())
@@ -1005,7 +1035,7 @@ def get_admin_order_items(
     description="Session Cookie 后台接口，复用统一订单列表逻辑，以支付流水视角返回 payments。",
 )
 def list_admin_payments(
-    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay，默认 all"),
+    provider: str = Query("all", description="支付 provider，可取 all/wechat/alipay/wechat_shop，默认 all"),
     status: str | None = Query(None, description="支付状态过滤"),
     payment_status: str | None = Query(None, description="支付状态过滤别名"),
     product_code: str | None = Query(None, description="商品编码"),
@@ -1195,6 +1225,30 @@ def replay_admin_webhook(payload: dict = Body(..., description="Webhook replay J
         )
     except LookupError as exc:
         return _admin_api_error(error_code="not_found", message=str(exc), source_status="next_admin_webhook_replay", status_code=404)
+
+
+@router.post("/api/admin/wechat-shop/orders/{order_id}/sync")
+def sync_admin_wechat_shop_order(order_id: str = PathParam(..., description="微信小店订单号")) -> JSONResponse:
+    try:
+        payload = sync_wechat_shop_order(str(order_id))
+        return JSONResponse(jsonable_encoder(_payment_final_payload(payload, source_status="next_wechat_shop_order_sync")), headers=_payment_final_headers())
+    except Exception as exc:
+        return _admin_api_error(
+            error_code="wechat_shop_order_sync_failed",
+            message=sanitize_wechat_shop_error(exc),
+            source_status="next_wechat_shop_order_sync",
+            status_code=400,
+        )
+
+
+@router.get("/api/admin/wechat-shop/events")
+def list_admin_wechat_shop_events(
+    order_id: str | None = Query(None, description="微信小店订单号"),
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> JSONResponse:
+    payload = list_wechat_shop_events({"order_id": order_id}, limit=limit, offset=offset)
+    return JSONResponse(jsonable_encoder(_payment_final_payload(payload, source_status="next_wechat_shop_events")), headers=_payment_final_headers())
 
 
 @router.post(

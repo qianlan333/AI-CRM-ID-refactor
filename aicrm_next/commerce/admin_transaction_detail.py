@@ -10,6 +10,7 @@ from aicrm_next.shared.runtime import database_mode, raw_database_url
 
 from .application import GetTransactionQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, product_code_filter_values
+from .wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_orders
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -53,6 +54,15 @@ class PaymentProviderStatusMapper:
 
     def map(self, provider: str, row: dict[str, Any]) -> dict[str, str]:
         status = self._status(provider, row)
+        if provider == "wechat_shop":
+            labels = {
+                **self.LABELS,
+                "paid": "成交",
+                "refund_processing": "退货中",
+                "partial_refunded": "部分退货",
+                "full_refunded": "已退货",
+            }
+            return {"status": status, "status_label": labels[status]}
         return {"status": status, "status_label": self.LABELS[status]}
 
     def _status(self, provider: str, row: dict[str, Any]) -> str:
@@ -62,6 +72,20 @@ class PaymentProviderStatusMapper:
         refund_status = _text(row.get("refund_status")).lower()
         raw_status = _text(row.get("status") or row.get("payment_status")).lower()
         provider_state = _text(row.get("trade_state") or row.get("trade_status")).upper()
+        if provider == "wechat_shop":
+            business_status = _text(row.get("business_status")).lower()
+            status_code = _int(row.get("status_code"))
+            if row.get("returned_recorded") is True or business_status == "returned":
+                if amount_total > 0 and refunded > 0 and refunded < amount_total:
+                    return "partial_refunded"
+                return "full_refunded"
+            if _int(row.get("on_aftersale_order_count")) > 0:
+                return "refund_processing"
+            if row.get("deal_recorded") is True or business_status == "deal":
+                return "paid"
+            if status_code == 250 or business_status == "closed":
+                return "closed"
+            return "pending"
         if refund_status == "full_refunded" or (amount_total > 0 and refunded >= amount_total):
             return "full_refunded"
         if active_refunding > 0 or refund_status in {"requested", "processing", "refund_processing"}:
@@ -123,6 +147,7 @@ class _ProviderConfig:
 PROVIDERS = {
     "wechat": _ProviderConfig("wechat", "微信支付", "微信单号", "/admin/wechat-pay/transactions", "/api/admin/wechat-pay/transactions"),
     "alipay": _ProviderConfig("alipay", "支付宝", "支付宝交易号", "/admin/alipay/transactions", "/api/admin/alipay/transactions"),
+    "wechat_shop": _ProviderConfig("wechat_shop", "微信小店", "小店订单号", "/admin/wechat-shop/transactions", "/api/admin/orders?provider=wechat_shop"),
 }
 
 
@@ -134,13 +159,15 @@ def provider_config(provider: str) -> _ProviderConfig:
 
 
 def _platform_transaction_no(provider: str, row: dict[str, Any]) -> str:
+    if provider == "wechat_shop":
+        return _text(row.get("transaction_id")) or "暂无微信小店支付单号"
     if provider == "alipay":
         return _text(row.get("trade_no") or row.get("transaction_id")) or "待支付暂无支付宝交易号"
     return _text(row.get("transaction_id")) or "待支付暂无微信单号"
 
 
 def _merchant_order_no(row: dict[str, Any]) -> str:
-    return _text(row.get("out_trade_no") or row.get("order_no"))
+    return _text(row.get("out_trade_no") or row.get("order_no") or row.get("order_id"))
 
 
 def _product_name(row: dict[str, Any]) -> str:
@@ -154,6 +181,7 @@ def _customer(row: dict[str, Any]) -> dict[str, str]:
         "mobile": _text(row.get("mobile_snapshot") or row.get("buyer_mobile")),
         "userid": _text(row.get("userid_snapshot") or row.get("buyer_id")),
         "external_userid": _text(row.get("external_userid") or row.get("identity_snapshot")),
+        "openid": _text(row.get("openid")),
         "unionid": _text(row.get("unionid")),
     }
 
@@ -171,7 +199,10 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
     customer = _customer(row)
     product_code = canonical_product_code(row.get("product_code"))
     timeline = PaymentTimelineProjection().project(provider=provider, order=row, events=events or [])
-    return {
+    can_refund = provider == "wechat" and status["status"] in {"paid", "partial_refunded"} and refundable > 0
+    raw_status = _text(row.get("business_status") or row.get("status") or row.get("payment_status")) if provider == "wechat_shop" else _text(row.get("status") or row.get("payment_status"))
+    provider_status = _text(row.get("status_code")) if provider == "wechat_shop" else _text(row.get("trade_state") or row.get("trade_status"))
+    result = {
         "id": order_id,
         "provider": provider,
         "provider_label": config.provider_label,
@@ -187,26 +218,32 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
         "mobile": customer["mobile"],
         "userid": customer["userid"],
         "external_userid": customer["external_userid"],
+        "openid": customer["openid"],
         "unionid": customer["unionid"],
         "product_code": product_code,
         "product_name": _product_name(row),
+        "quantity": _int(row.get("product_count")) or _int(row.get("quantity")) or 1,
         "amount_total": amount_total,
         "amount_yuan": _money_yuan(amount_total),
         "currency": _text(row.get("currency")) or "CNY",
         **status,
-        "raw_status": _text(row.get("status") or row.get("payment_status")),
-        "provider_status": _text(row.get("trade_state") or row.get("trade_status")),
+        "raw_status": raw_status,
+        "provider_status": provider_status,
         "refunded_amount_total": refunded,
         "refunded_amount_yuan": _money_yuan(refunded),
         "active_refund_amount_total": active_refunding,
         "active_refund_amount_yuan": _money_yuan(active_refunding),
         "refundable_amount_total": refundable,
         "refundable_amount_yuan": _money_yuan(refundable),
-        "can_refund": provider == "wechat" and status["status"] in {"paid", "partial_refunded"} and refundable > 0,
+        "can_refund": can_refund,
         "callback_summary": timeline["callback_summary"],
         "timeline": timeline["timeline"],
         "detail_url": f"{config.page_path}/{order_id}",
     }
+    if provider == "wechat_shop":
+        result["deal_recorded"] = bool(row.get("deal_recorded"))
+        result["returned_recorded"] = bool(row.get("returned_recorded"))
+    return result
 
 
 def _connect():
@@ -226,16 +263,25 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         params.extend(values)
     mobile = _text(filters.get("mobile") or filters.get("mobile_snapshot"))
     if mobile:
-        where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
-        params.append(f"%{mobile}%")
+        if provider == "wechat_shop":
+            where.append("1 = 0")
+        else:
+            where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
+            params.append(f"%{mobile}%")
     identity = _text(filters.get("identity") or filters.get("external_userid"))
     if identity:
-        if provider == "alipay":
+        if provider == "wechat_shop":
+            where.append("(COALESCE(o.openid, '') ILIKE %s OR COALESCE(o.unionid, '') ILIKE %s)")
+            needle = f"%{identity}%"
+            params.extend([needle, needle])
+        elif provider == "alipay":
             where.append("(COALESCE(o.identity_snapshot, '') ILIKE %s OR COALESCE(o.buyer_id, '') ILIKE %s OR COALESCE(o.buyer_logon_id, '') ILIKE %s)")
+            needle = f"%{identity}%"
+            params.extend([needle, needle, needle])
         else:
             where.append("(COALESCE(o.userid_snapshot, '') ILIKE %s OR COALESCE(o.external_userid, '') ILIKE %s OR COALESCE(o.respondent_key, '') ILIKE %s)")
-        needle = f"%{identity}%"
-        params.extend([needle, needle, needle])
+            needle = f"%{identity}%"
+            params.extend([needle, needle, needle])
     transaction = _text(filters.get("transaction_id") or filters.get("platform_transaction_no"))
     if transaction:
         column = "trade_no" if provider == "alipay" else "transaction_id"
@@ -243,7 +289,8 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         params.append(f"%{transaction}%")
     order_no = _text(filters.get("order_no") or filters.get("out_trade_no"))
     if order_no:
-        where.append("COALESCE(o.out_trade_no, '') ILIKE %s")
+        column = "order_id" if provider == "wechat_shop" else "out_trade_no"
+        where.append(f"COALESCE(o.{column}, '') ILIKE %s")
         params.append(f"%{order_no}%")
     created_from = _text(filters.get("created_from") or filters.get("date_from"))
     if created_from:
@@ -254,7 +301,20 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         where.append("o.created_at <= %s")
         params.append(created_to.replace("T", " "))
     status = _text(filters.get("status") or filters.get("payment_status"))
-    if status == "paid":
+    if provider == "wechat_shop":
+        if status == "paid":
+            where.append("(o.deal_recorded IS TRUE AND o.returned_recorded IS FALSE)")
+        elif status == "pending":
+            where.append("o.business_status = 'pending'")
+        elif status == "closed":
+            where.append("(o.business_status = 'closed' OR o.status_code = 250)")
+        elif status == "refund_processing":
+            where.append("o.on_aftersale_order_count > 0")
+        elif status == "partial_refunded":
+            where.append("(o.returned_recorded IS TRUE AND o.amount_total > 0 AND o.refunded_amount_total > 0 AND o.refunded_amount_total < o.amount_total)")
+        elif status == "full_refunded":
+            where.append("(o.returned_recorded IS TRUE OR o.business_status = 'returned')")
+    elif status == "paid":
         state_column = "trade_status" if provider == "alipay" else "trade_state"
         success_values = ("TRADE_SUCCESS", "TRADE_FINISHED") if provider == "alipay" else ("SUCCESS",)
         where.append(f"(o.status = 'paid' OR o.{state_column} IN ({', '.join(['%s'] * len(success_values))}))")
@@ -283,6 +343,14 @@ def _postgres_order_select(provider: str) -> str:
             o.notify_payload_json, o.return_payload_json, o.refunded_amount_total, o.refund_status,
             o.paid_at, o.created_at, o.updated_at, 0 AS active_refund_amount_total
         """
+    if provider == "wechat_shop":
+        return """
+            o.id, o.order_id, o.order_id AS out_trade_no, o.transaction_id, o.product_name, o.product_code,
+            o.amount_total, o.currency, o.openid, o.unionid, o.business_status, o.status_code,
+            o.deal_recorded, o.returned_recorded, o.raw_order_json AS notify_payload_json,
+            o.refunded_amount_total, '' AS refund_status, o.on_aftersale_order_count,
+            o.paid_at, o.created_at, o.updated_at, 0 AS active_refund_amount_total
+        """
     return """
         o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot, o.mobile_snapshot, o.userid_snapshot,
         o.external_userid, o.unionid, o.respondent_key, o.product_name, o.product_code, o.amount_total, o.currency,
@@ -298,17 +366,22 @@ def _postgres_order_select(provider: str) -> str:
 
 
 def _postgres_table(provider: str) -> str:
-    return "alipay_pay_orders" if provider == "alipay" else "wechat_pay_orders"
+    if provider == "alipay":
+        return "alipay_pay_orders"
+    if provider == "wechat_shop":
+        return "wechat_shop_orders"
+    return "wechat_pay_orders"
 
 
 def _postgres_events(provider: str, out_trade_no: str) -> list[dict[str, Any]]:
-    table = "alipay_pay_order_events" if provider == "alipay" else "wechat_pay_order_events"
+    table = "alipay_pay_order_events" if provider == "alipay" else "wechat_shop_order_events" if provider == "wechat_shop" else "wechat_pay_order_events"
+    column = "order_id" if provider == "wechat_shop" else "out_trade_no"
     with _connect() as conn:
         rows = conn.execute(
             f"""
             SELECT *
             FROM {table}
-            WHERE out_trade_no = %s
+            WHERE {column} = %s
             ORDER BY created_at DESC, id DESC
             LIMIT 20
             """,
@@ -350,12 +423,13 @@ def _postgres_get(provider: str, identifier: str) -> dict[str, Any] | None:
     table = _postgres_table(provider)
     select = _postgres_order_select(provider)
     transaction_column = "trade_no" if provider == "alipay" else "transaction_id"
+    order_column = "order_id" if provider == "wechat_shop" else "out_trade_no"
     with _connect() as conn:
         row = conn.execute(
             f"""
             SELECT {select}
             FROM {table} o
-            WHERE o.id::text = %s OR o.out_trade_no = %s OR o.{transaction_column} = %s
+            WHERE o.id::text = %s OR o.{order_column} = %s OR o.{transaction_column} = %s
             LIMIT 1
             """,
             (_text(identifier), _text(identifier), _text(identifier)),
@@ -367,6 +441,16 @@ def _postgres_get(provider: str, identifier: str) -> dict[str, Any] | None:
 
 
 def _fixture_list(provider: str, filters: dict[str, Any], *, limit: int, offset: int) -> dict[str, Any]:
+    if provider == "wechat_shop":
+        rows = fixture_wechat_shop_orders()
+        order_no = _text(filters.get("order_no") or filters.get("out_trade_no"))
+        if order_no:
+            rows = [item for item in rows if order_no in _text(item.get("order_id"))]
+        status_filter = _text(filters.get("status") or filters.get("payment_status"))
+        items = [_present(provider, row) for row in rows]
+        if status_filter in PaymentProviderStatusMapper.LABELS:
+            items = [item for item in items if item["status"] == status_filter]
+        return {"items": items[offset : offset + limit], "total": len(items), "limit": limit, "offset": offset, "has_more": offset + limit < len(items), "next_offset": offset + limit if offset + limit < len(items) else None}
     payload = ListTransactionsQuery(provider)(filters, limit=limit, offset=offset)
     items = [_present(provider, row) for row in payload.get("items", [])]
     order_no = _text(filters.get("order_no") or filters.get("out_trade_no"))
@@ -380,6 +464,9 @@ def _fixture_list(provider: str, filters: dict[str, Any], *, limit: int, offset:
 
 
 def _fixture_get(provider: str, identifier: str) -> dict[str, Any] | None:
+    if provider == "wechat_shop":
+        order = fixture_wechat_shop_order(identifier)
+        return _present(provider, order) if order else None
     try:
         payload = GetTransactionQuery(provider)(_text(identifier))
     except Exception:

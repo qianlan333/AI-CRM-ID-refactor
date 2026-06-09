@@ -31,7 +31,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `aicrm_next.automation_engine`: 40 routes; P0=4, P1=4, P2=27, P3=5
 - `aicrm_next.channel_entry`: 6 routes; P1=3, P2=3
 - `aicrm_next.cloud_orchestrator`: 8 routes; P0=3, P2=4, P3=1
-- `aicrm_next.commerce`: 22 routes; P0=1, P2=20, P3=1
+- `aicrm_next.commerce`: 26 routes; P0=1, P2=24, P3=1
 - `aicrm_next.customer_read_model`: 22 routes; P0=8, P2=14
 - `aicrm_next.customer_tags`: 15 routes; P2=15
 - `aicrm_next.hxc_dashboard`: 10 routes; P0=5, P2=5
@@ -52,7 +52,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `keep_guarded_until_adapter_ready`: 73 routes; blocked_or_guarded=73
 - `phase_3_readonly`: 37 routes; readonly=37
 - `phase_4_internal_write`: 9 routes; internal_write=1, readonly=8
-- `phase_5_external_adapter`: 88 routes; adapter_contract=11, external_side_effect=77
+- `phase_5_external_adapter`: 92 routes; adapter_contract=11, external_side_effect=81
 - `phase_6_timer_automation`: 11 routes; timer_or_automation_execution=11
 
 ## Top 10 Suggested First Replacements
@@ -367,3 +367,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `LRB-216` `/api/admin/wecom-customer-acquisition-links`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.post_legacy_deferred`
 - `LRB-217` `/api/admin/wecom-customer-acquisition-links/{link_id}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.post_legacy_deferred`
 - `LRB-218` `/api/admin/wecom-customer-acquisition-links/{link_id}/{action}`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.post_legacy_deferred`
+- `LRB-219` `/api/admin/wechat-shop/orders/{order_id}/sync`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-220` `/api/admin/wechat-shop/events`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-221` `/api/wechat-shop/notify`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
+- `LRB-222` `/api/wechat-shop/notify`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.commerce`
