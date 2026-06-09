@@ -2763,3 +2763,59 @@ routes:
     replacement_status: locked
     checker: tests/test_post_legacy_deferred_api_routes.py
     notes: Safe-mode enable/disable/sync action route for WeCom customer acquisition links; unknown actions return controlled 410, wecom_api_called=false.
+  - route_pattern: /api/admin/wechat-shop/orders/{order_id}/sync
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next_command
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: medium
+    delete_ready: true
+    checker: tests/test_wechat_shop_backend.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin WeChat Shop manual sync is a Next-owned backend command that fetches order detail from the configured WeChat Shop API and upserts the local commerce read model only; it never calls delivery or refund APIs and has no legacy fallback.
+  - route_pattern: /api/admin/wechat-shop/events
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_wechat_shop_backend.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Admin WeChat Shop event troubleshooting is a Next-owned read API over stored callback events; secrets and access tokens are not exposed and no provider side effect is enabled.
+  - route_pattern: /api/wechat-shop/notify
+    methods: [GET, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    checker: tests/test_wechat_shop_backend.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public WeChat Shop URL verification endpoint is a Next-owned callback route; it validates the optional callback token signature and returns echostr or ok without provider side effects or legacy fallback.
+  - route_pattern: /api/wechat-shop/notify
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next_command
+    production_behavior: next_command
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: medium
+    delete_ready: true
+    checker: tests/test_wechat_shop_backend.py
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    notes: Public WeChat Shop notify endpoint is a Next-owned backend callback that stores raw order events and attempts an order-detail sync only; order_id remains string typed, delivery/refund APIs are not called, and ordinary provider API failures still return success to WeChat.

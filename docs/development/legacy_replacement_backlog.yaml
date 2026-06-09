@@ -4799,3 +4799,91 @@ entries:
     delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
     recommended_verification: ["tests/test_post_legacy_deferred_api_routes.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
     notes: "Safe-mode enable/disable/sync action route for WeCom customer acquisition links; unknown actions return controlled 410, wecom_api_called=false."
+  - id: "LRB-219"
+    route_pattern: "/api/admin/wechat-shop/orders/{order_id}/sync"
+    methods: ["POST", "OPTIONS"]
+    capability_owner: "aicrm_next.commerce"
+    current_runtime_owner: "next_command"
+    production_behavior: "next_command"
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: "medium"
+    checker: "tests/test_wechat_shop_backend.py"
+    replacement_phase: "phase_5_external_adapter"
+    replacement_category: "external_side_effect"
+    priority: "P2"
+    daily_business_critical: true
+    business_continuity_requirement: "Current route is documented with no legacy fallback. Preserve the current owner and production behavior, do not restore production_compat or legacy facade fallback, and verify the route does not regress to 404, 500, empty-data false success, fixture/local_contract success, or accidental external side effects."
+    replacement_owner: "aicrm_next.commerce"
+    replacement_strategy: "Keep the current Next-owned route owner accurate, run the declared checker and smoke tests, and prevent registry/backlog drift. Do not add legacy fallback."
+    fallback_required_until: "No legacy fallback is required or allowed for this manifest entry; keep route owner checks current and do not restore production_compat or legacy facade fallback."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
+    recommended_verification: ["tests/test_wechat_shop_backend.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
+    notes: "Admin WeChat Shop manual sync is a Next-owned backend command that fetches order detail from the configured WeChat Shop API and upserts the local commerce read model only; it never calls delivery or refund APIs and has no legacy fallback."
+  - id: "LRB-220"
+    route_pattern: "/api/admin/wechat-shop/events"
+    methods: ["GET", "HEAD"]
+    capability_owner: "aicrm_next.commerce"
+    current_runtime_owner: "next"
+    production_behavior: "next_exact"
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: "none"
+    checker: "tests/test_wechat_shop_backend.py"
+    replacement_phase: "phase_5_external_adapter"
+    replacement_category: "external_side_effect"
+    priority: "P2"
+    daily_business_critical: true
+    business_continuity_requirement: "Current route is documented with no legacy fallback. Preserve the current owner and production behavior, do not restore production_compat or legacy facade fallback, and verify the route does not regress to 404, 500, empty-data false success, fixture/local_contract success, or accidental external side effects."
+    replacement_owner: "aicrm_next.commerce"
+    replacement_strategy: "Keep the current Next-owned route owner accurate, run the declared checker and smoke tests, and prevent registry/backlog drift. Do not add legacy fallback."
+    fallback_required_until: "No legacy fallback is required or allowed for this manifest entry; keep route owner checks current and do not restore production_compat or legacy facade fallback."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
+    recommended_verification: ["tests/test_wechat_shop_backend.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
+    notes: "Admin WeChat Shop event troubleshooting is a Next-owned read API over stored callback events; secrets and access tokens are not exposed and no provider side effect is enabled."
+  - id: "LRB-221"
+    route_pattern: "/api/wechat-shop/notify"
+    methods: ["GET", "HEAD"]
+    capability_owner: "aicrm_next.commerce"
+    current_runtime_owner: "next"
+    production_behavior: "next_exact"
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: "none"
+    checker: "tests/test_wechat_shop_backend.py"
+    replacement_phase: "phase_5_external_adapter"
+    replacement_category: "external_side_effect"
+    priority: "P2"
+    daily_business_critical: false
+    business_continuity_requirement: "Current route is documented with no legacy fallback. Preserve the current owner and production behavior, do not restore production_compat or legacy facade fallback, and verify the route does not regress to 404, 500, empty-data false success, fixture/local_contract success, or accidental external side effects."
+    replacement_owner: "aicrm_next.commerce"
+    replacement_strategy: "Keep the current Next-owned route owner accurate, run the declared checker and smoke tests, and prevent registry/backlog drift. Do not add legacy fallback."
+    fallback_required_until: "No legacy fallback is required or allowed for this manifest entry; keep route owner checks current and do not restore production_compat or legacy facade fallback."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
+    recommended_verification: ["tests/test_wechat_shop_backend.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
+    notes: "Public WeChat Shop URL verification endpoint is a Next-owned callback route; it validates the optional callback token signature and returns echostr or ok without provider side effects or legacy fallback."
+  - id: "LRB-222"
+    route_pattern: "/api/wechat-shop/notify"
+    methods: ["POST", "OPTIONS"]
+    capability_owner: "aicrm_next.commerce"
+    current_runtime_owner: "next_command"
+    production_behavior: "next_command"
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: "medium"
+    checker: "tests/test_wechat_shop_backend.py"
+    replacement_phase: "phase_5_external_adapter"
+    replacement_category: "external_side_effect"
+    priority: "P2"
+    daily_business_critical: false
+    business_continuity_requirement: "Current route is documented with no legacy fallback. Preserve the current owner and production behavior, do not restore production_compat or legacy facade fallback, and verify the route does not regress to 404, 500, empty-data false success, fixture/local_contract success, or accidental external side effects."
+    replacement_owner: "aicrm_next.commerce"
+    replacement_strategy: "Keep the current Next-owned route owner accurate, run the declared checker and smoke tests, and prevent registry/backlog drift. Do not add legacy fallback."
+    fallback_required_until: "No legacy fallback is required or allowed for this manifest entry; keep route owner checks current and do not restore production_compat or legacy facade fallback."
+    rollback_path: "Revert the replacement PR; this manifest route does not rely on legacy fallback."
+    delete_condition: "No legacy fallback delete action remains for this manifest entry; keep manifest, registry, and checker state current."
+    recommended_verification: ["tests/test_wechat_shop_backend.py", "fake/staging-disabled adapter check", "assert real external call is not enabled", "route owner drift guard"]
+    notes: "Public WeChat Shop notify endpoint is a Next-owned backend callback that stores raw order events and attempts an order-detail sync only; order_id remains string typed, delivery/refund APIs are not called, and ordinary provider API failures still return success to WeChat."
