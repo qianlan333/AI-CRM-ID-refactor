@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.check_no_new_legacy import (
+    LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST,
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
     check_admin_auth_login_closeout_lock,
@@ -56,6 +57,8 @@ from scripts.check_no_new_legacy import (
     check_support_pages_native,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
+    check_wecom_legacy_usage_freeze,
+    collect_wecom_legacy_usage_freeze,
     check_final_legacy_exit_cleanup,
     check_wecom_tag_read_next_native,
     scan_source_tree,
@@ -163,6 +166,132 @@ def test_startup_closeout_accepts_clean_state(tmp_path: Path) -> None:
     _write_startup_closeout_files(tmp_path)
 
     assert check_startup_legacy_closeout(tmp_path) == []
+
+
+def test_wecom_legacy_freeze_flags_next_runtime_import(tmp_path: Path) -> None:
+    source = tmp_path / "aicrm_next/foo.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("from wecom_ability_service import create_app\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_import_in_next_runtime" in codes
+
+
+def test_wecom_legacy_freeze_flags_startup_import(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("from wecom_ability_service import create_app\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_import_in_startup" in codes
+
+
+def test_wecom_legacy_freeze_flags_github_deploy_reference(tmp_path: Path) -> None:
+    workflow = tmp_path / ".github/workflows/deploy.yml"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text("echo wecom_ability_service\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_reference_in_deploy" in codes
+
+
+def test_wecom_legacy_freeze_flags_deploy_service_reference(tmp_path: Path) -> None:
+    service = tmp_path / "deploy/some.service"
+    service.parent.mkdir(parents=True, exist_ok=True)
+    service.write_text("ExecStart=python -m wecom_ability_service\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_reference_in_deploy" in codes
+
+
+def test_wecom_legacy_freeze_flags_unallowlisted_script_import(tmp_path: Path) -> None:
+    worker = tmp_path / "scripts/new_worker.py"
+    worker.parent.mkdir(parents=True, exist_ok=True)
+    worker.write_text("import wecom_ability_service\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "wecom_legacy_script_not_allowlisted" in codes
+
+
+def test_wecom_legacy_freeze_flags_missing_allowlist_path(tmp_path: Path) -> None:
+    violations = check_wecom_legacy_usage_freeze(
+        tmp_path,
+        maintenance_allowlist={Path("scripts/missing.py"): "missing maintenance script"},
+    )
+
+    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_missing"}
+
+
+def test_wecom_legacy_freeze_flags_allowlist_path_without_import(tmp_path: Path) -> None:
+    script = tmp_path / "scripts/old_worker.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("print('native now')\n", encoding="utf-8")
+
+    violations = check_wecom_legacy_usage_freeze(
+        tmp_path,
+        maintenance_allowlist={Path("scripts/old_worker.py"): "retired maintenance script"},
+    )
+
+    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_without_import"}
+
+
+def test_wecom_legacy_freeze_allows_current_external_push_worker_allowlist(tmp_path: Path) -> None:
+    worker = tmp_path / "scripts/run_external_push_worker.py"
+    worker.parent.mkdir(parents=True, exist_ok=True)
+    worker.write_text(
+        "from wecom_ability_service import create_app\n"
+        "from wecom_ability_service.domains.external_push import service\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        check_wecom_legacy_usage_freeze(
+            tmp_path,
+            maintenance_allowlist={Path("scripts/run_external_push_worker.py"): "active external push worker"},
+        )
+        == []
+    )
+
+
+def test_wecom_legacy_freeze_records_current_external_push_worker_allowlist() -> None:
+    reason = LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST[Path("scripts/run_external_push_worker.py")]
+
+    assert "external push worker" in reason
+    assert "Phase B" in reason
+
+
+def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:
+    test_file = tmp_path / "tests/legacy_fixture_test.py"
+    docs_file = tmp_path / "docs/some.md"
+    tool_file = tmp_path / "tools/inventory.py"
+    experiment_file = tmp_path / "experiments/legacy_probe.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    docs_file.parent.mkdir(parents=True, exist_ok=True)
+    tool_file.parent.mkdir(parents=True, exist_ok=True)
+    experiment_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("import wecom_ability_service\n", encoding="utf-8")
+    docs_file.write_text("historical wecom_ability_service reference\n", encoding="utf-8")
+    tool_file.write_text("import wecom_ability_service\n", encoding="utf-8")
+    experiment_file.write_text("import wecom_ability_service\n", encoding="utf-8")
+
+    stats = collect_wecom_legacy_usage_freeze(tmp_path)
+
+    assert check_wecom_legacy_usage_freeze(tmp_path) == []
+    assert stats["wecom_legacy_tests_references_count"] == 1
+    assert stats["wecom_legacy_docs_references_count"] == 1
+    assert stats["wecom_legacy_tools_references_count"] == 1
+    assert stats["wecom_legacy_experiments_references_count"] == 1
+
+
+def test_wecom_legacy_freeze_accepts_clean_state(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("NEXT_APP_IMPORT = 'aicrm_next.main:app'\n", encoding="utf-8")
+    (tmp_path / "aicrm_next").mkdir()
+    (tmp_path / "scripts").mkdir()
+
+    assert check_wecom_legacy_usage_freeze(tmp_path) == []
 
 
 def _write_group_ops_message_content_files(

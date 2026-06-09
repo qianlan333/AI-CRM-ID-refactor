@@ -35,6 +35,29 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = set()
 WECOM_IMPORT_ALLOWLIST = set()
 API_SIDE_EFFECT_ALLOWLIST = set()
+LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
+    Path("scripts/audit_operation_task_runtime_contract.py"): "historical operation-task runtime audit; migrate in Phase B",
+    Path("scripts/backfill_questionnaire_submission_identity.py"): "maintenance questionnaire identity backfill; migrate in Phase B",
+    Path("scripts/export_flask_routes.py"): "historical Flask route inventory exporter; retire in Phase D",
+    Path("scripts/repair_automation_member_projection.py"): "maintenance automation projection repair; migrate in Phase B",
+    Path("scripts/repair_invalid_operation_tasks.py"): "maintenance operation-task repair; migrate in Phase B",
+    Path("scripts/replay_operation_task_audience_entered.py"): "maintenance operation-task replay; migrate in Phase B",
+    Path("scripts/replay_questionnaire_sidebar_profile.py"): "maintenance questionnaire sidebar replay; migrate in Phase B",
+    Path("scripts/run_automation_agent_reply_backfill.py"): "maintenance automation reply backfill; migrate in Phase B",
+    Path("scripts/run_automation_member_backfill.py"): "maintenance automation member backfill; migrate in Phase B",
+    Path("scripts/run_automation_ops_scheduler.py"): "maintenance automation ops scheduler; migrate in Phase B",
+    Path("scripts/run_broadcast_queue_worker.py"): "maintenance broadcast queue worker; migrate in Phase B",
+    Path("scripts/run_build.py"): "legacy build/bootstrap helper; retire after tests migrate",
+    Path("scripts/run_campaign_scheduler.py"): "maintenance campaign scheduler; migrate in Phase B",
+    Path("scripts/run_cloud_orchestrator_scan.py"): "maintenance cloud orchestrator scan; migrate in Phase B",
+    Path("scripts/run_external_contact_sync.py"): "maintenance external contact sync; migrate in Phase B",
+    Path("scripts/run_external_push_worker.py"): "active external push worker; migrate in Phase B",
+    Path("scripts/run_hxc_dashboard_refresh.py"): "maintenance HXC dashboard refresh; migrate in Phase B",
+    Path("scripts/run_marketing_automation_backfill.py"): "maintenance marketing automation backfill; migrate in Phase B",
+    Path("scripts/run_owner_lead_pool_backfill.py"): "maintenance owner lead-pool backfill; migrate in Phase B",
+    Path("scripts/run_pool_signup_tag_backfill.py"): "maintenance pool signup tag backfill; migrate in Phase B",
+    Path("scripts/seed_automation_conversion_demo.py"): "historical demo seed helper; retire after tests migrate",
+}
 SIDE_EFFECT_MARKERS = {
     "dispatch_wecom_task",
     "create_contact_way",
@@ -897,6 +920,187 @@ class Violation:
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
+
+
+def _is_wecom_module(module: str) -> bool:
+    return module == "wecom_ability_service" or module.startswith("wecom_ability_service.")
+
+
+def _wecom_ast_imports(path: Path) -> list[str]:
+    if not path.exists() or path.suffix != ".py":
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _is_wecom_module(alias.name):
+                    imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if _is_wecom_module(module):
+                imports.append(module)
+    return sorted(set(imports))
+
+
+def _iter_files_under(path: Path) -> Iterable[Path]:
+    if path.is_file():
+        yield path
+    elif path.is_dir():
+        for item in path.rglob("*"):
+            if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc":
+                yield item
+
+
+def _count_files_with_marker(root: Path, rel_roots: tuple[str, ...], marker: str) -> int:
+    count = 0
+    for rel_root in rel_roots:
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        for path in _iter_files_under(search_root):
+            try:
+                if marker in path.read_text(encoding="utf-8"):
+                    count += 1
+            except UnicodeDecodeError:
+                continue
+    return count
+
+
+def _default_maintenance_allowlist(root: Path) -> dict[Path, str]:
+    return dict(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST) if root == ROOT else {}
+
+
+def collect_wecom_legacy_usage_freeze(
+    root: Path = ROOT,
+    *,
+    maintenance_allowlist: dict[Path, str] | None = None,
+) -> dict[str, int]:
+    allowlist = _default_maintenance_allowlist(root) if maintenance_allowlist is None else dict(maintenance_allowlist)
+    runtime_imports = 0
+    for rel_root in ("aicrm_next",):
+        search_root = root / rel_root
+        if search_root.exists():
+            runtime_imports += sum(1 for path in search_root.rglob("*.py") if _wecom_ast_imports(path))
+    app_path = root / "app.py"
+    if _wecom_ast_imports(app_path):
+        runtime_imports += 1
+
+    maintenance_scripts = 0
+    scripts_root = root / "scripts"
+    if scripts_root.exists():
+        maintenance_scripts = sum(1 for path in scripts_root.rglob("*.py") if _wecom_ast_imports(path))
+
+    return {
+        "wecom_legacy_runtime_imports_count": runtime_imports,
+        "wecom_legacy_maintenance_scripts_count": maintenance_scripts,
+        "wecom_legacy_tests_references_count": _count_files_with_marker(root, ("tests",), "wecom_ability_service"),
+        "wecom_legacy_tools_references_count": _count_files_with_marker(root, ("tools",), "wecom_ability_service"),
+        "wecom_legacy_docs_references_count": _count_files_with_marker(root, ("docs",), "wecom_ability_service"),
+        "wecom_legacy_experiments_references_count": _count_files_with_marker(
+            root,
+            ("experiments",),
+            "wecom_ability_service",
+        ),
+        "wecom_legacy_maintenance_allowlist_count": len(allowlist),
+    }
+
+
+def check_wecom_legacy_usage_freeze(
+    root: Path = ROOT,
+    *,
+    maintenance_allowlist: dict[Path, str] | None = None,
+) -> list[Violation]:
+    violations: list[Violation] = []
+    allowlist = _default_maintenance_allowlist(root) if maintenance_allowlist is None else dict(maintenance_allowlist)
+
+    app_path = root / "app.py"
+    app_imports = _wecom_ast_imports(app_path)
+    if app_imports:
+        violations.append(
+            Violation(
+                "wecom_legacy_import_in_startup",
+                "app.py",
+                ", ".join(app_imports),
+                "Keep app.py as a Next-only startup entrypoint; do not import wecom_ability_service.",
+            )
+        )
+
+    next_root = root / "aicrm_next"
+    if next_root.exists():
+        for path in sorted(next_root.rglob("*.py")):
+            imports = _wecom_ast_imports(path)
+            if imports:
+                violations.append(
+                    Violation(
+                        "wecom_legacy_import_in_next_runtime",
+                        str(path.relative_to(root)),
+                        ", ".join(imports),
+                        "Move or reimplement this dependency behind a Next-native boundary.",
+                    )
+                )
+
+    for rel_root in (".github", "deploy"):
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        for path in sorted(_iter_files_under(search_root)):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if "wecom_ability_service" in text:
+                violations.append(
+                    Violation(
+                        "wecom_legacy_reference_in_deploy",
+                        str(path.relative_to(root)),
+                        "wecom_ability_service",
+                        "Do not reference the legacy package from production deploy or GitHub entrypoint files.",
+                    )
+                )
+
+    scripts_root = root / "scripts"
+    scripts_with_imports: dict[Path, list[str]] = {}
+    if scripts_root.exists():
+        for path in sorted(scripts_root.rglob("*.py")):
+            imports = _wecom_ast_imports(path)
+            if imports:
+                scripts_with_imports[path.relative_to(root)] = imports
+
+    for rel_path, reason in allowlist.items():
+        path = root / rel_path
+        if not path.exists():
+            violations.append(
+                Violation(
+                    "wecom_legacy_allowlist_path_missing",
+                    str(rel_path),
+                    reason,
+                    "Remove missing paths from LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST or restore the script intentionally.",
+                )
+            )
+            continue
+        if rel_path not in scripts_with_imports:
+            violations.append(
+                Violation(
+                    "wecom_legacy_allowlist_path_without_import",
+                    str(rel_path),
+                    reason,
+                    "Remove scripts that no longer import wecom_ability_service from the maintenance allowlist.",
+                )
+            )
+
+    for rel_path, imports in scripts_with_imports.items():
+        if rel_path not in allowlist:
+            violations.append(
+                Violation(
+                    "wecom_legacy_script_not_allowlisted",
+                    str(rel_path),
+                    ", ".join(imports),
+                    "Add the existing maintenance script to LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST with a migration phase, or migrate it off legacy first.",
+                )
+            )
+
+    return violations
 
 
 def _iter_python_files(root: Path) -> Iterable[Path]:
@@ -7465,6 +7669,7 @@ def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
         + check_startup_legacy_closeout(ROOT)
+        + check_wecom_legacy_usage_freeze(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
@@ -7536,9 +7741,12 @@ def run_checks(*, strict: bool) -> dict:
                 "Resolve the route diff through route registry ownership and lifecycle updates instead of adding undocumented fallback.",
             )
         )
+    wecom_legacy_usage_freeze = collect_wecom_legacy_usage_freeze(ROOT)
     return {
         "ok": not violations,
         "strict": strict,
+        **wecom_legacy_usage_freeze,
+        "wecom_legacy_usage_freeze": wecom_legacy_usage_freeze,
         "violations": [violation.to_dict() for violation in violations],
         "route_registry": {
             "ok": route_report["ok"],
