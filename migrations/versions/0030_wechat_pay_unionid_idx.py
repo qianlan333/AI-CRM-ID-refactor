@@ -1,12 +1,16 @@
-"""add wechat pay order unionid lookup index"""
+"""add wechat pay order unionid lookup index.
+
+Revision ID: 0030_wechat_pay_unionid_idx
+Revises: 0029_user_ops_prod_tables
+"""
 
 from __future__ import annotations
 
 from alembic import op
 
 
-revision = "0029_wechat_pay_order_unionid_index"
-down_revision = "0028_owner_migration_excel_sessions"
+revision = "0030_wechat_pay_unionid_idx"
+down_revision = "0029_user_ops_prod_tables"
 branch_labels = None
 depends_on = None
 

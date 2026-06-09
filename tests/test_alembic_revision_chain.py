@@ -70,6 +70,7 @@ def test_alembic_revision_ids_fit_default_version_table() -> None:
     old_hxc_revision = "0012_hxc_dashboard_v6_" + "growth_columns"
     old_cloud_revision = "0024_cloud_plan_recipient_" + "approval"
     old_owner_revision = "0028_owner_migration_excel_" + "sessions"
+    old_wechat_unionid_revision = "0029_wechat_pay_order_" + "unionid_index"
 
     too_long = {
         revision: {"length": len(revision), "path": str(item["path"])}
@@ -81,10 +82,12 @@ def test_alembic_revision_ids_fit_default_version_table() -> None:
     assert old_hxc_revision not in revisions
     assert old_cloud_revision not in revisions
     assert old_owner_revision not in revisions
+    assert old_wechat_unionid_revision not in revisions
     assert "0012_hxc_growth_cols" in revisions
     assert "0024_cloud_plan_approval" in revisions
     assert "0028_owner_excel_sessions" in revisions
     assert "0029_user_ops_prod_tables" in revisions
+    assert "0030_wechat_pay_unionid_idx" in revisions
 
 
 def test_alembic_chain_keeps_0014_parent_available() -> None:
@@ -95,10 +98,11 @@ def test_alembic_chain_keeps_0014_parent_available() -> None:
     assert revisions["0013"]["down_revision"] == "0012_wechat_pay_products"
 
 
-def test_user_ops_production_tables_migration_is_current_head() -> None:
+def test_user_ops_production_tables_migration_is_parent_of_wechat_unionid_index() -> None:
     revisions = _migration_revisions()
 
     assert revisions["0029_user_ops_prod_tables"]["down_revision"] == "0028_owner_excel_sessions"
+    assert revisions["0030_wechat_pay_unionid_idx"]["down_revision"] == "0029_user_ops_prod_tables"
 
 
 def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
@@ -159,4 +163,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0029_user_ops_prod_tables" in heads[0]
+            assert "0030_wechat_pay_unionid_idx" in heads[0]
