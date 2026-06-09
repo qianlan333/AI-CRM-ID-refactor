@@ -225,6 +225,22 @@ def test_wecom_legacy_freeze_flags_missing_allowlist_path(tmp_path: Path) -> Non
     assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_missing"}
 
 
+def test_wecom_legacy_freeze_flags_retired_historical_helper_allowlist_entries(tmp_path: Path) -> None:
+    retired_helpers = {
+        Path("scripts") / ("export_" + "flask_routes.py"),
+        Path("scripts") / ("run_" + "build.py"),
+        Path("scripts") / ("seed_" + "automation_conversion_demo.py"),
+    }
+
+    violations = check_wecom_legacy_usage_freeze(
+        tmp_path,
+        maintenance_allowlist={path: "retired historical helper" for path in retired_helpers},
+    )
+
+    assert {violation.path for violation in violations} == {str(path) for path in retired_helpers}
+    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_missing"}
+
+
 def test_wecom_legacy_freeze_flags_allowlist_path_without_import(tmp_path: Path) -> None:
     script = tmp_path / "scripts/old_worker.py"
     script.parent.mkdir(parents=True, exist_ok=True)
@@ -254,6 +270,16 @@ def test_wecom_legacy_freeze_rejects_external_push_worker_legacy_import(tmp_path
 
 def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:
     assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
+
+
+def test_wecom_legacy_freeze_retired_historical_helpers_removed_from_allowlist() -> None:
+    retired_helpers = {
+        Path("scripts") / ("export_" + "flask_routes.py"),
+        Path("scripts") / ("run_" + "build.py"),
+        Path("scripts") / ("seed_" + "automation_conversion_demo.py"),
+    }
+
+    assert retired_helpers.isdisjoint(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

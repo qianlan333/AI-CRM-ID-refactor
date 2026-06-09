@@ -38,7 +38,6 @@ API_SIDE_EFFECT_ALLOWLIST = set()
 LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
     Path("scripts/audit_operation_task_runtime_contract.py"): "historical operation-task runtime audit; migrate in Phase B",
     Path("scripts/backfill_questionnaire_submission_identity.py"): "maintenance questionnaire identity backfill; migrate in Phase B",
-    Path("scripts/export_flask_routes.py"): "historical Flask route inventory exporter; retire in Phase D",
     Path("scripts/repair_automation_member_projection.py"): "maintenance automation projection repair; migrate in Phase B",
     Path("scripts/repair_invalid_operation_tasks.py"): "maintenance operation-task repair; migrate in Phase B",
     Path("scripts/replay_operation_task_audience_entered.py"): "maintenance operation-task replay; migrate in Phase B",
@@ -47,7 +46,6 @@ LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
     Path("scripts/run_automation_member_backfill.py"): "maintenance automation member backfill; migrate in Phase B",
     Path("scripts/run_automation_ops_scheduler.py"): "maintenance automation ops scheduler; migrate in Phase B",
     Path("scripts/run_broadcast_queue_worker.py"): "maintenance broadcast queue worker; migrate in Phase B",
-    Path("scripts/run_build.py"): "legacy build/bootstrap helper; retire after tests migrate",
     Path("scripts/run_campaign_scheduler.py"): "maintenance campaign scheduler; migrate in Phase B",
     Path("scripts/run_cloud_orchestrator_scan.py"): "maintenance cloud orchestrator scan; migrate in Phase B",
     Path("scripts/run_external_contact_sync.py"): "maintenance external contact sync; migrate in Phase B",
@@ -55,7 +53,6 @@ LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
     Path("scripts/run_marketing_automation_backfill.py"): "maintenance marketing automation backfill; migrate in Phase B",
     Path("scripts/run_owner_lead_pool_backfill.py"): "maintenance owner lead-pool backfill; migrate in Phase B",
     Path("scripts/run_pool_signup_tag_backfill.py"): "maintenance pool signup tag backfill; migrate in Phase B",
-    Path("scripts/seed_automation_conversion_demo.py"): "historical demo seed helper; retire after tests migrate",
 }
 SIDE_EFFECT_MARKERS = {
     "dispatch_wecom_task",
