@@ -1066,7 +1066,7 @@ def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
     cur.execute("SELECT status, current_step_index FROM campaign_members WHERE id = ?", (int(member_row["cm_id"]),))
     progressed = cur.fetchone()
     assert progressed["status"] == "pending"
-    assert int(progressed["current_step_index"]) == 0
+    assert int(progressed["current_step_index"]) == -1
 
 
 def test_pause_campaign_cancels_open_campaign_broadcast_jobs(app):
