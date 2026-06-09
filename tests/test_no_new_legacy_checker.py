@@ -7,6 +7,7 @@ from scripts.check_no_new_legacy import (
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
     check_admin_auth_login_closeout_lock,
+    check_automation_campaign_broadcast_tests_next_native,
     check_auth_wecom_wildcard_inventory,
     check_automation_conversion_timers_next_safe_mode,
     check_automation_member_actions_next_safe_mode,
@@ -579,6 +580,64 @@ def test_questionnaire_sidebar_customer_checker_allows_next_fixture_contract(tmp
     )
 
     assert check_questionnaire_sidebar_customer_tests_next_native(tmp_path) == []
+
+
+def test_automation_campaign_broadcast_checker_flags_automation_legacy_import(tmp_path: Path) -> None:
+    legacy_import = "import " + "wecom_ability" + "_service\n"
+    _write_test_file(tmp_path, "test_" + "automation_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_automation_campaign_broadcast_tests_next_native(tmp_path)}
+
+    assert "automation_test_imports_legacy" in codes
+
+
+def test_automation_campaign_broadcast_checker_flags_campaign_legacy_fixture(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "campaign_x.py",
+        "def test_campaign(legacy" + "_client):\n"
+        "    assert (legacy" + "_client).get('/api/admin/cloud-orchestrator/campaigns').status_code\n",
+    )
+
+    codes = {violation.code for violation in check_automation_campaign_broadcast_tests_next_native(tmp_path)}
+
+    assert "automation_campaign_broadcast_test_uses_" + "legacy" + "_client" in codes
+
+
+def test_automation_campaign_broadcast_checker_flags_broadcast_legacy_import(tmp_path: Path) -> None:
+    legacy_import = "from " + "wecom_ability" + "_service.domains.broadcast_jobs import service\n"
+    _write_test_file(tmp_path, "test_" + "broadcast_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_automation_campaign_broadcast_tests_next_native(tmp_path)}
+
+    assert "broadcast_test_imports_legacy" in codes
+
+
+def test_automation_campaign_broadcast_checker_flags_marketing_legacy_db(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "marketing_x.py",
+        "def test_marketing():\n"
+        "    from tests.conftest import build_" + "legacy" + "_pg_test_app\n"
+        "    assert build_" + "legacy" + "_pg_test_app\n",
+    )
+
+    codes = {violation.code for violation in check_automation_campaign_broadcast_tests_next_native(tmp_path)}
+
+    assert "automation_campaign_broadcast_test_uses_" + "legacy" + "_client" in codes
+
+
+def test_automation_campaign_broadcast_checker_allows_next_service_fake(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "automation_next.py",
+        "from aicrm_next.background_jobs.broadcast_queue_worker import run_broadcast_queue_worker\n"
+        "\n"
+        "def test_next(fake_repo):\n"
+        "    assert run_broadcast_queue_worker(limit=1, repo=fake_repo, dispatcher=object())\n",
+    )
+
+    assert check_automation_campaign_broadcast_tests_next_native(tmp_path) == []
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

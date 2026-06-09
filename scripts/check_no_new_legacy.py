@@ -1467,6 +1467,87 @@ def check_questionnaire_sidebar_customer_tests_next_native(root: Path = ROOT) ->
     return violations
 
 
+AUTOMATION_CAMPAIGN_BROADCAST_TEST_MARKERS = (
+    "automation",
+    "campaign",
+    "broadcast",
+    "cloud_orchestrator",
+    "group_ops",
+    "marketing",
+    "send_task",
+)
+
+
+def _is_automation_campaign_broadcast_test(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+    rel_posix = rel.as_posix()
+    if rel_posix == "tests/test_no_new_legacy_checker.py":
+        return False
+    if not rel_posix.startswith("tests/"):
+        return False
+    name = path.name
+    return any(marker in name for marker in AUTOMATION_CAMPAIGN_BROADCAST_TEST_MARKERS)
+
+
+def _automation_campaign_broadcast_import_code(path: Path) -> str:
+    name = path.name
+    if "broadcast" in name or "send_task" in name or "group_ops" in name:
+        return "broadcast_test_imports_legacy"
+    if "campaign" in name or "cloud_orchestrator" in name:
+        return "campaign_test_imports_legacy"
+    return "automation_test_imports_legacy"
+
+
+def check_automation_campaign_broadcast_tests_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts or not _is_automation_campaign_broadcast_test(path, root):
+            continue
+        rel = str(path.relative_to(root))
+        imports = _wecom_ast_imports(path)
+        if imports:
+            violations.append(
+                Violation(
+                    _automation_campaign_broadcast_import_code(path),
+                    rel,
+                    ", ".join(imports),
+                    "Automation, campaign, broadcast, cloud, group-ops, and marketing tests must use Next-native fixtures and fakes.",
+                )
+            )
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "legacy_app" in source or "legacy_client" in source or "build_legacy_pg_test_app" in source:
+            violations.append(
+                Violation(
+                    "automation_campaign_broadcast_test_uses_legacy_client",
+                    rel,
+                    "legacy_app/legacy_client/build_legacy_pg_test_app",
+                    "Automation, campaign, broadcast, cloud, group-ops, and marketing route tests must use next_client or Next-native service/repository fakes.",
+                )
+            )
+        legacy_db_markers = ("app_context(", "get_db(", "init_db(")
+        if any(marker in source for marker in legacy_db_markers):
+            violations.append(
+                Violation(
+                    "automation_campaign_broadcast_test_uses_legacy_db",
+                    rel,
+                    "app_context/get_db/init_db",
+                    "Automation, campaign, broadcast, cloud, group-ops, and marketing tests must not use legacy Flask DB/app-context helpers.",
+                )
+            )
+
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -8038,6 +8119,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_legacy_flask_http_test_retirement(ROOT)
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
+        + check_automation_campaign_broadcast_tests_next_native(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)

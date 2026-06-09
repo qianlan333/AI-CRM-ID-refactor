@@ -36,7 +36,7 @@ def test_campaign_page_registry_is_locked_over_next_read_apis():
 
     assert record["path_pattern"] == "/admin/cloud-orchestrator/campaigns"
     assert record["methods"] == ["GET"]
-    assert record["runtime_owner"] == "frontend_compat over Next read APIs"
+    assert record["runtime_owner"] == "next_native"
     assert record["legacy_fallback_allowed"] is False
     assert record["legacy_source"] == ""
     assert record["external_side_effect_risk"] == "none"
