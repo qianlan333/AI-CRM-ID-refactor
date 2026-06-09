@@ -40,7 +40,6 @@ from .customer_tags.admin_write import reset_wecom_tag_write_fixture_state
 from .customer_tags.live_mutation import reset_wecom_tag_live_mutation_fixture_state
 from .customer_read_model.admin_pages import router as customer_admin_pages_router
 from .customer_read_model.api import router as customer_router
-from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
 from .hxc_dashboard.safe_mode import reset_hxc_safe_mode_fixture_state
@@ -191,7 +190,6 @@ def create_app() -> FastAPI:
     app.include_router(send_content_router)
     app.include_router(admin_jobs_router)
     app.include_router(owner_migration_router)
-    app.include_router(frontend_compat_router)
     return app
 
 

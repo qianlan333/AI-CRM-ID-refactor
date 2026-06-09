@@ -76,22 +76,7 @@ def test_admin_logout_legacy_url_redirects_to_canonical_logout(monkeypatch) -> N
     assert "X-AICRM-Compatibility-Facade" not in response.headers
 
 
-def test_admin_shell_removed_from_frontend_compat_legacy_inventory(monkeypatch) -> None:
-    routes = _client(monkeypatch).get("/api/frontend-compat/legacy-routes").json()["routes"]
+def test_frontend_compat_legacy_inventory_endpoint_removed(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/api/frontend-compat/legacy-routes")
 
-    assert "/admin" not in routes
-
-
-def test_native_pages_removed_from_frontend_compat_inventory(monkeypatch) -> None:
-    routes = set(_client(monkeypatch).get("/api/frontend-compat/legacy-routes").json()["routes"])
-
-    assert "/admin/hxc-dashboard" not in routes
-    assert "/admin/hxc-send-config" not in routes
-    assert "/admin/cloud-orchestrator/campaigns" not in routes
-    assert "/admin/wechat-pay/products" not in routes
-    assert "/admin/cloud-orchestrator" not in routes
-    assert "/admin/cloud-orchestrator/observability" not in routes
-    assert "/admin/runtime-config" not in routes
-    assert "/admin/api-docs" not in routes
-
-    assert routes == set()
+    assert response.status_code == 404

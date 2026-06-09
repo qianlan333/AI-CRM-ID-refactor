@@ -469,9 +469,7 @@ def test_signup_conversion_config_alias_is_next_owned_and_audited(monkeypatch, t
 
 
 def test_admin_config_routes_no_longer_forward_to_legacy_facade() -> None:
-    source = (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").read_text(encoding="utf-8")
-    assert "admin_config_legacy_facade" not in source
-    assert '"/admin/config"' not in source
+    assert not (ROOT / "aicrm_next/frontend_compat/legacy_routes.py").exists()
     admin_config_source = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "aicrm_next/admin_config").glob("*.py"))
     assert "legacy_flask_facade" not in admin_config_source
     assert "forward_to_legacy_flask" not in admin_config_source

@@ -93,17 +93,17 @@ routes:
   - route_id: channel_entry_admin_pages_family
     path_pattern: /admin/channels*
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.automation_engine.channel_admin_pages
+    runtime_owner: next_native_page_shell
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_next_channel_runtime.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Channel admin pages rendered through frontend compatibility templates.
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_channel_radar_tag_admin_pages_next_native.py
+    rollback_owner: aicrm_next.automation_engine.channel_admin_pages
+    notes: Channel admin pages are served by Next native channel_admin_pages; frontend_compat runtime router removed, while shared templates/static remain asset-only.
   - route_id: hxc_dashboard_admin_api_family
     path_pattern: /api/admin/hxc-dashboard*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
@@ -607,7 +607,7 @@ routes:
     replacement_status: locked
     checker: tests/test_customer_detail_admin_page_native.py
     rollback_owner: aicrm_next.customer_read_model
-    notes: /admin/customers list and /admin/customers/{external_userid} detail pages are served by aicrm_next.customer_read_model.admin_pages over the Next read model; frontend_compat removed for the customer admin page family. User Ops remains frontend_compat pending P2-B3. Customer read legacy facade removed; no legacy fallback. Missing production read model data returns production_unavailable.
+    notes: /admin/customers list and /admin/customers/{external_userid} detail pages are served by aicrm_next.customer_read_model.admin_pages over the Next read model; frontend_compat runtime router removed, while shared templates/static remain asset-only. Customer read legacy facade removed; no legacy fallback. Missing production read model data returns production_unavailable.
   - route_id: user_ops_admin_api_family
     path_pattern: /api/admin/user-ops*
     methods: [GET, POST, OPTIONS]
@@ -1270,16 +1270,16 @@ routes:
     path_pattern: /admin/radar-links*
     methods: [GET]
     capability_owner: aicrm_next.radar_links
-    runtime_owner: frontend_compat
+    runtime_owner: next_native_page_shell
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_radar_links.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_channel_radar_tag_admin_pages_next_native.py
     rollback_owner: aicrm_next.radar_links
-    notes: Radar link admin pages rendered by frontend compatibility templates.
+    notes: Radar link admin pages are served by Next native radar_links.admin_pages; frontend_compat runtime router removed, while shared templates/static remain asset-only.
   - route_id: radar_links_public_family
     path_pattern: /r/{code}
     methods: [GET]
@@ -1508,16 +1508,16 @@ routes:
     path_pattern: /admin/wecom-tags
     methods: [GET]
     capability_owner: aicrm_next.customer_tags
-    runtime_owner: frontend_compat
+    runtime_owner: next_native_page_shell
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
+    legacy_source: ""
     external_side_effect_risk: medium
     adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_next_wecom_tags_management_contract.py
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_channel_radar_tag_admin_pages_next_native.py
     rollback_owner: aicrm_next.customer_tags
-    notes: WeCom tags admin page shell.
+    notes: WeCom tags admin page is served by Next native customer_tags.admin_pages; frontend_compat runtime router removed, while shared templates/static remain asset-only.
   - route_id: wecom_tag_read_detail_api
     path_pattern: /api/admin/wecom/tags/{tag_id}
     methods: [GET]
@@ -1616,20 +1616,6 @@ routes:
     checker: tests/test_wecom_tag_write_registry_lifecycle.py
     rollback_owner: aicrm_next.customer_tags
     notes: Production_compat rollback removed after Group 13 closeout. Exact tag group CRUD is locked on Next CommandBus; this wildcard only documents future auxiliary tag-group subpaths if added.
-  - route_id: frontend_compat_legacy_routes_inventory
-    path_pattern: /api/frontend-compat/legacy-routes
-    methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
-    legacy_fallback_allowed: false
-    legacy_source: ""
-    external_side_effect_risk: none
-    adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_console_shell.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Frontend compatibility route inventory endpoint.
   - route_id: frontend_compat_auth_pages
     path_pattern: /login
     methods: [GET, POST, OPTIONS]

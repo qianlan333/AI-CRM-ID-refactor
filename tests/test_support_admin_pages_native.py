@@ -60,11 +60,7 @@ def test_api_docs_page_renders_from_native_admin_config() -> None:
 def test_support_pages_removed_from_frontend_inventory() -> None:
     response = _client().get("/api/frontend-compat/legacy-routes")
 
-    assert response.status_code == 200
-    routes = response.json()["routes"]
-    assert "/admin/runtime-config" not in routes
-    assert "/admin/api-docs" not in routes
-    assert routes == []
+    assert response.status_code == 404
 
 
 def test_api_docs_view_model_import_path_is_native() -> None:

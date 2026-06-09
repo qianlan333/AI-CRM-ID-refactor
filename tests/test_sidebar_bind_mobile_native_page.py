@@ -71,10 +71,7 @@ def test_sidebar_workbench_static_assets_are_still_served(monkeypatch) -> None:
 def test_sidebar_bind_mobile_removed_from_frontend_inventory(monkeypatch) -> None:
     response = _client(monkeypatch).get("/api/frontend-compat/legacy-routes")
 
-    assert response.status_code == 200
-    routes = response.json()["routes"]
-    assert routes == []
-    assert "/sidebar/bind-mobile" not in routes
+    assert response.status_code == 404
 
 
 def test_sidebar_api_routes_stay_next_native(monkeypatch) -> None:

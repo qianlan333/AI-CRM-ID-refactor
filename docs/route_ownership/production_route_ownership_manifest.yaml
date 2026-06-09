@@ -78,7 +78,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_customer_admin_list_pages_native.py
-    notes: Customer list admin page is served by aicrm_next.customer_read_model.admin_pages and reads the Next read model only; frontend_compat removed for the list page. Customer detail is also Next native; User Ops remains frontend_compat pending P2-B3. Missing production read model data returns production_unavailable.
+    notes: Customer list admin page is served by aicrm_next.customer_read_model.admin_pages and reads the Next read model only; customer detail and User Ops are also Next native, and the frontend_compat runtime router has been removed while shared templates/static remain asset-only. Missing production read model data returns production_unavailable.
   - route_pattern: /admin/customers/{external_userid}
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model
@@ -91,7 +91,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_customer_detail_admin_page_native.py
-    notes: Customer detail admin page is served by aicrm_next.customer_read_model.admin_pages; customer profile URL data attributes and automation member action URLs remain unchanged. User Ops remains frontend_compat pending P2-B3.
+    notes: Customer detail admin page is served by aicrm_next.customer_read_model.admin_pages; customer profile URL data attributes and automation member action URLs remain unchanged. User Ops is Next native and the frontend_compat runtime router has been removed.
   - route_pattern: /admin/questionnaires
     methods: [GET]
     capability_owner: aicrm_next.questionnaire

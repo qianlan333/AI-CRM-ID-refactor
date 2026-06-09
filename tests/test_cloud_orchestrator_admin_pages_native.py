@@ -41,8 +41,4 @@ def test_cloud_observability_page_renders_from_native_cloud_module() -> None:
 def test_cloud_root_and_observability_removed_from_frontend_inventory() -> None:
     response = _client().get("/api/frontend-compat/legacy-routes")
 
-    assert response.status_code == 200
-    routes = set(response.json()["routes"])
-    assert "/admin/cloud-orchestrator" not in routes
-    assert "/admin/cloud-orchestrator/observability" not in routes
-    assert "/admin/api-docs" not in routes
+    assert response.status_code == 404
