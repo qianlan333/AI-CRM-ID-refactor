@@ -36,7 +36,7 @@ def test_root_aicrm_next_is_default_runtime_source() -> None:
     app_py = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
 
     assert (REPO_ROOT / "aicrm_next" / "main.py").exists()
-    assert (REPO_ROOT / "legacy_flask_app.py").exists()
+    assert not (REPO_ROOT / "legacy_flask_app.py").exists()
     assert 'NEXT_APP_IMPORT = "aicrm_next.main:app"' in app_py
     assert "uvicorn.run(NEXT_APP_IMPORT" in app_py
     assert "run-legacy" in app_py

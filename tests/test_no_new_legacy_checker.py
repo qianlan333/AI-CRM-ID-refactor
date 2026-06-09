@@ -52,6 +52,7 @@ from scripts.check_no_new_legacy import (
     check_sidebar_bind_mobile_page_native,
     check_sidebar_readonly_closeout_lock,
     check_sidebar_jssdk_next_adapter,
+    check_startup_legacy_closeout,
     check_support_pages_native,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
@@ -59,6 +60,109 @@ from scripts.check_no_new_legacy import (
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
+
+
+def _write_startup_closeout_files(
+    root: Path,
+    *,
+    app_text: str | None = None,
+    checker_text: str = "WECOM_IMPORT_ALLOWLIST = set()\n",
+    deploy_text: str | None = None,
+    legacy_runner: bool = False,
+) -> None:
+    root.joinpath("scripts").mkdir(parents=True, exist_ok=True)
+    root.joinpath(".github/workflows").mkdir(parents=True, exist_ok=True)
+    if app_text is None:
+        app_text = (
+            'NEXT_APP_IMPORT = "aicrm_next.main:app"\n'
+            "def run_next():\n    pass\n"
+            "def print_next_health():\n    pass\n"
+            "def print_next_routes():\n    pass\n"
+            "def removed_legacy_command(command):\n    pass\n"
+            "COMMANDS = 'run-legacy init-db init-db-legacy'\n"
+        )
+    if deploy_text is None:
+        deploy_text = (
+            "source /home/ubuntu/.openclaw-wecom-pg.env\n"
+            'test -n "${DATABASE_URL:-}"\n'
+            "python3 -m alembic upgrade head\n"
+        )
+    root.joinpath("app.py").write_text(app_text, encoding="utf-8")
+    root.joinpath("scripts/check_no_new_legacy.py").write_text(checker_text, encoding="utf-8")
+    root.joinpath(".github/workflows/deploy.yml").write_text(deploy_text, encoding="utf-8")
+    if legacy_runner:
+        root.joinpath("legacy_flask_app.py").write_text("print('legacy')\n", encoding="utf-8")
+
+
+def test_startup_closeout_flags_remaining_legacy_flask_runner(tmp_path: Path) -> None:
+    _write_startup_closeout_files(tmp_path, legacy_runner=True)
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "legacy_flask_app_file_remaining" in codes
+
+
+def test_startup_closeout_flags_app_py_legacy_import(tmp_path: Path) -> None:
+    _write_startup_closeout_files(tmp_path, app_text='import wecom_ability_service\nCOMMANDS = "run-legacy init-db init-db-legacy"\n')
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "app_py_imports_legacy_startup" in codes
+
+
+def test_startup_closeout_flags_app_py_legacy_execution_functions(tmp_path: Path) -> None:
+    _write_startup_closeout_files(
+        tmp_path,
+        app_text=(
+            'NEXT_APP_IMPORT = "aicrm_next.main:app"\n'
+            "def run_next():\n    pass\n"
+            "def print_next_health():\n    pass\n"
+            "def print_next_routes():\n    pass\n"
+            "def removed_legacy_command(command):\n    pass\n"
+            "def run_legacy():\n    create_app()\n"
+            "COMMANDS = 'run-legacy init-db init-db-legacy'\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "app_py_legacy_command_executes" in codes
+
+
+def test_startup_closeout_flags_deploy_legacy_init_db(tmp_path: Path) -> None:
+    _write_startup_closeout_files(tmp_path, deploy_text="python3 app.py init-db\npython3 -m alembic upgrade head\n")
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "deploy_workflow_uses_legacy_init_db" in codes
+
+
+def test_startup_closeout_flags_deploy_missing_alembic_upgrade(tmp_path: Path) -> None:
+    _write_startup_closeout_files(
+        tmp_path,
+        deploy_text="source /home/ubuntu/.openclaw-wecom-pg.env\n" 'test -n "${DATABASE_URL:-}"\n',
+    )
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "deploy_workflow_missing_alembic_upgrade" in codes
+
+
+def test_startup_closeout_flags_stale_wecom_startup_allowlist(tmp_path: Path) -> None:
+    _write_startup_closeout_files(
+        tmp_path,
+        checker_text='from pathlib import Path\nWECOM_IMPORT_ALLOWLIST = {Path("legacy_flask_app.py")}\n',
+    )
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "startup_wecom_allowlist_not_empty" in codes
+
+
+def test_startup_closeout_accepts_clean_state(tmp_path: Path) -> None:
+    _write_startup_closeout_files(tmp_path)
+
+    assert check_startup_legacy_closeout(tmp_path) == []
 
 
 def _write_group_ops_message_content_files(

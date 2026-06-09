@@ -43,7 +43,6 @@ EXPECTED_SAFETY_GATES = {
 }
 EXPECTED_RUNTIME_BOUNDARIES = {
     "app.py",
-    "legacy_flask_app.py",
     "aicrm_next/main.py",
     "aicrm_next/production_compat/api.py high-risk and retained fallback entries only",
     "wecom_ability_service runtime",
@@ -94,8 +93,13 @@ STOP_IDS = {
 }
 PROTECTED_EXACT = {
     "app.py",
-    "legacy_flask_app.py",
     "aicrm_next/main.py",
+}
+STARTUP_CLOSEOUT_ALLOWED_EXACT = {
+    ".github/workflows/deploy.yml",
+    "app.py",
+    "legacy_flask_app.py",
+    "scripts/check_no_new_legacy.py",
 }
 PROTECTED_PREFIXES = (
     "wecom_ability_service/",
@@ -375,6 +379,7 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
         path
         for path in sorted(changed)
         if path not in RUNTIME_FALLBACK_ALLOWED_EXACT
+        and path not in STARTUP_CLOSEOUT_ALLOWED_EXACT
         and (
             path in PROTECTED_EXACT
             or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)

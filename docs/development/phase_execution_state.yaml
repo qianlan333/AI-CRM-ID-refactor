@@ -53,7 +53,6 @@ remaining_runtime_fallback_tracks:
 
 protected_runtime_boundaries:
   - app.py
-  - legacy_flask_app.py
   - aicrm_next/main.py
   - aicrm_next/production_compat/api.py high-risk and retained fallback entries only
   - wecom_ability_service runtime

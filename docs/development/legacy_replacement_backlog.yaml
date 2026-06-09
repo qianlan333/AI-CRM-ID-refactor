@@ -2,6 +2,7 @@ version: 1
 status: "current_progress_snapshot_no_runtime_change"
 source_manifest: "docs/route_ownership/production_route_ownership_manifest.yaml"
 business_continuity: "This is the current progress snapshot generated from production_route_ownership_manifest.yaml. It does not change runtime behavior, restore legacy fallback, enable real external calls, or allow fixture/local_contract data in production success paths. If a route has legacy_fallback_allowed=false, the backlog must not require continuing fallback."
+notes: ["Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup legacy maintenance code until separately archived."]
 entries:
   - id: "LRB-001"
     route_pattern: "/health"
