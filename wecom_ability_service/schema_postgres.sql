@@ -3986,6 +3986,10 @@ ON wechat_pay_orders (status, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_payer
 ON wechat_pay_orders (payer_openid, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_unionid_created
+ON wechat_pay_orders (unionid, created_at DESC, id DESC)
+WHERE unionid IS NOT NULL AND unionid <> '';
+
 CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_product
 ON wechat_pay_orders (product_code, created_at DESC, id DESC);
 

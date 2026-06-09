@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from aicrm_next.customer_read_model.sidebar_v2 import SidebarV2SqlRepository
 from wecom_ability_service.db import get_db
 from wecom_ability_service.infra.signed_context import load_sidebar_product_context_token
 
@@ -50,6 +51,35 @@ def test_sidebar_v2_workbench_returns_text_profile_fields_without_enum_options(c
     assert payload["modules"] == ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
     assert "counts" not in payload
     assert payload["diagnostics"]["display_name_source"]
+
+
+def test_sidebar_v2_order_lookup_uses_index_friendly_candidate_queries(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def capture_all(self, sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    repo = object.__new__(SidebarV2SqlRepository)
+    monkeypatch.setattr(SidebarV2SqlRepository, "_all", capture_all)
+
+    rows = repo.list_customer_wechat_pay_orders(external_userid="wm_sidebar_v2", mobile="13800138001", limit=20)
+
+    assert rows == []
+    sql = str(captured["sql"])
+    assert "external_orders AS" in sql
+    assert "mobile_orders AS" in sql
+    assert "openid_orders AS" in sql
+    assert "unionid_orders AS" in sql
+    assert "UNION ALL" in sql
+    assert " OR " not in sql
+    assert captured["params"] == {
+        "external_userid": "wm_sidebar_v2",
+        "mobile": "13800138001",
+        "limit": 20,
+        "candidate_limit": 20,
+    }
 
 
 def test_sidebar_v2_workbench_resolves_display_name_from_contacts_or_identity_map(client, app):
