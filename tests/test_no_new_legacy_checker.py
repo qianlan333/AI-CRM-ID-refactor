@@ -46,6 +46,7 @@ from scripts.check_no_new_legacy import (
     check_public_product_h5_pay_sidebar_context_native,
     check_public_product_pay_closeout_lock,
     check_questionnaire_adapters_native_oauth,
+    check_questionnaire_sidebar_customer_tests_next_native,
     check_route_progress_docs_do_not_drift,
     check_questionnaire_admin_read_next_native,
     check_questionnaire_admin_write_next_commandbus,
@@ -536,6 +537,48 @@ def test_commerce_test_checker_does_not_scope_non_commerce_legacy_tests(tmp_path
     _write_test_file(tmp_path, "test_legacy_domain.py", legacy_import)
 
     assert check_commerce_tests_next_native(tmp_path) == []
+
+
+def test_questionnaire_sidebar_customer_checker_flags_questionnaire_legacy_import(tmp_path: Path) -> None:
+    legacy_import = "import " + "wecom_ability" + "_service\n"
+    _write_test_file(tmp_path, "test_" + "questionnaire_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_questionnaire_sidebar_customer_tests_next_native(tmp_path)}
+
+    assert "questionnaire_test_imports_legacy" in codes
+
+
+def test_questionnaire_sidebar_customer_checker_flags_sidebar_legacy_fixture(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "sidebar_x.py",
+        "def test_sidebar(legacy" + "_client):\n"
+        "    assert (legacy" + "_client).get('/api/sidebar/profile').status_code\n",
+    )
+
+    codes = {violation.code for violation in check_questionnaire_sidebar_customer_tests_next_native(tmp_path)}
+
+    assert "questionnaire_sidebar_customer_test_uses_" + "legacy" + "_client" in codes
+
+
+def test_questionnaire_sidebar_customer_checker_flags_customer_legacy_import(tmp_path: Path) -> None:
+    legacy_import = "from " + "wecom_ability" + "_service import create_app\n"
+    _write_test_file(tmp_path, "test_" + "customer_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_questionnaire_sidebar_customer_tests_next_native(tmp_path)}
+
+    assert "customer_test_imports_legacy" in codes
+
+
+def test_questionnaire_sidebar_customer_checker_allows_next_fixture_contract(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "questionnaire_next.py",
+        "def test_questionnaire(next_client):\n"
+        "    assert next_client.get('/api/admin/questionnaires').status_code\n",
+    )
+
+    assert check_questionnaire_sidebar_customer_tests_next_native(tmp_path) == []
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

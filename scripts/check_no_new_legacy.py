@@ -1391,6 +1391,82 @@ def check_commerce_tests_next_native(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+QUESTIONNAIRE_SIDEBAR_CUSTOMER_TEST_EXACT_NAMES = {
+    "test_api.py",
+    "test_user_ops_api.py",
+    "test_user_ops_application_contract.py",
+    "test_user_ops_import_parsers.py",
+    "test_user_ops_lead_pool_helpers.py",
+    "test_user_ops_page_service_helpers.py",
+    "test_user_ops_read_facade.py",
+}
+
+
+def _is_questionnaire_sidebar_customer_test(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+    if rel.as_posix() == "tests/test_no_new_legacy_checker.py":
+        return False
+    name = path.name
+    if name in QUESTIONNAIRE_SIDEBAR_CUSTOMER_TEST_EXACT_NAMES:
+        return True
+    return (
+        name.startswith("test_questionnaire")
+        or name.startswith("test_sidebar")
+        or name.startswith("test_customer")
+        or name.startswith("test_admin_customer")
+        or name.startswith("test_identity")
+    )
+
+
+def _questionnaire_sidebar_customer_import_code(path: Path) -> str:
+    name = path.name
+    if "questionnaire" in name:
+        return "questionnaire_test_imports_legacy"
+    if "sidebar" in name:
+        return "sidebar_test_imports_legacy"
+    return "customer_test_imports_legacy"
+
+
+def check_questionnaire_sidebar_customer_tests_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts or not _is_questionnaire_sidebar_customer_test(path, root):
+            continue
+        rel = str(path.relative_to(root))
+        imports = _wecom_ast_imports(path)
+        if imports:
+            violations.append(
+                Violation(
+                    _questionnaire_sidebar_customer_import_code(path),
+                    rel,
+                    ", ".join(imports),
+                    "Questionnaire, sidebar, customer, identity, and user-ops tests must use Next-native fixtures and fakes.",
+                )
+            )
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "legacy_app" in source or "legacy_client" in source:
+            violations.append(
+                Violation(
+                    "questionnaire_sidebar_customer_test_uses_legacy_client",
+                    rel,
+                    "legacy_app/legacy_client",
+                    "Questionnaire, sidebar, customer, identity, and user-ops route tests must use next_client or Next-native service/repository fakes.",
+                )
+            )
+
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -7961,6 +8037,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_test_fixture_legacy_boundaries(ROOT)
         + check_legacy_flask_http_test_retirement(ROOT)
         + check_commerce_tests_next_native(ROOT)
+        + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
