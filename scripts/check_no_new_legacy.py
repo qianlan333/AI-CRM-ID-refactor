@@ -36,24 +36,21 @@ LEGACY_IMPORT_ALLOWLIST = set()
 WECOM_IMPORT_ALLOWLIST = set()
 API_SIDE_EFFECT_ALLOWLIST = set()
 LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
-    Path("scripts/audit_operation_task_runtime_contract.py"): "historical operation-task runtime audit; migrate in Phase B",
-    Path("scripts/backfill_questionnaire_submission_identity.py"): "maintenance questionnaire identity backfill; migrate in Phase B",
-    Path("scripts/repair_automation_member_projection.py"): "maintenance automation projection repair; migrate in Phase B",
-    Path("scripts/repair_invalid_operation_tasks.py"): "maintenance operation-task repair; migrate in Phase B",
-    Path("scripts/replay_operation_task_audience_entered.py"): "maintenance operation-task replay; migrate in Phase B",
-    Path("scripts/replay_questionnaire_sidebar_profile.py"): "maintenance questionnaire sidebar replay; migrate in Phase B",
-    Path("scripts/run_automation_agent_reply_backfill.py"): "maintenance automation reply backfill; migrate in Phase B",
-    Path("scripts/run_automation_member_backfill.py"): "maintenance automation member backfill; migrate in Phase B",
-    Path("scripts/run_automation_ops_scheduler.py"): "maintenance automation ops scheduler; migrate in Phase B",
-    Path("scripts/run_broadcast_queue_worker.py"): "maintenance broadcast queue worker; migrate in Phase B",
-    Path("scripts/run_campaign_scheduler.py"): "maintenance campaign scheduler; migrate in Phase B",
-    Path("scripts/run_cloud_orchestrator_scan.py"): "maintenance cloud orchestrator scan; migrate in Phase B",
-    Path("scripts/run_external_contact_sync.py"): "maintenance external contact sync; migrate in Phase B",
-    Path("scripts/run_hxc_dashboard_refresh.py"): "maintenance HXC dashboard refresh; migrate in Phase B",
-    Path("scripts/run_marketing_automation_backfill.py"): "maintenance marketing automation backfill; migrate in Phase B",
-    Path("scripts/run_owner_lead_pool_backfill.py"): "maintenance owner lead-pool backfill; migrate in Phase B",
-    Path("scripts/run_pool_signup_tag_backfill.py"): "maintenance pool signup tag backfill; migrate in Phase B",
+    Path("scripts/run_automation_member_backfill.py"): "active deploy automation member backfill; migrate or decommission separately",
+    Path("scripts/run_automation_ops_scheduler.py"): "active deploy automation ops scheduler; migrate or decommission separately",
+    Path("scripts/run_broadcast_queue_worker.py"): "active deploy broadcast queue worker; migrate or decommission separately",
+    Path("scripts/run_external_contact_sync.py"): "active deploy external contact sync/full sync; migrate or decommission separately",
 }
+ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST = set(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
+ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
+    Path("deploy/openclaw-automation-member-backfill.service"): Path("scripts/run_automation_member_backfill.py"),
+    Path("deploy/openclaw-automation-ops-scheduler.service"): Path("scripts/run_automation_ops_scheduler.py"),
+    Path("deploy/openclaw-broadcast-queue-worker.service"): Path("scripts/run_broadcast_queue_worker.py"),
+    Path("deploy/openclaw-external-contact-sync.service"): Path("scripts/run_external_contact_sync.py"),
+    Path("deploy/openclaw-external-contact-full-sync.service"): Path("scripts/run_external_contact_sync.py"),
+}
+EXTERNAL_PUSH_WORKER_SCRIPT = Path("scripts/run_external_push_worker.py")
+EXTERNAL_PUSH_WORKER_SERVICE = Path("deploy/openclaw-external-push-worker.service")
 SIDE_EFFECT_MARKERS = {
     "dispatch_wecom_task",
     "create_contact_way",
@@ -1010,6 +1007,30 @@ def check_wecom_legacy_usage_freeze(
     violations: list[Violation] = []
     allowlist = _default_maintenance_allowlist(root) if maintenance_allowlist is None else dict(maintenance_allowlist)
 
+    allowlist_paths = set(allowlist)
+    should_enforce_active_allowlist = root == ROOT or maintenance_allowlist is not None
+    if should_enforce_active_allowlist:
+        unexpected_allowlist_paths = allowlist_paths - ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST
+        for rel_path in sorted(unexpected_allowlist_paths):
+            violations.append(
+                Violation(
+                    "legacy_maintenance_allowlist_non_deploy_script",
+                    str(rel_path),
+                    allowlist[rel_path],
+                    "LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST may only include active deploy-backed legacy scripts.",
+                )
+            )
+        missing_active_paths = ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST - allowlist_paths
+        for rel_path in sorted(missing_active_paths):
+            violations.append(
+                Violation(
+                    "legacy_maintenance_allowlist_missing_active_deploy_script",
+                    str(rel_path),
+                    "active deploy-backed legacy script",
+                    "Keep active deploy-backed scripts in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST until their services migrate or decommission.",
+                )
+            )
+
     app_path = root / "app.py"
     app_imports = _wecom_ast_imports(app_path)
     if app_imports:
@@ -1063,12 +1084,97 @@ def check_wecom_legacy_usage_freeze(
             if imports:
                 scripts_with_imports[path.relative_to(root)] = imports
 
+    external_worker_path = root / EXTERNAL_PUSH_WORKER_SCRIPT
+    external_worker_service_path = root / EXTERNAL_PUSH_WORKER_SERVICE
+    should_enforce_external_worker = root == ROOT or external_worker_path.exists() or external_worker_service_path.exists()
+    if should_enforce_external_worker and not external_worker_path.exists():
+        violations.append(
+            Violation(
+                "external_push_worker_removed",
+                str(EXTERNAL_PUSH_WORKER_SCRIPT),
+                "missing",
+                "Keep the Next-native external push worker script in place for the systemd service.",
+            )
+        )
+    elif external_worker_path.exists():
+        external_worker_imports = _wecom_ast_imports(external_worker_path)
+        if external_worker_imports:
+            violations.append(
+                Violation(
+                    "external_push_worker_legacy_import_returned",
+                    str(EXTERNAL_PUSH_WORKER_SCRIPT),
+                    ", ".join(external_worker_imports),
+                    "The external push worker must stay Next-native and must not import wecom_ability_service.",
+                )
+            )
+
+    if should_enforce_external_worker and not external_worker_service_path.exists():
+        violations.append(
+            Violation(
+                "external_push_worker_service_contract_broken",
+                str(EXTERNAL_PUSH_WORKER_SERVICE),
+                "missing",
+                "Keep the external push systemd service contract in deploy/.",
+            )
+        )
+    elif external_worker_service_path.exists():
+        try:
+            external_worker_service = external_worker_service_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            external_worker_service = ""
+        if "python scripts/run_external_push_worker.py" not in external_worker_service:
+            violations.append(
+                Violation(
+                    "external_push_worker_service_contract_broken",
+                    str(EXTERNAL_PUSH_WORKER_SERVICE),
+                    "missing python scripts/run_external_push_worker.py",
+                    "The external push service must continue to call scripts/run_external_push_worker.py.",
+                )
+            )
+
+    for service_rel_path, script_rel_path in ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS.items():
+        service_path = root / service_rel_path
+        if not service_path.exists():
+            if root == ROOT:
+                violations.append(
+                    Violation(
+                        "active_deploy_service_contract_broken",
+                        str(service_rel_path),
+                        "missing",
+                        "Keep active legacy deploy service files until their scripts migrate or decommission.",
+                    )
+                )
+            continue
+        try:
+            service_text = service_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            service_text = ""
+        if str(script_rel_path) not in service_text:
+            violations.append(
+                Violation(
+                    "active_deploy_service_contract_broken",
+                    str(service_rel_path),
+                    f"missing {script_rel_path}",
+                    "Active deploy services must keep pointing at their current legacy scripts in this PR.",
+                )
+            )
+            continue
+        if not (root / script_rel_path).exists():
+            violations.append(
+                Violation(
+                    "active_deploy_service_points_to_missing_script",
+                    str(service_rel_path),
+                    str(script_rel_path),
+                    "Do not remove active deploy-backed legacy scripts before their service is migrated or decommissioned.",
+                )
+            )
+
     for rel_path, reason in allowlist.items():
         path = root / rel_path
         if not path.exists():
             violations.append(
                 Violation(
-                    "wecom_legacy_allowlist_path_missing",
+                    "legacy_maintenance_allowlist_path_missing",
                     str(rel_path),
                     reason,
                     "Remove missing paths from LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST or restore the script intentionally.",
@@ -1078,7 +1184,7 @@ def check_wecom_legacy_usage_freeze(
         if rel_path not in scripts_with_imports:
             violations.append(
                 Violation(
-                    "wecom_legacy_allowlist_path_without_import",
+                    "legacy_maintenance_allowlist_path_without_import",
                     str(rel_path),
                     reason,
                     "Remove scripts that no longer import wecom_ability_service from the maintenance allowlist.",
@@ -1089,7 +1195,7 @@ def check_wecom_legacy_usage_freeze(
         if rel_path not in allowlist:
             violations.append(
                 Violation(
-                    "wecom_legacy_script_not_allowlisted",
+                    "legacy_script_import_remaining",
                     str(rel_path),
                     ", ".join(imports),
                     "Add the existing maintenance script to LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST with a migration phase, or migrate it off legacy first.",
