@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
 from aicrm_next.ops_enrollment import application, repo as repo_module
 from aicrm_next.ops_enrollment.repo import InMemoryUserOpsRepository, SqlAlchemyUserOpsRepository
 from aicrm_next.shared.repository_provider import evaluate_repository
+
+ROOT = Path(__file__).resolve().parents[1]
+USER_OPS_PROD_TABLES_MIGRATION = ROOT / "migrations" / "versions" / "0029_user_ops_prod_tables.py"
 
 
 class FakeSession:
@@ -91,3 +96,15 @@ def test_user_ops_overview_does_not_hit_fixture_blocker_in_postgres_mode(monkeyp
     assert payload["route_owner"] == "ai_crm_next"
     assert payload["fallback_used"] is False
     assert "fixture_repository_blocked_in_production" not in response.text
+
+
+def test_sqlalchemy_user_ops_tables_are_present_in_mainline_migrations() -> None:
+    migration = USER_OPS_PROD_TABLES_MIGRATION.read_text(encoding="utf-8")
+
+    for table_name in (
+        "user_ops_pool_current_next",
+        "user_ops_do_not_disturb_next",
+        "user_ops_send_records_next",
+    ):
+        assert table_name in migration
+    assert "INSERT INTO" not in migration

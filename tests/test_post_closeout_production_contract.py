@@ -82,6 +82,19 @@ def test_user_ops_overview_postgres_contract_avoids_fixture_blocker(monkeypatch)
     assert "fixture_repository_blocked_in_production" not in response.text
 
 
+def test_user_ops_production_tables_are_in_mainline_migrations() -> None:
+    migration = (ROOT / "migrations" / "versions" / "0029_user_ops_prod_tables.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'revision = "0029_user_ops_prod_tables"' in migration
+    assert 'down_revision = "0028_owner_excel_sessions"' in migration
+    assert "CREATE TABLE IF NOT EXISTS user_ops_pool_current_next" in migration
+    assert "CREATE TABLE IF NOT EXISTS user_ops_do_not_disturb_next" in migration
+    assert "CREATE TABLE IF NOT EXISTS user_ops_send_records_next" in migration
+    assert "INSERT INTO" not in migration
+
+
 def test_app_py_legacy_commands_still_hard_error() -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
