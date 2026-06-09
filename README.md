@@ -1,7 +1,7 @@
 # AI-CRM
 
 AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAPI modular monolith。
-旧 Flask 结构仍保留为 legacy fallback，方便回滚、对比和后续分批退场。
+Legacy Flask startup compatibility 已关闭；旧 Flask 代码仅作为非 startup maintenance/reference，等待后续单独归档。
 
 当前主线包含：
 
@@ -16,7 +16,7 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 
 - GitHub `main` 是唯一源码主线。
 - `python3 app.py run` 默认启动 `aicrm_next.main:app`。
-- 旧 Flask 只能通过 `python3 app.py run-legacy` 或 `python3 legacy_flask_app.py run` 显式启动。
+- `app.py` 是 Next-only startup entrypoint；旧 Flask startup 命令已移除为硬错误。
 - `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已在 D9.6 后 physically removed，不是当前 live repo path。
 - MCP / OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` 的 D7.7 adapter boundary 承接。
 - 本地开发统一基于当前 Git clone，从最新 `main` 开功能分支。
@@ -47,14 +47,13 @@ python3 app.py run
 
 - `http://127.0.0.1:5001`，除非设置 `APP_PORT`
 
-旧 Flask fallback：
+数据库 schema 变更：
 
 ```bash
-python3 app.py run-legacy
-python3 app.py init-db-legacy
+python3 -m alembic upgrade head
 ```
 
-兼容旧部署脚本的 `python3 app.py init-db` 仍保留为 legacy alias，但新文档应优先使用 `init-db-legacy`。
+Removed startup commands: `python3 app.py run-legacy`、`python3 app.py init-db`、`python3 app.py init-db-legacy`、`python3 app.py delete-questionnaire-submissions*`。这些命令仅作为 historical/deprecated note，不再是可执行入口。
 
 ## 测试基线
 
@@ -99,13 +98,11 @@ python3 -m venv .venv
 ## 仓库结构
 
 - `app.py`
-  - 默认应用入口，`run` 启动 AI-CRM Next，legacy 命令显式启动旧 Flask
-- `legacy_flask_app.py`
-  - 旧 Flask fallback runner
+  - Next-only 应用入口，`run` 启动 AI-CRM Next，`health` / `routes` 输出 Next 诊断信息
 - `aicrm_next/`
   - 当前默认 FastAPI modular monolith
 - `wecom_ability_service/`
-  - legacy Flask fallback
+  - non-startup legacy maintenance/reference code
   - `http/` 负责路由与控制器
   - `domains/` 负责业务能力
   - Media/Product/Customer/User Ops/Questionnaire readonly legacy route owners 已按 D1-D5 分批退场，混合依赖包仅作 fallback/reference

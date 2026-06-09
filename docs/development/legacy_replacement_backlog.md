@@ -17,6 +17,10 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - Do not let fixture/local_contract data enter production success paths.
 - Keep route registry, manifest, and generated backlog synchronized.
 
+## Notes
+
+- Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup legacy maintenance code until separately archived.
+
 ## Summary By Capability Owner
 
 - `aicrm_next.admin_auth`: 2 routes; P0=1, P2=1

@@ -13,6 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 DEFAULT_OUTPUT_YAML = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 DEFAULT_OUTPUT_MD = ROOT / "docs/development/legacy_replacement_backlog.md"
+STARTUP_CLOSEOUT_NOTE = (
+    "Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow "
+    "uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup "
+    "legacy maintenance code until separately archived."
+)
 
 MANIFEST_REQUIRED_FIELDS = {
     "route_pattern",
@@ -405,6 +410,7 @@ def build_backlog(routes: list[dict[str, Any]]) -> dict[str, Any]:
             "fixture/local_contract data in production success paths. If a route has legacy_fallback_allowed=false, "
             "the backlog must not require continuing fallback."
         ),
+        "notes": [STARTUP_CLOSEOUT_NOTE],
         "entries": [build_backlog_entry(route, index) for index, route in enumerate(routes)],
     }
 
@@ -491,6 +497,10 @@ def render_backlog_markdown(backlog: dict[str, Any]) -> str:
         "- Do not let fixture/local_contract data enter production success paths.",
         "- Keep route registry, manifest, and generated backlog synchronized.",
     ]
+    notes = [str(note) for note in backlog.get("notes", [])]
+    if notes:
+        lines.extend(["", "## Notes", ""])
+        lines.extend(f"- {note}" for note in notes)
     if has_legacy_fallback:
         lines.append("- Routes that still explicitly allow fallback must keep fallback until parity, checker, smoke, and rollback conditions are satisfied.")
     lines.extend(["", "## Summary By Capability Owner", ""])

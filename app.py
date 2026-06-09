@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections.abc import Sequence
 
 
@@ -24,33 +25,12 @@ def run_next() -> None:
     uvicorn.run(NEXT_APP_IMPORT, host=_host(), port=_port())
 
 
-def run_legacy() -> None:
-    from wecom_ability_service import create_app
-
-    app = create_app()
-    host = app.config.get("APP_HOST") or _host()
-    port = int(app.config.get("APP_PORT") or _port())
-    app.run(host=host, port=port, debug=bool(app.config.get("DEBUG")))
-
-
-def init_db_legacy() -> None:
-    from wecom_ability_service import create_app
-    from wecom_ability_service.db import init_db
-
-    app = create_app()
-    with app.app_context():
-        init_db()
-    print("Legacy Flask database initialized.")
-
-
-def delete_questionnaire_submissions_legacy(slug: str) -> None:
-    from wecom_ability_service import create_app
-    from wecom_ability_service.services import delete_questionnaire_submissions_by_slug
-
-    app = create_app()
-    with app.app_context():
-        result = delete_questionnaire_submissions_by_slug(str(slug or "").strip())
-    print(result)
+def removed_legacy_command(command: str) -> None:
+    raise SystemExit(
+        f"{command} has been removed. AI-CRM now starts with Next runtime only. "
+        "Use `python app.py run`, `python app.py health`, or `python app.py routes`. "
+        "For database schema changes use Alembic migrations."
+    )
 
 
 def print_next_health() -> None:
@@ -72,18 +52,24 @@ def print_next_health() -> None:
 def print_next_routes() -> None:
     from aicrm_next.main import app
 
-    for route in sorted(app.routes, key=lambda item: getattr(item, "path", "")):
-        path = getattr(route, "path", "")
-        methods = sorted(getattr(route, "methods", []) or [])
-        if path:
-            print(f"{','.join(methods) or '-'} {path}")
+    try:
+        for route in sorted(app.routes, key=lambda item: getattr(item, "path", "")):
+            path = getattr(route, "path", "")
+            methods = sorted(getattr(route, "methods", []) or [])
+            if path:
+                print(f"{','.join(methods) or '-'} {path}")
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        except OSError:
+            pass
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "AI-CRM runtime entry. Default runtime is AI-CRM Next; "
-            "legacy Flask is available only through explicit fallback commands."
+            "legacy Flask startup commands have been removed."
         )
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -91,9 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("run", help="Run AI-CRM Next FastAPI app (default runtime).")
     subparsers.add_parser("health", help="Check AI-CRM Next health via TestClient.")
     subparsers.add_parser("routes", help="Print AI-CRM Next route inventory.")
-    subparsers.add_parser("run-legacy", help="Run legacy Flask fallback explicitly.")
-    subparsers.add_parser("init-db-legacy", help="Initialize the legacy Flask database explicitly.")
-    subparsers.add_parser("init-db", help="Deprecated alias for init-db-legacy.")
+    subparsers.add_parser("run-legacy", help="Removed legacy Flask startup command.")
+    subparsers.add_parser("init-db-legacy", help="Removed legacy Flask database init command.")
+    subparsers.add_parser("init-db", help="Removed legacy Flask database init command.")
     legacy_delete = subparsers.add_parser(
         "delete-questionnaire-submissions-legacy",
         help="Legacy fallback helper for deleting questionnaire submissions by slug.",
@@ -122,13 +108,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_next_routes()
         return
     if command == "run-legacy":
-        run_legacy()
+        removed_legacy_command(command)
         return
     if command in {"init-db", "init-db-legacy"}:
-        init_db_legacy()
+        removed_legacy_command(command)
         return
     if command in {"delete-questionnaire-submissions", "delete-questionnaire-submissions-legacy"}:
-        delete_questionnaire_submissions_legacy(args.slug)
+        removed_legacy_command(command)
         return
 
     parser.print_help()
