@@ -63,6 +63,27 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
+def test_alembic_revision_ids_fit_default_version_table() -> None:
+    revisions = _migration_revisions()
+    old_hxc_revision = "0012_hxc_dashboard_v6_" + "growth_columns"
+    old_cloud_revision = "0024_cloud_plan_recipient_" + "approval"
+    old_owner_revision = "0028_owner_migration_excel_" + "sessions"
+
+    too_long = {
+        revision: {"length": len(revision), "path": str(item["path"])}
+        for revision, item in revisions.items()
+        if len(revision) > 32
+    }
+
+    assert too_long == {}
+    assert old_hxc_revision not in revisions
+    assert old_cloud_revision not in revisions
+    assert old_owner_revision not in revisions
+    assert "0012_hxc_growth_cols" in revisions
+    assert "0024_cloud_plan_approval" in revisions
+    assert "0028_owner_excel_sessions" in revisions
+
+
 def test_alembic_chain_keeps_0014_parent_available() -> None:
     revisions = _migration_revisions()
 
@@ -83,3 +104,6 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         assert result.returncode == 0, result.stderr
         assert "is not present" not in result.stderr
         assert "KeyError" not in result.stderr
+        if args == ("heads",):
+            heads = [line for line in result.stdout.splitlines() if "(head)" in line]
+            assert len(heads) == 1

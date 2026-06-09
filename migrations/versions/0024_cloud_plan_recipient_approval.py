@@ -1,11 +1,15 @@
-"""cloud plan recipient approval materialization"""
+"""cloud plan recipient approval materialization.
+
+Revision ID: 0024_cloud_plan_approval
+Revises: 0023_product_external_push, 0023_group_ops_webhook_rules
+"""
 
 from __future__ import annotations
 
 from alembic import op
 
 
-revision = "0024_cloud_plan_recipient_approval"
+revision = "0024_cloud_plan_approval"
 down_revision = ("0023_product_external_push", "0023_group_ops_webhook_rules")
 branch_labels = None
 depends_on = None

@@ -54,15 +54,17 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
     database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
     pip_install_index = workflow.index("pip install -r requirements.txt")
-    alembic_version_width_index = workflow.index("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+    alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
-    assert pip_install_index < alembic_version_width_index < alembic_upgrade_index < restart_index
+    assert pip_install_index < alembic_upgrade_index < restart_index
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
     assert "alembic stamp head" not in workflow
+    assert f"ALTER TABLE IF EXISTS {alembic_table}" not in workflow
+    assert f"ALTER TABLE {alembic_table}" not in workflow
 
 
 def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
