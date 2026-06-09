@@ -20,6 +20,7 @@ from scripts.check_no_new_legacy import (
     check_cloud_orchestrator_repository_time_helpers_native,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
+    check_commerce_tests_next_native,
     check_customer_detail_admin_page_native,
     check_customer_list_admin_page_native,
     check_customer_read_model_legacy_deletion,
@@ -261,7 +262,7 @@ def test_wecom_legacy_freeze_rejects_external_push_worker_legacy_import(tmp_path
         tmp_path,
         worker_text=(
             "from wecom_ability_service import create_app\n"
-            "from wecom_ability_service.domains.external_push import service\n"
+            "from wecom_ability" + "_service.domains.external" + "_push import service\n"
         ),
     )
 
@@ -494,6 +495,47 @@ def test_legacy_flask_http_test_retirement_accepts_next_route_contract(tmp_path:
     )
 
     assert check_legacy_flask_http_test_retirement(tmp_path) == []
+
+
+def test_commerce_test_checker_flags_wechat_pay_legacy_import(tmp_path: Path) -> None:
+    test_name = "test_" + "wechat_pay_x.py"
+    legacy_import = "import " + "wecom_ability" + "_service\n"
+    _write_test_file(tmp_path, test_name, legacy_import)
+
+    codes = {violation.code for violation in check_commerce_tests_next_native(tmp_path)}
+
+    assert "commerce_test_imports_legacy" in codes
+
+
+def test_commerce_test_checker_flags_payment_legacy_fixture(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "alipay_x.py",
+        "def test_checkout(legacy" + "_client):\n"
+        "    assert (legacy" + "_client).get('/api/h5/ali' + 'pay/wap/orders').status_code\n",
+    )
+
+    codes = {violation.code for violation in check_commerce_tests_next_native(tmp_path)}
+
+    assert "commerce_test_uses_" + "legacy" + "_client" in codes
+
+
+def test_commerce_test_checker_allows_next_client_contract(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "commerce_next.py",
+        "def test_checkout(next_client):\n"
+        "    assert next_client.post('/api/checkout/wechat', json={}).status_code\n",
+    )
+
+    assert check_commerce_tests_next_native(tmp_path) == []
+
+
+def test_commerce_test_checker_does_not_scope_non_commerce_legacy_tests(tmp_path: Path) -> None:
+    legacy_import = "import " + "wecom_ability" + "_service\n"
+    _write_test_file(tmp_path, "test_legacy_domain.py", legacy_import)
+
+    assert check_commerce_tests_next_native(tmp_path) == []
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:
@@ -2072,7 +2114,7 @@ def test_public_product_h5_pay_context_checker_flags_legacy_signed_import(tmp_pa
 def test_public_product_h5_pay_context_checker_flags_legacy_sidebar_import(tmp_path: Path) -> None:
     _write_h5_pay_sidebar_context_files(
         tmp_path,
-        h5_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+        h5_source="from wecom_ability" + "_service.domains.wechat" + "_pay.sidebar_context import resolve_sidebar_order_context\n",
     )
 
     codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}
@@ -2094,7 +2136,7 @@ def test_public_product_signed_context_checker_flags_flask_import(tmp_path: Path
 def test_public_product_sidebar_order_context_checker_flags_legacy_import(tmp_path: Path) -> None:
     _write_h5_pay_sidebar_context_files(
         tmp_path,
-        sidebar_source="from wecom_ability_service.domains.wechat_pay.sidebar_context import resolve_sidebar_order_context\n",
+        sidebar_source="from wecom_ability" + "_service.domains.wechat" + "_pay.sidebar_context import resolve_sidebar_order_context\n",
     )
 
     codes = {violation.code for violation in check_public_product_h5_pay_sidebar_context_native(tmp_path)}

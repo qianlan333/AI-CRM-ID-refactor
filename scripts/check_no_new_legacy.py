@@ -1335,6 +1335,62 @@ def check_legacy_flask_http_test_retirement(root: Path = ROOT) -> list[Violation
     return violations
 
 
+COMMERCE_TEST_NAME_MARKERS = (
+    "wechat_pay",
+    "alipay",
+    "commerce",
+    "product_external_push",
+)
+
+
+def _is_commerce_payment_test(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+    if rel.as_posix() == "tests/test_no_new_legacy_checker.py":
+        return False
+    name = path.name
+    return any(marker in name for marker in COMMERCE_TEST_NAME_MARKERS)
+
+
+def check_commerce_tests_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts or not _is_commerce_payment_test(path, root):
+            continue
+        rel = str(path.relative_to(root))
+        imports = _wecom_ast_imports(path)
+        if imports:
+            violations.append(
+                Violation(
+                    "commerce_test_imports_legacy",
+                    rel,
+                    ", ".join(imports),
+                    "Commerce, WeChat Pay, Alipay, and product external-push tests must use Next-native fixtures and fakes.",
+                )
+            )
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "legacy_app" in source or "legacy_client" in source:
+            violations.append(
+                Violation(
+                    "commerce_test_uses_legacy_client",
+                    rel,
+                    "legacy_app/legacy_client",
+                    "Commerce route tests must use next_client or Next-native service/repository fakes.",
+                )
+            )
+
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -7904,6 +7960,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_wecom_legacy_usage_freeze(ROOT)
         + check_test_fixture_legacy_boundaries(ROOT)
         + check_legacy_flask_http_test_retirement(ROOT)
+        + check_commerce_tests_next_native(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
