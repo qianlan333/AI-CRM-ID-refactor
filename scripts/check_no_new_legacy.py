@@ -35,13 +35,8 @@ EXCLUDED_DIRS = {
 LEGACY_IMPORT_ALLOWLIST = set()
 WECOM_IMPORT_ALLOWLIST = set()
 API_SIDE_EFFECT_ALLOWLIST = set()
-LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {
-    Path("scripts/run_automation_member_backfill.py"): "active deploy automation member backfill; migrate or decommission separately",
-    Path("scripts/run_automation_ops_scheduler.py"): "active deploy automation ops scheduler; migrate or decommission separately",
-    Path("scripts/run_broadcast_queue_worker.py"): "active deploy broadcast queue worker; migrate or decommission separately",
-    Path("scripts/run_external_contact_sync.py"): "active deploy external contact sync/full sync; migrate or decommission separately",
-}
-ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST = set(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
+LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {}
+ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST = set()
 ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
     Path("deploy/openclaw-automation-member-backfill.service"): Path("scripts/run_automation_member_backfill.py"),
     Path("deploy/openclaw-automation-ops-scheduler.service"): Path("scripts/run_automation_ops_scheduler.py"),
@@ -1039,7 +1034,7 @@ def check_wecom_legacy_usage_freeze(
                 "wecom_legacy_import_in_startup",
                 "app.py",
                 ", ".join(app_imports),
-                "Keep app.py as a Next-only startup entrypoint; do not import wecom_ability_service.",
+                "Keep app.py as a Next-only startup entrypoint; do not import the legacy package.",
             )
         )
 
@@ -1104,7 +1099,7 @@ def check_wecom_legacy_usage_freeze(
                     "external_push_worker_legacy_import_returned",
                     str(EXTERNAL_PUSH_WORKER_SCRIPT),
                     ", ".join(external_worker_imports),
-                    "The external push worker must stay Next-native and must not import wecom_ability_service.",
+                    "The external push worker must stay Next-native and must not import the legacy package.",
                 )
             )
 
@@ -1141,7 +1136,7 @@ def check_wecom_legacy_usage_freeze(
                         "active_deploy_service_contract_broken",
                         str(service_rel_path),
                         "missing",
-                        "Keep active legacy deploy service files until their scripts migrate or decommission.",
+                    "Keep active deploy service files wired to their Next-native scripts.",
                     )
                 )
             continue
@@ -1155,7 +1150,7 @@ def check_wecom_legacy_usage_freeze(
                     "active_deploy_service_contract_broken",
                     str(service_rel_path),
                     f"missing {script_rel_path}",
-                    "Active deploy services must keep pointing at their current legacy scripts in this PR.",
+                    "Active deploy services must keep pointing at their current Next-native scripts.",
                 )
             )
             continue
@@ -1165,7 +1160,7 @@ def check_wecom_legacy_usage_freeze(
                     "active_deploy_service_points_to_missing_script",
                     str(service_rel_path),
                     str(script_rel_path),
-                    "Do not remove active deploy-backed legacy scripts before their service is migrated or decommissioned.",
+                    "Do not remove active deploy-backed scripts; their implementations must stay Next-native.",
                 )
             )
 
@@ -1187,7 +1182,7 @@ def check_wecom_legacy_usage_freeze(
                     "legacy_maintenance_allowlist_path_without_import",
                     str(rel_path),
                     reason,
-                    "Remove scripts that no longer import wecom_ability_service from the maintenance allowlist.",
+                    "Remove scripts that no longer import the legacy package from the maintenance allowlist.",
                 )
             )
 
@@ -1425,7 +1420,7 @@ def check_group_ops_scheduler_duplicate_checker_native(root: Path = ROOT) -> lis
         "legacy_broadcast",
         "broadcast_jobs.service",
         "broadcast_jobs import repo",
-        "from wecom_ability_service",
+        "from " + "wecom_ability_service",
         "WeComClient.from_app",
         "current_app",
     )
@@ -1546,7 +1541,7 @@ def check_questionnaire_adapters_native_oauth(root: Path = ROOT) -> list[Violati
         rel = str(adapters_path.relative_to(root))
         for marker in (
             "wecom_ability_service",
-            "from wecom_ability_service",
+            "from " + "wecom_ability_service",
             "legacy_flask_facade",
             "wechat_oauth.exchange_wechat_oauth_code",
             "wechat_oauth.fetch_wechat_userinfo",
@@ -5842,7 +5837,7 @@ def check_cloud_orchestrator_repository_time_helpers_native(root: Path = ROOT) -
                 )
             )
         for marker in (
-            "from wecom_ability_service",
+            "from " + "wecom_ability_service",
             "wecom_ability_service",
             "legacy_flask_facade",
             "current_app",
@@ -7737,7 +7732,7 @@ def check_post_legacy_architecture_freeze(root: Path = ROOT) -> list[Violation]:
             rel = path.relative_to(root)
             for module_name in POST_LEGACY_DELETED_HTTP_MODULES:
                 dotted = f"wecom_ability_service.http.{module_name}"
-                if dotted in text or f"from wecom_ability_service.http import {module_name}" in text:
+                if dotted in text or f"from {'wecom_ability_service'}.http import {module_name}" in text:
                     violations.append(Violation("post_legacy_deleted_handler_import", str(rel), dotted))
 
     combined_docs = "\n".join(

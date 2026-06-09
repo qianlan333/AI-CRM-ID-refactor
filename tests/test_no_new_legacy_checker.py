@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.check_no_new_legacy import (
-    ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST,
     LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST,
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
@@ -64,10 +63,6 @@ from scripts.check_no_new_legacy import (
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
-
-
-def _active_legacy_allowlist(reason: str = "active deploy test script") -> dict[Path, str]:
-    return {path: reason for path in ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST}
 
 
 def _write_external_push_worker_contract(root: Path, *, worker_text: str | None = None, service_text: str | None = None) -> None:
@@ -234,44 +229,29 @@ def test_wecom_legacy_freeze_flags_unallowlisted_script_import(tmp_path: Path) -
     assert "legacy_script_import_remaining" in codes
 
 
-def test_wecom_legacy_freeze_flags_missing_allowlist_path(tmp_path: Path) -> None:
-    allowlist = _active_legacy_allowlist()
-    allowlist[Path("scripts/run_broadcast_queue_worker.py")] = "missing active deploy script"
+def test_wecom_legacy_freeze_flags_non_empty_allowlist(tmp_path: Path) -> None:
+    legacy_script = Path("scripts/run_broadcast_queue_worker.py")
 
     violations = check_wecom_legacy_usage_freeze(
         tmp_path,
-        maintenance_allowlist=allowlist,
-    )
-
-    assert "legacy_maintenance_allowlist_path_missing" in {violation.code for violation in violations}
-
-
-def test_wecom_legacy_freeze_flags_non_deploy_allowlist_entries(tmp_path: Path) -> None:
-    retired_script = Path("scripts/run_campaign_scheduler.py")
-
-    violations = check_wecom_legacy_usage_freeze(
-        tmp_path,
-        maintenance_allowlist={**_active_legacy_allowlist(), retired_script: "retired non-deploy maintenance script"},
+        maintenance_allowlist={legacy_script: "stale legacy maintenance allowlist entry"},
     )
 
     assert any(
         violation.code == "legacy_maintenance_allowlist_non_deploy_script"
-        and violation.path == str(retired_script)
+        and violation.path == str(legacy_script)
         for violation in violations
     )
 
 
-def test_wecom_legacy_freeze_flags_allowlist_path_without_import(tmp_path: Path) -> None:
+def test_wecom_legacy_freeze_flags_active_deploy_script_legacy_import(tmp_path: Path) -> None:
     script = tmp_path / "scripts/run_broadcast_queue_worker.py"
     script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text("print('native now')\n", encoding="utf-8")
+    script.write_text("from wecom_ability_service import create_app\n", encoding="utf-8")
 
-    violations = check_wecom_legacy_usage_freeze(
-        tmp_path,
-        maintenance_allowlist={Path("scripts/run_broadcast_queue_worker.py"): "active deploy script"},
-    )
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
 
-    assert "legacy_maintenance_allowlist_path_without_import" in {violation.code for violation in violations}
+    assert "legacy_script_import_remaining" in codes
 
 
 def test_wecom_legacy_freeze_rejects_external_push_worker_legacy_import(tmp_path: Path) -> None:
@@ -319,20 +299,12 @@ def test_wecom_legacy_freeze_flags_missing_active_deploy_script_target(tmp_path:
     assert "active_deploy_service_points_to_missing_script" in codes
 
 
-def test_wecom_legacy_freeze_flags_missing_active_deploy_allowlist_entry(tmp_path: Path) -> None:
-    allowlist = _active_legacy_allowlist()
-    allowlist.pop(Path("scripts/run_external_contact_sync.py"))
-
-    codes = {
-        violation.code
-        for violation in check_wecom_legacy_usage_freeze(tmp_path, maintenance_allowlist=allowlist)
-    }
-
-    assert "legacy_maintenance_allowlist_missing_active_deploy_script" in codes
-
-
 def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:
     assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
+
+
+def test_wecom_legacy_freeze_maintenance_allowlist_is_empty() -> None:
+    assert LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST == {}
 
 
 def test_wecom_legacy_freeze_retired_historical_helpers_removed_from_allowlist() -> None:
@@ -362,7 +334,6 @@ def test_wecom_legacy_freeze_non_deploy_scripts_removed_from_allowlist() -> None
         Path("scripts/run_pool_signup_tag_backfill.py"),
     }
 
-    assert set(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST) == ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST
     assert retired_scripts.isdisjoint(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
 
 

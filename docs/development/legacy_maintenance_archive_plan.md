@@ -5,21 +5,29 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 ## Freeze Policy
 
 - `aicrm_next/**`, `app.py`, `.github/**`, and `deploy/**` must not import or directly reference `wecom_ability_service`.
-- `scripts/**/*.py` may import `wecom_ability_service` only when explicitly listed in `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` in `scripts/check_no_new_legacy.py`.
+- `scripts/**/*.py` must not import `wecom_ability_service`; `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` must remain empty.
 - Tests, docs, tools, experiments, and `wecom_ability_service/**` historical references are tracked but do not block this freeze checker.
 - Existing maintenance scripts are migration targets, not precedent for new legacy dependencies.
 - The active external push worker has been migrated to `aicrm_next.external_push`; `scripts/run_external_push_worker.py` must remain outside the legacy maintenance allowlist.
 
 ## Allowlisted Maintenance Scripts
 
-Current allowlist count: 4. Only active deploy-backed legacy scripts remain in `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST`.
+Current allowlist count: 0. No active deploy-backed script may import `wecom_ability_service`.
 
 | script | usage | state | migration phase | risk |
 |---|---|---|---|---|
-| `scripts/run_automation_member_backfill.py` | automation member backfill | active deploy service | Phase C | high |
-| `scripts/run_automation_ops_scheduler.py` | automation ops scheduler | active deploy service | Phase C | high |
-| `scripts/run_broadcast_queue_worker.py` | broadcast queue worker | active deploy service | Phase C | high |
-| `scripts/run_external_contact_sync.py` | external contact sync/full sync | active deploy service | Phase C | high |
+| none | none | cleared | complete | none |
+
+## Migrated Active Deploy Services
+
+These deploy-backed capabilities now keep their existing script paths and systemd service/timer commands while running through `aicrm_next.background_jobs` implementations:
+
+- Automation member backfill: `scripts/run_automation_member_backfill.py`
+- Automation ops scheduler: `scripts/run_automation_ops_scheduler.py`
+- Broadcast queue worker: `scripts/run_broadcast_queue_worker.py`
+- External contact sync/full sync: `scripts/run_external_contact_sync.py`
+
+The deploy service and timer unit files remain in place with the same `ExecStart` commands. The script internals are Next-native and must not import `wecom_ability_service`. Where a legacy-only sub-capability has no safe Next owner yet, the job returns structured `skipped` output instead of using a legacy fallback.
 
 ## Retired Historical Helpers
 
@@ -45,7 +53,7 @@ These non-deploy direct-connect legacy maintenance scripts are retired:
 - `scripts/run_owner_lead_pool_backfill.py`
 - `scripts/run_pool_signup_tag_backfill.py`
 
-Future repair, backfill, or scheduler capability must be rebuilt through Next-native repository/service boundaries. Do not reintroduce `wecom_ability_service` imports into new scripts. The four remaining active deploy scripts are the next migration or decommission targets.
+Future repair, backfill, or scheduler capability must be rebuilt through Next-native repository/service boundaries. Do not reintroduce `wecom_ability_service` imports into new scripts.
 
 ## Archive Phases
 
@@ -61,13 +69,14 @@ Exit criteria:
 
 ### Phase C: Maintenance scripts migration inventory
 
-Status: non-deploy maintenance script retirement complete; the maintenance script allowlist now contains only active deploy-backed legacy services.
+Status: complete. Non-deploy maintenance scripts are retired, and active deploy-backed services have Next-native script implementations.
 
-Migrate or decommission active deploy services one group at a time.
+Keep the script path/systemd contract stable while the internal implementation remains Next-native.
 
 Exit criteria:
 
-- Each active deploy-backed script is removed from `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` only after its service migrates or decommissions.
+- `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` is empty.
+- Active deploy service targets exist and import no `wecom_ability_service`.
 - Production repair docs point to the Next-native replacement where the capability remains necessary.
 
 ### Phase D: Tests off legacy fixtures
@@ -100,4 +109,4 @@ Exit criteria:
 
 ## Recommended Next Step
 
-Active deploy legacy services migration/decommission plan.
+Tests off legacy fixtures bulk cleanup.
