@@ -44,6 +44,7 @@ from .frontend_compat.legacy_routes import router as frontend_compat_router
 from .hxc_dashboard.api import router as hxc_dashboard_router
 from .hxc_dashboard.repo import reset_hxc_dashboard_fixture_state
 from .hxc_dashboard.safe_mode import reset_hxc_safe_mode_fixture_state
+from .identity_contact.admin_pages import router as identity_admin_pages_router
 from .identity_contact.api import router as identity_router
 from .identity_contact.sidebar_jssdk import router as sidebar_jssdk_router
 from .integration_gateway.wecom_jssdk_adapter import reset_sidebar_jssdk_attempts
@@ -171,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(user_ops_admin_pages_router)
     app.include_router(mcp_router)
     app.include_router(identity_router)
+    app.include_router(identity_admin_pages_router)
     app.include_router(message_archive_router)
     app.include_router(questionnaire_admin_pages_router)
     app.include_router(questionnaire_router)

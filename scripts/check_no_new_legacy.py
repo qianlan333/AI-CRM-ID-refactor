@@ -4357,6 +4357,85 @@ def check_support_pages_native(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_sidebar_bind_mobile_page_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if not frontend_routes.exists():
+        violations.append(Violation("frontend_compat_manifest_removed_too_early", str(frontend_routes.relative_to(root)), "legacy_routes.py"))
+    else:
+        source = frontend_routes.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            tree = None
+
+        required_manifest_markers = (
+            "LEGACY_FRONTEND_ROUTES = []",
+            "/api/frontend-compat/legacy-routes",
+        )
+        for marker in required_manifest_markers:
+            if marker not in source:
+                violations.append(Violation("frontend_compat_manifest_removed_too_early", str(frontend_routes.relative_to(root)), marker))
+
+        forbidden_markers = (
+            "/sidebar/bind-mobile",
+            "def sidebar_bind_mobile_page",
+            "sidebar_customer_workbench.html",
+            "Jinja2Templates",
+            "_TEMPLATES_DIR",
+        )
+        for marker in forbidden_markers:
+            if marker in source:
+                violations.append(Violation("sidebar_bind_mobile_still_in_frontend_compat", str(frontend_routes.relative_to(root)), marker))
+
+        if tree is not None:
+            constants = _module_list_constants(tree)
+            if "/SIDEBAR/BIND-MOBILE" in constants.get("LEGACY_FRONTEND_ROUTES", ()):
+                violations.append(Violation("sidebar_bind_mobile_still_in_frontend_compat", str(frontend_routes.relative_to(root)), "LEGACY_FRONTEND_ROUTES:/sidebar/bind-mobile"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "sidebar_bind_mobile_page":
+                    violations.append(Violation("sidebar_bind_mobile_still_in_frontend_compat", str(frontend_routes.relative_to(root)), "def sidebar_bind_mobile_page"))
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not decorator.args:
+                        continue
+                    attr = decorator.func
+                    if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                        continue
+                    first = decorator.args[0]
+                    if isinstance(first, ast.Constant) and first.value == "/sidebar/bind-mobile":
+                        violations.append(Violation("sidebar_bind_mobile_still_in_frontend_compat", str(frontend_routes.relative_to(root)), "@router.get('/sidebar/bind-mobile')"))
+
+    admin_pages = root / "aicrm_next/identity_contact/admin_pages.py"
+    if not admin_pages.exists():
+        violations.append(Violation("sidebar_bind_mobile_native_page_missing", str(admin_pages.relative_to(root)), "missing identity_contact admin pages"))
+    else:
+        source = admin_pages.read_text(encoding="utf-8")
+        markers = (
+            "/sidebar/bind-mobile",
+            'name="api.sidebar_bind_mobile_page"',
+            "sidebar_customer_workbench.html",
+            "debug_enabled",
+        )
+        for marker in markers:
+            if marker not in source:
+                violations.append(Violation("sidebar_bind_mobile_native_route_missing", str(admin_pages.relative_to(root)), marker))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        admin_include = "app.include_router(identity_admin_pages_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        if admin_include not in source:
+            violations.append(Violation("sidebar_bind_mobile_native_router_not_registered", str(main_path.relative_to(root)), "identity_admin_pages_router"))
+        elif frontend_include in source and source.index(admin_include) > source.index(frontend_include):
+            violations.append(Violation("sidebar_bind_mobile_native_router_registered_after_frontend_compat", str(main_path.relative_to(root)), "identity_admin_pages_router"))
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -7311,6 +7390,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_shadowed_frontend_compat_handlers_removed(ROOT)
         + check_cloud_root_observability_native(ROOT)
         + check_support_pages_native(ROOT)
+        + check_sidebar_bind_mobile_page_native(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)
