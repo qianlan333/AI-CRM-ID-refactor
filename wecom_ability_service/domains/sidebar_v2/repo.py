@@ -172,6 +172,8 @@ def list_customer_wechat_pay_orders(
     normalized_mobile = str(mobile or "").strip()
     if not normalized_external_userid and not normalized_mobile:
         return []
+    safe_limit = max(1, min(int(limit or 20), 100))
+    candidate_limit = max(safe_limit, 20)
     return fetchall_dicts(
         get_db(),
         """
@@ -200,16 +202,132 @@ def list_customer_wechat_pay_orders(
             FROM wecom_external_contact_identity_map m
             JOIN target t ON m.external_userid = t.external_userid
             WHERE COALESCE(m.unionid, '') <> ''
+        ),
+        external_orders AS (
+            SELECT
+                id,
+                out_trade_no,
+                transaction_id,
+                product_code,
+                COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                amount_total,
+                currency,
+                external_userid AS order_external_userid,
+                mobile_snapshot,
+                payer_openid,
+                unionid,
+                status,
+                trade_state,
+                refunded_amount_total,
+                refund_status,
+                paid_at,
+                created_at,
+                COALESCE(paid_at, created_at) AS sort_at
+            FROM wechat_pay_orders
+            WHERE (SELECT external_userid FROM target) <> ''
+              AND external_userid = (SELECT external_userid FROM target)
+            ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
+            LIMIT ?
+        ),
+        mobile_orders AS (
+            SELECT
+                id,
+                out_trade_no,
+                transaction_id,
+                product_code,
+                COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                amount_total,
+                currency,
+                external_userid AS order_external_userid,
+                mobile_snapshot,
+                payer_openid,
+                unionid,
+                status,
+                trade_state,
+                refunded_amount_total,
+                refund_status,
+                paid_at,
+                created_at,
+                COALESCE(paid_at, created_at) AS sort_at
+            FROM wechat_pay_orders
+            WHERE mobile_snapshot IN (SELECT mobile FROM bound_mobiles)
+            ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
+            LIMIT ?
+        ),
+        openid_orders AS (
+            SELECT
+                id,
+                out_trade_no,
+                transaction_id,
+                product_code,
+                COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                amount_total,
+                currency,
+                external_userid AS order_external_userid,
+                mobile_snapshot,
+                payer_openid,
+                unionid,
+                status,
+                trade_state,
+                refunded_amount_total,
+                refund_status,
+                paid_at,
+                created_at,
+                COALESCE(paid_at, created_at) AS sort_at
+            FROM wechat_pay_orders
+            WHERE payer_openid IN (SELECT openid FROM identity_openids)
+            ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
+            LIMIT ?
+        ),
+        unionid_orders AS (
+            SELECT
+                id,
+                out_trade_no,
+                transaction_id,
+                product_code,
+                COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                amount_total,
+                currency,
+                external_userid AS order_external_userid,
+                mobile_snapshot,
+                payer_openid,
+                unionid,
+                status,
+                trade_state,
+                refunded_amount_total,
+                refund_status,
+                paid_at,
+                created_at,
+                COALESCE(paid_at, created_at) AS sort_at
+            FROM wechat_pay_orders
+            WHERE unionid IN (SELECT unionid FROM identity_unionids)
+            ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
+            LIMIT ?
+        ),
+        candidate_orders AS (
+            SELECT * FROM external_orders
+            UNION ALL
+            SELECT * FROM mobile_orders
+            UNION ALL
+            SELECT * FROM openid_orders
+            UNION ALL
+            SELECT * FROM unionid_orders
+        ),
+        ranked_orders AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (PARTITION BY id ORDER BY sort_at DESC, id DESC) AS order_rank
+            FROM candidate_orders
         )
         SELECT
             id,
             out_trade_no,
             transaction_id,
             product_code,
-            COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+            product_name,
             amount_total,
             currency,
-            external_userid AS order_external_userid,
+            order_external_userid,
             mobile_snapshot,
             payer_openid,
             unionid,
@@ -219,27 +337,18 @@ def list_customer_wechat_pay_orders(
             refund_status,
             paid_at,
             created_at
-        FROM wechat_pay_orders
-        WHERE (
-            (
-                COALESCE(external_userid, '') <> ''
-                AND external_userid = (SELECT external_userid FROM target)
-            )
-            OR (
-                COALESCE(mobile_snapshot, '') <> ''
-                AND mobile_snapshot IN (SELECT mobile FROM bound_mobiles)
-            )
-            OR (
-                COALESCE(payer_openid, '') <> ''
-                AND payer_openid IN (SELECT openid FROM identity_openids)
-            )
-            OR (
-                COALESCE(unionid, '') <> ''
-                AND unionid IN (SELECT unionid FROM identity_unionids)
-            )
-        )
-        ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
+        FROM ranked_orders
+        WHERE order_rank = 1
+        ORDER BY sort_at DESC, id DESC
         LIMIT ?
         """,
-        (normalized_external_userid, normalized_mobile, max(1, min(int(limit or 20), 100))),
+        (
+            normalized_external_userid,
+            normalized_mobile,
+            candidate_limit,
+            candidate_limit,
+            candidate_limit,
+            candidate_limit,
+            safe_limit,
+        ),
     )
