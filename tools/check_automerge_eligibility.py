@@ -135,7 +135,6 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
-        "tests/test_http_registration_contract.py",
         "tests/test_next_production_cutover_readiness.py",
         "tests/test_next_timer_route_readiness.py",
         "tests/test_production_route_resolution.py",

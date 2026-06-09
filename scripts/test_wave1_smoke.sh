@@ -50,7 +50,7 @@ WAVE1_SMOKE_TESTS=(
   "tests/test_mcp_business_tools.py"
   "tests/test_admin_customer_profile_console.py"
   "tests/test_service_layer_layout.py"
-  "tests/test_http_registration_contract.py"
+  "tests/test_production_route_resolution.py"
   "tests/contract/test_crm_contract.py"
 )
 

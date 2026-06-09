@@ -29,6 +29,18 @@ These deploy-backed capabilities now keep their existing script paths and system
 
 The deploy service and timer unit files remain in place with the same `ExecStart` commands. The script internals are Next-native and must not import `wecom_ability_service`. Where a legacy-only sub-capability has no safe Next owner yet, the job returns structured `skipped` output instead of using a legacy fallback.
 
+## Retired Legacy Flask HTTP Tests
+
+The legacy Flask HTTP route registry is no longer a production protection boundary. These tests have been retired:
+
+- `tests/test_http_registration_contract.py`
+- `tests/test_route_owner_headers.py`
+- legacy Flask-only assertions from `tests/test_legacy_channel_entry_retired.py`
+- legacy Flask-only assertions from `tests/test_post_legacy_cloud_orchestrator_legacy_handlers_removed.py`
+- `tests/test_user_ops_admin_retirement.py`
+
+Current route ownership is protected by Next-native route registry and production route resolution tests, including `tests/test_channel_entry_next_retirement_contract.py`, `tests/test_production_route_resolution.py`, and `tests/test_route_registry_final_freeze.py`. Future legacy package archive work must not be blocked by Flask blueprint, HTTP route registry, or legacy route-owner header tests.
+
 ## Retired Historical Helpers
 
 - `scripts/export_flask_routes.py` - retired after frontend_compat/runtime route closeout; route inventory now owned by Next route registry tests.

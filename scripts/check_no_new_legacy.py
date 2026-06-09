@@ -1265,6 +1265,76 @@ def check_test_fixture_legacy_boundaries(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+LEGACY_FLASK_HTTP_ROUTE_REGISTRY_SYMBOLS = {
+    "HTTP_ROUTE_MODULES",
+    "HTTP_ROUTE_REGISTRARS",
+    "HTTP_ROUTE_PLACEMENT",
+    "register_http_routes",
+}
+
+
+def check_legacy_flask_http_test_retirement(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = str(path.relative_to(root))
+        source = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "wecom_ability_service.http":
+                        violations.append(
+                            Violation(
+                                "legacy_http_test_import_remaining",
+                                rel,
+                                alias.name,
+                                "Legacy Flask HTTP package tests are retired; current route contracts must use Next route registry tests.",
+                            )
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                module_name = node.module or ""
+                imported_names = {alias.name for alias in node.names}
+                if module_name == "wecom_ability_service.http" and (
+                    "*" in imported_names or imported_names & LEGACY_FLASK_HTTP_ROUTE_REGISTRY_SYMBOLS
+                ):
+                    violations.append(
+                        Violation(
+                            "legacy_flask_route_registry_test_remaining",
+                            rel,
+                            ", ".join(sorted(imported_names)),
+                            "Legacy Flask HTTP route registry tests are retired; preserve active owner assertions in Next-native tests.",
+                        )
+                    )
+
+        legacy_header_expectations = (
+            'headers["X-AICRM-Route-Owner"] == "legacy_flask"',
+            "headers['X-AICRM-Route-Owner'] == 'legacy_flask'",
+            'headers["X-AICRM-App"] == "ai_crm_legacy_flask"',
+            "headers['X-AICRM-App'] == 'ai_crm_legacy_flask'",
+        )
+        if rel != "tests/test_no_new_legacy_checker.py" and any(marker in source for marker in legacy_header_expectations):
+            violations.append(
+                Violation(
+                    "legacy_flask_header_test_remaining",
+                    rel,
+                    "legacy Flask route owner header",
+                    "Legacy Flask route owner header tests are retired because production runtime is Next-only.",
+                )
+            )
+
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -7833,6 +7903,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_startup_legacy_closeout(ROOT)
         + check_wecom_legacy_usage_freeze(ROOT)
         + check_test_fixture_legacy_boundaries(ROOT)
+        + check_legacy_flask_http_test_retirement(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
