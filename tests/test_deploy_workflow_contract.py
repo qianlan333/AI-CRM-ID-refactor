@@ -109,15 +109,14 @@ def test_external_push_worker_systemd_units_are_deployable():
 
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert not (ROOT / "scripts" / "backup_sqlite.sh").exists()
+    retired_seed_demo = ROOT / "scripts" / ("seed_" + "automation_conversion_demo.py")
+    assert not retired_seed_demo.exists()
 
-    seed_demo = (ROOT / "scripts" / "seed_automation_conversion_demo.py").read_text(encoding="utf-8")
     campaign_scheduler = (ROOT / "scripts" / "run_campaign_scheduler.py").read_text(encoding="utf-8")
     broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(encoding="utf-8")
     ops_runtime = (ROOT / "wecom_ability_service" / "http" / "ops_runtime.py").read_text(encoding="utf-8")
     alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
-    assert "--database-path" not in seed_demo
-    assert "INSERT OR " not in seed_demo
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in campaign_scheduler
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in broadcast_worker
     assert "sqlite_path" not in ops_runtime

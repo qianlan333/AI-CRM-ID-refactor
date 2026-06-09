@@ -12,11 +12,12 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 
 ## Allowlisted Maintenance Scripts
 
+Current allowlist count: 17. The historical retire-only helper group is complete.
+
 | script | usage | state | migration phase | risk |
 |---|---|---|---|---|
 | `scripts/audit_operation_task_runtime_contract.py` | operation-task runtime audit | on-demand | Phase B | medium |
 | `scripts/backfill_questionnaire_submission_identity.py` | questionnaire identity backfill | on-demand | Phase B | high |
-| `scripts/export_flask_routes.py` | legacy route inventory export | historical | Phase D | low |
 | `scripts/repair_automation_member_projection.py` | automation projection repair | on-demand | Phase B | high |
 | `scripts/repair_invalid_operation_tasks.py` | operation-task repair | on-demand | Phase B | high |
 | `scripts/replay_operation_task_audience_entered.py` | operation-task replay | on-demand | Phase B | high |
@@ -25,7 +26,6 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 | `scripts/run_automation_member_backfill.py` | automation member backfill | on-demand | Phase B | high |
 | `scripts/run_automation_ops_scheduler.py` | automation ops scheduler | on-demand | Phase B | high |
 | `scripts/run_broadcast_queue_worker.py` | broadcast queue worker | on-demand | Phase B | high |
-| `scripts/run_build.py` | legacy bootstrap/build helper | historical | Phase C/D | medium |
 | `scripts/run_campaign_scheduler.py` | campaign scheduler | on-demand | Phase B | high |
 | `scripts/run_cloud_orchestrator_scan.py` | cloud orchestrator scan | on-demand | Phase B | medium |
 | `scripts/run_external_contact_sync.py` | external contact sync | on-demand | Phase B | high |
@@ -33,7 +33,12 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 | `scripts/run_marketing_automation_backfill.py` | marketing automation backfill | on-demand | Phase B | high |
 | `scripts/run_owner_lead_pool_backfill.py` | owner lead-pool backfill | on-demand | Phase B | high |
 | `scripts/run_pool_signup_tag_backfill.py` | pool signup tag backfill | on-demand | Phase B | high |
-| `scripts/seed_automation_conversion_demo.py` | historical demo seed | historical | Phase C/D | low |
+
+## Retired Historical Helpers
+
+- `scripts/export_flask_routes.py` - retired after frontend_compat/runtime route closeout; route inventory now owned by Next route registry tests.
+- `scripts/run_build.py` - retired after app.py became Next-only and deploy/build smoke moved to pytest + Alembic checks.
+- `scripts/seed_automation_conversion_demo.py` - retired as legacy demo seed; future demo fixtures must be Next-native and explicit.
 
 ## Archive Phases
 
@@ -86,4 +91,4 @@ Exit criteria:
 
 ## Recommended Next Step
 
-Continue with Phase C: maintenance scripts migration inventory. The deployed external push worker is no longer a legacy package consumer, so the next useful block is classifying and migrating the remaining allowlisted scripts.
+Continue with Phase C: migrate read-only operation audit. The deployed external push worker is no longer a legacy package consumer, and the historical retire-only helpers are gone, so the next useful block is moving the lowest-risk read-only audit script off the legacy package.
