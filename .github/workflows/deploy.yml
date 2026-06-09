@@ -35,6 +35,14 @@ jobs:
             else
               pip install -r requirements.txt
             fi
+            python3 - <<'PY'
+            import os
+            from sqlalchemy import create_engine, text
+
+            engine = create_engine(os.environ["DATABASE_URL"])
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"))
+            PY
             # 1) AI-CRM Next schema migrations
             python3 -m alembic upgrade head
             sudo systemctl restart openclaw-wecom-postgres.service
