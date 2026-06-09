@@ -1717,31 +1717,31 @@ routes:
   - route_id: admin_runtime_config_page
     path_pattern: /admin/runtime-config
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_config
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_admin_config.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Runtime config read page.
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_support_admin_pages_native.py
+    rollback_owner: aicrm_next.admin_config
+    notes: Runtime config page is served by Next native admin_config.api; frontend_compat route ownership is removed; no admin config write/save or business API changed.
   - route_id: admin_api_docs_page
     path_pattern: /admin/api-docs
     methods: [GET]
-    capability_owner: aicrm_next.frontend_compat
-    runtime_owner: frontend_compat
+    capability_owner: aicrm_next.admin_config
+    runtime_owner: next_native
     legacy_fallback_allowed: false
     legacy_source: ""
     external_side_effect_risk: none
     adapter_mode: none
-    delete_status: active
-    replacement_status: not_started
+    delete_status: deletion_locked
+    replacement_status: locked
     checker: tests/test_next_api_docs_page.py
-    rollback_owner: aicrm_next.frontend_compat
-    notes: Admin API docs page.
+    rollback_owner: aicrm_next.admin_config
+    notes: API docs page is served by Next native admin_config.api; API docs view model moved out of frontend_compat into admin_config.api_docs_view_model; no UI or business API changed.
   - route_id: questionnaire_external_push_pages_family
     path_pattern: /admin/questionnaires*external-push-logs*
     methods: [GET, POST]
