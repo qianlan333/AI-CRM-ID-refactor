@@ -40,6 +40,32 @@ routes:
     replacement_status: locked
     checker: tests/test_admin_shell_native.py
     notes: Admin shell, navigation, and dashboard shell context are served by aicrm_next.admin_shell; /admin is removed from frontend_compat legacy inventory.
+  - route_pattern: /admin/runtime-config
+    methods: [GET]
+    capability_owner: aicrm_next.admin_config
+    current_runtime_owner: next_native
+    production_behavior: next_read_model_only
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_support_admin_pages_native.py
+    notes: Runtime config page is served by Next native admin_config.api; frontend_compat removed for support pages and no admin config write/save behavior changed.
+  - route_pattern: /admin/api-docs
+    methods: [GET]
+    capability_owner: aicrm_next.admin_config
+    current_runtime_owner: next_native
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: true
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_support_admin_pages_native.py
+    notes: API docs page is served by Next native admin_config.api; API docs view model moved out of frontend_compat into admin_config.api_docs_view_model.
   - route_pattern: /admin/customers
     methods: [GET]
     capability_owner: aicrm_next.customer_read_model

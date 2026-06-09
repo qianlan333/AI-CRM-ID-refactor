@@ -50,6 +50,7 @@ from scripts.check_no_new_legacy import (
     check_shadowed_frontend_compat_handlers_removed,
     check_sidebar_readonly_closeout_lock,
     check_sidebar_jssdk_next_adapter,
+    check_support_pages_native,
     check_user_ops_next_native_preview,
     check_wecom_tag_live_mutation_next_commandbus,
     check_final_legacy_exit_cleanup,
@@ -2639,10 +2640,137 @@ def test_cloud_root_observability_checker_flags_registered_after_frontend(tmp_pa
 def test_cloud_root_observability_checker_accepts_native_state(tmp_path: Path) -> None:
     _write_valid_cloud_root_observability_state(
         tmp_path,
-        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/api-docs']\n",
+        frontend_source="LEGACY_FRONTEND_ROUTES = []\n",
     )
 
     assert check_cloud_root_observability_native(tmp_path) == []
+
+
+def _write_valid_support_pages_native_state(tmp_path: Path, *, frontend_source: str = "LEGACY_FRONTEND_ROUTES = []\n") -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_api = tmp_path / "aicrm_next/admin_config/api.py"
+    native_view_model = tmp_path / "aicrm_next/admin_config/api_docs_view_model.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    for path in (frontend_routes, admin_api, native_view_model, main_py):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text(frontend_source, encoding="utf-8")
+    admin_api.write_text(
+        '@router.get("/admin/runtime-config", name="api.admin_runtime_config")\n'
+        "def admin_runtime_config():\n"
+        "    payload = GetAdminConfigPageQuery()()\n"
+        "    return 'admin_console/real_data_page.html'\n"
+        '@router.get("/admin/api-docs", name="api.admin_api_docs")\n'
+        "def admin_api_docs():\n"
+        "    return build_api_docs_view_model(), 'admin_console/api_docs.html'\n",
+        encoding="utf-8",
+    )
+    native_view_model.write_text("def build_api_docs_view_model():\n    return {}\n", encoding="utf-8")
+    main_py.write_text(
+        "app.include_router(admin_config_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+
+def test_support_pages_checker_flags_runtime_config_frontend_route(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/runtime-config']\ndef admin_runtime_config(): pass\n",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "support_page_still_in_frontend_compat" in codes
+
+
+def test_support_pages_checker_flags_api_docs_frontend_route(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/api-docs']\ndef admin_api_docs(): pass\n",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "support_page_still_in_frontend_compat" in codes
+
+
+def test_support_pages_checker_flags_frontend_view_model_usage(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = []\nfrom x import build_api_docs_view_model\n",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "support_page_still_in_frontend_compat" in codes
+
+
+def test_support_pages_checker_flags_frontend_view_model_file(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+    old_view_model = tmp_path / "aicrm_next/frontend_compat/api_docs_view_model.py"
+    old_view_model.parent.mkdir(parents=True, exist_ok=True)
+    old_view_model.write_text("def build_api_docs_view_model(): return {}\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "api_docs_view_model_still_in_frontend_compat" in codes
+
+
+def test_support_pages_checker_flags_missing_runtime_config_route(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+    (tmp_path / "aicrm_next/admin_config/api.py").write_text(
+        '@router.get("/admin/api-docs", name="api.admin_api_docs")\n'
+        "def admin_api_docs():\n"
+        "    return build_api_docs_view_model(), 'admin_console/api_docs.html'\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "runtime_config_native_route_missing" in codes
+
+
+def test_support_pages_checker_flags_missing_api_docs_route(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+    (tmp_path / "aicrm_next/admin_config/api.py").write_text(
+        '@router.get("/admin/runtime-config", name="api.admin_runtime_config")\n'
+        "def admin_runtime_config():\n"
+        "    payload = GetAdminConfigPageQuery()()\n"
+        "    return 'admin_console/real_data_page.html'\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "api_docs_native_route_missing" in codes
+
+
+def test_support_pages_checker_flags_missing_native_view_model(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+    (tmp_path / "aicrm_next/admin_config/api_docs_view_model.py").unlink()
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "api_docs_view_model_native_missing" in codes
+
+
+def test_support_pages_checker_flags_admin_config_registered_after_frontend(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "app.include_router(frontend_compat_router)\n"
+        "app.include_router(admin_config_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_support_pages_native(tmp_path)}
+
+    assert "admin_config_router_registered_after_frontend_compat" in codes
+
+
+def test_support_pages_checker_accepts_native_state(tmp_path: Path) -> None:
+    _write_valid_support_pages_native_state(tmp_path)
+
+    assert check_support_pages_native(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:

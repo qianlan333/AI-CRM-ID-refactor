@@ -91,5 +91,7 @@ def test_native_pages_removed_from_frontend_compat_inventory(monkeypatch) -> Non
     assert "/admin/wechat-pay/products" not in routes
     assert "/admin/cloud-orchestrator" not in routes
     assert "/admin/cloud-orchestrator/observability" not in routes
+    assert "/admin/runtime-config" not in routes
+    assert "/admin/api-docs" not in routes
 
-    assert "/admin/api-docs" in routes
+    assert routes == set()

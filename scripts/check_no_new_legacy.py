@@ -4263,6 +4263,100 @@ def check_cloud_root_observability_native(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_support_pages_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            tree = None
+
+        forbidden_markers = (
+            "/admin/runtime-config",
+            "/admin/api-docs",
+            "def admin_runtime_config",
+            "def admin_api_docs",
+            "GetAdminConfigPageQuery",
+            "build_api_docs_view_model",
+            "_real_data_context",
+        )
+        for marker in forbidden_markers:
+            if marker in source:
+                violations.append(Violation("support_page_still_in_frontend_compat", str(frontend_routes.relative_to(root)), marker))
+
+        if tree is not None:
+            constants = _module_list_constants(tree)
+            legacy_routes = constants.get("LEGACY_FRONTEND_ROUTES", ())
+            for route in ("/admin/runtime-config", "/admin/api-docs"):
+                if route.upper() in legacy_routes:
+                    violations.append(Violation("support_page_still_in_frontend_compat", str(frontend_routes.relative_to(root)), f"LEGACY_FRONTEND_ROUTES:{route}"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"admin_runtime_config", "admin_api_docs"}:
+                    violations.append(Violation("support_page_still_in_frontend_compat", str(frontend_routes.relative_to(root)), f"def {node.name}"))
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not decorator.args:
+                        continue
+                    attr = decorator.func
+                    if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                        continue
+                    first = decorator.args[0]
+                    if isinstance(first, ast.Constant) and first.value in {"/admin/runtime-config", "/admin/api-docs"}:
+                        violations.append(Violation("support_page_still_in_frontend_compat", str(frontend_routes.relative_to(root)), f"@router.get('{first.value}')"))
+
+    frontend_view_model = root / "aicrm_next/frontend_compat/api_docs_view_model.py"
+    if frontend_view_model.exists():
+        violations.append(Violation("api_docs_view_model_still_in_frontend_compat", str(frontend_view_model.relative_to(root)), "remove frontend_compat API docs view model"))
+
+    admin_api = root / "aicrm_next/admin_config/api.py"
+    if not admin_api.exists():
+        violations.append(Violation("runtime_config_native_route_missing", str(admin_api.relative_to(root)), "missing admin_config API module"))
+        violations.append(Violation("api_docs_native_route_missing", str(admin_api.relative_to(root)), "missing admin_config API module"))
+    else:
+        source = admin_api.read_text(encoding="utf-8")
+        runtime_markers = (
+            "/admin/runtime-config",
+            'name="api.admin_runtime_config"',
+            "GetAdminConfigPageQuery",
+            "admin_console/real_data_page.html",
+        )
+        api_docs_markers = (
+            "/admin/api-docs",
+            'name="api.admin_api_docs"',
+            "build_api_docs_view_model()",
+            "admin_console/api_docs.html",
+        )
+        for marker in runtime_markers:
+            if marker not in source:
+                violations.append(Violation("runtime_config_native_route_missing", str(admin_api.relative_to(root)), marker))
+        for marker in api_docs_markers:
+            if marker not in source:
+                violations.append(Violation("api_docs_native_route_missing", str(admin_api.relative_to(root)), marker))
+
+    native_view_model = root / "aicrm_next/admin_config/api_docs_view_model.py"
+    if not native_view_model.exists():
+        violations.append(Violation("api_docs_view_model_native_missing", str(native_view_model.relative_to(root)), "missing native API docs view model"))
+    elif "build_api_docs_view_model" not in native_view_model.read_text(encoding="utf-8"):
+        violations.append(Violation("api_docs_view_model_native_missing", str(native_view_model.relative_to(root)), "build_api_docs_view_model"))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        admin_include = "app.include_router(admin_config_router)"
+        frontend_include = "app.include_router(frontend_compat_router)"
+        if admin_include not in source:
+            violations.append(Violation("runtime_config_native_route_missing", str(main_path.relative_to(root)), "admin_config_router"))
+            violations.append(Violation("api_docs_native_route_missing", str(main_path.relative_to(root)), "admin_config_router"))
+        elif frontend_include in source and source.index(admin_include) > source.index(frontend_include):
+            violations.append(Violation("admin_config_router_registered_after_frontend_compat", str(main_path.relative_to(root)), "admin_config_router"))
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -7216,6 +7310,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_user_ops_admin_pages_native(ROOT)
         + check_shadowed_frontend_compat_handlers_removed(ROOT)
         + check_cloud_root_observability_native(ROOT)
+        + check_support_pages_native(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)

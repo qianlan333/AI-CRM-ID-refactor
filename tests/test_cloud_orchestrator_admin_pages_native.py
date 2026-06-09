@@ -45,4 +45,4 @@ def test_cloud_root_and_observability_removed_from_frontend_inventory() -> None:
     routes = set(response.json()["routes"])
     assert "/admin/cloud-orchestrator" not in routes
     assert "/admin/cloud-orchestrator/observability" not in routes
-    assert "/admin/api-docs" in routes
+    assert "/admin/api-docs" not in routes

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.admin_config.api_docs_view_model import build_api_docs_view_model
 from aicrm_next.commerce.admin_exports import reset_export_jobs_for_tests
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
-from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
-from aicrm_next.frontend_compat.legacy_routes import router as frontend_compat_router
 from aicrm_next.main import create_app
 
 
@@ -29,7 +28,7 @@ def _paths(view_model: dict) -> dict[tuple[str, str], str]:
 
 
 def test_admin_p0_routes_are_in_api_docs() -> None:
-    view_model = build_api_docs_view_model(frontend_router=frontend_compat_router)
+    view_model = build_api_docs_view_model()
     paths = _paths(view_model)
     assert view_model["endpoint_count"] > 80
     assert view_model["markdown_data"]["full"]
