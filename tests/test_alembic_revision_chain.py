@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSIONS = ROOT / "migrations" / "versions"
+NUMERIC_BIND_PATTERN = re.compile(r"(?<![:\\]):[0-9]+")
 
 
 def _literal_assignment(tree: ast.Module, name: str) -> Any:
@@ -90,6 +92,49 @@ def test_alembic_chain_keeps_0014_parent_available() -> None:
     assert "0013" in revisions
     assert revisions["0014"]["down_revision"] == "0013"
     assert revisions["0013"]["down_revision"] == "0012_wechat_pay_products"
+
+
+def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
+    risky_default_prefix = '"default"' + ":"
+    old_sqlalchemy_rendered_default = "default" + "%("
+    raw_sql_strings: list[tuple[Path, int, str]] = []
+
+    for path in sorted(VERSIONS.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "execute"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                continue
+            raw_sql_strings.append((path, node.lineno, node.args[0].value))
+
+    numeric_bind_risks = {
+        f"{path.relative_to(ROOT)}:{lineno}": NUMERIC_BIND_PATTERN.findall(sql)
+        for path, lineno, sql in raw_sql_strings
+        if NUMERIC_BIND_PATTERN.search(sql)
+    }
+    raw_json_default_risks = {
+        f"{path.relative_to(ROOT)}:{lineno}": sql
+        for path, lineno, sql in raw_sql_strings
+        if any(f"{risky_default_prefix}{value}" in sql for value in ("30", "3", "1"))
+        or old_sqlalchemy_rendered_default in sql
+    }
+
+    assert numeric_bind_risks == {}
+    assert raw_json_default_risks == {}
+
+    group_ops_migration = VERSIONS / "0023_group_ops_webhook_rules.py"
+    source = group_ops_migration.read_text(encoding="utf-8")
+    assert "builtin:has_used_core_feature" in source
+    assert '"default"' + ":30" not in source
+    assert '"default"' + ":3" not in source
+    assert old_sqlalchemy_rendered_default not in source
 
 
 def test_alembic_commands_can_walk_revision_graph() -> None:
