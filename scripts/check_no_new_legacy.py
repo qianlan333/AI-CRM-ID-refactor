@@ -4088,6 +4088,98 @@ def check_user_ops_admin_pages_native(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_shadowed_frontend_compat_handlers_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    frontend_routes = root / "aicrm_next/frontend_compat/legacy_routes.py"
+    if frontend_routes.exists():
+        source = frontend_routes.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            tree = None
+
+        route_markers = {
+            "/admin/hxc-dashboard": "shadowed_hxc_page_still_in_frontend_compat",
+            "/admin/hxc-send-config": "shadowed_hxc_page_still_in_frontend_compat",
+            "/admin/cloud-orchestrator/campaigns": "shadowed_cloud_campaigns_page_still_in_frontend_compat",
+            "/admin/wechat-pay/products": "shadowed_product_page_still_in_frontend_compat",
+        }
+        handler_markers = {
+            "admin_hxc_dashboard": "shadowed_hxc_page_still_in_frontend_compat",
+            "admin_hxc_send_config": "shadowed_hxc_page_still_in_frontend_compat",
+            "admin_cloud_orchestrator_campaigns": "shadowed_cloud_campaigns_page_still_in_frontend_compat",
+            "admin_wechat_pay_products": "shadowed_product_page_still_in_frontend_compat",
+            "_empty_hxc_dashboard_summary": "shadowed_hxc_page_still_in_frontend_compat",
+        }
+        for marker, code in route_markers.items():
+            if marker in source:
+                violations.append(Violation(code, str(frontend_routes.relative_to(root)), marker))
+        for marker, code in handler_markers.items():
+            if f"def {marker}" in source:
+                violations.append(Violation(code, str(frontend_routes.relative_to(root)), f"def {marker}"))
+
+        if tree is not None:
+            constants = _module_list_constants(tree)
+            for route, code in route_markers.items():
+                if route.upper() in constants.get("LEGACY_FRONTEND_ROUTES", ()):
+                    violations.append(Violation(code, str(frontend_routes.relative_to(root)), f"LEGACY_FRONTEND_ROUTES:{route}"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in handler_markers:
+                    violations.append(Violation(handler_markers[node.name], str(frontend_routes.relative_to(root)), f"def {node.name}"))
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not decorator.args:
+                        continue
+                    attr = decorator.func
+                    if not isinstance(attr, ast.Attribute) or attr.attr != "get":
+                        continue
+                    first = decorator.args[0]
+                    if isinstance(first, ast.Constant) and first.value in route_markers:
+                        violations.append(Violation(route_markers[first.value], str(frontend_routes.relative_to(root)), f"@router.get('{first.value}')"))
+
+    native_route_requirements = (
+        (
+            root / "aicrm_next/hxc_dashboard/api.py",
+            ("/admin/hxc-dashboard", "/admin/hxc-send-config"),
+        ),
+        (
+            root / "aicrm_next/cloud_orchestrator/api.py",
+            ("/admin/cloud-orchestrator/campaigns",),
+        ),
+        (
+            root / "aicrm_next/commerce/api.py",
+            ("/admin/wechat-pay/products",),
+        ),
+    )
+    for path, markers in native_route_requirements:
+        if not path.exists():
+            violations.append(Violation("native_shadow_owner_missing", str(path.relative_to(root)), "missing native owner"))
+            continue
+        source = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in source:
+                violations.append(Violation("native_shadow_owner_missing", str(path.relative_to(root)), marker))
+
+    main_path = root / "aicrm_next/main.py"
+    if main_path.exists():
+        source = main_path.read_text(encoding="utf-8")
+        frontend_include = "app.include_router(frontend_compat_router)"
+        router_includes = {
+            "hxc_dashboard_router": "app.include_router(hxc_dashboard_router)",
+            "cloud_orchestrator_router": "app.include_router(cloud_orchestrator_router)",
+            "commerce_router": "app.include_router(commerce_router)",
+        }
+        for router_name, include_marker in router_includes.items():
+            if include_marker not in source:
+                violations.append(Violation("native_shadow_owner_missing", str(main_path.relative_to(root)), router_name))
+            elif frontend_include in source and source.index(include_marker) > source.index(frontend_include):
+                violations.append(Violation("native_shadow_owner_registered_after_frontend_compat", str(main_path.relative_to(root)), router_name))
+
+    return violations
+
+
 def check_media_library_closeout_lock(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -5248,7 +5340,7 @@ def check_cloud_orchestrator_campaign_read_closeout_lock(root: Path = ROOT) -> l
     else:
         if page_record.get("path_pattern") != CLOUD_ORCHESTRATOR_CAMPAIGN_PAGE_ROUTE or tuple(page_record.get("methods") or []) != ("GET",):
             violations.append(Violation("cloud_campaign_page_registry_route_shape", "cloud_orchestrator_campaigns_page", f"path_pattern={page_record.get('path_pattern')} methods={page_record.get('methods')}"))
-        if page_record.get("runtime_owner") != "frontend_compat over Next read APIs":
+        if page_record.get("runtime_owner") != "next_native":
             violations.append(Violation("cloud_campaign_page_registry_owner", "cloud_orchestrator_campaigns_page", f"runtime_owner={page_record.get('runtime_owner')}"))
         if page_record.get("legacy_fallback_allowed") is not False:
             violations.append(Violation("cloud_campaign_page_registry_legacy_allowed", "cloud_orchestrator_campaigns_page", f"legacy_fallback_allowed={page_record.get('legacy_fallback_allowed')}"))
@@ -7039,6 +7131,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_customer_list_admin_page_native(ROOT)
         + check_customer_detail_admin_page_native(ROOT)
         + check_user_ops_admin_pages_native(ROOT)
+        + check_shadowed_frontend_compat_handlers_removed(ROOT)
         + check_media_library_admin_pages_native(ROOT)
         + check_media_library_closeout_lock(ROOT)
         + check_hxc_dashboard_closeout_lock(ROOT)

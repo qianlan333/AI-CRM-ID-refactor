@@ -46,6 +46,7 @@ from scripts.check_no_new_legacy import (
     check_questionnaire_admin_write_next_commandbus,
     check_questionnaire_h5_submit_next_commandbus,
     check_questionnaire_oauth_next_adapter,
+    check_shadowed_frontend_compat_handlers_removed,
     check_sidebar_readonly_closeout_lock,
     check_sidebar_jssdk_next_adapter,
     check_user_ops_next_native_preview,
@@ -1746,7 +1747,7 @@ def _write_cloud_campaign_read_docs(tmp_path: Path, *, locked: bool = True, comp
         "  - route_id: cloud_orchestrator_campaigns_page\n"
         "    path_pattern: /admin/cloud-orchestrator/campaigns\n"
         "    methods: [GET]\n"
-        "    runtime_owner: frontend_compat over Next read APIs\n"
+        "    runtime_owner: next_native\n"
         f"    legacy_fallback_allowed: {legacy_allowed}\n"
         "    legacy_source: \"\"\n"
         "    external_side_effect_risk: none\n"
@@ -2432,6 +2433,117 @@ def test_user_ops_admin_page_checker_accepts_native_state(tmp_path: Path) -> Non
     _write_valid_user_ops_admin_page_state(tmp_path)
 
     assert check_user_ops_admin_pages_native(tmp_path) == []
+
+
+def _write_valid_shadowed_frontend_cleanup_state(tmp_path: Path, *, frontend_source: str = "LEGACY_FRONTEND_ROUTES = []\n") -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    hxc_api = tmp_path / "aicrm_next/hxc_dashboard/api.py"
+    cloud_api = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    commerce_api = tmp_path / "aicrm_next/commerce/api.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    for path in (frontend_routes, hxc_api, cloud_api, commerce_api, main_py):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text(frontend_source, encoding="utf-8")
+    hxc_api.write_text(
+        '@router.get("/admin/hxc-dashboard")\n'
+        'def admin_hxc_dashboard_page(): pass\n'
+        '@router.get("/admin/hxc-send-config")\n'
+        'def admin_hxc_send_config_page(): pass\n',
+        encoding="utf-8",
+    )
+    cloud_api.write_text(
+        '@router.get("/admin/cloud-orchestrator/campaigns")\n'
+        "def admin_cloud_campaigns(): pass\n",
+        encoding="utf-8",
+    )
+    commerce_api.write_text(
+        '@router.get("/admin/wechat-pay/products")\n'
+        "def admin_wechat_pay_products_page(): pass\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "app.include_router(hxc_dashboard_router)\n"
+        "app.include_router(cloud_orchestrator_router)\n"
+        "app.include_router(commerce_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+
+def test_shadowed_frontend_checker_flags_hxc_stale_route(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/hxc-dashboard']\ndef admin_hxc_dashboard(): pass\n",
+    )
+
+    codes = {violation.code for violation in check_shadowed_frontend_compat_handlers_removed(tmp_path)}
+
+    assert "shadowed_hxc_page_still_in_frontend_compat" in codes
+
+
+def test_shadowed_frontend_checker_flags_cloud_campaigns_stale_route(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(
+        tmp_path,
+        frontend_source=(
+            "LEGACY_FRONTEND_ROUTES = ['/admin/cloud-orchestrator/campaigns']\n"
+            "def admin_cloud_orchestrator_campaigns(): pass\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_shadowed_frontend_compat_handlers_removed(tmp_path)}
+
+    assert "shadowed_cloud_campaigns_page_still_in_frontend_compat" in codes
+
+
+def test_shadowed_frontend_checker_flags_product_stale_route(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/wechat-pay/products']\ndef admin_wechat_pay_products(): pass\n",
+    )
+
+    codes = {violation.code for violation in check_shadowed_frontend_compat_handlers_removed(tmp_path)}
+
+    assert "shadowed_product_page_still_in_frontend_compat" in codes
+
+
+def test_shadowed_frontend_checker_flags_missing_native_owner(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(tmp_path)
+    (tmp_path / "aicrm_next/hxc_dashboard/api.py").write_text('"/admin/hxc-dashboard"\n', encoding="utf-8")
+
+    codes = {violation.code for violation in check_shadowed_frontend_compat_handlers_removed(tmp_path)}
+
+    assert "native_shadow_owner_missing" in codes
+
+
+def test_shadowed_frontend_checker_flags_native_registered_after_frontend(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "app.include_router(frontend_compat_router)\n"
+        "app.include_router(hxc_dashboard_router)\n"
+        "app.include_router(cloud_orchestrator_router)\n"
+        "app.include_router(commerce_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_shadowed_frontend_compat_handlers_removed(tmp_path)}
+
+    assert "native_shadow_owner_registered_after_frontend_compat" in codes
+
+
+def test_shadowed_frontend_checker_accepts_clean_state(tmp_path: Path) -> None:
+    _write_valid_shadowed_frontend_cleanup_state(
+        tmp_path,
+        frontend_source=(
+            "LEGACY_FRONTEND_ROUTES = [\n"
+            "    '/admin/cloud-orchestrator',\n"
+            "    '/admin/cloud-orchestrator/observability',\n"
+            "    '/admin/runtime-config',\n"
+            "    '/admin/api-docs',\n"
+            "]\n"
+        ),
+    )
+
+    assert check_shadowed_frontend_compat_handlers_removed(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:

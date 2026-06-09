@@ -416,7 +416,7 @@ routes:
     external_side_effect_risk: none
     delete_ready: false
     checker: tools/check_production_route_resolution.py
-    notes: Product management list page is served by aicrm_next.commerce and reads the native commerce repository.
+    notes: Shadowed frontend_compat handler removed; product management list page is served by aicrm_next.commerce before frontend_compat registration with no route path or business API change.
   - route_pattern: /admin/wechat-pay/products*
     methods: [GET, POST, PUT, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
@@ -1261,7 +1261,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tools/check_production_route_resolution.py
-    notes: Campaign workspace page is locked to the Next shell over Next campaign read APIs; write controls call Next CommandBus and only produce AuditLedger/SideEffectPlan evidence; no real send/runtime.
+    notes: Shadowed frontend_compat handler removed; campaign workspace page is served by aicrm_next.cloud_orchestrator before frontend_compat registration while write controls stay on Next CommandBus; no route path or business API change.
   - route_pattern: /api/admin/cloud-orchestrator/campaigns*
     methods: [POST, PUT, PATCH, DELETE, OPTIONS]
     capability_owner: aicrm_next.cloud_orchestrator
@@ -2494,7 +2494,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_hxc_dashboard_pages.py
-    notes: HXC dashboard page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed.
+    notes: Shadowed frontend_compat handler removed; HXC dashboard page is served by aicrm_next.hxc_dashboard before frontend_compat registration with no route path or business API change.
   - route_pattern: /admin/hxc-send-config
     methods: [GET]
     capability_owner: aicrm_next.hxc_dashboard
@@ -2507,7 +2507,7 @@ routes:
     delete_status: deletion_locked
     replacement_status: locked
     checker: tests/test_hxc_dashboard_pages.py
-    notes: HXC send-config page is served by aicrm_next.hxc_dashboard before production_compat; legacy page fallback removed.
+    notes: Shadowed frontend_compat handler removed; HXC send-config page is served by aicrm_next.hxc_dashboard before frontend_compat registration with no route path or business API change.
   - route_pattern: /api/admin/hxc-dashboard
     methods: [GET]
     capability_owner: aicrm_next.hxc_dashboard
