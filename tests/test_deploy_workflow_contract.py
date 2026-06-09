@@ -112,12 +112,10 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     retired_seed_demo = ROOT / "scripts" / ("seed_" + "automation_conversion_demo.py")
     assert not retired_seed_demo.exists()
 
-    campaign_scheduler = (ROOT / "scripts" / "run_campaign_scheduler.py").read_text(encoding="utf-8")
     broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(encoding="utf-8")
     ops_runtime = (ROOT / "wecom_ability_service" / "http" / "ops_runtime.py").read_text(encoding="utf-8")
     alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
-    assert "DATABASE_PATH`` / ``DATABASE_URL" not in campaign_scheduler
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in broadcast_worker
     assert "sqlite_path" not in ops_runtime
     assert "DATABASE_PATH" not in alembic_env
@@ -149,17 +147,12 @@ def test_postgres_backup_restore_share_database_url_guard():
 
 def test_batch_scripts_share_int_env_reader():
     runtime = (ROOT / "scripts" / "script_runtime.py").read_text(encoding="utf-8")
-    campaign_scheduler = (ROOT / "scripts" / "run_campaign_scheduler.py").read_text(
-        encoding="utf-8"
-    )
     broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(
         encoding="utf-8"
     )
 
     assert "def read_int_env" in runtime
-    assert 'read_int_env("CAMPAIGN_SCHEDULER_BATCH_SIZE", 200)' in campaign_scheduler
     assert 'read_int_env("BROADCAST_QUEUE_BATCH_SIZE", 50)' in broadcast_worker
-    assert "int(os.environ.get" not in campaign_scheduler
     assert "int(os.environ.get" not in broadcast_worker
 
 

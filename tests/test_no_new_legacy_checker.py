@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.check_no_new_legacy import (
+    ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST,
     LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST,
     USER_OPS_PREVIEW_ROUTES,
     USER_OPS_READONLY_ROUTES,
@@ -63,6 +64,23 @@ from scripts.check_no_new_legacy import (
     check_wecom_tag_read_next_native,
     scan_source_tree,
 )
+
+
+def _active_legacy_allowlist(reason: str = "active deploy test script") -> dict[Path, str]:
+    return {path: reason for path in ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST}
+
+
+def _write_external_push_worker_contract(root: Path, *, worker_text: str | None = None, service_text: str | None = None) -> None:
+    worker = root / "scripts/run_external_push_worker.py"
+    service = root / "deploy/openclaw-external-push-worker.service"
+    worker.parent.mkdir(parents=True, exist_ok=True)
+    service.parent.mkdir(parents=True, exist_ok=True)
+    if worker_text is None:
+        worker_text = "from aicrm_next.external_push import service as external_push_service\n"
+    if service_text is None:
+        service_text = "ExecStart=/bin/bash -lc 'python scripts/run_external_push_worker.py'\n"
+    worker.write_text(worker_text, encoding="utf-8")
+    service.write_text(service_text, encoding="utf-8")
 
 
 def _write_startup_closeout_files(
@@ -213,59 +231,104 @@ def test_wecom_legacy_freeze_flags_unallowlisted_script_import(tmp_path: Path) -
 
     codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
 
-    assert "wecom_legacy_script_not_allowlisted" in codes
+    assert "legacy_script_import_remaining" in codes
 
 
 def test_wecom_legacy_freeze_flags_missing_allowlist_path(tmp_path: Path) -> None:
-    violations = check_wecom_legacy_usage_freeze(
-        tmp_path,
-        maintenance_allowlist={Path("scripts/missing.py"): "missing maintenance script"},
-    )
-
-    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_missing"}
-
-
-def test_wecom_legacy_freeze_flags_retired_historical_helper_allowlist_entries(tmp_path: Path) -> None:
-    retired_helpers = {
-        Path("scripts") / ("export_" + "flask_routes.py"),
-        Path("scripts") / ("run_" + "build.py"),
-        Path("scripts") / ("seed_" + "automation_conversion_demo.py"),
-    }
+    allowlist = _active_legacy_allowlist()
+    allowlist[Path("scripts/run_broadcast_queue_worker.py")] = "missing active deploy script"
 
     violations = check_wecom_legacy_usage_freeze(
         tmp_path,
-        maintenance_allowlist={path: "retired historical helper" for path in retired_helpers},
+        maintenance_allowlist=allowlist,
     )
 
-    assert {violation.path for violation in violations} == {str(path) for path in retired_helpers}
-    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_missing"}
+    assert "legacy_maintenance_allowlist_path_missing" in {violation.code for violation in violations}
+
+
+def test_wecom_legacy_freeze_flags_non_deploy_allowlist_entries(tmp_path: Path) -> None:
+    retired_script = Path("scripts/run_campaign_scheduler.py")
+
+    violations = check_wecom_legacy_usage_freeze(
+        tmp_path,
+        maintenance_allowlist={**_active_legacy_allowlist(), retired_script: "retired non-deploy maintenance script"},
+    )
+
+    assert any(
+        violation.code == "legacy_maintenance_allowlist_non_deploy_script"
+        and violation.path == str(retired_script)
+        for violation in violations
+    )
 
 
 def test_wecom_legacy_freeze_flags_allowlist_path_without_import(tmp_path: Path) -> None:
-    script = tmp_path / "scripts/old_worker.py"
+    script = tmp_path / "scripts/run_broadcast_queue_worker.py"
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text("print('native now')\n", encoding="utf-8")
 
     violations = check_wecom_legacy_usage_freeze(
         tmp_path,
-        maintenance_allowlist={Path("scripts/old_worker.py"): "retired maintenance script"},
+        maintenance_allowlist={Path("scripts/run_broadcast_queue_worker.py"): "active deploy script"},
     )
 
-    assert {violation.code for violation in violations} == {"wecom_legacy_allowlist_path_without_import"}
+    assert "legacy_maintenance_allowlist_path_without_import" in {violation.code for violation in violations}
 
 
 def test_wecom_legacy_freeze_rejects_external_push_worker_legacy_import(tmp_path: Path) -> None:
-    worker = tmp_path / "scripts/run_external_push_worker.py"
-    worker.parent.mkdir(parents=True, exist_ok=True)
-    worker.write_text(
-        "from wecom_ability_service import create_app\n"
-        "from wecom_ability_service.domains.external_push import service\n",
-        encoding="utf-8",
+    _write_external_push_worker_contract(
+        tmp_path,
+        worker_text=(
+            "from wecom_ability_service import create_app\n"
+            "from wecom_ability_service.domains.external_push import service\n"
+        ),
     )
 
     codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
 
-    assert "wecom_legacy_script_not_allowlisted" in codes
+    assert "external_push_worker_legacy_import_returned" in codes
+
+
+def test_wecom_legacy_freeze_flags_external_push_worker_removed(tmp_path: Path) -> None:
+    service = tmp_path / "deploy/openclaw-external-push-worker.service"
+    service.parent.mkdir(parents=True, exist_ok=True)
+    service.write_text("ExecStart=/bin/bash -lc 'python scripts/run_external_push_worker.py'\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "external_push_worker_removed" in codes
+
+
+def test_wecom_legacy_freeze_flags_external_push_service_contract_break(tmp_path: Path) -> None:
+    _write_external_push_worker_contract(
+        tmp_path,
+        service_text="ExecStart=/bin/bash -lc 'python scripts/something_else.py'\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "external_push_worker_service_contract_broken" in codes
+
+
+def test_wecom_legacy_freeze_flags_missing_active_deploy_script_target(tmp_path: Path) -> None:
+    service = tmp_path / "deploy/openclaw-broadcast-queue-worker.service"
+    service.parent.mkdir(parents=True, exist_ok=True)
+    service.write_text("ExecStart=/bin/bash -lc 'python scripts/run_broadcast_queue_worker.py'\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "active_deploy_service_points_to_missing_script" in codes
+
+
+def test_wecom_legacy_freeze_flags_missing_active_deploy_allowlist_entry(tmp_path: Path) -> None:
+    allowlist = _active_legacy_allowlist()
+    allowlist.pop(Path("scripts/run_external_contact_sync.py"))
+
+    codes = {
+        violation.code
+        for violation in check_wecom_legacy_usage_freeze(tmp_path, maintenance_allowlist=allowlist)
+    }
+
+    assert "legacy_maintenance_allowlist_missing_active_deploy_script" in codes
 
 
 def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:
@@ -280,6 +343,27 @@ def test_wecom_legacy_freeze_retired_historical_helpers_removed_from_allowlist()
     }
 
     assert retired_helpers.isdisjoint(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
+
+
+def test_wecom_legacy_freeze_non_deploy_scripts_removed_from_allowlist() -> None:
+    retired_scripts = {
+        Path("scripts/audit_operation_task_runtime_contract.py"),
+        Path("scripts/backfill_questionnaire_submission_identity.py"),
+        Path("scripts/repair_automation_member_projection.py"),
+        Path("scripts/repair_invalid_operation_tasks.py"),
+        Path("scripts/replay_operation_task_audience_entered.py"),
+        Path("scripts/replay_questionnaire_sidebar_profile.py"),
+        Path("scripts/run_automation_agent_reply_backfill.py"),
+        Path("scripts/run_campaign_scheduler.py"),
+        Path("scripts/run_cloud_orchestrator_scan.py"),
+        Path("scripts/run_hxc_dashboard_refresh.py"),
+        Path("scripts/run_marketing_automation_backfill.py"),
+        Path("scripts/run_owner_lead_pool_backfill.py"),
+        Path("scripts/run_pool_signup_tag_backfill.py"),
+    }
+
+    assert set(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST) == ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST
+    assert retired_scripts.isdisjoint(LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST)
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:
@@ -309,6 +393,7 @@ def test_wecom_legacy_freeze_accepts_clean_state(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("NEXT_APP_IMPORT = 'aicrm_next.main:app'\n", encoding="utf-8")
     (tmp_path / "aicrm_next").mkdir()
     (tmp_path / "scripts").mkdir()
+    _write_external_push_worker_contract(tmp_path)
 
     assert check_wecom_legacy_usage_freeze(tmp_path) == []
 
