@@ -34,6 +34,7 @@ from scripts.check_no_new_legacy import (
     check_legacy_flask_facade_removed,
     check_legacy_flask_http_test_retirement,
     check_wecom_group_adapter_native,
+    check_wecom_contact_tag_media_tests_next_native,
     check_group_ops_admin_pages_next_native,
     check_media_library_admin_pages_native,
     check_media_library_closeout_lock,
@@ -638,6 +639,65 @@ def test_automation_campaign_broadcast_checker_allows_next_service_fake(tmp_path
     )
 
     assert check_automation_campaign_broadcast_tests_next_native(tmp_path) == []
+
+
+def test_wecom_contact_tag_media_checker_flags_legacy_import(tmp_path: Path) -> None:
+    legacy_import = "import " + "wecom_ability" + "_service\n"
+    _write_test_file(tmp_path, "test_" + "admin_wecom_tags_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_wecom_contact_tag_media_tests_next_native(tmp_path)}
+
+    assert "wecom_contact_tag_media_test_imports_legacy" in codes
+
+
+def test_wecom_contact_tag_media_checker_flags_legacy_fixture(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "image_library_x.py",
+        "def test_image(build_" + "legacy" + "_pg_test_app):\n"
+        "    assert build_" + "legacy" + "_pg_test_app\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_contact_tag_media_tests_next_native(tmp_path)}
+
+    assert "wecom_contact_tag_media_test_uses_" + "legacy" + "_client" in codes
+
+
+def test_wecom_contact_tag_media_checker_flags_legacy_private_message_import(tmp_path: Path) -> None:
+    legacy_import = "from " + "wecom_ability" + "_service.domains.tasks.private_message import normalize\n"
+    _write_test_file(tmp_path, "test_" + "miniprogram_library_x.py", legacy_import)
+
+    codes = {violation.code for violation in check_wecom_contact_tag_media_tests_next_native(tmp_path)}
+
+    assert "wecom_contact_tag_media_test_imports_legacy" in codes
+
+
+def test_wecom_contact_tag_media_checker_flags_legacy_db(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "mcp_x.py",
+        "def test_mcp(app):\n"
+        "    with app.app_context():\n"
+        "        assert get_db()\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_contact_tag_media_tests_next_native(tmp_path)}
+
+    assert "wecom_contact_tag_media_test_uses_legacy_db" in codes
+
+
+def test_wecom_contact_tag_media_checker_allows_next_service_fake(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_" + "media_next.py",
+        "from aicrm_next.media_library.repo import normalize_tags\n"
+        "\n"
+        "def test_next_media(next_client):\n"
+        "    assert normalize_tags('a,b') == ['a', 'b']\n"
+        "    assert next_client.get('/api/admin/image-library').status_code\n",
+    )
+
+    assert check_wecom_contact_tag_media_tests_next_native(tmp_path) == []
 
 
 def test_wecom_legacy_freeze_counts_reference_zones_without_blocking(tmp_path: Path) -> None:

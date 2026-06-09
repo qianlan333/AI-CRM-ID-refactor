@@ -1548,6 +1548,86 @@ def check_automation_campaign_broadcast_tests_next_native(root: Path = ROOT) -> 
     return violations
 
 
+WECOM_CONTACT_TAG_MEDIA_TEST_MARKERS = (
+    "wecom",
+    "contact",
+    "tag",
+    "image",
+    "media",
+    "miniprogram",
+    "mcp",
+    "acquisition",
+    "class_user",
+)
+
+
+def _is_wecom_contact_tag_media_test(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+    rel_posix = rel.as_posix()
+    if rel_posix == "tests/test_no_new_legacy_checker.py":
+        return False
+    if not rel_posix.startswith("tests/"):
+        return False
+    name = path.name.lower()
+    return any(marker in name for marker in WECOM_CONTACT_TAG_MEDIA_TEST_MARKERS)
+
+
+def check_wecom_contact_tag_media_tests_next_native(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts or not _is_wecom_contact_tag_media_test(path, root):
+            continue
+        rel = str(path.relative_to(root))
+        imports = _wecom_ast_imports(path)
+        if imports:
+            violations.append(
+                Violation(
+                    "wecom_contact_tag_media_test_imports_legacy",
+                    rel,
+                    ", ".join(imports),
+                    "WeCom, contact, tag, media, image, miniprogram, MCP, and acquisition tests must use Next-native fixtures and fakes.",
+                )
+            )
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "legacy_app" in source or "legacy_client" in source or "build_legacy_pg_test_app" in source:
+            violations.append(
+                Violation(
+                    "wecom_contact_tag_media_test_uses_legacy_client",
+                    rel,
+                    "legacy_app/legacy_client/build_legacy_pg_test_app",
+                    "WeCom, contact, tag, media, image, miniprogram, MCP, and acquisition route tests must use next_client or Next-native service/repository fakes.",
+                )
+            )
+        legacy_db_markers = (
+            "from wecom_ability_service import create_app",
+            "from wecom_ability_service.db import",
+            "get_db(",
+            "init_db(",
+            "app_context(",
+        )
+        if any(marker in source for marker in legacy_db_markers):
+            violations.append(
+                Violation(
+                    "wecom_contact_tag_media_test_uses_legacy_db",
+                    rel,
+                    "legacy create_app/get_db/init_db/app_context",
+                    "WeCom, contact, tag, media, image, miniprogram, MCP, and acquisition tests must not use legacy Flask DB/app-context helpers.",
+                )
+            )
+
+    return violations
+
+
 def _iter_python_files(root: Path) -> Iterable[Path]:
     candidates: list[Path] = []
     for item in [root / "aicrm_next", root / "app.py", root / "legacy_flask_app.py"]:
@@ -8120,6 +8200,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
         + check_automation_campaign_broadcast_tests_next_native(ROOT)
+        + check_wecom_contact_tag_media_tests_next_native(ROOT)
         + check_group_ops_message_content_native(ROOT)
         + check_group_ops_material_resolver_native(ROOT)
         + check_group_ops_scheduler_duplicate_checker_native(ROOT)
