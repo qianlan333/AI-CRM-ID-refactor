@@ -37,11 +37,11 @@ jobs:
             fi
             python3 - <<'PY'
             import os
-            from sqlalchemy import create_engine, text
+            import psycopg
 
-            engine = create_engine(os.environ["DATABASE_URL"])
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"))
+            database_url = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+            with psycopg.connect(database_url) as conn:
+                conn.execute("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)")
             PY
             # 1) AI-CRM Next schema migrations
             python3 -m alembic upgrade head
