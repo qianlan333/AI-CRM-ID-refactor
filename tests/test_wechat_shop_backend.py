@@ -28,6 +28,7 @@ def _mock_order(
     transaction_id: str = "shop_tx_001",
     finish_aftersale_sku_cnt: int = 0,
     deliver_method: int = 3,
+    buyer_mobile: str = "13520436848",
 ) -> None:
     monkeypatch.setattr(WeChatShopClient, "get_stable_access_token", lambda self, force_refresh=False: {"access_token": "shop-access-token", "expires_in": 7200})
 
@@ -44,6 +45,11 @@ def _mock_order(
                     "price_info": {"order_price": 12900, "freight": 0},
                     "delivery_info": {
                         "deliver_method": deliver_method,
+                        "address_info": {
+                            "tel_number": "",
+                            "purchaser_tel_number": "",
+                            "virtual_order_tel_number": buyer_mobile,
+                        },
                         "recharge_info": {"account_no": "virtual-account-001", "account_type": "member_id"},
                     },
                     "product_infos": [
@@ -114,6 +120,29 @@ def test_wechat_shop_paid_order_maps_to_unified_paid_status(monkeypatch) -> None
     assert detail["order"]["status_label"] in {"成交", "已支付"}
     assert detail["order"]["provider_label"] == "微信小店"
     assert detail["order"]["transaction_id"] == "shop_tx_paid"
+
+
+def test_wechat_shop_buyer_mobile_is_available_for_filtering_and_export(monkeypatch) -> None:
+    order_id = "3705115058471208123"
+    mobile = "13520436848"
+    _mock_order(monkeypatch, order_id=order_id, buyer_mobile=mobile)
+    client = _client(monkeypatch)
+
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+    detail = client.get(f"/api/admin/orders/{order_id}?provider=wechat_shop").json()
+    filtered = client.get(f"/api/admin/orders?provider=wechat_shop&mobile={mobile[-4:]}").json()
+    export = client.post(
+        "/api/admin/exports",
+        json={"resource": "orders", "format": "csv", "filters": {"provider": "wechat_shop", "order_no": order_id}},
+    ).json()
+    exported = client.get(export["job"]["download_url"]).json()
+
+    assert detail["order"]["mobile"] == mobile
+    assert detail["order"]["customer"]["mobile"] == mobile
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["order_no"] == order_id
+    assert "mobile" in exported["content_text"].splitlines()[0]
+    assert mobile in exported["content_text"]
 
 
 def test_wechat_shop_returned_order_maps_to_refunded_without_refund_ability(monkeypatch) -> None:

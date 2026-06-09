@@ -220,6 +220,7 @@ def list_payments(
                 "platform_transaction_no": order.get("platform_transaction_no"),
                 "amount_total": order.get("amount_total"),
                 "currency": order.get("currency"),
+                "mobile": order.get("mobile"),
                 "payment_status": order.get("status"),
                 "status": order.get("status"),
                 "paid_at": order.get("paid_at"),
