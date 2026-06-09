@@ -8,7 +8,7 @@ from aicrm_next.shared.errors import NotFoundError
 from .admin_transaction_detail import CommerceAdminTransactionDetailReadModel, CommerceAdminTransactionListReadModel
 
 ROUTE_OWNER = "ai_crm_next"
-PROVIDERS = ("wechat", "alipay")
+PROVIDERS = ("wechat", "alipay", "wechat_shop")
 
 
 def _text(value: Any) -> str:
@@ -38,9 +38,9 @@ def _parse_time(value: Any) -> datetime:
 
 def normalize_provider(provider: str | None, *, default: str = "all") -> str:
     normalized = _text(provider or default).lower()
-    if normalized in {"", "auto", "all", "wechat", "alipay"}:
+    if normalized in {"", "auto", "all", "wechat", "alipay", "wechat_shop"}:
         return normalized or default
-    raise ValueError("provider must be one of all/wechat/alipay")
+    raise ValueError("provider must be one of all/auto/wechat/alipay/wechat_shop")
 
 
 def normalize_limit(limit: Any, *, default: int = 50, maximum: int = 100) -> int:
