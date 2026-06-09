@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
@@ -20,6 +21,9 @@ class BroadcastQueueRepository(Protocol):
 
 class SafeSkippedBroadcastDispatcher:
     def dispatch(self, job: dict[str, Any]) -> dict[str, Any]:
+        payload = _json_dict(job.get("content_payload"))
+        if _is_wecom_customer_group_job(job, payload):
+            return _dispatch_wecom_customer_group(job, payload)
         return {
             "ok": False,
             "status": "skipped",
@@ -106,6 +110,92 @@ def _summary(*, limit: int, dry_run: bool) -> dict[str, Any]:
 
 def _count_targets(job: dict[str, Any]) -> int:
     return len(json_list(job.get("target_external_userids"))) or int_value(job.get("target_count"))
+
+
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _is_wecom_customer_group_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
+    return (
+        str(payload.get("channel") or "").strip() == "wecom_customer_group"
+        or str(job.get("content_type") or "").strip() == "wecom_customer_group"
+        or str(job.get("channel") or "").strip() == "wecom_customer_group"
+    )
+
+
+def _record_outbound_task(*, job: dict[str, Any], request_payload: dict[str, Any], response_payload: dict[str, Any], status: str) -> int | None:
+    task_id = str(
+        response_payload.get("wecom_msgid")
+        or response_payload.get("msgid")
+        or _json_dict(response_payload.get("result")).get("msgid")
+        or _json_dict(response_payload.get("result")).get("task_id")
+        or ""
+    )
+    with connect() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO outbound_tasks (task_type, request_payload, response_payload, wecom_task_id, status, trace_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                "broadcast_job/group_ops",
+                _json_dumps(request_payload),
+                _json_dumps(response_payload),
+                task_id,
+                status,
+                str(job.get("trace_id") or ""),
+            ),
+        ).fetchone()
+    return int((row or {}).get("id") or 0) or None
+
+
+def _dispatch_wecom_customer_group(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_message_adapter
+
+    existing_outbound_task_id = int_value(job.get("outbound_task_id"))
+    if existing_outbound_task_id:
+        return {
+            "ok": True,
+            "sent_count": len(list(payload.get("chat_ids") or [])),
+            "failed_count": 0,
+            "outbound_task_id": existing_outbound_task_id,
+        }
+    result = build_wecom_group_message_adapter().create_group_message_task(
+        payload,
+        idempotency_key=str(job.get("idempotency_key") or job.get("trace_id") or job.get("id") or ""),
+    )
+    if result.get("ok") and result.get("exact_target_verified") is not True:
+        chats = ",".join([str(item) for item in list(result.get("requested_chat_ids") or payload.get("chat_ids") or [])])
+        return {"ok": False, "error": f"exact target not verified for requested chat ids: {chats}"}
+    outbound_task_id = _record_outbound_task(
+        job=job,
+        request_payload=payload,
+        response_payload=result,
+        status="created" if result.get("ok") else "failed",
+    )
+    if not result.get("ok"):
+        error = str(result.get("error_message") or result.get("error_code") or "wecom group message dispatch failed")
+        return {"ok": False, "error": error, "outbound_task_id": outbound_task_id}
+    return {
+        "ok": True,
+        "sent_count": len(list(payload.get("chat_ids") or [])),
+        "failed_count": 0,
+        "outbound_task_id": outbound_task_id,
+    }
 
 
 def run_broadcast_queue_worker(

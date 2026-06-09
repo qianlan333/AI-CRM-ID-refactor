@@ -289,19 +289,13 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
         assert scan_result["batches_enqueued"] == 0, f"run_due should not duplicate queued job: {scan_result}"
         worker_result = worker.run(batch_size=10)
 
-    # 关键断言：3 个 member，1 次 dispatch，1 个 task 含 3 人
-    assert worker_result["sent_ok"] == 1, f"sent_ok={worker_result['sent_ok']} result={worker_result}"
-    assert len(dispatched_calls) == 1, f"dispatch called {len(dispatched_calls)} times, should be 1"
-    assert len(dispatched_calls[0]["external_userid"]) == 3
-    assert set(dispatched_calls[0]["external_userid"]) == {"ext-901", "ext-902", "ext-903"}
-
-    # member 状态推进了
-    cur.execute("SELECT status, current_step_index FROM campaign_members WHERE campaign_id = ?", (int(camp_id),))
-    rows = cur.fetchall() or []
-    assert len(rows) == 3
-    for r in rows:
-        assert r["status"] == "completed", f"member status not completed: {dict(r)}"
-        assert int(r["current_step_index"]) == 0
+    # Next-native broadcast worker no longer falls back to the legacy campaign
+    # dispatcher. Until campaign dispatch gets a Next owner, the due job is
+    # claimed and failed with a structured skipped result instead of sending.
+    assert worker_result["sent_ok"] == 0, f"unexpected send: {worker_result}"
+    assert worker_result["sent_failed"] == 1, f"expected structured failure: {worker_result}"
+    assert worker_result["skipped"] == 1, f"expected skipped campaign dispatch: {worker_result}"
+    assert dispatched_calls == []
 
 
 def test_propose_campaign_segment_sql_carries_external_contact_id(app):
@@ -966,43 +960,21 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
     ):
         r1 = scheduler.process_due_campaign_members(batch_size=10)
         assert r1["batches_enqueued"] == 0, f"run_due should not duplicate queued step 0: {r1}"
-        worker.run(batch_size=10)
+        worker_result = worker.run(batch_size=10)
 
-    # step 0 写了 consumption → daily budget 已扣 1 次
+    assert worker_result["sent_ok"] == 0, f"unexpected send: {worker_result}"
+    assert worker_result["sent_failed"] == 1, f"expected structured failure: {worker_result}"
+    assert worker_result["skipped"] == 1, f"expected skipped campaign dispatch: {worker_result}"
+    assert dispatched == []
+
+    # The retired legacy worker used to write frequency consumption here. The
+    # Next-native worker must not silently replay that legacy side effect until
+    # campaign dispatch is rebuilt with a Next owner.
     cur.execute(
         "SELECT COUNT(*) AS c FROM automation_frequency_consumption "
         "WHERE external_contact_id = 'ext-950' AND source_kind = 'campaign_step'",
     )
-    assert int(cur.fetchone()["c"]) > 0, "consumption not recorded after step 0"
-
-    # step 0 发完后 _pre_enqueue_next_step 已为 step 1 预排期
-    # 把预排期 job 和 member 的 next_due_at 都拉到过去，模拟"明天已到"
-    cur.execute(
-        "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ? AND status = 'pending'",
-        ("2020-01-01 00:00:00+00:00", int(camp_id)),
-    )
-    cur.execute(
-        "UPDATE broadcast_jobs SET scheduled_for = ? WHERE source_type = 'campaign' AND status = 'queued'",
-        ("2020-01-01 00:00:00+00:00",),
-    )
-    db.commit()
-
-    dispatched.clear()
-    with patch(
-        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
-        side_effect=_fake_dispatch,
-    ):
-        # 预排期 job 已存在，直接由 worker 消费（不需要再 process_due_campaign_members）
-        worker.run(batch_size=10)
-
-    assert dispatched[0]["text"]["content"] == "step 1", f"wrong step dispatched: {dispatched}"
-
-    cur.execute(
-        "SELECT status, current_step_index FROM campaign_members WHERE campaign_id = ?",
-        (int(camp_id),),
-    )
-    row = cur.fetchone()
-    assert row["status"] == "completed", f"member not completed: {dict(row)}"
+    assert int(cur.fetchone()["c"]) == 0
 
 
 def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
@@ -1087,11 +1059,13 @@ def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
     ):
         worker_result = worker.run(batch_size=10)
 
-    assert worker_result["sent_ok"] == 1
-    assert dispatched and dispatched[0]["external_userid"] == ["ext-960"]
+    assert worker_result["sent_ok"] == 0, f"unexpected send: {worker_result}"
+    assert worker_result["sent_failed"] == 1, f"expected structured failure: {worker_result}"
+    assert worker_result["skipped"] == 1, f"expected skipped campaign dispatch: {worker_result}"
+    assert dispatched == []
     cur.execute("SELECT status, current_step_index FROM campaign_members WHERE id = ?", (int(member_row["cm_id"]),))
     progressed = cur.fetchone()
-    assert progressed["status"] == "completed"
+    assert progressed["status"] == "pending"
     assert int(progressed["current_step_index"]) == 0
 
 

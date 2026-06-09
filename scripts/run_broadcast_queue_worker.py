@@ -14,6 +14,12 @@ ensure_repo_root_on_path()
 from aicrm_next.background_jobs.broadcast_queue_worker import run_broadcast_queue_worker
 
 
+def run(*, batch_size: int | None = None, limit: int | None = None, dry_run: bool = False) -> dict:
+    """Backward-compatible module entrypoint for existing smoke tests."""
+    selected_limit = limit if limit is not None else batch_size
+    return run_broadcast_queue_worker(limit=int(selected_limit or 50), dry_run=bool(dry_run))
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Next-native broadcast queue worker.")
     parser.add_argument("--limit", type=int, default=read_int_env("BROADCAST_QUEUE_BATCH_SIZE", 50))
