@@ -49,9 +49,9 @@ WAVE1_SMOKE_TESTS=(
   "tests/test_customer_timeline_api.py"
   "tests/test_mcp_business_tools.py"
   "tests/test_admin_customer_profile_console.py"
-  "tests/test_service_layer_layout.py"
+  "tests/test_next_source_consolidation.py"
   "tests/test_production_route_resolution.py"
-  "tests/contract/test_crm_contract.py"
+  "tests/test_post_closeout_production_contract.py"
 )
 
 run_suite() {

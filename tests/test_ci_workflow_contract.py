@@ -10,6 +10,13 @@ LEGACY_LAYOUT_TARGETS = (
     "tests/test_refactor_guardrails.py",
     "tests/test_service_layer_layout.py",
 )
+RETIRED_LEGACY_SMOKE_TESTS = (
+    "tests/integration/test_pg_compat_smoke.py",
+    "tests/test_postgres_schema_retry.py",
+    "tests/test_hxc_dashboard_snapshot.py",
+    "tests/test_admin_rbac_navigation.py",
+    "tests/test_admin_navigation_groups.py",
+)
 
 
 def _ci_source() -> str:
@@ -55,6 +62,8 @@ def test_pr_and_main_smoke_skip_legacy_doc_and_layout_guardrails():
         assert LEGACY_BACKLOG_CHECK not in smoke_block
         for test_path in LEGACY_LAYOUT_TARGETS:
             assert test_path not in smoke_block
+        for test_path in RETIRED_LEGACY_SMOKE_TESTS:
+            assert test_path not in smoke_block
 
 
 def test_main_smoke_keeps_recently_touched_critical_paths():
@@ -62,12 +71,14 @@ def test_main_smoke_keeps_recently_touched_critical_paths():
     main_smoke_block = _job_block(source, "main-smoke", "full-test")
 
     for test_path in (
-        "tests/test_postgres_schema_retry.py",
+        "tests/test_post_closeout_production_contract.py",
+        "tests/test_next_source_consolidation.py",
         "tests/test_user_ops_import_parsers.py",
         "tests/test_user_ops_page_service_helpers.py",
-        "tests/test_hxc_dashboard_snapshot.py",
+        "tests/test_hxc_dashboard_api_contract.py",
         "tests/test_send_task.py",
-        "tests/test_admin_navigation_groups.py",
+        "tests/test_admin_auth_route_precedence.py",
+        "tests/test_admin_shell_native.py",
         "tests/test_wechat_pay_products.py",
         "tests/test_wechat_pay_admin_transactions.py",
     ):
@@ -81,7 +92,8 @@ def test_pr_smoke_covers_admin_navigation_and_wechat_pay_splits():
     assert "bash scripts/check_no_duplicate_next_source.sh" in pr_smoke_block
 
     for test_path in (
-        "tests/test_admin_navigation_groups.py",
+        "tests/test_admin_auth_route_precedence.py",
+        "tests/test_admin_shell_native.py",
         "tests/test_wechat_pay_products.py",
         "tests/test_wechat_pay_admin_transactions.py",
     ):

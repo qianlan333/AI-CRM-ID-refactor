@@ -31,6 +31,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_message_content_native,
     check_group_ops_scheduler_duplicate_checker_native,
     check_internal_run_due_guard_native,
+    check_legacy_package_domain_tests_archived,
     check_legacy_flask_facade_removed,
     check_legacy_flask_http_test_retirement,
     check_wecom_group_adapter_native,
@@ -443,6 +444,92 @@ def test_test_fixture_boundaries_flag_next_fixture_legacy_import(tmp_path: Path)
     codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
 
     assert "next_test_fixture_imports_legacy" in codes
+
+
+def test_legacy_package_domain_archive_flags_legacy_db_import(tmp_path: Path) -> None:
+    _write_test_file(tmp_path, "test_legacy_db.py", "from wecom_ability_service.db import get_db\n")
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_runtime_import_remaining" in codes
+    assert "legacy_package_domain_test_remaining" in codes
+    assert "legacy_test_db_usage_remaining" in codes
+
+
+def test_legacy_package_domain_archive_flags_legacy_domain_import(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_legacy_domain.py",
+        "from wecom_ability_service.domains.example import service\n",
+    )
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_runtime_import_remaining" in codes
+    assert "legacy_package_domain_test_remaining" in codes
+
+
+def test_legacy_package_domain_archive_flags_legacy_fixture_usage(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_legacy_fixture.py",
+        "from tests.conftest import build_legacy_pg_test_app\n"
+        "\n"
+        "def test_old(tmp_path):\n"
+        "    assert build_legacy_pg_test_app(tmp_path)\n",
+    )
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_fixture_usage_remaining" in codes
+
+
+def test_legacy_package_domain_archive_flags_legacy_client_fixture_arg(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_legacy_client.py",
+        "def test_old(legacy_client):\n"
+        "    assert legacy_client.get('/old').status_code\n",
+    )
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_fixture_usage_remaining" in codes
+
+
+def test_legacy_package_domain_archive_allows_temporary_bridge_files(tmp_path: Path) -> None:
+    conftest = tmp_path / "tests/conftest.py"
+    boundary = tmp_path / "tests/test_test_fixture_boundaries.py"
+    conftest.parent.mkdir(parents=True, exist_ok=True)
+    conftest.write_text(
+        "from wecom_ability_service import create_app\n"
+        "def build_legacy_pg_test_app(tmp_path):\n"
+        "    return create_app()\n"
+        "def legacy_app():\n"
+        "    return create_app()\n"
+        "def legacy_client(legacy_app):\n"
+        "    return legacy_app.test_client()\n",
+        encoding="utf-8",
+    )
+    boundary.write_text(
+        "def test_bridge_boundary():\n"
+        "    assert 'build_legacy_pg_test_app'\n"
+        "    assert 'legacy_client'\n",
+        encoding="utf-8",
+    )
+
+    assert check_legacy_package_domain_tests_archived(tmp_path) == []
+
+
+def test_legacy_package_domain_archive_allows_clean_next_test(tmp_path: Path) -> None:
+    _write_test_file(
+        tmp_path,
+        "test_next_contract.py",
+        "def test_next(next_client):\n"
+        "    assert next_client.get('/api/system/runtime-route-map').status_code\n",
+    )
+
+    assert check_legacy_package_domain_tests_archived(tmp_path) == []
 
 
 def _write_test_file(tmp_path: Path, name: str, source: str) -> Path:
