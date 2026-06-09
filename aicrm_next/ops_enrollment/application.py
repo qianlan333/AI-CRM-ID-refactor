@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 
 from aicrm_next.integration_gateway.user_ops_adapters import (
@@ -23,7 +22,7 @@ from aicrm_next.shared.runtime import fixture_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .dto import BatchSendRequest, BroadcastPreviewRequest, DoNotDisturbRequest, ExportPreviewRequest, UserOpsListRequest
-from .repo import UserOpsRepository, build_user_ops_repository
+from .repo import UserOpsRepository, build_user_ops_repository, resolve_user_ops_repo_backend
 from .user_ops import apply_filters, build_overview_cards, normalize_filters, resolve_batch_targets
 
 _REPO: UserOpsRepository | None = None
@@ -61,7 +60,7 @@ def reset_user_ops_fixture_state() -> None:
 
 
 def _user_ops_repo_cache_enabled() -> bool:
-    backend = os.getenv("USER_OPS_REPO_BACKEND", get_settings().user_ops_repo_backend).strip().lower()
+    backend = resolve_user_ops_repo_backend(get_settings())
     return backend not in {"sql", "sqlalchemy", "postgres", "postgresql"}
 
 

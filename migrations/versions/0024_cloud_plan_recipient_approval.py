@@ -6,7 +6,7 @@ from alembic import op
 
 
 revision = "0024_cloud_plan_recipient_approval"
-down_revision = "0023_product_external_push"
+down_revision = ("0023_product_external_push", "0023_group_ops_webhook_rules")
 branch_labels = None
 depends_on = None
 
@@ -117,4 +117,3 @@ def downgrade() -> None:
     op.execute("ALTER TABLE IF EXISTS cloud_broadcast_plans DROP COLUMN IF EXISTS review_status")
     op.execute("ALTER TABLE IF EXISTS cloud_broadcast_plans DROP COLUMN IF EXISTS owner_userid")
     op.execute("ALTER TABLE IF EXISTS cloud_broadcast_plans DROP COLUMN IF EXISTS display_name")
-

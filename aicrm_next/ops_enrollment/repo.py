@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from aicrm_next.shared.config import Settings, get_settings
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.repository_provider import assert_repository_allowed
+from aicrm_next.shared.runtime import database_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -529,7 +530,7 @@ def build_user_ops_repository(
     engine: Engine | None = None,
 ) -> UserOpsRepository:
     settings = settings or get_settings()
-    backend = os.getenv("USER_OPS_REPO_BACKEND", settings.user_ops_repo_backend).strip().lower()
+    backend = resolve_user_ops_repo_backend(settings)
     if backend in {"sql", "sqlalchemy", "postgres", "postgresql"}:
         if session is not None:
             return assert_repository_allowed(SqlAlchemyUserOpsRepository(session), capability_owner="ops_enrollment")
@@ -539,3 +540,13 @@ def build_user_ops_repository(
 
 
 FixtureUserOpsRepository = InMemoryUserOpsRepository
+
+
+def resolve_user_ops_repo_backend(settings: Settings | None = None) -> str:
+    configured = os.getenv("USER_OPS_REPO_BACKEND", "").strip().lower()
+    if configured:
+        return configured
+    settings = settings or get_settings()
+    if database_mode() == "postgres":
+        return "sqlalchemy"
+    return settings.user_ops_repo_backend.strip().lower()
