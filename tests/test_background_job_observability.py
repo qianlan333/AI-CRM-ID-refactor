@@ -8,9 +8,9 @@ from wecom_ability_service.routes import _dispatch_background_task
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path, CALLBACK_ASYNC_ENABLED=False) as app:
+    with build_legacy_pg_test_app(tmp_path, CALLBACK_ASYNC_ENABLED=False) as app:
         yield app
 
 

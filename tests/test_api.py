@@ -49,10 +49,10 @@ def _test_image_data_url(label: str = "img") -> str:
 
 @pytest.fixture()
 def app(tmp_path):
-    """PG-only：用顶层 build_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
-    from tests.conftest import build_pg_test_app
+    """PG-only：用顶层 build_legacy_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         SIDEBAR_PERSON_DETAIL_URL_TEMPLATE="https://www.youcangogogo.com/person/{person_id}",
         MCP_BEARER_TOKEN="mcp-token",

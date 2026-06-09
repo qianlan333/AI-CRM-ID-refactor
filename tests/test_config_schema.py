@@ -15,9 +15,9 @@ from wecom_ability_service.infra.config_schema import (
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         SECRET_KEY="test-secret-key",
         ADMIN_AUTH_MODE="wecom_sso",

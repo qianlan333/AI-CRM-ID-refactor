@@ -32,8 +32,8 @@ def _wechat_headers() -> dict[str, str]:
     return {"User-Agent": "Mozilla/5.0 MicroMessenger/8.0.50"}
 
 
-def _login_admin(client, *, token: str = "test-admin-action-token") -> str:
-    with client.session_transaction() as sess:
+def _login_admin(legacy_client, *, token: str = "test-admin-action-token") -> str:
+    with legacy_client.session_transaction() as sess:
         sess[ADMIN_SESSION_USER_ID_KEY] = 0
         sess[ADMIN_SESSION_LOGIN_TYPE_KEY] = "break_glass"
         sess[ADMIN_SESSION_BREAK_GLASS_USERNAME_KEY] = "tester"
@@ -42,12 +42,12 @@ def _login_admin(client, *, token: str = "test-admin-action-token") -> str:
     return token
 
 
-def _configure_pay(app, tmp_path) -> None:
+def _configure_pay(legacy_app, tmp_path) -> None:
     private_key = tmp_path / "wechat_pay_apiclient_key.pem"
     platform_key = tmp_path / "wechat_pay_platform_public_key.pem"
     private_key.write_text("fake-private-key", encoding="utf-8")
     platform_key.write_text("fake-public-key", encoding="utf-8")
-    app.config.update(
+    legacy_app.config.update(
         WECHAT_MP_APP_ID="wx-mp-app",
         WECHAT_MP_APP_SECRET="mp-secret",
         WECHAT_PAY_ENABLED="true",
@@ -82,8 +82,8 @@ def _create_image(file_bytes: bytes, name: str) -> dict:
     )
 
 
-def _create_product(client, token: str, **overrides):
-    del client, token
+def _create_product(legacy_client, token: str, **overrides):
+    del legacy_client, token
     payload = {
         "name": "AI 实战小课",
         "amount_total": 19900,
@@ -97,17 +97,17 @@ def _create_product(client, token: str, **overrides):
     return product_service.create_admin_product(payload, operator="pytest")
 
 
-def test_admin_product_management_routes_render_and_mutate(app, client):
-    token = _login_admin(client)
-    product = _create_product(client, token, name="私域成交动作拆解课", amount_total=39900)
+def test_admin_product_management_routes_render_and_mutate(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token, name="私域成交动作拆解课", amount_total=39900)
 
-    list_page = client.get("/admin/wechat-pay/products")
+    list_page = legacy_client.get("/admin/wechat-pay/products")
     assert list_page.status_code == 200
     list_html = list_page.get_data(as_text=True)
     assert "商品管理" in list_html
     assert "创建商品" in list_html
 
-    new_page = client.get("/admin/wechat-pay/products/new")
+    new_page = legacy_client.get("/admin/wechat-pay/products/new")
     assert new_page.status_code == 200
     assert "保存商品" in new_page.get_data(as_text=True)
     assert "支付后引流渠道码" in new_page.get_data(as_text=True)
@@ -119,29 +119,29 @@ def test_admin_product_management_routes_render_and_mutate(app, client):
     assert "completionRedirectUrl" in new_page.get_data(as_text=True)
     assert "支付后引流计划" not in new_page.get_data(as_text=True)
 
-    edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
+    edit_page = legacy_client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
     assert edit_page.status_code == 200
     assert "扫码预览" in edit_page.get_data(as_text=True)
 
-    list_response = client.get("/api/admin/wechat-pay/products")
+    list_response = legacy_client.get("/api/admin/wechat-pay/products")
     assert list_response.status_code == 200
     assert list_response.json["ok"] is True
     assert any(item["id"] == product["id"] for item in list_response.json["items"])
 
-    detail_response = client.get(f"/api/admin/wechat-pay/products/{product['id']}")
+    detail_response = legacy_client.get(f"/api/admin/wechat-pay/products/{product['id']}")
     assert detail_response.status_code == 200
     assert detail_response.json["product"]["name"] == "私域成交动作拆解课"
 
-    lead_channels_response = client.get("/api/admin/wechat-pay/products/lead-channels")
+    lead_channels_response = legacy_client.get("/api/admin/wechat-pay/products/lead-channels")
     assert lead_channels_response.status_code == 200
     assert lead_channels_response.json["ok"] is True
 
-    share_response = client.get(f"/api/admin/wechat-pay/products/{product['id']}/share")
+    share_response = legacy_client.get(f"/api/admin/wechat-pay/products/{product['id']}/share")
     assert share_response.status_code == 200
     assert f"/p/{product['product_code']}" in share_response.json["share"]["url"]
     assert share_response.json["share"]["qr_data_url"].startswith("data:image/svg+xml")
 
-    update_response = client.put(
+    update_response = legacy_client.put(
         f"/api/admin/wechat-pay/products/{product['id']}",
         json={
             "admin_action_token": token,
@@ -156,29 +156,29 @@ def test_admin_product_management_routes_render_and_mutate(app, client):
     assert update_response.status_code == 200
     assert update_response.json["product"]["status"] == "draft"
 
-    assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable", json={"admin_action_token": token}).json["product"]["status"] == "active"
-    assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}).json["product"]["status"] == "disabled"
+    assert legacy_client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable", json={"admin_action_token": token}).json["product"]["status"] == "active"
+    assert legacy_client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}).json["product"]["status"] == "disabled"
 
-    copy_response = client.post(f"/api/admin/wechat-pay/products/{product['id']}/copy", json={"admin_action_token": token})
+    copy_response = legacy_client.post(f"/api/admin/wechat-pay/products/{product['id']}/copy", json={"admin_action_token": token})
     assert copy_response.status_code == 201
     copied_id = copy_response.json["product"]["id"]
     assert copied_id != product["id"]
 
-    delete_response = client.delete(f"/api/admin/wechat-pay/products/{copied_id}", json={"admin_action_token": token})
+    delete_response = legacy_client.delete(f"/api/admin/wechat-pay/products/{copied_id}", json={"admin_action_token": token})
     assert delete_response.status_code == 200
     assert delete_response.json["ok"] is True
 
 
-def test_product_enable_disable_copy_and_delete(app, client):
-    token = _login_admin(client)
-    product = _create_product(client, token, status="draft")
+def test_product_enable_disable_copy_and_delete(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token, status="draft")
 
     enabled = product_service.set_admin_product_status(product["id"], "active", operator="pytest")
     assert enabled["status"] == "active"
 
     disabled = product_service.set_admin_product_status(product["id"], "disabled", operator="pytest")
     assert disabled["status"] == "disabled"
-    assert client.get(f"/p/{product['product_code']}").status_code == 404
+    assert legacy_client.get(f"/p/{product['product_code']}").status_code == 404
 
     copied = product_service.copy_admin_product(product["id"], operator="pytest")
     assert copied["status"] == "draft"
@@ -513,9 +513,9 @@ def test_create_jsapi_order_success_path_commits_with_fake_client(monkeypatch):
     assert commits == ["commit"]
 
 
-def test_admin_product_share_returns_public_link_and_qr(app, client):
-    token = _login_admin(client)
-    product = _create_product(client, token, name="可分享商品")
+def test_admin_product_share_returns_public_link_and_qr(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token, name="可分享商品")
 
     share = product_service.build_admin_product_share(
         product["id"],
@@ -529,10 +529,10 @@ def test_admin_product_share_returns_public_link_and_qr(app, client):
     assert 'xmlns="http://www.w3.org/2000/svg"' in unquote(share["qr_data_url"])
 
 
-def test_lead_channel_options_skip_program_summary_dependency(app, client, monkeypatch):
+def test_lead_channel_options_skip_program_summary_dependency(legacy_app, legacy_client, monkeypatch):
     from wecom_ability_service.domains.automation_conversion import program_service
 
-    _login_admin(client)
+    _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -565,8 +565,8 @@ def test_lead_channel_options_skip_program_summary_dependency(app, client, monke
     assert option["selectable"] is True
 
 
-def test_product_can_bind_direct_lead_channel(app, client):
-    token = _login_admin(client)
+def test_product_can_bind_direct_lead_channel(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -586,7 +586,7 @@ def test_product_can_bind_direct_lead_channel(app, client):
     ).fetchone()
     get_db().commit()
 
-    product = _create_product(client, token, lead_channel_id=channel["id"])
+    product = _create_product(legacy_client, token, lead_channel_id=channel["id"])
 
     assert product["lead_channel_id"] == channel["id"]
     assert product["lead_program_id"] == program["id"]
@@ -599,10 +599,10 @@ def test_product_can_bind_direct_lead_channel(app, client):
     assert product_service.get_lead_qr_for_product_code(product["product_code"]) == {}
 
 
-def test_product_completion_redirect_create_update_copy_and_validation(app, client):
-    token = _login_admin(client)
+def test_product_completion_redirect_create_update_copy_and_validation(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     product = _create_product(
-        client,
+        legacy_client,
         token,
         completion_redirect_enabled=True,
         completion_redirect_url="https://example.com/after-paid",
@@ -649,10 +649,10 @@ def test_product_completion_redirect_create_update_copy_and_validation(app, clie
         )
 
 
-def test_product_copy_preserves_enabled_completion_redirect(app, client):
-    token = _login_admin(client)
+def test_product_copy_preserves_enabled_completion_redirect(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     product = _create_product(
-        client,
+        legacy_client,
         token,
         completion_redirect_enabled=True,
         completion_redirect_url="https://example.com/copy-after-paid",
@@ -664,12 +664,12 @@ def test_product_copy_preserves_enabled_completion_redirect(app, client):
     assert copied["completion_redirect_url"] == "https://example.com/copy-after-paid"
 
 
-def test_product_slices_sort_and_public_page_render_order(app, client):
-    token = _login_admin(client)
+def test_product_slices_sort_and_public_page_render_order(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     first = _create_image(PNG_A, "slice-a")
     second = _create_image(PNG_B, "slice-b")
     product = _create_product(
-        client,
+        legacy_client,
         token,
         slices=[
             {"image_library_id": second["id"], "sort_order": 1},
@@ -687,23 +687,23 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
     )
     assert [item["image_library_id"] for item in reordered["slices"]] == [first["id"], second["id"]]
 
-    public_html = client.get(f"/p/{product['product_code']}").get_data(as_text=True)
+    public_html = legacy_client.get(f"/p/{product['product_code']}").get_data(as_text=True)
     assert public_html.index("YWFhYWFh") < public_html.index("YmJiYmJi")
 
 
-def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client):
-    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
-    token = _login_admin(client)
-    product = _create_product(client, token, name="带上下文商品")
-    with app.app_context():
+def test_public_product_and_checkout_preserve_signed_sidebar_context(legacy_app, legacy_client):
+    legacy_app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token, name="带上下文商品")
+    with legacy_app.app_context():
         context_token = build_sidebar_product_context_token(
             external_userid="wm_pay_ctx",
             owner_userid="sales_01",
             bind_by_userid="sales_01",
         )
 
-    product_html = client.get(f"/p/{product['product_code']}?ctx={context_token}").get_data(as_text=True)
-    checkout_html = client.get(f"/pay/{product['product_code']}?ctx={context_token}", headers=_wechat_headers()).get_data(as_text=True)
+    product_html = legacy_client.get(f"/p/{product['product_code']}?ctx={context_token}").get_data(as_text=True)
+    checkout_html = legacy_client.get(f"/pay/{product['product_code']}?ctx={context_token}", headers=_wechat_headers()).get_data(as_text=True)
 
     assert f"/pay/{product['product_code']}?ctx=" in product_html
     assert "wm_pay_ctx" not in product_html
@@ -712,17 +712,17 @@ def test_public_product_and_checkout_preserve_signed_sidebar_context(app, client
     assert "/api/h5/wechat-pay/oauth/start" in checkout_html
 
 
-def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app, client, monkeypatch):
-    app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
+def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(legacy_app, legacy_client, monkeypatch):
+    legacy_app.config["AICRM_NEXT_ACTION_TOKEN_SECRET"] = "test-sidebar-product-context-secret"
     captured: dict[str, object] = {}
-    with app.app_context():
+    with legacy_app.app_context():
         context_token = build_sidebar_product_context_token(
             external_userid="wm_signed_pay_ctx",
             owner_userid="sales_01",
             bind_by_userid="sales_02",
         )
 
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {
             "openid": "openid_pay_ctx",
             "unionid": "union_pay_ctx",
@@ -741,7 +741,7 @@ def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app
 
     monkeypatch.setattr("wecom_ability_service.http.wechat_pay.create_jsapi_order", fake_create_jsapi_order)
 
-    response = client.post(
+    response = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         headers=_wechat_headers(),
         json={
@@ -769,8 +769,8 @@ def test_h5_create_order_uses_signed_sidebar_context_not_raw_external_userid(app
     }
 
 
-def test_product_slices_limit_is_ten(app, client):
-    token = _login_admin(client)
+def test_product_slices_limit_is_ten(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
     with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
         product_service.create_admin_product(
@@ -789,7 +789,7 @@ def test_product_slices_limit_is_ten(app, client):
         )
 
     product = _create_product(
-        client,
+        legacy_client,
         token,
         slices=[
             {"image_library_id": item["id"], "sort_order": index + 1}
@@ -891,13 +891,13 @@ def test_next_product_editor_uses_v5_collapsed_modules_and_real_actions():
     assert "/api/admin/wechat-pay/products/${encodeURIComponent(product.id)}/share" in template
 
 
-def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):
-    _configure_pay(app, tmp_path)
-    app.config["SECRET_KEY"] = "wechat-pay-product-intro-secret"
-    token = _login_admin(client)
-    product = _create_product(client, token)
+def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(legacy_app, legacy_client, tmp_path):
+    _configure_pay(legacy_app, tmp_path)
+    legacy_app.config["SECRET_KEY"] = "wechat-pay-product-intro-secret"
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token)
 
-    response = client.get(f"/p/{product['product_code']}", headers=_wechat_headers())
+    response = legacy_client.get(f"/p/{product['product_code']}", headers=_wechat_headers())
 
     assert response.status_code == 302
     location = response.headers["Location"]
@@ -905,10 +905,10 @@ def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app
     assert f"return_url=%2Fp%2F{product['product_code']}" in location
 
 
-def test_image_library_upload_route_creates_item_for_product_editor(app, client):
-    token = _login_admin(client)
-    _create_product(client, token)
-    response = client.post(
+def test_image_library_upload_route_creates_item_for_product_editor(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    _create_product(legacy_client, token)
+    response = legacy_client.post(
         "/api/admin/image-library/upload",
         data={
             "image": (BytesIO(PNG_A), "slice.png"),
@@ -930,10 +930,10 @@ def test_image_library_upload_route_creates_item_for_product_editor(app, client)
     assert payload["item"]["tags"] == ["商品", "切片"]
 
 
-def test_image_library_upload_route_rejects_invalid_file(app, client):
-    token = _login_admin(client)
-    _create_product(client, token)
-    response = client.post(
+def test_image_library_upload_route_rejects_invalid_file(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    _create_product(legacy_client, token)
+    response = legacy_client.post(
         "/api/admin/image-library/upload",
         data={"image": (BytesIO(b"not-image"), "slice.txt")},
         content_type="multipart/form-data",
@@ -945,28 +945,28 @@ def test_image_library_upload_route_rejects_invalid_file(app, client):
     assert "only JPG/PNG" in payload["error"]
 
 
-def test_checkout_page_mobile_field_depends_on_product(app, client):
-    token = _login_admin(client)
-    require_mobile = _create_product(client, token, require_mobile=True)
-    no_mobile = _create_product(client, token, name="无需手机号商品", require_mobile=False)
-    with client.session_transaction() as sess:
+def test_checkout_page_mobile_field_depends_on_product(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
+    require_mobile = _create_product(legacy_client, token, require_mobile=True)
+    no_mobile = _create_product(legacy_client, token, name="无需手机号商品", require_mobile=False)
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_test", "payer_name": "微信昵称"}
 
-    html = client.get(f"/pay/{require_mobile['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    html = legacy_client.get(f"/pay/{require_mobile['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert 'id="mobileInput"' in html
     assert 'fetch(state.create_order_url' in html
     assert 'order_source: "product_checkout"' in html
     assert 'WeixinJSBridge.invoke("getBrandWCPayRequest"' in html
     assert "waitForPaid(activeOrderNo)" in html
 
-    html = client.get(f"/pay/{no_mobile['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    html = legacy_client.get(f"/pay/{no_mobile['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert 'id="mobileInput"' not in html
 
 
-def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_path, monkeypatch):
-    _configure_pay(app, tmp_path)
-    token = _login_admin(client)
-    product = _create_product(client, token, require_mobile=True)
+def test_require_mobile_order_validation_and_mobile_snapshot(legacy_app, legacy_client, tmp_path, monkeypatch):
+    _configure_pay(legacy_app, tmp_path)
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token, require_mobile=True)
     calls: dict[str, object] = {}
 
     class FakeClient:
@@ -978,10 +978,10 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
             return {"package": f"prepay_id={prepay_id}"}
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test", "payer_name": "微信昵称"}
 
-    missing_mobile = client.post(
+    missing_mobile = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         json={"product_code": product["product_code"], "order_source": "product_checkout"},
         headers=_wechat_headers(),
@@ -990,7 +990,7 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
     assert missing_mobile.get_json()["error"] == "mobile_required"
     assert get_db().execute("SELECT COUNT(*) AS c FROM wechat_pay_orders").fetchone()["c"] == 0
 
-    created = client.post(
+    created = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         json={
             "product_code": product["product_code"],
@@ -1010,9 +1010,9 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
     assert calls["transaction_payload"]["amount"]["total"] == 19900
 
 
-def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, tmp_path, monkeypatch):
-    _configure_pay(app, tmp_path)
-    token = _login_admin(client)
+def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(legacy_app, legacy_client, tmp_path, monkeypatch):
+    _configure_pay(legacy_app, tmp_path)
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -1031,7 +1031,7 @@ def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, t
         (program["id"],),
     ).fetchone()
     get_db().commit()
-    product = _create_product(client, token, lead_program_id=program["id"])
+    product = _create_product(legacy_client, token, lead_program_id=program["id"])
     assert product["lead_channel_id"] == channel["id"]
 
     class FakeClient:
@@ -1053,10 +1053,10 @@ def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, t
             }
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test", "payer_name": "微信昵称"}
 
-    created = client.post(
+    created = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         json={"product_code": product["product_code"], "order_source": "product_checkout"},
         headers=_wechat_headers(),
@@ -1064,14 +1064,14 @@ def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, t
     assert created.status_code == 200
     out_trade_no = created.get_json()["order"]["out_trade_no"]
 
-    paid = client.get(f"/api/h5/wechat-pay/orders/{out_trade_no}?refresh=1").get_json()["order"]
+    paid = legacy_client.get(f"/api/h5/wechat-pay/orders/{out_trade_no}?refresh=1").get_json()["order"]
     assert paid["status"] == "paid"
     assert paid["lead_qr"]["qr_url"] == "https://example.com/paid-refresh-qr.png"
 
 
-def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, client, tmp_path, monkeypatch):
-    _configure_pay(app, tmp_path)
-    token = _login_admin(client)
+def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(legacy_app, legacy_client, tmp_path, monkeypatch):
+    _configure_pay(legacy_app, tmp_path)
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -1089,7 +1089,7 @@ def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, cl
         (program["id"],),
     )
     get_db().commit()
-    product = _create_product(client, token, lead_program_id=program["id"], require_mobile=True)
+    product = _create_product(legacy_client, token, lead_program_id=program["id"], require_mobile=True)
     order = wechat_pay_repo.insert_order(
         {
             "out_trade_no": "WXP_ALREADY_PAID",
@@ -1119,22 +1119,22 @@ def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, cl
             raise AssertionError("duplicate paid users must not create a new WeChat order")
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_paid", "unionid": "un_paid", "payer_name": "已报名用户"}
 
-    intro_html = client.get(f"/p/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    intro_html = legacy_client.get(f"/p/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert "支付成功" in intro_html
     assert '"paid_order":' in intro_html
     assert 'id="showLeadQrButton"' in intro_html
     assert "showPaid(state.paid_order, { autoShowQr: false })" in intro_html
 
-    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    html = legacy_client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert '"paid_order":' in html
     assert "WXP_ALREADY_PAID" in html
     assert 'id="showLeadQrButton"' in html
     assert "showPaid(state.paid_order, { autoShowQr: false })" in html
 
-    duplicate = client.post(
+    duplicate = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         json={
             "product_code": product["product_code"],
@@ -1147,10 +1147,10 @@ def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, cl
     assert duplicate.get_json()["error"] == "already_paid"
 
 
-def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatch):
-    _configure_pay(app, tmp_path)
-    token = _login_admin(client)
-    product = _create_product(client, token)
+def test_full_refunded_order_allows_repurchase(legacy_app, legacy_client, tmp_path, monkeypatch):
+    _configure_pay(legacy_app, tmp_path)
+    token = _login_admin(legacy_client)
+    product = _create_product(legacy_client, token)
     order = wechat_pay_repo.insert_order(
         {
             "out_trade_no": "WXP_FULL_REFUNDED",
@@ -1184,12 +1184,12 @@ def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatc
             return {"package": f"prepay_id={prepay_id}"}
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_refunded", "payer_name": "退款用户"}
 
-    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    html = legacy_client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert '"paid_order": null' in html
-    created = client.post(
+    created = legacy_client.post(
         "/api/h5/wechat-pay/jsapi/orders",
         json={"product_code": product["product_code"], "order_source": "product_checkout"},
         headers=_wechat_headers(),
@@ -1235,8 +1235,8 @@ def test_checkout_template_uses_normalized_paid_status_only():
     assert "page_state.completion_redirect.enabled" not in source
 
 
-def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
-    token = _login_admin(client)
+def test_paid_order_status_returns_lead_qr_only_after_paid(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -1255,7 +1255,7 @@ def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
         (program["id"],),
     ).fetchone()
     get_db().commit()
-    product = _create_product(client, token, lead_program_id=program["id"])
+    product = _create_product(legacy_client, token, lead_program_id=program["id"])
     assert product["lead_channel_id"] == channel["id"]
 
     order = wechat_pay_repo.insert_order(
@@ -1271,7 +1271,7 @@ def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
             "request_meta": {},
         }
     )
-    unpaid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    unpaid = legacy_client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
     assert "lead_qr" not in unpaid
 
     get_db().execute(
@@ -1283,12 +1283,12 @@ def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
         (order["out_trade_no"],),
     )
     get_db().commit()
-    paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    paid = legacy_client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
     assert paid["lead_qr"]["qr_url"] == "https://example.com/qr.png"
 
 
-def test_paid_order_completion_redirect_takes_priority_over_lead_qr(app, client):
-    token = _login_admin(client)
+def test_paid_order_completion_redirect_takes_priority_over_lead_qr(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -1308,7 +1308,7 @@ def test_paid_order_completion_redirect_takes_priority_over_lead_qr(app, client)
     ).fetchone()
     get_db().commit()
     product = _create_product(
-        client,
+        legacy_client,
         token,
         lead_program_id=program["id"],
         completion_redirect_enabled=True,
@@ -1339,7 +1339,7 @@ def test_paid_order_completion_redirect_takes_priority_over_lead_qr(app, client)
     )
     get_db().commit()
 
-    paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    paid = legacy_client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
     assert paid["completion_redirect_enabled"] is True
     assert paid["completion_redirect_url"] == "https://example.com/after-paid-priority"
     assert paid["completion_redirect"]["url"] == "https://example.com/after-paid-priority"
@@ -1349,16 +1349,16 @@ def test_paid_order_completion_redirect_takes_priority_over_lead_qr(app, client)
     }
     assert "lead_qr" not in paid
 
-    with client.session_transaction() as sess:
+    with legacy_client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_redirect", "payer_name": "已报名用户"}
-    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    html = legacy_client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert "completionActionFromOrder" in html
     assert 'setState("报名成功，正在跳转...", "success")' in html
     assert 'id="showLeadQrButton"' not in html
 
 
-def test_completion_redirect_empty_url_keeps_existing_lead_qr_logic(app, client):
-    token = _login_admin(client)
+def test_completion_redirect_empty_url_keeps_existing_lead_qr_logic(legacy_app, legacy_client):
+    token = _login_admin(legacy_client)
     program = get_db().execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json)
@@ -1378,7 +1378,7 @@ def test_completion_redirect_empty_url_keeps_existing_lead_qr_logic(app, client)
     ).fetchone()
     get_db().commit()
     product = _create_product(
-        client,
+        legacy_client,
         token,
         lead_program_id=program["id"],
         completion_redirect_enabled=True,
@@ -1410,17 +1410,17 @@ def test_completion_redirect_empty_url_keeps_existing_lead_qr_logic(app, client)
     )
     get_db().commit()
 
-    paid = client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
+    paid = legacy_client.get(f"/api/h5/wechat-pay/orders/{order['out_trade_no']}").get_json()["order"]
     assert paid["completion_redirect"]["enabled"] is False
     assert paid["completion_redirect_url"] == ""
     assert paid["completion_action"] == {"type": "lead_qr", "redirect_url": ""}
     assert paid["lead_qr"]["qr_url"] == "https://example.com/empty-redirect-qr.png"
 
 
-def test_legacy_catalog_product_api_still_works(app, client, tmp_path):
-    _configure_pay(app, tmp_path)
+def test_legacy_catalog_product_api_still_works(legacy_app, legacy_client, tmp_path):
+    _configure_pay(legacy_app, tmp_path)
 
-    payload = client.get("/api/h5/wechat-pay/products/legacy_report_v1").get_json()
+    payload = legacy_client.get("/api/h5/wechat-pay/products/legacy_report_v1").get_json()
 
     assert payload["ok"] is True
     assert payload["product"]["product_code"] == "legacy_report_v1"
@@ -1428,10 +1428,10 @@ def test_legacy_catalog_product_api_still_works(app, client, tmp_path):
     assert payload["product"]["slices"] == []
 
 
-def test_next_style_public_product_api_alias_is_readonly(app, client, tmp_path):
-    _configure_pay(app, tmp_path)
+def test_next_style_public_product_api_alias_is_readonly(legacy_app, legacy_client, tmp_path):
+    _configure_pay(legacy_app, tmp_path)
 
-    response = client.get("/api/products/legacy_report_v1")
+    response = legacy_client.get("/api/products/legacy_report_v1")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -1442,8 +1442,8 @@ def test_next_style_public_product_api_alias_is_readonly(app, client, tmp_path):
     assert payload["product"]["slices"] == []
 
 
-def test_next_style_public_product_api_alias_returns_404_for_missing_product(client):
-    response = client.get("/api/products/missing_product")
+def test_next_style_public_product_api_alias_returns_404_for_missing_product(legacy_client):
+    response = legacy_client.get("/api/products/missing_product")
 
     assert response.status_code == 404
     assert response.get_json() == {"ok": False, "error": "product_not_configured"}

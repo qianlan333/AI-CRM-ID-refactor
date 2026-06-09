@@ -16,9 +16,9 @@ import pytest
 @pytest.fixture
 def app(tmp_path: Any) -> Iterator[Any]:
     """Flask app + 真实 PG，复用普通测试的统一建表/清表逻辑。"""
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         yield app
 
 

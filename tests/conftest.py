@@ -13,11 +13,11 @@ CI 上 service container 自动起 PG 并设 DATABASE_URL。
 superuser，开箱即用）。
 
 提供的 fixture：
-- ``app``：每个 test 一个干净 Flask app + truncate 关键表
-- ``client``：``app.test_client()``
+- ``next_app`` / ``next_client``：Next FastAPI 默认测试入口
+- ``legacy_app`` / ``legacy_client``：显式 opt-in 的历史 Flask app 测试入口
 
 老测试以前自己用 ``tmp_path / "test.sqlite3"`` + ``DATABASE_PATH`` 起 SQLite，
-迁移到这个顶层 fixture 后只需 ``def test_xxx(app, client):`` 即可。
+迁移到 PG fixture 后应显式使用 ``legacy_app`` / ``legacy_client``。
 """
 from __future__ import annotations
 
@@ -244,18 +244,27 @@ def _ensure_pg_url() -> str:
     return url
 
 
-def build_pg_test_app(tmp_path, **extra_config: Any):
-    """老测试兼容 helper：起 PG 模式 app，允许传 extra_config 覆盖默认。
+def build_legacy_pg_test_app(tmp_path, **extra_config: Any):
+    """显式 legacy helper：起 PG 模式 Flask app，允许传 extra_config 覆盖默认。
 
     用法（替换老 SQLite fixture）：
 
         @pytest.fixture
-        def app(tmp_path):
-            from tests.conftest import build_pg_test_app
-            with build_pg_test_app(tmp_path, MCP_BEARER_TOKEN="mcp-token") as app:
+        def legacy_app(tmp_path):
+            from tests.conftest import build_legacy_pg_test_app
+            with build_legacy_pg_test_app(tmp_path, MCP_BEARER_TOKEN="mcp-token") as app:
                 yield app
     """
     return _build_app_context(tmp_path, extra_config)
+
+
+def build_pg_test_app(tmp_path, **extra_config: Any):
+    """Deprecated alias for legacy Flask tests.
+
+    New tests must call ``build_legacy_pg_test_app`` so legacy Flask app
+    construction stays explicit and searchable.
+    """
+    return build_legacy_pg_test_app(tmp_path, **extra_config)
 
 
 class _AppContextManager:
@@ -394,7 +403,7 @@ def _truncate_cached_tables_once() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_schema_once():
-    """Session 起点（每个 xdist worker 各跑一次）：
+    """Temporary legacy schema bridge（每个 xdist worker 各跑一次）：
 
     1. 路由到 per-worker DB（``test_<worker_id>``，主进程仍用 base ``test``）
     2. 跑 ``schema_postgres.sql`` 建表（带前向 FK 重试）
@@ -522,8 +531,8 @@ def _truncate_before_each_test():
 
 
 @pytest.fixture
-def app(tmp_path) -> Iterator[Any]:
-    """干净 Flask app + 真 PG，每个 test 隔离。"""
+def legacy_app(tmp_path) -> Iterator[Any]:
+    """显式 legacy Flask app + 真 PG，每个 test 隔离。"""
     database_url = _ensure_pg_url()
 
     # WeCom SDK / private key 等运行时依赖文件（test 用 fake 占位）
@@ -535,7 +544,7 @@ def app(tmp_path) -> Iterator[Any]:
     from wecom_ability_service import create_app
     from wecom_ability_service.db import close_db, init_db
 
-    app = create_app(
+    flask_app = create_app(
         test_config={
             "TESTING": True,
             "DATABASE_URL": database_url,
@@ -552,7 +561,7 @@ def app(tmp_path) -> Iterator[Any]:
             "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
         }
     )
-    with app.app_context():
+    with flask_app.app_context():
         # session 级 ``_ensure_schema_once`` 已经把 schema_postgres.sql 跑过了，
         # 这里不再重建（每 test 50-100ms × 1004 tests = 50-100s 浪费）。
         # init_db 仍要 per-test：内含 seed_default_segments / ensure_default_budgets，
@@ -562,9 +571,43 @@ def app(tmp_path) -> Iterator[Any]:
         init_db()
         close_db()
         _truncate_cached_tables_once()
-        yield app
+        yield flask_app
 
 
 @pytest.fixture
-def client(app):
-    return app.test_client()
+def legacy_client(legacy_app):
+    return legacy_app.test_client()
+
+
+@pytest.fixture
+def legacy_app_context(legacy_app):
+    with legacy_app.app_context() as ctx:
+        yield ctx
+
+
+@pytest.fixture
+def next_app(monkeypatch):
+    monkeypatch.setenv("AICRM_NEXT_ENV", "test")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    from aicrm_next.main import create_app
+
+    return create_app()
+
+
+@pytest.fixture
+def next_client(next_app):
+    from fastapi.testclient import TestClient
+
+    return TestClient(next_app)
+
+
+@pytest.fixture
+def app(next_app):
+    """Default app fixture is Next-native; legacy Flask tests must opt in."""
+    return next_app
+
+
+@pytest.fixture
+def client(next_client):
+    """Default client fixture is Next-native; legacy Flask tests must opt in."""
+    return next_client

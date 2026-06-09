@@ -160,9 +160,9 @@ def _seed_orphan_submissions(app, questionnaire_id: int) -> None:
 
 
 def test_questionnaire_identity_backfill_dry_run_reports_without_writing(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         questionnaire_id = _seed_questionnaire(app)
         _seed_orphan_submissions(app, questionnaire_id)
 
@@ -201,9 +201,9 @@ def test_questionnaire_identity_backfill_dry_run_reports_without_writing(tmp_pat
 
 
 def test_questionnaire_identity_backfill_apply_updates_submission_and_sidebar_profile(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         questionnaire_id = _seed_questionnaire(app)
         _seed_orphan_submissions(app, questionnaire_id)
 
@@ -280,9 +280,9 @@ def test_questionnaire_identity_backfill_apply_updates_submission_and_sidebar_pr
 
 
 def test_questionnaire_sidebar_profile_replay_matches_recreated_questions_by_title(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path) as app:
+    with build_legacy_pg_test_app(tmp_path) as app:
         questionnaire_id = _seed_questionnaire(app)
         with app.app_context():
             db = get_db()

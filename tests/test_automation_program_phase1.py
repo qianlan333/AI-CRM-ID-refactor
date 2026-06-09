@@ -16,9 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture()
 def app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(tmp_path, SECRET_KEY="test-secret-key", ADMIN_AUTH_MODE="wecom_sso") as app:
+    with build_legacy_pg_test_app(tmp_path, SECRET_KEY="test-secret-key", ADMIN_AUTH_MODE="wecom_sso") as app:
         yield app
 
 

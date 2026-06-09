@@ -17,9 +17,9 @@ from wecom_ability_service.domains.marketing_automation.service import (
 
 
 def _make_app(tmp_path):
-    from tests.conftest import build_pg_test_app
+    from tests.conftest import build_legacy_pg_test_app
 
-    ctx = build_pg_test_app(
+    ctx = build_legacy_pg_test_app(
         tmp_path,
         WECOM_CALLBACK_TOKEN="callback-token",
         WECOM_CALLBACK_AES_KEY="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",

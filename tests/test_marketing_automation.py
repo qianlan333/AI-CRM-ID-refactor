@@ -47,10 +47,10 @@ def test_marketing_normalizers_are_shared_package_helpers():
 
 @pytest.fixture()
 def app(tmp_path):
-    """PG-only：用顶层 build_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
-    from tests.conftest import build_pg_test_app
+    """PG-only：用顶层 build_legacy_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
+    from tests.conftest import build_legacy_pg_test_app
 
-    with build_pg_test_app(
+    with build_legacy_pg_test_app(
         tmp_path,
         MCP_BEARER_TOKEN="mcp-token",
         AUTOMATION_INTERNAL_API_TOKEN="internal-token",
