@@ -1756,6 +1756,20 @@ routes:
     checker: tests/test_next_questionnaire_external_push_logs.py
     rollback_owner: aicrm_next.questionnaire
     notes: Questionnaire external push log pages use Next QuestionnaireExternalPushLogReadService; retry actions use Next retry commands and generate SideEffectPlan by default; real external retry delivery is gated.
+  - route_id: sidebar_bind_mobile_page
+    path_pattern: /sidebar/bind-mobile
+    methods: [GET]
+    capability_owner: aicrm_next.identity_contact
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_sidebar_bind_mobile_native_page.py
+    rollback_owner: aicrm_next.identity_contact
+    notes: Sidebar bind-mobile/workbench page is served by Next native identity_contact.admin_pages; frontend_compat page ownership is removed while sidebar read/write/JSSDK APIs remain unchanged.
   - route_id: sidebar_customer_context_api
     path_pattern: /api/sidebar/customer-context
     methods: [GET]

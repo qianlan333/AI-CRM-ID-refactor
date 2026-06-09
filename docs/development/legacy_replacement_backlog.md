@@ -30,9 +30,8 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `aicrm_next.commerce`: 22 routes; P0=1, P2=20, P3=1
 - `aicrm_next.customer_read_model`: 22 routes; P0=8, P2=14
 - `aicrm_next.customer_tags`: 15 routes; P2=15
-- `aicrm_next.frontend_compat`: 1 routes; P0=1
 - `aicrm_next.hxc_dashboard`: 10 routes; P0=5, P2=5
-- `aicrm_next.identity_contact`: 4 routes; P0=3, P2=1
+- `aicrm_next.identity_contact`: 5 routes; P0=4, P2=1
 - `aicrm_next.integration_gateway`: 1 routes; P2=1
 - `aicrm_next.media_library`: 7 routes; P2=7
 - `aicrm_next.message_archive`: 9 routes; P0=5, P1=1, P2=2, P3=1
@@ -47,7 +46,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 ## Summary By Replacement Phase
 
 - `keep_guarded_until_adapter_ready`: 73 routes; blocked_or_guarded=73
-- `phase_3_readonly`: 37 routes; readonly=36, shell_or_navigation=1
+- `phase_3_readonly`: 37 routes; readonly=37
 - `phase_4_internal_write`: 9 routes; internal_write=1, readonly=8
 - `phase_5_external_adapter`: 88 routes; adapter_contract=11, external_side_effect=77
 - `phase_6_timer_automation`: 11 routes; timer_or_automation_execution=11
@@ -310,7 +309,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 - `LRB-162` `/api/admin/image-library/upload`: `P2` / `phase_5_external_adapter` / `external_side_effect` / owner `aicrm_next.media_library`
 - `LRB-163` `/api/admin/attachment-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
 - `LRB-164` `/api/admin/miniprogram-library*`: `P2` / `phase_5_external_adapter` / `adapter_contract` / owner `aicrm_next.media_library`
-- `LRB-165` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `shell_or_navigation` / owner `aicrm_next.frontend_compat`
+- `LRB-165` `/sidebar/bind-mobile`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
 - `LRB-166` `/api/sidebar/contact-binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
 - `LRB-167` `/api/sidebar/binding-status`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.identity_contact`
 - `LRB-168` `/api/sidebar/customer-context`: `P0` / `phase_3_readonly` / `readonly` / owner `aicrm_next.customer_read_model`

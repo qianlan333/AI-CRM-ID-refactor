@@ -48,6 +48,7 @@ from scripts.check_no_new_legacy import (
     check_questionnaire_h5_submit_next_commandbus,
     check_questionnaire_oauth_next_adapter,
     check_shadowed_frontend_compat_handlers_removed,
+    check_sidebar_bind_mobile_page_native,
     check_sidebar_readonly_closeout_lock,
     check_sidebar_jssdk_next_adapter,
     check_support_pages_native,
@@ -2771,6 +2772,137 @@ def test_support_pages_checker_accepts_native_state(tmp_path: Path) -> None:
     _write_valid_support_pages_native_state(tmp_path)
 
     assert check_support_pages_native(tmp_path) == []
+
+
+def _write_valid_sidebar_bind_mobile_page_state(
+    tmp_path: Path,
+    *,
+    frontend_source: str = (
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "LEGACY_FRONTEND_ROUTES = []\n"
+        "@router.get('/api/frontend-compat/legacy-routes')\n"
+        "def legacy_routes_manifest(): return {'routes': LEGACY_FRONTEND_ROUTES}\n"
+    ),
+) -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    admin_pages = tmp_path / "aicrm_next/identity_contact/admin_pages.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    for path in (frontend_routes, admin_pages, main_py):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text(frontend_source, encoding="utf-8")
+    admin_pages.write_text(
+        '@router.get("/sidebar/bind-mobile", name="api.sidebar_bind_mobile_page")\n'
+        "async def sidebar_bind_mobile_page(request):\n"
+        "    return templates.TemplateResponse(request, 'sidebar_customer_workbench.html', {'debug_enabled': False})\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "app.include_router(identity_router)\n"
+        "app.include_router(identity_admin_pages_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+
+def test_sidebar_bind_mobile_checker_flags_frontend_route(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(
+        tmp_path,
+        frontend_source=(
+            "from fastapi import APIRouter\n"
+            "router = APIRouter()\n"
+            "LEGACY_FRONTEND_ROUTES = []\n"
+            "@router.get('/sidebar/bind-mobile', name='api.sidebar_bind_mobile_page')\n"
+            "async def sidebar_bind_mobile_page(request): return 'sidebar_customer_workbench.html'\n"
+            "@router.get('/api/frontend-compat/legacy-routes')\n"
+            "def legacy_routes_manifest(): return {'routes': LEGACY_FRONTEND_ROUTES}\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_still_in_frontend_compat" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_frontend_template_dependency(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(
+        tmp_path,
+        frontend_source=(
+            "from fastapi import APIRouter\n"
+            "from fastapi.templating import Jinja2Templates\n"
+            "router = APIRouter()\n"
+            "LEGACY_FRONTEND_ROUTES = []\n"
+            "_TEMPLATES_DIR = 'templates'\n"
+            "template_name = 'sidebar_customer_workbench.html'\n"
+            "@router.get('/api/frontend-compat/legacy-routes')\n"
+            "def legacy_routes_manifest(): return {'routes': LEGACY_FRONTEND_ROUTES}\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_still_in_frontend_compat" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_missing_native_module(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(tmp_path)
+    (tmp_path / "aicrm_next/identity_contact/admin_pages.py").unlink()
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_native_page_missing" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_missing_native_route(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(tmp_path)
+    (tmp_path / "aicrm_next/identity_contact/admin_pages.py").write_text("router = APIRouter()\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_native_route_missing" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_missing_registration(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "app.include_router(identity_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_native_router_not_registered" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_registered_after_frontend(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "app.include_router(frontend_compat_router)\n"
+        "app.include_router(identity_admin_pages_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "sidebar_bind_mobile_native_router_registered_after_frontend_compat" in codes
+
+
+def test_sidebar_bind_mobile_checker_flags_manifest_removed_too_early(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(
+        tmp_path,
+        frontend_source="from fastapi import APIRouter\nrouter = APIRouter()\nLEGACY_FRONTEND_ROUTES = []\n",
+    )
+
+    codes = {violation.code for violation in check_sidebar_bind_mobile_page_native(tmp_path)}
+
+    assert "frontend_compat_manifest_removed_too_early" in codes
+
+
+def test_sidebar_bind_mobile_checker_accepts_native_state(tmp_path: Path) -> None:
+    _write_valid_sidebar_bind_mobile_page_state(tmp_path)
+
+    assert check_sidebar_bind_mobile_page_native(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:
