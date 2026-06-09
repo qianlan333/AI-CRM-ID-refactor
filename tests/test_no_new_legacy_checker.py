@@ -15,6 +15,7 @@ from scripts.check_no_new_legacy import (
     check_channel_identity_bridge_native,
     check_cloud_orchestrator_media_upload_closeout_lock,
     check_cloud_orchestrator_media_upload_native_client,
+    check_cloud_root_observability_native,
     check_cloud_orchestrator_repository_time_helpers_native,
     check_cloud_orchestrator_campaign_read_closeout_lock,
     check_cloud_orchestrator_campaign_write_next_commandbus,
@@ -2544,6 +2545,104 @@ def test_shadowed_frontend_checker_accepts_clean_state(tmp_path: Path) -> None:
     )
 
     assert check_shadowed_frontend_compat_handlers_removed(tmp_path) == []
+
+
+def _write_valid_cloud_root_observability_state(tmp_path: Path, *, frontend_source: str = "LEGACY_FRONTEND_ROUTES = []\n") -> None:
+    frontend_routes = tmp_path / "aicrm_next/frontend_compat/legacy_routes.py"
+    cloud_api = tmp_path / "aicrm_next/cloud_orchestrator/api.py"
+    main_py = tmp_path / "aicrm_next/main.py"
+    for path in (frontend_routes, cloud_api, main_py):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    frontend_routes.write_text(frontend_source, encoding="utf-8")
+    cloud_api.write_text(
+        '@router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")\n'
+        "def admin_cloud_orchestrator():\n"
+        "    return 'api.admin_cloud_orchestrator_plans_workspace'\n"
+        '@router.get("/admin/cloud-orchestrator/observability", name="api.admin_cloud_orchestrator_observability")\n'
+        "def admin_cloud_orchestrator_observability():\n"
+        "    return 'admin_console/cloud_observability.html api.admin_cloud_orchestrator_campaigns_workspace'\n",
+        encoding="utf-8",
+    )
+    main_py.write_text(
+        "app.include_router(cloud_orchestrator_router)\n"
+        "app.include_router(frontend_compat_router)\n",
+        encoding="utf-8",
+    )
+
+
+def test_cloud_root_observability_checker_flags_frontend_root_route(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/cloud-orchestrator']\ndef admin_cloud_orchestrator(): pass\n",
+    )
+
+    codes = {violation.code for violation in check_cloud_root_observability_native(tmp_path)}
+
+    assert "cloud_root_still_in_frontend_compat" in codes
+
+
+def test_cloud_root_observability_checker_flags_frontend_observability_route(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(
+        tmp_path,
+        frontend_source=(
+            "LEGACY_FRONTEND_ROUTES = ['/admin/cloud-orchestrator/observability']\n"
+            "def admin_cloud_orchestrator_observability(): pass\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_cloud_root_observability_native(tmp_path)}
+
+    assert "cloud_observability_still_in_frontend_compat" in codes
+
+
+def test_cloud_root_observability_checker_flags_missing_root_native_route(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(tmp_path)
+    (tmp_path / "aicrm_next/cloud_orchestrator/api.py").write_text(
+        '@router.get("/admin/cloud-orchestrator/observability", name="api.admin_cloud_orchestrator_observability")\n'
+        "def admin_cloud_orchestrator_observability():\n"
+        "    return 'admin_console/cloud_observability.html api.admin_cloud_orchestrator_campaigns_workspace'\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_cloud_root_observability_native(tmp_path)}
+
+    assert "cloud_root_native_route_missing" in codes
+
+
+def test_cloud_root_observability_checker_flags_missing_observability_native_route(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(tmp_path)
+    (tmp_path / "aicrm_next/cloud_orchestrator/api.py").write_text(
+        '@router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")\n'
+        "def admin_cloud_orchestrator():\n"
+        "    return 'api.admin_cloud_orchestrator_plans_workspace'\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_cloud_root_observability_native(tmp_path)}
+
+    assert "cloud_observability_native_route_missing" in codes
+
+
+def test_cloud_root_observability_checker_flags_registered_after_frontend(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(tmp_path)
+    (tmp_path / "aicrm_next/main.py").write_text(
+        "app.include_router(frontend_compat_router)\n"
+        "app.include_router(cloud_orchestrator_router)\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_cloud_root_observability_native(tmp_path)}
+
+    assert "cloud_router_registered_after_frontend_compat" in codes
+
+
+def test_cloud_root_observability_checker_accepts_native_state(tmp_path: Path) -> None:
+    _write_valid_cloud_root_observability_state(
+        tmp_path,
+        frontend_source="LEGACY_FRONTEND_ROUTES = ['/admin/api-docs']\n",
+    )
+
+    assert check_cloud_root_observability_native(tmp_path) == []
 
 
 def test_media_library_guard_flags_legacy_and_external_drift(tmp_path: Path) -> None:

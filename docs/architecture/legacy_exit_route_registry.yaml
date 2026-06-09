@@ -264,14 +264,14 @@ routes:
     capability_owner: aicrm_next.cloud_orchestrator
     runtime_owner: next_native
     legacy_fallback_allowed: false
-    legacy_source: frontend_compat
-    external_side_effect_risk: medium
-    adapter_mode: real_blocked
-    delete_status: active
-    replacement_status: not_started
-    checker: tests/test_cloud_plan_review_frontend_contract.py
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: deletion_locked
+    replacement_status: locked
+    checker: tests/test_cloud_orchestrator_admin_pages_native.py
     rollback_owner: aicrm_next.cloud_orchestrator
-    notes: Cloud orchestrator admin pages and plan review surfaces.
+    notes: Cloud root redirect and observability page are served by Next native cloud_orchestrator.api; plans and campaigns page ownership stays native; no Cloud API or business workflow changed.
   - route_id: cloud_orchestrator_plans_api_family
     path_pattern: /api/admin/cloud-orchestrator/plans*
     methods: [GET, POST, PATCH]

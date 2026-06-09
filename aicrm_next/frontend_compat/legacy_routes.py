@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.admin_read_model.application import (
@@ -11,10 +10,7 @@ from aicrm_next.admin_read_model.application import (
     page_row_count,
 )
 from aicrm_next.frontend_compat.api_docs_view_model import build_api_docs_view_model
-from aicrm_next.admin_shell import (
-    admin_path_for as _admin_path_for,
-    shell_context as _shell_context,
-)
+from aicrm_next.admin_shell import shell_context as _shell_context
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -22,8 +18,6 @@ templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 LEGACY_FRONTEND_ROUTES = [
-    "/admin/cloud-orchestrator",
-    "/admin/cloud-orchestrator/observability",
     "/admin/api-docs",
 ]
 
@@ -49,37 +43,6 @@ def _real_data_context(context: dict, *, payload: dict, title: str, summary: str
     if payload.get("page_error"):
         context["page_error"] = payload["page_error"]
     return context
-
-
-@router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
-def admin_cloud_orchestrator(request: Request):
-    return RedirectResponse(
-        url=_admin_path_for("api.admin_cloud_orchestrator_plans_workspace"),
-        status_code=302,
-    )
-
-
-@router.get("/admin/cloud-orchestrator/observability", name="api.admin_cloud_orchestrator_observability")
-def admin_cloud_orchestrator_observability(request: Request):
-    context = _shell_context(
-        request=request,
-        page_title="Cloud Orchestrator · 可观察性",
-        page_summary="工单、审计、漏斗与 Tool 调用统计按 trace_id 串联排查。",
-        active_endpoint="api.admin_cloud_orchestrator_workspace",
-    )
-    context["breadcrumbs"] = [
-        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
-        {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
-        {"label": "可观察性"},
-    ]
-    context["page_actions"] = [
-        {
-            "label": "返回助手",
-            "href": request.url_for("api.admin_cloud_orchestrator_campaigns_workspace"),
-            "variant": "primary",
-        },
-    ]
-    return templates.TemplateResponse(request, "admin_console/cloud_observability.html", context)
 
 
 @router.get("/admin/runtime-config", name="api.admin_runtime_config")

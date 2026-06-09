@@ -82,14 +82,14 @@ def test_admin_shell_removed_from_frontend_compat_legacy_inventory(monkeypatch) 
     assert "/admin" not in routes
 
 
-def test_shadowed_native_pages_removed_from_frontend_compat_inventory(monkeypatch) -> None:
+def test_native_pages_removed_from_frontend_compat_inventory(monkeypatch) -> None:
     routes = set(_client(monkeypatch).get("/api/frontend-compat/legacy-routes").json()["routes"])
 
     assert "/admin/hxc-dashboard" not in routes
     assert "/admin/hxc-send-config" not in routes
     assert "/admin/cloud-orchestrator/campaigns" not in routes
     assert "/admin/wechat-pay/products" not in routes
+    assert "/admin/cloud-orchestrator" not in routes
+    assert "/admin/cloud-orchestrator/observability" not in routes
 
-    assert "/admin/cloud-orchestrator" in routes
-    assert "/admin/cloud-orchestrator/observability" in routes
     assert "/admin/api-docs" in routes
