@@ -1253,21 +1253,29 @@ def check_test_fixture_legacy_boundaries(root: Path = ROOT) -> list[Violation]:
                     "Next test fixtures must not import or construct the legacy Flask package.",
                 )
             )
-    if "def legacy_app(" not in text or "def legacy_client(" not in text:
-        violations.append(
-            Violation(
-                "legacy_test_fixture_not_explicit",
-                rel,
-                "legacy_app/legacy_client",
-                "Legacy Flask test fixtures must be explicitly named.",
-            )
-        )
     return violations
 
 
-LEGACY_TEST_BRIDGE_FILES = {
-    Path("tests/conftest.py"),
-    Path("tests/test_test_fixture_boundaries.py"),
+LEGACY_TEST_FIXTURE_BRIDGE_MARKERS = {
+    "build_legacy_pg_test_app",
+    "build_pg_test_app",
+    "legacy_app",
+    "legacy_client",
+    "legacy_app_context",
+    "runtime_v2_pg_app",
+}
+
+LEGACY_TEST_SCHEMA_BRIDGE_MARKERS = {
+    "schema_postgres.sql",
+    "run_schema_with_forward_fk_retries",
+}
+
+LEGACY_TEST_DB_BRIDGE_MARKERS = {
+    "get_db",
+    "init_db",
+    "close_db",
+    "create_app",
+    "app_context",
 }
 
 
@@ -1276,33 +1284,46 @@ def _legacy_test_runtime_markers(path: Path) -> dict[str, list[str]]:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
     except (UnicodeDecodeError, SyntaxError):
-        return {"fixture": [], "db": []}
+        return {"fixture": [], "schema": [], "db": []}
 
     fixture_markers: set[str] = set()
+    schema_markers: set[str] = set()
     potential_db_markers: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and (node.module or "") == "tests.conftest":
             for alias in node.names:
-                if alias.name == "build_legacy_pg_test_app":
-                    fixture_markers.add("build_legacy_pg_test_app")
+                if alias.name in LEGACY_TEST_FIXTURE_BRIDGE_MARKERS:
+                    fixture_markers.add(alias.name)
+        elif isinstance(node, ast.FunctionDef):
+            if node.name in LEGACY_TEST_FIXTURE_BRIDGE_MARKERS:
+                fixture_markers.add(node.name)
         elif isinstance(node, ast.Name):
-            if node.id in {"build_legacy_pg_test_app", "legacy_app", "legacy_client"}:
+            if node.id in LEGACY_TEST_FIXTURE_BRIDGE_MARKERS:
                 fixture_markers.add(node.id)
-            if node.id in {"get_db", "init_db"}:
+            if node.id in LEGACY_TEST_DB_BRIDGE_MARKERS:
                 potential_db_markers.add(node.id)
         elif isinstance(node, ast.arg):
-            if node.arg in {"legacy_app", "legacy_client"}:
+            if node.arg in LEGACY_TEST_FIXTURE_BRIDGE_MARKERS:
                 fixture_markers.add(node.arg)
-        elif isinstance(node, ast.Attribute) and node.attr == "app_context":
-            potential_db_markers.add("app_context")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in LEGACY_TEST_FIXTURE_BRIDGE_MARKERS:
+                fixture_markers.add(node.attr)
+            if node.attr in LEGACY_TEST_DB_BRIDGE_MARKERS:
+                potential_db_markers.add(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if path.name in {"test_no_new_legacy_checker.py", "test_test_fixture_boundaries.py"}:
+                continue
+            for marker in LEGACY_TEST_SCHEMA_BRIDGE_MARKERS:
+                if marker in node.value:
+                    schema_markers.add(marker)
 
     db_markers: set[str] = set()
     if _wecom_ast_imports(path) or fixture_markers:
         db_markers.update(potential_db_markers)
-        for marker in ("get_db", "init_db", "create_app", "app_context"):
+        for marker in LEGACY_TEST_DB_BRIDGE_MARKERS:
             if marker in source:
                 db_markers.add(marker)
-    return {"fixture": sorted(fixture_markers), "db": sorted(db_markers)}
+    return {"fixture": sorted(fixture_markers), "schema": sorted(schema_markers), "db": sorted(db_markers)}
 
 
 def check_legacy_package_domain_tests_archived(root: Path = ROOT) -> list[Violation]:
@@ -1315,8 +1336,6 @@ def check_legacy_package_domain_tests_archived(root: Path = ROOT) -> list[Violat
         if "__pycache__" in path.parts:
             continue
         rel = path.relative_to(root)
-        if rel in LEGACY_TEST_BRIDGE_FILES:
-            continue
         imports = _wecom_ast_imports(path)
         if imports:
             violations.append(
@@ -1340,16 +1359,25 @@ def check_legacy_package_domain_tests_archived(root: Path = ROOT) -> list[Violat
         if markers["fixture"]:
             violations.append(
                 Violation(
-                    "legacy_test_fixture_usage_remaining",
+                    "legacy_test_fixture_bridge_remaining",
                     str(rel),
                     ", ".join(markers["fixture"]),
-                    "Only tests/conftest.py and tests/test_test_fixture_boundaries.py may reference the temporary legacy fixture bridge.",
+                    "The temporary legacy test fixture bridge has been removed; tests must use Next-native fixtures only.",
+                )
+            )
+        if markers["schema"]:
+            violations.append(
+                Violation(
+                    "legacy_test_schema_bridge_remaining",
+                    str(rel),
+                    ", ".join(markers["schema"]),
+                    "Test schema setup must use Next-native Alembic migrations, not legacy schema_postgres.sql.",
                 )
             )
         if markers["db"]:
             violations.append(
                 Violation(
-                    "legacy_test_db_usage_remaining",
+                    "legacy_test_db_bridge_remaining",
                     str(rel),
                     ", ".join(markers["db"]),
                     "Executable tests must not use legacy Flask DB/app-context helpers; migrate to Next-native repositories or archive the historical coverage.",

@@ -358,13 +358,6 @@ def test_test_fixture_boundaries_flag_default_app_legacy_import(tmp_path: Path) 
         "def app():\n"
         "    from wecom_ability_service import create_app\n"
         "    return create_app()\n"
-        "@pytest.fixture\n"
-        "def legacy_app():\n"
-        "    from wecom_ability_service import create_app\n"
-        "    return create_app()\n"
-        "@pytest.fixture\n"
-        "def legacy_client(legacy_app):\n"
-        "    return legacy_app.test_client()\n",
     )
 
     codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
@@ -382,12 +375,6 @@ def test_test_fixture_boundaries_flag_default_client_legacy_dependency(tmp_path:
         "@pytest.fixture\n"
         "def client(app):\n"
         "    return app.test_client()\n"
-        "@pytest.fixture\n"
-        "def legacy_app():\n"
-        "    pass\n"
-        "@pytest.fixture\n"
-        "def legacy_client(legacy_app):\n"
-        "    return legacy_app.test_client()\n",
     )
 
     codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
@@ -395,7 +382,7 @@ def test_test_fixture_boundaries_flag_default_client_legacy_dependency(tmp_path:
     assert "default_test_client_fixture_uses_legacy" in codes
 
 
-def test_test_fixture_boundaries_allow_explicit_legacy_fixtures(tmp_path: Path) -> None:
+def test_test_fixture_boundaries_allow_next_only_fixtures(tmp_path: Path) -> None:
     _write_fixture_boundary_conftest(
         tmp_path,
         "import pytest\n"
@@ -413,13 +400,6 @@ def test_test_fixture_boundaries_allow_explicit_legacy_fixtures(tmp_path: Path) 
         "@pytest.fixture\n"
         "def client(next_client):\n"
         "    return next_client\n"
-        "@pytest.fixture\n"
-        "def legacy_app():\n"
-        "    from wecom_ability_service import create_app\n"
-        "    return create_app()\n"
-        "@pytest.fixture\n"
-        "def legacy_client(legacy_app):\n"
-        "    return legacy_app.test_client()\n",
     )
 
     assert check_test_fixture_legacy_boundaries(tmp_path) == []
@@ -433,12 +413,6 @@ def test_test_fixture_boundaries_flag_next_fixture_legacy_import(tmp_path: Path)
         "def next_client():\n"
         "    import wecom_ability_service\n"
         "    return wecom_ability_service.create_app().test_client()\n"
-        "@pytest.fixture\n"
-        "def legacy_app():\n"
-        "    pass\n"
-        "@pytest.fixture\n"
-        "def legacy_client(legacy_app):\n"
-        "    return legacy_app.test_client()\n",
     )
 
     codes = {violation.code for violation in check_test_fixture_legacy_boundaries(tmp_path)}
@@ -453,7 +427,7 @@ def test_legacy_package_domain_archive_flags_legacy_db_import(tmp_path: Path) ->
 
     assert "legacy_test_runtime_import_remaining" in codes
     assert "legacy_package_domain_test_remaining" in codes
-    assert "legacy_test_db_usage_remaining" in codes
+    assert "legacy_test_db_bridge_remaining" in codes
 
 
 def test_legacy_package_domain_archive_flags_legacy_domain_import(tmp_path: Path) -> None:
@@ -481,7 +455,7 @@ def test_legacy_package_domain_archive_flags_legacy_fixture_usage(tmp_path: Path
 
     codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
 
-    assert "legacy_test_fixture_usage_remaining" in codes
+    assert "legacy_test_fixture_bridge_remaining" in codes
 
 
 def test_legacy_package_domain_archive_flags_legacy_client_fixture_arg(tmp_path: Path) -> None:
@@ -494,31 +468,50 @@ def test_legacy_package_domain_archive_flags_legacy_client_fixture_arg(tmp_path:
 
     codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
 
-    assert "legacy_test_fixture_usage_remaining" in codes
+    assert "legacy_test_fixture_bridge_remaining" in codes
 
 
-def test_legacy_package_domain_archive_allows_temporary_bridge_files(tmp_path: Path) -> None:
+def test_legacy_package_domain_archive_flags_conftest_legacy_import(tmp_path: Path) -> None:
     conftest = tmp_path / "tests/conftest.py"
-    boundary = tmp_path / "tests/test_test_fixture_boundaries.py"
+    conftest.parent.mkdir(parents=True, exist_ok=True)
+    conftest.write_text("from wecom_ability_service import create_app\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_runtime_import_remaining" in codes
+
+
+def test_legacy_package_domain_archive_flags_conftest_legacy_fixture_bridge(tmp_path: Path) -> None:
+    conftest = tmp_path / "tests/conftest.py"
     conftest.parent.mkdir(parents=True, exist_ok=True)
     conftest.write_text(
-        "from wecom_ability_service import create_app\n"
         "def build_legacy_pg_test_app(tmp_path):\n"
-        "    return create_app()\n"
+        "    pass\n"
         "def legacy_app():\n"
-        "    return create_app()\n"
+        "    pass\n"
         "def legacy_client(legacy_app):\n"
-        "    return legacy_app.test_client()\n",
-        encoding="utf-8",
-    )
-    boundary.write_text(
-        "def test_bridge_boundary():\n"
-        "    assert 'build_legacy_pg_test_app'\n"
-        "    assert 'legacy_client'\n",
+        "    pass\n",
         encoding="utf-8",
     )
 
-    assert check_legacy_package_domain_tests_archived(tmp_path) == []
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_fixture_bridge_remaining" in codes
+
+
+def test_legacy_package_domain_archive_flags_conftest_legacy_schema_bridge(tmp_path: Path) -> None:
+    conftest = tmp_path / "tests/conftest.py"
+    conftest.parent.mkdir(parents=True, exist_ok=True)
+    conftest.write_text(
+        "SCHEMA = 'schema_postgres.sql'\n"
+        "def setup():\n"
+        "    return 'run_schema_with_forward_fk_retries'\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_legacy_package_domain_tests_archived(tmp_path)}
+
+    assert "legacy_test_schema_bridge_remaining" in codes
 
 
 def test_legacy_package_domain_archive_allows_clean_next_test(tmp_path: Path) -> None:

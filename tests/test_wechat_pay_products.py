@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+import aicrm_next.commerce.application as commerce_application
+import aicrm_next.public_product.service as public_product_service
 from aicrm_next.commerce.application import (
     DeleteProductCommand,
     GetProductQuery,
@@ -44,18 +46,18 @@ def _assert_next_payment_contract(response) -> dict:
 def test_admin_product_api_uses_next_fixture_routes(next_client):
     reset_commerce_fixture_state()
 
-    listed = next_client.get("/api/admin/wechat-pay/products")
-    assert listed.status_code == 200
-    payload = _assert_next_payment_contract(listed)
-    assert payload["ok"] is True
-    assert payload["items"]
-
     created = next_client.post("/api/admin/wechat-pay/products", json=_product_payload())
     assert created.status_code == 200
     created_payload = _assert_next_payment_contract(created)
     product = created_payload["product"]
     assert product["product_code"] == "next_course_001"
     assert product["enabled"] is True
+
+    listed = next_client.get("/api/admin/wechat-pay/products")
+    assert listed.status_code == 200
+    payload = _assert_next_payment_contract(listed)
+    assert payload["ok"] is True
+    assert "next_course_001" in [item["product_code"] for item in payload["items"]]
 
     detail = next_client.get(f"/api/admin/wechat-pay/products/{product['id']}")
     assert detail.status_code == 200
@@ -125,8 +127,23 @@ def test_completion_redirect_validation_blocks_unsafe_url():
         )
 
 
-def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(next_client):
+def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(next_client, monkeypatch):
     reset_commerce_fixture_state()
+
+    checkout_repo = InMemoryCommerceRepository()
+    UpsertProductCommand(checkout_repo)(
+        ProductUpsertRequest(
+            **_product_payload(
+                product_code="test-product-next-fixture",
+                title="测试商品",
+                description="测试商品",
+                price_cents=12900,
+                page_slug="test-product-next-fixture",
+            )
+        )
+    )
+    monkeypatch.setattr(commerce_application, "build_commerce_repository", lambda: checkout_repo)
+    monkeypatch.setattr(public_product_service, "build_commerce_repository", lambda: checkout_repo)
 
     product = next_client.get("/api/products/test-product")
     assert product.status_code == 200
@@ -139,10 +156,10 @@ def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(n
     checkout = next_client.post(
         "/api/checkout/wechat",
         json={
-            "product_code": "test-product",
+            "product_code": "test-product-next-fixture",
             "quantity": 1,
             "buyer_identity": {"mobile": "13800138000", "external_userid": "wx_ext_001", "openid": "op_fixture"},
-            "return_url": "/pay/test-product",
+            "return_url": "/pay/test-product-next-fixture",
         },
     )
     assert checkout.status_code == 200

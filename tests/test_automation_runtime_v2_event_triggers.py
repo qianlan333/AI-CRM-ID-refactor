@@ -6,7 +6,7 @@ from aicrm_next.automation_runtime_v2.domain import AutomationEventInput
 from tests.automation_runtime_v2_test_helpers import count, seed_program, seed_task
 
 
-def test_event_triggers_channel_questionnaire_payment_and_are_idempotent(runtime_v2_pg_app):
+def test_event_triggers_channel_questionnaire_payment_and_are_idempotent(next_pg_schema):
     program_id = seed_program("runtime_v2_events")
     seed_task(program_id, trigger_type="on_event", content_text="问卷事件", agent_config={"trigger_event_type": "questionnaire_submitted"})
 

@@ -7,7 +7,7 @@ from aicrm_next.automation_runtime_v2.task_adapter import get_task
 from tests.automation_runtime_v2_test_helpers import db, seed_program, seed_task
 
 
-def test_legacy_trigger_content_mapping_and_projection(runtime_v2_pg_app):
+def test_legacy_trigger_content_mapping_and_projection(next_pg_schema):
     program_id = seed_program("runtime_v2_compat")
     task_id = seed_task(program_id, trigger_type="audience_entered", content_mode="unified", content_text="兼容")
     task = get_task(task_id)

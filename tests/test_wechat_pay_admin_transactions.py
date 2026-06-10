@@ -2,6 +2,68 @@ from __future__ import annotations
 
 from aicrm_next.commerce import admin_transactions as next_wechat_admin_transactions
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
+from aicrm_next.shared.runtime import database_mode, raw_database_url
+
+
+def _seed_wechat_pay_admin_order() -> None:
+    reset_commerce_fixture_state()
+    if database_mode() != "postgres":
+        return
+
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(raw_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM wechat_pay_order_events WHERE out_trade_no = %s", ("order_masked_001",))
+            cur.execute("DELETE FROM wechat_pay_refunds WHERE out_trade_no = %s", ("order_masked_001",))
+            cur.execute("DELETE FROM wechat_pay_orders WHERE out_trade_no = %s", ("order_masked_001",))
+            cur.execute(
+                """
+                INSERT INTO wechat_pay_orders (
+                    out_trade_no, transaction_id, product_code, product_name,
+                    amount_total, currency, payer_openid, respondent_key, unionid,
+                    external_userid, userid_snapshot, mobile_snapshot, payer_name_snapshot,
+                    status, trade_state, paid_at, created_at, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s,
+                    %s, 'CNY', %s, %s, %s,
+                    %s, %s, %s, %s,
+                    'paid', 'SUCCESS', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """,
+                (
+                    "order_masked_001",
+                    "transaction_masked_001",
+                    "course_masked_001",
+                    "Next 私域成交课",
+                    12900,
+                    "op_masked_001",
+                    "respondent_masked_001",
+                    "union_masked_001",
+                    "wm_masked_001",
+                    "owner_masked_001",
+                    "13800138000",
+                    "张三",
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO wechat_pay_order_events (
+                    out_trade_no, event_type, transaction_id, trade_state,
+                    payload_json, headers_json, created_at
+                )
+                VALUES (%s, 'payment_success', %s, 'SUCCESS', %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (
+                    "order_masked_001",
+                    "transaction_masked_001",
+                    Jsonb({"trade_state": "SUCCESS"}),
+                    Jsonb({}),
+                ),
+            )
+        conn.commit()
 
 
 def test_next_wechat_pay_admin_present_order_uses_operator_product_label():
@@ -100,7 +162,7 @@ def test_next_wechat_pay_admin_status_mapping_and_refund_amounts():
 
 
 def test_next_wechat_pay_admin_order_list_filter_and_detail_use_next_routes(next_client):
-    reset_commerce_fixture_state()
+    _seed_wechat_pay_admin_order()
 
     list_response = next_client.get("/api/admin/wechat-pay/orders?product_code=course_masked_001&limit=20")
     payload = list_response.json()
@@ -123,7 +185,7 @@ def test_next_wechat_pay_admin_order_list_filter_and_detail_use_next_routes(next
 
 
 def test_next_wechat_pay_admin_export_returns_required_fields_without_legacy_job_path(next_client):
-    reset_commerce_fixture_state()
+    _seed_wechat_pay_admin_order()
 
     response = next_client.post(
         "/api/admin/wechat-pay/order-exports",
@@ -144,8 +206,18 @@ def test_next_wechat_pay_admin_export_returns_required_fields_without_legacy_job
     assert retired_payload["error_code"] == "admin_wechat_pay_export_job_removed"
 
 
-def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real_provider(next_client):
-    reset_commerce_fixture_state()
+def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real_provider(next_client, monkeypatch):
+    _seed_wechat_pay_admin_order()
+
+    class FakeRefundClient:
+        def create_refund(self, payload: dict) -> dict:
+            return {"status": "PROCESSING", "refund_id": "refund_fake_001", "request": payload}
+
+    monkeypatch.setattr(
+        next_wechat_admin_transactions,
+        "_create_wechat_pay_refund_client",
+        lambda: FakeRefundClient(),
+    )
 
     missing_confirmation = next_client.post(
         "/api/admin/wechat-pay/orders/order_masked_001/refunds",
@@ -174,16 +246,22 @@ def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert response.headers["X-AICRM-Real-Refund-Executed"] == "false"
     assert payload["ok"] is True
-    assert payload["refund"]["status"] == "requested"
-    assert payload["refund"]["provider_refund_executed"] is False
-    assert payload["real_refund_executed"] is False
+    if database_mode() == "postgres":
+        assert response.headers["X-AICRM-Real-Refund-Executed"] == "true"
+        assert payload["refund"]["status"] == "PROCESSING"
+        assert payload["refund"]["provider_refund_executed"] is True
+        assert payload["real_refund_executed"] is True
+    else:
+        assert response.headers["X-AICRM-Real-Refund-Executed"] == "false"
+        assert payload["refund"]["status"] == "requested"
+        assert payload["refund"]["provider_refund_executed"] is False
+        assert payload["real_refund_executed"] is False
     assert payload["order"]["status_label"] == "退款处理中"
 
 
 def test_next_wechat_pay_admin_refund_rejects_amount_over_order_total(next_client):
-    reset_commerce_fixture_state()
+    _seed_wechat_pay_admin_order()
 
     response = next_client.post(
         "/api/admin/wechat-pay/orders/order_masked_001/refunds",
