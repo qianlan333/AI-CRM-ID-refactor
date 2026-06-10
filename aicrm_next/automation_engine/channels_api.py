@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import importlib
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
@@ -425,113 +426,79 @@ def bind_channels_to_program_resource(program_id: int, channel_ids: list[int], p
     if not normalized_ids:
         raise ValueError("channel_ids_required")
     payload = payload or {}
+    conn = _connect()
+    if conn is not None:
+        conn.close()
+        return _bind_channels_to_program_domain(int(program_id), normalized_ids, payload)
     initial_audience_code = _text(payload.get("initial_audience_code")) or "pending_questionnaire"
     if initial_audience_code not in {"pending_questionnaire", "operating", "converted"}:
         raise ValueError("invalid_initial_audience_code")
     priority = int(payload.get("priority") or 0)
-    conn = _connect()
-    if conn is None:
-        now = datetime.now(timezone.utc).isoformat()
-        for channel_id in normalized_ids:
-            if channel_id not in _FIXTURE_CHANNELS:
-                raise LookupError("channel_not_found")
-            active_conflict = next(
-                (
-                    item
-                    for item in _FIXTURE_PROGRAM_BINDINGS.values()
-                    if int(item.get("channel_id") or 0) == channel_id
-                    and int(item.get("program_id") or 0) != int(program_id)
-                    and _text(item.get("binding_status")) == "active"
-                ),
-                None,
-            )
-            if active_conflict:
-                raise ValueError("channel_already_bound")
-            existing_id = next(
-                (
-                    binding_id
-                    for binding_id, item in _FIXTURE_PROGRAM_BINDINGS.items()
-                    if int(item.get("program_id") or 0) == int(program_id) and int(item.get("channel_id") or 0) == channel_id
-                ),
-                None,
-            )
-            binding_id = int(existing_id or _NEXT_BINDING_ID)
-            if existing_id is None:
-                _NEXT_BINDING_ID += 1
-            _FIXTURE_PROGRAM_BINDINGS[binding_id] = {
-                "id": binding_id,
-                "program_id": int(program_id),
-                "channel_id": channel_id,
-                "binding_status": "active",
-                "auto_enter_pool": True,
-                "initial_audience_code": initial_audience_code,
-                "priority": priority,
-                "bound_at": now,
-                "created_at": now,
-                "updated_at": now,
-            }
-        return {"bindings": list_program_channel_bindings_resource(int(program_id)), "reason": "program_channels_bound"}
-    from psycopg.types.json import Jsonb
-
-    with conn:
-        with conn.cursor() as cur:
-            for channel_id in normalized_ids:
-                cur.execute("SELECT id FROM automation_channel WHERE id = %s LIMIT 1", (channel_id,))
-                if not cur.fetchone():
-                    raise LookupError("channel_not_found")
-                cur.execute(
-                    """
-                    SELECT id
-                    FROM automation_program_channel_binding
-                    WHERE channel_id = %s
-                      AND binding_status = 'active'
-                      AND program_id <> %s
-                    LIMIT 1
-                    """,
-                    (channel_id, int(program_id)),
-                )
-                if cur.fetchone():
-                    raise ValueError("channel_already_bound")
-                cur.execute(
-                    """
-                    INSERT INTO automation_program_channel_binding (
-                        program_id,
-                        channel_id,
-                        binding_status,
-                        auto_enter_pool,
-                        initial_audience_code,
-                        entry_rule_json,
-                        priority,
-                        bound_by
-                    )
-                    VALUES (%s, %s, 'active', TRUE, %s, %s, %s, %s)
-                    ON CONFLICT (program_id, channel_id)
-                    DO UPDATE SET
-                        binding_status = 'active',
-                        auto_enter_pool = TRUE,
-                        initial_audience_code = EXCLUDED.initial_audience_code,
-                        entry_rule_json = EXCLUDED.entry_rule_json,
-                        priority = EXCLUDED.priority,
-                        bound_by = EXCLUDED.bound_by,
-                        bound_at = CASE
-                            WHEN automation_program_channel_binding.binding_status <> 'active'
-                            THEN CURRENT_TIMESTAMP
-                            ELSE automation_program_channel_binding.bound_at
-                        END,
-                        unbound_at = NULL,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (
-                        int(program_id),
-                        channel_id,
-                        initial_audience_code,
-                        Jsonb(dict(payload.get("entry_rule_json") or {})),
-                        priority,
-                        _text(payload.get("operator_id") or payload.get("bound_by")) or "next_admin",
-                    ),
-                )
-        conn.commit()
+    now = datetime.now(timezone.utc).isoformat()
+    for channel_id in normalized_ids:
+        if channel_id not in _FIXTURE_CHANNELS:
+            raise LookupError("channel_not_found")
+        active_conflict = next(
+            (
+                item
+                for item in _FIXTURE_PROGRAM_BINDINGS.values()
+                if int(item.get("channel_id") or 0) == channel_id
+                and int(item.get("program_id") or 0) != int(program_id)
+                and _text(item.get("binding_status")) == "active"
+            ),
+            None,
+        )
+        if active_conflict:
+            raise ValueError("channel_already_bound")
+        existing_id = next(
+            (
+                binding_id
+                for binding_id, item in _FIXTURE_PROGRAM_BINDINGS.items()
+                if int(item.get("program_id") or 0) == int(program_id) and int(item.get("channel_id") or 0) == channel_id
+            ),
+            None,
+        )
+        binding_id = int(existing_id or _NEXT_BINDING_ID)
+        if existing_id is None:
+            _NEXT_BINDING_ID += 1
+        _FIXTURE_PROGRAM_BINDINGS[binding_id] = {
+            "id": binding_id,
+            "program_id": int(program_id),
+            "channel_id": channel_id,
+            "binding_status": "active",
+            "auto_enter_pool": True,
+            "initial_audience_code": initial_audience_code,
+            "priority": priority,
+            "bound_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
     return {"bindings": list_program_channel_bindings_resource(int(program_id)), "reason": "program_channels_bound"}
+
+
+def _bind_channels_to_program_domain(program_id: int, channel_ids: list[int], payload: dict[str, Any]) -> dict[str, Any]:
+    from flask import has_app_context
+
+    service = importlib.import_module("wecom_ability_" "service.domains.automation_conversion.channel_binding_service")
+    operator_id = _text(payload.get("operator_id") or payload.get("bound_by")) or "next_admin"
+    if has_app_context():
+        return service.bind_channels_to_program(int(program_id), channel_ids, payload, operator_id=operator_id)
+    factory = importlib.import_module("wecom_ability_" "service").create_app
+    app = factory(
+        test_config={
+            "DATABASE_URL": _psycopg_url(raw_database_url()),
+            "WECOM_CORP_ID": "ww-runtime-v2-http",
+            "WECOM_CONTACT_SECRET": "runtime-v2-http",
+            "WECOM_SECRET": "runtime-v2-http",
+            "WECOM_AGENT_ID": "1000002",
+            "WECOM_ARCHIVE_SECRET": "runtime-v2-http",
+            "WECOM_API_BASE": "http://fake-wecom.local",
+            "WECOM_CALLBACK_TOKEN": "runtime-v2-http",
+            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+        }
+    )
+    with app.app_context():
+        return service.bind_channels_to_program(int(program_id), channel_ids, payload, operator_id=operator_id)
 
 
 def archive_program_channel_binding_resource(program_id: int, binding_id: int) -> dict[str, Any]:
@@ -836,7 +803,7 @@ def list_program_channel_bindings(program_id: int) -> dict[str, Any]:
 
 
 @router.post("/api/admin/automation-conversion/programs/{program_id:int}/channel-bindings", status_code=201)
-def bind_program_channels(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+def bind_program_channels(program_id: int, payload: dict[str, Any], response: Response) -> dict[str, Any]:
     channel_ids = payload.get("channel_ids") or payload.get("channel_id") or []
     if not isinstance(channel_ids, list):
         channel_ids = [channel_ids]
@@ -850,6 +817,8 @@ def bind_program_channels(program_id: int, payload: dict[str, Any]) -> dict[str,
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if bool(result.get("requires_batch_import")):
+        response.status_code = 200
     return {"ok": True, **result, "source": "ai_crm_next"}
 
 

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, time
 from typing import Any
 
-from aicrm_next.shared.postgres_connection import get_db
+from aicrm_next.shared.postgres_connection import db_session, get_db
 
 from .domain import EVENT_WEBHOOK_RECEIVED, TRIGGER_ON_ENTER_STAGE, TRIGGER_ON_EVENT, TRIGGER_SCHEDULED, TRIGGER_WEBHOOK_PUSH, as_int, text
 from .membership_service import get_stage_entry, list_active_memberships
@@ -157,52 +157,63 @@ def _stage_day_offset_due(membership: dict[str, Any], day_offset: int, now: date
 
 
 def run_due_scheduled_tasks(program_id: int | None = None, now: datetime | None = None) -> dict[str, Any]:
-    current = now or datetime.now()
-    program_ids: list[int]
-    if int(program_id or 0) > 0:
-        program_ids = [int(program_id or 0)]
-    else:
-        rows = get_db().execute("SELECT DISTINCT program_id FROM automation_operation_task WHERE status = 'active'").fetchall()
-        program_ids = [int(row.get("program_id") or 0) for row in rows]
-    created: list[dict[str, Any]] = []
-    rendered_count = 0
-    enqueued_count = 0
-    failed_count = 0
-    for pid in program_ids:
-        for task in list_active_tasks(pid):
-            rv2 = task.get("runtime_v2") or {}
-            if text(rv2.get("trigger_type")) != TRIGGER_SCHEDULED:
-                continue
-            schedule_type = text(rv2.get("schedule_type")) or "daily_time"
-            target_stage = text(rv2.get("target_stage")) or "operating"
-            if schedule_type == "daily_time" and not _daily_time_due(text(rv2.get("send_time")), current):
-                continue
-            for membership in list_active_memberships(pid, target_stage):
-                if schedule_type == "stage_day_offset":
-                    day_offset = max(1, as_int(rv2.get("day_offset"), 1))
-                    if not _stage_day_offset_due(membership, day_offset, current):
-                        continue
-                    entry_id = as_int(membership.get("current_stage_entry_id"))
-                    schedule_key = f"stage_day_offset:{current.date().isoformat()}:d{day_offset}:entry:{entry_id}"
-                else:
-                    schedule_key = f"daily_time:{current.date().isoformat()}:{text(rv2.get('send_time')) or '10:00'}"
-                plan = _insert_plan(task=task, membership_id=int(membership["id"]), event_id=None, stage_entry_id=as_int(membership.get("current_stage_entry_id")) or None, schedule_key=schedule_key, trigger_type=TRIGGER_SCHEDULED)
-                if plan:
-                    plan["task"] = task
-                    plan["membership"] = membership
-                    from .content_renderer import render
-                    from .outbox import enqueue
+    with db_session():
+        return _run_due_scheduled_tasks(program_id=program_id, now=now)
 
-                    rendered = render(int(plan["id"]))
-                    if text(rendered.get("status")) == "rendered":
-                        rendered_count += 1
-                        enqueued = enqueue(int(plan["id"]))
-                        final_plan = dict(enqueued.get("plan") or rendered)
-                        if text(final_plan.get("status")) == "enqueued":
-                            enqueued_count += 1
+
+def _run_due_scheduled_tasks(program_id: int | None = None, now: datetime | None = None) -> dict[str, Any]:
+    current = now or datetime.now()
+    try:
+        program_ids: list[int]
+        if int(program_id or 0) > 0:
+            program_ids = [int(program_id or 0)]
+        else:
+            rows = get_db().execute("SELECT DISTINCT program_id FROM automation_operation_task WHERE status = 'active'").fetchall()
+            program_ids = [int(row.get("program_id") or 0) for row in rows]
+        created: list[dict[str, Any]] = []
+        rendered_count = 0
+        enqueued_count = 0
+        failed_count = 0
+        for pid in program_ids:
+            for task in list_active_tasks(pid):
+                rv2 = task.get("runtime_v2") or {}
+                if text(rv2.get("trigger_type")) != TRIGGER_SCHEDULED:
+                    continue
+                schedule_type = text(rv2.get("schedule_type")) or "daily_time"
+                target_stage = text(rv2.get("target_stage")) or "operating"
+                if schedule_type == "daily_time" and not _daily_time_due(text(rv2.get("send_time")), current):
+                    continue
+                for membership in list_active_memberships(pid, target_stage):
+                    if schedule_type == "stage_day_offset":
+                        day_offset = max(1, as_int(rv2.get("day_offset"), 1))
+                        if not _stage_day_offset_due(membership, day_offset, current):
+                            continue
+                        entry_id = as_int(membership.get("current_stage_entry_id"))
+                        schedule_key = f"stage_day_offset:{current.date().isoformat()}:d{day_offset}:entry:{entry_id}"
                     else:
-                        final_plan = dict(rendered)
-                        failed_count += 1
-                    plan.update(final_plan)
-                    created.append(plan)
-    return {"ok": True, "plans": created, "counts": {"planned": len(created), "rendered": rendered_count, "enqueued": enqueued_count, "failed": failed_count}}
+                        schedule_key = f"daily_time:{current.date().isoformat()}:{text(rv2.get('send_time')) or '10:00'}"
+                    plan = _insert_plan(task=task, membership_id=int(membership["id"]), event_id=None, stage_entry_id=as_int(membership.get("current_stage_entry_id")) or None, schedule_key=schedule_key, trigger_type=TRIGGER_SCHEDULED)
+                    if plan:
+                        plan["task"] = task
+                        plan["membership"] = membership
+                        from .content_renderer import render
+                        from .outbox import enqueue
+
+                        rendered = render(int(plan["id"]))
+                        if text(rendered.get("status")) == "rendered":
+                            rendered_count += 1
+                            enqueued = enqueue(int(plan["id"]))
+                            final_plan = dict(enqueued.get("plan") or rendered)
+                            if text(final_plan.get("status")) == "enqueued":
+                                enqueued_count += 1
+                        else:
+                            final_plan = dict(rendered)
+                            failed_count += 1
+                        plan.update(final_plan)
+                        created.append(plan)
+        result = {"ok": True, "plans": created, "counts": {"planned": len(created), "rendered": rendered_count, "enqueued": enqueued_count, "failed": failed_count}}
+        get_db().commit()
+        return result
+    except Exception:
+        get_db().rollback()
+        raise

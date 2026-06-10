@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aicrm_next.shared.postgres_connection import get_db
+from aicrm_next.shared.postgres_connection import db_session, get_db
 
 from .content_renderer import render
 from .domain import AutomationEventInput, as_int, text
@@ -91,8 +91,9 @@ def process_event(event_id: int) -> dict[str, Any]:
 
 
 def process_event_payload(payload: AutomationEventInput | dict[str, Any]) -> dict[str, Any]:
-    event = insert_event(payload)
-    return process_event(int(event["id"]))
+    with db_session():
+        event = insert_event(payload)
+        return process_event(int(event["id"]))
 
 
 __all__ = [

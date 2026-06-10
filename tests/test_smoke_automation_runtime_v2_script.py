@@ -52,6 +52,7 @@ def test_allow_write_executes_selected_scenario(monkeypatch):
     monkeypatch.setattr(smoke.SmokeRunner, "_push_flask_context", lambda self: None)
     monkeypatch.setattr(smoke.SmokeRunner, "_pop_flask_context", lambda self: None)
     monkeypatch.setattr(smoke.SmokeRunner, "scenario_channel_binding", fake_scenario)
+    monkeypatch.setattr(smoke, "SmokeHttpClient", lambda *args, **kwargs: object())
 
     code, payload = smoke.run_cli(
         [
@@ -67,6 +68,20 @@ def test_allow_write_executes_selected_scenario(monkeypatch):
     assert payload["ok"] is True
     assert payload["environment"]["dry_run"] is False
     assert called == ["connect", "scenario", "close"]
+
+
+def test_all_scenarios_include_runtime_v2_release_blockers():
+    names = smoke.scenario_list(["all"])
+
+    assert names == [
+        "channel-binding",
+        "large-channel-protection",
+        "future-scan",
+        "questionnaire-agent",
+        "payment",
+        "webhook",
+        "scheduled",
+    ]
 
 
 class FakeCleanupDb:
