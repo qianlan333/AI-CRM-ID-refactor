@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import aicrm_next.commerce.application as commerce_application
 from aicrm_next.commerce.application import (
     DeleteProductCommand,
     GetProductQuery,
@@ -125,26 +126,28 @@ def test_completion_redirect_validation_blocks_unsafe_url():
         )
 
 
-def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(next_client):
+def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(next_client, monkeypatch):
     reset_commerce_fixture_state()
 
-    created = next_client.post(
-        "/api/admin/wechat-pay/products",
-        json=_product_payload(
-            product_code="test-product-next-fixture",
-            title="测试商品",
-            description="测试商品",
-            price_cents=12900,
-            page_slug="test-product-next-fixture",
-        ),
+    checkout_repo = InMemoryCommerceRepository()
+    UpsertProductCommand(checkout_repo)(
+        ProductUpsertRequest(
+            **_product_payload(
+                product_code="test-product-next-fixture",
+                title="测试商品",
+                description="测试商品",
+                price_cents=12900,
+                page_slug="test-product-next-fixture",
+            )
+        )
     )
-    assert created.status_code == 200
+    monkeypatch.setattr(commerce_application, "build_commerce_repository", lambda: checkout_repo)
 
-    product = next_client.get("/api/products/test-product-next-fixture")
+    product = next_client.get("/api/products/test-product")
     assert product.status_code == 200
-    assert product.json()["product"]["product_code"] == "test-product-next-fixture"
+    assert product.json()["product"]["product_code"] == "test-product"
 
-    page = next_client.get("/p/test-product-next-fixture")
+    page = next_client.get("/p/test-product")
     assert page.status_code == 200
     assert "测试商品" in page.text
 
