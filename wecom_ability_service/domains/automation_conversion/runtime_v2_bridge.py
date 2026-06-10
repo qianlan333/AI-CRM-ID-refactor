@@ -26,13 +26,50 @@ def _active_bindings(channel_id: int) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def process_binding_import(*, program_id: int, binding: dict[str, Any], batch_size: int = 500) -> dict[str, Any]:
+def process_binding_import(
+    *,
+    program_id: int,
+    binding: dict[str, Any],
+    batch_size: int = 500,
+    max_import_count: int | None = 1000,
+) -> dict[str, Any]:
     channel_id = int(binding.get("channel_id") or 0)
     binding_id = int(binding.get("id") or 0)
     limit = max(1, int(batch_size or 500))
     offset = 0
+    total_contact_count = int(
+        (
+            get_db()
+            .execute(
+                "SELECT COUNT(*) AS count FROM automation_channel_contact WHERE channel_id = ?",
+                (channel_id,),
+            )
+            .fetchone()
+            or {}
+        )["count"]
+        or 0
+    )
+    if max_import_count is not None and int(max_import_count or 0) > 0 and total_contact_count > int(max_import_count):
+        return {
+            "history_imported": False,
+            "requires_batch_import": True,
+            "total_contact_count": total_contact_count,
+            "max_import_count": int(max_import_count),
+            "import_continue_token": f"{int(program_id)}:{binding_id}:0",
+            "imported_contact_count": 0,
+            "skipped_existing_count": 0,
+            "failed_count": 0,
+            "generated_event_count": 0,
+            "generated_membership_count": 0,
+            "generated_stage_entry_count": 0,
+            "generated_task_plan_count": 0,
+            "generated_broadcast_job_count": 0,
+            "runtime_v2_summary": [],
+        }
     summary = {
         "history_imported": True,
+        "requires_batch_import": False,
+        "total_contact_count": total_contact_count,
         "imported_contact_count": 0,
         "skipped_existing_count": 0,
         "failed_count": 0,

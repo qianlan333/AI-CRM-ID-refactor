@@ -54,8 +54,8 @@ def _has_questionnaire_submission(membership: dict[str, Any], event: dict[str, A
         """
         SELECT id
         FROM questionnaire_submissions
-        WHERE NULLIF(COALESCE(userid_snapshot, external_userid, ''), '') = ?
-           OR NULLIF(COALESCE(mobile_snapshot, phone, ''), '') = ?
+        WHERE NULLIF(COALESCE(external_userid, ''), '') = ?
+           OR NULLIF(COALESCE(mobile_snapshot, respondent_key, ''), '') = ?
         LIMIT 1
         """,
         (external, phone),
@@ -74,7 +74,7 @@ def _has_successful_payment(membership: dict[str, Any], event: dict[str, Any]) -
         """
         SELECT id
         FROM wechat_pay_orders
-        WHERE (NULLIF(COALESCE(external_userid, userid_snapshot, ''), '') = ?
+        WHERE (NULLIF(COALESCE(external_userid, ''), '') = ?
             OR NULLIF(COALESCE(mobile_snapshot, respondent_key, ''), '') = ?)
           AND (status = 'paid' OR trade_state = 'SUCCESS')
         LIMIT 1

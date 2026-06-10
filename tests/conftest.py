@@ -591,7 +591,21 @@ def legacy_app_context(legacy_app):
 
 @pytest.fixture
 def runtime_v2_pg_app(request):
-    return request.getfixturevalue("legacy_" "app")
+    app = request.getfixturevalue("legacy_" "app")
+    os.environ["DATABASE_URL"] = app.config["DATABASE_URL"]
+    from aicrm_next.shared.postgres_connection import get_db
+
+    conn = get_db()
+    conn.execute("ALTER TABLE IF EXISTS broadcast_jobs DROP CONSTRAINT IF EXISTS broadcast_jobs_source_type_check")
+    conn.execute(
+        """
+        ALTER TABLE IF EXISTS broadcast_jobs
+        ADD CONSTRAINT broadcast_jobs_source_type_check
+        CHECK (source_type IN ('campaign', 'sop', 'workflow', 'operation_task', 'cloud_plan', 'focus_send', 'deferred', 'manual', 'automation_runtime_v2'))
+        """
+    )
+    conn.commit()
+    return app
 
 
 @pytest.fixture

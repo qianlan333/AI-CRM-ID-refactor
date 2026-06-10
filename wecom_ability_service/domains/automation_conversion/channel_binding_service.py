@@ -854,6 +854,8 @@ def bind_channels_to_program(
         raise ValueError("channel_ids_required")
     data = _normalize_binding_payload(dict(payload or {}), operator_id=operator_id)
     batch_size = max(1, int((payload or {}).get("batch_size") or 500))
+    confirm_large_import = _truthy((payload or {}).get("confirm_large_import"), default=False)
+    max_import_count = None if confirm_large_import else max(1, int((payload or {}).get("max_import_count") or 1000))
     db = get_db()
     bindings: list[dict[str, Any]] = []
     try:
@@ -906,6 +908,10 @@ def bind_channels_to_program(
 
     runtime_summary = {
         "history_imported": True,
+        "requires_batch_import": False,
+        "total_contact_count": 0,
+        "max_import_count": max_import_count,
+        "import_continue_token": "",
         "imported_contact_count": 0,
         "skipped_existing_count": 0,
         "failed_count": 0,
@@ -918,7 +924,17 @@ def bind_channels_to_program(
     }
     if data["binding_status"] == ACTIVE_BINDING and bool(data["auto_enter_pool"]):
         for binding in bindings:
-            summary = process_binding_import(program_id=int(program_id), binding=binding, batch_size=batch_size)
+            summary = process_binding_import(
+                program_id=int(program_id),
+                binding=binding,
+                batch_size=batch_size,
+                max_import_count=max_import_count,
+            )
+            runtime_summary["total_contact_count"] += int(summary.get("total_contact_count") or 0)
+            if bool(summary.get("requires_batch_import")):
+                runtime_summary["requires_batch_import"] = True
+                runtime_summary["history_imported"] = False
+                runtime_summary["import_continue_token"] = _normalized_text(summary.get("import_continue_token"))
             for key in (
                 "imported_contact_count",
                 "skipped_existing_count",
@@ -934,8 +950,8 @@ def bind_channels_to_program(
     return {
         "bindings": bindings,
         "reason": "channels_bound",
-        "history_imported": True,
-        "history_import_reason": "binding_imported_historical_channel_contacts",
+        "history_imported": bool(runtime_summary["history_imported"]),
+        "history_import_reason": "requires_batch_import" if runtime_summary["requires_batch_import"] else "binding_imported_historical_channel_contacts",
         **runtime_summary,
     }
 

@@ -82,8 +82,8 @@ def update_plan_status(plan_id: int, status: str, *, skip_reason: str = "", diag
         (
             text(status),
             text(skip_reason),
-            json.dumps(merged_diag, ensure_ascii=False),
-            json.dumps(rendered_payload or {}, ensure_ascii=False),
+            json.dumps(merged_diag, ensure_ascii=False, default=str),
+            json.dumps(rendered_payload or {}, ensure_ascii=False, default=str),
             broadcast_job_id,
             int(plan_id),
         ),

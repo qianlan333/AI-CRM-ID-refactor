@@ -3725,6 +3725,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_idempotency_key
 ON broadcast_jobs (idempotency_key)
 WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
 
+ALTER TABLE IF EXISTS broadcast_jobs
+DROP CONSTRAINT IF EXISTS broadcast_jobs_source_type_check;
+
+ALTER TABLE IF EXISTS broadcast_jobs
+ADD CONSTRAINT broadcast_jobs_source_type_check
+CHECK (source_type IN ('campaign', 'sop', 'workflow', 'operation_task', 'cloud_plan', 'focus_send', 'deferred', 'manual', 'automation_runtime_v2'));
+
 CREATE TABLE IF NOT EXISTS broadcast_job_events (
     id BIGSERIAL PRIMARY KEY,
     job_id BIGINT NOT NULL,

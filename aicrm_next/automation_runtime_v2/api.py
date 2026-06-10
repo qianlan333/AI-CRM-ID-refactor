@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from . import process_event_payload, replay_event, replay_membership, run_due_scheduled_tasks
@@ -10,6 +11,10 @@ from .domain import AutomationEventInput, EVENT_WEBHOOK_RECEIVED, text
 from .runtime_check import check_task_runtime
 
 router = APIRouter()
+
+
+def _json(payload: Any) -> JSONResponse:
+    return JSONResponse(jsonable_encoder(payload))
 
 
 def verify_webhook_signature(webhook_key: str, payload: dict[str, Any], signature: str = "") -> bool:
@@ -38,24 +43,24 @@ async def automation_runtime_v2_webhook(webhook_key: str, request: Request, x_ai
         person_id=int(payload.get("person_id") or 0) or None,
         payload_json={**payload, "webhook_key": webhook_key},
     )
-    return JSONResponse({"ok": True, "runtime_v2": process_event_payload(event_input)})
+    return _json({"ok": True, "runtime_v2": process_event_payload(event_input)})
 
 
 @router.post("/api/automation-runtime/v2/scheduled/run-due", name="api.automation_runtime_v2_run_due")
 async def automation_runtime_v2_run_due(payload: dict[str, Any]) -> JSONResponse:
-    return JSONResponse(run_due_scheduled_tasks(program_id=int(payload.get("program_id") or 0) or None))
+    return _json(run_due_scheduled_tasks(program_id=int(payload.get("program_id") or 0) or None))
 
 
 @router.post("/api/automation-runtime/v2/tasks/{task_id}/check", name="api.automation_runtime_v2_task_check")
 async def automation_runtime_v2_task_check(task_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
-    return JSONResponse(check_task_runtime(int(task_id), payload or {}))
+    return _json(check_task_runtime(int(task_id), payload or {}))
 
 
 @router.post("/api/automation-runtime/v2/events/{event_id}/replay", name="api.automation_runtime_v2_event_replay")
 async def automation_runtime_v2_event_replay(event_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
-    return JSONResponse(replay_event(int(event_id), dry_run=bool((payload or {}).get("dry_run", True))))
+    return _json(replay_event(int(event_id), dry_run=bool((payload or {}).get("dry_run", True))))
 
 
 @router.post("/api/automation-runtime/v2/memberships/{membership_id}/replay", name="api.automation_runtime_v2_membership_replay")
 async def automation_runtime_v2_membership_replay(membership_id: int, payload: dict[str, Any] | None = None) -> JSONResponse:
-    return JSONResponse(replay_membership(int(membership_id), task_ids=list((payload or {}).get("task_ids") or []), dry_run=bool((payload or {}).get("dry_run", True))))
+    return _json(replay_membership(int(membership_id), task_ids=list((payload or {}).get("task_ids") or []), dry_run=bool((payload or {}).get("dry_run", True))))
