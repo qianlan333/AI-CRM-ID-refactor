@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import aicrm_next.commerce.application as commerce_application
+import aicrm_next.public_product.service as public_product_service
 from aicrm_next.commerce.application import (
     DeleteProductCommand,
     GetProductQuery,
@@ -142,6 +143,7 @@ def test_public_product_and_checkout_routes_are_next_owned_and_no_real_payment(n
         )
     )
     monkeypatch.setattr(commerce_application, "build_commerce_repository", lambda: checkout_repo)
+    monkeypatch.setattr(public_product_service, "build_commerce_repository", lambda: checkout_repo)
 
     product = next_client.get("/api/products/test-product")
     assert product.status_code == 200
