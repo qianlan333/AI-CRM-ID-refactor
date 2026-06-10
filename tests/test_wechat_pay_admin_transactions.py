@@ -206,8 +206,18 @@ def test_next_wechat_pay_admin_export_returns_required_fields_without_legacy_job
     assert retired_payload["error_code"] == "admin_wechat_pay_export_job_removed"
 
 
-def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real_provider(next_client):
+def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real_provider(next_client, monkeypatch):
     _seed_wechat_pay_admin_order()
+
+    class FakeRefundClient:
+        def create_refund(self, payload: dict) -> dict:
+            return {"status": "PROCESSING", "refund_id": "refund_fake_001", "request": payload}
+
+    monkeypatch.setattr(
+        next_wechat_admin_transactions,
+        "_create_wechat_pay_refund_client",
+        lambda: FakeRefundClient(),
+    )
 
     missing_confirmation = next_client.post(
         "/api/admin/wechat-pay/orders/order_masked_001/refunds",
@@ -236,11 +246,17 @@ def test_next_wechat_pay_admin_refund_requires_confirmation_and_never_calls_real
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert response.headers["X-AICRM-Real-Refund-Executed"] == "false"
     assert payload["ok"] is True
-    assert payload["refund"]["status"] == "requested"
-    assert payload["refund"]["provider_refund_executed"] is False
-    assert payload["real_refund_executed"] is False
+    if database_mode() == "postgres":
+        assert response.headers["X-AICRM-Real-Refund-Executed"] == "true"
+        assert payload["refund"]["status"] == "PROCESSING"
+        assert payload["refund"]["provider_refund_executed"] is True
+        assert payload["real_refund_executed"] is True
+    else:
+        assert response.headers["X-AICRM-Real-Refund-Executed"] == "false"
+        assert payload["refund"]["status"] == "requested"
+        assert payload["refund"]["provider_refund_executed"] is False
+        assert payload["real_refund_executed"] is False
     assert payload["order"]["status_label"] == "退款处理中"
 
 

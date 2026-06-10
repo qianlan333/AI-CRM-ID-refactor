@@ -462,6 +462,34 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS wechat_pay_products (
+            id BIGSERIAL PRIMARY KEY,
+            product_code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL DEFAULT '',
+            amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            status TEXT NOT NULL DEFAULT 'draft',
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            cta_text TEXT NOT NULL DEFAULT '立即报名',
+            require_mobile BOOLEAN NOT NULL DEFAULT FALSE,
+            lead_program_id BIGINT,
+            lead_channel_id BIGINT,
+            completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            completion_redirect_url TEXT NOT NULL DEFAULT '',
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        ALTER TABLE wechat_pay_products
+        ADD COLUMN IF NOT EXISTS completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+        """
+        ALTER TABLE wechat_pay_products
+        ADD COLUMN IF NOT EXISTS completion_redirect_url TEXT NOT NULL DEFAULT ''
+        """,
+        """
         CREATE TABLE IF NOT EXISTS wechat_pay_orders (
             id BIGSERIAL PRIMARY KEY,
             out_trade_no TEXT NOT NULL DEFAULT '',
@@ -507,6 +535,7 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             out_trade_no TEXT NOT NULL DEFAULT '',
             transaction_id TEXT NOT NULL DEFAULT '',
             out_refund_no TEXT NOT NULL DEFAULT '',
+            refund_id TEXT NOT NULL DEFAULT '',
             reason TEXT NOT NULL DEFAULT '',
             refund_amount_total INTEGER NOT NULL DEFAULT 0,
             order_amount_total INTEGER NOT NULL DEFAULT 0,
