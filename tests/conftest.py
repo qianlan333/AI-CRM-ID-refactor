@@ -462,6 +462,77 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS wechat_pay_orders (
+            id BIGSERIAL PRIMARY KEY,
+            out_trade_no TEXT NOT NULL DEFAULT '',
+            transaction_id TEXT NOT NULL DEFAULT '',
+            order_source TEXT NOT NULL DEFAULT '',
+            client_order_ref TEXT NOT NULL DEFAULT '',
+            product_code TEXT NOT NULL DEFAULT '',
+            product_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            payer_openid TEXT NOT NULL DEFAULT '',
+            respondent_key TEXT NOT NULL DEFAULT '',
+            unionid TEXT NOT NULL DEFAULT '',
+            external_userid TEXT NOT NULL DEFAULT '',
+            userid_snapshot TEXT NOT NULL DEFAULT '',
+            mobile_snapshot TEXT NOT NULL DEFAULT '',
+            payer_name_snapshot TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'created',
+            trade_state TEXT NOT NULL DEFAULT '',
+            prepay_id TEXT NOT NULL DEFAULT '',
+            bank_type TEXT NOT NULL DEFAULT '',
+            payer_total INTEGER NOT NULL DEFAULT 0,
+            success_url TEXT NOT NULL DEFAULT '',
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            notify_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            last_error TEXT NOT NULL DEFAULT '',
+            expires_at TIMESTAMPTZ,
+            paid_at TIMESTAMPTZ,
+            refunded_amount_total INTEGER NOT NULL DEFAULT 0,
+            refund_status TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS wechat_pay_refunds (
+            id BIGSERIAL PRIMARY KEY,
+            order_id BIGINT NOT NULL DEFAULT 0,
+            out_trade_no TEXT NOT NULL DEFAULT '',
+            transaction_id TEXT NOT NULL DEFAULT '',
+            out_refund_no TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            refund_amount_total INTEGER NOT NULL DEFAULT 0,
+            order_amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            status TEXT NOT NULL DEFAULT '',
+            requested_by TEXT NOT NULL DEFAULT '',
+            request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS wechat_pay_order_events (
+            id BIGSERIAL PRIMARY KEY,
+            out_trade_no TEXT NOT NULL DEFAULT '',
+            event_type TEXT NOT NULL DEFAULT '',
+            transaction_id TEXT NOT NULL DEFAULT '',
+            trade_state TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            headers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS automation_operation_task (
             id BIGSERIAL PRIMARY KEY,
             program_id BIGINT NOT NULL DEFAULT 0,
