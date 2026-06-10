@@ -19,21 +19,39 @@ def _fixture_block(source: str, fixture_name: str) -> str:
     return source[start:next_start]
 
 
-def test_next_and_legacy_test_fixtures_exist() -> None:
+def test_next_test_fixtures_exist_and_are_default() -> None:
     source = CONFTEST.read_text(encoding="utf-8")
 
-    for fixture_name in ("next_app", "next_client", "legacy_app", "legacy_client", "legacy_app_context"):
+    for fixture_name in ("next_app", "next_client", "next_pg_schema", "app", "client"):
         assert f"def {fixture_name}(" in source
-    assert "def build_legacy_pg_test_app(" in source
+
+    assert "return next_app" in _fixture_block(source, "app")
+    assert "return next_client" in _fixture_block(source, "client")
 
 
-def test_default_app_and_client_do_not_construct_legacy_flask_app() -> None:
+def test_legacy_test_fixture_bridge_is_removed() -> None:
     source = CONFTEST.read_text(encoding="utf-8")
 
-    assert "wecom_ability_service" not in _fixture_block(source, "app")
-    assert "test_client(" not in _fixture_block(source, "client")
-    assert "legacy_app" not in _fixture_block(source, "client")
-    assert "legacy_client" not in _fixture_block(source, "client")
+    for marker in (
+        "build_legacy_pg_test_app",
+        "build_pg_test_app",
+        "_AppContextManager",
+        "_build_app_context",
+        "def legacy_app(",
+        "def legacy_client(",
+        "def legacy_app_context(",
+        "def runtime_v2_pg_app(",
+    ):
+        assert marker not in source
+
+
+def test_conftest_no_longer_imports_legacy_or_schema_bridge() -> None:
+    source = CONFTEST.read_text(encoding="utf-8")
+
+    assert "wecom_ability_service" not in source
+    assert "schema_postgres.sql" not in source
+    assert "run_schema_with_forward_fk_retries" not in source
+    assert "alembic" in source
 
 
 def test_next_fixtures_do_not_import_legacy_package() -> None:
@@ -41,11 +59,3 @@ def test_next_fixtures_do_not_import_legacy_package() -> None:
 
     assert "wecom_ability_service" not in _fixture_block(source, "next_app")
     assert "wecom_ability_service" not in _fixture_block(source, "next_client")
-
-
-def test_build_pg_test_app_is_deprecated_alias() -> None:
-    source = CONFTEST.read_text(encoding="utf-8")
-    block = _fixture_block(source, "build_pg_test_app")
-
-    assert "Deprecated alias" in block
-    assert "build_legacy_pg_test_app" in block

@@ -6,7 +6,7 @@ from aicrm_next.automation_runtime_v2.domain import AutomationEventInput
 from tests.automation_runtime_v2_test_helpers import count, seed_program, seed_task
 
 
-def test_stage_triggers_fire_once_when_stage_changes(runtime_v2_pg_app):
+def test_stage_triggers_fire_once_when_stage_changes(next_pg_schema):
     program_id = seed_program("runtime_v2_stage")
     seed_task(program_id, trigger_type="audience_entered", target_stage="operating", content_text="进入运营")
     seed_task(program_id, trigger_type="on_enter_stage", target_stage="converted", content_text="成交")

@@ -6,7 +6,7 @@ from aicrm_next.automation_runtime_v2.domain import AutomationEventInput
 from tests.automation_runtime_v2_test_helpers import db, seed_agent, seed_program, seed_task
 
 
-def test_content_renderer_fixed_layered_and_agent_paths(runtime_v2_pg_app):
+def test_content_renderer_fixed_layered_and_agent_paths(next_pg_schema):
     program_id = seed_program("runtime_v2_render")
     seed_task(program_id, trigger_type="on_event", content_text="固定", agent_config={"trigger_event_type": "questionnaire_submitted"})
     seed_task(program_id, trigger_type="on_event", content_mode="profile_layered", segment_contents=[{"segment_key": "default", "content_text": "分层"}], agent_config={"trigger_event_type": "questionnaire_submitted"})

@@ -6,7 +6,7 @@ AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, d
 
 - `aicrm_next/**`, `app.py`, `.github/**`, and `deploy/**` must not import or directly reference `wecom_ability_service`.
 - `scripts/**/*.py` must not import `wecom_ability_service`; `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` must remain empty.
-- Tests, docs, tools, experiments, and `wecom_ability_service/**` historical references are tracked but do not block this freeze checker.
+- Tests must not runtime import `wecom_ability_service`; docs, tools, experiments, and `wecom_ability_service/**` historical references are tracked but do not block this freeze checker.
 - Existing maintenance scripts are migration targets, not precedent for new legacy dependencies.
 - The active external push worker has been migrated to `aicrm_next.external_push`; `scripts/run_external_push_worker.py` must remain outside the legacy maintenance allowlist.
 
@@ -67,6 +67,17 @@ These non-deploy direct-connect legacy maintenance scripts are retired:
 
 Future repair, backfill, or scheduler capability must be rebuilt through Next-native repository/service boundaries. Do not reintroduce `wecom_ability_service` imports into new scripts.
 
+## Removed Temporary Legacy Test Fixture Bridge
+
+The temporary legacy Flask test fixture bridge has been removed from `tests/conftest.py`. Default test fixtures now point to the Next application and FastAPI test client only:
+
+- `next_app`
+- `next_client`
+- `app`
+- `client`
+
+Test database schema setup now runs Alembic migrations from the Next schema source instead of reading `wecom_ability_service/schema_postgres.sql` or importing the legacy schema runner. Tests under `tests/**` must not runtime import `wecom_ability_service` or use legacy fixture names such as `legacy_app`, `legacy_client`, or `build_legacy_pg_test_app`.
+
 ## Archive Phases
 
 ### Phase B: External push worker Next-native migration
@@ -93,12 +104,13 @@ Exit criteria:
 
 ### Phase D: Tests off legacy fixtures
 
-Move tests away from legacy Flask app fixtures, legacy HTTP monkeypatch seams, and direct legacy domain imports where the behavior has a Next owner.
+Status: complete. Tests have been moved away from legacy Flask app fixtures, legacy HTTP monkeypatch seams, direct legacy domain imports, and the temporary legacy fixture bridge.
 
 Exit criteria:
 
-- `tests/conftest.py` no longer needs default legacy app setup for current-route tests.
-- Remaining legacy tests are explicitly historical/archive tests.
+- `tests/conftest.py` exposes only Next-native app/client fixtures.
+- `tests/**` no longer runtime imports `wecom_ability_service`.
+- Test schema setup uses Alembic/Next schema sources.
 
 ### Phase E: Legacy HTTP/runtime archive
 
@@ -121,4 +133,4 @@ Exit criteria:
 
 ## Recommended Next Step
 
-Tests off legacy fixtures bulk cleanup.
+Archive legacy HTTP/runtime package.

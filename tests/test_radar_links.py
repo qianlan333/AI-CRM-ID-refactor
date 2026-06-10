@@ -680,14 +680,13 @@ def test_radar_links_api_does_not_return_fixture_success_when_production_data_re
     assert "fixture_repository_blocked_in_production" not in response.text
 
 
-def test_postgres_schema_includes_radar_tables():
-    schema = (ROOT / "wecom_ability_service" / "schema_postgres.sql").read_text(encoding="utf-8")
+def test_alembic_schema_includes_radar_pdf_preview_assets():
+    migration = (ROOT / "migrations" / "versions" / "0025_radar_pdf_preview_assets.py").read_text(encoding="utf-8")
 
-    assert "CREATE TABLE IF NOT EXISTS radar_links" in schema
-    assert "CREATE TABLE IF NOT EXISTS radar_click_events" in schema
-    assert "target_type TEXT NOT NULL DEFAULT 'link'" in schema
-    assert "media_item_id TEXT NOT NULL DEFAULT ''" in schema
-    assert "ip_hash TEXT NOT NULL DEFAULT ''" in schema
-    assert "CREATE TABLE IF NOT EXISTS radar_pdf_preview_assets" in schema
-    assert "pdf_processing_status TEXT NOT NULL DEFAULT ''" in schema
-    assert "idx_radar_click_events_link_created" in schema
+    assert "ALTER TABLE IF EXISTS radar_links" in migration
+    assert "CREATE TABLE IF NOT EXISTS radar_pdf_preview_assets" in migration
+    assert "media_item_id TEXT NOT NULL" in migration
+    assert "pdf_processing_status TEXT NOT NULL DEFAULT ''" in migration
+    assert "pdf_preview_error_code TEXT NOT NULL DEFAULT ''" in migration
+    assert "pdf_preview_error_message TEXT NOT NULL DEFAULT ''" in migration
+    assert "idx_radar_pdf_preview_assets_link" in migration

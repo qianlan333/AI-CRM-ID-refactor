@@ -4,7 +4,7 @@
 
 Production runtime, startup, deploy services, external push worker, and active background jobs are now Next-native. The maintenance script allowlist is empty, and the primary business test families have been migrated to Next-native fixtures and services.
 
-The remaining executable tests that imported `wecom_ability_service` directly were legacy package/domain unit tests. They no longer protect the current production runtime and should not continue to block package archive work.
+The remaining executable tests that imported `wecom_ability_service` directly were legacy package/domain unit tests. They no longer protect the current production runtime and should not continue to block package archive work. The temporary legacy test fixture bridge has also been removed, so pytest fixtures and schema setup now use Next-native fixtures and Alembic migrations instead of legacy Flask app setup or `schema_postgres.sql`.
 
 ## Retired Executable Legacy Tests
 
@@ -40,15 +40,15 @@ The remaining executable tests that imported `wecom_ability_service` directly we
 | `tests/test_value_segment_service.py` | legacy value segment service/config | legacy service/db unit test | Next customer read-model and segmentation contracts | medium |
 | `tests/test_wechat_oauth.py` | legacy WeChat OAuth infra helper | legacy OAuth helper test | Next OAuth adapter/security tests | low |
 
-## Remaining Temporary Bridge
+## Removed Temporary Bridge
 
-The only temporary executable bridge is:
+The temporary executable bridge has been removed:
 
 - `tests/conftest.py`
 - `tests/test_test_fixture_boundaries.py`
 
-These files remain only to keep the explicit `legacy_app` / `legacy_client` bridge isolated while remaining consumers are removed. The next cleanup block removes that bridge.
+`tests/conftest.py` now exposes only Next-native fixtures (`next_app`, `next_client`, `next_pg_schema`, `app`, and `client`) and runs test database setup through Alembic. `tests/test_test_fixture_boundaries.py` now protects the absence of legacy fixtures, legacy runtime imports, and legacy schema setup.
 
 ## Rule
 
-New executable tests must not runtime import `wecom_ability_service`. If an old capability is needed again, rebuild the behavior under `aicrm_next/**` and test it with Next-native fixtures, repositories, or fakes. Historical references may live in docs or tools, but Python tests under `tests/` must not reintroduce legacy package/domain unit coverage.
+New executable tests must not runtime import `wecom_ability_service` or use legacy Flask fixture names. If an old capability is needed again, rebuild the behavior under `aicrm_next/**` and test it with Next-native fixtures, repositories, or fakes. Historical references may live in docs or tools, but Python tests under `tests/` must not reintroduce legacy package/domain unit coverage.

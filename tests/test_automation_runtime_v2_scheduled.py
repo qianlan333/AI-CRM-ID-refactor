@@ -9,7 +9,7 @@ from aicrm_next.automation_runtime_v2.task_planner import run_due_scheduled_task
 from tests.automation_runtime_v2_test_helpers import count, seed_program, seed_task
 
 
-def test_scheduled_daily_and_stage_day_offset_are_idempotent(runtime_v2_pg_app):
+def test_scheduled_daily_and_stage_day_offset_are_idempotent(next_pg_schema):
     program_id = seed_program("runtime_v2_scheduled")
     seed_task(program_id, trigger_type="scheduled_daily", target_stage="operating", content_text="每日")
     seed_task(program_id, trigger_type="scheduled", target_stage="operating", content_text="第N天", agent_config={"schedule_type": "stage_day_offset"})
