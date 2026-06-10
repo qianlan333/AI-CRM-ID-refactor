@@ -412,6 +412,8 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         """
         CREATE TABLE IF NOT EXISTS automation_agent_config (
             id BIGSERIAL PRIMARY KEY,
+            agent_code TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
             scenario_code TEXT NOT NULL DEFAULT '',
             enabled BOOLEAN NOT NULL DEFAULT TRUE,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
