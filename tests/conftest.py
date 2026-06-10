@@ -448,6 +448,20 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS group_chats (
+            chat_id TEXT PRIMARY KEY,
+            group_name TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            notice TEXT NOT NULL DEFAULT '',
+            member_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            create_time TEXT NOT NULL DEFAULT '',
+            dismissed_at TEXT NOT NULL DEFAULT '',
+            raw_payload TEXT NOT NULL DEFAULT '{}',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS automation_operation_task (
             id BIGSERIAL PRIMARY KEY,
             program_id BIGINT NOT NULL DEFAULT 0,
