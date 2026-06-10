@@ -11,7 +11,8 @@ def db():
 
 
 def seed_program(code: str = "runtime_v2_program") -> int:
-    row = db().execute(
+    conn = db()
+    row = conn.execute(
         """
         INSERT INTO automation_program (program_code, program_name, status, config_json, created_by, updated_by)
         VALUES (?, ?, 'active', '{}'::jsonb, 'test', 'test')
@@ -19,11 +20,13 @@ def seed_program(code: str = "runtime_v2_program") -> int:
         """,
         (code, code),
     ).fetchone()
+    conn.commit()
     return int(row["id"])
 
 
 def seed_channel(code: str = "runtime_v2_channel") -> int:
-    row = db().execute(
+    conn = db()
+    row = conn.execute(
         """
         INSERT INTO automation_channel (channel_code, channel_name, status, scene_value, owner_staff_id)
         VALUES (?, ?, 'active', ?, 'owner')
@@ -31,11 +34,13 @@ def seed_channel(code: str = "runtime_v2_channel") -> int:
         """,
         (code, code, code),
     ).fetchone()
+    conn.commit()
     return int(row["id"])
 
 
 def seed_contact(channel_id: int, external: str, first_at: str = "2026-01-01 00:00:00+00") -> int:
-    row = db().execute(
+    conn = db()
+    row = conn.execute(
         """
         INSERT INTO automation_channel_contact (channel_id, external_contact_id, first_channel_entered_at, last_channel_entered_at)
         VALUES (?, ?, ?::timestamptz, ?::timestamptz)
@@ -43,6 +48,7 @@ def seed_contact(channel_id: int, external: str, first_at: str = "2026-01-01 00:
         """,
         (int(channel_id), external, first_at, first_at),
     ).fetchone()
+    conn.commit()
     return int(row["id"])
 
 
@@ -56,7 +62,8 @@ def seed_task(
     segment_contents: list[dict[str, Any]] | None = None,
     agent_config: dict[str, Any] | None = None,
 ) -> int:
-    row = db().execute(
+    conn = db()
+    row = conn.execute(
         """
         INSERT INTO automation_operation_task (
             program_id, task_name, status, trigger_type, send_time, timezone,
@@ -78,11 +85,13 @@ def seed_task(
             json.dumps(agent_config or {}, ensure_ascii=False),
         ),
     ).fetchone()
+    conn.commit()
     return int(row["id"])
 
 
 def seed_agent(agent_code: str = "runtime_agent", *, published: bool = True) -> None:
-    db().execute(
+    conn = db()
+    conn.execute(
         """
         INSERT INTO automation_agent_config (
             agent_code, display_name, enabled, published_role_prompt, published_task_prompt,
@@ -96,6 +105,7 @@ def seed_agent(agent_code: str = "runtime_agent", *, published: bool = True) -> 
         """,
         (agent_code, agent_code, "role" if published else "", "请根据问卷生成话术" if published else "", 1 if published else 0),
     )
+    conn.commit()
 
 
 def count(table: str) -> int:

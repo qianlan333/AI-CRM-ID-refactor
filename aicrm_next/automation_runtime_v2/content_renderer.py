@@ -26,6 +26,14 @@ def _content_has_body(content: dict[str, Any]) -> bool:
     return bool(text(content.get("content_text") or content.get("text")) or content.get("image_library_ids") or content.get("miniprogram_library_ids") or content.get("attachment_library_ids") or content.get("attachments"))
 
 
+def _fallback_content(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if text(value):
+        return {"content_text": text(value)}
+    return {}
+
+
 def _fixed(task: dict[str, Any]) -> tuple[bool, dict[str, Any], str]:
     content = dict(task.get("unified_content_json") or {})
     if not _content_has_body(content):
@@ -107,7 +115,7 @@ def build_variables(*, event: dict[str, Any] | None, membership: dict[str, Any],
 def _agent(task: dict[str, Any], membership: dict[str, Any], event: dict[str, Any] | None, stage_entry: dict[str, Any] | None) -> tuple[bool, dict[str, Any], str]:
     config = dict(task.get("agent_config_json") or {})
     agent_code = text(config.get("agent_code"))
-    fallback = dict(config.get("fallback_content") or config.get("fallback") or task.get("unified_content_json") or {})
+    fallback = _fallback_content(config.get("fallback_content") or config.get("fallback") or task.get("unified_content_json") or {})
     if not agent_code:
         return False, {}, "agent_code_missing"
     prompt = _agent_prompt(agent_code)
