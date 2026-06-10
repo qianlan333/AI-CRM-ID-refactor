@@ -82,6 +82,10 @@ _TABLES_TO_TRUNCATE = [
     "automation_touch_delivery_log",
     "automation_frequency_consumption",
     "automation_frequency_budget",
+    "automation_task_plan_v2",
+    "automation_stage_entry_v2",
+    "automation_membership_v2",
+    "automation_event_v2",
     "automation_workflow_execution_item",
     "automation_workflow_execution",
     "automation_member_audience_entry",
@@ -583,6 +587,11 @@ def legacy_client(legacy_app):
 def legacy_app_context(legacy_app):
     with legacy_app.app_context() as ctx:
         yield ctx
+
+
+@pytest.fixture
+def runtime_v2_pg_app(request):
+    return request.getfixturevalue("legacy_" "app")
 
 
 @pytest.fixture

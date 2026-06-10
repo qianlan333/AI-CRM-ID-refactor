@@ -71,6 +71,20 @@ def _handle_generic(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@register("automation_runtime_v2")
+def _handle_automation_runtime_v2(job: dict[str, Any]) -> dict[str, Any]:
+    """Runtime v2 enqueues intent only; no real WeCom send happens in this handler."""
+
+    return {
+        "ok": True,
+        "sent_count": int(job.get("target_count") or 0),
+        "failed_count": 0,
+        "outbound_task_id": int(job.get("outbound_task_id") or 0) or None,
+        "runtime_version": "v2",
+        "real_wecom_send_executed": False,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # focus_send handler — 逐个 push_openclaw + update batch item status
 # ═══════════════════════════════════════════════════════════════════════════════

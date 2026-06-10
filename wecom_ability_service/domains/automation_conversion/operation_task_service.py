@@ -39,7 +39,7 @@ AUDIENCE_CODES = {AUDIENCE_PENDING_QUESTIONNAIRE, AUDIENCE_OPERATING, AUDIENCE_C
 TASK_STATUSES = {"draft", "active", "paused", "archived"}
 BEHAVIOR_FILTERS = {"none", "lt_2", "between_2_9", "gte_10"}
 CONTENT_MODES = {"unified", "profile_layered", "behavior_layered", "agent"}
-TRIGGER_TYPES = {"scheduled_daily", "audience_entered"}
+TRIGGER_TYPES = {"scheduled_daily", "audience_entered", "on_event", "on_enter_stage", "scheduled", "webhook_push"}
 
 
 def _text(value: Any) -> str:
@@ -158,6 +158,18 @@ def _with_stage_metadata(task: dict[str, Any]) -> dict[str, Any]:
     item["target_stage_description"] = stage_filter["stage_description"]
     item["target_audience_code"] = stage_filter["audience_code"]
     item["target_entry_reason"] = stage_filter["entry_reason"]
+    try:
+        from aicrm_next.automation_runtime_v2.runtime_check import check_task_runtime
+        from aicrm_next.automation_runtime_v2.task_adapter import with_runtime_fields
+
+        runtime_task = with_runtime_fields(item)
+        item["runtime_v2"] = runtime_task.get("runtime_v2") or {}
+        item["content_type"] = runtime_task.get("content_type")
+        item["trigger_kind"] = runtime_task.get("trigger_kind")
+        item["runtime_check"] = check_task_runtime(int(item.get("id") or 0), {})
+    except Exception as exc:
+        item["runtime_v2"] = {}
+        item["runtime_check"] = {"ok": False, "blocked": True, "blocked_reasons": {"runtime_check_error": 1}, "error": str(exc)}
     return item
 
 
@@ -267,6 +279,15 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
 def _validate_publishable_task(task: dict[str, Any]) -> None:
     if _text(task.get("status")) != "active":
         return
+    try:
+        from aicrm_next.automation_runtime_v2.runtime_check import check_task_runtime
+
+        if int(task.get("id") or 0) > 0:
+            checked = check_task_runtime(int(task["id"]), {})
+            if not bool(checked.get("ok")):
+                raise ValueError(f"runtime_v2_check_blocked: {checked.get('blocked_reasons')}")
+    except ImportError:
+        pass
     validate_publishable_task(task, agent_runtime_context=_agent_runtime_context(task, require_questionnaire_context=False))
 
 
@@ -340,6 +361,13 @@ def update_operation_task(task_id: int, payload: dict[str, Any], *, operator_id:
         raise LookupError("任务不存在")
     normalized = _normalize_task_payload(payload, program_id=int(existing["program_id"]), operator_id=operator_id, existing=existing)
     task = repo.update_task(int(task_id), normalized)
+    if _text(task.get("status")) == "active":
+        from aicrm_next.automation_runtime_v2.runtime_check import check_task_runtime
+
+        checked = check_task_runtime(int(task_id), {})
+        if not bool(checked.get("ok")):
+            get_db().rollback()
+            raise ValueError(f"runtime_v2_check_blocked: {checked.get('blocked_reasons')}")
     get_db().commit()
     return {"task": _with_stage_metadata(task)}
 

@@ -16,6 +16,7 @@ from .admin_jobs.repository import reset_admin_jobs_fixture_state
 from .admin_jobs.routes import router as admin_jobs_router
 from .automation_engine.admin_pages import router as automation_admin_pages_router
 from .automation_engine.api import router as automation_router
+from .automation_runtime_v2.api import router as automation_runtime_v2_router
 from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
@@ -183,6 +184,7 @@ def create_app() -> FastAPI:
     app.include_router(channel_admin_pages_router)
     app.include_router(customer_tags_admin_pages_router)
     app.include_router(automation_router)
+    app.include_router(automation_runtime_v2_router)
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(media_library_admin_pages_router)

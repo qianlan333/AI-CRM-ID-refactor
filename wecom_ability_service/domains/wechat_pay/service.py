@@ -542,6 +542,12 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
         from ..external_push import service as external_push_service
 
         external_push_service.enqueue_transaction_paid_event(order)
+        try:
+            from ..automation_conversion.runtime_v2_bridge import process_payment_succeeded_event
+
+            process_payment_succeeded_event(order=order, transaction=transaction)
+        except Exception:
+            logger.exception("automation_runtime_v2_payment_event_failed", extra={"out_trade_no": out_trade_no})
     repo.insert_event(
         out_trade_no=out_trade_no,
         event_type=event_type,

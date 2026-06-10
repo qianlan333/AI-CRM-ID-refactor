@@ -24,6 +24,7 @@ VALID_SOURCE_TYPES = (
     "focus_send",
     "deferred",
     "manual",
+    "automation_runtime_v2",
 )
 
 VALID_FAILURE_TYPES = (

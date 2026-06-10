@@ -56,6 +56,43 @@ def sync_questionnaire_submission_audience_transition(
     normalized_questionnaire_id = int(questionnaire_id or 0)
     normalized_submission_id = int(submission_id or 0)
     try:
+        runtime_v2_result: dict[str, Any] = {}
+        if normalized_submission_id > 0:
+            try:
+                answers = get_db().execute(
+                    """
+                    SELECT question_id, question_title_snapshot, selected_option_texts_snapshot, text_value
+                    FROM questionnaire_submission_answers
+                    WHERE submission_id = ?
+                    ORDER BY id ASC
+                    """,
+                    (normalized_submission_id,),
+                ).fetchall()
+                answer_payload = [
+                    {
+                        "question_id": int(row.get("question_id") or 0),
+                        "question": _normalized_text(row.get("question_title_snapshot")),
+                        "answer": row.get("text_value") or row.get("selected_option_texts_snapshot"),
+                    }
+                    for row in answers
+                ]
+                from .runtime_v2_bridge import process_questionnaire_submission_event
+
+                runtime_v2_result = process_questionnaire_submission_event(
+                    external_userid=normalized_external,
+                    phone=normalized_phone,
+                    questionnaire_id=normalized_questionnaire_id,
+                    submission_id=normalized_submission_id,
+                    payload_json={
+                        "answers": answer_payload,
+                        "score": None,
+                        "tags": [],
+                        "mobile_snapshot": normalized_phone,
+                    },
+                )
+            except Exception as exc:
+                logger.exception("questionnaire runtime v2 event failed submission_id=%s", normalized_submission_id)
+                runtime_v2_result = {"ok": False, "reason": "runtime_v2_failed", "error": str(exc)}
         member_sync = member_state_service.sync_member_from_questionnaire_submission(
             external_contact_id=normalized_external,
             phone=normalized_phone,
@@ -75,6 +112,7 @@ def sync_questionnaire_submission_audience_transition(
                 "member_sync": member_sync,
                 "submission_id": normalized_submission_id,
                 "questionnaire_id": normalized_questionnaire_id,
+                "runtime_v2": runtime_v2_result,
             }
 
         source_channel_missing = _positive_int(member.get("source_channel_id")) <= 0
@@ -103,6 +141,7 @@ def sync_questionnaire_submission_audience_transition(
                 "member_sync": member_sync,
                 "audience_sync": audience_sync,
                 "realtime_task_hook": hook_payload,
+                "runtime_v2": runtime_v2_result,
             }
 
         from aicrm_next.automation_engine.audience_transition.application import handle_committed_audience_transition
@@ -125,6 +164,7 @@ def sync_questionnaire_submission_audience_transition(
             "member_sync": member_sync,
             "audience_sync": audience_sync,
             "realtime_task_hook": hook_payload,
+            "runtime_v2": runtime_v2_result,
         }
         logger.info(
             "questionnaire audience transition sync submission_id=%s questionnaire_id=%s member_id=%s reason=%s enqueued=%s",

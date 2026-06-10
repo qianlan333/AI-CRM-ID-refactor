@@ -300,7 +300,15 @@ def _admit(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scen
     bindings = repo.list_active_bindings_for_channel(channel_id)
     if not bindings:
         if not command.dry_run:
-            return [{"admission_status": "standalone_channel", "reason": "channel_without_active_binding"}], False, "no_active_binding"
+            from aicrm_next.automation_runtime_v2.bridge import process_channel_entry_event
+
+            runtime_v2 = process_channel_entry_event(
+                channel_id=channel_id,
+                external_userid=command.external_contact_id,
+                event_log_id=command.event_log_id,
+                payload_json={**dict(command.payload_json or {}), "source_type": command.source_type, "scene_value": scene},
+            )
+            return [{"admission_status": "standalone_channel", "reason": "channel_without_active_binding", "runtime_v2": runtime_v2}], False, "no_active_binding"
         return [{"admission_status": "planned", "reason": "dry_run_no_active_binding"}], False, "no_active_binding"
     results: list[dict[str, Any]] = []
     member_written = False
@@ -328,20 +336,37 @@ def _admit(command: ProcessChannelEntryCommand, *, channel: dict[str, Any], scen
             reason = "planned"
             continue
         try:
-            admission = _admit_program_binding(
-                program_id=program_id,
+            from aicrm_next.automation_runtime_v2.bridge import process_channel_entry_event
+
+            runtime_v2 = process_channel_entry_event(
                 channel_id=channel_id,
-                binding_id=binding_id,
-                external_contact_id=command.external_contact_id,
-                follow_user_userid=command.follow_user_userid,
-                trigger_payload={
+                external_userid=command.external_contact_id,
+                event_log_id=command.event_log_id,
+                payload_json={
                     **dict(command.payload_json or {}),
                     "event_log_id": command.event_log_id,
                     "source_type": command.source_type,
                     "scene_value": scene,
+                    "trigger_type": command.event_action,
+                    "follow_user_userid": command.follow_user_userid,
                 },
-                trigger_type=command.event_action,
             )
+            processed = list(runtime_v2.get("processed") or [])
+            current = next((item for item in processed if int(((item.get("membership") or {}).get("program_id") or 0)) == program_id), processed[0] if processed else {})
+            admission = {
+                "admission_status": "accepted" if current.get("membership") else "rejected",
+                "accepted": bool(current.get("membership")),
+                "reason": "automation_runtime_v2_processed" if current.get("membership") else text(runtime_v2.get("reason")) or "automation_runtime_v2_skipped",
+                "program_member": (current.get("legacy_projection") or {}),
+                "legacy_member": (current.get("legacy_projection") or {}),
+                "audience_entry_id": int((current.get("legacy_projection") or {}).get("audience_entry_id") or 0),
+                "audience_code": text(((current.get("membership") or {}).get("current_stage"))),
+                "entry_reason": text(((current.get("stage_entry") or {}).get("entry_reason"))),
+                "realtime_task_hook": {"runtime": "automation_runtime_v2", "ok": True, "counts": current.get("counts") or {}},
+                "realtime_operation_tasks_ran": int((current.get("counts") or {}).get("planned") or 0),
+                "realtime_operation_tasks_enqueued_count": int((current.get("counts") or {}).get("enqueued") or 0),
+                "runtime_v2": runtime_v2,
+            }
         except Exception as exc:
             admission = {
                 "admission_status": "failed",

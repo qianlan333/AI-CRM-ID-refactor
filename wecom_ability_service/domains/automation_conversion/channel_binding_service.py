@@ -853,6 +853,7 @@ def bind_channels_to_program(
     if not normalized_ids:
         raise ValueError("channel_ids_required")
     data = _normalize_binding_payload(dict(payload or {}), operator_id=operator_id)
+    batch_size = max(1, int((payload or {}).get("batch_size") or 500))
     db = get_db()
     bindings: list[dict[str, Any]] = []
     try:
@@ -901,11 +902,41 @@ def bind_channels_to_program(
     except Exception:
         db.rollback()
         raise
+    from .runtime_v2_bridge import process_binding_import
+
+    runtime_summary = {
+        "history_imported": True,
+        "imported_contact_count": 0,
+        "skipped_existing_count": 0,
+        "failed_count": 0,
+        "generated_event_count": 0,
+        "generated_membership_count": 0,
+        "generated_stage_entry_count": 0,
+        "generated_task_plan_count": 0,
+        "generated_broadcast_job_count": 0,
+        "runtime_v2_summary": [],
+    }
+    if data["binding_status"] == ACTIVE_BINDING and bool(data["auto_enter_pool"]):
+        for binding in bindings:
+            summary = process_binding_import(program_id=int(program_id), binding=binding, batch_size=batch_size)
+            for key in (
+                "imported_contact_count",
+                "skipped_existing_count",
+                "failed_count",
+                "generated_event_count",
+                "generated_membership_count",
+                "generated_stage_entry_count",
+                "generated_task_plan_count",
+                "generated_broadcast_job_count",
+            ):
+                runtime_summary[key] += int(summary.get(key) or 0)
+            runtime_summary["runtime_v2_summary"].append({"binding_id": int(binding.get("id") or 0), **summary})
     return {
         "bindings": bindings,
         "reason": "channels_bound",
-        "history_imported": False,
-        "history_import_reason": "binding_does_not_import_historical_channel_contacts",
+        "history_imported": True,
+        "history_import_reason": "binding_imported_historical_channel_contacts",
+        **runtime_summary,
     }
 
 

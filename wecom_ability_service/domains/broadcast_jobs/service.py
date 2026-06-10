@@ -14,7 +14,7 @@ BROADCAST_BUSINESS_DOMAINS = {"automation_ops", "ai_assistant", "group_ops", "ma
 BROADCAST_CHANNELS = {"wecom_private", "wecom_customer_group", "wechat", "manual", "unknown"}
 BROADCAST_TARGET_KINDS = {"external_userid", "chat_id", "mixed", "dynamic", "unknown"}
 BROADCAST_FAILURE_TYPES = set(repo.VALID_FAILURE_TYPES)
-AUTOMATION_SOURCE_TYPES = {"campaign", "sop", "workflow", "operation_task", "focus_send", "deferred"}
+AUTOMATION_SOURCE_TYPES = {"campaign", "sop", "workflow", "operation_task", "focus_send", "deferred", "automation_runtime_v2"}
 GROUP_OPS_SOURCE_TABLE = "automation_group_ops_plans"
 
 
@@ -159,6 +159,8 @@ def build_broadcast_job_idempotency_key(input_data: dict[str, Any]) -> str | Non
             joined = "|".join(sorted(_clean_text(item) for item in targets if _clean_text(item)))
             target_hash = hashlib.sha1(joined.encode("utf-8")).hexdigest()[:12] if joined else ""
         return f"campaign:{source_id}:{scheduled}:{target_hash}" if target_hash else f"campaign:{source_id}:{scheduled}"
+    if source_type == "automation_runtime_v2" and source_id:
+        return f"automation_runtime_v2:{source_id}"
     return None
 
 

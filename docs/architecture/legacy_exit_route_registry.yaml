@@ -7,6 +7,76 @@ notes:
   - Sample lifecycle items are marked sample=true and are excluded from production deletion decisions.
   - Foundation group 1 is validated and locked by docs/architecture/legacy_exit_foundation_closeout.md; do not roll back these guards without a replacement closeout.
 routes:
+  - route_id: automation_runtime_v2_webhook_push
+    path_pattern: /api/automation-runtime/v2/webhooks/{webhook_key}
+    methods: [POST]
+    capability_owner: aicrm_next.automation_runtime_v2
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: none
+    delete_status: active
+    replacement_status: in_progress
+    checker: tests/test_automation_runtime_v2_webhook_push.py
+    rollback_owner: aicrm_next.automation_runtime_v2
+    notes: Runtime v2 webhook push endpoint writes automation_event_v2 and broadcast_jobs only; no direct WeCom send.
+  - route_id: automation_runtime_v2_scheduled_run_due
+    path_pattern: /api/automation-runtime/v2/scheduled/run-due
+    methods: [POST]
+    capability_owner: aicrm_next.automation_runtime_v2
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: none
+    delete_status: active
+    replacement_status: in_progress
+    checker: tests/test_automation_runtime_v2_scheduled.py
+    rollback_owner: aicrm_next.automation_runtime_v2
+    notes: Runtime v2 scheduled runner creates task plans and queued broadcast_jobs only.
+  - route_id: automation_runtime_v2_task_check
+    path_pattern: /api/automation-runtime/v2/tasks/{task_id}/check
+    methods: [POST]
+    capability_owner: aicrm_next.automation_runtime_v2
+    runtime_owner: next_native
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: none
+    adapter_mode: none
+    delete_status: active
+    replacement_status: in_progress
+    checker: tests/test_automation_runtime_v2_runtime_check.py
+    rollback_owner: aicrm_next.automation_runtime_v2
+    notes: Runtime v2 task readiness checker for trigger/content/outbox/idempotency diagnostics.
+  - route_id: automation_runtime_v2_event_replay
+    path_pattern: /api/automation-runtime/v2/events/{event_id}/replay
+    methods: [POST]
+    capability_owner: aicrm_next.automation_runtime_v2
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: none
+    delete_status: active
+    replacement_status: in_progress
+    checker: tests/test_automation_runtime_v2_event_triggers.py
+    rollback_owner: aicrm_next.automation_runtime_v2
+    notes: Runtime v2 event replay is dry-run by default and uses idempotent task plan and broadcast job keys.
+  - route_id: automation_runtime_v2_membership_replay
+    path_pattern: /api/automation-runtime/v2/memberships/{membership_id}/replay
+    methods: [POST]
+    capability_owner: aicrm_next.automation_runtime_v2
+    runtime_owner: next_command
+    legacy_fallback_allowed: false
+    legacy_source: ""
+    external_side_effect_risk: medium
+    adapter_mode: none
+    delete_status: active
+    replacement_status: in_progress
+    checker: tests/test_automation_runtime_v2_event_triggers.py
+    rollback_owner: aicrm_next.automation_runtime_v2
+    notes: Runtime v2 membership replay is dry-run by default and does not direct-send WeCom.
   - route_id: platform_foundation_runtime_route_map
     path_pattern: /api/system/runtime-route-map
     methods: [GET]
