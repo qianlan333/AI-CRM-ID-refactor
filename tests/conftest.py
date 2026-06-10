@@ -328,6 +328,7 @@ def _run_next_alembic_upgrade(url: str) -> None:
     from alembic import command
     from alembic.config import Config
 
+    _bootstrap_next_test_baseline_schema(url)
     previous_url = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = url
     try:
@@ -339,6 +340,146 @@ def _run_next_alembic_upgrade(url: str) -> None:
             os.environ.pop("DATABASE_URL", None)
         else:
             os.environ["DATABASE_URL"] = previous_url
+
+
+def _bootstrap_next_test_baseline_schema(url: str) -> None:
+    """Create the minimal post-legacy baseline that Alembic 0001 assumes exists.
+
+    The production migration chain starts with a no-op 0001 baseline because
+    production databases already had these tables when Alembic was introduced.
+    CI test databases are empty, so tests need a tiny Next-owned bootstrap
+    before running later Alembic revisions. Keep this local to tests and do not
+    read or import the retired legacy schema runner.
+    """
+    import psycopg
+
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS conversion_dispatch_log (
+            id BIGSERIAL PRIMARY KEY,
+            external_userid TEXT NOT NULL DEFAULT '',
+            dispatched_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_member (
+            id BIGSERIAL PRIMARY KEY,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            in_pool BOOLEAN NOT NULL DEFAULT FALSE,
+            current_pool TEXT NOT NULL DEFAULT 'removed',
+            follow_type TEXT NOT NULL DEFAULT '',
+            current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire',
+            questionnaire_status TEXT NOT NULL DEFAULT '',
+            joined_at TEXT NOT NULL DEFAULT '',
+            last_ai_push_at TEXT NOT NULL DEFAULT '',
+            ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_ai_push_log (
+            id BIGSERIAL PRIMARY KEY,
+            member_id BIGINT NOT NULL DEFAULT 0,
+            pushed_at TEXT NOT NULL DEFAULT ''
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_touch_delivery_log (
+            id BIGSERIAL PRIMARY KEY,
+            member_id BIGINT NOT NULL DEFAULT 0,
+            trace_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            sent_at TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS outbound_tasks (
+            id BIGSERIAL PRIMARY KEY,
+            trace_id TEXT NOT NULL DEFAULT ''
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_run (
+            id BIGSERIAL PRIMARY KEY,
+            trace_id TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_config (
+            id BIGSERIAL PRIMARY KEY,
+            scenario_code TEXT NOT NULL DEFAULT '',
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow (
+            id BIGSERIAL PRIMARY KEY,
+            review_status TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
+            id BIGSERIAL PRIMARY KEY
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_sop_template (
+            id BIGSERIAL PRIMARY KEY
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS radar_links (
+            id BIGSERIAL PRIMARY KEY,
+            code TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            target_type TEXT NOT NULL DEFAULT 'link',
+            media_item_id TEXT NOT NULL DEFAULT '',
+            deleted_at TIMESTAMPTZ
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_operation_task (
+            id BIGSERIAL PRIMARY KEY,
+            program_id BIGINT NOT NULL DEFAULT 0,
+            task_name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            trigger_type TEXT NOT NULL DEFAULT '',
+            send_time TEXT NOT NULL DEFAULT '',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            target_audience_code TEXT NOT NULL DEFAULT '',
+            target_stage_code TEXT NOT NULL DEFAULT '',
+            audience_day_offset INTEGER NOT NULL DEFAULT 0,
+            behavior_filter TEXT NOT NULL DEFAULT '',
+            content_mode TEXT NOT NULL DEFAULT 'unified',
+            unified_content_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            segment_contents_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            agent_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            published_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    ]
+    conn = psycopg.connect(url, autocommit=True)
+    try:
+        cur = conn.cursor()
+        try:
+            for statement in statements:
+                cur.execute(statement)
+        finally:
+            cur.close()
+    finally:
+        conn.close()
 
 
 @pytest.fixture(scope="session", autouse=True)

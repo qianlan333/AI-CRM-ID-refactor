@@ -4,7 +4,7 @@
 
 Production runtime, startup, deploy services, external push worker, and active background jobs are now Next-native. The maintenance script allowlist is empty, and the primary business test families have been migrated to Next-native fixtures and services.
 
-The remaining executable tests that imported `wecom_ability_service` directly were legacy package/domain unit tests. They no longer protect the current production runtime and should not continue to block package archive work. The temporary legacy test fixture bridge has also been removed, so pytest fixtures and schema setup now use Next-native fixtures and Alembic migrations instead of legacy Flask app setup or `schema_postgres.sql`.
+The remaining executable tests that imported `wecom_ability_service` directly were legacy package/domain unit tests. They no longer protect the current production runtime and should not continue to block package archive work. The temporary legacy test fixture bridge has also been removed, so pytest fixtures and schema setup now use Next-native fixtures plus the test-only Next baseline bootstrap and Alembic migrations instead of legacy Flask app setup or `schema_postgres.sql`.
 
 ## Retired Executable Legacy Tests
 
@@ -47,7 +47,7 @@ The temporary executable bridge has been removed:
 - `tests/conftest.py`
 - `tests/test_test_fixture_boundaries.py`
 
-`tests/conftest.py` now exposes only Next-native fixtures (`next_app`, `next_client`, `next_pg_schema`, `app`, and `client`) and runs test database setup through Alembic. `tests/test_test_fixture_boundaries.py` now protects the absence of legacy fixtures, legacy runtime imports, and legacy schema setup.
+`tests/conftest.py` now exposes only Next-native fixtures (`next_app`, `next_client`, `next_pg_schema`, `app`, and `client`) and runs test database setup through a test-only Next baseline bootstrap followed by Alembic. `tests/test_test_fixture_boundaries.py` now protects the absence of legacy fixtures, legacy runtime imports, and legacy schema setup.
 
 ## Rule
 

@@ -76,7 +76,7 @@ The temporary legacy Flask test fixture bridge has been removed from `tests/conf
 - `app`
 - `client`
 
-Test database schema setup now runs Alembic migrations from the Next schema source instead of reading `wecom_ability_service/schema_postgres.sql` or importing the legacy schema runner. Tests under `tests/**` must not runtime import `wecom_ability_service` or use legacy fixture names such as `legacy_app`, `legacy_client`, or `build_legacy_pg_test_app`.
+Test database schema setup now runs the test-only Next baseline bootstrap and Alembic migrations from the Next schema source instead of reading `wecom_ability_service/schema_postgres.sql` or importing the legacy schema runner. Tests under `tests/**` must not runtime import `wecom_ability_service` or use legacy fixture names such as `legacy_app`, `legacy_client`, or `build_legacy_pg_test_app`.
 
 ## Archive Phases
 
@@ -110,7 +110,7 @@ Exit criteria:
 
 - `tests/conftest.py` exposes only Next-native app/client fixtures.
 - `tests/**` no longer runtime imports `wecom_ability_service`.
-- Test schema setup uses Alembic/Next schema sources.
+- Test schema setup uses Next baseline/Alembic schema sources.
 
 ### Phase E: Legacy HTTP/runtime archive
 
