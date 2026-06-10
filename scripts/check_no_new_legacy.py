@@ -1265,6 +1265,100 @@ def check_test_fixture_legacy_boundaries(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+LEGACY_TEST_BRIDGE_FILES = {
+    Path("tests/conftest.py"),
+    Path("tests/test_test_fixture_boundaries.py"),
+}
+
+
+def _legacy_test_runtime_markers(path: Path) -> dict[str, list[str]]:
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+    except (UnicodeDecodeError, SyntaxError):
+        return {"fixture": [], "db": []}
+
+    fixture_markers: set[str] = set()
+    potential_db_markers: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "") == "tests.conftest":
+            for alias in node.names:
+                if alias.name == "build_legacy_pg_test_app":
+                    fixture_markers.add("build_legacy_pg_test_app")
+        elif isinstance(node, ast.Name):
+            if node.id in {"build_legacy_pg_test_app", "legacy_app", "legacy_client"}:
+                fixture_markers.add(node.id)
+            if node.id in {"get_db", "init_db"}:
+                potential_db_markers.add(node.id)
+        elif isinstance(node, ast.arg):
+            if node.arg in {"legacy_app", "legacy_client"}:
+                fixture_markers.add(node.arg)
+        elif isinstance(node, ast.Attribute) and node.attr == "app_context":
+            potential_db_markers.add("app_context")
+
+    db_markers: set[str] = set()
+    if _wecom_ast_imports(path) or fixture_markers:
+        db_markers.update(potential_db_markers)
+        for marker in ("get_db", "init_db", "create_app", "app_context"):
+            if marker in source:
+                db_markers.add(marker)
+    return {"fixture": sorted(fixture_markers), "db": sorted(db_markers)}
+
+
+def check_legacy_package_domain_tests_archived(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+    tests_root = root / "tests"
+    if not tests_root.exists():
+        return violations
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(root)
+        if rel in LEGACY_TEST_BRIDGE_FILES:
+            continue
+        imports = _wecom_ast_imports(path)
+        if imports:
+            violations.append(
+                Violation(
+                    "legacy_test_runtime_import_remaining",
+                    str(rel),
+                    ", ".join(imports),
+                    "Executable tests must not runtime import wecom_ability_service; migrate to aicrm_next or archive the historical coverage outside pytest.",
+                )
+            )
+            violations.append(
+                Violation(
+                    "legacy_package_domain_test_remaining",
+                    str(rel),
+                    ", ".join(imports),
+                    "Legacy package/domain unit tests are retired as production guards; document them in the archive and remove the executable test.",
+                )
+            )
+
+        markers = _legacy_test_runtime_markers(path)
+        if markers["fixture"]:
+            violations.append(
+                Violation(
+                    "legacy_test_fixture_usage_remaining",
+                    str(rel),
+                    ", ".join(markers["fixture"]),
+                    "Only tests/conftest.py and tests/test_test_fixture_boundaries.py may reference the temporary legacy fixture bridge.",
+                )
+            )
+        if markers["db"]:
+            violations.append(
+                Violation(
+                    "legacy_test_db_usage_remaining",
+                    str(rel),
+                    ", ".join(markers["db"]),
+                    "Executable tests must not use legacy Flask DB/app-context helpers; migrate to Next-native repositories or archive the historical coverage.",
+                )
+            )
+
+    return violations
+
+
 LEGACY_FLASK_HTTP_ROUTE_REGISTRY_SYMBOLS = {
     "HTTP_ROUTE_MODULES",
     "HTTP_ROUTE_REGISTRARS",
@@ -8196,6 +8290,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_startup_legacy_closeout(ROOT)
         + check_wecom_legacy_usage_freeze(ROOT)
         + check_test_fixture_legacy_boundaries(ROOT)
+        + check_legacy_package_domain_tests_archived(ROOT)
         + check_legacy_flask_http_test_retirement(ROOT)
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
