@@ -448,19 +448,19 @@
     if (addButton) addButton.disabled = assignees.length >= 5;
     if (!list) return;
     if (!assignees.length) {
-      list.innerHTML = '<div class="channel-assignee-empty">请添加企微客服。</div>';
+      list.innerHTML = '<div class="assignee-empty">请添加企微客服。</div>';
       return;
     }
     list.innerHTML = assignees.map((item, index) => {
       const field = ratioMode
-        ? '<label class="admin-field"><span>分配比例</span><input type="number" min="1" max="100" value="' + escapeHtml(item.ratio_percent) + '" data-assignee-field="ratio_percent" data-index="' + index + '"></label>'
-        : '<label class="admin-field"><span>24h 上限人数</span><input type="number" min="1" max="99999" value="' + escapeHtml(item.max_scans_24h) + '" data-assignee-field="max_scans_24h" data-index="' + index + '"></label>';
-      return '<div class="channel-assignee-row">' +
-        '<div class="channel-assignee-name"><strong>' + escapeHtml(item.display_name || item.staff_id) + '</strong><small>' + escapeHtml(item.staff_id) + '</small></div>' +
+        ? '<label class="field"><span>分配比例</span><input type="number" min="1" max="100" value="' + escapeHtml(item.ratio_percent) + '" data-assignee-field="ratio_percent" data-index="' + index + '"></label>'
+        : '<label class="field"><span>24h 上限人数</span><input type="number" min="1" max="99999" value="' + escapeHtml(item.max_scans_24h) + '" data-assignee-field="max_scans_24h" data-index="' + index + '"></label>';
+      return '<div class="assignee-row">' +
+        '<div class="assignee-name"><strong>' + escapeHtml(item.display_name || item.staff_id) + '</strong><small>' + escapeHtml(item.staff_id) + '</small></div>' +
         field +
-        '<div class="channel-assignee-actions">' +
-        '<button class="admin-button admin-button--secondary" type="button" data-assignee-move-up="' + index + '" ' + (index === 0 ? "disabled" : "") + '>上移</button>' +
-        '<button class="admin-button admin-button--secondary" type="button" data-assignee-remove="' + index + '" ' + (assignees.length <= 1 ? "disabled" : "") + '>删除</button>' +
+        '<div class="assignee-row-actions">' +
+        '<button class="button small" type="button" data-assignee-move-up="' + index + '" ' + (index === 0 ? "disabled" : "") + '>上移</button>' +
+        '<button class="button small ghost" type="button" data-assignee-remove="' + index + '" ' + (assignees.length <= 1 ? "disabled" : "") + '>删除</button>' +
         '</div></div>';
     }).join("");
   }
@@ -476,13 +476,13 @@
       if (text) text.textContent = errors.length ? errors[0] : "比例合计 100%，可以保存。";
       if (pill) {
         pill.textContent = total + "%";
-        pill.className = "channel-pill " + (total === 100 ? "is-ok" : "");
+        pill.className = "pill " + (total === 100 ? "green" : "red");
       }
     } else {
       if (text) text.textContent = errors.length ? errors[0] : "按列表顺序承接；达到 24h 上限后切换下一个客服。";
       if (pill) {
         pill.textContent = "满额切换";
-        pill.className = "channel-pill is-qrcode";
+        pill.className = "pill blue";
       }
     }
     setSaveButtonAvailability();
@@ -655,9 +655,9 @@
         setSaveFeedback(error.message || "保存失败", "error");
       }).finally(() => {
         if (saveButton) {
-          saveButton.disabled = false;
           saveButton.textContent = "保存渠道";
         }
+        setSaveButtonAvailability();
       });
     });
   }
@@ -668,6 +668,7 @@
     const imageInput = root.querySelector("[data-image-ids]");
     const attachmentInput = root.querySelector("[data-attachment-ids]");
     const summary = root.querySelector("[data-welcome-content-summary]");
+    const materialSummary = root.querySelector("[data-welcome-material-summary]");
     if (!root.querySelector("[data-open-welcome-composer]")) return;
 
     const currentPackage = () => welcomeFieldsToContentPackage({
@@ -681,7 +682,13 @@
       const contentPackage = currentPackage();
       const text = String(contentPackage.content_text || "").trim();
       const textSummary = text ? (text.length > 60 ? text.slice(0, 60) + "..." : text) : "未配置话术";
-      if (summary) {
+      if (summary) summary.textContent = textSummary;
+      if (materialSummary) {
+        materialSummary.innerHTML =
+          '<span class="pill">图片 ' + contentPackage.image_library_ids.length + '</span>' +
+          '<span class="pill">小程序 ' + contentPackage.miniprogram_library_ids.length + '</span>' +
+          '<span class="pill">附件 ' + contentPackage.attachment_library_ids.length + '</span>';
+      } else if (summary) {
         summary.innerHTML =
           '<strong>话术：</strong><span>' + escapeHtml(textSummary) + '</span>' +
           '<strong>素材：</strong><span>图片 ' + contentPackage.image_library_ids.length +
@@ -762,8 +769,8 @@
         const tagName = String(tagNameInput?.value || "").trim();
         const groupName = String(tagGroupInput?.value || "").trim();
         tagSelected.innerHTML = tagId
-          ? '<button type="button" class="channel-material-chip" data-remove-picked="tag">' + escapeHtml((groupName ? groupName + " / " : "") + (tagName || "已选择标签")) + ' ×</button>'
-          : '<span class="channel-muted">暂未选择标签</span>';
+          ? '<button type="button" class="pill" data-remove-picked="tag">' + escapeHtml((groupName ? groupName + " / " : "") + (tagName || "已选择标签")) + ' ×</button>'
+          : '暂未选择标签';
       }
     };
 

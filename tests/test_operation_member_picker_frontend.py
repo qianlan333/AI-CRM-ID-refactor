@@ -38,7 +38,12 @@ def test_operation_member_picker_modal_is_simplified_and_searches_common_api():
     assert "z-index: 10000" in source
     assert "display: none !important" in source
     assert "选择运营人员" in source
-    assert "搜索姓名或 userID，选择后回填到当前页面。" in source
+    assert "从企微客服列表勾选，确认后加入当前渠道。最多 5 个。" in source
+    assert "搜索姓名或 userID" in source
+    assert "member-modal" in source
+    assert "member-modal__panel" in source
+    assert "member-modal__search" in source
+    assert "member-modal__actions" in source
     assert "data-operation-member-search" in source
     assert "data-operation-member-clear" in source
     assert "data-operation-member-list" in source
@@ -66,6 +71,9 @@ def test_operation_member_picker_rows_only_show_identity_avatar_and_select_butto
     assert "operation-member-picker__avatar" in source
     assert "operation-member-picker__identity" in source
     assert "data-operation-member-row-select" in source
+    assert "member-row" in source
+    assert "member-row__main" in source
+    assert 'type="checkbox"' in source
     assert "已选" in source
     assert "选择" in source
     assert "avatarUrl ? `" in source
@@ -78,6 +86,9 @@ def test_operation_member_picker_rows_only_show_identity_avatar_and_select_butto
     assert "member.role" not in source
     assert ".role" not in source
     assert "operation-member-picker__select" in css
+    assert "width: min(860px, 100%)" in source
+    assert "grid-template-columns: 1fr 100px" in source
+    assert "border-radius: 18px" in source
     assert "width: min(820px, 100%)" in css
     assert "grid-template-columns: 1fr 110px" in css
     assert "background: var(--panel-strong, #fff)" in css

@@ -60,74 +60,84 @@
         padding: 24px;
         background: rgba(15, 23, 42, 0.4);
       }
+      .member-modal {
+        background: rgba(15, 23, 42, 0.42);
+      }
       .operation-member-picker[hidden] {
         display: none !important;
       }
-      .operation-member-picker__panel {
-        width: min(820px, 100%);
+      .operation-member-picker__panel,
+      .member-modal__panel {
+        width: min(860px, 100%);
         max-height: min(720px, 92vh);
         display: grid;
         grid-template-rows: auto auto minmax(0, 1fr) auto;
         overflow: hidden;
-        border-radius: 22px;
+        border-radius: 18px;
         background: var(--panel-strong, #fff);
         box-shadow: var(--shadow-lg, 0 18px 54px rgba(15, 23, 42, 0.18));
       }
-      .operation-member-picker__head {
-        padding: 22px 24px 14px;
+      .operation-member-picker__head,
+      .member-modal__head {
+        padding: 16px 18px;
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
-        gap: 16px;
+        gap: 12px;
         border-bottom: 1px solid var(--line, #e5e7eb);
+        background: var(--panel-strong, #fffdf8);
       }
       .operation-member-picker__head h2 {
         margin: 0 0 4px;
-        font-size: 20px;
+        font-size: 18px;
       }
       .operation-member-picker__head p {
         margin: 0;
         color: var(--muted, #6b7280);
         font-size: 13px;
+        font-weight: 700;
       }
       .operation-member-picker__close {
         white-space: nowrap;
       }
-      .operation-member-picker__search {
-        padding: 14px 24px;
+      .operation-member-picker__search,
+      .member-modal__search {
+        padding: 16px 18px;
         display: grid;
-        grid-template-columns: 1fr 110px;
+        grid-template-columns: 1fr 100px;
         gap: 10px;
         border-bottom: 1px solid var(--line, #e5e7eb);
-        background: #fbfdff;
+        background: #fafafa;
       }
       .operation-member-picker__search input {
         width: 100%;
         min-width: 0;
-        min-height: 46px;
+        min-height: 40px;
         border: 1px solid var(--line, #e5e7eb);
-        border-radius: 12px;
-        padding: 0 14px;
+        border-radius: 10px;
+        padding: 0 12px;
         font-size: 14px;
         background: var(--panel-strong, #fff);
       }
-      .operation-member-picker__list {
+      .operation-member-picker__list,
+      .member-modal__list {
         display: grid;
         align-content: start;
         gap: 10px;
         overflow: auto;
-        padding: 14px 18px 18px;
+        padding: 14px 18px;
         background: var(--panel-strong, #fff);
       }
-      .operation-member-picker__row {
-        min-height: 74px;
+      .operation-member-picker__row,
+      .member-row {
+        min-height: 68px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        padding: 13px 14px;
+        gap: 14px;
+        padding: 12px 14px;
         border: 1px solid var(--line, #e5e7eb);
-        border-radius: 14px;
+        border-radius: 12px;
         background: var(--panel-strong, #fff);
       }
       .operation-member-picker__row.is-selected {
@@ -138,7 +148,8 @@
         opacity: 0.56;
         background: #f9fafb;
       }
-      .operation-member-picker__member-main {
+      .operation-member-picker__member-main,
+      .member-row__main {
         min-width: 0;
         display: flex;
         align-items: center;
@@ -174,6 +185,11 @@
       .operation-member-picker__select {
         white-space: nowrap;
       }
+      .operation-member-picker__checkbox {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+      }
       .operation-member-picker__empty {
         padding: 44px 12px;
         border: 1px dashed var(--line, #e5e7eb);
@@ -182,8 +198,9 @@
         text-align: center;
         font-size: 14px;
       }
-      .operation-member-picker__actions {
-        padding: 14px 24px;
+      .operation-member-picker__actions,
+      .member-modal__actions {
+        padding: 16px 18px;
         display: flex;
         justify-content: flex-end;
         gap: 10px;
@@ -207,25 +224,25 @@
     let modal = document.querySelector("[data-operation-member-picker]");
     if (modal) return modal;
     modal = document.createElement("aside");
-    modal.className = "operation-member-picker";
+    modal.className = "operation-member-picker member-modal";
     modal.hidden = true;
     modal.setAttribute("data-operation-member-picker", "1");
     modal.setAttribute("aria-hidden", "true");
     modal.innerHTML = `
-      <section class="operation-member-picker__panel" role="dialog" aria-modal="true" aria-labelledby="operation-member-picker-title">
-        <div class="operation-member-picker__head">
+      <section class="operation-member-picker__panel member-modal__panel" role="dialog" aria-modal="true" aria-labelledby="operation-member-picker-title">
+        <div class="operation-member-picker__head member-modal__head">
           <div>
             <h2 id="operation-member-picker-title" data-operation-member-title>选择运营人员</h2>
-            <p>搜索姓名或 userID，选择后回填到当前页面。</p>
+            <p>从企微客服列表勾选，确认后加入当前渠道。最多 5 个。</p>
           </div>
-          <button class="operation-member-picker__close" type="button" data-operation-member-close>关闭</button>
+          <button class="operation-member-picker__close admin-button admin-button--secondary" type="button" data-operation-member-close>关闭</button>
         </div>
-        <div class="operation-member-picker__search">
-          <input type="search" data-operation-member-search placeholder="搜索：Anne / WangJiaYin / 嘉茵 / support1" autocomplete="off">
+        <div class="operation-member-picker__search member-modal__search">
+          <input type="search" data-operation-member-search placeholder="搜索姓名或 userID" autocomplete="off">
           <button class="admin-button admin-button--secondary" type="button" data-operation-member-clear>清空</button>
         </div>
-        <div class="operation-member-picker__list" data-operation-member-list></div>
-        <div class="operation-member-picker__actions">
+        <div class="operation-member-picker__list member-modal__list" data-operation-member-list></div>
+        <div class="operation-member-picker__actions member-modal__actions">
           <button class="admin-button admin-button--secondary" type="button" data-operation-member-cancel>取消</button>
           <button class="admin-button admin-button--primary" type="button" data-operation-member-confirm>确认选择</button>
         </div>
@@ -327,16 +344,19 @@
         : state.selected && state.selected.user_id === userId;
       const maxed = state.multiple && !selected && state.max > 0 && state.selectedMembers.length >= state.max;
       const rowDisabled = disabled || maxed;
+      const control = state.multiple
+        ? `<input class="operation-member-picker__checkbox" type="checkbox" data-operation-member-row-select ${selected ? "checked" : ""} ${rowDisabled ? "disabled" : ""}>`
+        : `<button class="admin-button ${selected ? "admin-button--primary" : "admin-button--secondary"} operation-member-picker__select" type="button" data-operation-member-row-select ${rowDisabled ? "disabled" : ""}>${disabled ? "已添加" : selected ? "已选" : "选择"}</button>`;
       return `
-        <div class="operation-member-picker__row${selected ? " is-selected" : ""}${rowDisabled ? " is-disabled" : ""}" data-operation-member-row data-user-id="${escapeHtml(userId)}">
-          <div class="operation-member-picker__member-main">
+        <div class="operation-member-picker__row member-row${selected ? " is-selected" : ""}${rowDisabled ? " is-disabled" : ""}" data-operation-member-row data-user-id="${escapeHtml(userId)}">
+          <div class="operation-member-picker__member-main member-row__main">
             ${avatarUrl ? `<img class="operation-member-picker__avatar" src="${escapeHtml(avatarUrl)}" alt="">` : ""}
             <div class="operation-member-picker__identity">
               <div class="operation-member-picker__name">${escapeHtml(displayName)}</div>
               <div class="operation-member-picker__user-id">${escapeHtml(userId)}</div>
             </div>
           </div>
-          <button class="admin-button ${selected ? "admin-button--primary" : "admin-button--secondary"} operation-member-picker__select" type="button" data-operation-member-row-select ${rowDisabled ? "disabled" : ""}>${disabled ? "已添加" : selected ? "已选" : "选择"}</button>
+          ${control}
         </div>
       `;
     }).join("");
