@@ -10,12 +10,23 @@ LEGACY_LAYOUT_TARGETS = (
     "tests/test_refactor_guardrails.py",
     "tests/test_service_layer_layout.py",
 )
-RETIRED_LEGACY_SMOKE_TESTS = (
-    "tests/integration/test_pg_compat_smoke.py",
-    "tests/test_postgres_schema_retry.py",
-    "tests/test_hxc_dashboard_snapshot.py",
-    "tests/test_admin_rbac_navigation.py",
-    "tests/test_admin_navigation_groups.py",
+REQUIRED_SMOKE_COMMANDS = (
+    "bash scripts/check_no_duplicate_next_source.sh",
+    "python scripts/check_no_new_legacy.py --strict",
+)
+REQUIRED_SMOKE_TESTS = (
+    "tests/test_broadcast_jobs_service.py",
+    "tests/test_run_broadcast_queue_worker.py",
+    "tests/test_broadcast_jobs_wecom_private_dispatch.py",
+)
+SPECIALIZED_TEST_MARKERS = (
+    "post_closeout",
+    "deploy_workflow_contract",
+    "ci_workflow_contract",
+    "wechat_pay",
+    "hxc",
+    "user_ops",
+    "admin_shell",
 )
 
 
@@ -51,7 +62,7 @@ def test_full_test_keeps_complete_regression_and_backlog_drift_check():
     assert LEGACY_BACKLOG_CHECK in full_test_block
 
 
-def test_pr_and_main_smoke_skip_legacy_doc_and_layout_guardrails():
+def test_pr_and_main_smoke_skip_legacy_doc_layout_and_specialized_tests():
     source = _ci_source()
     smoke_blocks = (
         _job_block(source, "pr-smoke", "main-smoke"),
@@ -62,39 +73,19 @@ def test_pr_and_main_smoke_skip_legacy_doc_and_layout_guardrails():
         assert LEGACY_BACKLOG_CHECK not in smoke_block
         for test_path in LEGACY_LAYOUT_TARGETS:
             assert test_path not in smoke_block
-        for test_path in RETIRED_LEGACY_SMOKE_TESTS:
-            assert test_path not in smoke_block
+        for marker in SPECIALIZED_TEST_MARKERS:
+            assert marker not in smoke_block
 
 
-def test_main_smoke_keeps_recently_touched_critical_paths():
+def test_pr_and_main_smoke_keep_required_fast_gates_and_broadcast_tests():
     source = _ci_source()
-    main_smoke_block = _job_block(source, "main-smoke", "full-test")
+    smoke_blocks = (
+        _job_block(source, "pr-smoke", "main-smoke"),
+        _job_block(source, "main-smoke", "full-test"),
+    )
 
-    for test_path in (
-        "tests/test_post_closeout_production_contract.py",
-        "tests/test_next_source_consolidation.py",
-        "tests/test_user_ops_import_parsers.py",
-        "tests/test_user_ops_page_service_helpers.py",
-        "tests/test_hxc_dashboard_api_contract.py",
-        "tests/test_send_task.py",
-        "tests/test_admin_auth_route_precedence.py",
-        "tests/test_admin_shell_native.py",
-        "tests/test_wechat_pay_products.py",
-        "tests/test_wechat_pay_admin_transactions.py",
-    ):
-        assert test_path in main_smoke_block
-
-
-def test_pr_smoke_covers_admin_navigation_and_wechat_pay_splits():
-    source = _ci_source()
-    pr_smoke_block = _job_block(source, "pr-smoke", "main-smoke")
-
-    assert "bash scripts/check_no_duplicate_next_source.sh" in pr_smoke_block
-
-    for test_path in (
-        "tests/test_admin_auth_route_precedence.py",
-        "tests/test_admin_shell_native.py",
-        "tests/test_wechat_pay_products.py",
-        "tests/test_wechat_pay_admin_transactions.py",
-    ):
-        assert test_path in pr_smoke_block
+    for smoke_block in smoke_blocks:
+        for command in REQUIRED_SMOKE_COMMANDS:
+            assert command in smoke_block
+        for test_path in REQUIRED_SMOKE_TESTS:
+            assert test_path in smoke_block
