@@ -149,4 +149,4 @@ def test_external_contact_sync_missing_client_is_structured() -> None:
 
     assert result["ok"] is True
     assert result["status"] == "skipped"
-    assert result["skipped_components"][0]["reason"] == "next_native_live_client_not_configured"
+    assert result["skipped_components"][0]["reason"] == "missing_wecom_config"

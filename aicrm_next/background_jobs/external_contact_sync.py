@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol
 
+from aicrm_next.channel_entry.wecom_adapter import get_wecom_adapter, wecom_adapter_diagnostics
+
 from .db import connect, has_database_url
 
 
@@ -28,12 +30,13 @@ class PostgresExternalContactSyncRepository:
             return {str(row.get("external_userid") or "").strip() for row in rows if str(row.get("external_userid") or "").strip()}
 
     def upsert_contact(self, *, corp_id: str, owner_userid: str, detail: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-        external_userid = _text(detail.get("external_userid") or detail.get("external_userid_external") or detail.get("userid"))
+        contact = dict((detail or {}).get("external_contact") or detail or {})
+        external_userid = _text(contact.get("external_userid") or contact.get("external_userid_external") or contact.get("userid"))
         if not external_userid:
             return {"ok": False, "status": "skipped", "reason": "missing_external_userid"}
-        name = _text(detail.get("name") or detail.get("customer_name"))
-        unionid = _text(detail.get("unionid"))
-        openid = _text(detail.get("openid"))
+        name = _text(contact.get("name") or contact.get("customer_name"))
+        unionid = _text(contact.get("unionid"))
+        openid = _text(contact.get("openid"))
         if dry_run:
             return {"ok": True, "status": "upsert", "external_userid": external_userid, "dry_run": True}
         from psycopg.types.json import Jsonb
@@ -102,6 +105,32 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+class AdapterExternalContactClient:
+    def __init__(self, adapter: Any) -> None:
+        self._adapter = adapter
+
+    def list_follow_users(self) -> list[str]:
+        return list(self._adapter.list_follow_users())
+
+    def list_contacts(self, owner_userid: str) -> list[str]:
+        return list(self._adapter.list_contacts(owner_userid))
+
+    def get_contact(self, external_userid: str) -> dict[str, Any]:
+        return dict(self._adapter.get_external_contact_detail(external_userid))
+
+
+def _default_external_contact_client() -> tuple[ExternalContactClient | None, dict[str, Any] | None]:
+    diagnostics = wecom_adapter_diagnostics()
+    if not diagnostics.get("real_wecom_adapter_enabled"):
+        return None, {
+            "component": "wecom_contact_client",
+            "status": "skipped",
+            "reason": diagnostics.get("real_wecom_adapter_reason") or "next_native_live_client_not_configured",
+            "missing_config": list(diagnostics.get("missing_config") or []),
+        }
+    return AdapterExternalContactClient(get_wecom_adapter()), None
+
+
 def run_external_contact_sync(
     *,
     full: bool = False,
@@ -128,7 +157,11 @@ def run_external_contact_sync(
         "errors": [],
     }
     if client is None:
-        skipped = {"component": "wecom_contact_client", "status": "skipped", "reason": "next_native_live_client_not_configured"}
+        client, skipped = _default_external_contact_client()
+    else:
+        skipped = None
+    if client is None:
+        skipped = skipped or {"component": "wecom_contact_client", "status": "skipped", "reason": "next_native_live_client_not_configured"}
         payload = {**summary, "status": "skipped", "skipped": 1, "skipped_components": [skipped]}
         return payload if dry_run else {**payload, "ok": False, "errors": [{"code": "wecom_contact_client_missing", "message": "Next-native live client is not configured"}]}
     if repo is None and not has_database_url():
