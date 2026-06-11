@@ -159,6 +159,11 @@ def _is_wecom_private_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
         _text(payload.get("channel")) == "wecom_private"
         or _text(job.get("channel")) == "wecom_private"
         or (
+            _text(job.get("source_type")) == "campaign"
+            and _text(job.get("source_table")) == "campaign_members"
+            and _text(job.get("content_type")) == "private_message"
+        )
+        or (
             _text(job.get("source_type")) == "automation_runtime_v2"
             and _text(job.get("target_kind")) == "external_userid"
         )
@@ -206,7 +211,19 @@ def _extract_private_targets(job: dict[str, Any], payload: dict[str, Any]) -> li
 
 def _extract_private_text(payload: dict[str, Any]) -> str:
     rendered = payload.get("rendered_content") if isinstance(payload.get("rendered_content"), dict) else {}
-    return _text(rendered.get("content_text") or rendered.get("text") or payload.get("content_text") or payload.get("text"))
+    step = payload.get("step") if isinstance(payload.get("step"), dict) else {}
+    return _text(
+        rendered.get("content_text")
+        or rendered.get("text")
+        or payload.get("content_text")
+        or payload.get("text")
+        or step.get("content_text")
+    )
+
+
+def _extract_private_sender(payload: dict[str, Any]) -> str:
+    campaign = payload.get("campaign") if isinstance(payload.get("campaign"), dict) else {}
+    return _text(payload.get("sender_userid") or payload.get("owner_userid") or campaign.get("owner_userid"))
 
 
 def _realtest_guard(*, sender_userid: str, targets: list[str], content_text: str) -> tuple[bool, str]:
@@ -225,7 +242,7 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
 
     targets = _extract_private_targets(job, payload)
     target_count = int_value(job.get("target_count"))
-    sender_userid = _text(payload.get("sender_userid") or payload.get("owner_userid"))
+    sender_userid = _extract_private_sender(payload)
     content_text = _extract_private_text(payload)
     if not targets:
         return {"ok": False, "error": "target_external_userids_missing", "failure_type": "validation_failed"}

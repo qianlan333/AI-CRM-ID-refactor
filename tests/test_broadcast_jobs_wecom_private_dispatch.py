@@ -72,6 +72,42 @@ def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
     assert adapter.payload["external_userids"] == ["wm_test"]
 
 
+def test_campaign_private_message_job_is_dispatched(monkeypatch) -> None:
+    adapter = Adapter({"ok": True, "wecom_msgid": "msg-campaign", "result": {"msgid": "msg-campaign"}})
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 889)
+    repo = FakeRepo(
+        [
+            _job(
+                source_type="campaign",
+                source_table="campaign_members",
+                source_id="2745:2745:0",
+                idempotency_key="campaign_member_step:2745:2745:0",
+                channel="",
+                target_kind="",
+                content_type="private_message",
+                payload={
+                    "channel": "",
+                    "sender_userid": "",
+                    "owner_userid": "",
+                    "rendered_content": {},
+                    "campaign": {"owner_userid": "HuangYouCan"},
+                    "step": {"content_text": "campaign private hello"},
+                    "members": [{"external_contact_id": "wm_test"}],
+                },
+            )
+        ]
+    )
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["sent_ok"] == 1
+    assert repo.sent == [{"job_id": 101, "outbound_task_id": 889, "sent_count": 1, "failed_count": 0}]
+    assert adapter.payload["sender"] == "HuangYouCan"
+    assert adapter.payload["external_userids"] == ["wm_test"]
+    assert adapter.payload["text"]["content"] == "campaign private hello"
+
+
 def test_wecom_private_sender_missing_is_validation_failed() -> None:
     repo = FakeRepo([_job(payload={"sender_userid": ""})])
 
