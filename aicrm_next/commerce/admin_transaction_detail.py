@@ -233,6 +233,7 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
         **status,
         "raw_status": raw_status,
         "provider_status": provider_status,
+        "refund_status": _text(row.get("refund_status")),
         "refunded_amount_total": refunded,
         "refunded_amount_yuan": _money_yuan(refunded),
         "active_refund_amount_total": active_refunding,
@@ -265,6 +266,10 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         values = product_code_filter_values(product_code)
         where.append(f"{table_alias}.product_code IN ({', '.join(['%s'] * len(values))})")
         params.extend(values)
+    product_name = _text(filters.get("product_name"))
+    if product_name:
+        where.append(f"COALESCE({table_alias}.product_name, '') ILIKE %s")
+        params.append(f"%{product_name}%")
     mobile = _text(filters.get("mobile") or filters.get("mobile_snapshot"))
     if mobile:
         if provider == "wechat_shop":
@@ -273,6 +278,13 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
         else:
             where.append(f"COALESCE({table_alias}.mobile_snapshot, '') ILIKE %s")
             params.append(f"%{mobile}%")
+    unionid = _text(filters.get("unionid"))
+    if unionid:
+        if provider == "alipay":
+            where.append("1 = 0")
+        else:
+            where.append(f"COALESCE({table_alias}.unionid, '') ILIKE %s")
+            params.append(f"%{unionid}%")
     identity = _text(filters.get("identity") or filters.get("external_userid"))
     if identity:
         if provider == "wechat_shop":
@@ -305,6 +317,58 @@ def _postgres_filter_clause(provider: str, filters: dict[str, Any], params: list
     if created_to:
         where.append("o.created_at <= %s")
         params.append(created_to.replace("T", " "))
+    paid_from = _text(filters.get("paid_from"))
+    if paid_from:
+        where.append("o.paid_at IS NOT NULL")
+        where.append("o.paid_at >= %s")
+        params.append(paid_from.replace("T", " "))
+    paid_to = _text(filters.get("paid_to"))
+    if paid_to:
+        where.append("o.paid_at IS NOT NULL")
+        where.append("o.paid_at <= %s")
+        params.append(paid_to.replace("T", " "))
+    is_paid = _text(filters.get("is_paid")).lower()
+    if is_paid in {"1", "true", "yes", "y", "on"}:
+        where.append("o.paid_at IS NOT NULL")
+    elif is_paid in {"0", "false", "no", "n", "off"}:
+        where.append("o.paid_at IS NULL")
+    is_refunded = _text(filters.get("is_refunded")).lower()
+    if is_refunded in {"1", "true", "yes", "y", "on"}:
+        if provider == "wechat_shop":
+            where.append("(COALESCE(o.refunded_amount_total, 0) > 0 OR COALESCE(o.on_aftersale_order_count, 0) > 0 OR o.returned_recorded IS TRUE)")
+        elif provider == "wechat":
+            where.append(
+                """(
+                    COALESCE(o.refunded_amount_total, 0) > 0
+                    OR COALESCE(o.refund_status, '') IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM wechat_pay_refunds r
+                        WHERE r.order_id = o.id
+                          AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+                    )
+                )"""
+            )
+        else:
+            where.append("(COALESCE(o.refunded_amount_total, 0) > 0 OR COALESCE(o.refund_status, '') IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded'))")
+    elif is_refunded in {"0", "false", "no", "n", "off"}:
+        if provider == "wechat_shop":
+            where.append("(COALESCE(o.refunded_amount_total, 0) = 0 AND COALESCE(o.on_aftersale_order_count, 0) = 0 AND COALESCE(o.returned_recorded, FALSE) IS FALSE)")
+        elif provider == "wechat":
+            where.append(
+                """(
+                    COALESCE(o.refunded_amount_total, 0) = 0
+                    AND COALESCE(o.refund_status, '') NOT IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded')
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM wechat_pay_refunds r
+                        WHERE r.order_id = o.id
+                          AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+                    )
+                )"""
+            )
+        else:
+            where.append("(COALESCE(o.refunded_amount_total, 0) = 0 AND COALESCE(o.refund_status, '') NOT IN ('requested', 'processing', 'refund_processing', 'partial_refunded', 'full_refunded'))")
     status = _text(filters.get("status") or filters.get("payment_status"))
     if provider == "wechat_shop":
         if status == "paid":
