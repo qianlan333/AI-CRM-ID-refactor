@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -21,12 +22,48 @@ REQUIRED_SMOKE_TESTS = (
 )
 SPECIALIZED_TEST_MARKERS = (
     "post_closeout",
+    "campaigns_due_calc",
+    "send_task",
+    "campaign_hard_delete",
     "deploy_workflow_contract",
     "ci_workflow_contract",
+    "admin_auth_route_precedence",
     "wechat_pay",
     "hxc",
     "user_ops",
     "admin_shell",
+    "cloud_orchestrator_external_agent",
+)
+REMOVED_PR_SMOKE_TESTS = (
+    "tests/test_post_closeout_production_contract.py",
+    "tests/test_campaigns_due_calc.py",
+    "tests/test_send_task.py",
+    "tests/test_campaign_hard_delete.py",
+    "tests/test_ci_workflow_contract.py",
+    "tests/test_deploy_workflow_contract.py",
+    "tests/test_admin_auth_route_precedence.py",
+    "tests/test_admin_shell_native.py",
+    "tests/test_wechat_pay_products.py",
+    "tests/test_wechat_pay_admin_transactions.py",
+    "tests/test_cloud_orchestrator_external_agent.py",
+)
+REMOVED_MAIN_SMOKE_TESTS = (
+    "tests/test_post_closeout_production_contract.py",
+    "tests/test_next_source_consolidation.py",
+    "tests/test_marketing_schema_init.py",
+    "tests/test_campaigns_due_calc.py",
+    "tests/test_send_task.py",
+    "tests/test_campaign_hard_delete.py",
+    "tests/test_ci_workflow_contract.py",
+    "tests/test_deploy_workflow_contract.py",
+    "tests/test_user_ops_import_parsers.py",
+    "tests/test_user_ops_page_service_helpers.py",
+    "tests/test_hxc_dashboard_api_contract.py",
+    "tests/test_admin_auth_route_precedence.py",
+    "tests/test_admin_shell_native.py",
+    "tests/test_wechat_pay_products.py",
+    "tests/test_wechat_pay_admin_transactions.py",
+    "tests/test_cloud_orchestrator_external_agent.py",
 )
 
 
@@ -39,6 +76,10 @@ def _job_block(source: str, job_name: str, next_job_name: str | None = None) -> 
     if next_job_name is None:
         return source[start:]
     return source[start:source.index(f"{next_job_name}:")]
+
+
+def _smoke_pytest_test_paths(job_block: str) -> set[str]:
+    return set(re.findall(r"tests/test_[A-Za-z0-9_]+\.py", job_block))
 
 
 def test_main_push_uses_smoke_not_full_regression():
@@ -75,6 +116,24 @@ def test_pr_and_main_smoke_skip_legacy_doc_layout_and_specialized_tests():
             assert test_path not in smoke_block
         for marker in SPECIALIZED_TEST_MARKERS:
             assert marker not in smoke_block
+
+
+def test_pr_smoke_excludes_specialized_contract_and_domain_suites():
+    source = _ci_source()
+    pr_smoke_block = _job_block(source, "pr-smoke", "main-smoke")
+
+    assert _smoke_pytest_test_paths(pr_smoke_block) == set(REQUIRED_SMOKE_TESTS)
+    for test_path in REMOVED_PR_SMOKE_TESTS:
+        assert test_path not in pr_smoke_block
+
+
+def test_main_smoke_excludes_specialized_contract_and_domain_suites():
+    source = _ci_source()
+    main_smoke_block = _job_block(source, "main-smoke", "full-test")
+
+    assert _smoke_pytest_test_paths(main_smoke_block) == set(REQUIRED_SMOKE_TESTS)
+    for test_path in REMOVED_MAIN_SMOKE_TESTS:
+        assert test_path not in main_smoke_block
 
 
 def test_pr_and_main_smoke_keep_required_fast_gates_and_broadcast_tests():
