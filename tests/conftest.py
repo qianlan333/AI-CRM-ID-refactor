@@ -91,6 +91,8 @@ _TABLES_TO_TRUNCATE = [
     "automation_program_admission_attempt",
     "automation_program_member",
     "automation_channel_contact",
+    "automation_channel_assignment_event",
+    "automation_channel_assignee",
     "automation_program_channel_binding",
     "automation_workflow_node_content_variant",
     "automation_workflow_node_content",
@@ -376,6 +378,33 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             joined_at TEXT NOT NULL DEFAULT '',
             last_ai_push_at TEXT NOT NULL DEFAULT '',
             ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_channel (
+            id BIGSERIAL PRIMARY KEY,
+            channel_type TEXT NOT NULL DEFAULT 'qrcode',
+            carrier_type TEXT NOT NULL DEFAULT 'qrcode',
+            channel_name TEXT NOT NULL DEFAULT '',
+            channel_code TEXT NOT NULL DEFAULT '',
+            scene_value TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            qr_ticket TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            customer_channel TEXT NOT NULL DEFAULT '',
+            link_url TEXT NOT NULL DEFAULT '',
+            final_url TEXT NOT NULL DEFAULT '',
+            welcome_message TEXT NOT NULL DEFAULT '',
+            welcome_image_library_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            welcome_miniprogram_library_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            welcome_attachment_library_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            auto_accept_friend BOOLEAN NOT NULL DEFAULT FALSE,
+            entry_tag_id TEXT NOT NULL DEFAULT '',
+            entry_tag_name TEXT NOT NULL DEFAULT '',
+            entry_tag_group_name TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )

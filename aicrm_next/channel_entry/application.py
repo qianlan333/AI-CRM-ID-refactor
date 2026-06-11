@@ -413,8 +413,25 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         _log_effect(command, effect_type="channel_contact", idempotency_key=f"{corp_id}:{command.external_contact_id}:{scene}:not_found", status="failed", channel_id=None, scene_value=scene, reason=reason, response_json={"scene_match": match})
         return {"handled": False, "mode": "channel_not_found", "reason": reason, "scene_match": match}
 
-    command.follow_user_userid = text(command.follow_user_userid) or text(channel.get("owner_staff_id")) or "HuangYouCan"
     channel_id = int(channel["id"])
+    assignment_result: dict[str, Any] = {}
+    if not text(command.follow_user_userid) and text(channel.get("assignment_mode")) == "multi_staff":
+        try:
+            assignment_result = repo.choose_channel_assignee(
+                channel_id,
+                external_contact_id=command.external_contact_id,
+                wecom_user_id="",
+                write_event=not command.dry_run,
+                source_payload=command.payload_json,
+            )
+        except Exception as exc:
+            assignment_result = {"ok": False, "reason": text(str(exc)) or "assignment_failed"}
+    command.follow_user_userid = (
+        text(command.follow_user_userid)
+        or text(assignment_result.get("assignee_staff_id"))
+        or text(channel.get("owner_staff_id"))
+        or "HuangYouCan"
+    )
     if not channel_enabled(channel):
         for effect_type, response in {
             "channel_contact": {"attempted": False, "reason": "channel_disabled"},
@@ -473,6 +490,7 @@ def process_channel_entry(command: ProcessChannelEntryCommand) -> dict[str, Any]
         "channel_contact": channel_contact,
         "welcome_message": welcome,
         "entry_tag": tag,
+        "assignment": assignment_result,
     }
 
 
@@ -606,7 +624,12 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
     if text(channel.get("carrier_type")) == "link" or text(channel.get("channel_type")) == "wecom_customer_acquisition":
         raise ValueError("link_channel_does_not_support_qrcode_generate")
     owner_staff_id = text(command.owner_staff_id) or text(channel.get("owner_staff_id"))
-    if not owner_staff_id:
+    payload_user_ids: list[str] = []
+    if text(channel.get("assignment_mode")) == "multi_staff":
+        payload_user_ids = [text(item.get("staff_id")) for item in repo.list_channel_assignees(int(command.channel_id), active_only=True) if text(item.get("staff_id"))]
+    if not payload_user_ids and owner_staff_id:
+        payload_user_ids = [owner_staff_id]
+    if not payload_user_ids:
         raise ValueError("owner_staff_id_required")
     scene_value = text(command.scene_value) or _generated_scene_value()
     previous_scene = text(channel.get("scene_value"))
@@ -617,7 +640,7 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
         "style": 1,
         "skip_verify": bool(command.skip_verify if command.skip_verify is not None else channel.get("auto_accept_friend")),
         "state": scene_value,
-        "user": [owner_staff_id],
+        "user": payload_user_ids,
     }
     try:
         wecom_result = get_wecom_adapter().create_contact_way(payload)
@@ -744,6 +767,7 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
         "qr_url": qr_url,
         "alias_id": int(alias.get("id") or 0),
         "qrcode_asset_id": int(asset.get("id") or 0),
+        "provider_payload_user_count": len(payload_user_ids),
         "channel": channel_payload(updated or {**channel, "scene_value": scene_value, "qr_url": qr_url, "qr_ticket": config_id}),
         "source": "aicrm_next.channel_entry",
         "route_owner": "ai_crm_next",
