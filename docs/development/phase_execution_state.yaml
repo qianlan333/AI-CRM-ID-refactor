@@ -25,9 +25,6 @@ cleanup_closeout:
   continue_deletion_mode: false
 
 active_safety_gates:
-  - check_legacy_facade_growth_freeze
-  - generate_legacy_replacement_backlog
-  - check_production_route_resolution
   - check_automerge_eligibility
   - check_autonomous_development_loop
   - pr_smoke

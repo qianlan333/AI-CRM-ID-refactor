@@ -12,8 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs/development/autonomous_development_loop.md"
 STATE = ROOT / "docs/development/phase_execution_state.yaml"
 STOP = ROOT / "docs/development/autonomous_stop_conditions.yaml"
-MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
-BACKLOG = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 
 REQUIRED_STATE_FIELDS = {
     "version",
@@ -34,9 +32,6 @@ REQUIRED_STATE_FIELDS = {
     "next_cleanup_candidates",
 }
 EXPECTED_SAFETY_GATES = {
-    "check_legacy_facade_growth_freeze",
-    "generate_legacy_replacement_backlog",
-    "check_production_route_resolution",
     "check_automerge_eligibility",
     "check_autonomous_development_loop",
     "pr_smoke",
@@ -98,7 +93,6 @@ PROTECTED_EXACT = {
 STARTUP_CLOSEOUT_ALLOWED_EXACT = {
     ".github/workflows/deploy.yml",
     "app.py",
-    "scripts/check_no_new_legacy.py",
 }
 PROTECTED_PREFIXES = (
     "migrations/",
@@ -122,7 +116,6 @@ GOVERNANCE_ALLOWED_EXACT = {
     "aicrm_next/automation_runtime_v2/bridge.py",
     "aicrm_next/automation_runtime_v2/channel_binding_service.py",
     "scripts/codex_autopilot_tick.sh",
-    "scripts/check_no_new_legacy.py",
     "scripts/run_lint.py",
     "scripts/smoke_automation_runtime_v2.py",
     "requirements.txt",

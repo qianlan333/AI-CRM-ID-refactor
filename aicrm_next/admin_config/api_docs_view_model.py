@@ -621,7 +621,7 @@ def build_api_docs_view_model(*, frontend_router: APIRouter | None = None) -> di
         "markdown_data": markdown_data,
         "endpoint_count": len(quick_reference),
         "markdown_size_label": _size_label(markdown_data["full"]),
-        "source_status": "fastapi_route_registry",
+        "source_status": "fastapi_route_map",
     }
 
 

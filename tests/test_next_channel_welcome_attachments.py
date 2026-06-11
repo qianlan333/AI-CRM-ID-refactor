@@ -13,6 +13,10 @@ def _base(monkeypatch, channel):
     monkeypatch.setattr("aicrm_next.channel_entry.repo.upsert_channel_entry_effect_log", lambda **kwargs: {"ok": True})
     monkeypatch.setattr("aicrm_next.channel_entry.repo.save_tag_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr("aicrm_next.channel_entry.repo.list_active_bindings_for_channel", lambda channel_id: [])
+    monkeypatch.setattr(
+        "aicrm_next.automation_runtime_v2.bridge.process_channel_entry_event",
+        lambda **kwargs: {"processed": [], "reason": "channel_without_active_binding"},
+    )
 
     class Adapter:
         def send_welcome_msg(self, payload):
@@ -50,4 +54,3 @@ def test_welcome_attachment_limit_failed(monkeypatch):
     assert result["welcome_message"]["sent"] is False
     assert result["welcome_message"]["reason"] == "attachment_limit_exceeded"
     assert sent == []
-

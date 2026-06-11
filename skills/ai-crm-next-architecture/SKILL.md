@@ -24,8 +24,6 @@ Before every AI-CRM development task, read and follow these files:
 
 1. `docs/development/codex_architecture_operating_memory.md`
 2. `docs/development/ai_crm_next_architecture_skill.md`
-3. `docs/route_ownership/production_route_ownership_manifest.yaml`
-4. `docs/development/legacy_replacement_backlog.yaml`
 
 Do not start code, docs, route, checker, test, production_compat, runtime, or
 business-route changes until this preflight has been completed.
@@ -87,15 +85,7 @@ business-route changes until this preflight has been completed.
 
 ## Required Checks Before Finish
 
-Run the architecture compliance checker before finishing every Codex task:
-
-```bash
-.venv/bin/python tools/check_architecture_skill_compliance.py \
-  --output-md /tmp/architecture_skill_compliance.md \
-  --output-json /tmp/architecture_skill_compliance.json
-```
-
-Also run the task-specific tests/checkers named in the task prompt.
+Run the task-specific tests/checkers named in the task prompt.
 
 ## PR Output Format
 

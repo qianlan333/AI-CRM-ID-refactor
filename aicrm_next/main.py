@@ -20,11 +20,13 @@ from .automation_runtime_v2.api import router as automation_runtime_v2_router
 from .automation_engine.channel_admin_pages import router as channel_admin_pages_router
 from .automation_engine.channels_api import router as automation_channels_router
 from .channel_entry.api import router as channel_entry_router
+from .class_user_management.api import router as class_user_management_router
 from .automation_engine.group_ops.admin_pages import router as group_ops_admin_pages_router
 from .automation_engine.group_ops.repo import reset_group_ops_fixture_state
 from .automation_engine.customer_webhooks import reset_customer_webhook_fixture_state
 from .automation_engine.member_actions import reset_member_actions_fixture_state
 from .automation_engine.repo import reset_automation_fixture_state
+from .automation_engine.channels_api import reset_wecom_customer_acquisition_link_fixture_state
 from .auth_wecom.api import router as auth_wecom_router
 from .commerce.api import router as commerce_router
 from .commerce.repo import reset_commerce_fixture_state
@@ -58,8 +60,6 @@ from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
-from .post_legacy_deferred.api import router as post_legacy_deferred_router
-from .post_legacy_deferred import reset_post_legacy_deferred_fixture_state
 from .public_product.api import router as public_product_router
 from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
 from .questionnaire.api import router as questionnaire_router
@@ -102,7 +102,7 @@ def create_app() -> FastAPI:
         reset_campaign_read_fixture_state()
         reset_campaign_write_fixture_state()
         reset_sidebar_write_fixture_state()
-        reset_post_legacy_deferred_fixture_state()
+        reset_wecom_customer_acquisition_link_fixture_state()
         reset_admin_auth_fixture_state()
         reset_questionnaire_admin_write_fixture_state()
         reset_wecom_tag_write_fixture_state()
@@ -154,7 +154,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_auth_router)
     app.include_router(admin_shell_router)
     app.include_router(admin_config_router)
-    app.include_router(post_legacy_deferred_router)
+    app.include_router(class_user_management_router)
     app.include_router(common_operation_members_router)
     app.include_router(channel_entry_router)
     app.include_router(automation_channels_router)
