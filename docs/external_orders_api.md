@@ -6,6 +6,29 @@
 
 接口只查询本地订单读模型，不会创建订单、发起支付、发起退款，也不会主动同步微信小店订单。
 
+## 生产访问地址
+
+生产环境 Base URL：
+
+```text
+https://www.youcangogogo.com
+```
+
+当前文档涉及的完整接口地址：
+
+| 能力 | Method | 完整 URL |
+|---|---|---|
+| 查询用户基础信息 | `GET` | `https://www.youcangogogo.com/api/external/users/resolve` |
+| 批量查询订单 | `GET` | `https://www.youcangogogo.com/api/external/orders` |
+| 查询订单详情 | `GET` | `https://www.youcangogogo.com/api/external/orders/{order_no}` |
+
+可选 shell 变量写法：
+
+```bash
+BASE_URL="https://www.youcangogogo.com"
+TOKEN="<AUTOMATION_INTERNAL_API_TOKEN>"
+```
+
 ## 鉴权
 
 所有请求都必须带 Bearer Token：
@@ -27,6 +50,92 @@ AUTOMATION_INTERNAL_API_TOKEN
 | 服务端未配置 token | `503` | `internal_token_not_configured` |
 | 请求未带 token | `401` | `missing_internal_token` |
 | token 错误 | `401` | `invalid_internal_token` |
+
+## 查询用户基础信息
+
+```http
+GET /api/external/users/resolve
+```
+
+按用户身份键解析用户基础信息。第一版只读本地身份和客户读模型，不会主动同步企微联系人。
+
+### Query 参数
+
+至少传入以下参数之一。建议订单侧优先使用 `unionid`。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `unionid` | string | 否 | - | 微信 unionid |
+| `external_userid` | string | 否 | - | 企业微信外部联系人 ID |
+| `mobile` | string | 否 | - | 手机号 |
+| `openid` | string | 否 | - | 微信 openid |
+
+### 请求示例
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/users/resolve?unionid=orSqJ5iT9UoeYQRVxvAoo_8avkmA"
+```
+
+### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | 是否成功 |
+| `user` | 用户基础信息 |
+| `route_owner` | 路由归属 |
+| `source_status` | 数据来源标记，固定为 `external_user_basic` |
+| `fallback_used` | 是否走 fallback |
+
+`user` 固定包含 `mobile`、`customer_name`、`unionid` 三个字段；未解析到具体值时返回空字符串。
+
+| user 字段 | 说明 |
+|---|---|
+| `person_id` | 系统内部用户 ID |
+| `external_userid` | 企业微信外部联系人 ID |
+| `mobile` | 手机号 |
+| `customer_name` | 客户名称 |
+| `unionid` | 微信 unionid |
+| `openid` | 微信 openid |
+| `owner_userid` | 当前负责人 userid |
+| `owner_display_name` | 当前负责人展示名 |
+| `remark` | 客户备注 |
+| `follow_user_userid` | 身份映射里的跟进员工 userid |
+| `follow_user_userids` | 客户详情里的跟进员工 userid 数组 |
+| `binding_status` | 绑定状态 |
+| `is_bound` | 是否已绑定手机号或身份 |
+| `matched_by` | 本次匹配使用的键：`unionid`、`external_userid`、`mobile`、`openid` |
+| `identity_map_id` | 身份映射表 ID |
+| `detail_url` | 内部客户详情 API 路径 |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "user": {
+    "person_id": "123",
+    "external_userid": "wm_xxx",
+    "mobile": "13800138000",
+    "customer_name": "张三",
+    "unionid": "orSqJ5iT9UoeYQRVxvAoo_8avkmA",
+    "openid": "o_xxx",
+    "owner_userid": "zhangsan",
+    "owner_display_name": "张三",
+    "remark": "张三妈妈",
+    "follow_user_userid": "zhangsan",
+    "follow_user_userids": ["zhangsan"],
+    "binding_status": "bound",
+    "is_bound": true,
+    "matched_by": "unionid",
+    "identity_map_id": 123,
+    "detail_url": "/api/customers/wm_xxx"
+  },
+  "route_owner": "ai_crm_next",
+  "source_status": "external_user_basic",
+  "fallback_used": false
+}
+```
 
 ## 当前产品编码对照
 
@@ -83,21 +192,21 @@ GET /api/external/orders
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders?provider=all&paid_from=1780272000&paid_to=1781222399&is_paid=true&limit=100"
+"https://www.youcangogogo.com/api/external/orders?provider=all&paid_from=1780272000&paid_to=1781222399&is_paid=true&limit=100"
 ```
 
 只拉取订阅版月付：
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders?provider=all&product_code=subscription_monthly&is_paid=true&limit=100"
+"https://www.youcangogogo.com/api/external/orders?provider=all&product_code=subscription_monthly&is_paid=true&limit=100"
 ```
 
 只拉取微信小店订单：
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders?provider=wechat_shop&is_paid=true&limit=100"
+"https://www.youcangogogo.com/api/external/orders?provider=wechat_shop&is_paid=true&limit=100"
 ```
 
 ### 响应字段
@@ -184,14 +293,14 @@ GET /api/external/orders/{order_no}
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders/WXP202606110001?provider=wechat"
+"https://www.youcangogogo.com/api/external/orders/WXP202606110001?provider=wechat"
 ```
 
 微信小店详情：
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders/3705115058471208928?provider=wechat_shop"
+"https://www.youcangogogo.com/api/external/orders/3705115058471208928?provider=wechat_shop"
 ```
 
 详情响应复用统一订单详情投影，包含客户、商品编码、金额、可退款金额、已退款/退款中金额、回调摘要和时间线。外部对接统一按 `product_code` 识别产品。
@@ -211,7 +320,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-"$BASE/api/external/orders?provider=all&is_paid=true&limit=100&cursor=xxxx"
+"https://www.youcangogogo.com/api/external/orders?provider=all&is_paid=true&limit=100&cursor=xxxx"
 ```
 
 不要自行拼 `offset`。
