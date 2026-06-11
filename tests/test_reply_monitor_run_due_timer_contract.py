@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 
@@ -49,7 +52,8 @@ def test_service_and_timer_lock_next_native_script_contract() -> None:
     timer = (ROOT / "deploy/aicrm-reply-monitor-run-due.timer").read_text(encoding="utf-8")
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "python scripts/run_reply_monitor_run_due.py" in service
+    assert "python -m scripts.run_reply_monitor_run_due" in service
+    assert "python scripts/run_reply_monitor_run_due.py" not in service
     assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
     assert "Unit=aicrm-reply-monitor-run-due.service" in timer
     assert "OnCalendar=*-*-* *:*:00" in timer
@@ -141,3 +145,22 @@ def test_reply_monitor_run_due_timer_script_reports_missing_token_without_post(m
     assert payload["fallback_used"] is False
     assert payload["real_external_call_executed"] is False
     assert json.loads(capsys.readouterr().out.strip())["error_code"] == "automation_internal_token_not_configured"
+
+
+def test_reply_monitor_run_due_timer_script_can_run_directly_without_package_import_error() -> None:
+    env = os.environ.copy()
+    env.pop("AUTOMATION_INTERNAL_API_TOKEN", None)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--limit", "1"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "automation_internal_token_not_configured"
+    assert "ModuleNotFoundError" not in result.stderr

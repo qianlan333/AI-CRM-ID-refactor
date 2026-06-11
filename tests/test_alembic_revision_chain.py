@@ -11,6 +11,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 VERSIONS = ROOT / "migrations" / "versions"
 NUMERIC_BIND_PATTERN = re.compile(r"(?<![:\\]):[0-9]+")
+ALEMBIC_VERSION_NUM_LENGTH = 128
 
 
 def _literal_assignment(tree: ast.Module, name: str) -> Any:
@@ -65,20 +66,24 @@ def test_all_alembic_down_revisions_exist() -> None:
     assert missing == {}
 
 
-def test_alembic_revision_ids_fit_default_version_table() -> None:
+def test_alembic_revision_storage_supports_deployed_revision_ids() -> None:
     revisions = _migration_revisions()
     old_hxc_revision = "0012_hxc_dashboard_v6_" + "growth_columns"
     old_cloud_revision = "0024_cloud_plan_recipient_" + "approval"
     old_owner_revision = "0028_owner_migration_excel_" + "sessions"
     old_wechat_unionid_revision = "0029_wechat_pay_order_" + "unionid_index"
 
-    too_long = {
+    beyond_runtime_limit = {
         revision: {"length": len(revision), "path": str(item["path"])}
         for revision, item in revisions.items()
-        if len(revision) > 32
+        if len(revision) > ALEMBIC_VERSION_NUM_LENGTH
     }
+    alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
-    assert too_long == {}
+    assert beyond_runtime_limit == {}
+    assert f"ALEMBIC_VERSION_NUM_LENGTH = {ALEMBIC_VERSION_NUM_LENGTH}" in alembic_env
+    assert "CREATE TABLE IF NOT EXISTS alembic_version" in alembic_env
+    assert "ALTER COLUMN version_num TYPE VARCHAR" in alembic_env
     assert old_hxc_revision not in revisions
     assert old_cloud_revision not in revisions
     assert old_owner_revision not in revisions
@@ -88,6 +93,8 @@ def test_alembic_revision_ids_fit_default_version_table() -> None:
     assert "0028_owner_excel_sessions" in revisions
     assert "0029_user_ops_prod_tables" in revisions
     assert "0030_wechat_pay_unionid_idx" in revisions
+    assert "0032_miniprogram_only_resend_20260611" in revisions
+    assert "0033_complete_miniprogram_only_resend_20260611" in revisions
 
 
 def test_alembic_chain_keeps_0014_parent_available() -> None:
@@ -163,4 +170,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0031_automation_runtime_v2" in heads[0]
+            assert "0033_complete_miniprogram_only_resend_20260611" in heads[0]
