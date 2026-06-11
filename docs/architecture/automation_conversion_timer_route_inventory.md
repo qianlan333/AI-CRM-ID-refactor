@@ -22,6 +22,14 @@ This inventory locks the reply monitor and registered jobs timer family to Next 
 - `scripts/run_automation_conversion_due_jobs.py` can select `AUTOMATION_CONVERSION_DUE_JOBS=operation_task`, but the default scheduled set stays `sop,conversion_workflow` until the runbook allowlist and worker coverage are explicitly approved.
 - `scripts/run_broadcast_queue_worker.py` is the separate consumer for `broadcast_jobs.source_type=operation_task`; timer success must not be treated as send success unless the worker dispatch result is observed.
 
+## Reply Monitor Timer Contract
+
+- `deploy/aicrm-reply-monitor-run-due.service` calls `scripts/run_reply_monitor_run_due.py`, not a bare curl command.
+- The runner posts JSON to `/api/admin/automation-conversion/reply-monitor/run-due` with `Authorization: Bearer $AUTOMATION_INTERNAL_API_TOKEN`, `operator=reply_monitor_run_due_timer`, `limit=20`, and `dry_run=true` by default.
+- If `AUTOMATION_INTERNAL_API_TOKEN` is missing, the runner emits structured skipped diagnostics and does not call the route.
+- The route must reject missing/invalid internal tokens with structured 401 diagnostics and must return a controlled non-400 safe plan for a valid timer request with no body or no due work.
+- The timer contract is plan-only and keeps `real_external_call_executed=false`, `automation_runtime_executed=false`, `wecom_send_executed=false`, and `fallback_used=false`.
+
 ## Adjacent Workspace Routes
 
 | Caller | API | CommandBus | SideEffectPlan |

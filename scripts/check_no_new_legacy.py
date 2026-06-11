@@ -38,6 +38,7 @@ API_SIDE_EFFECT_ALLOWLIST = set()
 LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {}
 ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST = set()
 ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
+    Path("deploy/aicrm-reply-monitor-run-due.service"): Path("scripts/run_reply_monitor_run_due.py"),
     Path("deploy/openclaw-automation-member-backfill.service"): Path("scripts/run_automation_member_backfill.py"),
     Path("deploy/openclaw-automation-ops-scheduler.service"): Path("scripts/run_automation_ops_scheduler.py"),
     Path("deploy/openclaw-broadcast-queue-worker.service"): Path("scripts/run_broadcast_queue_worker.py"),

@@ -93,6 +93,21 @@ def test_production_deploy_installs_and_runs_external_push_worker_timer():
     assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
 
 
+def test_production_deploy_installs_and_runs_reply_monitor_timer():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    copy_service_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-run-due.service /etc/systemd/system/")
+    copy_timer_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_index = workflow.index("sudo systemctl enable aicrm-reply-monitor-run-due.timer")
+    restart_timer_index = workflow.index("sudo systemctl restart aicrm-reply-monitor-run-due.timer")
+    start_service_index = workflow.index("sudo systemctl start aicrm-reply-monitor-run-due.service")
+
+    assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
+
+
 def test_external_push_worker_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "openclaw-external-push-worker.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "openclaw-external-push-worker.timer").read_text(encoding="utf-8")
@@ -105,6 +120,23 @@ def test_external_push_worker_systemd_units_are_deployable():
     assert "OnCalendar=*-*-* *:*:20" in timer
     assert "Persistent=true" in timer
     assert "Unit=openclaw-external-push-worker.service" in timer
+
+
+def test_reply_monitor_run_due_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "aicrm-reply-monitor-run-due.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "aicrm-reply-monitor-run-due.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_reply_monitor_run_due.py" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+    assert "OnCalendar=*-*-* *:*:00" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=aicrm-reply-monitor-run-due.service" in timer
 
 
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
