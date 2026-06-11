@@ -38,6 +38,7 @@ API_SIDE_EFFECT_ALLOWLIST = set()
 LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST = {}
 ACTIVE_DEPLOY_LEGACY_SCRIPT_ALLOWLIST = set()
 ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
+    Path("deploy/aicrm-reply-monitor-capture.service"): Path("scripts/run_reply_monitor_capture.py"),
     Path("deploy/aicrm-reply-monitor-run-due.service"): Path("scripts/run_reply_monitor_run_due.py"),
     Path("deploy/openclaw-automation-member-backfill.service"): Path("scripts/run_automation_member_backfill.py"),
     Path("deploy/openclaw-automation-ops-scheduler.service"): Path("scripts/run_automation_ops_scheduler.py"),
@@ -45,6 +46,9 @@ ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
     Path("deploy/openclaw-external-contact-sync.service"): Path("scripts/run_external_contact_sync.py"),
     Path("deploy/openclaw-external-contact-full-sync.service"): Path("scripts/run_external_contact_sync.py"),
 }
+REPLY_MONITOR_CAPTURE_SCRIPT = Path("scripts/run_reply_monitor_capture.py")
+REPLY_MONITOR_CAPTURE_SERVICE = Path("deploy/aicrm-reply-monitor-capture.service")
+REPLY_MONITOR_CAPTURE_TIMER = Path("deploy/aicrm-reply-monitor-capture.timer")
 EXTERNAL_PUSH_WORKER_SCRIPT = Path("scripts/run_external_push_worker.py")
 EXTERNAL_PUSH_WORKER_SERVICE = Path("deploy/openclaw-external-push-worker.service")
 SIDE_EFFECT_MARKERS = {
@@ -1164,6 +1168,95 @@ def check_wecom_legacy_usage_freeze(
                 )
             )
 
+    capture_artifacts = (
+        root / REPLY_MONITOR_CAPTURE_SCRIPT,
+        root / REPLY_MONITOR_CAPTURE_SERVICE,
+        root / REPLY_MONITOR_CAPTURE_TIMER,
+    )
+    should_enforce_capture = root == ROOT or any(path.exists() for path in capture_artifacts)
+    if should_enforce_capture:
+        capture_script = root / REPLY_MONITOR_CAPTURE_SCRIPT
+        capture_service = root / REPLY_MONITOR_CAPTURE_SERVICE
+        capture_timer = root / REPLY_MONITOR_CAPTURE_TIMER
+        if not capture_script.exists():
+            violations.append(
+                Violation(
+                    "reply_monitor_capture_runner_missing",
+                    str(REPLY_MONITOR_CAPTURE_SCRIPT),
+                    "missing",
+                    "The reply-monitor capture timer must be backed by a tracked Next-native runner.",
+                )
+            )
+        elif _wecom_ast_imports(capture_script):
+            violations.append(
+                Violation(
+                    "reply_monitor_capture_legacy_import_returned",
+                    str(REPLY_MONITOR_CAPTURE_SCRIPT),
+                    "wecom_ability_service",
+                    "The reply-monitor capture runner must not import the retired legacy package.",
+                )
+            )
+        if not capture_service.exists():
+            violations.append(
+                Violation(
+                    "reply_monitor_capture_service_missing",
+                    str(REPLY_MONITOR_CAPTURE_SERVICE),
+                    "missing",
+                    "Track the reply-monitor capture systemd service in deploy/ so production stale units are overwritten.",
+                )
+            )
+        else:
+            capture_service_text = capture_service.read_text(encoding="utf-8")
+            if str(REPLY_MONITOR_CAPTURE_SCRIPT) not in capture_service_text:
+                violations.append(
+                    Violation(
+                        "reply_monitor_capture_service_contract_broken",
+                        str(REPLY_MONITOR_CAPTURE_SERVICE),
+                        f"missing {REPLY_MONITOR_CAPTURE_SCRIPT}",
+                        "The reply-monitor capture service must call scripts/run_reply_monitor_capture.py.",
+                    )
+                )
+            for marker in ("wecom_ability_service", "legacy_flask_app", "run-legacy"):
+                if marker in capture_service_text:
+                    violations.append(
+                        Violation(
+                            "reply_monitor_capture_service_contract_broken",
+                            str(REPLY_MONITOR_CAPTURE_SERVICE),
+                            marker,
+                            "The reply-monitor capture service must stay Next-native.",
+                        )
+                    )
+        if not capture_timer.exists():
+            violations.append(
+                Violation(
+                    "reply_monitor_capture_timer_missing",
+                    str(REPLY_MONITOR_CAPTURE_TIMER),
+                    "missing",
+                    "Track the reply-monitor capture systemd timer in deploy/ so production stale units are overwritten.",
+                )
+            )
+        else:
+            capture_timer_text = capture_timer.read_text(encoding="utf-8")
+            if "Unit=aicrm-reply-monitor-capture.service" not in capture_timer_text:
+                violations.append(
+                    Violation(
+                        "reply_monitor_capture_service_contract_broken",
+                        str(REPLY_MONITOR_CAPTURE_TIMER),
+                        "missing Unit=aicrm-reply-monitor-capture.service",
+                        "The reply-monitor capture timer must target the tracked capture service.",
+                    )
+                )
+            for marker in ("wecom_ability_service", "legacy_flask_app", "run-legacy"):
+                if marker in capture_timer_text:
+                    violations.append(
+                        Violation(
+                            "reply_monitor_capture_service_contract_broken",
+                            str(REPLY_MONITOR_CAPTURE_TIMER),
+                            marker,
+                            "The reply-monitor capture timer must stay Next-native.",
+                        )
+                    )
+
     for rel_path, reason in allowlist.items():
         path = root / rel_path
         if not path.exists():
@@ -2051,6 +2144,34 @@ def check_startup_legacy_closeout(root: Path = ROOT) -> list[Violation]:
     for marker in required_deploy_markers:
         if marker not in deploy_text:
             violations.append(Violation("deploy_workflow_missing_alembic_upgrade", str(deploy_path.relative_to(root)), marker))
+
+    should_enforce_capture_deploy = root == ROOT or "aicrm-reply-monitor-run-due" in deploy_text or "aicrm-reply-monitor-capture" in deploy_text
+    if should_enforce_capture_deploy:
+        capture_deploy_markers = (
+            "sudo cp deploy/aicrm-reply-monitor-capture.service /etc/systemd/system/",
+            "sudo cp deploy/aicrm-reply-monitor-capture.timer /etc/systemd/system/",
+            "sudo systemctl enable aicrm-reply-monitor-capture.timer",
+            "sudo systemctl restart aicrm-reply-monitor-capture.timer",
+        )
+        for marker in capture_deploy_markers:
+            if marker not in deploy_text:
+                violations.append(
+                    Violation(
+                        "reply_monitor_capture_deploy_contract_missing",
+                        str(deploy_path.relative_to(root)),
+                        marker,
+                        "Deploy must overwrite the stale production-only reply-monitor capture unit with the tracked Next-native timer.",
+                    )
+                )
+        if "sudo systemctl start aicrm-reply-monitor-capture.service" in deploy_text:
+            violations.append(
+                Violation(
+                    "reply_monitor_capture_deploy_contract_missing",
+                    str(deploy_path.relative_to(root)),
+                    "sudo systemctl start aicrm-reply-monitor-capture.service",
+                    "Deploy should install and restart the capture timer without immediately starting the capture service.",
+                )
+            )
 
     checker_text = checker_path.read_text(encoding="utf-8") if checker_path.exists() else ""
     stale_allowlist_markers = (

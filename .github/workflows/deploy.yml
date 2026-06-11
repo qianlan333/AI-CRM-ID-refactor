@@ -47,6 +47,8 @@ jobs:
             curl -sSf http://127.0.0.1:5001/health
             sudo cp deploy/openclaw-external-push-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-external-push-worker.timer /etc/systemd/system/
+            sudo cp deploy/aicrm-reply-monitor-capture.service /etc/systemd/system/
+            sudo cp deploy/aicrm-reply-monitor-capture.timer /etc/systemd/system/
             sudo cp deploy/aicrm-reply-monitor-run-due.service /etc/systemd/system/
             sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/
             sudo systemctl daemon-reload
@@ -54,6 +56,9 @@ jobs:
             sudo systemctl restart openclaw-external-push-worker.timer
             sudo systemctl start openclaw-external-push-worker.service
             sudo systemctl status openclaw-external-push-worker.timer --no-pager
+            sudo systemctl enable aicrm-reply-monitor-capture.timer
+            sudo systemctl restart aicrm-reply-monitor-capture.timer
+            sudo systemctl status aicrm-reply-monitor-capture.timer --no-pager
             sudo systemctl enable aicrm-reply-monitor-run-due.timer
             sudo systemctl restart aicrm-reply-monitor-run-due.timer
             if ! sudo systemctl start aicrm-reply-monitor-run-due.service; then
