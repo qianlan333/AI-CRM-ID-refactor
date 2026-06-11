@@ -216,6 +216,9 @@ class WeComPrivateMessageAdapter:
         }
 
     def _build_wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from aicrm_next.automation_engine.group_ops.domain import normalize_message_content
+        from aicrm_next.shared.errors import ContractError
+
         sender = str((payload or {}).get("sender") or "").strip()
         if not sender:
             raise ValueError("sender is required for WeCom private message")
@@ -229,11 +232,20 @@ class WeComPrivateMessageAdapter:
             "allow_select": False,
         }
         text = (payload or {}).get("text")
-        if isinstance(text, dict) and str(text.get("content") or "").strip():
-            result["text"] = {"content": str(text.get("content") or "").strip()}
+        text_content = str(text.get("content") or "").strip() if isinstance(text, dict) else ""
         attachments = (payload or {}).get("attachments")
-        if isinstance(attachments, list) and attachments:
-            result["attachments"] = attachments
+        try:
+            content = normalize_message_content(
+                text=text_content,
+                attachments=attachments if isinstance(attachments, list) else [],
+                sender=sender,
+            )
+        except ContractError as exc:
+            raise ValueError(str(exc)) from exc
+        if content.get("text"):
+            result["text"] = content["text"]
+        if content.get("attachments"):
+            result["attachments"] = content["attachments"]
         if not result.get("text") and not result.get("attachments"):
             raise ValueError("text or attachments is required for WeCom private message")
         return result
