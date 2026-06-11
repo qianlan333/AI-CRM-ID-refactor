@@ -117,3 +117,45 @@ def test_external_order_detail_reuses_unified_detail_projection(monkeypatch) -> 
     assert "refundable_amount_total" in order
     assert "callback_summary" in order
     assert "timeline" in order
+
+
+def test_external_user_basic_requires_bearer_token(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    missing = client.get("/api/external/users/resolve?unionid=unionid_001")
+    assert missing.status_code == 401
+    assert missing.json()["error_code"] == "missing_internal_token"
+
+    invalid = client.get(
+        "/api/external/users/resolve?unionid=unionid_001",
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert invalid.status_code == 401
+    assert invalid.json()["error_code"] == "invalid_internal_token"
+
+
+def test_external_user_basic_requires_identity_key(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/api/external/users/resolve", headers=_headers())
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "invalid_request"
+
+
+def test_external_user_basic_resolves_required_fields_by_unionid(monkeypatch) -> None:
+    response = _client(monkeypatch).get(
+        "/api/external/users/resolve?unionid=unionid_001",
+        headers=_headers(),
+    )
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["source_status"] == "external_user_basic"
+    assert payload["route_owner"] == "ai_crm_next"
+    assert payload["fallback_used"] is False
+    user = payload["user"]
+    assert user["unionid"] == "unionid_001"
+    assert user["mobile"] == "13800138000"
+    assert user["customer_name"] == "张小蓝"
+    assert user["external_userid"] == "wx_ext_001"
+    assert user["matched_by"] == "unionid"

@@ -28,6 +28,92 @@ AUTOMATION_INTERNAL_API_TOKEN
 | 请求未带 token | `401` | `missing_internal_token` |
 | token 错误 | `401` | `invalid_internal_token` |
 
+## 查询用户基础信息
+
+```http
+GET /api/external/users/resolve
+```
+
+按用户身份键解析用户基础信息。第一版只读本地身份和客户读模型，不会主动同步企微联系人。
+
+### Query 参数
+
+至少传入以下参数之一。建议订单侧优先使用 `unionid`。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `unionid` | string | 否 | - | 微信 unionid |
+| `external_userid` | string | 否 | - | 企业微信外部联系人 ID |
+| `mobile` | string | 否 | - | 手机号 |
+| `openid` | string | 否 | - | 微信 openid |
+
+### 请求示例
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/users/resolve?unionid=orSqJ5iT9UoeYQRVxvAoo_8avkmA"
+```
+
+### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | 是否成功 |
+| `user` | 用户基础信息 |
+| `route_owner` | 路由归属 |
+| `source_status` | 数据来源标记，固定为 `external_user_basic` |
+| `fallback_used` | 是否走 fallback |
+
+`user` 固定包含 `mobile`、`customer_name`、`unionid` 三个字段；未解析到具体值时返回空字符串。
+
+| user 字段 | 说明 |
+|---|---|
+| `person_id` | 系统内部用户 ID |
+| `external_userid` | 企业微信外部联系人 ID |
+| `mobile` | 手机号 |
+| `customer_name` | 客户名称 |
+| `unionid` | 微信 unionid |
+| `openid` | 微信 openid |
+| `owner_userid` | 当前负责人 userid |
+| `owner_display_name` | 当前负责人展示名 |
+| `remark` | 客户备注 |
+| `follow_user_userid` | 身份映射里的跟进员工 userid |
+| `follow_user_userids` | 客户详情里的跟进员工 userid 数组 |
+| `binding_status` | 绑定状态 |
+| `is_bound` | 是否已绑定手机号或身份 |
+| `matched_by` | 本次匹配使用的键：`unionid`、`external_userid`、`mobile`、`openid` |
+| `identity_map_id` | 身份映射表 ID |
+| `detail_url` | 内部客户详情 API 路径 |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "user": {
+    "person_id": "123",
+    "external_userid": "wm_xxx",
+    "mobile": "13800138000",
+    "customer_name": "张三",
+    "unionid": "orSqJ5iT9UoeYQRVxvAoo_8avkmA",
+    "openid": "o_xxx",
+    "owner_userid": "zhangsan",
+    "owner_display_name": "张三",
+    "remark": "张三妈妈",
+    "follow_user_userid": "zhangsan",
+    "follow_user_userids": ["zhangsan"],
+    "binding_status": "bound",
+    "is_bound": true,
+    "matched_by": "unionid",
+    "identity_map_id": 123,
+    "detail_url": "/api/customers/wm_xxx"
+  },
+  "route_owner": "ai_crm_next",
+  "source_status": "external_user_basic",
+  "fallback_used": false
+}
+```
+
 ## 当前产品编码对照
 
 以下对照来自当前生产商品列表 `GET /api/admin/wechat-pay/products?limit=100`，用于 `product_code` 参数。
