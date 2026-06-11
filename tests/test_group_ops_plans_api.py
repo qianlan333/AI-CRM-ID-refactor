@@ -87,6 +87,36 @@ def test_plan_list_returns_group_ops_queue_count(group_ops_api_client, monkeypat
     assert response.json()["queue_count"] == 7
 
 
+def test_admin_plan_actions_can_disable_enable_and_delete(group_ops_api_client):
+    created = group_ops_api_client.post(
+        "/api/admin/automation-conversion/group-ops/plans",
+        json={"plan_name": "pytest 操作按钮计划", "plan_type": "standard", "owner_userid": "owner_001", "status": "active"},
+    )
+    assert created.status_code == 201
+    plan_id = created.json()["item"]["id"]
+
+    disabled = group_ops_api_client.post(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/disable")
+    assert disabled.status_code == 200
+    assert disabled.json()["item"]["status"] == "disabled"
+
+    enabled = group_ops_api_client.post(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/enable")
+    assert enabled.status_code == 200
+    assert enabled.json()["item"]["status"] == "active"
+
+    disabled_again = group_ops_api_client.post(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}/disable")
+    assert disabled_again.status_code == 200
+    assert disabled_again.json()["item"]["status"] == "disabled"
+
+    deleted = group_ops_api_client.delete(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["archived"] is True
+
+    detail = group_ops_api_client.get(f"/api/admin/automation-conversion/group-ops/plans/{plan_id}")
+    listed = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/plans")
+    assert detail.status_code == 404
+    assert plan_id not in [item["id"] for item in listed.json()["items"]]
+
+
 def test_owners_api_returns_multiple_fixture_owners(group_ops_api_client):
     response = group_ops_api_client.get("/api/admin/automation-conversion/group-ops/owners")
 
