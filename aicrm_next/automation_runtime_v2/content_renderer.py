@@ -203,6 +203,16 @@ def _explicit_fallback(task: dict[str, Any]) -> dict[str, Any]:
     return _fallback_content(config.get("fallback_content") or config.get("fallback") or {})
 
 
+def _agent_attachments(task: dict[str, Any]) -> dict[str, Any]:
+    config = dict(task.get("agent_config_json") or {})
+    attachments: dict[str, Any] = {}
+    for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids", "attachments"):
+        value = config.get(key)
+        if value:
+            attachments[key] = value
+    return attachments
+
+
 def _render_agent_fallback(task: dict[str, Any], variables: dict[str, Any], reason: str) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:
     fallback = _explicit_fallback(task)
     if not _content_has_body(fallback):
@@ -307,7 +317,11 @@ def _agent(task: dict[str, Any], plan: dict[str, Any], membership: dict[str, Any
         return False, {}, reason, {**base_diag, "llm_call_logged": bool(log), "render_failed": reason, "error_code": reason, "error_message": reason}
     completed = complete_agent_run(run, status="completed", provider=gateway_result.provider, latency_ms=gateway_result.latency_ms, final_prompt_preview=task_prompt)
     output = record_agent_output(run=completed or run, agent_code=agent_code, external_userid=text(membership.get("external_userid")), final_text=final_text, applied_status="generated")
-    return True, {"type": CONTENT_AGENT_GENERATED, "agent_code": agent_code, "content_text": final_text, "variables": variables}, "", {**base_diag, "agent_output_id": text(output.get("output_id")), "llm_call_logged": bool(log), "fallback_used": False}
+    attachments = _agent_attachments(task)
+    rendered = {"type": CONTENT_AGENT_GENERATED, "agent_code": agent_code, "content_text": final_text, "variables": variables}
+    if attachments:
+        rendered["attachments"] = attachments
+    return True, rendered, "", {**base_diag, "agent_output_id": text(output.get("output_id")), "llm_call_logged": bool(log), "fallback_used": False, "attachment_counts": {key: len(value) if isinstance(value, list) else 1 for key, value in attachments.items()}}
 
 
 def render(task_plan_id: int, *, event: dict[str, Any] | None = None) -> dict[str, Any]:

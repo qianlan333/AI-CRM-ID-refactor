@@ -59,7 +59,17 @@ def test_agent_generated_uses_gateway_output_and_writes_audit(next_pg_schema, mo
     monkeypatch.setenv("AICRM_RUNTIME_V2_AGENT_FAKE_ALLOWED", "1")
     program_id = seed_program("runtime_v2_agent_generation_ok")
     seed_agent("qa_agent", task_prompt="需求={{questionnaire.answers.need}}")
-    seed_task(program_id, trigger_type="on_event", content_mode="agent", agent_config={"agent_code": "qa_agent", "mock_output": "根据你的问卷，我建议你先解决私域自动化转化的问题。", "trigger_event_type": "questionnaire_submitted"})
+    seed_task(
+        program_id,
+        trigger_type="on_event",
+        content_mode="agent",
+        agent_config={
+            "agent_code": "qa_agent",
+            "mock_output": "根据你的问卷，我建议你先解决私域自动化转化的问题。",
+            "trigger_event_type": "questionnaire_submitted",
+            "miniprogram_library_ids": [2],
+        },
+    )
 
     result = _trigger(program_id, "agent-generation-ok")
 
@@ -67,6 +77,7 @@ def test_agent_generated_uses_gateway_output_and_writes_audit(next_pg_schema, mo
     assert result["counts"]["enqueued"] == 1
     assert plan["status"] == "enqueued"
     assert plan["rendered_content_json"]["content_text"] == "根据你的问卷，我建议你先解决私域自动化转化的问题。"
+    assert plan["rendered_content_json"]["attachments"]["miniprogram_library_ids"] == [2]
     assert "{{问卷信息}}" not in plan["rendered_content_json"]["content_text"]
     assert "你将收到以下资料" not in plan["rendered_content_json"]["content_text"]
     assert plan["diagnostics_json"]["agent_code"] == "qa_agent"
