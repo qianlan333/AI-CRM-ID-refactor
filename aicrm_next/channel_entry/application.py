@@ -494,6 +494,9 @@ def process_wecom_external_contact_event(command: ProcessWeComExternalContactEve
         identity_sync = sync_external_contact_identity_for_event(event, corp_id=command.corp_id)
         result["identity_sync"] = identity_sync
         if text(event.get("Event")) == "change_external_contact" and text(event.get("ChangeType")) in ENTRY_CHANGE_TYPES:
+            if text(identity_sync.get("status")) != "success":
+                reason = text(identity_sync.get("reason")) or text(identity_sync.get("status")) or "identity_sync_failed"
+                raise RuntimeError(f"identity_sync_failed:{reason}")
             entry = process_channel_entry(
                 ProcessChannelEntryCommand(
                     external_contact_id=text(event.get("ExternalUserID")),
