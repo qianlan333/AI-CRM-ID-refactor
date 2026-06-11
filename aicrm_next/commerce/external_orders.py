@@ -11,6 +11,10 @@ from fastapi import APIRouter, Path, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from aicrm_next.customer_read_model.application import GetCustomerDetailQuery
+from aicrm_next.customer_read_model.dto import CustomerDetailRequest
+from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
+from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
 from aicrm_next.shared.errors import NotFoundError
 
 from .admin_unified_orders import get_order, list_orders
@@ -20,6 +24,7 @@ router = APIRouter()
 ROUTE_OWNER = "ai_crm_next"
 SOURCE_STATUS_LIST = "external_orders"
 SOURCE_STATUS_DETAIL = "external_order_detail"
+SOURCE_STATUS_USER_BASIC = "external_user_basic"
 TOKEN_ENV_KEY = "AUTOMATION_INTERNAL_API_TOKEN"
 PAID_STATUSES = {"paid", "refund_processing", "partial_refunded", "full_refunded"}
 REFUND_STATUSES = {"refund_processing", "partial_refunded", "full_refunded"}
@@ -253,3 +258,122 @@ def _project_detail_order(order: dict[str, Any]) -> dict[str, Any]:
     projected = dict(order)
     projected.pop("product_name", None)
     return projected
+
+
+def _model_dump(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        return dict(value.model_dump())
+    return dict(value)
+
+
+def _customer_detail(external_userid: str) -> dict[str, Any]:
+    if not external_userid:
+        return {}
+    try:
+        payload = GetCustomerDetailQuery()(CustomerDetailRequest(external_userid=external_userid))
+    except NotFoundError:
+        return {}
+    if not payload.get("ok"):
+        return {}
+    return dict(payload.get("customer") or {})
+
+
+def _project_user_basic(identity: dict[str, Any], customer: dict[str, Any]) -> dict[str, Any]:
+    customer_identity = dict(customer.get("identity") or {})
+    binding = dict(customer.get("binding") or {})
+    external_userid = _text(identity.get("external_userid") or customer.get("external_userid") or customer_identity.get("external_userid"))
+    mobile = _text(customer.get("mobile") or binding.get("mobile") or customer_identity.get("mobile") or identity.get("mobile"))
+    unionid = _text(identity.get("unionid") or customer_identity.get("unionid") or customer.get("unionid"))
+    customer_name = _text(customer.get("customer_name") or customer.get("remark") or customer.get("name"))
+    return {
+        "person_id": _text(identity.get("person_id") or customer.get("person_id") or customer_identity.get("person_id")),
+        "external_userid": external_userid,
+        "mobile": mobile,
+        "customer_name": customer_name,
+        "unionid": unionid,
+        "openid": _text(identity.get("openid") or customer_identity.get("openid") or customer.get("openid")),
+        "owner_userid": _text(customer.get("owner_userid") or identity.get("owner_userid")),
+        "owner_display_name": _text(customer.get("owner_display_name")),
+        "remark": _text(customer.get("remark")),
+        "follow_user_userid": _text(identity.get("follow_user_userid")),
+        "follow_user_userids": [
+            _text(item)
+            for item in list(customer.get("follow_user_userids") or [])
+            if _text(item)
+        ],
+        "binding_status": _text(customer.get("binding_status") or identity.get("binding_status")),
+        "is_bound": bool(customer.get("is_bound") or mobile),
+        "matched_by": _text(identity.get("matched_by")),
+        "identity_map_id": identity.get("identity_map_id"),
+        "detail_url": f"/api/customers/{quote(external_userid)}" if external_userid else "",
+    }
+
+
+def _matched_by_from_request(
+    *,
+    unionid: str | None = None,
+    external_userid: str | None = None,
+    mobile: str | None = None,
+    openid: str | None = None,
+) -> str:
+    for key, value in (
+        ("unionid", unionid),
+        ("external_userid", external_userid),
+        ("mobile", mobile),
+        ("openid", openid),
+    ):
+        if _text(value):
+            return key
+    return ""
+
+
+@router.get("/api/external/users/resolve")
+def resolve_external_user_basic(
+    request: Request,
+    unionid: str | None = Query(None, description="微信 unionid"),
+    external_userid: str | None = Query(None, description="企业微信 external_userid"),
+    mobile: str | None = Query(None, description="手机号"),
+    openid: str | None = Query(None, description="微信 openid"),
+) -> JSONResponse:
+    auth_failure = _auth_failure(request, source_status=SOURCE_STATUS_USER_BASIC)
+    if auth_failure:
+        return auth_failure
+    if not any(_text(value) for value in (unionid, external_userid, mobile, openid)):
+        return _error(
+            error_code="invalid_request",
+            message="one of unionid, external_userid, mobile, or openid is required",
+            status_code=400,
+            source_status=SOURCE_STATUS_USER_BASIC,
+        )
+
+    identity = _model_dump(
+        ResolvePersonIdentityQuery()(
+            ResolvePersonIdentityRequest(
+                external_userid=external_userid,
+                mobile=mobile,
+                openid=openid,
+                unionid=unionid,
+            )
+        )
+    )
+    if not _text(identity.get("matched_by")):
+        identity["matched_by"] = _matched_by_from_request(
+            unionid=unionid,
+            external_userid=external_userid,
+            mobile=mobile,
+            openid=openid,
+        )
+    customer = _customer_detail(_text(identity.get("external_userid") or external_userid))
+    if not identity and not customer:
+        return _error(error_code="not_found", message="user not found", status_code=404, source_status=SOURCE_STATUS_USER_BASIC)
+
+    response_payload = {
+        "ok": True,
+        "user": _project_user_basic(identity, customer),
+        "route_owner": ROUTE_OWNER,
+        "source_status": SOURCE_STATUS_USER_BASIC,
+        "fallback_used": False,
+    }
+    return JSONResponse(jsonable_encoder(response_payload))
