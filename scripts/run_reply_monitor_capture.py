@@ -4,8 +4,14 @@ import argparse
 import os
 import urllib.request
 
-from scripts import internal_http
-from scripts.script_runtime import emit_json, read_app_host, read_app_port, read_int_env, read_internal_api_token
+try:
+    from scripts import internal_http
+    from scripts.script_runtime import emit_json, read_app_host, read_app_port, read_int_env, read_internal_api_token
+except ModuleNotFoundError as exc:
+    if exc.name != "scripts":
+        raise
+    import internal_http  # type: ignore[no-redef]
+    from script_runtime import emit_json, read_app_host, read_app_port, read_int_env, read_internal_api_token
 
 
 DEFAULT_OPERATOR = "reply_monitor_capture_timer"
