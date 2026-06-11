@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aicrm_next.shared.postgres_connection import get_db
+from aicrm_next.shared.postgres_connection import db_session, get_db
 
 from . import process_event
 from .domain import AutomationEventInput, EVENT_CHANNEL_ENTERED, EVENT_PAYMENT_SUCCEEDED, text
@@ -24,6 +24,24 @@ def _active_bindings(channel_id: int) -> list[dict[str, Any]]:
 
 
 def process_channel_entry_event(
+    *,
+    channel_id: int,
+    external_userid: str,
+    event_log_id: int | None = None,
+    payload_json: dict[str, Any] | None = None,
+    occurred_at: Any = None,
+) -> dict[str, Any]:
+    with db_session():
+        return _process_channel_entry_event(
+            channel_id=channel_id,
+            external_userid=external_userid,
+            event_log_id=event_log_id,
+            payload_json=payload_json,
+            occurred_at=occurred_at,
+        )
+
+
+def _process_channel_entry_event(
     *,
     channel_id: int,
     external_userid: str,
