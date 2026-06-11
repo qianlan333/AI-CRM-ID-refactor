@@ -112,6 +112,18 @@ def test_user_ops_production_tables_migration_is_parent_of_wechat_unionid_index(
     assert revisions["0030_wechat_pay_unionid_idx"]["down_revision"] == "0029_user_ops_prod_tables"
 
 
+def test_miniprogram_reset_migration_preserves_broadcast_job_claim_token_not_null_contract() -> None:
+    source = (
+        VERSIONS / "0034_reset_miniprogram_only_material_jobs_20260611.py"
+    ).read_text(encoding="utf-8")
+
+    assert "claim_token TEXT NOT NULL DEFAULT ''" in (
+        VERSIONS / "0012_broadcast_job_leases.py"
+    ).read_text(encoding="utf-8")
+    assert "claim_token = ''" in source
+    assert "claim_token = NULL" not in source
+
+
 def test_raw_migration_sql_does_not_expose_numeric_bind_literals() -> None:
     risky_default_prefix = '"default"' + ":"
     old_sqlalchemy_rendered_default = "default" + "%("
@@ -170,4 +182,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0033_complete_miniprogram_only_resend_20260611" in heads[0]
+            assert "0034_reset_miniprogram_only_material_jobs_20260611" in heads[0]

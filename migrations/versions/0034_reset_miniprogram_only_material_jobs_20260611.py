@@ -31,7 +31,7 @@ def upgrade() -> None:
             failure_type = NULL,
             last_error = '',
             claimed_at = NULL,
-            claim_token = NULL,
+            claim_token = '',
             lease_expires_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         FROM target_campaigns c
