@@ -1,0 +1,55 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card config-center" data-config-center data-admin-action-token="{{ admin_action_token }}">
+  <div class="config-center-alert" data-config-alert hidden></div>
+  <div class="admin-table-wrap">
+    <table class="admin-table config-center-table">
+      <thead>
+        <tr>
+          <th>类目</th>
+          <th>是否生效</th>
+          <th>生效开关</th>
+          <th>配置</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for category in config_categories %}
+        <tr data-category-row="{{ category.key }}">
+          <td>
+            <span class="config-center-category-name">{{ category.label }}</span>
+          </td>
+          <td>
+            <span class="config-center-state{% if category.enabled %} is-on{% endif %}" data-category-status>
+              {{ category.status_label }}
+            </span>
+          </td>
+          <td>
+            <label class="config-center-switch">
+              <input
+                type="checkbox"
+                data-category-enabled
+                data-category-key="{{ category.key }}"
+                {% if category.enabled %}checked{% endif %}
+              >
+              <span class="config-center-slider"></span>
+            </label>
+          </td>
+          <td>
+            <a class="admin-button admin-button--ghost config-center-action" href="{{ category.detail_href }}">配置</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4">暂无配置类目</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/config_center.js') }}"></script>
+{% endblock %}
