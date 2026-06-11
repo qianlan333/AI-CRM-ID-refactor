@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import urllib.error
 import urllib.request
 
 from scripts import internal_http
@@ -39,16 +40,45 @@ def run(*, limit: int = DEFAULT_LIMIT, dry_run: bool = True) -> str:
                 "message": "AUTOMATION_INTERNAL_API_TOKEN is required before the reply monitor timer can call the Next route.",
             }
         )
-    payload = internal_http.post_json(
-        host=host,
-        port=port,
-        token=token,
-        path=path,
-        payload={"operator": operator, "limit": limit, "dry_run": dry_run},
-        retry_count=retry_count,
-        retry_interval_seconds=retry_interval_seconds,
-        urlopen=urllib.request.urlopen,
-    )
+    try:
+        payload = internal_http.post_json(
+            host=host,
+            port=port,
+            token=token,
+            path=path,
+            payload={"operator": operator, "limit": limit, "dry_run": dry_run},
+            retry_count=retry_count,
+            retry_interval_seconds=retry_interval_seconds,
+            urlopen=urllib.request.urlopen,
+        )
+    except urllib.error.HTTPError as exc:
+        payload = {
+            "ok": False,
+            "status": "skipped",
+            "error_code": "reply_monitor_run_due_http_error",
+            "http_status": int(exc.code or 0),
+            "source_status": "next_reply_monitor_run_due_timer_http_error",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "automation_runtime_executed": False,
+            "wecom_send_executed": False,
+            "reply_monitor_run_due_executed": False,
+        }
+    except urllib.error.URLError as exc:
+        payload = {
+            "ok": False,
+            "status": "skipped",
+            "error_code": "reply_monitor_run_due_connection_error",
+            "error": str(exc.reason or exc),
+            "source_status": "next_reply_monitor_run_due_timer_connection_error",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+            "automation_runtime_executed": False,
+            "wecom_send_executed": False,
+            "reply_monitor_run_due_executed": False,
+        }
     return emit_json(payload)
 
 
