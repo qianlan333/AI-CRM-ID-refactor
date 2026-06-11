@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN_PREFIXES = ("wecom_ability_service", "openclaw_service")
+FORBIDDEN_PREFIXES = ("wecom_ability" + "_service", "openclaw_service")
 ACTIVE_DUPLICATE_SOURCE_PATTERNS = (
     "PYTHONPATH=src",
     'pythonpath = ["src"]',

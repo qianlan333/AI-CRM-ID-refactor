@@ -69,7 +69,11 @@ The executable legacy package body has been removed after the tests layer and HT
 - `wecom_ability_service/schema_postgres.sql`
 - orphaned root-level package helpers such as legacy service, callback, archive, and WeCom client modules
 
-Only the archived package marker remains temporarily. New code and tests must not import `wecom_ability_service.domains`, `wecom_ability_service.db`, or `wecom_ability_service.infra`; old capabilities must be rebuilt under `aicrm_next/**`.
+The final archived package marker and frozen note have been deleted. New code and tests must not import deleted legacy package paths; old capabilities must be rebuilt under `aicrm_next/**`.
+
+## Legacy Package Removal Complete
+
+`wecom_ability_service/` no longer exists in the repository. Tests, tools, scripts, deploy units, startup, and the Next runtime do not runtime import the legacy package. Historical docs may mention retired paths only as deleted history; no fallback command should be described as available.
 
 New executable tests must not reintroduce `wecom_ability_service.http`, `from wecom_ability_service import create_app`, legacy route owner headers, or Flask app factory coverage.
 

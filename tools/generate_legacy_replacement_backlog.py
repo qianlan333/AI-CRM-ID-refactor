@@ -14,9 +14,9 @@ DEFAULT_MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manif
 DEFAULT_OUTPUT_YAML = ROOT / "docs/development/legacy_replacement_backlog.yaml"
 DEFAULT_OUTPUT_MD = ROOT / "docs/development/legacy_replacement_backlog.md"
 STARTUP_CLOSEOUT_NOTE = (
-    "Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow "
-    "uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup "
-    "legacy maintenance code until separately archived."
+    "Startup compatibility closeout completed: app.py is Next-only; legacy Flask runner removed; deploy workflow "
+    "uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. Legacy package removal is complete; current runtime "
+    "lives under aicrm_next."
 )
 
 MANIFEST_REQUIRED_FIELDS = {

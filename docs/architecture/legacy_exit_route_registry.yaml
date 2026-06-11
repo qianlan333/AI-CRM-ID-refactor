@@ -3,7 +3,7 @@ status: legacy_exit_foundation_validated_locked
 notes:
   - Supplements docs/route_ownership/production_route_ownership_manifest.yaml with Legacy Exit specific fields.
   - production_compat empty router has been removed; no production_compat runtime route or fallback remains.
-  - "Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup legacy maintenance code until separately archived."
+  - "Startup compatibility closeout completed: app.py is Next-only; legacy Flask runner removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. Legacy package removal is complete; current runtime lives under aicrm_next."
   - Sample lifecycle items are marked sample=true and are excluded from production deletion decisions.
   - Foundation group 1 is validated and locked by docs/architecture/legacy_exit_foundation_closeout.md; do not roll back these guards without a replacement closeout.
 routes:
@@ -2428,7 +2428,7 @@ routes:
     replacement_status: locked
     checker: tests/test_public_product_registry_lifecycle.py
     rollback_owner: aicrm_next.public_product
-    notes: Public pay landing is Next-owned. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks. No production_compat fallback.
+    notes: Public pay landing is Next-owned. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no deleted legacy package runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks. No production_compat fallback.
   - route_id: public_product_api_next_contract
     path_pattern: /api/products/{path:path}
     methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
@@ -2638,7 +2638,7 @@ routes:
     replacement_status: locked
     checker: tests/test_payment_wildcard_final_registry_lifecycle.py
     rollback_owner: ""
-    notes: Final production_compat wildcard rollback removed. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks.
+    notes: Final production_compat wildcard rollback removed. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no deleted legacy package runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks.
   - route_id: h5_alipay_wildcard_final_closeout
     path_pattern: /api/h5/alipay/{path:path}
     methods: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]

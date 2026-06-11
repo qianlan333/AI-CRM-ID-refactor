@@ -49,8 +49,6 @@ def test_allow_write_executes_selected_scenario(monkeypatch):
 
     monkeypatch.setattr(smoke.SmokeDatabase, "connect", fake_connect)
     monkeypatch.setattr(smoke.SmokeDatabase, "close", fake_close)
-    monkeypatch.setattr(smoke.SmokeRunner, "_push_flask_context", lambda self: None)
-    monkeypatch.setattr(smoke.SmokeRunner, "_pop_flask_context", lambda self: None)
     monkeypatch.setattr(smoke.SmokeRunner, "scenario_channel_binding", fake_scenario)
     monkeypatch.setattr(smoke, "SmokeHttpClient", lambda *args, **kwargs: object())
 

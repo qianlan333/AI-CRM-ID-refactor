@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import sys
@@ -187,7 +186,6 @@ class SmokeRunner:
         self.skip_frontend = bool(skip_frontend)
         self.db = db or SmokeDatabase(database_url)
         self.http = http
-        self._flask_context: Any = None
 
     def environment(self) -> dict[str, Any]:
         return {
@@ -215,7 +213,6 @@ class SmokeRunner:
         self._assert_write_allowed()
         os.environ["DATABASE_URL"] = self.database_url
         self.db.connect()
-        self._push_flask_context()
         self.http = self.http or SmokeHttpClient(self.app_url, admin_cookie=self.admin_cookie, admin_token=self.admin_token)
         results: list[ScenarioResult] = []
         failures: list[dict[str, Any]] = []
@@ -229,7 +226,6 @@ class SmokeRunner:
                     results.append(ScenarioResult(name=name, ok=False, diagnostics={"error": str(exc)}))
             return self._result(results, failures)
         finally:
-            self._pop_flask_context()
             self.db.close()
 
     def cleanup(self) -> dict[str, Any]:
@@ -295,32 +291,6 @@ class SmokeRunner:
         self._assert_database_url()
         if not self.allow_write:
             raise SmokeFailure("--allow-write is required for non-dry-run smoke")
-
-    def _push_flask_context(self) -> None:
-        if self._flask_context is not None:
-            return
-        module = importlib.import_module("wecom_ability_" "service")
-        app = module.create_app(
-            test_config={
-                "TESTING": True,
-                "DATABASE_URL": self.database_url,
-                "WECOM_CORP_ID": "ww-smoke",
-                "WECOM_CONTACT_SECRET": "smoke-contact-secret",
-                "WECOM_SECRET": "smoke-secret",
-                "WECOM_AGENT_ID": "1000002",
-                "WECOM_ARCHIVE_SECRET": "smoke-archive-secret",
-                "WECOM_API_BASE": "http://fake-wecom.local",
-                "WECOM_CALLBACK_TOKEN": "callback-token",
-                "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            }
-        )
-        self._flask_context = app.app_context()
-        self._flask_context.push()
-
-    def _pop_flask_context(self) -> None:
-        if self._flask_context is not None:
-            self._flask_context.pop()
-            self._flask_context = None
 
     def _result(self, scenarios: list[ScenarioResult], failures: list[dict[str, Any]]) -> dict[str, Any]:
         return {
@@ -577,21 +547,22 @@ class SmokeRunner:
         return ScenarioResult("large-channel-protection", True, counts, {"program_id": program_id, "channel_id": channel_id, "bind_response": result})
 
     def scenario_future_scan(self) -> ScenarioResult:
-        bridge = importlib.import_module("wecom_ability_" "service.domains.automation_conversion.runtime_v2_bridge")
-        process_channel_entry_event = bridge.process_channel_entry_event
+        from aicrm_next.automation_runtime_v2.bridge import process_channel_entry_event
+        from aicrm_next.shared.postgres_connection import db_session
 
         program_id = self._program("future_scan")
         channel_id = self._channel("future_scan")
         self._task(program_id, "future_scan", trigger_type="audience_entered", target_stage="operating")
         self._bind_channel(program_id, channel_id)
         external = self._code("external_future_scan")
-        result = process_channel_entry_event(
-            channel_id=channel_id,
-            external_userid=external,
-            event_log_id=None,
-            occurred_at=_now(),
-            payload_json={"smoke_run_id": self.smoke_run_id, "source": "smoke_future_scan"},
-        )
+        with db_session():
+            result = process_channel_entry_event(
+                channel_id=channel_id,
+                external_userid=external,
+                event_log_id=None,
+                occurred_at=_now(),
+                payload_json={"smoke_run_id": self.smoke_run_id, "source": "smoke_future_scan"},
+            )
         counts = self._counts_for_program(program_id)
         if not result.get("processed") or counts["events"] < 1 or counts["memberships"] < 1:
             raise SmokeFailure(f"future scan did not process v2 chain: result={result}, counts={counts}")

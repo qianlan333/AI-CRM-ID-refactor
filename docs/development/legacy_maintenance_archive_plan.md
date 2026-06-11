@@ -1,12 +1,12 @@
 # Legacy Maintenance Archive Plan
 
-AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, deploy runs Alembic migrations, and legacy startup commands are removed-command hard errors. The remaining `wecom_ability_service` package is frozen as non-startup maintenance/reference code until it is migrated or archived in separate PRs.
+AI-CRM production startup is Next-only. `app.py` starts `aicrm_next.main:app`, deploy runs Alembic migrations, and legacy startup commands are removed-command hard errors. The legacy package directory has been deleted; current runtime ownership lives under `aicrm_next`.
 
 ## Freeze Policy
 
 - `aicrm_next/**`, `app.py`, `.github/**`, and `deploy/**` must not import or directly reference `wecom_ability_service`.
 - `scripts/**/*.py` must not import `wecom_ability_service`; `LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST` must remain empty.
-- Tests must not runtime import `wecom_ability_service`; docs, tools, experiments, and `wecom_ability_service/**` historical references are tracked but do not block this freeze checker.
+- Tests and tools must not runtime import or depend on the deleted legacy package; historical docs may mention retired paths only as deleted history.
 - Existing maintenance scripts are migration targets, not precedent for new legacy dependencies.
 - The active external push worker has been migrated to `aicrm_next.external_push`; `scripts/run_external_push_worker.py` must remain outside the legacy maintenance allowlist.
 
@@ -86,7 +86,7 @@ The legacy Flask HTTP/runtime package surface has been archived:
 - `wecom_ability_service/http/**` and the legacy Flask route registry are removed.
 - Legacy blueprint runtime files, request observability runtime, and package-local templates/static are removed.
 - Current route/runtime ownership lives under `aicrm_next`.
-- The remaining legacy domains/db/infra/schema package body has since been retired; only the archived package marker remains until final dependency/reference cleanup.
+- The remaining legacy domains/db/infra/schema package body has since been retired, and the final archived package marker has been deleted.
 
 ## Removed Legacy Domains DB Infra Package
 
@@ -98,9 +98,17 @@ The legacy package body below has been retired:
 - `wecom_ability_service/schema_postgres.sql`
 - orphaned root-level legacy support modules under `wecom_ability_service`
 
-Tests, scripts, deploy units, `app.py`, and `aicrm_next/**` no longer runtime import these legacy package bodies. `wecom_ability_service/__init__.py` remains only as an archived marker until the final legacy package/dependency/reference cleanup.
+Tests, scripts, deploy units, `app.py`, tools, and `aicrm_next/**` no longer runtime import these legacy package bodies. The final archived package marker has been deleted.
 
 New code must not restore the legacy Flask runtime, legacy route owner headers, or `wecom_ability_service.http` imports.
+
+## Legacy Package Removal Complete
+
+- `wecom_ability_service/` has been deleted.
+- Current runtime owner is `aicrm_next`.
+- Deploy/startup/background jobs/tests/tools no longer depend on the legacy package.
+- Old fallback commands are unavailable deleted-history references only.
+- If an old capability is needed again, rebuild it under `aicrm_next/**`; do not restore the old package.
 
 ## Archive Phases
 

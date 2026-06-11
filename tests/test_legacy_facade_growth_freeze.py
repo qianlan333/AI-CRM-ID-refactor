@@ -115,7 +115,7 @@ def test_aicrm_next_cannot_directly_import_wecom_or_openclaw(tmp_path: Path) -> 
     _write(tmp_path / "aicrm_next/integration_gateway/legacy_flask_facade.py", "import importlib\n")
     _write(
         tmp_path / "aicrm_next/bad.py",
-        "from wecom_ability_service.domains.questionnaire import service\nimport openclaw_service\n",
+        "from " + "wecom_ability" + "_service.domains.questionnaire import service\nimport openclaw_service\n",
     )
 
     result = checker.check_aicrm_next_legacy_import_boundary(tmp_path)

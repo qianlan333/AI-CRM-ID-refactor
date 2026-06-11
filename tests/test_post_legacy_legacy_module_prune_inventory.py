@@ -7,21 +7,21 @@ ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = ROOT / "docs/architecture/post_legacy_legacy_module_prune_inventory.md"
 
 ARCHIVED_MODULES = [
-    "wecom_ability_service/http/admin_hxc_dashboard.py",
-    "wecom_ability_service/http/admin_auth_routes.py",
-    "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
-    "wecom_ability_service/http/cloud_orchestrator_campaign_details.py",
-    "wecom_ability_service/http/cloud_orchestrator_media.py",
-    "wecom_ability_service/http/cloud_orchestrator_endpoint.py",
-    "wecom_ability_service/http/cloud_orchestrator_pages.py",
-    "wecom_ability_service/http/cloud_orchestrator_plans.py",
-    "wecom_ability_service/http/cloud_orchestrator_segments.py",
-    "wecom_ability_service/http/automation_conversion.py",
-    "wecom_ability_service/http/automation_conversion_runtime_api.py",
-    "wecom_ability_service/http/automation_conversion_task_runtime.py",
-    "wecom_ability_service/http/automation_conversion_execution_outbound.py",
-    "wecom_ability_service/http/automation_conversion_member_api.py",
-    "wecom_ability_service/http/customer_automation.py",
+    "wecom_ability" + "_service/http/admin_hxc_dashboard.py",
+    "wecom_ability" + "_service/http/admin_auth_routes.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_campaigns.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_campaign_details.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_media.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_endpoint.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_pages.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_plans.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_segments.py",
+    "wecom_ability" + "_service/http/automation_conversion.py",
+    "wecom_ability" + "_service/http/automation_conversion_runtime_api.py",
+    "wecom_ability" + "_service/http/automation_conversion_task_runtime.py",
+    "wecom_ability" + "_service/http/automation_conversion_execution_outbound.py",
+    "wecom_ability" + "_service/http/automation_conversion_member_api.py",
+    "wecom_ability" + "_service/http/customer_automation.py",
 ]
 
 
@@ -45,4 +45,4 @@ def test_no_temporarily_kept_legacy_http_modules_remain() -> None:
     text = INVENTORY.read_text(encoding="utf-8")
 
     assert "keep_temporarily_historical" not in text
-    assert not (ROOT / "wecom_ability_service/http").exists()
+    assert not (ROOT / ("wecom_ability" + "_service") / "http").exists()

@@ -33,6 +33,7 @@ from scripts.check_no_new_legacy import (
     check_internal_run_due_guard_native,
     check_legacy_package_domain_tests_archived,
     check_legacy_domains_db_infra_package_removed,
+    check_final_legacy_package_dependency_cleanup,
     check_legacy_flask_facade_removed,
     check_legacy_flask_http_test_retirement,
     check_legacy_http_runtime_archived,
@@ -723,6 +724,110 @@ def test_legacy_package_body_removed_accepts_archived_marker(tmp_path: Path) -> 
     _write_test_file(tmp_path, "test_next.py", "def test_next(next_client):\n    assert next_client\n")
 
     assert check_legacy_domains_db_infra_package_removed(tmp_path) == []
+
+
+def test_final_legacy_package_cleanup_flags_package_marker(tmp_path: Path) -> None:
+    package_init = tmp_path / "wecom_ability_service/__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text("__all__ = []\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_package_directory_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_frozen_marker(tmp_path: Path) -> None:
+    frozen = tmp_path / "wecom_ability_service/LEGACY_FROZEN.md"
+    frozen.parent.mkdir(parents=True, exist_ok=True)
+    frozen.write_text("archived\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_package_directory_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_active_source_reference(tmp_path: Path) -> None:
+    source = tmp_path / "aicrm_next/foo.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("import wecom_ability_service\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_package_reference_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_test_runtime_import(tmp_path: Path) -> None:
+    source = tmp_path / "tests/test_x.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("from wecom_ability_service import something\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_package_reference_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_tool_reference(tmp_path: Path) -> None:
+    tool = tmp_path / "tools/check_old.py"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    tool.write_text('LEGACY = "wecom_ability_service/"\n', encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_package_reference_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_available_run_legacy_doc(tmp_path: Path) -> None:
+    doc = tmp_path / "docs/runbook.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text("Run `python3 app.py run-legacy` to start the fallback.\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_fallback_command_reference_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_allows_deleted_run_legacy_doc(tmp_path: Path) -> None:
+    doc = tmp_path / "docs/runbook.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text("Do not run `python3 app.py run-legacy`; this removed command is historical only.\n", encoding="utf-8")
+
+    assert check_final_legacy_package_dependency_cleanup(tmp_path) == []
+
+
+def test_final_legacy_package_cleanup_flags_available_legacy_flask_app_doc(tmp_path: Path) -> None:
+    doc = tmp_path / "docs/runbook.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text("Run `python3 legacy_flask_app.py run` for fallback.\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_fallback_command_reference_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_flags_unused_flask_dependency(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text("Flask==3.1.0\nfastapi>=0.115,<1.0\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_final_legacy_package_dependency_cleanup(tmp_path)}
+
+    assert "legacy_flask_dependency_remaining" in codes
+
+
+def test_final_legacy_package_cleanup_allows_active_flask_dependency(tmp_path: Path) -> None:
+    next_file = tmp_path / "aicrm_next/shared.py"
+    next_file.parent.mkdir(parents=True, exist_ok=True)
+    next_file.write_text("from flask import g\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("Flask==3.1.0\nfastapi>=0.115,<1.0\n", encoding="utf-8")
+
+    assert check_final_legacy_package_dependency_cleanup(tmp_path) == []
+
+
+def test_final_legacy_package_cleanup_accepts_clean_final_state(tmp_path: Path) -> None:
+    next_file = tmp_path / "aicrm_next/foo.py"
+    next_file.parent.mkdir(parents=True, exist_ok=True)
+    next_file.write_text("from aicrm_next.main import app\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("fastapi>=0.115,<1.0\n", encoding="utf-8")
+
+    assert check_final_legacy_package_dependency_cleanup(tmp_path) == []
 
 
 def test_commerce_test_checker_flags_wechat_pay_legacy_import(tmp_path: Path) -> None:

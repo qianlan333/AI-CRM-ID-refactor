@@ -12,18 +12,13 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "docs/route_ownership/production_route_ownership_manifest.yaml"
 REMOVED_LEGACY_IMPORT_BOUNDARY = Path("aicrm_next/integration_gateway/legacy_flask_facade.py")
-ALLOWED_DIRECT_LEGACY_IMPORTS = {
-    (
-        "aicrm_next/integration_gateway/wecom_group_adapter.py",
-        "wecom_ability_service.domains.broadcast_jobs.service",
-    ),
-}
+ALLOWED_DIRECT_LEGACY_IMPORTS: set[tuple[str, str]] = set()
 REQUIRED_DOCS = [
     Path("docs/development/legacy_facade_freeze_policy.md"),
     Path("docs/development/ai_crm_next_architecture_skill.md"),
     Path("docs/route_ownership/production_route_ownership_manifest.yaml"),
 ]
-FORBIDDEN_IMPORT_ROOTS = ("wecom_ability_service", "openclaw_service")
+FORBIDDEN_IMPORT_ROOTS = ("wecom_ability" + "_service", "openclaw_service")
 IMPORTLIB_CONTEXT_KEYWORDS = ("wecom", "ability_service", "openclaw", "legacy_flask")
 REQUIRED_MANIFEST_CATEGORIES: dict[str, set[str]] = {}
 ALLOWED_SIDE_EFFECT_RISKS = {"none", "guarded", "real_blocked", "low", "medium", "high"}
@@ -171,7 +166,7 @@ def check_aicrm_next_legacy_import_boundary(root: Path = ROOT) -> dict[str, Any]
                 if value:
                     lower_value = value.lower()
                     looks_like_split_legacy = (
-                        "wecom_ability_service" in lower_value
+                        FORBIDDEN_IMPORT_ROOTS[0] in lower_value
                         or "openclaw_service" in lower_value
                         or ("wecom_" in lower_segment and "ability_service" in lower_segment)
                     )

@@ -55,7 +55,7 @@ protected_runtime_boundaries:
   - app.py
   - aicrm_next/main.py
   - aicrm_next/production_compat/api.py high-risk and retained fallback entries only
-  - wecom_ability_service runtime
+  - deleted legacy package must not return
   - migrations/deploy/nginx/systemd
   - payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths
 

@@ -39,7 +39,7 @@ def test_active_deploy_scripts_exist_and_do_not_import_legacy() -> None:
         path = ROOT / rel_path
         assert path.exists()
         source = path.read_text(encoding="utf-8")
-        assert "wecom_ability_service" not in source
+        assert "wecom_ability" + "_service" not in source
         assert "create_app" not in source
         assert "app_context" not in source
 

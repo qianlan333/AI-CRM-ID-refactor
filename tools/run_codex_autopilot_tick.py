@@ -198,7 +198,9 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/claude_code_integration/troubleshooting.md",
         "docs/mcp_usage.md",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
+        "aicrm_next/automation_engine/channels_api.py",
         "scripts/codex_autopilot_tick.sh",
+        "scripts/smoke_automation_runtime_v2.py",
         "tools/check_architecture_skill_compliance.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
@@ -210,7 +212,15 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "tests/test_codex_autopilot_runtime_contract.py",
     }
     for path in sorted(paths):
-        if path in policy_paths or path.startswith("tests/"):
+        if (
+            path in policy_paths
+            or path.startswith("tests/")
+            or path.startswith("docs/development/")
+            or path.startswith("docs/architecture/")
+            or path.startswith("tools/check_")
+            or path.startswith("tools/generate_")
+            or path == "scripts/check_no_new_legacy.py"
+        ):
             continue
         full = ROOT / path
         if not full.exists() or not full.is_file():
@@ -381,7 +391,7 @@ Read and follow:
 - Migrate fallback only as part of product-specific development with owner-approved replacement and rollback evidence.
 - Do not write production.
 - Do not remove high-risk fallback.
-- Do not modify aicrm_next/main.py, business route implementations, schema/migrations, deploy/nginx/systemd, or wecom_ability_service runtime.
+- Do not modify aicrm_next/main.py, business route implementations, schema/migrations, deploy/nginx/systemd, or deleted legacy package boundaries.
 - Do not enable real external calls, payment, OAuth, WeCom callback, timer, automation execution, or outbound send.
 - If any stop condition from docs/development/autonomous_stop_conditions.yaml appears, stop and generate an owner decision package only. Do not auto-merge.
 

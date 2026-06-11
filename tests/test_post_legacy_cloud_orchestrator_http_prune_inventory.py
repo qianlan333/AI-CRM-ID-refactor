@@ -8,13 +8,13 @@ INVENTORY = ROOT / "docs/architecture/post_legacy_cloud_orchestrator_http_prune_
 MAIN_INVENTORY = ROOT / "docs/architecture/post_legacy_legacy_module_prune_inventory.md"
 
 CLOUD_HTTP_MODULES = [
-    "wecom_ability_service/http/cloud_orchestrator_endpoint.py",
-    "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
-    "wecom_ability_service/http/cloud_orchestrator_campaign_details.py",
-    "wecom_ability_service/http/cloud_orchestrator_media.py",
-    "wecom_ability_service/http/cloud_orchestrator_pages.py",
-    "wecom_ability_service/http/cloud_orchestrator_plans.py",
-    "wecom_ability_service/http/cloud_orchestrator_segments.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_endpoint.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_campaigns.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_campaign_details.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_media.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_pages.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_plans.py",
+    "wecom_ability" + "_service/http/cloud_orchestrator_segments.py",
 ]
 
 

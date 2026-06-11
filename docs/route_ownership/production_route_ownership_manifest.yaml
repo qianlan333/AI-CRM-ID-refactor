@@ -3,7 +3,7 @@ status: manifest_only_no_runtime_change
 notes:
   - AI-CRM Next is the default FastAPI modular monolith runtime.
   - production_compat empty router has been removed; no production_compat runtime route or fallback remains.
-  - "Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup legacy maintenance code until separately archived."
+  - "Startup compatibility closeout completed: app.py is Next-only; legacy Flask runner removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. Legacy package removal is complete; current runtime lives under aicrm_next."
   - Real external side effects remain blocked, fake, guarded, or staging-disabled unless separately approved.
 routes:
   - route_pattern: /health
@@ -1970,7 +1970,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Public pay landing is Next-owned. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks. No production_compat fallback.
+    notes: Public pay landing is Next-owned. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no deleted legacy package runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks. No production_compat fallback.
   - route_pattern: /api/orders*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
@@ -2040,7 +2040,7 @@ routes:
     adapter_mode: real_blocked
     delete_status: deletion_locked
     replacement_status: locked
-    notes: Final production_compat wildcard rollback removed. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no wecom_ability_service runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks.
+    notes: Final production_compat wildcard rollback removed. H5 Pay OAuth uses Next native WeChatOAuthClient; sidebar product ctx uses Next native public_product.signed_context; sidebar order attribution uses Next native public_product.sidebar_order_context; h5_wechat_pay.py has no deleted legacy package runtime import. Real payment remains guarded by existing WECHAT_PAY_ENABLED / production DB checks.
   - route_pattern: /api/h5/alipay*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

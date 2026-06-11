@@ -35,7 +35,7 @@ def test_low_risk_changed_files_are_docs_tools_tests_only() -> None:
 def test_protected_runtime_path_requires_owner_approval() -> None:
     assert checker._protected_path_reason("aicrm_next/production_compat/api.py") is None
     assert checker._protected_path_reason("aicrm_next/main.py")
-    assert checker._protected_path_reason("wecom_ability_service/http/example.py")
+    assert checker._protected_path_reason("deploy/openclaw-next.service")
 
 
 def test_destructive_migration_detection() -> None:
