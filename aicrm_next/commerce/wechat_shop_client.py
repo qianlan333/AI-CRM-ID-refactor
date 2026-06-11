@@ -77,6 +77,33 @@ class WeChatShopClient:
             {"order_id": normalized_order_id},
         )
 
+    def list_orders(
+        self,
+        *,
+        start_time: int,
+        end_time: int,
+        access_token: str,
+        time_mode: str = "update_time",
+        page_size: int = 100,
+        next_key: str = "",
+    ) -> dict[str, Any]:
+        token = _text(access_token)
+        if not token:
+            raise WeChatShopClientError("access_token is required")
+        if int(start_time) <= 0 or int(end_time) <= 0 or int(end_time) < int(start_time):
+            raise WeChatShopClientError("valid start_time and end_time are required")
+        range_key = "create_time_range" if _text(time_mode) == "create_time" else "update_time_range"
+        payload: dict[str, Any] = {
+            range_key: {"start_time": int(start_time), "end_time": int(end_time)},
+            "page_size": max(1, min(int(page_size or 100), 100)),
+        }
+        if _text(next_key):
+            payload["next_key"] = _text(next_key)
+        return self._post_json(
+            f"/channels/ec/order/list/get?access_token={token}",
+            payload,
+        )
+
     def gen_after_sale_order(self, payload: dict[str, Any], access_token: str) -> dict[str, Any]:
         token = _text(access_token)
         if not token:

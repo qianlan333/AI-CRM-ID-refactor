@@ -154,6 +154,31 @@ def test_external_push_worker_systemd_units_are_deployable():
     assert "Unit=openclaw-external-push-worker.service" in timer
 
 
+def test_wechat_shop_order_sync_systemd_units_are_deployable():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    service = (ROOT / "deploy" / "aicrm-wechat-shop-order-sync.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "aicrm-wechat-shop-order-sync.timer").read_text(encoding="utf-8")
+
+    copy_service_index = workflow.index("sudo cp deploy/aicrm-wechat-shop-order-sync.service /etc/systemd/system/")
+    copy_timer_index = workflow.index("sudo cp deploy/aicrm-wechat-shop-order-sync.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_index = workflow.index("sudo systemctl enable aicrm-wechat-shop-order-sync.timer")
+    restart_index = workflow.index("sudo systemctl restart aicrm-wechat-shop-order-sync.timer")
+    start_index = workflow.index("if ! sudo systemctl start aicrm-wechat-shop-order-sync.service; then")
+    status_index = workflow.index("sudo systemctl status aicrm-wechat-shop-order-sync.timer --no-pager")
+
+    assert copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_index < restart_index < start_index < status_index
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python -m scripts.run_wechat_shop_order_sync --mode incremental" in service
+    assert "OnCalendar=*-*-* *:0/10:30" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=aicrm-wechat-shop-order-sync.service" in timer
+
+
 def test_broadcast_queue_worker_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "openclaw-broadcast-queue-worker.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "openclaw-broadcast-queue-worker.timer").read_text(encoding="utf-8")

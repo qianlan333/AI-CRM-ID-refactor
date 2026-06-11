@@ -21,6 +21,7 @@ TOKEN_INVALID_CODES = {40001, 40014, 42001, 45009}
 _FIXTURE_EVENTS: list[dict[str, Any]] = []
 _FIXTURE_ORDERS: dict[str, dict[str, Any]] = {}
 _FIXTURE_REFUNDS: list[dict[str, Any]] = []
+_FIXTURE_SYNC_RUNS: list[dict[str, Any]] = []
 
 
 def _text(value: Any) -> str:
@@ -47,6 +48,23 @@ def _ts(value: Any) -> datetime | None:
     if ts <= 0:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def _unix_time(value: Any) -> int:
+    if isinstance(value, datetime):
+        target = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return int(target.timestamp())
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = _text(value)
+    if not text:
+        return 0
+    if text.isdigit():
+        return int(text)
+    try:
+        return int(datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp())
+    except ValueError:
+        return 0
 
 
 def _iso(value: Any) -> str:
@@ -97,6 +115,7 @@ def reset_wechat_shop_fixture_state() -> None:
     _FIXTURE_EVENTS.clear()
     _FIXTURE_ORDERS.clear()
     _FIXTURE_REFUNDS.clear()
+    _FIXTURE_SYNC_RUNS.clear()
 
 
 def _extract_order_id(payload: dict[str, Any]) -> str:
@@ -181,6 +200,360 @@ def sync_wechat_shop_order(order_id: str, *, source_event_id: int | None = None,
         "order": saved,
         "source_status": "next_wechat_shop_order_sync",
         "route_owner": "ai_crm_next",
+        "fallback_used": False,
+    }
+
+
+def _normalize_time_mode(mode: Any) -> str:
+    normalized = _text(mode).lower()
+    if normalized in {"create", "created", "create_time"}:
+        return "create_time"
+    if normalized in {"", "update", "updated", "update_time"}:
+        return "update_time"
+    raise ValueError("time_mode must be create_time or update_time")
+
+
+def _list_order_ids_once(
+    *,
+    start_time: int,
+    end_time: int,
+    time_mode: str,
+    page_size: int,
+    next_key: str,
+    force_refresh_token: bool = False,
+) -> dict[str, Any]:
+    token = _get_access_token(force_refresh=force_refresh_token)
+    try:
+        return _client().list_orders(
+            start_time=start_time,
+            end_time=end_time,
+            access_token=token,
+            time_mode=time_mode,
+            page_size=page_size,
+            next_key=next_key,
+        )
+    except WeChatShopClientError as exc:
+        code = _int(exc.payload.get("errcode"), -1)
+        if code in TOKEN_INVALID_CODES and not force_refresh_token:
+            token = _get_access_token(force_refresh=True)
+            return _client().list_orders(
+                start_time=start_time,
+                end_time=end_time,
+                access_token=token,
+                time_mode=time_mode,
+                page_size=page_size,
+                next_key=next_key,
+            )
+        raise
+
+
+def _extract_order_id_list(payload: dict[str, Any]) -> list[str]:
+    raw_ids = payload.get("order_id_list") or payload.get("order_ids") or payload.get("orders") or []
+    if not isinstance(raw_ids, list):
+        return []
+    order_ids: list[str] = []
+    for item in raw_ids:
+        if isinstance(item, dict):
+            order_id = _text(item.get("order_id"))
+        else:
+            order_id = _text(item)
+        if order_id:
+            order_ids.append(order_id)
+    return order_ids
+
+
+def _insert_sync_run(*, sync_type: str, time_mode: str, range_start: int, range_end: int, operator: str = "") -> int:
+    if database_mode() != "postgres":
+        run = {
+            "id": len(_FIXTURE_SYNC_RUNS) + 1,
+            "sync_type": _text(sync_type),
+            "time_mode": time_mode,
+            "range_start": _ts(range_start),
+            "range_end": _ts(range_end),
+            "status": "running",
+            "scanned_count": 0,
+            "synced_count": 0,
+            "failed_count": 0,
+            "next_key": "",
+            "last_error": "",
+            "operator": _text(operator),
+            "started_at": _now(),
+            "finished_at": None,
+            "created_at": _now(),
+            "updated_at": _now(),
+        }
+        _FIXTURE_SYNC_RUNS.append(run)
+        return int(run["id"])
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO wechat_shop_sync_runs (
+                sync_type, time_mode, range_start, range_end, status, operator, updated_at
+            )
+            VALUES (%s, %s, to_timestamp(%s), to_timestamp(%s), 'running', %s, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (_text(sync_type), time_mode, int(range_start), int(range_end), _text(operator)),
+        ).fetchone()
+    return int((row or {}).get("id") or 0)
+
+
+def _update_sync_run(
+    run_id: int | None,
+    *,
+    status: str,
+    scanned_count: int,
+    synced_count: int,
+    failed_count: int,
+    next_key: str = "",
+    last_error: str = "",
+) -> None:
+    if not run_id:
+        return
+    if database_mode() != "postgres":
+        for run in _FIXTURE_SYNC_RUNS:
+            if int(run.get("id") or 0) == int(run_id):
+                run["status"] = status
+                run["scanned_count"] = scanned_count
+                run["synced_count"] = synced_count
+                run["failed_count"] = failed_count
+                run["next_key"] = next_key
+                run["last_error"] = last_error
+                run["finished_at"] = _now()
+                run["updated_at"] = _now()
+        return
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE wechat_shop_sync_runs
+            SET status = %s,
+                scanned_count = %s,
+                synced_count = %s,
+                failed_count = %s,
+                next_key = %s,
+                last_error = %s,
+                finished_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (status, int(scanned_count), int(synced_count), int(failed_count), _text(next_key), _sanitize_error(last_error), int(run_id)),
+        )
+
+
+def _latest_successful_incremental_end() -> datetime | None:
+    if database_mode() != "postgres":
+        candidates = [
+            run
+            for run in _FIXTURE_SYNC_RUNS
+            if run.get("sync_type") == "incremental" and run.get("time_mode") == "update_time" and run.get("status") == "success"
+        ]
+        if not candidates:
+            return None
+        return max((run.get("range_end") for run in candidates if isinstance(run.get("range_end"), datetime)), default=None)
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT range_end
+            FROM wechat_shop_sync_runs
+            WHERE sync_type = 'incremental'
+              AND time_mode = 'update_time'
+              AND status = 'success'
+            ORDER BY range_end DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    value = (row or {}).get("range_end")
+    return value if isinstance(value, datetime) else None
+
+
+def sync_wechat_shop_orders_window(
+    start_time: Any,
+    end_time: Any,
+    *,
+    mode: str = "update_time",
+    page_size: int = 100,
+    max_pages: int = 200,
+    sync_type: str = "window",
+    dry_run: bool = False,
+    operator: str = "",
+) -> dict[str, Any]:
+    time_mode = _normalize_time_mode(mode)
+    start_ts = _unix_time(start_time)
+    end_ts = _unix_time(end_time)
+    if start_ts <= 0 or end_ts <= 0 or end_ts < start_ts:
+        raise ValueError("valid start_time and end_time are required")
+    page_size = max(1, min(_int(page_size, 100), 100))
+    max_pages = max(1, min(_int(max_pages, 200), 1000))
+    run_id = _insert_sync_run(sync_type=sync_type, time_mode=time_mode, range_start=start_ts, range_end=end_ts, operator=operator)
+    scanned_count = 0
+    synced_count = 0
+    failed_count = 0
+    page_count = 0
+    next_key = ""
+    order_ids_seen: set[str] = set()
+    failures: list[dict[str, str]] = []
+    status = "success"
+    error_message = ""
+    try:
+        while True:
+            page_count += 1
+            payload = _list_order_ids_once(
+                start_time=start_ts,
+                end_time=end_ts,
+                time_mode=time_mode,
+                page_size=page_size,
+                next_key=next_key,
+            )
+            for order_id in _extract_order_id_list(payload):
+                if order_id in order_ids_seen:
+                    continue
+                order_ids_seen.add(order_id)
+                scanned_count += 1
+                if dry_run:
+                    continue
+                try:
+                    sync_wechat_shop_order(order_id)
+                    synced_count += 1
+                except Exception as exc:
+                    failed_count += 1
+                    error = _sanitize_error(exc)
+                    failures.append({"order_id": order_id, "error_message": error})
+                    _record_order_error(order_id, error)
+            next_key = _text(payload.get("next_key"))
+            if not bool(payload.get("has_more")):
+                break
+            if not next_key:
+                status = "failed"
+                error_message = "wechat_shop list response has_more without next_key"
+                break
+            if page_count >= max_pages:
+                status = "partial"
+                error_message = "wechat_shop order sync page limit reached"
+                break
+        if failed_count and status == "success":
+            status = "partial"
+            error_message = f"{failed_count} order(s) failed during sync"
+        if dry_run and status == "success":
+            status = "dry_run"
+    except Exception as exc:
+        status = "failed"
+        error_message = _sanitize_error(exc)
+    _update_sync_run(
+        run_id,
+        status=status,
+        scanned_count=scanned_count,
+        synced_count=synced_count,
+        failed_count=failed_count,
+        next_key=next_key,
+        last_error=error_message,
+    )
+    return {
+        "ok": status not in {"failed"},
+        "provider": PROVIDER,
+        "provider_label": PROVIDER_LABEL,
+        "sync_run": {
+            "id": run_id,
+            "sync_type": sync_type,
+            "time_mode": time_mode,
+            "range_start": _iso(_ts(start_ts)),
+            "range_end": _iso(_ts(end_ts)),
+            "status": status,
+            "scanned_count": scanned_count,
+            "synced_count": synced_count,
+            "failed_count": failed_count,
+            "page_count": page_count,
+            "next_key": next_key,
+            "last_error": error_message,
+            "dry_run": dry_run,
+        },
+        "failures": failures[:20],
+        "route_owner": "ai_crm_next",
+        "source_status": "next_wechat_shop_order_window_sync",
+        "fallback_used": False,
+    }
+
+
+def sync_wechat_shop_orders_incremental(
+    *,
+    lookback_minutes: int = 120,
+    overlap_minutes: int = 15,
+    page_size: int = 100,
+    max_pages: int = 200,
+    dry_run: bool = False,
+    operator: str = "wechat_shop_order_sync_timer",
+) -> dict[str, Any]:
+    end_at = _now()
+    lookback_start = end_at - timedelta(minutes=max(1, _int(lookback_minutes, 120)))
+    latest_end = _latest_successful_incremental_end()
+    if latest_end:
+        cursor_start = latest_end - timedelta(minutes=max(0, _int(overlap_minutes, 15)))
+        start_at = min(lookback_start, cursor_start)
+    else:
+        start_at = lookback_start
+    return sync_wechat_shop_orders_window(
+        start_at,
+        end_at,
+        mode="update_time",
+        page_size=page_size,
+        max_pages=max_pages,
+        sync_type="incremental",
+        dry_run=dry_run,
+        operator=operator,
+    )
+
+
+def sync_wechat_shop_orders_backfill(
+    *,
+    start_time: Any,
+    end_time: Any | None = None,
+    window_days: int = 7,
+    page_size: int = 100,
+    max_pages: int = 200,
+    dry_run: bool = False,
+    operator: str = "wechat_shop_order_backfill",
+) -> dict[str, Any]:
+    start_ts = _unix_time(start_time)
+    end_ts = _unix_time(end_time or _now())
+    if start_ts <= 0 or end_ts <= 0 or end_ts < start_ts:
+        raise ValueError("valid start_time and end_time are required")
+    window_seconds = max(1, _int(window_days, 7)) * 86400
+    windows: list[dict[str, Any]] = []
+    cursor = start_ts
+    total_scanned = 0
+    total_synced = 0
+    total_failed = 0
+    ok = True
+    while cursor <= end_ts:
+        window_end = min(end_ts, cursor + window_seconds - 1)
+        result = sync_wechat_shop_orders_window(
+            cursor,
+            window_end,
+            mode="create_time",
+            page_size=page_size,
+            max_pages=max_pages,
+            sync_type="backfill",
+            dry_run=dry_run,
+            operator=operator,
+        )
+        run = result.get("sync_run") or {}
+        windows.append(run)
+        total_scanned += _int(run.get("scanned_count"))
+        total_synced += _int(run.get("synced_count"))
+        total_failed += _int(run.get("failed_count"))
+        ok = ok and bool(result.get("ok"))
+        cursor = window_end + 1
+    return {
+        "ok": ok,
+        "provider": PROVIDER,
+        "provider_label": PROVIDER_LABEL,
+        "sync_type": "backfill",
+        "window_count": len(windows),
+        "scanned_count": total_scanned,
+        "synced_count": total_synced,
+        "failed_count": total_failed,
+        "windows": windows,
+        "route_owner": "ai_crm_next",
+        "source_status": "next_wechat_shop_order_backfill_sync",
         "fallback_used": False,
     }
 
@@ -614,6 +987,51 @@ def list_wechat_shop_events(filters: dict[str, Any] | None = None, *, limit: int
         "provider_label": PROVIDER_LABEL,
         "route_owner": "ai_crm_next",
         "source_status": "next_wechat_shop_events",
+        "fallback_used": False,
+    }
+
+
+def list_wechat_shop_sync_runs(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    limit = max(1, min(_int(limit, 50), 100))
+    offset = max(0, _int(offset))
+    if database_mode() != "postgres":
+        rows = [deepcopy(run) for run in _FIXTURE_SYNC_RUNS]
+        rows.sort(key=lambda item: (item.get("started_at") or datetime.min.replace(tzinfo=timezone.utc), int(item.get("id") or 0)), reverse=True)
+        return {
+            "ok": True,
+            "sync_runs": rows[offset : offset + limit],
+            "total": len(rows),
+            "limit": limit,
+            "offset": offset,
+            "provider": PROVIDER,
+            "provider_label": PROVIDER_LABEL,
+            "route_owner": "ai_crm_next",
+            "source_status": "next_wechat_shop_sync_runs",
+            "fallback_used": False,
+        }
+    with _connect() as conn:
+        total = int((conn.execute("SELECT count(*) AS total FROM wechat_shop_sync_runs").fetchone() or {}).get("total") or 0)
+        rows = conn.execute(
+            """
+            SELECT id, sync_type, time_mode, range_start, range_end, status,
+                   scanned_count, synced_count, failed_count, next_key, last_error,
+                   operator, started_at, finished_at, created_at, updated_at
+            FROM wechat_shop_sync_runs
+            ORDER BY started_at DESC, id DESC
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset),
+        ).fetchall()
+    return {
+        "ok": True,
+        "sync_runs": [dict(row) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "provider": PROVIDER,
+        "provider_label": PROVIDER_LABEL,
+        "route_owner": "ai_crm_next",
+        "source_status": "next_wechat_shop_sync_runs",
         "fallback_used": False,
     }
 
