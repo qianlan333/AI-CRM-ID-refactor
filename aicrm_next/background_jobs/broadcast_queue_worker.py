@@ -22,6 +22,8 @@ class BroadcastQueueRepository(Protocol):
 class SafeSkippedBroadcastDispatcher:
     def dispatch(self, job: dict[str, Any]) -> dict[str, Any]:
         payload = _json_dict(job.get("content_payload"))
+        if _is_wecom_private_job(job, payload):
+            return _dispatch_wecom_private(job, payload)
         if _is_wecom_customer_group_job(job, payload):
             return _dispatch_wecom_customer_group(job, payload)
         return {
@@ -128,6 +130,22 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return []
+        return decoded if isinstance(decoded, list) else []
+    return []
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 def _is_wecom_customer_group_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
     return (
         str(payload.get("channel") or "").strip() == "wecom_customer_group"
@@ -136,7 +154,25 @@ def _is_wecom_customer_group_job(job: dict[str, Any], payload: dict[str, Any]) -
     )
 
 
-def _record_outbound_task(*, job: dict[str, Any], request_payload: dict[str, Any], response_payload: dict[str, Any], status: str) -> int | None:
+def _is_wecom_private_job(job: dict[str, Any], payload: dict[str, Any]) -> bool:
+    return (
+        _text(payload.get("channel")) == "wecom_private"
+        or _text(job.get("channel")) == "wecom_private"
+        or (
+            _text(job.get("source_type")) == "automation_runtime_v2"
+            and _text(job.get("target_kind")) == "external_userid"
+        )
+    )
+
+
+def _record_outbound_task(
+    *,
+    job: dict[str, Any],
+    request_payload: dict[str, Any],
+    response_payload: dict[str, Any],
+    status: str,
+    task_type: str = "broadcast_job/group_ops",
+) -> int | None:
     task_id = str(
         response_payload.get("wecom_msgid")
         or response_payload.get("msgid")
@@ -152,7 +188,7 @@ def _record_outbound_task(*, job: dict[str, Any], request_payload: dict[str, Any
             RETURNING id
             """,
             (
-                "broadcast_job/group_ops",
+                task_type,
                 _json_dumps(request_payload),
                 _json_dumps(response_payload),
                 task_id,
@@ -161,6 +197,85 @@ def _record_outbound_task(*, job: dict[str, Any], request_payload: dict[str, Any
             ),
         ).fetchone()
     return int((row or {}).get("id") or 0) or None
+
+
+def _extract_private_targets(job: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    values = _json_list(job.get("target_external_userids")) or _json_list(payload.get("target_external_userids"))
+    return [_text(item) for item in values if _text(item)]
+
+
+def _extract_private_text(payload: dict[str, Any]) -> str:
+    rendered = payload.get("rendered_content") if isinstance(payload.get("rendered_content"), dict) else {}
+    return _text(rendered.get("content_text") or rendered.get("text") or payload.get("content_text") or payload.get("text"))
+
+
+def _realtest_guard(*, sender_userid: str, targets: list[str], content_text: str) -> tuple[bool, str]:
+    if "【RuntimeV2真实链路测试】" not in content_text and "runtime_v2_realtest_" not in content_text:
+        return True, ""
+    allowed_target = "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"
+    if sender_userid not in {"HuangYouCan", "QianLan"}:
+        return False, "realtest_sender_not_allowed"
+    if targets != [allowed_target]:
+        return False, "realtest_target_not_allowed"
+    return True, ""
+
+
+def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
+
+    targets = _extract_private_targets(job, payload)
+    target_count = int_value(job.get("target_count"))
+    sender_userid = _text(payload.get("sender_userid") or payload.get("owner_userid"))
+    content_text = _extract_private_text(payload)
+    if not targets:
+        return {"ok": False, "error": "target_external_userids_missing", "failure_type": "validation_failed"}
+    if target_count != len(targets):
+        return {"ok": False, "error": "target_count_mismatch", "failure_type": "validation_failed"}
+    if not sender_userid:
+        return {"ok": False, "error": "sender_userid_missing", "failure_type": "validation_failed"}
+    if not content_text:
+        return {"ok": False, "error": "content_text_missing", "failure_type": "validation_failed"}
+    ok, reason = _realtest_guard(sender_userid=sender_userid, targets=targets, content_text=content_text)
+    if not ok:
+        return {"ok": False, "error": reason, "failure_type": "validation_failed"}
+    request_payload = {
+        "job_id": int_value(job.get("id")),
+        "source_type": _text(job.get("source_type")),
+        "source_id": _text(job.get("source_id")),
+        "sender_userid": sender_userid,
+        "external_userids": targets,
+        "text": {"content": content_text},
+        "content_hash": _json_dict(payload.get("rendered_content")).get("content_hash") or "",
+        "content_preview": content_text[:120],
+    }
+    result = build_wecom_private_message_adapter().create_private_message_task(
+        {"sender": sender_userid, "external_userids": targets, "text": {"content": content_text}},
+        idempotency_key=_text(job.get("idempotency_key") or job.get("trace_id") or job.get("id")),
+    )
+    failure_type = _text(result.get("error_code")) or "handler_error"
+    outbound_task_id = _record_outbound_task(
+        job=job,
+        request_payload=request_payload,
+        response_payload=result,
+        status="created" if result.get("ok") else "failed",
+        task_type="broadcast_job/wecom_private",
+    )
+    if not result.get("ok"):
+        return {
+            "ok": False,
+            "error": _text(result.get("error_message") or result.get("error_code") or "wecom private message dispatch failed"),
+            "failure_type": failure_type,
+            "outbound_task_id": outbound_task_id,
+        }
+    if not outbound_task_id:
+        return {"ok": False, "error": "outbound_task_record_missing", "failure_type": "handler_error"}
+    return {
+        "ok": True,
+        "sent_count": len(targets),
+        "failed_count": 0,
+        "outbound_task_id": outbound_task_id,
+        "wecom_msgid": _text(result.get("wecom_msgid") or _json_dict(result.get("result")).get("msgid")),
+    }
 
 
 def _dispatch_wecom_customer_group(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -239,11 +354,15 @@ def run_broadcast_queue_worker(
                 summary["results"].append({"id": job_id, "status": "sent", "sent_count": sent_count})
                 continue
             reason = str(outcome.get("reason") or outcome.get("error") or "next_native_dispatch_failed")
-            repo.mark_failed(job_id, error=reason, failure_type="next_native_dispatch_skipped" if outcome.get("status") == "skipped" else "handler_error")
+            repo.mark_failed(
+                job_id,
+                error=reason,
+                failure_type=str(outcome.get("failure_type") or ("next_native_dispatch_skipped" if outcome.get("status") == "skipped" else "handler_error")),
+            )
             summary["sent_failed"] += 1
             if outcome.get("status") == "skipped":
                 summary["skipped"] += 1
-            summary["results"].append({"id": job_id, "status": outcome.get("status") or "failed", "reason": reason})
+            summary["results"].append({"id": job_id, "status": outcome.get("status") or "failed", "reason": reason, "failure_type": outcome.get("failure_type") or ""})
         return summary
     except Exception as exc:
         return {**summary, "ok": False, "errors": [{"code": "broadcast_queue_worker_failed", "message": str(exc)}]}
