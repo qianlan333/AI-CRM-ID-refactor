@@ -40,8 +40,8 @@ def test_channel_form_contains_multi_staff_assignment_without_demo_forbidden_sur
 def test_assignment_strategy_radios_are_before_titles_and_only_two_modes() -> None:
     html = _read(CHANNEL_FORM)
 
-    ratio_block = re.search(r'<label class="channel-strategy-card" data-strategy-card="ratio">(.*?)</label>', html, re.S)
-    cap_block = re.search(r'<label class="channel-strategy-card" data-strategy-card="cap_switch">(.*?)</label>', html, re.S)
+    ratio_block = re.search(r'<label class="strategy-card" data-strategy-card="ratio">(.*?)</label>', html, re.S)
+    cap_block = re.search(r'<label class="strategy-card" data-strategy-card="cap_switch">(.*?)</label>', html, re.S)
     assert ratio_block
     assert cap_block
     assert ratio_block.group(1).index('type="radio"') < ratio_block.group(1).index("<strong>按比例分配</strong>")
@@ -52,6 +52,50 @@ def test_assignment_strategy_radios_are_before_titles_and_only_two_modes() -> No
     assert "weighted_random" not in html
     assert "balanced" not in html
     assert "average_ratio" not in html
+
+
+def test_channel_form_uses_demo_shell_dom_and_prefixed_css() -> None:
+    html = _read(CHANNEL_FORM)
+    js = _read(CHANNEL_JS)
+    css = _read(CHANNEL_CSS)
+
+    for class_name in [
+        "channel-form-v3",
+        "breadcrumbs",
+        "page-head",
+        "card",
+        "card-head",
+        "card-body",
+        "section",
+        "section-head",
+        "field-grid",
+        "strategy-grid",
+        "strategy-card",
+        "strategy-title",
+        "assignee-panel",
+        "assignee-toolbar",
+        "assignee-list",
+        "validation",
+        "summary-box",
+        "summary-row",
+    ]:
+        assert class_name in html or class_name in js
+
+    for selector in [
+        ".channel-form-v3 .card",
+        ".channel-form-v3 .strategy-card",
+        ".channel-form-v3 .assignee-panel",
+        ".channel-form-v3 .summary-box",
+        ".channel-form-v3 .validation",
+    ]:
+        assert selector in css
+
+    assert "assignee-row" in js
+    assert "assignee-name" in js
+    assert "assignee-row-actions" in js
+    assert "channel-strategy-card" not in html
+    assert "channel-assignee-panel" not in html
+    assert "channel-selector-box" not in html
 
 
 def test_channel_type_visibility_and_payload_fields_follow_demo_contract() -> None:
@@ -106,6 +150,10 @@ def test_add_assignee_uses_operation_member_picker_multiple_mode_without_fake_st
     assert "Support05" not in js
     assert "selectedMembers" in picker
     assert "disabledUserIds" in picker
+    assert "member-modal" in picker
+    assert "member-modal__panel" in picker
+    assert "member-row" in picker
+    assert 'type="checkbox"' in picker
 
 
 def test_standard_welcome_tag_components_and_hidden_payload_inputs_are_kept() -> None:
@@ -115,6 +163,9 @@ def test_standard_welcome_tag_components_and_hidden_payload_inputs_are_kept() ->
     assert "AICRMSendContentComposer.open" in js
     assert "AICRMWeComTagPicker.open" in js
     assert "prompt(" not in js
+    assert "summary-box" in html
+    assert "summary-row" in html
+    assert "data-welcome-material-summary" in html
     assert 'name="welcome_message"' in html
     assert 'name="welcome_image_library_ids"' in html
     assert 'name="welcome_miniprogram_library_ids"' in html
