@@ -7,6 +7,7 @@ from aicrm_next.shared.runtime import database_mode, raw_database_url
 
 from .admin_transactions import create_wechat_refund_request
 from .admin_unified_orders import ROUTE_OWNER, normalize_limit, normalize_offset, normalize_provider
+from .wechat_shop_service import create_wechat_shop_refund_request, fixture_wechat_shop_refunds
 
 
 def _text(value: Any) -> str:
@@ -68,6 +69,7 @@ def _present(provider: str, row: dict[str, Any]) -> dict[str, Any]:
     status = _text(row.get("status"))
     return {
         "provider": provider,
+        "provider_label": {"wechat": "微信支付", "alipay": "支付宝", "wechat_shop": "微信小店"}.get(provider, provider),
         "order_no": _text(row.get("out_trade_no") or row.get("order_no")),
         "out_trade_no": _text(row.get("out_trade_no") or row.get("order_no")),
         "transaction_id": _text(row.get("transaction_id") or row.get("trade_no")),
@@ -88,7 +90,16 @@ def _present(provider: str, row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _postgres_provider_refunds(provider: str, filters: dict[str, str], *, limit: int, offset: int) -> tuple[list[dict[str, Any]], int, list[str]]:
-    table = "wechat_pay_refunds" if provider == "wechat" else "alipay_pay_refunds"
+    if provider == "wechat_shop":
+        table = "wechat_shop_refunds"
+        select = """
+            order_id AS out_trade_no, transaction_id, aftersale_id AS refund_id, out_refund_no,
+            refund_amount_total, order_amount_total, currency, status, reason, requested_by,
+            operator, created_at, updated_at
+        """
+    else:
+        table = "wechat_pay_refunds" if provider == "wechat" else "alipay_pay_refunds"
+        select = "*"
     where = ["1 = 1"]
     params: list[Any] = []
     if filters["order_no"]:
@@ -110,7 +121,7 @@ def _postgres_provider_refunds(provider: str, filters: dict[str, str], *, limit:
             total = int((conn.execute(f"SELECT count(*) AS total FROM {table} WHERE {clause}", tuple(params)).fetchone() or {}).get("total") or 0)
             rows = conn.execute(
                 f"""
-                SELECT *
+                SELECT {select}
                 FROM {table}
                 WHERE {clause}
                 ORDER BY created_at DESC, id DESC
@@ -137,7 +148,7 @@ def list_refunds(
     page_offset = normalize_offset(offset)
     normalized_filters = _filters(filters)
     warnings: list[str] = []
-    selected = ["wechat", "alipay"] if normalized_provider == "all" else [normalized_provider]
+    selected = ["wechat", "alipay", "wechat_shop"] if normalized_provider == "all" else [normalized_provider]
     refunds: list[dict[str, Any]] = []
     total = 0
     if database_mode() == "postgres":
@@ -146,6 +157,10 @@ def list_refunds(
             refunds.extend(rows)
             total += count
             warnings.extend(provider_warnings)
+    elif normalized_provider == "wechat_shop":
+        rows = [_present("wechat_shop", row) for row in fixture_wechat_shop_refunds()]
+        refunds.extend(rows)
+        total = len(rows)
     elif normalized_provider == "alipay":
         warnings.append("alipay refund fixture table is not available in this slice")
     return {
@@ -165,6 +180,17 @@ def request_refund(payload: dict[str, Any]) -> dict[str, Any]:
     provider = normalize_provider(payload.get("provider") or "wechat", default="wechat")
     if provider == "alipay":
         raise ValueError("provider_refund_not_supported")
+    if provider == "wechat_shop":
+        order_no = _text(payload.get("order_no") or payload.get("out_trade_no"))
+        if not order_no:
+            raise ValueError("order_no is required")
+        result = create_wechat_shop_refund_request(order_no, payload)
+        return {
+            **result,
+            "route_owner": ROUTE_OWNER,
+            "source_status": "next_admin_refund_request",
+            "fallback_used": False,
+        }
     if provider != "wechat":
         raise ValueError("provider_refund_not_supported")
     order_no = _text(payload.get("order_no") or payload.get("out_trade_no"))

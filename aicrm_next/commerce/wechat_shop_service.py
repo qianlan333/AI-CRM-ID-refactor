@@ -4,10 +4,12 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import os
 import re
+import secrets
 from typing import Any
 
 from aicrm_next.shared.runtime import database_mode, raw_database_url
 
+from .product_code_aliases import canonical_product_code, canonical_product_name
 from .wechat_shop_client import WeChatShopClient, WeChatShopClientConfig, WeChatShopClientError
 from .wechat_shop_signature import callback_token, should_skip_signature_without_token, verify_signature
 
@@ -18,6 +20,7 @@ TOKEN_INVALID_CODES = {40001, 40014, 42001, 45009}
 
 _FIXTURE_EVENTS: list[dict[str, Any]] = []
 _FIXTURE_ORDERS: dict[str, dict[str, Any]] = {}
+_FIXTURE_REFUNDS: list[dict[str, Any]] = []
 
 
 def _text(value: Any) -> str:
@@ -93,6 +96,7 @@ def _client() -> WeChatShopClient:
 def reset_wechat_shop_fixture_state() -> None:
     _FIXTURE_EVENTS.clear()
     _FIXTURE_ORDERS.clear()
+    _FIXTURE_REFUNDS.clear()
 
 
 def _extract_order_id(payload: dict[str, Any]) -> str:
@@ -266,6 +270,8 @@ def normalize_wechat_shop_order(order: dict[str, Any], *, raw_response: dict[str
     pay_time = _int(pay_info.get("pay_time"))
     paid_at = _ts(pay_time)
     product_name, product_code, product_count, finish_sku_count = _product_summary(product_infos)
+    canonical_code = canonical_product_code(product_code or product_name)
+    canonical_name = canonical_product_name(canonical_code, product_name)
     aftersale_order_count, on_aftersale_order_count, finish_aftersale_count = _aftersale_counts(aftersale_detail, product_infos)
     finish_sku_count = max(finish_sku_count, finish_aftersale_count)
     deal_recorded = bool(pay_time > 0 or status_code in {20, 21, 30, 100})
@@ -293,8 +299,8 @@ def normalize_wechat_shop_order(order: dict[str, Any], *, raw_response: dict[str
         "buyer_mobile": _buyer_mobile(delivery_info),
         "openid": _text(order.get("openid") or order_detail.get("openid") or pay_info.get("openid")),
         "unionid": _text(order.get("unionid") or order_detail.get("unionid") or pay_info.get("unionid")),
-        "product_name": product_name or _text(order.get("product_name")) or "微信小店商品",
-        "product_code": product_code,
+        "product_name": canonical_name or product_name or _text(order.get("product_name")) or "微信小店商品",
+        "product_code": canonical_code or product_code,
         "product_count": product_count,
         "deliver_method": _int(delivery_info.get("deliver_method")) if delivery_info.get("deliver_method") is not None else None,
         "is_virtual_delivery": _is_virtual_delivery(delivery_info, order_detail),
@@ -619,3 +625,246 @@ def fixture_wechat_shop_order(identifier: str) -> dict[str, Any] | None:
         if needle in {_text(order.get("order_id")), _text(order.get("transaction_id")), _text(order.get("id"))}:
             return deepcopy(order)
     return None
+
+
+def fixture_wechat_shop_refunds() -> list[dict[str, Any]]:
+    return [deepcopy(item) for item in _FIXTURE_REFUNDS]
+
+
+def _out_refund_no() -> str:
+    return "WSR" + datetime.now(timezone.utc).strftime("%y%m%d%H%M%S") + secrets.token_hex(4).upper()
+
+
+def _normalized_bool(value: Any) -> bool:
+    return _text(value).lower() in {"1", "true", "yes", "on"}
+
+
+def _refund_status_label(status: str) -> str:
+    return {
+        "requested": "退款申请已提交",
+        "PROCESSING": "退款处理中",
+        "SUCCESS": "退款成功",
+        "failed": "退款申请失败",
+    }.get(_text(status), _text(status) or "退款申请已提交")
+
+
+def _extract_first_product(raw_order_json: Any) -> dict[str, Any]:
+    raw = raw_order_json if isinstance(raw_order_json, dict) else {}
+    order = raw.get("order") if isinstance(raw.get("order"), dict) else raw
+    order_detail = order.get("order_detail") if isinstance(order.get("order_detail"), dict) else {}
+    product_infos = order_detail.get("product_infos") or order.get("product_infos") or []
+    if isinstance(product_infos, list) and product_infos:
+        first = product_infos[0]
+        return dict(first) if isinstance(first, dict) else {}
+    return {}
+
+
+def _wechat_shop_refund_request_payload(order: dict[str, Any], *, out_refund_no: str, amount_total: int, reason: str) -> dict[str, Any]:
+    product = _extract_first_product(order.get("raw_order_json"))
+    sku_id = _text(product.get("sku_id") or product.get("sku_code") or product.get("product_code") or order.get("product_code"))
+    product_id = _text(product.get("product_id") or product.get("spu_id") or product.get("product_code") or sku_id)
+    count = _int(product.get("sku_cnt") or product.get("product_count") or product.get("count"), 1) or 1
+    return {
+        "request_id": out_refund_no,
+        "order_id": _text(order.get("order_id")),
+        "product_id": product_id,
+        "sku_id": sku_id,
+        "amount": int(amount_total),
+        "reason": reason[:80],
+        "desc": reason[:200],
+        "count": count,
+        "type": "REFUND",
+    }
+
+
+def _load_refundable_order(order_id: str) -> dict[str, Any] | None:
+    normalized_order_id = _text(order_id)
+    if database_mode() != "postgres":
+        order = fixture_wechat_shop_order(normalized_order_id)
+        if not order:
+            return None
+        active = sum(
+            _int(item.get("refund_amount_total"))
+            for item in _FIXTURE_REFUNDS
+            if item.get("order_id") == normalized_order_id and item.get("status") not in {"failed", "closed", "CLOSED", "SUCCESS"}
+        )
+        order["active_refund_amount_total"] = active
+        return order
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT o.*,
+                   (
+                       SELECT COALESCE(SUM(r.refund_amount_total), 0)
+                       FROM wechat_shop_refunds r
+                       WHERE r.order_id = o.order_id
+                         AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'SUCCESS')
+                   ) AS active_refund_amount_total
+            FROM wechat_shop_orders o
+            WHERE o.order_id = %s OR o.transaction_id = %s
+            LIMIT 1
+            """,
+            (normalized_order_id, normalized_order_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _validate_refund_request(order: dict[str, Any], payload: dict[str, Any]) -> int:
+    if not order:
+        raise ValueError("订单不存在")
+    order_id = _text(order.get("order_id"))
+    if _text(payload.get("order_no_confirmation") or payload.get("transaction_id_confirmation")) != order_id:
+        raise ValueError("微信小店订单号二次确认不匹配")
+    if not _normalized_bool(payload.get("checked")):
+        raise ValueError("请先勾选已核对付款人、商品、金额和微信小店订单号")
+    amount_total = _int(order.get("amount_total"))
+    refunded = _int(order.get("refunded_amount_total"))
+    active = _int(order.get("active_refund_amount_total"))
+    refundable = max(0, amount_total - refunded - active)
+    if refundable <= 0:
+        raise ValueError("当前订单没有可退金额")
+    if order.get("returned_recorded") is True or _text(order.get("business_status")).lower() == "returned":
+        raise ValueError("当前订单已记录退货，不能重复申请退款")
+    if not (order.get("deal_recorded") is True or _text(order.get("business_status")).lower() == "deal"):
+        raise ValueError("只有已成交的微信小店订单可以申请退款")
+    if not _text(payload.get("reason")):
+        raise ValueError("请选择退款原因")
+    return refundable
+
+
+def _insert_refund_record(order: dict[str, Any], *, out_refund_no: str, amount_total: int, reason: str, operator: str, request_payload: dict[str, Any]) -> None:
+    if database_mode() != "postgres":
+        _FIXTURE_REFUNDS.append(
+            {
+                "id": len(_FIXTURE_REFUNDS) + 1,
+                "order_id": _text(order.get("order_id")),
+                "transaction_id": _text(order.get("transaction_id")),
+                "out_refund_no": out_refund_no,
+                "aftersale_id": "",
+                "refund_amount_total": amount_total,
+                "order_amount_total": _int(order.get("amount_total")),
+                "currency": _text(order.get("currency")) or "CNY",
+                "status": "requested",
+                "reason": reason,
+                "requested_by": operator,
+                "operator": operator,
+                "request_payload_json": deepcopy(request_payload),
+                "response_payload_json": {},
+                "error_message": "",
+                "created_at": _now_text(),
+                "updated_at": _now_text(),
+            }
+        )
+        return
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO wechat_shop_refunds (
+                order_id, transaction_id, out_refund_no, refund_amount_total, order_amount_total,
+                currency, status, reason, requested_by, operator, request_payload_json, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, 'requested', %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """,
+            (
+                _text(order.get("order_id")),
+                _text(order.get("transaction_id")),
+                out_refund_no,
+                amount_total,
+                _int(order.get("amount_total")),
+                _text(order.get("currency")) or "CNY",
+                reason,
+                operator,
+                operator,
+                _jsonb(request_payload),
+            ),
+        )
+
+
+def _update_refund_record(out_refund_no: str, *, status: str, response_payload: dict[str, Any] | None = None, error_message: str = "") -> None:
+    aftersale_id = _text((response_payload or {}).get("aftersale_id") or (response_payload or {}).get("after_sale_order_id"))
+    if database_mode() != "postgres":
+        for item in _FIXTURE_REFUNDS:
+            if item.get("out_refund_no") == out_refund_no:
+                item["status"] = status
+                item["aftersale_id"] = aftersale_id or item.get("aftersale_id", "")
+                item["response_payload_json"] = deepcopy(response_payload or {})
+                item["error_message"] = error_message
+                item["updated_at"] = _now_text()
+        return
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE wechat_shop_refunds
+            SET status = %s,
+                aftersale_id = COALESCE(NULLIF(%s, ''), aftersale_id),
+                response_payload_json = %s,
+                error_message = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE out_refund_no = %s
+            """,
+            (status, aftersale_id, _jsonb(response_payload or {}), error_message, out_refund_no),
+        )
+
+
+def create_wechat_shop_refund_request(order_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    order = _load_refundable_order(order_id)
+    amount_total = _validate_refund_request(order or {}, payload)
+    reason = _text(payload.get("reason"))
+    operator = _text(payload.get("operator")) or "aicrm_next"
+    out_refund_no = _out_refund_no()
+    request_payload = _wechat_shop_refund_request_payload(order or {}, out_refund_no=out_refund_no, amount_total=amount_total, reason=reason)
+    _insert_refund_record(order or {}, out_refund_no=out_refund_no, amount_total=amount_total, reason=reason, operator=operator, request_payload=request_payload)
+    try:
+        token = _get_access_token()
+        response_payload = _client().gen_after_sale_order(request_payload, token)
+    except WeChatShopClientError as exc:
+        code = _int(exc.payload.get("errcode"), -1)
+        if code in TOKEN_INVALID_CODES:
+            try:
+                token = _get_access_token(force_refresh=True)
+                response_payload = _client().gen_after_sale_order(request_payload, token)
+            except Exception as retry_exc:
+                error = _sanitize_error(retry_exc)
+                _update_refund_record(out_refund_no, status="failed", response_payload=getattr(retry_exc, "payload", {}) or {}, error_message=error)
+                raise ValueError(f"微信小店退款申请失败：{error}") from retry_exc
+        else:
+            error = _sanitize_error(exc)
+            _update_refund_record(out_refund_no, status="failed", response_payload=exc.payload, error_message=error)
+            raise ValueError(f"微信小店退款申请失败：{error}") from exc
+    except Exception as exc:
+        error = _sanitize_error(exc)
+        _update_refund_record(out_refund_no, status="failed", response_payload={}, error_message=error)
+        raise ValueError(f"微信小店退款申请失败：{error}") from exc
+    _update_refund_record(out_refund_no, status="PROCESSING", response_payload=response_payload, error_message="")
+    try:
+        sync_wechat_shop_order(_text((order or {}).get("order_id")), force_refresh_token=False)
+    except Exception:
+        pass
+    try:
+        from .admin_unified_orders import get_order
+
+        updated_order = get_order(_text((order or {}).get("order_id")), provider="wechat_shop")["order"]
+    except Exception:
+        updated_order = _load_refundable_order(_text((order or {}).get("order_id"))) or order or {}
+    updated_order = dict(updated_order or {})
+    updated_order["active_refund_amount_total"] = _int(updated_order.get("active_refund_amount_total")) or amount_total
+    updated_order["active_refund_amount_yuan"] = f"{_int(updated_order.get('active_refund_amount_total')) / 100:.2f}"
+    updated_order["refundable_amount_total"] = max(0, _int(updated_order.get("amount_total")) - _int(updated_order.get("refunded_amount_total")) - _int(updated_order.get("active_refund_amount_total")))
+    updated_order["refundable_amount_yuan"] = f"{_int(updated_order.get('refundable_amount_total')) / 100:.2f}"
+    updated_order["can_refund"] = False
+    updated_order["status"] = "refund_processing"
+    updated_order["status_label"] = "退货中"
+    return {
+        "ok": True,
+        "provider": PROVIDER,
+        "provider_label": PROVIDER_LABEL,
+        "order": updated_order,
+        "refund": {
+            "status": "PROCESSING",
+            "status_label": _refund_status_label("PROCESSING"),
+            "out_refund_no": out_refund_no,
+            "refund_id": _text(response_payload.get("aftersale_id") or response_payload.get("after_sale_order_id")),
+            "aftersale_id": _text(response_payload.get("aftersale_id") or response_payload.get("after_sale_order_id")),
+            "provider_refund_executed": True,
+        },
+    }

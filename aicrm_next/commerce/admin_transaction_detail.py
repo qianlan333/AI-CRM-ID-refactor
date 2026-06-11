@@ -10,7 +10,7 @@ from aicrm_next.shared.runtime import database_mode, raw_database_url
 from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .application import GetTransactionQuery, ListTransactionsQuery
-from .product_code_aliases import canonical_product_code, product_code_filter_values
+from .product_code_aliases import canonical_product_code, canonical_product_name, product_code_filter_values
 from .wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_orders
 
 ADMIN_TZ = ZoneInfo("Asia/Shanghai")
@@ -80,7 +80,7 @@ class PaymentProviderStatusMapper:
                 if amount_total > 0 and refunded > 0 and refunded < amount_total:
                     return "partial_refunded"
                 return "full_refunded"
-            if _int(row.get("on_aftersale_order_count")) > 0:
+            if active_refunding > 0 or _int(row.get("on_aftersale_order_count")) > 0:
                 return "refund_processing"
             if row.get("deal_recorded") is True or business_status == "deal":
                 return "paid"
@@ -173,7 +173,8 @@ def _merchant_order_no(row: dict[str, Any]) -> str:
 
 def _product_name(row: dict[str, Any]) -> str:
     product_code = canonical_product_code(row.get("product_code"))
-    return _text(row.get("product_name") or row.get("product_title") or product_code) or "-"
+    product_name = canonical_product_name(product_code, row.get("product_name") or row.get("product_title"))
+    return product_name or product_code or "-"
 
 
 def _customer(row: dict[str, Any]) -> dict[str, str]:
@@ -197,11 +198,11 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
     refundable = max(0, amount_total - refunded - active_refunding)
     merchant_order_no = _merchant_order_no(row)
     platform_no = _platform_transaction_no(provider, row)
-    order_id = _text(row.get("id") or row.get("order_no") or merchant_order_no)
+    order_id = merchant_order_no if provider == "wechat_shop" else _text(row.get("id") or row.get("order_no") or merchant_order_no)
     customer = _customer(row)
     product_code = canonical_product_code(row.get("product_code"))
     timeline = PaymentTimelineProjection().project(provider=provider, order=row, events=events or [])
-    can_refund = provider == "wechat" and status["status"] in {"paid", "partial_refunded"} and refundable > 0
+    can_refund = provider in {"wechat", "wechat_shop"} and status["status"] in {"paid", "partial_refunded"} and refundable > 0
     raw_status = _text(row.get("business_status") or row.get("status") or row.get("payment_status")) if provider == "wechat_shop" else _text(row.get("status") or row.get("payment_status"))
     provider_status = _text(row.get("status_code")) if provider == "wechat_shop" else _text(row.get("trade_state") or row.get("trade_status"))
     result = {
@@ -224,6 +225,7 @@ def _present(provider: str, row: dict[str, Any], *, events: list[dict[str, Any]]
         "unionid": customer["unionid"],
         "product_code": product_code,
         "product_name": _product_name(row),
+        "source_product_name": _text(row.get("product_name") or row.get("product_title")),
         "quantity": _int(row.get("product_count")) or _int(row.get("quantity")) or 1,
         "amount_total": amount_total,
         "amount_yuan": _money_yuan(amount_total),
@@ -352,7 +354,13 @@ def _postgres_order_select(provider: str) -> str:
             o.amount_total, o.currency, o.buyer_mobile, o.openid, o.unionid, o.business_status, o.status_code,
             o.deal_recorded, o.returned_recorded, o.raw_order_json AS notify_payload_json,
             o.refunded_amount_total, '' AS refund_status, o.on_aftersale_order_count,
-            o.paid_at, o.created_at, o.updated_at, 0 AS active_refund_amount_total
+            o.paid_at, o.created_at, o.updated_at,
+            (
+                SELECT COALESCE(SUM(r.refund_amount_total), 0)
+                FROM wechat_shop_refunds r
+                WHERE r.order_id = o.order_id
+                  AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'SUCCESS')
+            ) AS active_refund_amount_total
         """
     return """
         o.id, o.out_trade_no, o.transaction_id, o.payer_name_snapshot, o.mobile_snapshot, o.userid_snapshot,

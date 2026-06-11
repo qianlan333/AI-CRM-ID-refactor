@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.commerce.wechat_shop_client import WeChatShopClient, WeChatShopClientError
-from aicrm_next.commerce.wechat_shop_service import fixture_wechat_shop_order
+from aicrm_next.commerce.wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_refunds
 from aicrm_next.main import create_app
 
 
@@ -29,6 +29,8 @@ def _mock_order(
     finish_aftersale_sku_cnt: int = 0,
     deliver_method: int = 3,
     buyer_mobile: str = "13520436848",
+    product_title: str = "微信小店虚拟课程",
+    sku_id: str = "sku_shop_001",
 ) -> None:
     monkeypatch.setattr(WeChatShopClient, "get_stable_access_token", lambda self, force_refresh=False: {"access_token": "shop-access-token", "expires_in": 7200})
 
@@ -54,8 +56,9 @@ def _mock_order(
                     },
                     "product_infos": [
                         {
-                            "title": "微信小店虚拟课程",
-                            "sku_id": "sku_shop_001",
+                            "title": product_title,
+                            "sku_id": sku_id,
+                            "product_id": sku_id,
                             "sku_cnt": 1,
                             "finish_aftersale_sku_cnt": finish_aftersale_sku_cnt,
                         }
@@ -122,6 +125,25 @@ def test_wechat_shop_paid_order_maps_to_unified_paid_status(monkeypatch) -> None
     assert detail["order"]["transaction_id"] == "shop_tx_paid"
 
 
+def test_wechat_shop_subscription_product_is_canonicalized(monkeypatch) -> None:
+    order_id = "3705115058471208124"
+    _mock_order(
+        monkeypatch,
+        order_id=order_id,
+        product_title="老黄的一人公司实践与思考.订阅会员",
+        sku_id="15383271146",
+    )
+    client = _client(monkeypatch)
+
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+    detail = client.get(f"/api/admin/orders/{order_id}?provider=wechat_shop").json()
+    items = client.get("/api/admin/orders?provider=all").json()["items"]
+
+    assert detail["order"]["product_code"] == "subscription_trial_month"
+    assert detail["order"]["product_name"] == "订阅会员"
+    assert any(item["provider_label"] == "微信小店" for item in items)
+
+
 def test_wechat_shop_buyer_mobile_is_available_for_filtering_and_export(monkeypatch) -> None:
     order_id = "3705115058471208123"
     mobile = "13520436848"
@@ -156,6 +178,91 @@ def test_wechat_shop_returned_order_maps_to_refunded_without_refund_ability(monk
     assert detail["order"]["returned_recorded"] is True
     assert detail["order"]["status"] in {"full_refunded", "partial_refunded"}
     assert detail["order"]["can_refund"] is False
+
+
+def test_wechat_shop_refund_request_uses_after_sale_api(monkeypatch) -> None:
+    order_id = "3705115058471208555"
+    _mock_order(monkeypatch, order_id=order_id, status=20, transaction_id="shop_tx_refund")
+    aftersale_calls = []
+
+    def fake_gen_after_sale_order(self, payload: dict, access_token: str) -> dict:
+        aftersale_calls.append(payload)
+        assert payload["order_id"] == order_id
+        assert payload["request_id"].startswith("WSR")
+        assert payload["amount"] == 12900
+        return {"errcode": 0, "aftersale_id": "after_sale_001"}
+
+    monkeypatch.setattr(WeChatShopClient, "gen_after_sale_order", fake_gen_after_sale_order)
+    client = _client(monkeypatch)
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+
+    response = client.post(
+        "/api/admin/refunds",
+        json={
+            "provider": "wechat_shop",
+            "order_no": order_id,
+            "reason": "客户主动申请退款",
+            "order_no_confirmation": order_id,
+            "checked": True,
+            "operator": "admin",
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["provider"] == "wechat_shop"
+    assert body["refund"]["status"] == "PROCESSING"
+    assert body["refund"]["aftersale_id"] == "after_sale_001"
+    assert body["order"]["status"] == "refund_processing"
+    assert aftersale_calls
+    refunds = fixture_wechat_shop_refunds()
+    assert refunds[0]["order_id"] == order_id
+    assert refunds[0]["status"] == "PROCESSING"
+
+
+def test_wechat_shop_detail_page_shows_refund_form(monkeypatch) -> None:
+    order_id = "3705115058471208557"
+    _mock_order(monkeypatch, order_id=order_id, status=20, transaction_id="shop_tx_refund_page")
+    client = _client(monkeypatch)
+
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+    response = client.get(f"/admin/wechat-shop/transactions/{order_id}")
+
+    assert response.status_code == 200
+    assert "申请退款" in response.text
+    assert "微信小店订单号" in response.text
+    assert "/api/admin/refunds" in response.text
+
+
+def test_wechat_shop_refund_failure_is_structured_and_redacted(monkeypatch) -> None:
+    order_id = "3705115058471208556"
+    _mock_order(monkeypatch, order_id=order_id, status=20, transaction_id="shop_tx_refund_fail")
+
+    def fail_gen_after_sale_order(self, payload: dict, access_token: str) -> dict:
+        raise WeChatShopClientError("bad access_token=shop-access-token shop-secret-value")
+
+    monkeypatch.setattr(WeChatShopClient, "gen_after_sale_order", fail_gen_after_sale_order)
+    client = _client(monkeypatch)
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+
+    response = client.post(
+        "/api/admin/refunds",
+        json={
+            "provider": "wechat_shop",
+            "order_no": order_id,
+            "reason": "客户主动申请退款",
+            "order_no_confirmation": order_id,
+            "checked": True,
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error_code"] == "invalid_refund_request"
+    assert "shop-access-token" not in body["message"]
+    assert "shop-secret-value" not in body["message"]
 
 
 def test_wechat_shop_virtual_delivery_is_recorded_without_delivery_api(monkeypatch) -> None:
@@ -197,12 +304,9 @@ def test_wechat_shop_does_not_change_existing_refund_routes(monkeypatch) -> None
     client = _client(monkeypatch)
 
     alipay_refund = client.post("/api/admin/refunds", json={"provider": "alipay", "order_no": "order_fake_0003"})
-    wechat_shop_refund = client.post("/api/admin/refunds", json={"provider": "wechat_shop", "order_no": "3705115058471208928"})
     wechat_pay_refunds = client.get("/api/admin/wechat-pay/orders/1/refunds")
 
     assert alipay_refund.status_code == 400
     assert alipay_refund.json()["error_code"] == "provider_refund_not_supported"
-    assert wechat_shop_refund.status_code == 400
-    assert wechat_shop_refund.json()["error_code"] in {"invalid_refund_request", "provider_refund_not_supported"}
     assert wechat_pay_refunds.status_code == 410
     assert wechat_pay_refunds.json()["error_code"] == "admin_wechat_pay_path_removed"
