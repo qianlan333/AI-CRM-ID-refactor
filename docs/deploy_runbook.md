@@ -106,6 +106,68 @@ sudo systemctl status openclaw-external-push-worker.timer --no-pager
 
 不要在未经审批时修改生产 Nginx、systemd 或 route flag。不要把本地/staging evidence 写成 production canary 已执行。
 
+## Runtime v2 真实发送验收队列隔离
+
+Runtime v2 真实发送验收如果需要人工运行 broadcast worker，不能只检查
+`systemctl --user`。服务器可能同时存在 root/system-level
+`aicrm-broadcast-queue-worker.timer`，它会自动 claim due queued jobs，从而绕过人工
+due queue guard。
+
+验收前记录并检查两个层级：
+
+```bash
+systemctl --user status aicrm-broadcast-queue-worker.timer
+systemctl --user status aicrm-broadcast-queue-worker.service
+systemctl --user is-active aicrm-broadcast-queue-worker.timer
+systemctl --user is-active aicrm-broadcast-queue-worker.service
+
+systemctl status aicrm-broadcast-queue-worker.timer
+systemctl status aicrm-broadcast-queue-worker.service
+systemctl is-active aicrm-broadcast-queue-worker.timer
+systemctl is-active aicrm-broadcast-queue-worker.service
+```
+
+若 user-level timer active，先执行：
+
+```bash
+systemctl --user stop aicrm-broadcast-queue-worker.timer
+```
+
+若 root/system-level timer active，先执行：
+
+```bash
+sudo systemctl stop aicrm-broadcast-queue-worker.timer
+```
+
+必须确认 user-level timer/service 与 root-level timer/service 都为 inactive 或不存在，才允许继续真实发送验收。
+
+每次手动运行 worker `--limit 1` 前都必须执行 due queue guard：
+
+```sql
+SELECT id, source_type, source_id, channel, target_external_userids,
+       content_payload, content_summary, scheduled_for, priority
+FROM broadcast_jobs
+WHERE status = 'queued' AND scheduled_for <= NOW()
+ORDER BY priority ASC, scheduled_for ASC, id ASC
+LIMIT 20;
+```
+
+只有第一条 due job 是本 case job，并且 `source_type='automation_runtime_v2'`、
+`channel='wecom_private'`、目标只包含测试 external_userid、`content_payload.sender_userid`
+等于预期 sender、`content_summary` 包含测试标识，才允许运行 worker。
+
+验收后只恢复原来 active 的 timer：
+
+```bash
+# If the root/system-level timer was originally active:
+sudo systemctl start aicrm-broadcast-queue-worker.timer
+
+# If the user-level timer was originally active:
+systemctl --user start aicrm-broadcast-queue-worker.timer
+```
+
+只恢复实际原来 active 的层级；恢复后确认 timer active，service 最终收敛为 inactive。
+
 ## 日志与备份
 
 - service 日志：
