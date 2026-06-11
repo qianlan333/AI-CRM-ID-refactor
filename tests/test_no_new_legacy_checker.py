@@ -32,6 +32,7 @@ from scripts.check_no_new_legacy import (
     check_group_ops_scheduler_duplicate_checker_native,
     check_internal_run_due_guard_native,
     check_legacy_package_domain_tests_archived,
+    check_legacy_domains_db_infra_package_removed,
     check_legacy_flask_facade_removed,
     check_legacy_flask_http_test_retirement,
     check_legacy_http_runtime_archived,
@@ -642,6 +643,86 @@ def test_legacy_http_runtime_archived_accepts_package_marker(tmp_path: Path) -> 
     _write_test_file(tmp_path, "test_next.py", "def test_next(next_client):\n    assert next_client\n")
 
     assert check_legacy_http_runtime_archived(tmp_path) == []
+
+
+def test_legacy_package_body_removed_flags_domains_path(tmp_path: Path) -> None:
+    legacy_file = tmp_path / "wecom_ability_service/domains/example.py"
+    legacy_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_file.write_text("# retired\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_domain_package_remaining" in codes
+
+
+def test_legacy_package_body_removed_flags_db_path(tmp_path: Path) -> None:
+    legacy_file = tmp_path / "wecom_ability_service/db/helpers.py"
+    legacy_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_file.write_text("# retired\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_db_package_remaining" in codes
+
+
+def test_legacy_package_body_removed_flags_infra_path(tmp_path: Path) -> None:
+    legacy_file = tmp_path / "wecom_ability_service/infra/settings.py"
+    legacy_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_file.write_text("# retired\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_infra_package_remaining" in codes
+
+
+def test_legacy_package_body_removed_flags_schema_path(tmp_path: Path) -> None:
+    schema = tmp_path / "wecom_ability_service/schema_postgres.sql"
+    schema.parent.mkdir(parents=True, exist_ok=True)
+    schema.write_text("-- retired\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_schema_postgres_remaining" in codes
+
+
+def test_legacy_package_body_removed_flags_active_imports(tmp_path: Path) -> None:
+    next_file = tmp_path / "aicrm_next/foo.py"
+    script_file = tmp_path / "scripts/foo.py"
+    test_file = tmp_path / "tests/foo.py"
+    next_file.parent.mkdir(parents=True, exist_ok=True)
+    script_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    next_file.write_text("from wecom_ability_service.domains.example import service\n", encoding="utf-8")
+    script_file.write_text("import wecom_ability_service.db\n", encoding="utf-8")
+    test_file.write_text("from wecom_ability_service.infra import settings\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_package_runtime_import_remaining" in codes
+
+
+def test_legacy_package_body_removed_flags_marker_runtime_import(tmp_path: Path) -> None:
+    package_init = tmp_path / "wecom_ability_service/__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text("from .db import get_db\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_domains_db_infra_package_removed(tmp_path)}
+
+    assert "legacy_package_marker_not_archived" in codes
+
+
+def test_legacy_package_body_removed_accepts_archived_marker(tmp_path: Path) -> None:
+    package_init = tmp_path / "wecom_ability_service/__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text(
+        '"""Archived legacy package namespace."""\n'
+        "from __future__ import annotations\n"
+        "__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    _write_test_file(tmp_path, "test_next.py", "def test_next(next_client):\n    assert next_client\n")
+
+    assert check_legacy_domains_db_infra_package_removed(tmp_path) == []
 
 
 def test_commerce_test_checker_flags_wechat_pay_legacy_import(tmp_path: Path) -> None:

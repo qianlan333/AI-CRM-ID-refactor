@@ -57,7 +57,19 @@ The legacy Flask HTTP/runtime package surface has been archived after tests stop
 - `wecom_ability_service/http/**`, the legacy route registry, and blueprint runtime files have been removed.
 - Package-local legacy templates/static and request-observability runtime files have been removed.
 - Current route/runtime ownership is `aicrm_next`.
-- `wecom_ability_service/domains/**`, `wecom_ability_service/db/**`, `wecom_ability_service/infra/**`, and `wecom_ability_service/schema_postgres.sql` remain temporarily for the next package-removal PR.
+- `wecom_ability_service/domains/**`, `wecom_ability_service/db/**`, `wecom_ability_service/infra/**`, and `wecom_ability_service/schema_postgres.sql` have since been retired.
+
+## Removed Legacy Domains DB Infra Package
+
+The executable legacy package body has been removed after the tests layer and HTTP runtime were disconnected:
+
+- `wecom_ability_service/domains/**`
+- `wecom_ability_service/db/**`
+- `wecom_ability_service/infra/**`
+- `wecom_ability_service/schema_postgres.sql`
+- orphaned root-level package helpers such as legacy service, callback, archive, and WeCom client modules
+
+Only the archived package marker remains temporarily. New code and tests must not import `wecom_ability_service.domains`, `wecom_ability_service.db`, or `wecom_ability_service.infra`; old capabilities must be rebuilt under `aicrm_next/**`.
 
 New executable tests must not reintroduce `wecom_ability_service.http`, `from wecom_ability_service import create_app`, legacy route owner headers, or Flask app factory coverage.
 

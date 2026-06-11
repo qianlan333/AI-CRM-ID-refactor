@@ -145,7 +145,6 @@ PROTECTED_PREFIXES = (
 )
 MIGRATION_PREFIXES = (
     "migrations/",
-    "wecom_ability_service/db/migrations/",
 )
 DESTRUCTIVE_MIGRATION_PATTERNS = (
     r"\bdrop\s+table\b",

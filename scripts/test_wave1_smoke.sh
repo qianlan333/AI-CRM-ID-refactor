@@ -41,7 +41,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 
 GUARDRAIL_TESTS=(
-  "tests/test_refactor_guardrails.py"
+  "tests/test_no_new_legacy_checker.py"
 )
 
 WAVE1_SMOKE_TESTS=(

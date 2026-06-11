@@ -1495,6 +1495,42 @@ LEGACY_FLASK_ROUTE_OWNER_HEADER_MARKERS = (
 )
 
 
+LEGACY_PACKAGE_BODY_PATHS = (
+    (Path("wecom_ability_service/domains"), "legacy_domain_package_remaining"),
+    (Path("wecom_ability_service/db"), "legacy_db_package_remaining"),
+    (Path("wecom_ability_service/infra"), "legacy_infra_package_remaining"),
+    (Path("wecom_ability_service/schema_postgres.sql"), "legacy_schema_postgres_remaining"),
+)
+LEGACY_PACKAGE_RUNTIME_IMPORT_ROOTS = (
+    Path("tests"),
+    Path("scripts"),
+    Path("aicrm_next"),
+    Path(".github"),
+    Path("deploy"),
+)
+LEGACY_PACKAGE_RUNTIME_IMPORT_PREFIXES = (
+    "wecom_ability_service.domains",
+    "wecom_ability_service.db",
+    "wecom_ability_service.infra",
+)
+LEGACY_PACKAGE_MARKER_FORBIDDEN_MARKERS = (
+    "create_app",
+    "from flask",
+    "import flask",
+    "Flask(",
+    "wecom_ability_service.domains",
+    "wecom_ability_service.db",
+    "wecom_ability_service.infra",
+    "from .domains",
+    "from .db",
+    "from .infra",
+    "import requests",
+    "import httpx",
+    "WeComClient",
+    "wecom_client",
+)
+
+
 def check_legacy_http_runtime_archived(root: Path = ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
@@ -8439,6 +8475,94 @@ def check_post_legacy_architecture_freeze(root: Path = ROOT) -> list[Violation]:
     return violations
 
 
+def check_legacy_domains_db_infra_package_removed(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    for rel_path, code in LEGACY_PACKAGE_BODY_PATHS:
+        path = root / rel_path
+        if path.exists():
+            violations.append(
+                Violation(
+                    code,
+                    rel_path.as_posix(),
+                    "legacy package body path still exists",
+                    "The legacy domains/db/infra/schema package body is retired; keep only the archived package marker until final package cleanup.",
+                )
+            )
+
+    package_init = root / "wecom_ability_service/__init__.py"
+    if package_init.exists():
+        source = package_init.read_text(encoding="utf-8")
+        for marker in LEGACY_PACKAGE_MARKER_FORBIDDEN_MARKERS:
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "legacy_package_marker_not_archived",
+                        str(package_init.relative_to(root)),
+                        marker,
+                        "wecom_ability_service/__init__.py must remain a minimal archived marker with no runtime imports or behavior.",
+                    )
+                )
+
+    scan_files: list[Path] = []
+    for rel_root in LEGACY_PACKAGE_RUNTIME_IMPORT_ROOTS:
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        scan_files.extend(path for path in search_root.rglob("*.py") if "__pycache__" not in path.parts)
+        if rel_root in {Path(".github"), Path("deploy")}:
+            scan_files.extend(
+                path
+                for path in search_root.rglob("*")
+                if path.is_file() and path.suffix in {".yml", ".yaml", ".service", ".timer"}
+            )
+    app_path = root / "app.py"
+    if app_path.exists():
+        scan_files.append(app_path)
+
+    for path in sorted(set(scan_files)):
+        rel = str(path.relative_to(root))
+        if rel in {"tests/test_no_new_legacy_checker.py", "scripts/check_no_new_legacy.py"}:
+            continue
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        legacy_imports: set[str] = set()
+        if path.suffix == ".py":
+            try:
+                tree = ast.parse(source, filename=str(path))
+            except SyntaxError:
+                tree = None
+            if tree is not None:
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == "wecom_ability_service" or alias.name.startswith(LEGACY_PACKAGE_RUNTIME_IMPORT_PREFIXES):
+                                legacy_imports.add(alias.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        module_name = node.module or ""
+                        if module_name == "wecom_ability_service":
+                            legacy_imports.add("from wecom_ability_service import ...")
+                        elif module_name.startswith(LEGACY_PACKAGE_RUNTIME_IMPORT_PREFIXES):
+                            legacy_imports.add(module_name)
+        else:
+            for marker in LEGACY_PACKAGE_RUNTIME_IMPORT_PREFIXES + ("from wecom_ability_service import", "import wecom_ability_service"):
+                if marker in source:
+                    legacy_imports.add(marker)
+        if legacy_imports:
+            violations.append(
+                Violation(
+                    "legacy_package_runtime_import_remaining",
+                    rel,
+                    ", ".join(sorted(legacy_imports)),
+                    "Active runtime, scripts, deploy, and executable tests must not import the retired legacy package body.",
+                )
+            )
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -8448,6 +8572,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_legacy_package_domain_tests_archived(ROOT)
         + check_legacy_flask_http_test_retirement(ROOT)
         + check_legacy_http_runtime_archived(ROOT)
+        + check_legacy_domains_db_infra_package_removed(ROOT)
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
         + check_automation_campaign_broadcast_tests_next_native(ROOT)
