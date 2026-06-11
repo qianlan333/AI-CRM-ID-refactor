@@ -129,7 +129,7 @@ def create_stage_entry(
     entry_reason: str,
     snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    if text(membership.get("current_stage")) == text(stage_code):
+    if text(membership.get("current_stage")) == text(stage_code) and as_int(membership.get("current_stage_entry_id")) > 0:
         return None
     row = get_db().execute(
         """
