@@ -102,10 +102,14 @@ def test_production_deploy_installs_and_runs_reply_monitor_timer():
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
     enable_index = workflow.index("sudo systemctl enable aicrm-reply-monitor-run-due.timer")
     restart_timer_index = workflow.index("sudo systemctl restart aicrm-reply-monitor-run-due.timer")
-    start_service_index = workflow.index("sudo systemctl start aicrm-reply-monitor-run-due.service")
+    start_service_index = workflow.index("if ! sudo systemctl start aicrm-reply-monitor-run-due.service; then")
+    service_status_index = workflow.index("sudo systemctl status aicrm-reply-monitor-run-due.service --no-pager || true")
+    journal_index = workflow.index("sudo journalctl -u aicrm-reply-monitor-run-due.service -n 80 --no-pager || true")
+    timer_status_index = workflow.index("sudo systemctl status aicrm-reply-monitor-run-due.timer --no-pager")
 
     assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
     assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
+    assert start_service_index < service_status_index < journal_index < timer_status_index
 
 
 def test_external_push_worker_systemd_units_are_deployable():
