@@ -186,6 +186,7 @@ class SmokeRunner:
         self.skip_frontend = bool(skip_frontend)
         self.db = db or SmokeDatabase(database_url)
         self.http = http
+        self._queue_safety_warnings: list[dict[str, Any]] = []
 
     def environment(self) -> dict[str, Any]:
         return {
@@ -197,6 +198,7 @@ class SmokeRunner:
             "dry_run": self.dry_run,
             "allow_write": self.allow_write,
             "skip_frontend": self.skip_frontend,
+            "queue_safety_warnings": self._queue_safety_warnings,
         }
 
     def run(self, scenario_names: list[str]) -> dict[str, Any]:
@@ -211,8 +213,10 @@ class SmokeRunner:
             ]
             return self._result(scenarios, [])
         self._assert_write_allowed()
+        previous_database_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = self.database_url
         self.db.connect()
+        self._preflight_queue_safety()
         self.http = self.http or SmokeHttpClient(self.app_url, admin_cookie=self.admin_cookie, admin_token=self.admin_token)
         results: list[ScenarioResult] = []
         failures: list[dict[str, Any]] = []
@@ -224,8 +228,13 @@ class SmokeRunner:
                     self.db.rollback()
                     failures.append({"scenario": name, "error": str(exc)})
                     results.append(ScenarioResult(name=name, ok=False, diagnostics={"error": str(exc)}))
+            self._apply_worker_claimed_result(results, failures)
             return self._result(results, failures)
         finally:
+            if previous_database_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_database_url
             self.db.close()
 
     def cleanup(self) -> dict[str, Any]:
@@ -245,7 +254,14 @@ class SmokeRunner:
                     UPDATE broadcast_jobs
                     SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
                     WHERE source_type = 'automation_runtime_v2'
-                      AND status IN ('queued', 'pending', 'planned')
+                      AND (
+                        status IN ('queued', 'pending', 'planned')
+                        OR (
+                            status = 'claimed'
+                            AND outbound_task_id IS NULL
+                            AND sent_at IS NULL
+                        )
+                      )
                       AND (content_payload->>'task_plan_id') IN (SELECT id::text FROM smoke_plans)
                     RETURNING id
                 )
@@ -261,7 +277,7 @@ class SmokeRunner:
                     UPDATE automation_task_plan_v2
                     SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
                     WHERE program_id IN (SELECT id FROM smoke_programs)
-                      AND status IN ('planned', 'rendered', 'enqueued', 'skipped', 'failed')
+                      AND status IN ('planned', 'rendered', 'enqueued', 'skipped', 'failed', 'cancelled')
                     RETURNING id
                 )
                 SELECT COUNT(*) AS count FROM updated_plans
@@ -291,6 +307,69 @@ class SmokeRunner:
         self._assert_database_url()
         if not self.allow_write:
             raise SmokeFailure("--allow-write is required for non-dry-run smoke")
+
+    def _preflight_queue_safety(self) -> None:
+        row = self.db.one(
+            """
+            SELECT COUNT(*) AS count
+            FROM broadcast_jobs
+            WHERE source_type = 'automation_runtime_v2'
+              AND created_at >= CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+              AND (
+                status IN ('claimed', 'sending', 'sent', 'failed')
+                OR claimed_at IS NOT NULL
+                OR sent_at IS NOT NULL
+                OR outbound_task_id IS NOT NULL
+              )
+            """,
+        ) or {}
+        count = int(row.get("count") or 0)
+        if count > 0:
+            self._queue_safety_warnings.append(
+                {
+                    "reason": "recent_runtime_v2_worker_activity_detected",
+                    "recent_claimed_or_sent_jobs": count,
+                    "action": "pause staging broadcast worker timer before acceptance smoke",
+                }
+            )
+
+    def _smoke_worker_claimed_count(self) -> int:
+        pattern = f"{self.smoke_run_id}%"
+        return self.db.scalar(
+            """
+            WITH smoke_programs AS (
+                SELECT id FROM automation_program WHERE program_code LIKE %s
+            ), smoke_plans AS (
+                SELECT id FROM automation_task_plan_v2 WHERE program_id IN (SELECT id FROM smoke_programs)
+            )
+            SELECT COUNT(*) AS count
+            FROM broadcast_jobs bj
+            WHERE bj.source_type = 'automation_runtime_v2'
+              AND (bj.content_payload->>'task_plan_id') IN (SELECT id::text FROM smoke_plans)
+              AND (
+                bj.status IN ('claimed', 'sending', 'sent', 'failed')
+                OR bj.claimed_at IS NOT NULL
+                OR bj.sent_at IS NOT NULL
+                OR bj.outbound_task_id IS NOT NULL
+              )
+            """,
+            (pattern,),
+        )
+
+    def _apply_worker_claimed_result(self, results: list[ScenarioResult], failures: list[dict[str, Any]]) -> None:
+        claimed = self._smoke_worker_claimed_count()
+        if claimed <= 0:
+            return
+        failure = {
+            "scenario": "queue-safety",
+            "error": "worker_claimed_smoke_jobs",
+            "claimed_smoke_jobs": claimed,
+        }
+        failures.append(failure)
+        for item in results:
+            item.ok = False
+            item.diagnostics["worker_claimed"] = True
+            item.diagnostics["claimed_smoke_jobs"] = claimed
 
     def _result(self, scenarios: list[ScenarioResult], failures: list[dict[str, Any]]) -> dict[str, Any]:
         return {

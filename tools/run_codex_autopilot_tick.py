@@ -199,6 +199,7 @@ def diff_hits_stop_condition(paths: set[str], terms: set[str]) -> list[str]:
         "docs/mcp_usage.md",
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "aicrm_next/automation_engine/channels_api.py",
+        "aicrm_next/automation_runtime_v2/bridge.py",
         "scripts/codex_autopilot_tick.sh",
         "scripts/smoke_automation_runtime_v2.py",
         "tools/check_architecture_skill_compliance.py",

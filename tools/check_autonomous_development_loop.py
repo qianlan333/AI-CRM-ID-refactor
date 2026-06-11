@@ -119,6 +119,8 @@ GOVERNANCE_ALLOWED_EXACT = {
     "README.md",
     ".github/workflows/ci.yml",
     "aicrm_next/automation_engine/channels_api.py",
+    "aicrm_next/automation_runtime_v2/bridge.py",
+    "aicrm_next/automation_runtime_v2/channel_binding_service.py",
     "scripts/codex_autopilot_tick.sh",
     "scripts/check_no_new_legacy.py",
     "scripts/run_lint.py",

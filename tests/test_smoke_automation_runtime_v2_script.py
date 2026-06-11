@@ -49,6 +49,8 @@ def test_allow_write_executes_selected_scenario(monkeypatch):
 
     monkeypatch.setattr(smoke.SmokeDatabase, "connect", fake_connect)
     monkeypatch.setattr(smoke.SmokeDatabase, "close", fake_close)
+    monkeypatch.setattr(smoke.SmokeRunner, "_preflight_queue_safety", lambda self: None)
+    monkeypatch.setattr(smoke.SmokeRunner, "_apply_worker_claimed_result", lambda self, results, failures: None)
     monkeypatch.setattr(smoke.SmokeRunner, "scenario_channel_binding", fake_scenario)
     monkeypatch.setattr(smoke, "SmokeHttpClient", lambda *args, **kwargs: object())
 
@@ -66,6 +68,61 @@ def test_allow_write_executes_selected_scenario(monkeypatch):
     assert payload["ok"] is True
     assert payload["environment"]["dry_run"] is False
     assert called == ["connect", "scenario", "close"]
+
+
+def test_remote_app_does_not_push_flask_context_or_import_legacy(monkeypatch):
+    called = []
+
+    def fake_connect(self):
+        called.append("connect")
+
+    def fake_close(self):
+        called.append("close")
+
+    def fake_scenario(self):
+        called.append("scenario")
+        return smoke.ScenarioResult("channel-binding", True, {"events": 1})
+
+    monkeypatch.setattr(smoke.SmokeDatabase, "connect", fake_connect)
+    monkeypatch.setattr(smoke.SmokeDatabase, "close", fake_close)
+    monkeypatch.setattr(smoke.SmokeRunner, "_preflight_queue_safety", lambda self: None)
+    monkeypatch.setattr(smoke.SmokeRunner, "_apply_worker_claimed_result", lambda self, results, failures: None)
+    monkeypatch.setattr(smoke.SmokeRunner, "scenario_channel_binding", fake_scenario)
+    monkeypatch.setattr(smoke, "SmokeHttpClient", lambda *args, **kwargs: object())
+
+    code, payload = smoke.run_cli(
+        [
+            "--database-url",
+            "postgresql://example/db",
+            "--app-url",
+            "https://staging.example.test",
+            "--scenario",
+            "channel-binding",
+            "--allow-write",
+        ]
+    )
+
+    assert code == 0
+    assert payload["ok"] is True
+    assert payload["environment"]["mode"] == "remote-app"
+    assert called == ["connect", "scenario", "close"]
+
+
+def test_local_app_uses_next_test_client_not_legacy_create_app(monkeypatch):
+    captured = {}
+
+    class FakeTestClient:
+        def __init__(self, app):
+            captured["app"] = app
+
+    monkeypatch.setitem(__import__("sys").modules, "wecom_ability_service", None)
+    monkeypatch.setitem(__import__("sys").modules, "wecom_ability_service.observability", None)
+    monkeypatch.setattr("fastapi.testclient.TestClient", FakeTestClient)
+
+    client = smoke.SmokeHttpClient("")
+
+    assert client.mode == "local-app"
+    assert "app" in captured
 
 
 def test_all_scenarios_include_runtime_v2_release_blockers():
@@ -128,7 +185,33 @@ def test_cleanup_is_limited_to_smoke_run_scope():
     assert "broadcast_jobs" in joined_sql
     assert "source_type = 'automation_runtime_v2'" in joined_sql
     assert "status IN ('queued', 'pending', 'planned')" in joined_sql
+    assert "status = 'claimed'" in joined_sql
+    assert "outbound_task_id" in joined_sql
     assert "UPDATE automation_membership_v2" not in joined_sql
     assert fake_db.params == [("smoke_runtime_v2_abc123%",), ("smoke_runtime_v2_abc123%",)]
     assert fake_db.committed is True
     assert fake_db.closed is True
+
+
+def test_worker_claimed_smoke_jobs_fail_scenarios():
+    class FakeDb:
+        def scalar(self, sql, params=()):
+            assert "broadcast_jobs" in sql
+            assert params == ("smoke_runtime_v2_worker%",)
+            return 2
+
+    runner = smoke.SmokeRunner(
+        database_url="postgresql://example/db",
+        smoke_run_id="smoke_runtime_v2_worker",
+        dry_run=False,
+        allow_write=True,
+        db=FakeDb(),  # type: ignore[arg-type]
+    )
+    results = [smoke.ScenarioResult("channel-binding", True)]
+    failures: list[dict] = []
+
+    runner._apply_worker_claimed_result(results, failures)
+
+    assert results[0].ok is False
+    assert results[0].diagnostics["worker_claimed"] is True
+    assert failures[0]["error"] == "worker_claimed_smoke_jobs"
