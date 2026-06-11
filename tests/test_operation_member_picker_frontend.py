@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
 PICKER_CSS = ROOT / "aicrm_next/frontend_compat/static/admin_console/admin_console.css"
 BASE_TEMPLATE = ROOT / "aicrm_next/frontend_compat/templates/admin_console/base.html"
-LEGACY_BASE_TEMPLATE = ROOT / "wecom_ability_service/templates/admin_console/base.html"
 GROUP_OPS_JS = ROOT / "aicrm_next/automation_engine/group_ops/static/admin_console/group_ops.js"
 CHANNEL_FORM = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_form.html"
 CHANNEL_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js"
@@ -116,7 +115,6 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     admin_jobs = _read(ADMIN_JOBS_TEMPLATE)
     admin_jobs_base = _read(ADMIN_JOBS_BASE)
     base_template = _read(BASE_TEMPLATE)
-    legacy_base_template = _read(LEGACY_BASE_TEMPLATE)
 
     assert "OperationMemberPicker.open" in group_ops
     assert "OperationMemberPicker.open" in channel_js
@@ -124,10 +122,8 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     assert "OperationMemberPicker.open" in jobs
     assert "OperationMemberPicker.open" in admin_jobs
     assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in base_template
-    assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in legacy_base_template
     assert "operation_member_picker.js') }}?v=operation-member-picker-fix-20260527" in admin_jobs_base
     assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in base_template
-    assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in legacy_base_template
     for source in [group_ops, channel_js, operations, jobs, admin_jobs]:
         assert "value:" in source
         assert "onSelect:" in source

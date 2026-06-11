@@ -511,7 +511,7 @@ POST_LEGACY_DEVELOPMENT_DOCS = {
         "legacy module / package",
         "替代 Next 模块",
         "删除决策",
-        "keep_temporarily_historical",
+        "legacy_http_runtime_archived",
         "wecom_ability_service/http/admin_hxc_dashboard.py",
         "wecom_ability_service/http/admin_auth_routes.py",
         "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
@@ -529,8 +529,6 @@ POST_LEGACY_DELETED_HTTP_MODULES = {
     "cloud_orchestrator_pages": Path("wecom_ability_service/http/cloud_orchestrator_pages.py"),
     "cloud_orchestrator_plans": Path("wecom_ability_service/http/cloud_orchestrator_plans.py"),
     "cloud_orchestrator_segments": Path("wecom_ability_service/http/cloud_orchestrator_segments.py"),
-}
-POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES = {
     "automation_conversion": Path("wecom_ability_service/http/automation_conversion.py"),
     "automation_conversion_runtime_api": Path("wecom_ability_service/http/automation_conversion_runtime_api.py"),
     "automation_conversion_task_runtime": Path("wecom_ability_service/http/automation_conversion_task_runtime.py"),
@@ -538,6 +536,7 @@ POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES = {
     "automation_conversion_member_api": Path("wecom_ability_service/http/automation_conversion_member_api.py"),
     "customer_automation": Path("wecom_ability_service/http/customer_automation.py"),
 }
+POST_LEGACY_TEMPORARY_HISTORICAL_HTTP_MODULES: dict[str, Path] = {}
 POST_LEGACY_MAIN_FORBIDDEN_MARKERS = {
     "production_compat_router": "post_legacy_main_production_compat_router",
     "production_compat_wildcard_router": "post_legacy_main_production_compat_wildcard_router",
@@ -1451,6 +1450,134 @@ def check_legacy_flask_http_test_retirement(root: Path = ROOT) -> list[Violation
                     rel,
                     "legacy Flask route owner header",
                     "Legacy Flask route owner header tests are retired because production runtime is Next-only.",
+                )
+            )
+
+    return violations
+
+
+LEGACY_HTTP_RUNTIME_PATHS = (
+    Path("wecom_ability_service/http"),
+    Path("wecom_ability_service/routes.py"),
+    Path("wecom_ability_service/mcp_adapter.py"),
+    Path("wecom_ability_service/observability.py"),
+    Path("wecom_ability_service/templates"),
+    Path("wecom_ability_service/static"),
+)
+LEGACY_HTTP_RUNTIME_IMPORT_ROOTS = (
+    Path("tests"),
+    Path("scripts"),
+    Path("aicrm_next"),
+    Path(".github"),
+    Path("deploy"),
+)
+LEGACY_APP_FACTORY_MARKERS = {
+    "def create_app": "create_app",
+    "from flask": "Flask import",
+    "import flask": "Flask import",
+    "Flask(": "Flask app factory",
+    "Blueprint": "Blueprint",
+    "register_blueprint": "register_blueprint",
+    "legacy_flask": "legacy route owner",
+    "ai_crm_legacy_flask": "legacy app header",
+}
+LEGACY_HTTP_RUNTIME_IMPORT_MARKERS = (
+    "wecom_ability_service.http",
+    "from wecom_ability_service import create_app",
+)
+LEGACY_FLASK_ROUTE_OWNER_HEADER_MARKERS = (
+    "X-AICRM-Route-Owner: legacy_flask",
+    "X-AICRM-App: ai_crm_legacy_flask",
+    'X-AICRM-Route-Owner"] == "legacy_flask"',
+    "X-AICRM-Route-Owner'] == 'legacy_flask'",
+    'X-AICRM-App"] == "ai_crm_legacy_flask"',
+    "X-AICRM-App'] == 'ai_crm_legacy_flask'",
+)
+
+
+def check_legacy_http_runtime_archived(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    for rel_path in LEGACY_HTTP_RUNTIME_PATHS:
+        path = root / rel_path
+        if path.exists():
+            violations.append(
+                Violation(
+                    "legacy_http_runtime_path_remaining",
+                    rel_path.as_posix(),
+                    "legacy HTTP/runtime path still exists",
+                    "The legacy Flask HTTP/runtime package surface is archived; keep only domains/db/infra/schema until the next package-removal PR.",
+                )
+            )
+
+    package_init = root / "wecom_ability_service/__init__.py"
+    if package_init.exists():
+        source = package_init.read_text(encoding="utf-8")
+        for marker, detail in LEGACY_APP_FACTORY_MARKERS.items():
+            if marker in source:
+                violations.append(
+                    Violation(
+                        "legacy_app_factory_remaining",
+                        str(package_init.relative_to(root)),
+                        detail,
+                        "wecom_ability_service must be an archived package marker and must not expose a Flask app factory.",
+                    )
+                )
+
+    scan_files: list[Path] = []
+    for rel_root in LEGACY_HTTP_RUNTIME_IMPORT_ROOTS:
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        scan_files.extend(path for path in search_root.rglob("*.py") if "__pycache__" not in path.parts)
+        if rel_root in {Path(".github"), Path("deploy")}:
+            scan_files.extend(path for path in search_root.rglob("*") if path.is_file() and path.suffix in {".yml", ".yaml", ".service", ".timer"})
+    app_path = root / "app.py"
+    if app_path.exists():
+        scan_files.append(app_path)
+
+    for path in sorted(set(scan_files)):
+        rel = str(path.relative_to(root))
+        source = path.read_text(encoding="utf-8")
+        if rel in {"tests/test_no_new_legacy_checker.py", "scripts/check_no_new_legacy.py"}:
+            continue
+        imports_legacy_runtime = False
+        if path.suffix == ".py":
+            try:
+                tree = ast.parse(source, filename=str(path))
+            except SyntaxError:
+                tree = None
+            if tree is not None:
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name == "wecom_ability_service.http" or alias.name.startswith("wecom_ability_service.http."):
+                                imports_legacy_runtime = True
+                    elif isinstance(node, ast.ImportFrom):
+                        module_name = node.module or ""
+                        imported_names = {alias.name for alias in node.names}
+                        if module_name == "wecom_ability_service" and "create_app" in imported_names:
+                            imports_legacy_runtime = True
+                        if module_name == "wecom_ability_service.http" or module_name.startswith("wecom_ability_service.http."):
+                            imports_legacy_runtime = True
+        else:
+            imports_legacy_runtime = any(marker in source for marker in LEGACY_HTTP_RUNTIME_IMPORT_MARKERS)
+        if imports_legacy_runtime:
+            violations.append(
+                Violation(
+                    "legacy_flask_runtime_import_remaining",
+                    rel,
+                    "legacy Flask HTTP/runtime import",
+                    "Tests, scripts, Next runtime, app.py, deploy, and workflow files must not import the archived legacy Flask HTTP/runtime package.",
+                )
+            )
+        if any(marker in source for marker in LEGACY_FLASK_ROUTE_OWNER_HEADER_MARKERS):
+            violations.append(
+                Violation(
+                    "legacy_flask_route_owner_header_remaining",
+                    rel,
+                    "legacy Flask route owner header",
+                    "Legacy Flask route owner headers must not return after the runtime has been archived.",
                 )
             )
 
@@ -8320,6 +8447,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_test_fixture_legacy_boundaries(ROOT)
         + check_legacy_package_domain_tests_archived(ROOT)
         + check_legacy_flask_http_test_retirement(ROOT)
+        + check_legacy_http_runtime_archived(ROOT)
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
         + check_automation_campaign_broadcast_tests_next_native(ROOT)
