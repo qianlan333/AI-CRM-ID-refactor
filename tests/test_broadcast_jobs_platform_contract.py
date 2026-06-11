@@ -5,13 +5,28 @@ from aicrm_next.background_jobs.broadcast_queue_worker import SafeSkippedBroadca
 
 
 def test_default_broadcast_dispatcher_skips_unknown_source_type() -> None:
-    result = SafeSkippedBroadcastDispatcher().dispatch({"id": 1, "source_type": "unknown", "content_payload": {}})
+    result = SafeSkippedBroadcastDispatcher().dispatch(
+        {
+            "id": 1,
+            "source_type": "unknown",
+            "source_table": "mystery_table",
+            "content_type": "mystery",
+            "channel": "",
+            "target_kind": "",
+            "content_payload": {"channel": "unknown_channel"},
+        }
+    )
 
     assert result == {
         "ok": False,
         "status": "skipped",
         "reason": "next_native_dispatcher_missing",
         "source_type": "unknown",
+        "source_table": "mystery_table",
+        "content_type": "mystery",
+        "channel": "",
+        "target_kind": "",
+        "payload_channel": "unknown_channel",
     }
 
 

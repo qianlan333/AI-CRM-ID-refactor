@@ -31,6 +31,11 @@ class SafeSkippedBroadcastDispatcher:
             "status": "skipped",
             "reason": "next_native_dispatcher_missing",
             "source_type": str(job.get("source_type") or ""),
+            "source_table": str(job.get("source_table") or ""),
+            "content_type": str(job.get("content_type") or ""),
+            "channel": str(job.get("channel") or ""),
+            "target_kind": str(job.get("target_kind") or ""),
+            "payload_channel": str(payload.get("channel") or ""),
         }
 
 
@@ -263,6 +268,25 @@ def _resolve_private_attachments(content_package: dict[str, Any]) -> list[dict[s
     return list(attachments or []) + image_attachments
 
 
+def _normalize_private_attachments_for_wecom(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not attachments:
+        return []
+    from aicrm_next.automation_engine.group_ops.message_content import normalize_miniprogram_attachment_payload
+
+    normalized: list[dict[str, Any]] = []
+    for item in attachments:
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        msgtype = _text(item.get("msgtype")).lower()
+        if msgtype != "miniprogram":
+            normalized.append(dict(item))
+            continue
+        payload = item.get("miniprogram") if isinstance(item.get("miniprogram"), dict) else {}
+        normalized.append({"msgtype": "miniprogram", "miniprogram": normalize_miniprogram_attachment_payload(payload)})
+    return normalized
+
+
 def _realtest_guard(*, sender_userid: str, targets: list[str], content_text: str) -> tuple[bool, str]:
     if "【RuntimeV2真实链路测试】" not in content_text and "runtime_v2_realtest_" not in content_text:
         return True, ""
@@ -290,6 +314,10 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
     content_package = _extract_private_content_package(payload)
     try:
         attachments = _resolve_private_attachments(content_package)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
+    try:
+        attachments = _normalize_private_attachments_for_wecom(attachments)
     except Exception as exc:
         return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
     if not content_text and not attachments:

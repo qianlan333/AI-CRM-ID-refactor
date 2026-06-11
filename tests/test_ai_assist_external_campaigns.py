@@ -302,6 +302,29 @@ def test_external_campaign_allows_attachment_only_step() -> None:
     assert repo.steps[0]["content_payload"] == {"miniprogram_library_ids": [17]}
 
 
+def test_campaign_private_broadcast_job_fields_are_complete() -> None:
+    from aicrm_next.cloud_orchestrator.repository import (
+        _campaign_private_broadcast_job_extra_fields,
+        _campaign_private_broadcast_payload,
+    )
+
+    columns, placeholders, params = _campaign_private_broadcast_job_extra_fields(
+        {"business_domain", "channel", "target_kind"}
+    )
+    payload = _campaign_private_broadcast_payload(
+        campaign={"owner_userid": "owner_1"},
+        step={"content_text": "", "content_payload_json": {"miniprogram_library_ids": [17]}},
+        members=[{"external_contact_id": "ext_1"}],
+    )
+
+    assert columns == ["business_domain", "channel", "target_kind"]
+    assert placeholders == ["%s", "%s", "%s"]
+    assert params == ["automation_ops", "wecom_private", "external_userid"]
+    assert payload["channel"] == "wecom_private"
+    assert payload["target_kind"] == "external_userid"
+    assert payload["step"]["content_payload_json"] == {"miniprogram_library_ids": [17]}
+
+
 def test_external_campaign_idempotent_existing_campaign() -> None:
     repo = _repo_with_target()
     repo.campaigns_by_code["fixed_code"] = {"id": 9, "campaign_code": "fixed_code", "review_status": "pending_review", "run_status": "draft"}

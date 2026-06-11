@@ -4,6 +4,8 @@ import hashlib
 import os
 from typing import Any, Callable
 
+from aicrm_next.automation_engine.group_ops.message_content import normalize_miniprogram_attachment_payload
+
 from .audit import record_audit_event
 from .wecom_customer_group_client import WeComCustomerGroupClient, WeComCustomerGroupClientError
 
@@ -33,6 +35,18 @@ def _safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _targets(value: Any) -> list[str]:
     return [str(item or "").strip() for item in list(value or []) if str(item or "").strip()]
+
+
+def _normalize_wecom_attachment(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("attachments entries must be objects")
+    msgtype = str(item.get("msgtype") or "").strip().lower()
+    if msgtype != "miniprogram":
+        return dict(item)
+    payload = item.get("miniprogram")
+    if not isinstance(payload, dict):
+        raise ValueError("miniprogram attachments must include miniprogram")
+    return {"msgtype": "miniprogram", "miniprogram": normalize_miniprogram_attachment_payload(payload)}
 
 
 class WeComPrivateMessageAdapter:
@@ -233,7 +247,7 @@ class WeComPrivateMessageAdapter:
             result["text"] = {"content": str(text.get("content") or "").strip()}
         attachments = (payload or {}).get("attachments")
         if isinstance(attachments, list) and attachments:
-            result["attachments"] = attachments
+            result["attachments"] = [_normalize_wecom_attachment(item) for item in attachments]
         if not result.get("text") and not result.get("attachments"):
             raise ValueError("text or attachments is required for WeCom private message")
         return result
