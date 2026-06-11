@@ -309,6 +309,23 @@ def test_wecom_legacy_freeze_flags_missing_active_deploy_script_target(tmp_path:
     assert "active_deploy_service_points_to_missing_script" in codes
 
 
+def test_wecom_legacy_freeze_accepts_active_deploy_module_script_reference(tmp_path: Path) -> None:
+    service = tmp_path / "deploy/aicrm-reply-monitor-run-due.service"
+    script = tmp_path / "scripts/run_reply_monitor_run_due.py"
+    service.parent.mkdir(parents=True, exist_ok=True)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    service.write_text(
+        "ExecStart=/bin/bash -lc 'python -m scripts.run_reply_monitor_run_due'\n",
+        encoding="utf-8",
+    )
+    script.write_text("print('ok')\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "active_deploy_service_contract_broken" not in codes
+    assert "active_deploy_service_points_to_missing_script" not in codes
+
+
 def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:
     assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
 

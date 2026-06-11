@@ -47,6 +47,13 @@ ACTIVE_DEPLOY_SERVICE_SCRIPT_CONTRACTS = {
 }
 EXTERNAL_PUSH_WORKER_SCRIPT = Path("scripts/run_external_push_worker.py")
 EXTERNAL_PUSH_WORKER_SERVICE = Path("deploy/openclaw-external-push-worker.service")
+
+
+def _service_references_script(service_text: str, script_rel_path: Path) -> bool:
+    module_ref = ".".join(script_rel_path.with_suffix("").parts)
+    return str(script_rel_path) in service_text or f"python -m {module_ref}" in service_text
+
+
 SIDE_EFFECT_MARKERS = {
     "dispatch_wecom_task",
     "create_contact_way",
@@ -1144,7 +1151,7 @@ def check_wecom_legacy_usage_freeze(
             service_text = service_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             service_text = ""
-        if str(script_rel_path) not in service_text:
+        if not _service_references_script(service_text, script_rel_path):
             violations.append(
                 Violation(
                     "active_deploy_service_contract_broken",
