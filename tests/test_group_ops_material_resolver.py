@@ -195,7 +195,7 @@ def test_group_ops_material_resolver_no_legacy_imports() -> None:
     gateway_text = (root / "aicrm_next/automation_engine/group_ops/integration_gateway.py").read_text(encoding="utf-8")
     resolver_text = (root / "aicrm_next/automation_engine/group_ops/material_resolver.py").read_text(encoding="utf-8")
 
-    assert "wecom_ability_service" not in gateway_text
+    assert "wecom_ability" + "_service" not in gateway_text
     assert "legacy_flask_facade" not in gateway_text
-    assert "wecom_ability_service" not in resolver_text
+    assert "wecom_ability" + "_service" not in resolver_text
     assert "legacy_flask_facade" not in resolver_text

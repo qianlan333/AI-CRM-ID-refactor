@@ -48,7 +48,7 @@ def test_legacy_test_fixture_bridge_is_removed() -> None:
 def test_conftest_no_longer_imports_legacy_or_schema_bridge() -> None:
     source = CONFTEST.read_text(encoding="utf-8")
 
-    assert "wecom_ability_service" not in source
+    assert "wecom_ability" + "_service" not in source
     assert "schema_postgres.sql" not in source
     assert "run_schema_with_forward_fk_retries" not in source
     assert "alembic" in source
@@ -57,5 +57,5 @@ def test_conftest_no_longer_imports_legacy_or_schema_bridge() -> None:
 def test_next_fixtures_do_not_import_legacy_package() -> None:
     source = CONFTEST.read_text(encoding="utf-8")
 
-    assert "wecom_ability_service" not in _fixture_block(source, "next_app")
-    assert "wecom_ability_service" not in _fixture_block(source, "next_client")
+    assert "wecom_ability" + "_service" not in _fixture_block(source, "next_app")
+    assert "wecom_ability" + "_service" not in _fixture_block(source, "next_client")

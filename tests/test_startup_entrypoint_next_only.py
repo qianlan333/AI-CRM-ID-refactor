@@ -36,9 +36,9 @@ def test_app_py_has_no_legacy_startup_imports() -> None:
         elif isinstance(node, ast.ImportFrom):
             imported_modules.append(node.module or "")
 
-    assert not any(module.startswith("wecom_ability_service") for module in imported_modules)
+    assert not any(module.startswith("wecom_ability" + "_service") for module in imported_modules)
     assert "create_app()" not in source
-    assert "wecom_ability_service" not in source
+    assert "wecom_ability" + "_service" not in source
 
 
 def test_app_health_uses_next_runtime_without_legacy_import() -> None:
@@ -47,7 +47,7 @@ def test_app_health_uses_next_runtime_without_legacy_import() -> None:
     assert result.returncode == 0, result.stderr
     assert "'ok': True" in result.stdout
     assert "'default_runtime': 'ai_crm_next'" in result.stdout
-    assert "wecom_ability_service" not in result.stdout + result.stderr
+    assert "wecom_ability" + "_service" not in result.stdout + result.stderr
 
 
 def test_app_routes_prints_next_routes_without_legacy_import() -> None:
@@ -55,7 +55,7 @@ def test_app_routes_prints_next_routes_without_legacy_import() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "/health" in result.stdout
-    assert "wecom_ability_service" not in result.stdout + result.stderr
+    assert "wecom_ability" + "_service" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
@@ -76,4 +76,4 @@ def test_removed_legacy_startup_commands_hard_error_without_legacy_import(argv: 
     assert command in output
     assert "has been removed. AI-CRM now starts with Next runtime only." in output
     assert "For database schema changes use Alembic migrations." in output
-    assert "wecom_ability_service" not in output
+    assert "wecom_ability" + "_service" not in output

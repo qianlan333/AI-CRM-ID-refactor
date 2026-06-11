@@ -2,7 +2,7 @@
 
 ## Status
 
-The legacy Flask HTTP/runtime surface was retired in the previous archive step. This step removes the remaining executable legacy package body:
+Legacy package removal is complete. The legacy Flask HTTP/runtime surface was retired first; the remaining executable legacy package body was then removed:
 
 - `wecom_ability_service/domains/**`
 - `wecom_ability_service/db/**`
@@ -10,12 +10,17 @@ The legacy Flask HTTP/runtime surface was retired in the previous archive step. 
 - `wecom_ability_service/schema_postgres.sql`
 - orphaned root-level legacy support modules under `wecom_ability_service`
 
-Production runtime, scripts, deploy units, and tests no longer runtime import the legacy package. Current runtime and replacement behavior live under `aicrm_next/**`.
+Production runtime, scripts, deploy units, tools, and tests no longer runtime import the legacy package. Current runtime and replacement behavior live under `aicrm_next/**`.
 
-## Temporary Remainder
+## Final Package Deletion
 
-`wecom_ability_service/__init__.py` remains as an archived marker until final dependency/reference cleanup. `wecom_ability_service/LEGACY_FROZEN.md` remains as a non-runtime historical note.
+The final archived marker and frozen note have been deleted:
+
+- `wecom_ability_service/__init__.py`
+- `wecom_ability_service/LEGACY_FROZEN.md`
+
+There is no remaining `wecom_ability_service/` package directory. Old fallback commands are deleted historical references only; they are not available runtime paths.
 
 ## Rule
 
-Do not restore legacy package imports or schema setup. If an old domain, DB, infra, or helper capability is needed again, rebuild it under a Next-native owner in `aicrm_next/**` and cover it with Next-native tests.
+Do not restore legacy package imports, schema setup, or fallback commands. If an old domain, DB, infra, or helper capability is needed again, rebuild it under a Next-native owner in `aicrm_next/**` and cover it with Next-native tests.

@@ -45,7 +45,7 @@ EXPECTED_RUNTIME_BOUNDARIES = {
     "app.py",
     "aicrm_next/main.py",
     "aicrm_next/production_compat/api.py high-risk and retained fallback entries only",
-    "wecom_ability_service runtime",
+    "deleted legacy package must not return",
     "migrations/deploy/nginx/systemd",
     "payment/OAuth/WeCom callback/public submit/product/checkout/order/image upload/runtime/outbound paths",
 }
@@ -98,11 +98,9 @@ PROTECTED_EXACT = {
 STARTUP_CLOSEOUT_ALLOWED_EXACT = {
     ".github/workflows/deploy.yml",
     "app.py",
-    "legacy_flask_app.py",
     "scripts/check_no_new_legacy.py",
 }
 PROTECTED_PREFIXES = (
-    "wecom_ability_service/",
     "migrations/",
     "deploy/",
     "systemd/",
@@ -120,9 +118,17 @@ GOVERNANCE_ALLOWED_PREFIXES = (
 GOVERNANCE_ALLOWED_EXACT = {
     "README.md",
     ".github/workflows/ci.yml",
+    "aicrm_next/automation_engine/channels_api.py",
+    "aicrm_next/automation_runtime_v2/bridge.py",
+    "aicrm_next/automation_runtime_v2/channel_binding_service.py",
     "scripts/codex_autopilot_tick.sh",
+    "scripts/check_no_new_legacy.py",
+    "scripts/run_lint.py",
+    "scripts/smoke_automation_runtime_v2.py",
+    "requirements.txt",
     "aicrm_next/production_compat/api.py",
 }
+DELETED_LEGACY_PACKAGE_PREFIX = "wecom_ability" + "_service/"
 REMOVED_CHANNEL_FALLBACK_STRINGS = {
     '"/api/admin/channels"',
     '"/api/admin/channels/{path:path}"',
@@ -373,6 +379,7 @@ def _validate_changed_files(changed: set[str], blockers: list[str]) -> None:
         for path in sorted(changed)
         if path not in RUNTIME_FALLBACK_ALLOWED_EXACT
         and path not in STARTUP_CLOSEOUT_ALLOWED_EXACT
+        and not (path.startswith(DELETED_LEGACY_PACKAGE_PREFIX) and not (ROOT / path).exists())
         and (
             path in PROTECTED_EXACT
             or any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)

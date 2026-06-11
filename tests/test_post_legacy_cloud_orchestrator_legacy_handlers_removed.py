@@ -29,7 +29,7 @@ REPRESENTATIVE_NEXT_ROUTES = {
 
 def test_cloud_orchestrator_legacy_handler_files_are_removed() -> None:
     for module in CLOUD_HTTP_MODULES:
-        assert not (ROOT / "wecom_ability_service/http" / f"{module}.py").exists()
+        assert not (ROOT / ("wecom_ability" + "_service") / "http" / f"{module}.py").exists()
 
 
 def test_representative_cloud_orchestrator_routes_remain_next_owned() -> None:

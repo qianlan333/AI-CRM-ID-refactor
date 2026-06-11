@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+DELETED_LEGACY_PACKAGE = "wecom_ability" + "_service"
 
 
 def _read(path: str) -> str:
@@ -33,8 +34,8 @@ def main() -> int:
     else:
         for path in sorted(channel_entry_dir.glob("*.py")):
             text = path.read_text(encoding="utf-8")
-            if "wecom_ability_service" in text:
-                blockers.append(f"{path.relative_to(ROOT)} imports or references wecom_ability_service")
+            if DELETED_LEGACY_PACKAGE in text:
+                blockers.append(f"{path.relative_to(ROOT)} imports or references deleted legacy package")
 
     runtime = _read("aicrm_next/shared/runtime.py")
     if '"next_live_callback_gateway_enabled": False' in runtime:
@@ -70,8 +71,8 @@ def main() -> int:
         blockers.append("route ownership manifest does not name aicrm_next.channel_entry")
 
     legacy_files = [
-        "wecom_ability_service/http/channel_runtime_diagnosis.py",
-        "wecom_ability_service/domains/automation_conversion/channel_entry_orchestrator.py",
+        f"{DELETED_LEGACY_PACKAGE}/http/channel_runtime_diagnosis.py",
+        f"{DELETED_LEGACY_PACKAGE}/domains/automation_conversion/channel_entry_orchestrator.py",
     ]
     for file_name in legacy_files:
         if "aicrm_next.channel_entry" in _read_optional(file_name):

@@ -1529,6 +1529,48 @@ LEGACY_PACKAGE_MARKER_FORBIDDEN_MARKERS = (
     "WeComClient",
     "wecom_client",
 )
+FINAL_LEGACY_PACKAGE_DIR = Path("wecom_ability_service")
+FINAL_LEGACY_PACKAGE_REFERENCE_ROOTS = tuple(
+    Path(part)
+    for part in (
+        "aicrm_next",
+        "app.py",
+        "scripts",
+        "tests",
+        "tools",
+        ".github",
+        "deploy",
+    )
+)
+FINAL_LEGACY_PACKAGE_REFERENCE_ALLOWLIST = {
+    Path("scripts/check_no_new_legacy.py"),
+    Path("tests/test_no_new_legacy_checker.py"),
+}
+FINAL_LEGACY_FALLBACK_COMMAND_MARKERS = (
+    "python3 app.py run-legacy",
+    "python app.py run-legacy",
+    "python3 legacy_flask_app.py run",
+    "python legacy_flask_app.py run",
+    "legacy Flask fallback",
+)
+FINAL_LEGACY_FALLBACK_HISTORICAL_MARKERS = (
+    "not current",
+    "not available",
+    "no longer",
+    "removed",
+    "deleted",
+    "retired",
+    "historical",
+    "history",
+    "旧命令",
+    "历史",
+    "不要",
+    "不可用",
+    "不可执行",
+    "已关闭",
+    "已删除",
+    "已退休",
+)
 
 
 def check_legacy_http_runtime_archived(root: Path = ROOT) -> list[Violation]:
@@ -2011,7 +2053,6 @@ def check_startup_legacy_closeout(root: Path = ROOT) -> list[Violation]:
 
     checker_text = checker_path.read_text(encoding="utf-8") if checker_path.exists() else ""
     stale_allowlist_markers = (
-        'Path("' + 'app.py' + '")',
         'Path("' + 'legacy_flask_app.py' + '")',
     )
     for marker in stale_allowlist_markers:
@@ -8563,6 +8604,107 @@ def check_legacy_domains_db_infra_package_removed(root: Path = ROOT) -> list[Vio
     return violations
 
 
+def _has_active_flask_import(root: Path) -> bool:
+    for rel_root in (Path("aicrm_next"), Path("app.py"), Path("scripts"), Path("tools")):
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        candidates = [search_root] if search_root.is_file() else sorted(search_root.rglob("*.py"))
+        for path in candidates:
+            rel = path.relative_to(root)
+            if rel in FINAL_LEGACY_PACKAGE_REFERENCE_ALLOWLIST or "__pycache__" in path.parts:
+                continue
+            try:
+                source = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if "from flask" in source or "import flask" in source:
+                return True
+    return False
+
+
+def _line_is_historical_deleted_reference(line: str) -> bool:
+    lowered = line.lower()
+    return any(marker in lowered for marker in FINAL_LEGACY_FALLBACK_HISTORICAL_MARKERS)
+
+
+def check_final_legacy_package_dependency_cleanup(root: Path = ROOT) -> list[Violation]:
+    violations: list[Violation] = []
+
+    package_dir = root / FINAL_LEGACY_PACKAGE_DIR
+    if package_dir.exists():
+        violations.append(
+            Violation(
+                "legacy_package_directory_remaining",
+                FINAL_LEGACY_PACKAGE_DIR.as_posix(),
+                "final legacy package directory still exists",
+                "Delete the archived wecom_ability_service package marker; current runtime lives under aicrm_next.",
+            )
+        )
+
+    for rel_root in FINAL_LEGACY_PACKAGE_REFERENCE_ROOTS:
+        search_root = root / rel_root
+        if not search_root.exists():
+            continue
+        candidates = [search_root] if search_root.is_file() else sorted(_iter_files_under(search_root))
+        for path in candidates:
+            rel = path.relative_to(root)
+            if rel in FINAL_LEGACY_PACKAGE_REFERENCE_ALLOWLIST or "__pycache__" in path.parts:
+                continue
+            try:
+                source = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if rel.parts and rel.parts[0] == "tests" and path.suffix == ".py":
+                has_legacy_reference = bool(_wecom_ast_imports(path))
+            else:
+                has_legacy_reference = "wecom_ability_service" in source
+            if has_legacy_reference:
+                violations.append(
+                    Violation(
+                        "legacy_package_reference_remaining",
+                        rel.as_posix(),
+                        "wecom_ability_service",
+                        "Active runtime, tests, scripts, tools, deploy, and workflow files must not reference the deleted legacy package.",
+                    )
+                )
+
+    docs_root = root / "docs"
+    if docs_root.exists():
+        for path in sorted(_iter_files_under(docs_root)):
+            if path.suffix.lower() not in {".md", ".yaml", ".yml"}:
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                continue
+            for line_no, line in enumerate(lines, start=1):
+                if any(marker in line for marker in FINAL_LEGACY_FALLBACK_COMMAND_MARKERS) and not _line_is_historical_deleted_reference(line):
+                    violations.append(
+                        Violation(
+                            "legacy_fallback_command_reference_remaining",
+                            f"{path.relative_to(root).as_posix()}:{line_no}",
+                            line.strip(),
+                            "Docs must not describe legacy Flask fallback commands as available; keep only deleted/historical wording.",
+                        )
+                    )
+
+    requirements = root / "requirements.txt"
+    if requirements.exists():
+        text = requirements.read_text(encoding="utf-8")
+        if "Flask==" in text and not _has_active_flask_import(root):
+            violations.append(
+                Violation(
+                    "legacy_flask_dependency_remaining",
+                    "requirements.txt",
+                    "Flask dependency without active import usage",
+                    "Remove Flask when no active Next-owned code imports it; keep it only while active non-legacy modules still require it.",
+                )
+            )
+
+    return violations
+
+
 def run_checks(*, strict: bool) -> dict:
     violations = (
         scan_source_tree(ROOT)
@@ -8573,6 +8715,7 @@ def run_checks(*, strict: bool) -> dict:
         + check_legacy_flask_http_test_retirement(ROOT)
         + check_legacy_http_runtime_archived(ROOT)
         + check_legacy_domains_db_infra_package_removed(ROOT)
+        + check_final_legacy_package_dependency_cleanup(ROOT)
         + check_commerce_tests_next_native(ROOT)
         + check_questionnaire_sidebar_customer_tests_next_native(ROOT)
         + check_automation_campaign_broadcast_tests_next_native(ROOT)

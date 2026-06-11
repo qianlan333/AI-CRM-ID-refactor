@@ -49,7 +49,7 @@ def test_protected_runtime_boundaries_are_retained() -> None:
     assert "app.py" in data["protected_runtime_boundaries"]
     assert "legacy_flask_app.py" not in data["protected_runtime_boundaries"]
     assert "aicrm_next/production_compat/api.py high-risk and retained fallback entries only" in data["protected_runtime_boundaries"]
-    assert "wecom_ability_service runtime" in data["protected_runtime_boundaries"]
+    assert "deleted legacy package must not return" in data["protected_runtime_boundaries"]
 
 
 def test_next_cleanup_candidates_close_global_runtime_fallback_track() -> None:
@@ -105,6 +105,5 @@ def test_no_runtime_or_protected_files_changed_if_git_diff_available() -> None:
     allowed_startup_closeout = {"app.py", "legacy_flask_app.py", ".github/workflows/deploy.yml"}
     changed = changed - allowed_startup_closeout
     assert "aicrm_next/main.py" not in changed
-    assert not any(path.startswith("wecom_ability_service/") for path in changed)
     assert not any(path.startswith("migrations/") for path in changed)
     assert not any(path.startswith("deploy/") for path in changed)

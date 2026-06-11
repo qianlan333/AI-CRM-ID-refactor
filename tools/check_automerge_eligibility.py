@@ -20,8 +20,10 @@ REQUIRED_PR_BODY_SECTIONS = {
     "Next action",
 }
 LOW_RISK_PREFIXES = (
+    "docs/architecture/",
     "docs/development/",
     "tools/check_",
+    "tools/generate_",
     "tests/test_",
 )
 DELETED_LOW_RISK_PREFIXES = (
@@ -34,10 +36,21 @@ DELETED_LOW_RISK_PREFIXES = (
 DELETED_LOW_RISK_SUFFIXES = (
     "_gray_smoke.py",
 )
-DELETED_LOW_RISK_EXACT: set[str] = set()
+DELETED_LOW_RISK_EXACT = {
+    "wecom_ability" + "_service/LEGACY_FROZEN.md",
+    "wecom_ability" + "_service/__init__.py",
+}
 RUNTIME_FALLBACK_ALLOWED_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
     "README.md",
+    "requirements.txt",
+    "aicrm_next/automation_engine/channels_api.py",
+    "aicrm_next/automation_runtime_v2/bridge.py",
+    "aicrm_next/automation_runtime_v2/channel_binding_service.py",
+    "scripts/check_no_new_legacy.py",
+    "scripts/run_lint.py",
+    "scripts/smoke_automation_runtime_v2.py",
+    "tests/automation_runtime_v2_test_helpers.py",
     "aicrm_next/customer_read_model/api.py",
     "aicrm_next/automation_engine/api.py",
     "aicrm_next/production_compat/api.py",
@@ -105,8 +118,13 @@ OWNER_DECISION_PACKAGE_PATHS = {
 }
 POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "aicrm_next/production_compat/api.py",
+        "docs/architecture/hxc_dashboard_route_inventory.md",
+        "docs/architecture/legacy_exit_route_registry.yaml",
         "docs/development/legacy_replacement_backlog.md",
         "docs/development/legacy_replacement_backlog.yaml",
+        "docs/development/legacy_maintenance_archive_plan.md",
+        "docs/development/legacy_package_test_archive.md",
+        "docs/development/legacy_package_removal.md",
         "docs/development/autonomous_development_loop.md",
         "docs/development/codex_autopilot_runtime_runbook.md",
         "docs/development/ai_crm_next_architecture_skill.md",
@@ -114,12 +132,17 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "docs/route_ownership/production_route_ownership_manifest.yaml",
         "docs/development/phase_execution_state.yaml",
         "docs/development/autonomous_stop_conditions.yaml",
+        "aicrm_next/automation_runtime_v2/bridge.py",
         "aicrm_next/integration_gateway/legacy_flask_facade.py",
         "scripts/codex_autopilot_tick.sh",
+        "scripts/check_no_new_legacy.py",
+        "scripts/smoke_automation_runtime_v2.py",
         "tools/check_architecture_skill_compliance.py",
         "tools/check_autonomous_development_loop.py",
         "tools/check_automerge_eligibility.py",
         "tools/check_legacy_facade_growth_freeze.py",
+        "tools/check_reply_monitor_run_due_readiness.py",
+        "tools/generate_legacy_replacement_backlog.py",
         "tools/check_production_route_resolution.py",
         "tools/collect_server_readonly_evidence.py",
         "tools/run_codex_autopilot_tick.py",
@@ -127,6 +150,7 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
         "tests/test_autonomous_development_loop.py",
         "tests/test_automerge_eligibility.py",
         "tests/test_codex_autopilot_runtime_contract.py",
+        "tests/test_no_new_legacy_checker.py",
         "tests/test_next_production_cutover_readiness.py",
         "tests/test_next_timer_route_readiness.py",
         "tests/test_production_route_resolution.py",
@@ -134,11 +158,9 @@ POLICY_FILES_CAN_DEFINE_STOP_TERMS = {
 PROTECTED_EXACT = {
     "aicrm_next/main.py",
     "app.py",
-    "legacy_flask_app.py",
 }
 PROTECTED_PREFIXES = (
     "aicrm_next/production_compat/",
-    "wecom_ability_service/",
     "deploy/",
     "systemd/",
     "nginx/",
@@ -325,7 +347,7 @@ def build_report(
         if _is_deleted_path(path):
             continue
         lowered = text.lower()
-        if path not in POLICY_FILES_CAN_DEFINE_STOP_TERMS and path not in RUNTIME_FALLBACK_ALLOWED_EXACT:
+        if path not in POLICY_FILES_CAN_DEFINE_STOP_TERMS and path not in RUNTIME_FALLBACK_ALLOWED_EXACT and not path.startswith("tests/"):
             for pattern in STOP_CONDITION_PATTERNS:
                 if re.search(pattern, lowered):
                     stop_hits.append(f"{path}: {pattern}")

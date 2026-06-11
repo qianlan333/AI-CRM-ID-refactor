@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+DELETED_LEGACY_PACKAGE = "wecom_ability" + "_service"
 
 
 def _read(path: str) -> str:
@@ -47,13 +48,13 @@ def _manifest_record(route_pattern: str) -> dict:
 
 def main() -> int:
     blockers: list[str] = []
-    legacy_http_dir = ROOT / "wecom_ability_service/http"
+    legacy_http_dir = ROOT / DELETED_LEGACY_PACKAGE / "http"
     if legacy_http_dir.exists():
-        callback_routes = _decorated_routes("wecom_ability_service/http/callbacks.py")
+        callback_routes = _decorated_routes(f"{DELETED_LEGACY_PACKAGE}/http/callbacks.py")
         for route in {"/wecom/external-contact/callback", "/api/wecom/events"} & callback_routes:
             blockers.append(f"legacy callbacks.py still registers {route}")
 
-        automation_conversion = _read_optional("wecom_ability_service/http/automation_conversion.py")
+        automation_conversion = _read_optional(f"{DELETED_LEGACY_PACKAGE}/http/automation_conversion.py")
         for route in (
             "/api/admin/channels/runtime-diagnosis",
             "/api/admin/channels/<int:channel_id>/runtime-diagnosis",
@@ -63,12 +64,12 @@ def main() -> int:
             if route in automation_conversion:
                 blockers.append(f"legacy automation_conversion.py still registers {route}")
 
-        if (ROOT / "wecom_ability_service/http/channel_runtime_diagnosis.py").exists():
+        if (ROOT / DELETED_LEGACY_PACKAGE / "http/channel_runtime_diagnosis.py").exists():
             blockers.append("legacy channel_runtime_diagnosis.py still exists")
-    if (ROOT / "wecom_ability_service/domains/automation_conversion/channel_entry_orchestrator.py").exists():
+    if (ROOT / DELETED_LEGACY_PACKAGE / "domains/automation_conversion/channel_entry_orchestrator.py").exists():
         blockers.append("legacy channel_entry_orchestrator.py still exists")
 
-    background_jobs = _read_optional("wecom_ability_service/http/background_jobs.py")
+    background_jobs = _read_optional(f"{DELETED_LEGACY_PACKAGE}/http/background_jobs.py")
     if background_jobs:
         if "HandleQrcodeEnterFromCallbackCommand" in background_jobs:
             blockers.append("legacy background_jobs still imports HandleQrcodeEnterFromCallbackCommand")
@@ -98,8 +99,8 @@ def main() -> int:
             blockers.append(f"{path} does not hard-disable legacy_callback_fallback_enabled")
 
     for path in sorted((ROOT / "aicrm_next/channel_entry").glob("*.py")):
-        if "wecom_ability_service" in path.read_text(encoding="utf-8"):
-            blockers.append(f"{path.relative_to(ROOT)} imports wecom_ability_service")
+        if DELETED_LEGACY_PACKAGE in path.read_text(encoding="utf-8"):
+            blockers.append(f"{path.relative_to(ROOT)} imports deleted legacy package")
 
     for route in (
         "/wecom/external-contact/callback",

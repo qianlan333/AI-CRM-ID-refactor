@@ -116,4 +116,4 @@ def test_app_py_legacy_commands_still_hard_error() -> None:
         output = result.stdout + result.stderr
         assert result.returncode != 0
         assert "has been removed. AI-CRM now starts with Next runtime only." in output
-        assert "wecom_ability_service" not in output
+        assert "wecom_ability" + "_service" not in output

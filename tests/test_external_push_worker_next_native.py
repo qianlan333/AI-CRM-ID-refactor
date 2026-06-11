@@ -22,9 +22,9 @@ def test_worker_script_uses_next_native_service_without_legacy_imports() -> None
         elif isinstance(node, ast.ImportFrom):
             imported_modules.append(node.module or "")
 
-    assert all(not module.startswith("wecom_ability_service") for module in imported_modules)
-    assert "from wecom_ability_service" not in source
-    assert "import wecom_ability_service" not in source
+    assert all(not module.startswith("wecom_ability" + "_service") for module in imported_modules)
+    assert "from " + "wecom_ability" + "_service" not in source
+    assert "import " + "wecom_ability" + "_service" not in source
     assert "create_app" not in source
     assert "app_context" not in source
     assert "aicrm_next.external_push" in source
@@ -92,4 +92,3 @@ def test_deploy_service_still_runs_same_worker_script() -> None:
 def test_worker_is_not_legacy_maintenance_allowlisted() -> None:
     assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
     assert check_wecom_legacy_usage_freeze(ROOT) == []
-

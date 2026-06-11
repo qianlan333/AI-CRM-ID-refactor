@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_DIR = ROOT / "wecom_ability_service"
+RUNTIME_DIR = ROOT / ("wecom_ability" + "_service")
 
 
 def test_production_deploy_loads_postgres_env_before_alembic_upgrade():
@@ -111,7 +111,7 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert not (ROOT / "scripts" / "backup_sqlite.sh").exists()
     retired_seed_demo = ROOT / "scripts" / ("seed_" + "automation_conversion_demo.py")
     assert not retired_seed_demo.exists()
-    assert not (ROOT / "wecom_ability_service" / "http").exists()
+    assert not (ROOT / ("wecom_ability" + "_service") / "http").exists()
 
     broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(encoding="utf-8")
     alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")

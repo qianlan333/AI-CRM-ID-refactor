@@ -16,7 +16,6 @@ PYTHON_TARGETS = [
     "scripts/script_runtime.py",
 ]
 SCAN_ROOTS = [
-    ROOT / "wecom_ability_service",
     ROOT / "tests",
     ROOT / "scripts",
 ]

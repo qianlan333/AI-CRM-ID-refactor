@@ -19,7 +19,7 @@ Status: Current progress snapshot, no runtime change. This document is generated
 
 ## Notes
 
-- Startup compatibility closeout completed: app.py is Next-only; legacy_flask_app.py removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. wecom_ability_service remains only as non-startup legacy maintenance code until separately archived.
+- Startup compatibility closeout completed: app.py is Next-only; legacy Flask runner removed; deploy workflow uses Alembic upgrade path; WECOM_IMPORT_ALLOWLIST cleared. Legacy package removal is complete; current runtime lives under aicrm_next.
 
 ## Summary By Capability Owner
 

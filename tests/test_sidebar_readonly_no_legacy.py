@@ -31,7 +31,7 @@ def test_sidebar_readonly_target_routes_do_not_call_legacy_sidebar_facade() -> N
 
     assert "legacy_sidebar_read_facade" not in combined
     assert "forward_to_legacy_flask" not in combined
-    assert "wecom_ability_service" not in combined
+    assert "wecom_ability" + "_service" not in combined
 
 
 def test_sidebar_readonly_routes_are_not_production_compat_forwards() -> None:

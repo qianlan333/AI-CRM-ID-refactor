@@ -213,6 +213,7 @@ class SmokeRunner:
             ]
             return self._result(scenarios, [])
         self._assert_write_allowed()
+        previous_database_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = self.database_url
         self.db.connect()
         self._preflight_queue_safety()
@@ -230,6 +231,10 @@ class SmokeRunner:
             self._apply_worker_claimed_result(results, failures)
             return self._result(results, failures)
         finally:
+            if previous_database_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_database_url
             self.db.close()
 
     def cleanup(self) -> dict[str, Any]:
@@ -622,19 +627,21 @@ class SmokeRunner:
 
     def scenario_future_scan(self) -> ScenarioResult:
         from aicrm_next.automation_runtime_v2.bridge import process_channel_entry_event
+        from aicrm_next.shared.postgres_connection import db_session
 
         program_id = self._program("future_scan")
         channel_id = self._channel("future_scan")
         self._task(program_id, "future_scan", trigger_type="audience_entered", target_stage="operating")
         self._bind_channel(program_id, channel_id)
         external = self._code("external_future_scan")
-        result = process_channel_entry_event(
-            channel_id=channel_id,
-            external_userid=external,
-            event_log_id=None,
-            occurred_at=_now(),
-            payload_json={"smoke_run_id": self.smoke_run_id, "source": "smoke_future_scan"},
-        )
+        with db_session():
+            result = process_channel_entry_event(
+                channel_id=channel_id,
+                external_userid=external,
+                event_log_id=None,
+                occurred_at=_now(),
+                payload_json={"smoke_run_id": self.smoke_run_id, "source": "smoke_future_scan"},
+            )
         counts = self._counts_for_program(program_id)
         if not result.get("processed") or counts["events"] < 1 or counts["memberships"] < 1:
             raise SmokeFailure(f"future scan did not process v2 chain: result={result}, counts={counts}")
