@@ -173,33 +173,48 @@ def run_external_contact_sync(
     existing = repo.existing_external_userids(corp_id=corp) if not full else set()
     remaining = int(limit) if limit is not None else None
     try:
-        for owner_userid in client.list_follow_users():
+        follow_users = client.list_follow_users()
+    except Exception as exc:
+        return {**summary, "ok": False, "errors": [{"code": "external_contact_sync_failed", "message": str(exc)}]}
+    for owner_userid in follow_users:
+        if remaining is not None and remaining <= 0:
+            break
+        owner_result = {"owner_userid": owner_userid, "ok": True, "external_count": 0, "fetched_count": 0}
+        try:
+            external_userids = client.list_contacts(owner_userid)
+        except Exception as exc:
+            owner_result.update({"ok": False, "error": str(exc)})
+            summary["warnings"].append({"owner_userid": owner_userid, "code": "owner_contact_list_failed", "message": str(exc)})
+            summary["owners"].append(owner_result)
+            continue
+        for external_userid in external_userids:
             if remaining is not None and remaining <= 0:
                 break
-            owner_result = {"owner_userid": owner_userid, "ok": True, "external_count": 0, "fetched_count": 0}
-            for external_userid in client.list_contacts(owner_userid):
-                if remaining is not None and remaining <= 0:
-                    break
-                owner_result["external_count"] += 1
-                if not full and external_userid in existing:
-                    summary["skipped"] += 1
-                    continue
+            owner_result["external_count"] += 1
+            if not full and external_userid in existing:
+                summary["skipped"] += 1
+                continue
+            try:
                 detail = dict(client.get_contact(external_userid))
                 detail.setdefault("external_userid", external_userid)
                 outcome = repo.upsert_contact(corp_id=corp, owner_userid=owner_userid, detail=detail, dry_run=dry_run)
-                summary["processed"] += 1
-                summary["fetched_count"] += 1
-                owner_result["fetched_count"] += 1
-                if outcome.get("ok"):
-                    summary["inserted_or_updated"] += 1
-                else:
-                    summary["skipped"] += 1
-                    summary["warnings"].append({"external_userid": external_userid, "reason": outcome.get("reason")})
-                existing.add(external_userid)
-                if remaining is not None:
-                    remaining -= 1
-            summary["owners"].append(owner_result)
-        summary.update(repo.counts())
-        return summary
-    except Exception as exc:
-        return {**summary, "ok": False, "errors": [{"code": "external_contact_sync_failed", "message": str(exc)}]}
+            except Exception as exc:
+                summary["skipped"] += 1
+                warning = {"owner_userid": owner_userid, "external_userid": external_userid, "code": "contact_sync_failed", "message": str(exc)}
+                owner_result.setdefault("warnings", []).append(warning)
+                summary["warnings"].append(warning)
+                continue
+            summary["processed"] += 1
+            summary["fetched_count"] += 1
+            owner_result["fetched_count"] += 1
+            if outcome.get("ok"):
+                summary["inserted_or_updated"] += 1
+            else:
+                summary["skipped"] += 1
+                summary["warnings"].append({"external_userid": external_userid, "reason": outcome.get("reason")})
+            existing.add(external_userid)
+            if remaining is not None:
+                remaining -= 1
+        summary["owners"].append(owner_result)
+    summary.update(repo.counts())
+    return summary
