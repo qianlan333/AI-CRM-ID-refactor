@@ -211,6 +211,18 @@ def ensure_runtime_v2_base_tables() -> None:
         ON questionnaires(slug)
         """,
         """
+        CREATE TABLE IF NOT EXISTS automation_agent_output (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_agent_config_agent_code
         ON automation_agent_config(agent_code)
         """,
@@ -257,6 +269,65 @@ def ensure_runtime_v2_base_tables() -> None:
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_output_schema_json JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_version INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE automation_agent_config ADD COLUMN IF NOT EXISTS published_by TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS run_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS request_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS batch_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS userid TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS external_contact_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS agent_type TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS input_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS variables_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS final_prompt_preview TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS role_prompt_version INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS task_prompt_version INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS error_message TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS latency_ms INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS parent_run_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS replay_of_run_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_run ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS output_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS run_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS request_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS userid TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS external_contact_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS output_type TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS raw_output_text TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS normalized_output_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS rendered_output_text TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS target_agent_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS target_pool TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS confidence NUMERIC NOT NULL DEFAULT 0",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS need_human_review BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS applied_status TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS adopted_by TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS adopted_action TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS adopted_at TIMESTAMPTZ",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS outcome_status TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS outcome_value TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS revision_of_output_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_output ADD COLUMN IF NOT EXISTS error_message TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS run_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS model_name TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS request_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS prompt_hash TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS request_summary JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS response_summary JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS latency_ms INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE automation_agent_llm_call_log ADD COLUMN IF NOT EXISTS error_message TEXT NOT NULL DEFAULT ''",
     ]
     for statement in statements:
         conn.execute(statement)
@@ -349,8 +420,10 @@ def seed_task(
     return int(row["id"])
 
 
-def seed_agent(agent_code: str = "runtime_agent", *, published: bool = True) -> None:
+def seed_agent(agent_code: str = "runtime_agent", *, published: bool = True, role_prompt: str | None = None, task_prompt: str | None = None) -> None:
     conn = db()
+    role = role_prompt if role_prompt is not None else ("role" if published else "")
+    task = task_prompt if task_prompt is not None else ("请根据问卷生成话术" if published else "")
     conn.execute(
         """
         INSERT INTO automation_agent_config (
@@ -363,7 +436,7 @@ def seed_agent(agent_code: str = "runtime_agent", *, published: bool = True) -> 
             published_task_prompt = EXCLUDED.published_task_prompt,
             published_version = EXCLUDED.published_version
         """,
-        (agent_code, agent_code, "role" if published else "", "请根据问卷生成话术" if published else "", 1 if published else 0),
+        (agent_code, agent_code, role, task, 1 if published else 0),
     )
     conn.commit()
 
