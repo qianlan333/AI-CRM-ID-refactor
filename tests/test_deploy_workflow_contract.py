@@ -54,12 +54,14 @@ def test_production_deploy_runs_alembic_upgrade_before_service_restart():
     env_source_index = workflow.index("source /home/ubuntu/.openclaw-wecom-pg.env")
     database_url_guard_index = workflow.index('test -n "${DATABASE_URL:-}"')
     pip_install_index = workflow.index("pip install -r requirements.txt")
+    stop_broadcast_timer_index = workflow.index("sudo systemctl stop openclaw-broadcast-queue-worker.timer || true")
+    stop_broadcast_service_index = workflow.index("sudo systemctl stop openclaw-broadcast-queue-worker.service || true")
     alembic_upgrade_index = workflow.index("python3 -m alembic upgrade head")
     restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
     alembic_table = "alembic_" + "version"
 
     assert env_source_index < database_url_guard_index < alembic_upgrade_index
-    assert pip_install_index < alembic_upgrade_index < restart_index
+    assert pip_install_index < stop_broadcast_timer_index < stop_broadcast_service_index < alembic_upgrade_index < restart_index
     assert "python3 app.py init-db" not in workflow
     assert "python app.py init-db" not in workflow
     assert "alembic stamp head" not in workflow
@@ -119,6 +121,25 @@ def test_production_deploy_installs_and_runs_reply_monitor_timer():
     assert "sudo systemctl start aicrm-reply-monitor-capture.service" not in workflow
 
 
+def test_production_deploy_installs_and_runs_broadcast_queue_worker_timer():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    copy_service_index = workflow.index("sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/")
+    copy_timer_index = workflow.index("sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/")
+    daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    enable_index = workflow.index("sudo systemctl enable openclaw-broadcast-queue-worker.timer")
+    restart_timer_index = workflow.index("sudo systemctl restart openclaw-broadcast-queue-worker.timer")
+    start_service_index = workflow.index("if ! sudo systemctl start openclaw-broadcast-queue-worker.service; then")
+    service_status_index = workflow.index("sudo systemctl status openclaw-broadcast-queue-worker.service --no-pager || true")
+    journal_index = workflow.index("sudo journalctl -u openclaw-broadcast-queue-worker.service -n 80 --no-pager || true")
+    timer_status_index = workflow.index("sudo systemctl status openclaw-broadcast-queue-worker.timer --no-pager")
+
+    assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
+    assert start_service_index < service_status_index < journal_index < timer_status_index
+
+
 def test_external_push_worker_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "openclaw-external-push-worker.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "openclaw-external-push-worker.timer").read_text(encoding="utf-8")
@@ -131,6 +152,24 @@ def test_external_push_worker_systemd_units_are_deployable():
     assert "OnCalendar=*-*-* *:*:20" in timer
     assert "Persistent=true" in timer
     assert "Unit=openclaw-external-push-worker.service" in timer
+
+
+def test_broadcast_queue_worker_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "openclaw-broadcast-queue-worker.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "openclaw-broadcast-queue-worker.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE=real" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_broadcast_queue_worker.py" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+    assert "OnCalendar=*-*-* *:*:00" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=openclaw-broadcast-queue-worker.service" in timer
 
 
 def test_reply_monitor_run_due_systemd_units_are_deployable():

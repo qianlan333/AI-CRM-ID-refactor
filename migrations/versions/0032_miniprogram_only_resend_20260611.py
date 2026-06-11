@@ -21,6 +21,7 @@ NEW_GROUP_LABEL = "本周第二推飞书表小程序补发 · HuangYouCan · 202
 
 
 def upgrade() -> None:
+    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
     op.execute(
         f"""
         WITH constants AS (
