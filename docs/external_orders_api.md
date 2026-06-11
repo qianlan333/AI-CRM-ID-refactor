@@ -1,0 +1,247 @@
+# 外部订单查询 API
+
+## 概述
+
+这组接口给外部系统只读拉取订单数据，覆盖 `wechat`、`alipay`、`wechat_shop` 三类渠道。
+
+接口只查询本地订单读模型，不会创建订单、发起支付、发起退款，也不会主动同步微信小店订单。
+
+## 鉴权
+
+所有请求都必须带 Bearer Token：
+
+```http
+Authorization: Bearer <AUTOMATION_INTERNAL_API_TOKEN>
+```
+
+服务端读取环境变量：
+
+```bash
+AUTOMATION_INTERNAL_API_TOKEN
+```
+
+错误语义：
+
+| 场景 | HTTP 状态 | error_code |
+|---|---:|---|
+| 服务端未配置 token | `503` | `internal_token_not_configured` |
+| 请求未带 token | `401` | `missing_internal_token` |
+| token 错误 | `401` | `invalid_internal_token` |
+
+## 当前产品编码对照
+
+以下对照来自当前生产商品列表 `GET /api/admin/wechat-pay/products?limit=100`，用于 `product_code` 参数。
+
+| product_code | 产品名称 | 金额 | 状态 | 备注 |
+|---|---|---:|---|---|
+| `premium_monthly_trial` | 黄小璨月度会员私教版 | 69.00 | active | 当前可用 |
+| `subscription_monthly` | 黄小璨订阅版-月付 | 19.90 | active | 当前可用 |
+| `subscription_trial_month` | 黄小璨首月体验 | 9.90 | active | 当前可用 |
+| `prd_20260528102810_0fe9ac` | 黄小璨私教版年度会员 | 999.00 | active | 当前可用 |
+
+历史订单编码兼容：
+
+| 历史 product_code | 归并到当前 product_code |
+|---|---|
+| `prd_20260518095708_9f77db` | `subscription_trial_month` |
+| `prd_20260601055439_3c4f56` | `premium_monthly_trial` |
+
+调用时传当前编码即可命中兼容的历史编码。例如传 `subscription_trial_month`，会同时匹配 `subscription_trial_month` 和 `prd_20260518095708_9f77db`。
+
+## 批量查询订单
+
+```http
+GET /api/external/orders
+```
+
+### Query 参数
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `provider` | string | 否 | `all` | `all`、`wechat`、`alipay`、`wechat_shop` |
+| `paid_from` | integer | 否 | - | 付款开始时间，秒级 Unix 时间戳；传入后只返回已付款订单 |
+| `paid_to` | integer | 否 | - | 付款结束时间，秒级 Unix 时间戳；传入后只返回已付款订单 |
+| `created_from` | integer | 否 | - | 订单创建开始时间，秒级 Unix 时间戳 |
+| `created_to` | integer | 否 | - | 订单创建结束时间，秒级 Unix 时间戳 |
+| `product_code` | string | 否 | - | 产品编码，见上方产品编码对照 |
+| `payment_status` | string | 否 | - | `pending`、`paid`、`closed`、`failed`、`refund_processing`、`partial_refunded`、`full_refunded` |
+| `is_paid` | boolean string | 否 | - | `true` 或 `false` |
+| `is_refunded` | boolean string | 否 | - | `true` 或 `false`；退款中也算 `true` |
+| `order_no` | string | 否 | - | 商户订单号；微信小店为小店订单号 |
+| `transaction_id` | string | 否 | - | 微信/支付宝/微信小店支付单号 |
+| `mobile` | string | 否 | - | 手机号 |
+| `external_userid` | string | 否 | - | 企业微信外部联系人 ID |
+| `unionid` | string | 否 | - | 微信 unionid |
+| `limit` | integer | 否 | `100` | 每页条数，最大 `500` |
+| `cursor` | string | 否 | - | 下一页游标，使用上一页返回的 `next_cursor` |
+
+不支持按商品名称筛选；外部对接统一使用 `product_code`。
+
+### 请求示例
+
+拉取 2026-06-01 至 2026-06-11 的所有已付款订单：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders?provider=all&paid_from=1780272000&paid_to=1781222399&is_paid=true&limit=100"
+```
+
+只拉取订阅版月付：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders?provider=all&product_code=subscription_monthly&is_paid=true&limit=100"
+```
+
+只拉取微信小店订单：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders?provider=wechat_shop&is_paid=true&limit=100"
+```
+
+### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | 是否成功 |
+| `items` | 订单数组 |
+| `next_cursor` | 下一页游标；为空表示没有下一页 |
+| `has_more` | 是否还有下一页 |
+| `limit` | 当前页大小 |
+| `total` | 当前查询估算总数 |
+
+`items[]` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `provider` | 渠道：`wechat`、`alipay`、`wechat_shop` |
+| `order_no` | 商户订单号；微信小店为小店订单号 |
+| `transaction_id` | 平台支付单号 |
+| `paid_at` | 付款时间，服务端展示格式 |
+| `created_at` | 创建时间，服务端展示格式 |
+| `product_code` | 产品编码 |
+| `payment_status` | 标准支付状态 |
+| `status_label` | 状态展示文案 |
+| `amount_total` | 金额，单位分 |
+| `amount_yuan` | 金额，单位元，字符串 |
+| `currency` | 币种 |
+| `is_paid` | 是否已付款 |
+| `is_refunded` | 是否退款或退款中 |
+| `refund_status` | 退款状态 |
+| `refunded_amount_total` | 已退款金额，单位分 |
+| `mobile` | 手机号 |
+| `unionid` | 微信 unionid |
+| `external_userid` | 企业微信外部联系人 ID |
+| `detail_url` | 详情接口路径 |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "provider": "wechat",
+      "order_no": "WXP202606110001",
+      "transaction_id": "4200000000000000000",
+      "paid_at": "2026-06-11 10:30:22",
+      "created_at": "2026-06-11 10:29:58",
+      "product_code": "subscription_monthly",
+      "payment_status": "paid",
+      "status_label": "已支付",
+      "amount_total": 1990,
+      "amount_yuan": "19.90",
+      "currency": "CNY",
+      "is_paid": true,
+      "is_refunded": false,
+      "refund_status": "",
+      "refunded_amount_total": 0,
+      "mobile": "138****0000",
+      "unionid": "xxx",
+      "external_userid": "wm_xxx",
+      "detail_url": "/api/external/orders/WXP202606110001?provider=wechat"
+    }
+  ],
+  "next_cursor": "",
+  "has_more": false
+}
+```
+
+## 查询订单详情
+
+```http
+GET /api/external/orders/{order_no}
+```
+
+### Query 参数
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `provider` | string | 否 | `auto` | `auto`、`wechat`、`alipay`、`wechat_shop` |
+
+### 请求示例
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders/WXP202606110001?provider=wechat"
+```
+
+微信小店详情：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders/3705115058471208928?provider=wechat_shop"
+```
+
+详情响应复用统一订单详情投影，包含客户、商品编码、金额、可退款金额、已退款/退款中金额、回调摘要和时间线。外部对接统一按 `product_code` 识别产品。
+
+## 分页规则
+
+首次请求不传 `cursor`。如果响应中：
+
+```json
+{
+  "has_more": true,
+  "next_cursor": "xxxx"
+}
+```
+
+下一页请求原筛选条件保持不变，追加 `cursor`：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"$BASE/api/external/orders?provider=all&is_paid=true&limit=100&cursor=xxxx"
+```
+
+不要自行拼 `offset`。
+
+## 微信小店订单来源
+
+微信小店订单查询读取本地 `wechat_shop_orders`。当前订单进入本地库的链路是：
+
+1. 微信小店回调 `/api/wechat-shop/notify`。
+2. 系统从回调中提取 `order_id`。
+3. 系统使用 `WECHAT_SHOP_APPID` 和 `WECHAT_SHOP_APPSECRET` 获取 `stable_token`。
+4. 系统调用微信官方 `/channels/ec/order/get` 拉取该订单详情。
+5. 系统写入 `wechat_shop_orders` 和 `wechat_shop_order_events`。
+6. 外部订单 API 再从本地读模型读取。
+
+如果已知订单号但本地没有记录，可由受控后台入口按订单号补同步：
+
+```http
+POST /api/admin/wechat-shop/orders/{order_id}/sync
+```
+
+## 时间戳说明
+
+`paid_from`、`paid_to`、`created_from`、`created_to` 都必须传秒级 Unix 时间戳。
+
+示例：
+
+| 时间 | 秒级时间戳 |
+|---|---:|
+| 2026-06-01 00:00:00 UTC | `1780272000` |
+| 2026-06-11 23:59:59 UTC | `1781222399` |
+
+不要传毫秒级时间戳，例如 `1780272000000` 会被拒绝。

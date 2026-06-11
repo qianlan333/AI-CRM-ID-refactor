@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from aicrm_next.shared.errors import NotFoundError
@@ -30,7 +30,10 @@ def _parse_time(value: Any) -> datetime:
     text = _text(value).replace("Z", "+00:00")
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(text, fmt)
+            parsed = datetime.strptime(text, fmt)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
         except ValueError:
             continue
     return datetime.min
@@ -57,9 +60,11 @@ def normalize_order_filters(filters: dict[str, Any] | None = None) -> dict[str, 
         "status": _text(payload.get("status") or payload.get("payment_status")),
         "payment_status": _text(payload.get("payment_status") or payload.get("status")),
         "product_code": _text(payload.get("product_code")),
+        "product_name": _text(payload.get("product_name")),
         "mobile": _text(payload.get("mobile")),
         "external_userid": _text(payload.get("external_userid") or payload.get("identity")),
         "identity": _text(payload.get("identity") or payload.get("external_userid")),
+        "unionid": _text(payload.get("unionid")),
         "transaction_id": _text(payload.get("transaction_id") or payload.get("platform_transaction_no")),
         "platform_transaction_no": _text(payload.get("platform_transaction_no") or payload.get("transaction_id")),
         "order_no": _text(payload.get("order_no") or payload.get("out_trade_no")),
@@ -70,6 +75,8 @@ def normalize_order_filters(filters: dict[str, Any] | None = None) -> dict[str, 
         "date_to": _text(payload.get("date_to") or payload.get("created_to")),
         "paid_from": _text(payload.get("paid_from")),
         "paid_to": _text(payload.get("paid_to")),
+        "is_paid": _text(payload.get("is_paid")).lower(),
+        "is_refunded": _text(payload.get("is_refunded")).lower(),
     }
 
 
@@ -96,6 +103,37 @@ def _normalize_order_item(item: dict[str, Any]) -> dict[str, Any]:
     return order
 
 
+_PAID_STATUSES = {"paid", "refund_processing", "partial_refunded", "full_refunded"}
+_REFUND_STATUSES = {"refund_processing", "partial_refunded", "full_refunded"}
+_TRUE_VALUES = {"1", "true", "yes", "y", "on"}
+_FALSE_VALUES = {"0", "false", "no", "n", "off"}
+
+
+def _bool_filter(value: str) -> bool | None:
+    normalized = _text(value).lower()
+    if normalized in _TRUE_VALUES:
+        return True
+    if normalized in _FALSE_VALUES:
+        return False
+    return None
+
+
+def _order_status(item: dict[str, Any]) -> str:
+    return _text(item.get("status") or item.get("payment_status")).lower()
+
+
+def _is_paid(item: dict[str, Any]) -> bool:
+    return _order_status(item) in _PAID_STATUSES or bool(_text(item.get("paid_at")))
+
+
+def _is_refunded(item: dict[str, Any]) -> bool:
+    return (
+        _order_status(item) in _REFUND_STATUSES
+        or _int(item.get("refunded_amount_total")) > 0
+        or _int(item.get("active_refund_amount_total")) > 0
+    )
+
+
 def _post_filter(items: list[dict[str, Any]], filters: dict[str, str]) -> list[dict[str, Any]]:
     order_no = filters.get("order_no") or filters.get("out_trade_no")
     paid_from = filters.get("paid_from")
@@ -103,11 +141,27 @@ def _post_filter(items: list[dict[str, Any]], filters: dict[str, str]) -> list[d
     rows = items
     if order_no:
         rows = [item for item in rows if order_no in _text(item.get("order_no") or item.get("out_trade_no") or item.get("merchant_order_no"))]
+    if filters.get("product_name"):
+        needle = filters["product_name"].lower()
+        rows = [item for item in rows if needle in _text(item.get("product_name") or item.get("product_title")).lower()]
+    if filters.get("unionid"):
+        needle = filters["unionid"].lower()
+        rows = [item for item in rows if needle in _text(item.get("unionid") or (item.get("customer") or {}).get("unionid")).lower()]
     if paid_from:
-        rows = [item for item in rows if not _text(item.get("paid_at")) or _text(item.get("paid_at")) >= paid_from]
+        rows = [item for item in rows if _text(item.get("paid_at")) and _parse_time(item.get("paid_at")) >= _parse_time(paid_from)]
     if paid_to:
-        rows = [item for item in rows if not _text(item.get("paid_at")) or _text(item.get("paid_at")) <= paid_to]
+        rows = [item for item in rows if _text(item.get("paid_at")) and _parse_time(item.get("paid_at")) <= _parse_time(paid_to)]
+    paid_filter = _bool_filter(filters.get("is_paid", ""))
+    if paid_filter is not None:
+        rows = [item for item in rows if _is_paid(item) is paid_filter]
+    refund_filter = _bool_filter(filters.get("is_refunded", ""))
+    if refund_filter is not None:
+        rows = [item for item in rows if _is_refunded(item) is refund_filter]
     return rows
+
+
+def _order_sort_key(item: dict[str, Any]) -> tuple[datetime, datetime]:
+    return (_parse_time(item.get("paid_at")), _parse_time(item.get("created_at")))
 
 
 def list_orders(
@@ -116,11 +170,12 @@ def list_orders(
     filters: dict[str, Any] | None = None,
     limit: int = 50,
     offset: int = 0,
+    max_limit: int = 100,
 ) -> dict[str, Any]:
     normalized_provider = normalize_provider(provider)
     if normalized_provider == "auto":
         normalized_provider = "all"
-    page_limit = normalize_limit(limit)
+    page_limit = normalize_limit(limit, maximum=max_limit)
     page_offset = normalize_offset(offset)
     normalized_filters = normalize_order_filters(filters)
     selected = list(PROVIDERS if normalized_provider == "all" else (normalized_provider,))
@@ -133,12 +188,16 @@ def list_orders(
             limit=query_limit,
             offset=0 if normalized_provider == "all" else page_offset,
         )
+        payload_items = list(payload.get("items", []))
         provider_items = [_normalize_order_item(dict(item)) for item in payload.get("items", [])]
         provider_items = _post_filter(provider_items, normalized_filters)
         items.extend(provider_items)
-        total += int(payload.get("total") or len(provider_items))
+        provider_total = int(payload.get("total") or len(provider_items))
+        if len(provider_items) != len(payload_items):
+            provider_total = len(provider_items)
+        total += provider_total
     if normalized_provider == "all":
-        items.sort(key=lambda item: _parse_time(item.get("created_at")), reverse=True)
+        items.sort(key=_order_sort_key, reverse=True)
         items = items[page_offset : page_offset + page_limit]
     has_more = page_offset + page_limit < total
     return {
