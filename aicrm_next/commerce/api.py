@@ -61,6 +61,7 @@ from .repo import build_commerce_repository
 from .wechat_shop_service import (
     handle_wechat_shop_notify,
     list_wechat_shop_events,
+    list_wechat_shop_sync_runs,
     sanitize_wechat_shop_error,
     sync_wechat_shop_order,
     verify_echo as verify_wechat_shop_echo,
@@ -1304,6 +1305,15 @@ def list_admin_wechat_shop_events(
 ) -> JSONResponse:
     payload = list_wechat_shop_events({"order_id": order_id}, limit=limit, offset=offset)
     return JSONResponse(jsonable_encoder(_payment_final_payload(payload, source_status="next_wechat_shop_events")), headers=_payment_final_headers())
+
+
+@router.get("/api/admin/wechat-shop/sync-runs")
+def list_admin_wechat_shop_sync_runs(
+    limit: int = Query(50, description="分页条数，默认 50，最大 100"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+) -> JSONResponse:
+    payload = list_wechat_shop_sync_runs(limit=limit, offset=offset)
+    return JSONResponse(jsonable_encoder(_payment_final_payload(payload, source_status="next_wechat_shop_sync_runs")), headers=_payment_final_headers())
 
 
 @router.post(

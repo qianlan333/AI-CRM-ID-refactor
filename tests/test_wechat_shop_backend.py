@@ -4,7 +4,13 @@ from fastapi.testclient import TestClient
 
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.commerce.wechat_shop_client import WeChatShopClient, WeChatShopClientError
-from aicrm_next.commerce.wechat_shop_service import fixture_wechat_shop_order, fixture_wechat_shop_refunds
+from aicrm_next.commerce.wechat_shop_service import (
+    fixture_wechat_shop_order,
+    fixture_wechat_shop_refunds,
+    sync_wechat_shop_orders_backfill,
+    sync_wechat_shop_orders_incremental,
+    sync_wechat_shop_orders_window,
+)
 from aicrm_next.main import create_app
 
 
@@ -312,6 +318,117 @@ def test_wechat_shop_manual_sync_error_is_structured_and_redacted(monkeypatch) -
     assert body["error_code"] == "wechat_shop_order_sync_failed"
     assert "shop-access-token" not in body["message"]
     assert "shop-secret-value" not in body["message"]
+
+
+def test_wechat_shop_window_sync_paginates_and_keeps_order_ids_as_strings(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    order_ids = ["370511505847120892812345678901", "370511505847120892812345678902"]
+    list_calls = []
+    get_calls = []
+    monkeypatch.setattr(WeChatShopClient, "get_stable_access_token", lambda self, force_refresh=False: {"access_token": "shop-access-token", "expires_in": 7200})
+
+    def fake_list_orders(self, *, start_time: int, end_time: int, access_token: str, time_mode: str = "update_time", page_size: int = 100, next_key: str = "") -> dict:
+        list_calls.append({"start_time": start_time, "end_time": end_time, "time_mode": time_mode, "page_size": page_size, "next_key": next_key})
+        if not next_key:
+            return {"errcode": 0, "order_id_list": [int(order_ids[0])], "has_more": True, "next_key": "page-2"}
+        return {"errcode": 0, "order_id_list": [order_ids[1]], "has_more": False, "next_key": ""}
+
+    def fake_get_order(self, requested_order_id: str, access_token: str) -> dict:
+        get_calls.append(requested_order_id)
+        return {
+            "errcode": 0,
+            "order": {
+                "order_id": requested_order_id,
+                "status": 20,
+                "create_time": 1700000000,
+                "order_detail": {
+                    "pay_info": {"pay_time": 1700000100, "transaction_id": f"tx_{requested_order_id[-4:]}"},
+                    "price_info": {"order_price": 9900},
+                    "delivery_info": {"deliver_method": 3},
+                    "product_infos": [{"title": "微信小店虚拟课程", "sku_id": "sku_shop_001", "sku_cnt": 1}],
+                },
+            },
+        }
+
+    monkeypatch.setattr(WeChatShopClient, "list_orders", fake_list_orders)
+    monkeypatch.setattr(WeChatShopClient, "get_order", fake_get_order)
+
+    result = sync_wechat_shop_orders_window(1700000000, 1700003600, mode="update_time", page_size=100, operator="pytest")
+    runs = client.get("/api/admin/wechat-shop/sync-runs").json()
+
+    assert result["ok"] is True
+    assert result["sync_run"]["status"] == "success"
+    assert result["sync_run"]["scanned_count"] == 2
+    assert result["sync_run"]["synced_count"] == 2
+    assert list_calls[0]["time_mode"] == "update_time"
+    assert list_calls[1]["next_key"] == "page-2"
+    assert get_calls == order_ids
+    assert fixture_wechat_shop_order(order_ids[0])["order_id"] == order_ids[0]
+    assert "e+" not in fixture_wechat_shop_order(order_ids[0])["order_id"].lower()
+    assert runs["ok"] is True
+    assert runs["sync_runs"][0]["status"] == "success"
+    assert runs["sync_runs"][0]["scanned_count"] == 2
+
+
+def test_wechat_shop_incremental_sync_continues_when_one_order_fails(monkeypatch) -> None:
+    _client(monkeypatch)
+    monkeypatch.setattr(WeChatShopClient, "get_stable_access_token", lambda self, force_refresh=False: {"access_token": "shop-access-token", "expires_in": 7200})
+
+    def fake_list_orders(self, *, start_time: int, end_time: int, access_token: str, time_mode: str = "update_time", page_size: int = 100, next_key: str = "") -> dict:
+        return {"errcode": 0, "order_id_list": ["ok-order-001", "fail-order-002"], "has_more": False, "next_key": ""}
+
+    def fake_get_order(self, requested_order_id: str, access_token: str) -> dict:
+        if requested_order_id == "fail-order-002":
+            raise WeChatShopClientError("bad access_token=shop-access-token shop-secret-value")
+        return {
+            "errcode": 0,
+            "order": {
+                "order_id": requested_order_id,
+                "status": 20,
+                "create_time": 1700000000,
+                "order_detail": {
+                    "pay_info": {"pay_time": 1700000100, "transaction_id": "tx_ok"},
+                    "price_info": {"order_price": 9900},
+                    "delivery_info": {"deliver_method": 3},
+                    "product_infos": [{"title": "微信小店虚拟课程", "sku_id": "sku_shop_001", "sku_cnt": 1}],
+                },
+            },
+        }
+
+    monkeypatch.setattr(WeChatShopClient, "list_orders", fake_list_orders)
+    monkeypatch.setattr(WeChatShopClient, "get_order", fake_get_order)
+
+    result = sync_wechat_shop_orders_incremental(lookback_minutes=120, overlap_minutes=15, operator="pytest")
+
+    assert result["ok"] is True
+    assert result["sync_run"]["status"] == "partial"
+    assert result["sync_run"]["scanned_count"] == 2
+    assert result["sync_run"]["synced_count"] == 1
+    assert result["sync_run"]["failed_count"] == 1
+    assert "shop-access-token" not in result["failures"][0]["error_message"]
+    assert "shop-secret-value" not in result["failures"][0]["error_message"]
+    assert fixture_wechat_shop_order("ok-order-001")["status_code"] == 20
+    assert fixture_wechat_shop_order("fail-order-002")["sync_status"] == "failed"
+
+
+def test_wechat_shop_backfill_uses_create_time_windows_in_dry_run(monkeypatch) -> None:
+    _client(monkeypatch)
+    list_calls = []
+    monkeypatch.setattr(WeChatShopClient, "get_stable_access_token", lambda self, force_refresh=False: {"access_token": "shop-access-token", "expires_in": 7200})
+
+    def fake_list_orders(self, *, start_time: int, end_time: int, access_token: str, time_mode: str = "update_time", page_size: int = 100, next_key: str = "") -> dict:
+        list_calls.append({"start_time": start_time, "end_time": end_time, "time_mode": time_mode})
+        return {"errcode": 0, "order_id_list": ["dry-run-order"], "has_more": False, "next_key": ""}
+
+    monkeypatch.setattr(WeChatShopClient, "list_orders", fake_list_orders)
+
+    result = sync_wechat_shop_orders_backfill(start_time=1700000000, end_time=1700172799, window_days=1, dry_run=True, operator="pytest")
+
+    assert result["ok"] is True
+    assert result["window_count"] == 2
+    assert result["scanned_count"] == 2
+    assert result["synced_count"] == 0
+    assert {call["time_mode"] for call in list_calls} == {"create_time"}
 
 
 def test_wechat_shop_does_not_change_existing_refund_routes(monkeypatch) -> None:

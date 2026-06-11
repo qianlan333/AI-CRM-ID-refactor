@@ -38,6 +38,8 @@ jobs:
             # 1) AI-CRM Next schema migrations
             sudo systemctl stop openclaw-broadcast-queue-worker.timer || true
             sudo systemctl stop openclaw-broadcast-queue-worker.service || true
+            sudo systemctl stop aicrm-wechat-shop-order-sync.timer || true
+            sudo systemctl stop aicrm-wechat-shop-order-sync.service || true
             python3 -m alembic upgrade head
             sudo systemctl restart openclaw-wecom-postgres.service
             for _ in $(seq 1 20); do
@@ -55,11 +57,20 @@ jobs:
             sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/
             sudo cp deploy/openclaw-broadcast-queue-worker.service /etc/systemd/system/
             sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/
+            sudo cp deploy/aicrm-wechat-shop-order-sync.service /etc/systemd/system/
+            sudo cp deploy/aicrm-wechat-shop-order-sync.timer /etc/systemd/system/
             sudo systemctl daemon-reload
             sudo systemctl enable openclaw-external-push-worker.timer
             sudo systemctl restart openclaw-external-push-worker.timer
             sudo systemctl start openclaw-external-push-worker.service
             sudo systemctl status openclaw-external-push-worker.timer --no-pager
+            sudo systemctl enable aicrm-wechat-shop-order-sync.timer
+            sudo systemctl restart aicrm-wechat-shop-order-sync.timer
+            if ! sudo systemctl start aicrm-wechat-shop-order-sync.service; then
+              sudo systemctl status aicrm-wechat-shop-order-sync.service --no-pager || true
+              sudo journalctl -u aicrm-wechat-shop-order-sync.service -n 80 --no-pager || true
+            fi
+            sudo systemctl status aicrm-wechat-shop-order-sync.timer --no-pager
             sudo systemctl enable aicrm-reply-monitor-capture.timer
             sudo systemctl restart aicrm-reply-monitor-capture.timer
             sudo systemctl status aicrm-reply-monitor-capture.timer --no-pager
