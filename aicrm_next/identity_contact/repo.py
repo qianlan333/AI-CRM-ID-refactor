@@ -177,7 +177,7 @@ class PostgresIdentityRepository:
                     JOIN external_contact_bindings b ON b.person_id = p.id
                     LEFT JOIN wecom_external_contact_identity_map im ON im.external_userid = b.external_userid
                     WHERE p.mobile = %s
-                    ORDER BY b.updated_at DESC, b.id DESC
+                    ORDER BY b.updated_at DESC NULLS LAST, b.external_userid DESC
                     LIMIT 1
                     """,
                     (mobile,),
