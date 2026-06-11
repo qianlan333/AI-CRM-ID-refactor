@@ -1,0 +1,136 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any
+
+import aicrm_next.background_jobs.broadcast_queue_worker as worker
+from aicrm_next.background_jobs.broadcast_queue_worker import SafeSkippedBroadcastDispatcher, run_broadcast_queue_worker
+
+
+class FakeRepo:
+    def __init__(self, jobs: list[dict[str, Any]]) -> None:
+        self.jobs = jobs
+        self.sent: list[dict[str, Any]] = []
+        self.failed: list[dict[str, Any]] = []
+
+    def claim_due_jobs(self, *, limit: int, now: datetime, claim_token: str, lease_seconds: int) -> list[dict[str, Any]]:
+        return self.jobs[:limit]
+
+    def mark_sent(self, job_id: int, *, outbound_task_id: Any = None, sent_count: int = 0, failed_count: int = 0) -> None:
+        self.sent.append({"job_id": job_id, "outbound_task_id": outbound_task_id, "sent_count": sent_count, "failed_count": failed_count})
+
+    def mark_failed(self, job_id: int, *, error: str, failure_type: str = "handler_error") -> None:
+        self.failed.append({"job_id": job_id, "error": error, "failure_type": failure_type})
+
+
+class Adapter:
+    def __init__(self, result: dict[str, Any]) -> None:
+        self.result = result
+
+    def create_private_message_task(self, payload: dict[str, Any], *, idempotency_key: str = "") -> dict[str, Any]:
+        self.payload = payload
+        self.idempotency_key = idempotency_key
+        return dict(self.result)
+
+
+def _job(**overrides: Any) -> dict[str, Any]:
+    payload = {
+        "channel": "wecom_private",
+        "sender_userid": "HuangYouCan",
+        "target_external_userids": ["wm_test"],
+        "rendered_content": {"content_text": "hello private"},
+    }
+    payload.update(overrides.pop("payload", {}))
+    job = {
+        "id": 101,
+        "source_type": "automation_runtime_v2",
+        "source_id": "v2:event:1:task:2:member:3",
+        "idempotency_key": "v2:event:1:task:2:member:3",
+        "trace_id": "v2:event:1:task:2:member:3",
+        "channel": "wecom_private",
+        "target_kind": "external_userid",
+        "target_external_userids": json.dumps(["wm_test"]),
+        "target_count": 1,
+        "content_payload": payload,
+    }
+    job.update(overrides)
+    return job
+
+
+def test_wecom_private_job_is_dispatched_and_marked_sent(monkeypatch) -> None:
+    adapter = Adapter({"ok": True, "wecom_msgid": "msg-1", "result": {"msgid": "msg-1"}})
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 888)
+    repo = FakeRepo([_job()])
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher(), now=datetime(2026, 6, 1, tzinfo=timezone.utc))
+
+    assert summary["sent_ok"] == 1
+    assert repo.sent == [{"job_id": 101, "outbound_task_id": 888, "sent_count": 1, "failed_count": 0}]
+    assert adapter.payload["sender"] == "HuangYouCan"
+    assert adapter.payload["external_userids"] == ["wm_test"]
+
+
+def test_wecom_private_sender_missing_is_validation_failed() -> None:
+    repo = FakeRepo([_job(payload={"sender_userid": ""})])
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["sent_failed"] == 1
+    assert repo.failed[0]["failure_type"] == "validation_failed"
+    assert repo.failed[0]["error"] == "sender_userid_missing"
+
+
+def test_wecom_private_target_missing_is_validation_failed() -> None:
+    repo = FakeRepo([_job(target_external_userids="[]", target_count=0, payload={"target_external_userids": []})])
+
+    run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert repo.failed[0]["failure_type"] == "validation_failed"
+    assert repo.failed[0]["error"] == "target_external_userids_missing"
+
+
+def test_wecom_private_target_count_mismatch_is_validation_failed() -> None:
+    repo = FakeRepo([_job(target_count=2)])
+
+    run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert repo.failed[0]["failure_type"] == "validation_failed"
+    assert repo.failed[0]["error"] == "target_count_mismatch"
+
+
+def test_wecom_private_before_external_call_failure(monkeypatch) -> None:
+    adapter = Adapter({"ok": False, "error_code": "before_external_call", "error_message": "disabled"})
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 889)
+    repo = FakeRepo([_job()])
+
+    run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert repo.failed[0]["failure_type"] == "before_external_call"
+    assert repo.failed[0]["error"] == "disabled"
+
+
+def test_wecom_private_external_known_failure(monkeypatch) -> None:
+    adapter = Adapter({"ok": False, "error_code": "external_call_failed_known", "error_message": "invalid external_userid"})
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 890)
+    repo = FakeRepo([_job()])
+
+    run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert repo.failed[0]["failure_type"] == "external_call_failed_known"
+    assert repo.failed[0]["error"] == "invalid external_userid"
+
+
+def test_wecom_private_no_longer_returns_dispatcher_missing(monkeypatch) -> None:
+    adapter = Adapter({"ok": False, "error_code": "external_call_unknown", "error_message": "timeout"})
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_record_outbound_task", lambda **kwargs: 891)
+    repo = FakeRepo([_job()])
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["results"][0]["reason"] != "next_native_dispatcher_missing"
+    assert repo.failed[0]["failure_type"] == "external_call_unknown"
