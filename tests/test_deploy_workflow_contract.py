@@ -129,6 +129,8 @@ def test_reply_monitor_run_due_systemd_units_are_deployable():
     assert "After=network.target openclaw-wecom-postgres.service" in service
     assert "Requires=openclaw-wecom-postgres.service" in service
     assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=APP_HOST=127.0.0.1" in service
+    assert "Environment=APP_PORT=5001" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
     assert "python scripts/run_reply_monitor_run_due.py" in service
     assert "wecom_ability_service" not in service
