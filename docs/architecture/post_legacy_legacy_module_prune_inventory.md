@@ -30,4 +30,4 @@
 
 1. `wecom_ability_service/http/**`、legacy Flask route registry、blueprint runtime、package-local templates/static 均已归档。
 2. 当前 production owner 是 `aicrm_next/**` route registry and background jobs。
-3. `wecom_ability_service/domains/**`、`wecom_ability_service/db/**`、`wecom_ability_service/infra/**` 与 `schema_postgres.sql` 暂存到下一 PR 处理。
+3. `wecom_ability_service/domains/**`、`wecom_ability_service/db/**`、`wecom_ability_service/infra/**` 与 `schema_postgres.sql` 已在 package body removal 中退休。

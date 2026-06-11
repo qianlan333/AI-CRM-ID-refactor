@@ -1,6 +1,6 @@
 # Post-Legacy Cloud Orchestrator HTTP Handler Prune Inventory
 
-Scope: Historical Handler Prune group 2 removes the Cloud Orchestrator legacy Flask HTTP handler family after Next runtime ownership is already frozen. This inventory covers HTTP handler modules only; `wecom_ability_service/domains/cloud_orchestrator/*` and `wecom_ability_service/domains/campaigns/*` remain available for domain compatibility tests.
+Scope: Historical Handler Prune group 2 removed the Cloud Orchestrator legacy Flask HTTP handler family after Next runtime ownership was already frozen. The later package body removal retired the remaining `wecom_ability_service/domains/cloud_orchestrator/*` and `wecom_ability_service/domains/campaigns/*` modules as executable code.
 
 ## Reference Classification
 
