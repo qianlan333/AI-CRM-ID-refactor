@@ -6,6 +6,8 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANNEL_FORM = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_form.html"
+CHANNEL_PAGES = ROOT / "aicrm_next/automation_engine/channel_admin_pages.py"
+CHANNEL_BASE = ROOT / "aicrm_next/automation_engine/templates/admin_console/base.html"
 CHANNEL_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js"
 CHANNEL_CSS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.css"
 PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
@@ -96,6 +98,17 @@ def test_channel_form_uses_demo_shell_dom_and_prefixed_css() -> None:
     assert "channel-strategy-card" not in html
     assert "channel-assignee-panel" not in html
     assert "channel-selector-box" not in html
+
+
+def test_channel_form_hides_shell_header_and_busts_static_cache() -> None:
+    html = _read(CHANNEL_FORM)
+    pages = _read(CHANNEL_PAGES)
+    base = _read(CHANNEL_BASE)
+
+    assert '"show_page_header": False' in pages
+    assert "channel_admission_pages.css?v=channel-multi-staff-demo-shell-20260612" in html
+    assert "channel_admission_pages.js?v=channel-multi-staff-demo-shell-20260612" in html
+    assert "operation_member_picker.js') }}?v=channel-multi-staff-picker-20260612" in base
 
 
 def test_channel_type_visibility_and_payload_fields_follow_demo_contract() -> None:
