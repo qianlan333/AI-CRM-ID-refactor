@@ -76,3 +76,12 @@ class WeChatShopClient:
             f"/channels/ec/order/get?access_token={token}",
             {"order_id": normalized_order_id},
         )
+
+    def gen_after_sale_order(self, payload: dict[str, Any], access_token: str) -> dict[str, Any]:
+        token = _text(access_token)
+        if not token:
+            raise WeChatShopClientError("access_token is required")
+        return self._post_json(
+            f"/channels/ec/aftersale/genaftersaleorder?access_token={token}",
+            dict(payload or {}),
+        )

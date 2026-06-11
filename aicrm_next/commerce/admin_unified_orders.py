@@ -214,6 +214,7 @@ def list_payments(
         payments.append(
             {
                 "provider": order.get("provider"),
+                "provider_label": order.get("provider_label"),
                 "order_no": order.get("order_no") or order.get("out_trade_no"),
                 "out_trade_no": order.get("out_trade_no") or order.get("order_no"),
                 "transaction_id": order.get("transaction_id"),

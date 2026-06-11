@@ -32,12 +32,24 @@ def test_admin_transaction_pages_resolve_to_commerce_not_frontend_compat(monkeyp
     app = client.app
 
     for path in [
+        "/admin/orders",
         "/admin/wechat-pay/transactions",
         "/admin/wechat-pay/transactions/order_masked_001",
         "/admin/alipay/transactions",
     ]:
         route = _first_match(app, method="GET", path=path)
         assert route.endpoint.__module__ == "aicrm_next.commerce.api"
+
+
+def test_unified_orders_page_exposes_payment_channel_dimension(monkeypatch) -> None:
+    response = _client(monkeypatch).get("/admin/orders")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "交易管理" in html
+    assert "支付渠道" in html
+    assert "/api/admin/orders" in html
+    assert "微信小店" in html
 
 
 def test_wechat_transaction_detail_page_is_next_readonly(monkeypatch) -> None:
@@ -70,6 +82,15 @@ def test_alipay_transaction_page_uses_same_next_readonly_model(monkeypatch) -> N
     assert "/api/admin/alipay/transactions" in html
     assert "支付宝交易兼容入口" not in html
     assert "x-aicrm-compatibility-facade" not in response.headers
+
+
+def test_wechat_shop_transaction_page_and_detail_are_next_routes(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    app = client.app
+
+    for path in ["/admin/wechat-shop/transactions", "/admin/wechat-shop/transactions/shop_fixture_paid_001"]:
+        route = _first_match(app, method="GET", path=path)
+        assert route.endpoint.__module__ == "aicrm_next.commerce.api"
 
 
 def test_admin_transaction_apis_return_unified_readonly_fields(monkeypatch) -> None:
