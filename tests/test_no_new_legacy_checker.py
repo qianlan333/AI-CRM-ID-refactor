@@ -174,6 +174,24 @@ def test_startup_closeout_flags_deploy_missing_alembic_upgrade(tmp_path: Path) -
     assert "deploy_workflow_missing_alembic_upgrade" in codes
 
 
+def test_startup_closeout_flags_reply_monitor_capture_deploy_contract_missing(tmp_path: Path) -> None:
+    _write_startup_closeout_files(
+        tmp_path,
+        deploy_text=(
+            "source /home/ubuntu/.openclaw-wecom-pg.env\n"
+            'test -n "${DATABASE_URL:-}"\n'
+            "python3 -m alembic upgrade head\n"
+            "sudo cp deploy/aicrm-reply-monitor-run-due.service /etc/systemd/system/\n"
+            "sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/\n"
+            "sudo systemctl enable aicrm-reply-monitor-run-due.timer\n"
+        ),
+    )
+
+    codes = {violation.code for violation in check_startup_legacy_closeout(tmp_path)}
+
+    assert "reply_monitor_capture_deploy_contract_missing" in codes
+
+
 def test_startup_closeout_flags_stale_wecom_startup_allowlist(tmp_path: Path) -> None:
     _write_startup_closeout_files(
         tmp_path,
@@ -324,6 +342,75 @@ def test_wecom_legacy_freeze_accepts_active_deploy_module_script_reference(tmp_p
 
     assert "active_deploy_service_contract_broken" not in codes
     assert "active_deploy_service_points_to_missing_script" not in codes
+
+
+def _write_reply_monitor_capture_contract(
+    root: Path,
+    *,
+    script_text: str | None = None,
+    service_text: str | None = None,
+    timer_text: str | None = None,
+    include_script: bool = True,
+    include_service: bool = True,
+    include_timer: bool = True,
+) -> None:
+    script = root / "scripts/run_reply_monitor_capture.py"
+    service = root / "deploy/aicrm-reply-monitor-capture.service"
+    timer = root / "deploy/aicrm-reply-monitor-capture.timer"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    service.parent.mkdir(parents=True, exist_ok=True)
+    if include_script:
+        script.write_text(script_text or "from aicrm_next.automation_engine import timers\n", encoding="utf-8")
+    if include_service:
+        service.write_text(service_text or "ExecStart=/bin/bash -lc 'python scripts/run_reply_monitor_capture.py'\n", encoding="utf-8")
+    if include_timer:
+        timer.write_text(timer_text or "Unit=aicrm-reply-monitor-capture.service\n", encoding="utf-8")
+
+
+def test_wecom_legacy_freeze_flags_reply_monitor_capture_runner_missing(tmp_path: Path) -> None:
+    _write_reply_monitor_capture_contract(tmp_path, include_script=False)
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "reply_monitor_capture_runner_missing" in codes
+
+
+def test_wecom_legacy_freeze_flags_reply_monitor_capture_service_missing(tmp_path: Path) -> None:
+    _write_reply_monitor_capture_contract(tmp_path, include_service=False)
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "reply_monitor_capture_service_missing" in codes
+
+
+def test_wecom_legacy_freeze_flags_reply_monitor_capture_timer_missing(tmp_path: Path) -> None:
+    _write_reply_monitor_capture_contract(tmp_path, include_timer=False)
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "reply_monitor_capture_timer_missing" in codes
+
+
+def test_wecom_legacy_freeze_flags_reply_monitor_capture_service_contract_break(tmp_path: Path) -> None:
+    _write_reply_monitor_capture_contract(
+        tmp_path,
+        service_text="ExecStart=/bin/bash -lc 'python scripts/old_capture.py'\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "reply_monitor_capture_service_contract_broken" in codes
+
+
+def test_wecom_legacy_freeze_rejects_reply_monitor_capture_legacy_import(tmp_path: Path) -> None:
+    _write_reply_monitor_capture_contract(
+        tmp_path,
+        script_text="from wecom_ability_service import create_app\n",
+    )
+
+    codes = {violation.code for violation in check_wecom_legacy_usage_freeze(tmp_path)}
+
+    assert "reply_monitor_capture_legacy_import_returned" in codes
 
 
 def test_wecom_legacy_freeze_external_push_worker_removed_from_allowlist() -> None:

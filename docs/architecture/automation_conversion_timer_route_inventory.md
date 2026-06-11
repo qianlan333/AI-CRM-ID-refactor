@@ -24,6 +24,11 @@ This inventory locks the reply monitor and registered jobs timer family to Next 
 
 ## Reply Monitor Timer Contract
 
+- `deploy/aicrm-reply-monitor-capture.service` calls `scripts/run_reply_monitor_capture.py`, not a bare curl command.
+- `deploy/aicrm-reply-monitor-capture.timer` owns the three-minute capture cadence and overwrites the previously observed production-only stale unit on deploy.
+- The capture runner posts JSON to `/api/admin/automation-conversion/reply-monitor/capture` with `Authorization: Bearer $AUTOMATION_INTERNAL_API_TOKEN`, `operator=reply_monitor_capture_timer`, `limit=500`, and `dry_run=true` by default.
+- If `AUTOMATION_INTERNAL_API_TOKEN` is missing, the capture runner emits structured skipped diagnostics and does not call the route.
+- The capture route keeps the path unchanged and must return a controlled non-400 safe plan for a valid internal-token timer request with an empty or safe payload.
 - `deploy/aicrm-reply-monitor-run-due.service` calls `scripts/run_reply_monitor_run_due.py`, not a bare curl command.
 - The runner posts JSON to `/api/admin/automation-conversion/reply-monitor/run-due` with `Authorization: Bearer $AUTOMATION_INTERNAL_API_TOKEN`, `operator=reply_monitor_run_due_timer`, `limit=20`, and `dry_run=true` by default.
 - If `AUTOMATION_INTERNAL_API_TOKEN` is missing, the runner emits structured skipped diagnostics and does not call the route.
