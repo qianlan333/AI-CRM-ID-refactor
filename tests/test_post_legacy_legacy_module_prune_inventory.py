@@ -5,9 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = ROOT / "docs/architecture/post_legacy_legacy_module_prune_inventory.md"
-HTTP_INIT = ROOT / "wecom_ability_service/http/__init__.py"
 
-DELETED_MODULES = [
+ARCHIVED_MODULES = [
     "wecom_ability_service/http/admin_hxc_dashboard.py",
     "wecom_ability_service/http/admin_auth_routes.py",
     "wecom_ability_service/http/cloud_orchestrator_campaigns.py",
@@ -17,8 +16,6 @@ DELETED_MODULES = [
     "wecom_ability_service/http/cloud_orchestrator_pages.py",
     "wecom_ability_service/http/cloud_orchestrator_plans.py",
     "wecom_ability_service/http/cloud_orchestrator_segments.py",
-]
-KEPT_MODULES = [
     "wecom_ability_service/http/automation_conversion.py",
     "wecom_ability_service/http/automation_conversion_runtime_api.py",
     "wecom_ability_service/http/automation_conversion_task_runtime.py",
@@ -33,23 +30,19 @@ def test_prune_inventory_exists_and_has_required_columns() -> None:
 
     for phrase in ["legacy module / package", "原用途", "替代 Next 模块", "当前引用", "删除决策", "测试"]:
         assert phrase in text
+    assert "legacy_http_runtime_archived" in text
 
 
-def test_deleted_legacy_modules_are_removed_and_not_registered() -> None:
+def test_legacy_http_runtime_modules_are_archived() -> None:
     inventory_text = INVENTORY.read_text(encoding="utf-8")
-    http_init_text = HTTP_INIT.read_text(encoding="utf-8")
 
-    for module in DELETED_MODULES:
+    for module in ARCHIVED_MODULES:
         assert f"`{module}`" in inventory_text
         assert not (ROOT / module).exists()
-        assert Path(module).stem not in http_init_text
 
 
-def test_temporarily_kept_legacy_modules_have_deletion_conditions() -> None:
+def test_no_temporarily_kept_legacy_http_modules_remain() -> None:
     text = INVENTORY.read_text(encoding="utf-8")
 
-    for module in KEPT_MODULES:
-        assert f"`{module}`" in text
-        assert "keep_temporarily_historical" in text
-        assert (ROOT / module).exists()
-    assert "后续删除条件" in text
+    assert "keep_temporarily_historical" not in text
+    assert not (ROOT / "wecom_ability_service/http").exists()

@@ -34,6 +34,7 @@ from scripts.check_no_new_legacy import (
     check_legacy_package_domain_tests_archived,
     check_legacy_flask_facade_removed,
     check_legacy_flask_http_test_retirement,
+    check_legacy_http_runtime_archived,
     check_wecom_group_adapter_native,
     check_wecom_contact_tag_media_tests_next_native,
     check_group_ops_admin_pages_next_native,
@@ -578,6 +579,69 @@ def test_legacy_flask_http_test_retirement_accepts_next_route_contract(tmp_path:
     )
 
     assert check_legacy_flask_http_test_retirement(tmp_path) == []
+
+
+def test_legacy_http_runtime_archived_flags_http_package_path(tmp_path: Path) -> None:
+    http_file = tmp_path / "wecom_ability_service/http/foo.py"
+    http_file.parent.mkdir(parents=True, exist_ok=True)
+    http_file.write_text("def register_routes(): pass\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_http_runtime_archived(tmp_path)}
+
+    assert "legacy_http_runtime_path_remaining" in codes
+
+
+def test_legacy_http_runtime_archived_flags_runtime_entrypoints(tmp_path: Path) -> None:
+    package = tmp_path / "wecom_ability_service"
+    package.mkdir(parents=True, exist_ok=True)
+    (package / "routes.py").write_text("from flask import Blueprint\n", encoding="utf-8")
+    (package / "mcp_adapter.py").write_text("def _call_tool(): pass\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_http_runtime_archived(tmp_path)}
+
+    assert "legacy_http_runtime_path_remaining" in codes
+
+
+def test_legacy_http_runtime_archived_flags_package_app_factory(tmp_path: Path) -> None:
+    package_init = tmp_path / "wecom_ability_service/__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text(
+        "from flask import Flask\n"
+        "def create_app():\n"
+        "    app = Flask(__name__)\n"
+        "    app.register_blueprint(object())\n"
+        "    return app\n",
+        encoding="utf-8",
+    )
+
+    codes = {violation.code for violation in check_legacy_http_runtime_archived(tmp_path)}
+
+    assert "legacy_app_factory_remaining" in codes
+
+
+def test_legacy_http_runtime_archived_flags_runtime_imports(tmp_path: Path) -> None:
+    _write_test_file(tmp_path, "test_x.py", "import wecom_ability_service.http\n")
+    script = tmp_path / "scripts/foo.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("from wecom_ability_service import create_app\n", encoding="utf-8")
+
+    codes = {violation.code for violation in check_legacy_http_runtime_archived(tmp_path)}
+
+    assert "legacy_flask_runtime_import_remaining" in codes
+
+
+def test_legacy_http_runtime_archived_accepts_package_marker(tmp_path: Path) -> None:
+    package_init = tmp_path / "wecom_ability_service/__init__.py"
+    package_init.parent.mkdir(parents=True, exist_ok=True)
+    package_init.write_text(
+        '"""Archived legacy package namespace."""\n'
+        "from __future__ import annotations\n"
+        "__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    _write_test_file(tmp_path, "test_next.py", "def test_next(next_client):\n    assert next_client\n")
+
+    assert check_legacy_http_runtime_archived(tmp_path) == []
 
 
 def test_commerce_test_checker_flags_wechat_pay_legacy_import(tmp_path: Path) -> None:
@@ -1847,6 +1911,7 @@ def test_post_legacy_architecture_freeze_guard_flags_deleted_handler_registratio
     )
     (docs / "post_legacy_legacy_module_prune_inventory.md").write_text(
         "legacy module / package | 替代 Next 模块 | 删除决策\n"
+        "legacy_http_runtime_archived\n"
         "`wecom_ability_service/http/admin_hxc_dashboard.py` | next | `deleted`\n"
         "`wecom_ability_service/http/admin_auth_routes.py` | next | `deleted`\n"
         "`wecom_ability_service/http/cloud_orchestrator_campaigns.py` | next | `deleted`\n"
@@ -1856,12 +1921,12 @@ def test_post_legacy_architecture_freeze_guard_flags_deleted_handler_registratio
         "`wecom_ability_service/http/cloud_orchestrator_pages.py` | next | `deleted`\n"
         "`wecom_ability_service/http/cloud_orchestrator_plans.py` | next | `deleted`\n"
         "`wecom_ability_service/http/cloud_orchestrator_segments.py` | next | `deleted`\n"
-        "`wecom_ability_service/http/automation_conversion.py` | next | keep_temporarily_historical\n"
-        "`wecom_ability_service/http/automation_conversion_runtime_api.py` | next | keep_temporarily_historical\n"
-        "`wecom_ability_service/http/automation_conversion_task_runtime.py` | next | keep_temporarily_historical\n"
-        "`wecom_ability_service/http/automation_conversion_execution_outbound.py` | next | keep_temporarily_historical\n"
-        "`wecom_ability_service/http/automation_conversion_member_api.py` | next | keep_temporarily_historical\n"
-        "`wecom_ability_service/http/customer_automation.py` | next | keep_temporarily_historical\n",
+        "`wecom_ability_service/http/automation_conversion.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/automation_conversion_runtime_api.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/automation_conversion_task_runtime.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/automation_conversion_execution_outbound.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/automation_conversion_member_api.py` | next | `deleted`\n"
+        "`wecom_ability_service/http/customer_automation.py` | next | `deleted`\n",
         encoding="utf-8",
     )
     (http / "__init__.py").write_text("from .admin_auth_routes import register_routes\n", encoding="utf-8")

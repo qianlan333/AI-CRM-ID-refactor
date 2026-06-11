@@ -35,15 +35,7 @@ DELETED_LOW_RISK_SUFFIXES = (
     "_gray_smoke.py",
 )
 DELETED_LOW_RISK_EXACT: set[str] = set()
-RUNTIME_FALLBACK_ALLOWED_EXACT = {
-    "wecom_ability_service/http/__init__.py",
-    "wecom_ability_service/http/automation_conversion.py",
-    "wecom_ability_service/http/automation_conversion_channels.py",
-    "wecom_ability_service/templates/admin_console/channel_code_center.html",
-    "wecom_ability_service/templates/admin_console/channel_code_form.html",
-    "wecom_ability_service/static/admin_console/channel_admission_pages.js",
-    "wecom_ability_service/static/admin_console/channel_admission_pages.css",
-}
+RUNTIME_FALLBACK_ALLOWED_EXACT: set[str] = set()
 LOW_RISK_EXACT = {
     "README.md",
     "aicrm_next/customer_read_model/api.py",

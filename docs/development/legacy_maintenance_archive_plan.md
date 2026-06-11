@@ -78,6 +78,18 @@ The temporary legacy Flask test fixture bridge has been removed from `tests/conf
 
 Test database schema setup now runs the test-only Next baseline bootstrap and Alembic migrations from the Next schema source instead of reading `wecom_ability_service/schema_postgres.sql` or importing the legacy schema runner. Tests under `tests/**` must not runtime import `wecom_ability_service` or use legacy fixture names such as `legacy_app`, `legacy_client`, or `build_legacy_pg_test_app`.
 
+## Archived Legacy HTTP Runtime Package
+
+The legacy Flask HTTP/runtime package surface has been archived:
+
+- `wecom_ability_service` no longer provides `create_app`.
+- `wecom_ability_service/http/**` and the legacy Flask route registry are removed.
+- Legacy blueprint runtime files, request observability runtime, and package-local templates/static are removed.
+- Current route/runtime ownership lives under `aicrm_next`.
+- `wecom_ability_service/domains/**`, `wecom_ability_service/db/**`, `wecom_ability_service/infra/**`, and `wecom_ability_service/schema_postgres.sql` remain temporarily for the next package-removal PR.
+
+New code must not restore the legacy Flask runtime, legacy route owner headers, or `wecom_ability_service.http` imports.
+
 ## Archive Phases
 
 ### Phase B: External push worker Next-native migration
@@ -114,7 +126,7 @@ Exit criteria:
 
 ### Phase E: Legacy HTTP/runtime archive
 
-Delete or archive obsolete `wecom_ability_service/http/**`, route registry shims, package-local templates/static, and legacy Flask runtime files after scripts/tests stop importing them.
+Status: complete. Obsolete `wecom_ability_service/http/**`, route registry shims, package-local templates/static, and legacy Flask runtime files have been archived.
 
 Exit criteria:
 
@@ -133,4 +145,4 @@ Exit criteria:
 
 ## Recommended Next Step
 
-Archive legacy HTTP/runtime package.
+Remove legacy domains/db/infra package.

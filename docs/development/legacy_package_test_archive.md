@@ -49,6 +49,18 @@ The temporary executable bridge has been removed:
 
 `tests/conftest.py` now exposes only Next-native fixtures (`next_app`, `next_client`, `next_pg_schema`, `app`, and `client`) and runs test database setup through a test-only Next baseline bootstrap followed by Alembic. `tests/test_test_fixture_boundaries.py` now protects the absence of legacy fixtures, legacy runtime imports, and legacy schema setup.
 
+## Archived Legacy HTTP Runtime Package
+
+The legacy Flask HTTP/runtime package surface has been archived after tests stopped importing it:
+
+- `wecom_ability_service/__init__.py` is now an archived package marker and no longer exposes `create_app`.
+- `wecom_ability_service/http/**`, the legacy route registry, and blueprint runtime files have been removed.
+- Package-local legacy templates/static and request-observability runtime files have been removed.
+- Current route/runtime ownership is `aicrm_next`.
+- `wecom_ability_service/domains/**`, `wecom_ability_service/db/**`, `wecom_ability_service/infra/**`, and `wecom_ability_service/schema_postgres.sql` remain temporarily for the next package-removal PR.
+
+New executable tests must not reintroduce `wecom_ability_service.http`, `from wecom_ability_service import create_app`, legacy route owner headers, or Flask app factory coverage.
+
 ## Rule
 
 New executable tests must not runtime import `wecom_ability_service` or use legacy Flask fixture names. If an old capability is needed again, rebuild the behavior under `aicrm_next/**` and test it with Next-native fixtures, repositories, or fakes. Historical references may live in docs or tools, but Python tests under `tests/` must not reintroduce legacy package/domain unit coverage.

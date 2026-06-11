@@ -47,30 +47,33 @@ def _manifest_record(route_pattern: str) -> dict:
 
 def main() -> int:
     blockers: list[str] = []
-    callback_routes = _decorated_routes("wecom_ability_service/http/callbacks.py")
-    for route in {"/wecom/external-contact/callback", "/api/wecom/events"} & callback_routes:
-        blockers.append(f"legacy callbacks.py still registers {route}")
+    legacy_http_dir = ROOT / "wecom_ability_service/http"
+    if legacy_http_dir.exists():
+        callback_routes = _decorated_routes("wecom_ability_service/http/callbacks.py")
+        for route in {"/wecom/external-contact/callback", "/api/wecom/events"} & callback_routes:
+            blockers.append(f"legacy callbacks.py still registers {route}")
 
-    automation_conversion = _read("wecom_ability_service/http/automation_conversion.py")
-    for route in (
-        "/api/admin/channels/runtime-diagnosis",
-        "/api/admin/channels/<int:channel_id>/runtime-diagnosis",
-        "/api/admin/channels/runtime-diagnosis/dry-run",
-        "/api/admin/channels/repair-entry",
-    ):
-        if route in automation_conversion:
-            blockers.append(f"legacy automation_conversion.py still registers {route}")
+        automation_conversion = _read_optional("wecom_ability_service/http/automation_conversion.py")
+        for route in (
+            "/api/admin/channels/runtime-diagnosis",
+            "/api/admin/channels/<int:channel_id>/runtime-diagnosis",
+            "/api/admin/channels/runtime-diagnosis/dry-run",
+            "/api/admin/channels/repair-entry",
+        ):
+            if route in automation_conversion:
+                blockers.append(f"legacy automation_conversion.py still registers {route}")
 
-    if (ROOT / "wecom_ability_service/http/channel_runtime_diagnosis.py").exists():
-        blockers.append("legacy channel_runtime_diagnosis.py still exists")
+        if (ROOT / "wecom_ability_service/http/channel_runtime_diagnosis.py").exists():
+            blockers.append("legacy channel_runtime_diagnosis.py still exists")
     if (ROOT / "wecom_ability_service/domains/automation_conversion/channel_entry_orchestrator.py").exists():
         blockers.append("legacy channel_entry_orchestrator.py still exists")
 
-    background_jobs = _read("wecom_ability_service/http/background_jobs.py")
-    if "HandleQrcodeEnterFromCallbackCommand" in background_jobs:
-        blockers.append("legacy background_jobs still imports HandleQrcodeEnterFromCallbackCommand")
-    if "qrcode_result = handle_qrcode_enter_from_callback" in background_jobs:
-        blockers.append("legacy background_jobs still consumes channel entry callback")
+    background_jobs = _read_optional("wecom_ability_service/http/background_jobs.py")
+    if background_jobs:
+        if "HandleQrcodeEnterFromCallbackCommand" in background_jobs:
+            blockers.append("legacy background_jobs still imports HandleQrcodeEnterFromCallbackCommand")
+        if "qrcode_result = handle_qrcode_enter_from_callback" in background_jobs:
+            blockers.append("legacy background_jobs still consumes channel entry callback")
 
     production_compat = _read_optional("aicrm_next/production_compat/api.py")
     for route in ("/wecom/external-contact/callback", "/api/wecom/events"):
