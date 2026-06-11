@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 
@@ -161,3 +164,29 @@ def test_reply_monitor_capture_timer_script_reports_missing_token_without_post(m
     assert payload["real_external_call_executed"] is False
     assert payload["reply_monitor_capture_executed"] is False
     assert json.loads(capsys.readouterr().out.strip())["error_code"] == "automation_internal_token_not_configured"
+
+
+def test_reply_monitor_capture_timer_script_can_run_directly_without_package_import_error() -> None:
+    env = os.environ.copy()
+    env.pop("AUTOMATION_INTERNAL_API_TOKEN", None)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--limit", "1", "--dry-run"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert payload["status"] == "skipped"
+    assert payload["error_code"] == "automation_internal_token_not_configured"
+    assert payload["route_owner"] == "ai_crm_next"
+    assert payload["fallback_used"] is False
+    assert payload["real_external_call_executed"] is False
+    assert payload["reply_monitor_capture_executed"] is False
+    assert "Traceback" not in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
