@@ -30,7 +30,7 @@ def test_api_docs_view_model_scans_current_fastapi_routes() -> None:
     paths = _endpoint_paths(view_model)
     group_titles = {group["title"] for group in view_model["endpoint_groups"]}
 
-    assert view_model["source_status"] == "fastapi_route_registry"
+    assert view_model["source_status"] == "fastapi_route_map"
     assert view_model["endpoint_count"] > 80
     assert {
         "系统 / MCP",

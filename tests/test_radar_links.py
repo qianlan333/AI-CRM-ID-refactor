@@ -555,7 +555,8 @@ def test_radar_pdf_chunk_upload_supports_out_of_order_and_retries(client):
     assert complete.json()["item"]["file_size"] == len(payload)
 
 
-def test_radar_pdf_manifest_page_images_and_range(client):
+def test_radar_pdf_manifest_page_images_and_range(client, monkeypatch):
+    monkeypatch.setattr("aicrm_next.radar_links.application._render_pdf_preview_assets_with_pymupdf", lambda *args, **kwargs: [])
     upload_response = client.post(
         "/api/admin/radar-links/upload-pdf",
         files={"pdf": ("manifest.pdf", b"%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n", "application/pdf")},

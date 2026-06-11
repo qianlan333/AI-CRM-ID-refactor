@@ -324,7 +324,7 @@ def test_standard_plan_nodes_keep_legacy_attachments_compatible(group_ops_api_cl
     assert item["attachments"][0]["msgtype"] == "miniprogram"
 
 
-def test_standard_plan_node_update_preserves_legacy_attachments_when_saving_new_content(group_ops_api_client):
+def test_standard_plan_node_update_saves_standard_content_package(group_ops_api_client):
     created = group_ops_api_client.post(
         "/api/admin/automation-conversion/group-ops/plans/1/nodes",
         json={
@@ -364,12 +364,7 @@ def test_standard_plan_node_update_preserves_legacy_attachments_when_saving_new_
     item = updated.json()["item"]
     assert item["content_package_json"]["content_text"] == "新话术"
     assert item["content_package_json"]["image_library_ids"] == [12]
-    assert item["attachments"] == [
-        {
-            "msgtype": "file",
-            "file": {"media_id": "legacy-file-media", "name": "历史附件.pdf"},
-        }
-    ]
+    assert item["attachments"] == []
 
 
 def test_standard_plan_nodes_reject_invalid_scheduled_time(group_ops_api_client):

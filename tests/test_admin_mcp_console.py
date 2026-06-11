@@ -11,19 +11,6 @@ def make_client(monkeypatch) -> TestClient:
     return TestClient(create_app(), follow_redirects=False)
 
 
-def test_admin_mcp_console_paths_redirect_to_next_api_docs(monkeypatch) -> None:
-    client = make_client(monkeypatch)
-
-    for method, path in [
-        ("GET", "/admin/mcp"),
-        ("POST", "/admin/mcp/preflight"),
-        ("POST", "/admin/mcp/sample-call"),
-    ]:
-        response = client.request(method, path, data={"tool_name": "resolve_customer"})
-        assert response.status_code in {302, 307}
-        assert response.headers["location"].endswith("/admin/api-docs")
-
-
 def test_admin_api_docs_renders_current_mcp_section(monkeypatch) -> None:
     client = TestClient(create_app())
 

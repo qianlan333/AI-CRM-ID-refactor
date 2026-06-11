@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.common_operation_members import search_operation_members
@@ -15,8 +17,10 @@ router = APIRouter()
 
 _FIXTURE_CHANNELS: dict[int, dict[str, Any]] = {}
 _FIXTURE_PROGRAM_BINDINGS: dict[int, dict[str, Any]] = {}
+_FIXTURE_WE_COM_LINKS: list[dict[str, Any]] = []
 _NEXT_ID = 1
 _NEXT_BINDING_ID = 1
+_NEXT_WE_COM_LINK_ID = 1
 
 
 def _psycopg_url(url: str) -> str:
@@ -690,6 +694,258 @@ def list_channel_owner_candidates() -> list[dict[str, Any]]:
 
 def default_channel_form_payload() -> dict[str, Any]:
     return _default_channel()
+
+
+_WE_COM_LINK_HEADERS = {
+    "X-AICRM-Route-Owner": "ai_crm_next",
+    "X-AICRM-Fallback-Used": "false",
+    "X-AICRM-Real-External-Call-Executed": "false",
+}
+
+
+def reset_wecom_customer_acquisition_link_fixture_state() -> None:
+    global _FIXTURE_WE_COM_LINKS, _NEXT_WE_COM_LINK_ID
+    _NEXT_WE_COM_LINK_ID = 1
+    now = datetime.now(timezone.utc).isoformat()
+    _FIXTURE_WE_COM_LINKS = [
+        {
+            "id": 1,
+            "link_id": "next_fixture_link",
+            "link_name": "Next Fixture",
+            "name": "Next Fixture",
+            "description": "safe-mode local fixture",
+            "link_url": "https://work.weixin.qq.com/ca/next-fixture",
+            "customer_channel": "wca_next_fixture",
+            "final_url": "https://work.weixin.qq.com/ca/next-fixture?customer_channel=wca_next_fixture",
+            "program_id": None,
+            "workflow_id": None,
+            "initial_audience_code": "pending_questionnaire",
+            "status": "active",
+            "adapter_mode": "real_blocked",
+            "wecom_api_called": False,
+            "real_external_call_executed": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    _NEXT_WE_COM_LINK_ID = 2
+
+
+def _wecom_link_common_payload(source_status: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "source_status": source_status,
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "real_external_call_executed": False,
+    }
+
+
+def _wecom_link_json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
+    return JSONResponse(payload, status_code=status_code, headers=_WE_COM_LINK_HEADERS)
+
+
+def _wecom_link_options(source_status: str) -> JSONResponse:
+    payload = _wecom_link_common_payload(source_status)
+    payload.update({"allowed": True})
+    return _wecom_link_json(payload)
+
+
+def _wecom_customer_channel(*, link_id: str, name: str) -> str:
+    seed = _text(link_id) or _text(name) or uuid.uuid4().hex
+    normalized = "".join(ch.lower() if ch.isalnum() else "_" for ch in seed).strip("_")
+    return f"wca_{normalized[:48] or uuid.uuid4().hex[:12]}"
+
+
+def _wecom_final_url(link_url: str, customer_channel: str) -> str:
+    base = _text(link_url) or "https://work.weixin.qq.com/ca/next-local"
+    parsed = urlsplit(base)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["customer_channel"] = customer_channel
+    return urlunsplit(
+        (
+            parsed.scheme or "https",
+            parsed.netloc or "work.weixin.qq.com",
+            parsed.path or "/ca/next-local",
+            urlencode(query),
+            parsed.fragment,
+        )
+    )
+
+
+async def _wecom_link_payload(request: Request) -> dict[str, Any]:
+    if request.method.upper() == "GET":
+        return dict(request.query_params)
+    if "application/json" in _text(request.headers.get("content-type")).lower():
+        body = await request.json()
+        return dict(body or {}) if isinstance(body, dict) else {}
+    form = await request.form()
+    return dict(form)
+
+
+def _wecom_link_view(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row)
+
+
+def _find_wecom_link(link_id: str) -> dict[str, Any] | None:
+    normalized = _text(link_id)
+    for row in _FIXTURE_WE_COM_LINKS:
+        if str(row.get("id")) == normalized or _text(row.get("link_id")) == normalized:
+            return row
+    return None
+
+
+@router.api_route("/api/admin/wecom-customer-acquisition-links", methods=["GET", "POST", "OPTIONS"])
+async def wecom_customer_acquisition_links(request: Request) -> JSONResponse:
+    global _NEXT_WE_COM_LINK_ID
+    source_status = "next_wecom_customer_acquisition_links" if request.method.upper() == "GET" else "next_command"
+    if request.method.upper() == "OPTIONS":
+        return _wecom_link_options(source_status)
+    if request.method.upper() == "GET":
+        status = _text(request.query_params.get("status"))
+        links = [_wecom_link_view(row) for row in _FIXTURE_WE_COM_LINKS if not status or _text(row.get("status")) == status]
+        payload = _wecom_link_common_payload(source_status)
+        payload.update(
+            {
+                "items": links,
+                "links": links,
+                "count": len(links),
+                "adapter_mode": "real_blocked",
+                "wecom_api_called": False,
+                "degraded": False,
+                "warnings": [],
+            }
+        )
+        return _wecom_link_json(payload)
+
+    body = await _wecom_link_payload(request)
+    now = datetime.now(timezone.utc).isoformat()
+    link_id = _text(body.get("link_id")) or f"next_link_{_NEXT_WE_COM_LINK_ID}"
+    link_name = _text(body.get("link_name")) or _text(body.get("name")) or link_id
+    link_url = _text(body.get("link_url")) or "https://work.weixin.qq.com/ca/next-local"
+    customer_channel = _wecom_customer_channel(link_id=link_id, name=link_name)
+    row = {
+        "id": _NEXT_WE_COM_LINK_ID,
+        "link_id": link_id,
+        "link_name": link_name,
+        "name": link_name,
+        "description": _text(body.get("description")),
+        "link_url": link_url,
+        "customer_channel": customer_channel,
+        "final_url": _wecom_final_url(link_url, customer_channel),
+        "program_id": int(body["program_id"]) if _text(body.get("program_id")).isdigit() else None,
+        "workflow_id": int(body["workflow_id"]) if _text(body.get("workflow_id")).isdigit() else None,
+        "initial_audience_code": _text(body.get("initial_audience_code")) or "pending_questionnaire",
+        "status": "active",
+        "adapter_mode": "real_blocked",
+        "wecom_api_called": False,
+        "real_external_call_executed": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+    _FIXTURE_WE_COM_LINKS.insert(0, row)
+    _NEXT_WE_COM_LINK_ID += 1
+    payload = _wecom_link_common_payload(source_status)
+    payload.update(
+        {
+            "command_id": f"cmd_wecom_ca_{uuid.uuid4().hex}",
+            "command_name": "wecom_customer_acquisition_link.create.plan",
+            "idempotency_key": _text(request.headers.get("Idempotency-Key")),
+            "link": _wecom_link_view(row),
+            "adapter_mode": "real_blocked",
+            "wecom_api_called": False,
+            "side_effect_plan": {
+                "kind": "wecom_customer_acquisition_link_create",
+                "status": "blocked",
+                "reason": "real_wecom_api_blocked_by_default",
+            },
+        }
+    )
+    return _wecom_link_json(payload)
+
+
+@router.api_route(
+    "/api/admin/wecom-customer-acquisition-links/{link_id}",
+    methods=["GET", "PATCH", "DELETE", "OPTIONS"],
+)
+async def wecom_customer_acquisition_link_detail(request: Request, link_id: str) -> JSONResponse:
+    if request.method.upper() == "OPTIONS":
+        return _wecom_link_options("next_wecom_customer_acquisition_links")
+    row = _find_wecom_link(link_id)
+    if not row:
+        payload = _wecom_link_common_payload("next_wecom_customer_acquisition_links")
+        payload.update({"ok": False, "error_code": "wecom_customer_acquisition_link_not_found", "link": {}})
+        return _wecom_link_json(payload, status_code=404)
+    if request.method.upper() == "GET":
+        payload = _wecom_link_common_payload("next_wecom_customer_acquisition_links")
+        payload.update({"link": _wecom_link_view(row), "adapter_mode": "real_blocked", "wecom_api_called": False})
+        return _wecom_link_json(payload)
+    if request.method.upper() == "DELETE":
+        row["status"] = "disabled"
+    elif request.method.upper() == "PATCH":
+        body = await _wecom_link_payload(request)
+        for key in ("link_name", "name", "description", "initial_audience_code"):
+            if key in body:
+                row[key] = _text(body.get(key))
+        row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    payload = _wecom_link_common_payload("next_command")
+    payload.update(
+        {
+            "command_id": f"cmd_wecom_ca_{uuid.uuid4().hex}",
+            "link": _wecom_link_view(row),
+            "adapter_mode": "real_blocked",
+            "wecom_api_called": False,
+            "side_effect_plan": {"kind": "wecom_customer_acquisition_link_mutation", "status": "blocked"},
+        }
+    )
+    return _wecom_link_json(payload)
+
+
+@router.api_route(
+    "/api/admin/wecom-customer-acquisition-links/{link_id}/{action}",
+    methods=["POST", "OPTIONS"],
+)
+async def wecom_customer_acquisition_link_action(request: Request, link_id: str, action: str) -> JSONResponse:
+    if request.method.upper() == "OPTIONS":
+        return _wecom_link_options("next_command")
+    normalized_action = _text(action)
+    row = _find_wecom_link(link_id)
+    if not row:
+        payload = _wecom_link_common_payload("next_command")
+        payload.update({"ok": False, "error_code": "wecom_customer_acquisition_link_not_found"})
+        return _wecom_link_json(payload, status_code=404)
+    if normalized_action not in {"enable", "disable", "sync"}:
+        payload = _wecom_link_common_payload("next_command")
+        payload.update(
+            {
+                "ok": False,
+                "error_code": "wecom_customer_acquisition_action_deprecated",
+                "replacement": "/api/admin/wecom-customer-acquisition-links/{link_id}",
+            }
+        )
+        return _wecom_link_json(payload, status_code=410)
+    if normalized_action == "enable":
+        row["status"] = "active"
+    elif normalized_action == "disable":
+        row["status"] = "disabled"
+    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    payload = _wecom_link_common_payload("next_command")
+    payload.update(
+        {
+            "command_id": f"cmd_wecom_ca_{uuid.uuid4().hex}",
+            "command_name": f"wecom_customer_acquisition_link.{normalized_action}.plan",
+            "link": _wecom_link_view(row),
+            "adapter_mode": "real_blocked",
+            "wecom_api_called": False,
+            "sync_executed": False,
+            "side_effect_plan": {
+                "kind": f"wecom_customer_acquisition_link_{normalized_action}",
+                "status": "blocked",
+                "reason": "real_wecom_api_blocked_by_default",
+            },
+        }
+    )
+    return _wecom_link_json(payload)
 
 
 @router.get("/api/admin/channels")

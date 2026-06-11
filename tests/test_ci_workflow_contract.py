@@ -6,21 +6,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-LEGACY_BACKLOG_CHECK = "tools/generate_legacy_replacement_backlog.py --check"
-LEGACY_LAYOUT_TARGETS = (
-    "tests/test_refactor_guardrails.py",
-    "tests/test_service_layer_layout.py",
-)
-REQUIRED_SMOKE_COMMANDS = (
-    "bash scripts/check_no_duplicate_next_source.sh",
-    "python scripts/check_no_new_legacy.py --strict",
-)
 REQUIRED_SMOKE_TESTS = (
     "tests/test_broadcast_jobs_service.py",
     "tests/test_run_broadcast_queue_worker.py",
     "tests/test_broadcast_jobs_wecom_private_dispatch.py",
 )
 SPECIALIZED_TEST_MARKERS = (
+    "post_legacy",
     "post_closeout",
     "campaigns_due_calc",
     "send_task",
@@ -95,15 +87,17 @@ def test_main_push_uses_smoke_not_full_regression():
     assert "python -m pytest tests/ -n auto" in full_test_block
 
 
-def test_full_test_keeps_complete_regression_and_backlog_drift_check():
+def test_full_test_keeps_complete_regression_only():
     source = _ci_source()
     full_test_block = _job_block(source, "full-test")
 
+    assert "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in full_test_block
     assert "python -m pytest tests/ -n auto" in full_test_block
-    assert LEGACY_BACKLOG_CHECK in full_test_block
+    assert "scripts/check_no_new_legacy.py" not in full_test_block
+    assert "tools/generate_legacy_replacement_backlog.py" not in full_test_block
 
 
-def test_pr_and_main_smoke_skip_legacy_doc_layout_and_specialized_tests():
+def test_pr_and_main_smoke_skip_architecture_guards_and_specialized_tests():
     source = _ci_source()
     smoke_blocks = (
         _job_block(source, "pr-smoke", "main-smoke"),
@@ -111,9 +105,9 @@ def test_pr_and_main_smoke_skip_legacy_doc_layout_and_specialized_tests():
     )
 
     for smoke_block in smoke_blocks:
-        assert LEGACY_BACKLOG_CHECK not in smoke_block
-        for test_path in LEGACY_LAYOUT_TARGETS:
-            assert test_path not in smoke_block
+        assert "scripts/check_no_new_legacy.py" not in smoke_block
+        assert "scripts/check_no_duplicate_next_source.sh" not in smoke_block
+        assert "tools/generate_legacy_replacement_backlog.py" not in smoke_block
         for marker in SPECIALIZED_TEST_MARKERS:
             assert marker not in smoke_block
 
@@ -136,7 +130,7 @@ def test_main_smoke_excludes_specialized_contract_and_domain_suites():
         assert test_path not in main_smoke_block
 
 
-def test_pr_and_main_smoke_keep_required_fast_gates_and_broadcast_tests():
+def test_pr_and_main_smoke_keep_broadcast_business_smoke_tests():
     source = _ci_source()
     smoke_blocks = (
         _job_block(source, "pr-smoke", "main-smoke"),
@@ -144,7 +138,6 @@ def test_pr_and_main_smoke_keep_required_fast_gates_and_broadcast_tests():
     )
 
     for smoke_block in smoke_blocks:
-        for command in REQUIRED_SMOKE_COMMANDS:
-            assert command in smoke_block
+        assert _smoke_pytest_test_paths(smoke_block) == set(REQUIRED_SMOKE_TESTS)
         for test_path in REQUIRED_SMOKE_TESTS:
             assert test_path in smoke_block

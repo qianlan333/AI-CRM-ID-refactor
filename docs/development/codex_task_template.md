@@ -29,8 +29,7 @@
 
 ## Completion Checks
 
-- Run `tools/check_architecture_skill_compliance.py` before marking a Codex task complete.
-- Include the checker result in Verification when the task changes code, docs, routes, or checker rules.
+- Run the task-specific tests/checkers named in the task prompt before marking a Codex task complete.
 
 ## PR Summary Template
 

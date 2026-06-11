@@ -4,14 +4,14 @@ from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
 
+from aicrm_next.automation_engine.channels_api import reset_wecom_customer_acquisition_link_fixture_state
 from aicrm_next.main import create_app
-from aicrm_next.post_legacy_deferred.api import reset_post_legacy_deferred_fixture_state
 
 
 def make_client(monkeypatch) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("SECRET_KEY", "next-wecom-customer-acquisition-test")
-    reset_post_legacy_deferred_fixture_state()
+    reset_wecom_customer_acquisition_link_fixture_state()
     return TestClient(create_app())
 
 

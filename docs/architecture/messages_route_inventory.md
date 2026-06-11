@@ -24,10 +24,8 @@ Search evidence:
 - `aicrm_next/message_archive/api.py` owns the new exact archive list/search routes plus explicit deprecated/blocked routes listed above.
 - `aicrm_next/admin_config/api_docs_view_model.py` only groups `/api/messages/` paths for API docs display.
 - `tests/test_customer_read_model_next_primary.py` and `tests/test_messages_exact_routes.py` reference `GET /api/messages/{external_userid}`, `GET /api/messages/{external_userid}/recent`, and `GET /api/messages/search`.
-- `tests/test_messages_*.py` and `tests/test_route_registry_foundation.py` are validation coverage for this inventory and route registry behavior.
-- `docs/development/legacy_replacement_backlog.md` and `.yaml` contain historical backlog entries for recent and broad wildcard; this inventory supersedes their operational decision for this group.
-- `scripts/check_no_new_legacy.py` references `/api/messages/{external_userid}/recent` only as part of the customer-read deletion guard.
-- Docs references are limited to `docs/crm_sensitive_routes.md`, `docs/mcp_usage.md`, and legacy replacement backlog entries.
+- `tests/test_messages_*.py` are validation coverage for message archive business behavior.
+- Docs references are limited to `docs/crm_sensitive_routes.md` and `docs/mcp_usage.md`.
 
 Non-goals:
 

@@ -2,12 +2,10 @@
 
 Scope: Legacy Exit group 16 deletion closeout locks the media library admin pages, API routes, storage adapter boundary, and route precedence after PR #1007 and the #1009 no-real-external hardening. Media Library production_compat rollback is removed, `legacy_fallback_allowed=false`, real external object storage is not enabled, and real WeCom media upload is not executed.
 
-Route precedence check:
+Current Next coverage:
 
-- `aicrm_next.main.create_app()` no longer registers production_compat, and `aicrm_next/production_compat/api.py` has been removed; media-library requests resolve to Next routes without compatibility fallback.
-- `media_library_router` and `media_library_admin_pages_router` are registered as Next-native routers; `frontend_compat_router` and production compatibility wildcard routing have been removed.
-- `tools/check_production_route_resolution.py` samples every media library API family plus the three admin pages; `tests/test_production_route_resolution.py` asserts they resolve to `aicrm_next.media_library.api` or `aicrm_next.media_library.admin_pages`, not production_compat or frontend_compat.
-- `scripts/check_no_new_legacy.py --strict` now treats any Media Library production_compat route, direct HTTP/storage client, or `legacy_fallback_allowed=true` lifecycle drift as a violation.
+- `media_library_router` and `media_library_admin_pages_router` are registered as Next-native routers.
+- Media library business tests cover list/detail/facets/upload/import/update/delete/thumbnail/variant behavior and no-real-external defaults.
 
 Closeout lock status:
 

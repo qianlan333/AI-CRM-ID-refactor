@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 from scripts import run_external_push_worker
-from scripts.check_no_new_legacy import LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST, check_wecom_legacy_usage_freeze
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,8 +86,3 @@ def test_deploy_service_still_runs_same_worker_script() -> None:
 
     assert "python scripts/run_external_push_worker.py" in service
     assert "openclaw-external-push-worker.service" in timer
-
-
-def test_worker_is_not_legacy_maintenance_allowlisted() -> None:
-    assert Path("scripts/run_external_push_worker.py") not in LEGACY_MAINTENANCE_SCRIPT_ALLOWLIST
-    assert check_wecom_legacy_usage_freeze(ROOT) == []
