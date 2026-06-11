@@ -56,5 +56,8 @@ jobs:
             sudo systemctl status openclaw-external-push-worker.timer --no-pager
             sudo systemctl enable aicrm-reply-monitor-run-due.timer
             sudo systemctl restart aicrm-reply-monitor-run-due.timer
-            sudo systemctl start aicrm-reply-monitor-run-due.service
+            if ! sudo systemctl start aicrm-reply-monitor-run-due.service; then
+              sudo systemctl status aicrm-reply-monitor-run-due.service --no-pager || true
+              sudo journalctl -u aicrm-reply-monitor-run-due.service -n 80 --no-pager || true
+            fi
             sudo systemctl status aicrm-reply-monitor-run-due.timer --no-pager
