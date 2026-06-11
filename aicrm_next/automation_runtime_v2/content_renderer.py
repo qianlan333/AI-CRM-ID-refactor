@@ -6,6 +6,8 @@ from typing import Any
 
 from aicrm_next.shared.postgres_connection import get_db
 
+from . import agent_gateway
+from .agent_runtime import complete_agent_run, create_agent_run, log_llm_call, record_agent_output
 from .domain import CONTENT_AGENT_GENERATED, CONTENT_FIXED_MESSAGE, CONTENT_LAYERED_MESSAGE, as_int, text
 from .membership_service import get_membership, get_stage_entry
 from .task_adapter import get_task
@@ -13,6 +15,15 @@ from .task_planner import get_plan, update_plan_status
 
 _TEMPLATE_TOKEN_RE = re.compile(r"{{\s*([^{}]+?)\s*}}")
 _SAFE_VARIABLE_RE = re.compile(r"^[A-Za-z0-9_.]+$")
+_PROMPT_LEAK_MARKERS = (
+    "你将收到以下资料",
+    "你的唯一任务是",
+    "最终只输出",
+    "不要解释",
+    "不要输出 JSON",
+    "系统说明",
+    "可用认知依据",
+)
 
 
 def _decode(value: Any, default: Any) -> Any:
@@ -167,6 +178,7 @@ def _agent_prompt(agent_code: str) -> dict[str, Any]:
     return {
         "role_prompt": text(item.get("published_role_prompt") or item.get("role_prompt")),
         "task_prompt": text(item.get("published_task_prompt") or item.get("task_prompt")),
+        "published_version": as_int(item.get("published_version")),
         "raw": item,
     }
 
@@ -186,28 +198,116 @@ def build_variables(*, event: dict[str, Any] | None, membership: dict[str, Any],
     }
 
 
-def _agent(task: dict[str, Any], membership: dict[str, Any], event: dict[str, Any] | None, stage_entry: dict[str, Any] | None) -> tuple[bool, dict[str, Any], str]:
+def _explicit_fallback(task: dict[str, Any]) -> dict[str, Any]:
+    config = dict(task.get("agent_config_json") or {})
+    return _fallback_content(config.get("fallback_content") or config.get("fallback") or {})
+
+
+def _render_agent_fallback(task: dict[str, Any], variables: dict[str, Any], reason: str) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:
+    fallback = _explicit_fallback(task)
+    if not _content_has_body(fallback):
+        return False, {}, reason, {"fallback_used": False, "fallback_reason": reason}
+    rendered_text, diagnostics, template_reason = render_template_text(text(fallback.get("content_text") or fallback.get("text")), variables)
+    if template_reason:
+        return False, {}, "agent_fallback_variable_missing", {"fallback_used": False, "fallback_reason": reason, **diagnostics}
+    return True, {"type": CONTENT_AGENT_GENERATED, "fallback": True, "content_text": rendered_text, "attachments": fallback}, "", {"fallback_used": True, "fallback_reason": reason, **diagnostics}
+
+
+def _render_prompt_text(raw: str, variables: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
+    rendered, diagnostics, reason = render_template_text(raw, variables)
+    if reason:
+        return "", diagnostics, "agent_prompt_variable_missing"
+    return rendered, diagnostics, ""
+
+
+def _looks_like_prompt(final_text: str, *, role_prompt: str, task_prompt: str) -> bool:
+    candidate = text(final_text)
+    if not candidate:
+        return False
+    if _TEMPLATE_TOKEN_RE.search(candidate):
+        return True
+    role = text(role_prompt)
+    task = text(task_prompt)
+    if candidate == role or candidate == task:
+        return True
+    if len(task) >= 120 and (task[:120] in candidate or candidate[:120] in task):
+        return True
+    return any(marker in candidate for marker in _PROMPT_LEAK_MARKERS)
+
+
+def _agent(task: dict[str, Any], plan: dict[str, Any], membership: dict[str, Any], event: dict[str, Any] | None, stage_entry: dict[str, Any] | None) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:
     config = dict(task.get("agent_config_json") or {})
     agent_code = text(config.get("agent_code"))
-    fallback = _fallback_content(config.get("fallback_content") or config.get("fallback") or task.get("unified_content_json") or {})
     if not agent_code:
-        return False, {}, "agent_code_missing"
+        return False, {}, "agent_code_missing", {"fallback_used": False}
     prompt = _agent_prompt(agent_code)
-    if not prompt["role_prompt"] or not prompt["task_prompt"]:
-        if _content_has_body(fallback):
-            return True, {"type": CONTENT_AGENT_GENERATED, "fallback": True, "content_text": text(fallback.get("content_text") or fallback.get("text")), "attachments": fallback}, ""
-        return False, {}, "agent_published_prompt_missing"
-    if config.get("force_fail"):
-        if _content_has_body(fallback):
-            return True, {"type": CONTENT_AGENT_GENERATED, "fallback": True, "content_text": text(fallback.get("content_text") or fallback.get("text")), "attachments": fallback}, ""
-        return False, {}, "agent_generation_failed"
     variables = build_variables(event=event, membership=membership, stage_entry=stage_entry)
-    answers = variables["questionnaire"]["answers"]
-    answer_hint = " ".join(text(v) for v in answers.values() if text(v))[:300]
-    generated = text(config.get("mock_output")) or f"{prompt['task_prompt']}\n{answer_hint}".strip()
-    if not generated:
-        return False, {}, "agent_generation_empty"
-    return True, {"type": CONTENT_AGENT_GENERATED, "agent_code": agent_code, "content_text": generated, "variables": variables}, ""
+    run = create_agent_run(agent_code=agent_code, task=task, plan=plan, membership=membership, event=event, stage_entry=stage_entry, variables=variables)
+    run_id = text(run.get("run_id"))
+    base_diag = {
+        "agent_code": agent_code,
+        "agent_run_id": run_id,
+        "fallback_used": False,
+        "questionnaire_answer_count": len(variables.get("questionnaire", {}).get("answers") or {}),
+    }
+    if not prompt["role_prompt"] or not prompt["task_prompt"]:
+        reason = "agent_published_prompt_missing"
+        complete_agent_run(run, status="failed", error_code=reason, error_message=reason)
+        log_llm_call(run=run, agent_code=agent_code, provider="", model="", status="failed", error_code=reason, error_message=reason)
+        ok, rendered, fallback_reason, fallback_diag = _render_agent_fallback(task, variables, reason)
+        if ok:
+            output = record_agent_output(run=run, agent_code=agent_code, external_userid=text(membership.get("external_userid")), final_text=text(rendered.get("content_text")), applied_status="fallback")
+            return True, rendered, "", {**base_diag, **fallback_diag, "agent_output_id": text(output.get("output_id"))}
+        return False, {}, fallback_reason, {**base_diag, **fallback_diag, "render_failed": fallback_reason, "error_code": reason, "error_message": reason}
+    role_prompt, role_diag, role_reason = _render_prompt_text(prompt["role_prompt"], variables)
+    task_prompt, task_diag, task_reason = _render_prompt_text(prompt["task_prompt"], variables)
+    prompt_diag = {
+        "role_prompt_template": role_diag,
+        "task_prompt_template": task_diag,
+    }
+    if role_reason or task_reason:
+        reason = "agent_prompt_variable_missing"
+        missing = sorted(set((role_diag.get("missing_variables") or []) + (task_diag.get("missing_variables") or [])))
+        complete_agent_run(run, status="failed", error_code=reason, error_message=",".join(missing))
+        log_llm_call(run=run, agent_code=agent_code, provider="", model="", status="failed", error_code=reason, error_message=",".join(missing), prompt_text=f"{prompt['role_prompt']}\n{prompt['task_prompt']}")
+        return False, {}, reason, {**base_diag, **prompt_diag, "missing_variables": missing, "render_failed": reason, "error_code": reason, "error_message": ",".join(missing)}
+    if config.get("force_fail"):
+        gateway_result = agent_gateway.AgentGatewayResult(ok=False, mode="forced", error_code="agent_generation_failed", error_message="Forced agent failure")
+    else:
+        gateway_result = agent_gateway.generate_agent_reply(agent_code=agent_code, role_prompt=role_prompt, task_prompt=task_prompt, variables=variables, mock_output=text(config.get("mock_output")))
+    log = log_llm_call(
+        run=run,
+        agent_code=agent_code,
+        provider=gateway_result.provider,
+        model=gateway_result.model,
+        status="completed" if gateway_result.ok else "failed",
+        latency_ms=gateway_result.latency_ms,
+        error_code=gateway_result.error_code,
+        error_message=gateway_result.error_message,
+        request_summary=gateway_result.request_summary,
+        response_summary=gateway_result.response_summary,
+        prompt_text=f"{role_prompt}\n{task_prompt}",
+    )
+    if not gateway_result.ok:
+        reason = gateway_result.error_code or "agent_generation_failed"
+        complete_agent_run(run, status="failed", provider=gateway_result.provider, latency_ms=gateway_result.latency_ms, final_prompt_preview=task_prompt, error_code=reason, error_message=gateway_result.error_message)
+        ok, rendered, fallback_reason, fallback_diag = _render_agent_fallback(task, variables, reason)
+        if ok:
+            output = record_agent_output(run=run, agent_code=agent_code, external_userid=text(membership.get("external_userid")), final_text=text(rendered.get("content_text")), applied_status="fallback", error_code=reason, error_message=gateway_result.error_message)
+            return True, rendered, "", {**base_diag, **fallback_diag, "agent_output_id": text(output.get("output_id")), "llm_call_logged": bool(log), "error_code": reason, "error_message": gateway_result.error_message}
+        return False, {}, fallback_reason, {**base_diag, **fallback_diag, "llm_call_logged": bool(log), "render_failed": fallback_reason, "error_code": reason, "error_message": gateway_result.error_message}
+    final_text = text(gateway_result.final_text)
+    if not final_text:
+        reason = "agent_generation_empty"
+        complete_agent_run(run, status="failed", provider=gateway_result.provider, latency_ms=gateway_result.latency_ms, final_prompt_preview=task_prompt, error_code=reason, error_message=reason)
+        return False, {}, reason, {**base_diag, "llm_call_logged": bool(log), "render_failed": reason, "error_code": reason, "error_message": reason}
+    if _looks_like_prompt(final_text, role_prompt=prompt["role_prompt"], task_prompt=prompt["task_prompt"]):
+        reason = "agent_output_looks_like_prompt"
+        complete_agent_run(run, status="failed", provider=gateway_result.provider, latency_ms=gateway_result.latency_ms, final_prompt_preview=task_prompt, error_code=reason, error_message=reason)
+        return False, {}, reason, {**base_diag, "llm_call_logged": bool(log), "render_failed": reason, "error_code": reason, "error_message": reason}
+    completed = complete_agent_run(run, status="completed", provider=gateway_result.provider, latency_ms=gateway_result.latency_ms, final_prompt_preview=task_prompt)
+    output = record_agent_output(run=completed or run, agent_code=agent_code, external_userid=text(membership.get("external_userid")), final_text=final_text, applied_status="generated")
+    return True, {"type": CONTENT_AGENT_GENERATED, "agent_code": agent_code, "content_text": final_text, "variables": variables}, "", {**base_diag, "agent_output_id": text(output.get("output_id")), "llm_call_logged": bool(log), "fallback_used": False}
 
 
 def render(task_plan_id: int, *, event: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -227,7 +327,7 @@ def render(task_plan_id: int, *, event: dict[str, Any] | None = None) -> dict[st
     elif content_type == CONTENT_LAYERED_MESSAGE:
         ok, rendered, reason = _layered(task, membership, event)
     else:
-        ok, rendered, reason = _agent(task, membership, event, stage_entry)
+        ok, rendered, reason, diagnostics = _agent(task, plan, membership, event, stage_entry)
     if not ok:
         return update_plan_status(int(task_plan_id), "failed", skip_reason=reason, diagnostics={"render_failed": reason, **diagnostics})
     return update_plan_status(int(task_plan_id), "rendered", rendered=rendered, diagnostics={"rendered": True, "content_type": content_type, **diagnostics})

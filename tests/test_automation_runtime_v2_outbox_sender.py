@@ -67,9 +67,8 @@ def test_runtime_v2_outbox_does_not_enqueue_without_sender(next_pg_schema):
 
     assert result["status"] == "failed"
     assert result["reason"] == "sender_userid_missing"
-    stored = conn.execute("SELECT status, skip_reason, broadcast_job_id FROM automation_task_plan_v2 WHERE id = ?", (int(plan["id"]),)).fetchone()
-    assert stored["status"] == "failed"
-    assert stored["skip_reason"] == "sender_userid_missing"
-    assert stored["broadcast_job_id"] is None
+    assert result["plan"]["status"] == "failed"
+    assert result["plan"]["skip_reason"] == "sender_userid_missing"
+    assert result["plan"]["broadcast_job_id"] is None
     count = conn.execute("SELECT COUNT(*) AS count FROM broadcast_jobs WHERE source_type = 'automation_runtime_v2'").fetchone()["count"]
     assert int(count) == 0
