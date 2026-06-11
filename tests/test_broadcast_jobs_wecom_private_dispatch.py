@@ -161,6 +161,61 @@ def test_campaign_private_message_materializes_miniprogram_attachment(monkeypatc
     assert recorded["request_payload"]["attachments"] == [attachment]
 
 
+def test_campaign_private_message_allows_attachment_only_step(monkeypatch) -> None:
+    adapter = Adapter({"ok": True, "wecom_msgid": "msg-campaign-mini-only", "result": {"msgid": "msg-campaign-mini-only"}})
+    attachment = {
+        "msgtype": "miniprogram",
+        "miniprogram": {
+            "appid": "wx_app_001",
+            "pagepath": "pages/article/article?lesson_id=abc",
+            "title": "Mini Card",
+            "thumb_media_id": "media_thumb_001",
+        },
+    }
+    recorded: dict[str, Any] = {}
+
+    def record_outbound_task(**kwargs: Any) -> int:
+        recorded["request_payload"] = kwargs["request_payload"]
+        return 891
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
+    monkeypatch.setattr(worker, "_resolve_private_attachments", lambda content_package: [attachment])
+    monkeypatch.setattr(worker, "_record_outbound_task", record_outbound_task)
+    repo = FakeRepo(
+        [
+            _job(
+                source_type="campaign",
+                source_table="campaign_members",
+                source_id="2745:2745:0",
+                idempotency_key="campaign_member_step:2745:2745:0",
+                channel="",
+                target_kind="",
+                content_type="private_message",
+                payload={
+                    "channel": "",
+                    "sender_userid": "",
+                    "owner_userid": "",
+                    "rendered_content": {},
+                    "campaign": {"owner_userid": "HuangYouCan"},
+                    "step": {
+                        "content_text": "",
+                        "content_payload_json": {"miniprogram_library_ids": [17]},
+                    },
+                    "members": [{"external_contact_id": "wm_test"}],
+                },
+            )
+        ]
+    )
+
+    summary = run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert summary["sent_ok"] == 1
+    assert adapter.payload["attachments"] == [attachment]
+    assert "text" not in adapter.payload
+    assert recorded["request_payload"]["attachments"] == [attachment]
+    assert "text" not in recorded["request_payload"]
+
+
 def test_campaign_private_message_material_resolve_failure_is_not_sent(monkeypatch) -> None:
     adapter = Adapter({"ok": True, "wecom_msgid": "msg-should-not-send", "result": {"msgid": "msg-should-not-send"}})
     monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: adapter)
@@ -222,6 +277,15 @@ def test_wecom_private_target_count_mismatch_is_validation_failed() -> None:
 
     assert repo.failed[0]["failure_type"] == "validation_failed"
     assert repo.failed[0]["error"] == "target_count_mismatch"
+
+
+def test_wecom_private_content_or_attachment_missing_is_validation_failed() -> None:
+    repo = FakeRepo([_job(payload={"rendered_content": {"content_text": ""}})])
+
+    run_broadcast_queue_worker(repo=repo, dispatcher=SafeSkippedBroadcastDispatcher())
+
+    assert repo.failed[0]["failure_type"] == "validation_failed"
+    assert repo.failed[0]["error"] == "content_text_or_attachment_missing"
 
 
 def test_wecom_private_before_external_call_failure(monkeypatch) -> None:

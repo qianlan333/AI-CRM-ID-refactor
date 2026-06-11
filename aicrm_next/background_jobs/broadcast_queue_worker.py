@@ -287,29 +287,32 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         return {"ok": False, "error": "target_count_mismatch", "failure_type": "validation_failed"}
     if not sender_userid:
         return {"ok": False, "error": "sender_userid_missing", "failure_type": "validation_failed"}
-    if not content_text:
-        return {"ok": False, "error": "content_text_missing", "failure_type": "validation_failed"}
-    ok, reason = _realtest_guard(sender_userid=sender_userid, targets=targets, content_text=content_text)
-    if not ok:
-        return {"ok": False, "error": reason, "failure_type": "validation_failed"}
     content_package = _extract_private_content_package(payload)
     try:
         attachments = _resolve_private_attachments(content_package)
     except Exception as exc:
         return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
+    if not content_text and not attachments:
+        return {"ok": False, "error": "content_text_or_attachment_missing", "failure_type": "validation_failed"}
+    ok, reason = _realtest_guard(sender_userid=sender_userid, targets=targets, content_text=content_text)
+    if not ok:
+        return {"ok": False, "error": reason, "failure_type": "validation_failed"}
     request_payload = {
         "job_id": int_value(job.get("id")),
         "source_type": _text(job.get("source_type")),
         "source_id": _text(job.get("source_id")),
         "sender_userid": sender_userid,
         "external_userids": targets,
-        "text": {"content": content_text},
         "content_hash": _json_dict(payload.get("rendered_content")).get("content_hash") or "",
         "content_preview": content_text[:120],
     }
+    if content_text:
+        request_payload["text"] = {"content": content_text}
     if attachments:
         request_payload["attachments"] = attachments
-    adapter_payload = {"sender": sender_userid, "external_userids": targets, "text": {"content": content_text}}
+    adapter_payload = {"sender": sender_userid, "external_userids": targets}
+    if content_text:
+        adapter_payload["text"] = {"content": content_text}
     if attachments:
         adapter_payload["attachments"] = attachments
     result = build_wecom_private_message_adapter().create_private_message_task(
