@@ -269,6 +269,7 @@ def normalize_wechat_shop_order(order: dict[str, Any], *, raw_response: dict[str
     status_code = _int(order.get("status"))
     pay_time = _int(pay_info.get("pay_time"))
     paid_at = _ts(pay_time)
+    order_created_at = _ts(order.get("create_time") or order.get("create_time_s") or order_detail.get("create_time"))
     product_name, product_code, product_count, finish_sku_count = _product_summary(product_infos)
     canonical_code = canonical_product_code(product_code or product_name)
     canonical_name = canonical_product_name(canonical_code, product_name)
@@ -289,6 +290,7 @@ def normalize_wechat_shop_order(order: dict[str, Any], *, raw_response: dict[str
         "business_status": business_status,
         "status_code": status_code,
         "status_label": _text(order.get("status_desc") or order.get("status_label")),
+        "created_at": order_created_at,
         "paid_at": paid_at,
         "returned_at": returned_at,
         "amount_total": amount_total,
@@ -472,7 +474,7 @@ def _upsert_order(order: dict[str, Any], *, source_event_id: int | None = None) 
             "id": existing.get("id") or len(_FIXTURE_ORDERS) + 1,
             "last_event_type": _text(_FIXTURE_EVENTS[-1].get("event_type")) if _FIXTURE_EVENTS else existing.get("last_event_type", ""),
             "last_event_at": _now_text() if source_event_id else existing.get("last_event_at", ""),
-            "created_at": existing.get("created_at") or _now_text(),
+            "created_at": _iso(order.get("created_at")) or existing.get("created_at") or _now_text(),
             "updated_at": _now_text(),
             "synced_at": _iso(order.get("synced_at")) or _now_text(),
             "paid_at": _iso(order.get("paid_at")),
@@ -489,7 +491,7 @@ def _upsert_order(order: dict[str, Any], *, source_event_id: int | None = None) 
                 currency, transaction_id, payment_method, buyer_mobile, openid, unionid, product_name, product_code,
                 product_count, deliver_method, is_virtual_delivery, virtual_account_no, virtual_account_type,
                 aftersale_order_count, on_aftersale_order_count, finish_aftersale_sku_count, raw_order_json,
-                last_event_type, last_event_at, synced_at, sync_status, last_error, updated_at
+                last_event_type, last_event_at, synced_at, sync_status, last_error, created_at, updated_at
             )
             VALUES (
                 %(order_id)s, %(provider)s, %(provider_label)s, %(deal_recorded)s, %(returned_recorded)s,
@@ -499,7 +501,7 @@ def _upsert_order(order: dict[str, Any], *, source_event_id: int | None = None) 
                 %(product_count)s, %(deliver_method)s, %(is_virtual_delivery)s, %(virtual_account_no)s,
                 %(virtual_account_type)s, %(aftersale_order_count)s, %(on_aftersale_order_count)s,
                 %(finish_aftersale_sku_count)s, %(raw_order_json)s, %(last_event_type)s, %(last_event_at)s,
-                %(synced_at)s, %(sync_status)s, %(last_error)s, CURRENT_TIMESTAMP
+                %(synced_at)s, %(sync_status)s, %(last_error)s, COALESCE(%(created_at)s, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
             )
             ON CONFLICT (order_id) DO UPDATE
             SET provider = EXCLUDED.provider,
@@ -535,6 +537,7 @@ def _upsert_order(order: dict[str, Any], *, source_event_id: int | None = None) 
                 synced_at = EXCLUDED.synced_at,
                 sync_status = EXCLUDED.sync_status,
                 last_error = '',
+                created_at = EXCLUDED.created_at,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
             """,

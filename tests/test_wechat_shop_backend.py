@@ -24,6 +24,7 @@ def _mock_order(
     *,
     order_id: str,
     status: int = 20,
+    create_time: int = 1759900000,
     pay_time: int = 1760000000,
     transaction_id: str = "shop_tx_001",
     finish_aftersale_sku_cnt: int = 0,
@@ -41,6 +42,7 @@ def _mock_order(
             "order": {
                 "order_id": requested_order_id,
                 "status": status,
+                "create_time": create_time,
                 "update_time": 1760000300,
                 "order_detail": {
                     "pay_info": {"pay_time": pay_time, "transaction_id": transaction_id, "pay_method": 1},
@@ -123,6 +125,18 @@ def test_wechat_shop_paid_order_maps_to_unified_paid_status(monkeypatch) -> None
     assert detail["order"]["status_label"] in {"成交", "已支付"}
     assert detail["order"]["provider_label"] == "微信小店"
     assert detail["order"]["transaction_id"] == "shop_tx_paid"
+
+
+def test_wechat_shop_order_created_at_uses_source_create_time(monkeypatch) -> None:
+    order_id = "3705115058471208125"
+    _mock_order(monkeypatch, order_id=order_id, create_time=1700000000)
+    client = _client(monkeypatch)
+
+    client.post(f"/api/admin/wechat-shop/orders/{order_id}/sync")
+    saved = fixture_wechat_shop_order(order_id)
+
+    assert saved is not None
+    assert saved["created_at"] == "2023-11-14T22:13:20Z"
 
 
 def test_wechat_shop_subscription_product_is_canonicalized(monkeypatch) -> None:
