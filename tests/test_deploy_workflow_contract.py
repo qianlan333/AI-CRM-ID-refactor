@@ -97,9 +97,14 @@ def test_production_deploy_installs_and_runs_reply_monitor_timer():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health", workflow.index("for _ in $(seq 1 20); do"))
+    capture_copy_service_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-capture.service /etc/systemd/system/")
+    capture_copy_timer_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-capture.timer /etc/systemd/system/")
     copy_service_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-run-due.service /etc/systemd/system/")
     copy_timer_index = workflow.index("sudo cp deploy/aicrm-reply-monitor-run-due.timer /etc/systemd/system/")
     daemon_reload_index = workflow.index("sudo systemctl daemon-reload")
+    capture_enable_index = workflow.index("sudo systemctl enable aicrm-reply-monitor-capture.timer")
+    capture_restart_index = workflow.index("sudo systemctl restart aicrm-reply-monitor-capture.timer")
+    capture_status_index = workflow.index("sudo systemctl status aicrm-reply-monitor-capture.timer --no-pager")
     enable_index = workflow.index("sudo systemctl enable aicrm-reply-monitor-run-due.timer")
     restart_timer_index = workflow.index("sudo systemctl restart aicrm-reply-monitor-run-due.timer")
     start_service_index = workflow.index("if ! sudo systemctl start aicrm-reply-monitor-run-due.service; then")
@@ -107,9 +112,11 @@ def test_production_deploy_installs_and_runs_reply_monitor_timer():
     journal_index = workflow.index("sudo journalctl -u aicrm-reply-monitor-run-due.service -n 80 --no-pager || true")
     timer_status_index = workflow.index("sudo systemctl status aicrm-reply-monitor-run-due.timer --no-pager")
 
-    assert health_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert health_index < capture_copy_service_index < capture_copy_timer_index < copy_service_index < copy_timer_index < daemon_reload_index
+    assert daemon_reload_index < capture_enable_index < capture_restart_index < capture_status_index < enable_index
     assert daemon_reload_index < enable_index < restart_timer_index < start_service_index
     assert start_service_index < service_status_index < journal_index < timer_status_index
+    assert "sudo systemctl start aicrm-reply-monitor-capture.service" not in workflow
 
 
 def test_external_push_worker_systemd_units_are_deployable():
@@ -143,6 +150,25 @@ def test_reply_monitor_run_due_systemd_units_are_deployable():
     assert "OnCalendar=*-*-* *:*:00" in timer
     assert "Persistent=true" in timer
     assert "Unit=aicrm-reply-monitor-run-due.service" in timer
+
+
+def test_reply_monitor_capture_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "aicrm-reply-monitor-capture.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "aicrm-reply-monitor-capture.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=APP_HOST=127.0.0.1" in service
+    assert "Environment=APP_PORT=5001" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python scripts/run_reply_monitor_capture.py" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+    assert "OnCalendar=*-*-* *:00/3:00" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=aicrm-reply-monitor-capture.service" in timer
 
 
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
