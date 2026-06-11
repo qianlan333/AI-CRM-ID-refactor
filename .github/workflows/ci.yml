@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   pr-smoke:
-    # PR 阶段只跑 campaign / broadcast queue / cloud orchestrator 相关 smoke，
+    # PR 阶段只跑 broadcast queue 相关 smoke，
     # 全量 PG 回归留给 nightly 和手动触发。
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
         timeout-minutes: 15
 
   main-smoke:
-    # main push 只跑关键路径 smoke，避免每次部署都被全量回归卡 6-8 分钟。
+    # main push 只跑 broadcast queue 关键路径 smoke，避免每次部署都被全量回归卡 6-8 分钟。
     # 全量 ``pytest tests/`` 仍由 nightly / workflow_dispatch 负责。
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
