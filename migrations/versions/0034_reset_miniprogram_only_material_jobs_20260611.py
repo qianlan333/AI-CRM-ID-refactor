@@ -29,7 +29,7 @@ def upgrade() -> None:
         UPDATE broadcast_jobs bj
         SET status = 'queued',
             failure_type = NULL,
-            last_error = NULL,
+            last_error = '',
             claimed_at = NULL,
             claim_token = NULL,
             lease_expires_at = NULL,
