@@ -2,42 +2,49 @@
 
 {% set category = config_category_detail.category %}
 
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/config_center.css') }}?v=config-center-shell-20260611">
+{% endblock %}
+
 {% block content %}
 <section
-  class="config-detail"
+  class="cc-page cc-detail"
   data-config-detail
   data-category-key="{{ category.key }}"
   data-admin-action-token="{{ admin_action_token }}"
 >
-  <div class="config-center-alert" data-config-alert hidden></div>
+  <div class="cc-alert" data-config-alert hidden></div>
 
-  <div class="config-detail-top admin-card">
-    <div class="config-detail-title">{{ category.label }}</div>
-    <div class="config-detail-status">
-      <span class="config-center-state{% if category.enabled %} is-on{% endif %}" data-category-status>
-        {{ category.status_label }}
+  <div class="cc-detail-top">
+    <div class="cc-detail-title">{{ category.label }}</div>
+
+    <div class="cc-detail-state">
+      <span class="cc-state{% if category.enabled %} is-on{% endif %}" data-category-status>
+        {{ "已生效" if category.enabled else "未生效" }}
       </span>
-      <label class="config-center-switch">
+      <label class="cc-switch">
         <input
           type="checkbox"
           data-category-enabled
           data-category-key="{{ category.key }}"
           {% if category.enabled %}checked{% endif %}
         >
-        <span class="config-center-slider"></span>
+        <span class="cc-slider"></span>
       </label>
     </div>
-    <a class="admin-button admin-button--ghost" href="/admin/config">返回</a>
+
+    <a class="cc-btn" href="/admin/config">返回</a>
   </div>
 
-  <form class="config-detail-form" data-config-settings-form>
+  <form class="cc-form" data-config-settings-form>
     {% for block in config_category_detail.blocks %}
-    <section class="admin-card config-detail-block">
-      <div class="config-detail-block-head">
+    <section class="cc-card cc-block" data-config-detail-block>
+      <div class="cc-card-h">
         <h2>{{ block.title }}</h2>
       </div>
-      <div class="admin-table-wrap">
-        <table class="admin-table config-detail-table">
+
+      <div class="cc-table-wrap">
+        <table class="cc-table cc-field-table">
           <tbody>
             {% for field in block.fields %}
             {% set is_boolean = field.type == "boolean" or field.key.endswith("_ENABLED") %}
@@ -46,7 +53,7 @@
               <th>{{ field.label }}</th>
               <td>
                 {% if is_boolean %}
-                <label class="config-center-switch">
+                <label class="cc-switch">
                   <input
                     type="checkbox"
                     data-config-field
@@ -55,32 +62,49 @@
                     {% if normalized_value in ["true", "1", "yes", "on"] %}checked{% endif %}
                     {% if field.readonly %}disabled{% endif %}
                   >
-                  <span class="config-center-slider"></span>
+                  <span class="cc-slider"></span>
                 </label>
                 {% elif field.sensitive %}
                 <input
+                  class="cc-input"
                   type="password"
                   data-config-field
                   data-field-key="{{ field.key }}"
                   placeholder="{{ '已设置' if field.configured else '未设置' }}"
                   autocomplete="new-password"
-                  {% if field.readonly %}readonly class="config-detail-readonly"{% endif %}
+                  {% if field.readonly %}readonly{% endif %}
                 >
                 {% elif field.readonly %}
                 <input
+                  class="cc-input is-readonly"
                   type="text"
                   data-config-field
                   data-field-key="{{ field.key }}"
                   value="{{ field.display_value or field.value }}"
                   readonly
-                  class="config-detail-readonly"
                 >
                 {% elif field.input_type == "textarea" %}
-                <textarea data-config-field data-field-key="{{ field.key }}">{{ field.value }}</textarea>
+                <textarea
+                  class="cc-input cc-textarea"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                >{{ field.value }}</textarea>
                 {% elif field.input_type == "number" or field.type == "integer" %}
-                <input type="number" data-config-field data-field-key="{{ field.key }}" value="{{ field.value }}">
+                <input
+                  class="cc-input"
+                  type="number"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  value="{{ field.value }}"
+                >
                 {% else %}
-                <input type="text" data-config-field data-field-key="{{ field.key }}" value="{{ field.value }}">
+                <input
+                  class="cc-input"
+                  type="text"
+                  data-config-field
+                  data-field-key="{{ field.key }}"
+                  value="{{ field.value }}"
+                >
                 {% endif %}
               </td>
             </tr>
@@ -91,17 +115,17 @@
     </section>
     {% endfor %}
 
-    <div class="config-detail-bottom admin-card">
-      <a class="admin-button admin-button--ghost" href="/admin/config">取消</a>
+    <div class="cc-bottom-actions">
+      <a class="cc-btn" href="/admin/config">取消</a>
       {% if category.check_supported %}
-      <button class="admin-button admin-button--secondary" type="button" data-config-check>检查</button>
+      <button class="cc-btn cc-btn-secondary" type="button" data-config-check>检查</button>
       {% endif %}
-      <button class="admin-button admin-button--primary" type="submit">保存</button>
+      <button class="cc-btn cc-btn-primary" type="submit">保存</button>
     </div>
   </form>
 </section>
 {% endblock %}
 
 {% block scripts_extra %}
-<script defer src="{{ url_for('static', filename='admin_console/config_center.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/config_center.js') }}?v=config-center-shell-20260611"></script>
 {% endblock %}
