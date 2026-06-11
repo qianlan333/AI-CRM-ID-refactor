@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from aicrm_next.shared.postgres_connection import get_db
@@ -9,6 +10,9 @@ from .domain import CONTENT_AGENT_GENERATED, CONTENT_FIXED_MESSAGE, CONTENT_LAYE
 from .membership_service import get_membership, get_stage_entry
 from .task_adapter import get_task
 from .task_planner import get_plan, update_plan_status
+
+_TEMPLATE_TOKEN_RE = re.compile(r"{{\s*([^{}]+?)\s*}}")
+_SAFE_VARIABLE_RE = re.compile(r"^[A-Za-z0-9_.]+$")
 
 
 def _decode(value: Any, default: Any) -> Any:
@@ -34,11 +38,81 @@ def _fallback_content(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _fixed(task: dict[str, Any]) -> tuple[bool, dict[str, Any], str]:
+_MISSING = object()
+
+
+def _stringify_template_value(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return text(value)
+
+
+def _resolve_path(source: Any, path: str) -> Any:
+    current = source
+    for part in path.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+            continue
+        return _MISSING
+    return current
+
+
+def _resolve_template_variable(name: str, variables: dict[str, Any]) -> Any:
+    if "." not in name:
+        webhook = variables.get("webhook") if isinstance(variables.get("webhook"), dict) else {}
+        webhook_vars = webhook.get("variables") if isinstance(webhook.get("variables"), dict) else {}
+        resolved = _resolve_path(webhook_vars, name)
+        if resolved is not _MISSING:
+            return resolved
+        resolved = _resolve_path(webhook, name)
+        if resolved is not _MISSING:
+            return resolved
+    return _resolve_path(variables, name)
+
+
+def render_template_text(raw_text: str, variables: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
+    raw = text(raw_text)
+    matches = list(_TEMPLATE_TOKEN_RE.finditer(raw))
+    if not matches:
+        return raw, {"template_rendered": False, "template_variables_used": []}, ""
+    missing: list[str] = []
+    used: list[str] = []
+    rendered_parts: list[str] = []
+    cursor = 0
+    for match in matches:
+        rendered_parts.append(raw[cursor : match.start()])
+        name = text(match.group(1))
+        if not _SAFE_VARIABLE_RE.fullmatch(name):
+            missing.append(name or "<invalid>")
+            rendered_parts.append("")
+            cursor = match.end()
+            continue
+        value = _resolve_template_variable(name, variables)
+        if value is _MISSING or value is None:
+            missing.append(name)
+            rendered_parts.append("")
+            cursor = match.end()
+            continue
+        used.append(name)
+        rendered_parts.append(_stringify_template_value(value))
+        cursor = match.end()
+    rendered_parts.append(raw[cursor:])
+    if missing:
+        return "", {"template_rendered": True, "unresolved_template": True, "missing_variables": sorted(set(missing)), "template_variables_used": sorted(set(used))}, "template_variable_missing"
+    rendered = "".join(rendered_parts)
+    if _TEMPLATE_TOKEN_RE.search(rendered):
+        return "", {"template_rendered": True, "unresolved_template": True, "missing_variables": [], "template_variables_used": sorted(set(used))}, "template_variable_missing"
+    return rendered, {"template_rendered": True, "template_variables_used": sorted(set(used))}, ""
+
+
+def _fixed(task: dict[str, Any], variables: dict[str, Any]) -> tuple[bool, dict[str, Any], str, dict[str, Any]]:
     content = dict(task.get("unified_content_json") or {})
     if not _content_has_body(content):
-        return False, {}, "fixed_content_missing"
-    return True, {"type": CONTENT_FIXED_MESSAGE, "content_text": text(content.get("content_text") or content.get("text")), "attachments": {k: content.get(k) for k in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids", "attachments") if content.get(k)}}, ""
+        return False, {}, "fixed_content_missing", {}
+    rendered_text, diagnostics, reason = render_template_text(text(content.get("content_text") or content.get("text")), variables)
+    if reason:
+        return False, {}, reason, diagnostics
+    return True, {"type": CONTENT_FIXED_MESSAGE, "content_text": rendered_text, "attachments": {k: content.get(k) for k in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids", "attachments") if content.get(k)}}, "", diagnostics
 
 
 def _questionnaire_answers(event: dict[str, Any] | None) -> dict[str, Any]:
@@ -146,12 +220,14 @@ def render(task_plan_id: int, *, event: dict[str, Any] | None = None) -> dict[st
     membership = get_membership(as_int(plan.get("membership_id"))) or {}
     stage_entry = get_stage_entry(as_int(plan.get("stage_entry_id"))) if as_int(plan.get("stage_entry_id")) else None
     content_type = text(task.get("content_type"))
+    diagnostics: dict[str, Any] = {}
     if content_type == CONTENT_FIXED_MESSAGE:
-        ok, rendered, reason = _fixed(task)
+        variables = build_variables(event=event, membership=membership, stage_entry=stage_entry)
+        ok, rendered, reason, diagnostics = _fixed(task, variables)
     elif content_type == CONTENT_LAYERED_MESSAGE:
         ok, rendered, reason = _layered(task, membership, event)
     else:
         ok, rendered, reason = _agent(task, membership, event, stage_entry)
     if not ok:
-        return update_plan_status(int(task_plan_id), "failed", skip_reason=reason, diagnostics={"render_failed": reason})
-    return update_plan_status(int(task_plan_id), "rendered", rendered=rendered, diagnostics={"rendered": True, "content_type": content_type})
+        return update_plan_status(int(task_plan_id), "failed", skip_reason=reason, diagnostics={"render_failed": reason, **diagnostics})
+    return update_plan_status(int(task_plan_id), "rendered", rendered=rendered, diagnostics={"rendered": True, "content_type": content_type, **diagnostics})
