@@ -57,6 +57,7 @@ def seed_task(
     *,
     trigger_type: str = "audience_entered",
     target_stage: str = "operating",
+    audience_day_offset: int = 1,
     content_mode: str = "unified",
     content_text: str = "hello",
     segment_contents: list[dict[str, Any]] | None = None,
@@ -70,7 +71,7 @@ def seed_task(
             target_audience_code, target_stage_code, audience_day_offset, behavior_filter, content_mode,
             unified_content_json, segment_contents_json, agent_config_json, created_by, updated_by, published_at
         )
-        VALUES (?, 'runtime v2 task', 'active', ?, '10:00', 'Asia/Shanghai', ?, ?, 1, 'none', ?,
+        VALUES (?, 'runtime v2 task', 'active', ?, '10:00', 'Asia/Shanghai', ?, ?, ?, 'none', ?,
                 CAST(? AS jsonb), CAST(? AS jsonb), CAST(? AS jsonb), 'test', 'test', CURRENT_TIMESTAMP)
         RETURNING id
         """,
@@ -79,6 +80,7 @@ def seed_task(
             trigger_type,
             target_stage,
             target_stage,
+            int(audience_day_offset),
             content_mode,
             json.dumps({"content_text": content_text}, ensure_ascii=False),
             json.dumps(segment_contents or [], ensure_ascii=False),

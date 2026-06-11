@@ -35,26 +35,35 @@ def normalize_task(row: dict[str, Any]) -> dict[str, Any]:
     content_mode = text(item.get("content_mode")) or "unified"
     runtime_trigger = LEGACY_TRIGGER_MAP.get(trigger_type, trigger_type)
     content_type = LEGACY_CONTENT_MAP.get(content_mode, content_mode)
+    unified = _decode(item.get("unified_content_json"), {})
+    segments = _decode(item.get("segment_contents_json"), [])
+    agent = _decode(item.get("agent_config_json"), {})
+    trigger_config = _decode(item.get("trigger_config_json"), {}) if "trigger_config_json" in item else {}
     layer_basis = ""
     if content_mode == "profile_layered":
         layer_basis = "profile"
     elif content_mode == "behavior_layered":
         layer_basis = "behavior"
     if content_type == CONTENT_LAYERED_MESSAGE and not layer_basis:
-        layer_basis = text(item.get("layer_basis") or (item.get("agent_config_json") or {}).get("layer_basis")) or "questionnaire"
-    unified = _decode(item.get("unified_content_json"), {})
-    segments = _decode(item.get("segment_contents_json"), [])
-    agent = _decode(item.get("agent_config_json"), {})
-    trigger_config = _decode(item.get("trigger_config_json"), {}) if "trigger_config_json" in item else {}
+        layer_basis = text(item.get("layer_basis") or agent.get("layer_basis")) or "questionnaire"
     target_stage = text(item.get("target_stage_code") or item.get("target_audience_code")) or "operating"
+    day_offset = as_int(item.get("audience_day_offset"), 1)
+    schedule_type = text(
+        trigger_config.get("schedule_type")
+        or item.get("schedule_type")
+        or agent.get("schedule_type")
+        or unified.get("schedule_type")
+    )
+    if not schedule_type and runtime_trigger == TRIGGER_SCHEDULED:
+        schedule_type = "stage_day_offset" if trigger_type == "scheduled_daily" and day_offset > 1 else "daily_time"
     runtime_v2 = {
         "trigger_type": runtime_trigger,
         "content_type": content_type,
         "trigger_event_type": text(item.get("trigger_event_type") or trigger_config.get("event_type") or agent.get("trigger_event_type")),
         "target_stage": target_stage,
-        "schedule_type": text(item.get("schedule_type") or trigger_config.get("schedule_type")) or ("daily_time" if runtime_trigger == TRIGGER_SCHEDULED else ""),
+        "schedule_type": schedule_type,
         "send_time": text(item.get("send_time")) or "10:00",
-        "day_offset": as_int(item.get("audience_day_offset"), 1),
+        "day_offset": day_offset,
         "webhook_key": text(item.get("webhook_key") or trigger_config.get("webhook_key") or agent.get("webhook_key")),
         "layer_basis": layer_basis,
     }

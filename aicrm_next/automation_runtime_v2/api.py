@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -20,6 +21,17 @@ def _json(payload: Any) -> JSONResponse:
 def verify_webhook_signature(webhook_key: str, payload: dict[str, Any], signature: str = "") -> bool:
     expected = text(payload.get("signature"))
     return not expected or expected == text(signature)
+
+
+def _parse_now(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(text(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid now") from exc
 
 
 @router.post("/api/automation-runtime/v2/webhooks/{webhook_key}", name="api.automation_runtime_v2_webhook")
@@ -48,7 +60,7 @@ async def automation_runtime_v2_webhook(webhook_key: str, request: Request, x_ai
 
 @router.post("/api/automation-runtime/v2/scheduled/run-due", name="api.automation_runtime_v2_run_due")
 async def automation_runtime_v2_run_due(payload: dict[str, Any]) -> JSONResponse:
-    return _json(run_due_scheduled_tasks(program_id=int(payload.get("program_id") or 0) or None))
+    return _json(run_due_scheduled_tasks(program_id=int(payload.get("program_id") or 0) or None, now=_parse_now(payload.get("now"))))
 
 
 @router.post("/api/automation-runtime/v2/tasks/{task_id}/check", name="api.automation_runtime_v2_task_check")
