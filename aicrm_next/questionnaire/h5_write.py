@@ -208,6 +208,8 @@ def _validate_submit_command(command: QuestionnaireH5SubmitCommand) -> None:
         raise QuestionnaireH5WriteInputError("source_route is required")
     if not isinstance(command.answers, dict):
         raise QuestionnaireH5WriteInputError("answers must be an object")
+    if not command.answers:
+        raise QuestionnaireH5WriteInputError("answers is required")
 
 
 def _validate_diagnostics_command(command: QuestionnaireClientDiagnosticsCommand) -> None:
