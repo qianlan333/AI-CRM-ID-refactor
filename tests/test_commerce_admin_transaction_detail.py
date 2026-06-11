@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from starlette.routing import Match
 
-from aicrm_next.commerce.admin_transaction_detail import PaymentProviderStatusMapper
+from aicrm_next.commerce.admin_transaction_detail import PaymentProviderStatusMapper, _present
 from aicrm_next.commerce.repo import reset_commerce_fixture_state
 from aicrm_next.main import create_app
 
@@ -87,6 +87,49 @@ def test_admin_transaction_apis_return_unified_readonly_fields(monkeypatch) -> N
         item = payload["items"][0]
         for key in ["merchant_order_no", "platform_transaction_no", "product_name", "amount_yuan", "status_label", "callback_summary"]:
             assert key in item
+
+
+def test_admin_transaction_list_repairs_wechat_payer_mojibake() -> None:
+    item = _present(
+        "wechat",
+        {
+            "id": 1,
+            "out_trade_no": "WXP260609124929054C79692934",
+            "transaction_id": "4200003092202606091585869259",
+            "payer_name_snapshot": "å¼ ä¸‰",
+            "mobile_snapshot": "18689496150",
+            "userid_snapshot": "HuangYouCan",
+            "product_code": "premium_monthly_trial",
+            "product_name": "黄小璨月度会员私教版",
+            "amount_total": 6900,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        },
+    )
+
+    assert item["payer_name"] == "张三"
+    assert item["customer"]["name"] == "张三"
+
+
+def test_admin_transaction_list_repairs_emoji_payer_mojibake() -> None:
+    item = _present(
+        "wechat",
+        {
+            "id": 1,
+            "out_trade_no": "WXP260609064048981593301304",
+            "transaction_id": "4200003082202606093443481735",
+            "payer_name_snapshot": "CarolðŸŒ¸",
+            "mobile_snapshot": "18186496215",
+            "external_userid": "orSqJ5sX6-GPST-E_OwJXkVOiJRw",
+            "product_code": "subscription_trial_month",
+            "product_name": "黄小璨首月体验",
+            "amount_total": 990,
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        },
+    )
+
+    assert item["payer_name"] == "Carol🌸"
 
 
 def test_payment_provider_status_mapper_covers_admin_statuses() -> None:

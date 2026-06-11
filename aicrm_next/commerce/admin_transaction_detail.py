@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.runtime import database_mode, raw_database_url
+from aicrm_next.shared.text_encoding import repair_utf8_mojibake
 
 from .application import GetTransactionQuery, ListTransactionsQuery
 from .product_code_aliases import canonical_product_code, product_code_filter_values
@@ -177,7 +178,8 @@ def _product_name(row: dict[str, Any]) -> str:
 
 def _customer(row: dict[str, Any]) -> dict[str, str]:
     return {
-        "name": _text(row.get("payer_name_snapshot") or row.get("payer_name") or row.get("buyer_logon_id")) or "未记录付款人",
+        "name": repair_utf8_mojibake(row.get("payer_name_snapshot") or row.get("payer_name") or row.get("buyer_logon_id"))
+        or "未记录付款人",
         "mobile": _text(row.get("mobile_snapshot") or row.get("buyer_mobile")),
         "userid": _text(row.get("userid_snapshot") or row.get("buyer_id")),
         "external_userid": _text(row.get("external_userid") or row.get("identity_snapshot")),
