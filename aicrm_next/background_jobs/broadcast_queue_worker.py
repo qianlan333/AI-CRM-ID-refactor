@@ -226,6 +226,43 @@ def _extract_private_sender(payload: dict[str, Any]) -> str:
     return _text(payload.get("sender_userid") or payload.get("owner_userid") or campaign.get("owner_userid"))
 
 
+def _merge_content_package(target: dict[str, Any], source: Any) -> None:
+    source_dict = _json_dict(source)
+    if not source_dict:
+        return
+    for nested_key in ("content_payload_json", "content_package_json", "content_package", "attachments"):
+        nested = _json_dict(source_dict.get(nested_key))
+        if nested:
+            _merge_content_package(target, nested)
+    for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids"):
+        values = _json_list(source_dict.get(key))
+        if values:
+            existing = list(target.get(key) or [])
+            for value in values:
+                if value not in existing:
+                    existing.append(value)
+            target[key] = existing
+
+
+def _extract_private_content_package(payload: dict[str, Any]) -> dict[str, Any]:
+    rendered = payload.get("rendered_content") if isinstance(payload.get("rendered_content"), dict) else {}
+    step = payload.get("step") if isinstance(payload.get("step"), dict) else {}
+    content_package: dict[str, Any] = {}
+    for source in (payload, rendered, step):
+        _merge_content_package(content_package, source)
+    return content_package
+
+
+def _resolve_private_attachments(content_package: dict[str, Any]) -> list[dict[str, Any]]:
+    if not any(_json_list(content_package.get(key)) for key in ("image_library_ids", "miniprogram_library_ids", "attachment_library_ids")):
+        return []
+    from aicrm_next.automation_engine.group_ops.integration_gateway import resolve_group_ops_content_package_materials
+
+    attachments, image_media_ids = resolve_group_ops_content_package_materials(content_package)
+    image_attachments = [{"msgtype": "image", "image": {"media_id": media_id}} for media_id in image_media_ids if _text(media_id)]
+    return list(attachments or []) + image_attachments
+
+
 def _realtest_guard(*, sender_userid: str, targets: list[str], content_text: str) -> tuple[bool, str]:
     if "【RuntimeV2真实链路测试】" not in content_text and "runtime_v2_realtest_" not in content_text:
         return True, ""
@@ -255,6 +292,11 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
     ok, reason = _realtest_guard(sender_userid=sender_userid, targets=targets, content_text=content_text)
     if not ok:
         return {"ok": False, "error": reason, "failure_type": "validation_failed"}
+    content_package = _extract_private_content_package(payload)
+    try:
+        attachments = _resolve_private_attachments(content_package)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "failure_type": "material_resolve_failed"}
     request_payload = {
         "job_id": int_value(job.get("id")),
         "source_type": _text(job.get("source_type")),
@@ -265,8 +307,13 @@ def _dispatch_wecom_private(job: dict[str, Any], payload: dict[str, Any]) -> dic
         "content_hash": _json_dict(payload.get("rendered_content")).get("content_hash") or "",
         "content_preview": content_text[:120],
     }
+    if attachments:
+        request_payload["attachments"] = attachments
+    adapter_payload = {"sender": sender_userid, "external_userids": targets, "text": {"content": content_text}}
+    if attachments:
+        adapter_payload["attachments"] = attachments
     result = build_wecom_private_message_adapter().create_private_message_task(
-        {"sender": sender_userid, "external_userids": targets, "text": {"content": content_text}},
+        adapter_payload,
         idempotency_key=_text(job.get("idempotency_key") or job.get("trace_id") or job.get("id")),
     )
     failure_type = _text(result.get("error_code")) or "handler_error"
