@@ -43,7 +43,7 @@
         <span>渠道类型</span>
         <select name="channel_type" data-channel-type-select>
           <option value="qrcode" {% if not is_link %}selected{% endif %}>普通二维码</option>
-          <option value="wecom_customer_acquisition" {% if is_link %}selected{% endif %}>企微获客助手链接</option>
+          <option value="wecom_customer_acquisition" {% if is_link %}selected{% endif %}>渠道获客链接</option>
         </select>
       </label>
       <label class="admin-field">
@@ -62,42 +62,65 @@
         </div>
       </div>
       {% endif %}
-      <div class="admin-field">
-        <span>负责人</span>
-        <div class="channel-owner-card">
-          <div class="channel-owner-current" data-channel-owner-current>
-            {% if channel.owner_staff_id %}
-              <strong>{{ channel.owner_staff_id }}</strong>
-              <small>{{ channel.owner_staff_id }}</small>
-            {% else %}
-              <strong>未选择负责人</strong>
-              <small>从企业微信通讯录或后台成员中选择</small>
-            {% endif %}
-          </div>
-          <button class="admin-button admin-button--secondary" type="button" data-channel-owner-picker-open>{{ "更换负责人" if channel.owner_staff_id else "选择负责人" }}</button>
-        </div>
-        <input type="hidden" name="owner_staff_id" value="{{ channel.owner_staff_id or '' }}" data-channel-owner-staff-id>
-      </div>
       <div class="admin-field channel-form-wide" data-qrcode-field {% if is_link %}hidden{% endif %}>
         <span>自动通过</span>
         <label class="admin-check-line">
           <input type="checkbox" name="auto_accept_friend" value="1" {% if channel.auto_accept_friend %}checked{% endif %}>
-          <span>扫码添加负责人时自动通过好友申请</span>
+          <span>扫码添加成员时自动通过好友申请</span>
         </label>
         <small>仅对普通二维码生效；保存后重新生成二维码时会透传为企微 skip_verify。</small>
       </div>
       <label class="admin-field" data-link-field {% if not is_link %}hidden{% endif %}>
-        <span>企微渠道参数</span>
+        <span>渠道参数</span>
         <input name="customer_channel" value="{{ channel.customer_channel or channel.scene_value or '' }}" placeholder="wca_p1001_xxx">
       </label>
       <label class="admin-field" data-link-field {% if not is_link %}hidden{% endif %}>
-        <span>企微获客助手原始链接</span>
+        <span>原始链接</span>
         <input name="link_url" value="{{ channel.link_url or '' }}" placeholder="https://work.weixin.qq.com/ca/cawcde...">
       </label>
       <label class="admin-field channel-form-wide" data-link-field {% if not is_link %}hidden{% endif %}>
         <span>最终分享链接</span>
         <input name="final_url" value="{{ channel.final_url or channel.share_url or '' }}" placeholder="保存后以后端生成为准">
       </label>
+      <div class="admin-field channel-form-wide channel-assignment" data-channel-assignment>
+        <div class="channel-section-heading">
+          <div>
+            <strong>企微客服分配</strong>
+            <small>一个渠道最多添加 5 个客服。</small>
+          </div>
+        </div>
+        <div class="channel-strategy-grid" data-assignment-strategies>
+          <label class="channel-strategy-card" data-strategy-card="ratio">
+            <div class="channel-strategy-title">
+              <input type="radio" name="assignment_strategy" value="ratio" data-assignment-strategy checked>
+              <strong>按比例分配</strong>
+            </div>
+            <small>按每个客服设置的百分比分配；50% / 50% 就是均分。比例合计必须等于 100%。</small>
+          </label>
+          <label class="channel-strategy-card" data-strategy-card="cap_switch">
+            <div class="channel-strategy-title">
+              <input type="radio" name="assignment_strategy" value="cap_switch" data-assignment-strategy>
+              <strong>满额切换</strong>
+            </div>
+            <small>按列表顺序承接；当前客服 24 小时达到上限后，自动切换到下一个客服。</small>
+          </label>
+        </div>
+        <div class="channel-assignee-panel">
+          <div class="channel-assignee-toolbar">
+            <strong data-assignee-mode-title>客服比例</strong>
+            <div class="channel-actions">
+              <span class="channel-pill is-qrcode" data-assignee-count>0 / 5</span>
+              <button class="admin-button admin-button--secondary" type="button" data-add-channel-assignee>添加客服</button>
+            </div>
+          </div>
+          <div class="channel-assignee-list" data-assignee-list></div>
+          <div class="channel-assignment-validation" data-assignment-validation>
+            <span data-assignment-validation-text>至少添加 1 个客服。</span>
+            <span class="channel-pill" data-assignment-validation-pill>0%</span>
+          </div>
+        </div>
+        <input type="hidden" name="owner_staff_id" value="{{ channel.owner_staff_id or '' }}" data-channel-owner-staff-id>
+      </div>
       <input type="hidden" name="status" value="{{ channel.status or 'active' }}">
     </form>
   </section>
@@ -106,7 +129,7 @@
     <article class="admin-card channel-section">
       <div class="admin-card-head admin-card-head--tight">
         <div>
-          <h2>企微获客助手链接预览</h2>
+          <h2>渠道获客链接预览</h2>
           <p>该类型没有二维码下载动作，使用链接分享。</p>
         </div>
       </div>

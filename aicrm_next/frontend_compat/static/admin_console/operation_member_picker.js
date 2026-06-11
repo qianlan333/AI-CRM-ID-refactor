@@ -14,6 +14,11 @@
     selected: null,
     confirmed: null,
     onSelect: null,
+    multiple: false,
+    max: 1,
+    selectedMembers: [],
+    confirmedMembers: [],
+    disabledUserIds: [],
     loading: false,
     items: [],
     debounceTimer: null,
@@ -128,6 +133,10 @@
       .operation-member-picker__row.is-selected {
         border-color: #93c5fd;
         background: #eff6ff;
+      }
+      .operation-member-picker__row.is-disabled {
+        opacity: 0.56;
+        background: #f9fafb;
       }
       .operation-member-picker__member-main {
         min-width: 0;
@@ -288,7 +297,13 @@
     const modal = ensureModal();
     const list = modal.querySelector("[data-operation-member-list]");
     const confirmButton = modal.querySelector("[data-operation-member-confirm]");
-    if (confirmButton) confirmButton.disabled = !state.selected;
+    if (confirmButton) {
+      if (state.multiple) {
+        confirmButton.disabled = !state.selectedMembers.length;
+      } else {
+        confirmButton.disabled = !state.selected;
+      }
+    }
     if (!list) return;
     if (state.loading) {
       list.innerHTML = renderEmpty("正在加载人员...");
@@ -306,9 +321,14 @@
       const userId = String(member.user_id || "");
       const displayName = String(member.display_name || userId || "");
       const avatarUrl = String(member.avatar_url || "").trim();
-      const selected = state.selected && state.selected.user_id === userId;
+      const disabled = state.disabledUserIds.includes(userId);
+      const selected = state.multiple
+        ? state.selectedMembers.some((item) => item.user_id === userId) || disabled
+        : state.selected && state.selected.user_id === userId;
+      const maxed = state.multiple && !selected && state.max > 0 && state.selectedMembers.length >= state.max;
+      const rowDisabled = disabled || maxed;
       return `
-        <div class="operation-member-picker__row${selected ? " is-selected" : ""}" data-operation-member-row data-user-id="${escapeHtml(userId)}">
+        <div class="operation-member-picker__row${selected ? " is-selected" : ""}${rowDisabled ? " is-disabled" : ""}" data-operation-member-row data-user-id="${escapeHtml(userId)}">
           <div class="operation-member-picker__member-main">
             ${avatarUrl ? `<img class="operation-member-picker__avatar" src="${escapeHtml(avatarUrl)}" alt="">` : ""}
             <div class="operation-member-picker__identity">
@@ -316,7 +336,7 @@
               <div class="operation-member-picker__user-id">${escapeHtml(userId)}</div>
             </div>
           </div>
-          <button class="admin-button ${selected ? "admin-button--primary" : "admin-button--secondary"} operation-member-picker__select" type="button" data-operation-member-row-select>${selected ? "已选" : "选择"}</button>
+          <button class="admin-button ${selected ? "admin-button--primary" : "admin-button--secondary"} operation-member-picker__select" type="button" data-operation-member-row-select ${rowDisabled ? "disabled" : ""}>${disabled ? "已添加" : selected ? "已选" : "选择"}</button>
         </div>
       `;
     }).join("");
@@ -336,6 +356,9 @@
       const selectedUserId = String((state.selected || {}).user_id || (state.confirmed || {}).user_id || "");
       const matchedSelected = state.items.find((item) => item.user_id === selectedUserId);
       if (matchedSelected) state.selected = matchedSelected;
+      if (state.multiple && state.selectedMembers.length) {
+        state.selectedMembers = state.selectedMembers.map((selected) => state.items.find((item) => item.user_id === selected.user_id) || selected);
+      }
     } catch (error) {
       state.items = [];
       state.errorMessage = "人员加载失败，请稍后重试";
@@ -346,6 +369,19 @@
   }
 
   function select(userId) {
+    if (state.disabledUserIds.includes(userId)) return;
+    if (state.multiple) {
+      const member = state.items.find((item) => item.user_id === userId);
+      if (!member) return;
+      const index = state.selectedMembers.findIndex((item) => item.user_id === userId);
+      if (index >= 0) {
+        state.selectedMembers.splice(index, 1);
+      } else if (!state.max || state.selectedMembers.length < state.max) {
+        state.selectedMembers.push(member);
+      }
+      render();
+      return;
+    }
     state.selected = state.items.find((item) => item.user_id === userId) || null;
     render();
   }
@@ -356,9 +392,19 @@
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
     state.selected = state.confirmed;
+    state.selectedMembers = state.confirmedMembers.slice();
   }
 
   function confirm() {
+    if (state.multiple) {
+      if (!state.selectedMembers.length) return;
+      state.confirmedMembers = state.selectedMembers.slice();
+      if (typeof state.onSelect === "function") state.onSelect(state.confirmedMembers);
+      const modal = ensureModal();
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      return;
+    }
     if (!state.selected) return;
     state.confirmed = state.selected;
     if (typeof state.onSelect === "function") state.onSelect(state.selected);
@@ -373,8 +419,17 @@
     state.scope = String(options.scope || "").trim();
     state.pageSize = String(options.page_size || options.pageSize || "").trim();
     state.includeInactive = optionBool(options, "includeInactive", "include_inactive");
+    state.multiple = Boolean(options.multiple);
+    state.max = Math.max(1, Number(options.max || (state.multiple ? 5 : 1)) || 1);
+    state.disabledUserIds = (Array.isArray(options.disabledUserIds) ? options.disabledUserIds : []).map((item) => String(item || "").trim()).filter(Boolean);
     state.confirmed = options.selectedMember || (value ? { user_id: value, display_name: options.selectedLabel || value, avatar_url: "" } : null);
     state.selected = state.confirmed;
+    state.confirmedMembers = (Array.isArray(options.selectedMembers) ? options.selectedMembers : []).map((member) => ({
+      ...member,
+      user_id: String(member.user_id || member.staff_id || "").trim(),
+      display_name: String(member.display_name || member.display_name_snapshot || member.user_id || member.staff_id || "").trim(),
+    })).filter((member) => member.user_id);
+    state.selectedMembers = state.confirmedMembers.slice();
     state.onSelect = options.onSelect || options.onConfirm || null;
     clearTimeout(state.debounceTimer);
     modal.querySelector("[data-operation-member-title]").textContent = options.title || "选择运营人员";
