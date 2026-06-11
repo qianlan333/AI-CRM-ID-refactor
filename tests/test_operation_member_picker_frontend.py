@@ -98,6 +98,11 @@ def test_operation_member_picker_error_empty_debounce_clear_cancel_confirm_contr
     assert "if (!state.selected) return;" in source
     assert "state.onSelect(state.selected)" in source
     assert "confirmButton.disabled = !state.selected" in source
+    assert "state.multiple" in source
+    assert "selectedMembers" in source
+    assert "disabledUserIds" in source
+    assert "state.max" in source
+    assert "已添加" in source
     assert 'event.key === "Escape"' in source
     assert "url.searchParams.set(\"q\", q)" in source
     assert 'url.searchParams.set("scope", state.scope)' in source
@@ -126,14 +131,19 @@ def test_business_pages_use_operation_member_picker_instead_of_visible_userid_in
     assert "admin_console.css') }}?v=operation-member-picker-fix-20260527" in base_template
     for source in [group_ops, channel_js, operations, jobs, admin_jobs]:
         assert "value:" in source
-        assert "onSelect:" in source
         assert "selectedUserId:" not in source
+    for source in [group_ops, operations, jobs, admin_jobs]:
+        assert "onSelect:" in source
+    assert "onConfirm:" in channel_js
+    assert "multiple: true" in channel_js
     for source in [group_ops, operations, jobs, admin_jobs]:
         assert "onConfirm:" not in source
     assert "AICRMWeComTagPicker.open" in channel_js
     assert 'scope: "group_ops"' in group_ops
+    assert 'scope: "channel_code"' in channel_js
+    assert "page_size: 100" in channel_js
     assert "page_size: 100" in group_ops
-    for source in [channel_js, operations, jobs, admin_jobs]:
+    for source in [operations, jobs, admin_jobs]:
         assert "scope:" not in source
     assert "data-channel-owner-modal" not in channel_form + channel_js
     assert "data-channel-owner-pick " not in channel_form + channel_js
