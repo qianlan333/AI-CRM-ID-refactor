@@ -57,7 +57,14 @@ def test_group_ops_list_frontend_contract_has_required_actions_and_columns():
         assert label in source
     assert "<th>计划名称</th><th>类型</th><th>运营成员</th><th>绑定群</th><th>今日预估</th><th>状态</th><th>操作</th>" in source
     assert "编辑" in source
-    assert "停用 / 删除" in source
+    assert "停用 / 删除" not in source
+    for label in ["停用", "启用", "删除"]:
+        assert label in source
+    for action in ['data-action="disable-plan"', 'data-action="enable-plan"', 'data-action="delete-plan"']:
+        assert action in source
+    assert "apiPlanEnable" in source
+    assert "apiPlanDisable" in source
+    assert "确认删除" in source
     assert 'name="create_plan_type"' in source
     assert "标准编排计划" in source
     assert "Webhook 接收计划" in source
