@@ -7,6 +7,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 CHANNEL_FORM = ROOT / "aicrm_next/automation_engine/templates/admin_console/channel_code_form.html"
 CHANNEL_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.js"
+CHANNEL_CENTER_JS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_code_center_next.js"
 CHANNEL_CSS = ROOT / "aicrm_next/automation_engine/static/admin_console/channel_admission_pages.css"
 PICKER_JS = ROOT / "aicrm_next/frontend_compat/static/admin_console/operation_member_picker.js"
 
@@ -71,6 +72,46 @@ def test_channel_type_visibility_and_payload_fields_follow_demo_contract() -> No
     assert "payload.customer_channel" in js
     assert "link_url:" in js
     assert "final_url:" in js
+
+
+def test_channel_center_list_has_enable_disable_and_soft_delete_actions() -> None:
+    js = _read(CHANNEL_CENTER_JS)
+
+    assert 'status === "active"' in js
+    assert 'data-next-status="inactive"' in js
+    assert ">下架</button>" in js
+    assert 'status === "inactive"' in js
+    assert 'data-next-status="active"' in js
+    assert ">启用</button>" in js
+    assert 'data-next-status="archived"' in js
+    assert ">删除</button>" in js
+    assert "删除后会归档渠道并保留历史用户、二维码、绑定和入渠记录。确认删除？" in js
+    assert "patchJson(`/api/admin/channels/${encodeURIComponent(channelId)}`, { status: nextStatus })" in js
+    assert "row.outerHTML = renderRow(data.channel)" in js
+    assert "渠道已下架" in js
+    assert "渠道已启用" in js
+    assert "渠道已删除" in js
+
+
+def test_channel_center_list_compacts_binding_status_and_long_channel_names() -> None:
+    js = _read(CHANNEL_CENTER_JS)
+    css = _read(CHANNEL_CSS)
+
+    assert "function truncateChannelName(name, maxLength = 20)" in js
+    assert "value.length > maxLength" in js
+    assert "····" in js
+    assert "const displayChannelName = truncateChannelName(channelName)" in js
+    assert 'class="channel-name"' in js
+    assert 'title="${escapeHtml(channelName)}"' in js
+    assert "data-search-text" in js
+    assert "searchText = String(channel.channel_name || \"\").toLowerCase()" in js
+    assert '<span class="channel-pill is-bound">已绑定</span>' in js
+    assert '<span class="channel-pill is-standalone">独立使用</span>' in js
+    assert "escapeHtml(channel.bound_program_name)" not in js
+    assert "is-status ${statusClass(channel.status)}" in js
+    assert "is-status-inactive" in css
+    assert "#b42318" in css
+    assert "overflow-wrap: anywhere" in css
 
 
 def test_assignment_rows_show_only_ratio_or_cap_fields_and_validate_before_save() -> None:
