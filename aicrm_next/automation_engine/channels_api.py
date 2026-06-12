@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 
 from aicrm_next.common_operation_members import search_operation_members
 from aicrm_next.channel_entry import repo as channel_entry_repo
@@ -115,6 +117,23 @@ def _json_dict(value: Any) -> dict[str, Any]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _qrcode_download_filename(channel_id: int, asset: dict[str, Any]) -> str:
+    scene = _text(asset.get("scene_value")) or f"channel_{int(channel_id)}"
+    safe_scene = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in scene)[:80]
+    return f"channel-{int(channel_id)}-{safe_scene or 'qrcode'}.png"
+
+
+def _fetch_qrcode_bytes(qr_url: str) -> tuple[bytes, str]:
+    request = urllib.request.Request(qr_url, headers={"User-Agent": "AI-CRM/1.0"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        content = response.read()
+        headers = getattr(response, "headers", None)
+        content_type = _text(headers.get("Content-Type") if headers is not None else "")
+    if not content:
+        raise ValueError("empty_qrcode_response")
+    return content, content_type or "image/png"
 
 
 def _bool(value: Any, *, default: bool = False) -> bool:
@@ -1594,16 +1613,22 @@ def download_channel_qrcode(channel_id: int):
     asset = status.get("active_qrcode_asset") or {}
     qr_url = _text(asset.get("qr_url"))
     if qr_url.startswith(("http://", "https://")):
-        return RedirectResponse(
-            qr_url,
-            status_code=302,
-            headers={
-                "Cache-Control": "no-store",
-                "X-AICRM-Channel-ID": str(int(channel_id)),
-                "X-AICRM-QR-Scene": _text(asset.get("scene_value")),
-                "X-AICRM-QR-Asset-ID": str(int(asset.get("id") or 0)),
-            },
-        )
+        headers = {
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{_qrcode_download_filename(int(channel_id), asset)}"',
+            "X-AICRM-Channel-ID": str(int(channel_id)),
+            "X-AICRM-QR-Scene": _text(asset.get("scene_value")),
+            "X-AICRM-QR-Asset-ID": str(int(asset.get("id") or 0)),
+        }
+        try:
+            content, content_type = _fetch_qrcode_bytes(qr_url)
+        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "reason": "qrcode_fetch_failed", "error": str(exc)},
+                headers=headers,
+            )
+        return Response(content=content, media_type=content_type, headers=headers)
     raise HTTPException(status_code=404, detail="qrcode_not_ready")
 
 

@@ -174,6 +174,7 @@ def test_channel_center_list_compacts_binding_status_and_long_channel_names() ->
 def test_channel_center_qrcode_generate_has_timeout_and_readable_errors() -> None:
     js = _read(CHANNEL_CENTER_JS)
 
+    assert 'download>下载二维码</a>' in js
     assert "function apiErrorMessage(data, fallback)" in js
     assert "detail.reason || detail.error || detail.error_code || detail.message" in js
     assert "{ timeoutMs: 30000 }" in js
