@@ -635,7 +635,7 @@ def generate_channel_qrcode(command: GenerateChannelQrCodeCommand) -> dict[str, 
     previous_scene = text(channel.get("scene_value"))
     corp_id = callback_config().get("corp_id", "")
     payload = {
-        "type": 1,
+        "type": 2 if len(payload_user_ids) > 1 else 1,
         "scene": 2,
         "style": 1,
         "skip_verify": bool(command.skip_verify if command.skip_verify is not None else channel.get("auto_accept_friend")),
