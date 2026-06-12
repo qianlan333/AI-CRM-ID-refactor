@@ -1382,8 +1382,13 @@ def get_channel(channel_id: int) -> dict[str, Any]:
     return {"ok": True, "channel": channel, "reason": "channel_loaded", "source": "ai_crm_next"}
 
 
+CHANNEL_STATUS_ONLY_PATCH_VALUES = {"active", "inactive", "archived"}
+
+
 @router.patch("/api/admin/channels/{channel_id:int}")
 def update_channel(channel_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    if set(payload.keys()) == {"status"} and _text(payload.get("status")) not in CHANNEL_STATUS_ONLY_PATCH_VALUES:
+        raise HTTPException(status_code=400, detail="invalid_channel_status")
     try:
         channel = _save_postgres_channel(payload, int(channel_id))
     except LookupError as exc:
