@@ -122,7 +122,7 @@ def test_generate_channel_qrcode_uses_multi_staff_assignees(monkeypatch):
 
     assert result["ok"] is True
     assert result["provider_payload_user_count"] == 2
-    assert payloads == [{"type": 1, "scene": 2, "style": 1, "skip_verify": False, "state": "aqr_multi", "user": ["StaffA", "StaffB"]}]
+    assert payloads == [{"type": 2, "scene": 2, "style": 1, "skip_verify": False, "state": "aqr_multi", "user": ["StaffA", "StaffB"]}]
     assert assets[0]["channel_id"] == 102
     assert aliases[0]["scene_value"] == "aqr_multi"
     assert effects[0]["status"] == "success"
