@@ -70,6 +70,16 @@ class FakeContactClient:
         return {"external_userid": external_userid, "name": "测试客户", "unionid": "union_1"}
 
 
+class PartiallyFailingContactClient(FakeContactClient):
+    def list_follow_users(self) -> list[str]:
+        return ["owner_1", "owner_broken"]
+
+    def list_contacts(self, owner_userid: str) -> list[str]:
+        if owner_userid == "owner_broken":
+            raise RuntimeError("wecom_api_error")
+        return super().list_contacts(owner_userid)
+
+
 class FakeContactRepo:
     def __init__(self) -> None:
         self.upserts: list[dict[str, Any]] = []
@@ -142,6 +152,17 @@ def test_external_contact_sync_fake_client_success() -> None:
     assert result["processed"] == 1
     assert result["inserted_or_updated"] == 1
     assert repo.upserts[0]["dry_run"] is True
+
+
+def test_external_contact_sync_owner_failure_does_not_abort_other_owners() -> None:
+    repo = FakeContactRepo()
+    result = run_external_contact_sync(full=True, dry_run=True, client=PartiallyFailingContactClient(), repo=repo, corp_id="ww-test")
+
+    assert result["ok"] is True
+    assert result["processed"] == 1
+    assert result["inserted_or_updated"] == 1
+    assert result["owners"][1]["ok"] is False
+    assert result["warnings"][0]["code"] == "owner_contact_list_failed"
 
 
 def test_external_contact_sync_missing_client_is_structured() -> None:
