@@ -171,6 +171,18 @@ def test_channel_center_list_compacts_binding_status_and_long_channel_names() ->
     assert "overflow-wrap: anywhere" in css
 
 
+def test_channel_center_qrcode_generate_has_timeout_and_readable_errors() -> None:
+    js = _read(CHANNEL_CENTER_JS)
+
+    assert "function apiErrorMessage(data, fallback)" in js
+    assert "detail.reason || detail.error || detail.error_code || detail.message" in js
+    assert "{ timeoutMs: 30000 }" in js
+    assert "controller.abort()" in js
+    assert 'error.name === "AbortError"' in js
+    assert "二维码生成超时，请稍后刷新确认或重试" in js
+    assert 'generateButton.textContent = "生成二维码"' in js
+
+
 def test_assignment_rows_show_only_ratio_or_cap_fields_and_validate_before_save() -> None:
     js = _read(CHANNEL_JS)
 

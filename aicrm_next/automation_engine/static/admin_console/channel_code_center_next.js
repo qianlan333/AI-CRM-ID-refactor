@@ -110,13 +110,29 @@
     return fetch(url, { credentials: "same-origin" }).then((response) => response.json().then((data) => ({ response, data })));
   }
 
-  function postJson(url, payload) {
-    return fetch(url, {
+  function apiErrorMessage(data, fallback) {
+    const detail = data && data.detail;
+    if (data && typeof data.reason === "string" && data.reason) return data.reason;
+    if (data && typeof data.error === "string" && data.error) return data.error;
+    if (typeof detail === "string" && detail) return detail;
+    if (detail && typeof detail === "object") {
+      return detail.reason || detail.error || detail.error_code || detail.message || fallback;
+    }
+    return fallback;
+  }
+
+  function postJson(url, payload, options) {
+    const timeoutMs = Number((options || {}).timeoutMs || 0);
+    const controller = timeoutMs > 0 && window.AbortController ? new AbortController() : null;
+    const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    const request = fetch(url, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload || {}),
-    }).then((response) => response.json().then((data) => ({ response, data })));
+      signal: controller ? controller.signal : undefined,
+    }).then((response) => response.json().catch(() => ({})).then((data) => ({ response, data })));
+    return timer ? request.finally(() => window.clearTimeout(timer)) : request;
   }
 
   function patchJson(url, payload) {
@@ -259,16 +275,16 @@
       if (!channelId) return;
       generateButton.disabled = true;
       generateButton.textContent = "生成中";
-      postJson(`/api/admin/channels/${encodeURIComponent(channelId)}/qrcode/generate`, {}).then(({ response, data }) => {
+      postJson(`/api/admin/channels/${encodeURIComponent(channelId)}/qrcode/generate`, {}, { timeoutMs: 30000 }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {
-          throw new Error(data.reason || data.detail?.reason || data.detail || "qrcode_generate_failed");
+          throw new Error(apiErrorMessage(data, "二维码生成失败"));
         }
         toast("二维码已生成");
         window.location.reload();
       }).catch((error) => {
         generateButton.disabled = false;
         generateButton.textContent = "生成二维码";
-        toast(error.message || "二维码生成失败");
+        toast(error.name === "AbortError" ? "二维码生成超时，请稍后刷新确认或重试" : (error.message || "二维码生成失败"));
       });
       return;
     }
