@@ -98,6 +98,11 @@
   display: block;
 }
 
+.channel-name {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
 .channel-actions-heading,
 .channel-action-cell {
   width: 240px;
@@ -172,6 +177,12 @@
 .channel-pill.is-status {
   color: #344054;
   background: #f5f6f7;
+}
+
+.channel-pill.is-status-inactive {
+  color: #b42318;
+  background: #fef3f2;
+  border-color: #fecdca;
 }
 
 .channel-form-grid {

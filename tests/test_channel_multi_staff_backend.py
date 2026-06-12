@@ -247,6 +247,55 @@ def test_patch_status_only_preserves_qrcode_fields(monkeypatch):
     assert channel["auto_accept_friend"] is True
 
 
+def test_channel_status_only_patch_supports_list_page_lifecycle(monkeypatch):
+    client = _client(monkeypatch)
+    created = client.post(
+        "/api/admin/channels",
+        json={
+            "channel_name": "列表状态操作",
+            "channel_code": "list-status",
+            "welcome_message": "欢迎语",
+            "welcome_image_library_ids": [1],
+            "entry_tag_id": "tag-list",
+            "entry_tag_name": "列表标签",
+            "assignment_mode": "multi_staff",
+            "assignment_strategy": "ratio",
+            "assignees": _ratio_assignees(50, 50),
+        },
+    ).json()["channel"]
+    channel_id = int(created["id"])
+    channels_api._FIXTURE_CHANNELS[channel_id]["scene_value"] = "aqr_list_status"
+    channels_api._FIXTURE_CHANNELS[channel_id]["qr_url"] = "https://wework.qpic.cn/list-status"
+
+    inactive = client.patch(f"/api/admin/channels/{channel_id}", json={"status": "inactive"})
+    assert inactive.status_code == 200
+    assert inactive.json()["channel"]["status"] == "inactive"
+
+    active = client.patch(f"/api/admin/channels/{channel_id}", json={"status": "active"})
+    assert active.status_code == 200
+    assert active.json()["channel"]["status"] == "active"
+
+    archived = client.patch(f"/api/admin/channels/{channel_id}", json={"status": "archived"})
+    assert archived.status_code == 200
+    channel = archived.json()["channel"]
+    assert channel["status"] == "archived"
+    assert channel["scene_value"] == "aqr_list_status"
+    assert channel["qr_url"] == "https://wework.qpic.cn/list-status"
+    assert channel["welcome_message"] == "欢迎语"
+    assert channel["welcome_image_library_ids"] == [1]
+    assert channel["entry_tag_id"] == "tag-list"
+    assert channel["entry_tag_name"] == "列表标签"
+    assert channel["assignment_mode"] == "multi_staff"
+    assert channel["assignment_strategy"] == "ratio"
+    assert len(channel["assignees"]) == 2
+    listed = client.get("/api/admin/channels").json()["channels"]
+    assert any(item["id"] == channel_id and item["status"] == "archived" for item in listed)
+
+    invalid = client.patch(f"/api/admin/channels/{channel_id}", json={"status": "deleted"})
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"] == "invalid_channel_status"
+
+
 def test_ratio_assignment_distribution_and_events(monkeypatch):
     client = _client(monkeypatch)
     channel_id = client.post(

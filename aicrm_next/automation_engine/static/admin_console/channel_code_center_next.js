@@ -110,9 +110,34 @@
     return fetch(url, { credentials: "same-origin" }).then((response) => response.json().then((data) => ({ response, data })));
   }
 
-  function postJson(url, payload) {
-    return fetch(url, {
+  function apiErrorMessage(data, fallback) {
+    const detail = data && data.detail;
+    if (data && typeof data.reason === "string" && data.reason) return data.reason;
+    if (data && typeof data.error === "string" && data.error) return data.error;
+    if (typeof detail === "string" && detail) return detail;
+    if (detail && typeof detail === "object") {
+      return detail.reason || detail.error || detail.error_code || detail.message || fallback;
+    }
+    return fallback;
+  }
+
+  function postJson(url, payload, options) {
+    const timeoutMs = Number((options || {}).timeoutMs || 0);
+    const controller = timeoutMs > 0 && window.AbortController ? new AbortController() : null;
+    const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    const request = fetch(url, {
       method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+      signal: controller ? controller.signal : undefined,
+    }).then((response) => response.json().catch(() => ({})).then((data) => ({ response, data })));
+    return timer ? request.finally(() => window.clearTimeout(timer)) : request;
+  }
+
+  function patchJson(url, payload) {
+    return fetch(url, {
+      method: "PATCH",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload || {}),
@@ -133,14 +158,51 @@
     }
   }
 
+  function truncateChannelName(name, maxLength = 20) {
+    const value = String(name || "-");
+    return value.length > maxLength ? `${value.slice(0, maxLength)}····` : value;
+  }
+
+  function statusClass(value) {
+    const normalized = String(value || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    return normalized ? `is-status-${normalized}` : "is-status-unknown";
+  }
+
+  function statusActionButtons(channel) {
+    const status = String(channel.status || "");
+    const deleteButton = '<button class="admin-button admin-button--ghost" type="button" data-channel-status-action data-next-status="archived" data-action-label="删除">删除</button>';
+    if (status === "active") {
+      return `<button class="admin-button admin-button--ghost" type="button" data-channel-status-action data-next-status="inactive" data-action-label="下架">下架</button>${deleteButton}`;
+    }
+    if (status === "inactive") {
+      return `<button class="admin-button admin-button--ghost" type="button" data-channel-status-action data-next-status="active" data-action-label="启用">启用</button>${deleteButton}`;
+    }
+    return "";
+  }
+
+  function statusSuccessMessage(nextStatus) {
+    return {
+      active: "渠道已启用",
+      inactive: "渠道已下架",
+      archived: "渠道已删除",
+    }[nextStatus] || "渠道状态已更新";
+  }
+
+  function confirmStatusAction(nextStatus) {
+    if (nextStatus !== "archived") return true;
+    return window.confirm("删除后会归档渠道并保留历史用户、二维码、绑定和入渠记录。确认删除？");
+  }
+
   function renderRow(channel) {
     const link = isLink(channel);
+    const channelName = String(channel.channel_name || "-");
+    const displayChannelName = truncateChannelName(channelName);
     const searchText = String(channel.channel_name || "").toLowerCase();
     const typeText = link ? "企微获客助手链接" : "普通二维码";
     const downloadUrl = channel.qr_download_url || `/api/admin/channels/${encodeURIComponent(channel.id)}/qrcode/download`;
     const copyText = channelLinkText(channel);
     const bound = channel.bound_program_name
-      ? `<span class="channel-pill is-bound">${escapeHtml(channel.bound_program_name)}</span>`
+      ? '<span class="channel-pill is-bound">已绑定</span>'
       : '<span class="channel-pill is-standalone">独立使用</span>';
     const action = link
       ? `<button class="admin-button admin-button--secondary" type="button" data-copy-channel-link data-copy-text="${escapeHtml(copyText)}">复制链接</button>
@@ -151,10 +213,10 @@
     return `
       <tr data-channel-row data-channel-id="${escapeHtml(channel.id)}" data-search-text="${escapeHtml(searchText)}">
         <td>
-          <strong>${escapeHtml(channel.channel_name || "-")}</strong>
+          <strong class="channel-name" title="${escapeHtml(channelName)}">${escapeHtml(displayChannelName)}</strong>
         </td>
         <td><span class="channel-pill ${link ? "is-link" : "is-qrcode"}">${typeText}</span></td>
-        <td><span class="channel-pill is-status">${escapeHtml(statusLabel(channel.status))}</span></td>
+        <td><span class="channel-pill is-status ${statusClass(channel.status)}">${escapeHtml(statusLabel(channel.status))}</span></td>
         <td>
           <span class="channel-pill ${channel.welcome_message_configured ? "is-ok" : ""}">${channel.welcome_message_configured ? "欢迎语" : "无欢迎语"}</span>
           <span class="channel-pill">${escapeHtml(channel.welcome_attachment_count || 0)} 素材</span>
@@ -167,6 +229,7 @@
             ${action}
             <button class="admin-button admin-button--ghost" type="button" data-open-channel-drawer>查看</button>
             <a class="admin-button admin-button--ghost" href="/admin/channels/${encodeURIComponent(channel.id)}/edit">编辑</a>
+            ${statusActionButtons(channel)}
           </div>
         </td>
       </tr>`;
@@ -212,16 +275,40 @@
       if (!channelId) return;
       generateButton.disabled = true;
       generateButton.textContent = "生成中";
-      postJson(`/api/admin/channels/${encodeURIComponent(channelId)}/qrcode/generate`, {}).then(({ response, data }) => {
+      postJson(`/api/admin/channels/${encodeURIComponent(channelId)}/qrcode/generate`, {}, { timeoutMs: 30000 }).then(({ response, data }) => {
         if (!response.ok || data.ok === false) {
-          throw new Error(data.reason || data.detail?.reason || data.detail || "qrcode_generate_failed");
+          throw new Error(apiErrorMessage(data, "二维码生成失败"));
         }
         toast("二维码已生成");
         window.location.reload();
       }).catch((error) => {
         generateButton.disabled = false;
         generateButton.textContent = "生成二维码";
-        toast(error.message || "二维码生成失败");
+        toast(error.name === "AbortError" ? "二维码生成超时，请稍后刷新确认或重试" : (error.message || "二维码生成失败"));
+      });
+      return;
+    }
+    const statusButton = event.target.closest("[data-channel-status-action]");
+    if (statusButton) {
+      const row = statusButton.closest("[data-channel-row]");
+      const channelId = row ? row.dataset.channelId : "";
+      const nextStatus = statusButton.dataset.nextStatus || "";
+      if (!channelId || !nextStatus || !confirmStatusAction(nextStatus)) return;
+      statusButton.disabled = true;
+      const originalText = statusButton.textContent;
+      statusButton.textContent = "处理中";
+      patchJson(`/api/admin/channels/${encodeURIComponent(channelId)}`, { status: nextStatus }).then(({ response, data }) => {
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.detail || data.error || data.reason || "channel_status_update_failed");
+        }
+        if (row && data.channel) {
+          row.outerHTML = renderRow(data.channel);
+        }
+        toast(statusSuccessMessage(nextStatus));
+      }).catch((error) => {
+        statusButton.disabled = false;
+        statusButton.textContent = originalText || statusButton.dataset.actionLabel || "操作";
+        toast(error.message || "渠道状态更新失败");
       });
       return;
     }
