@@ -149,6 +149,33 @@ class ExternalEffectAttempt:
 
 
 @dataclass(frozen=True)
+class ExternalEffectTestReceipt:
+    id: int = 0
+    receipt_id: str = field(default_factory=lambda: "eer_" + uuid4().hex)
+    receiver_token: str = ""
+    job_id: int = 0
+    effect_type: str = ""
+    trace_id: str = ""
+    idempotency_key: str = ""
+    target_type: str = ""
+    target_id: str = ""
+    business_type: str = ""
+    business_id: str = ""
+    request_method: str = "POST"
+    request_path: str = ""
+    headers_summary_json: dict[str, Any] = field(default_factory=dict)
+    payload_summary_json: dict[str, Any] = field(default_factory=dict)
+    payload_hash: str = ""
+    body_json: dict[str, Any] = field(default_factory=dict)
+    signature_valid: bool | None = None
+    response_status: int = 200
+    received_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class ExternalEffectDispatchResult:
     status: ExternalEffectAttemptStatus
     adapter_mode: str = "none"
@@ -162,4 +189,3 @@ class ExternalEffectDispatchResult:
     @property
     def ok(self) -> bool:
         return self.status == "succeeded"
-

@@ -14,6 +14,7 @@ from aicrm_next.admin_shell import admin_path_for, shell_context
 
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
+from .test_receiver import create_loopback_job, detect_current_base_url, record_test_receiver_request, safe_current_base_url
 from .view_model import build_external_effect_diagnostics_payload, build_external_effect_jobs_payload, external_effect_filters
 from .worker import ExternalEffectWorker
 
@@ -99,7 +100,11 @@ def _page_context(
         page_summary="统一外部动作队列的 shadow 任务、执行尝试和排障入口。",
         active_endpoint="api.admin_external_effects_page",
     )
-    payload = build_external_effect_jobs_payload(params if params is not None else dict(request.query_params), service=_service())
+    payload = build_external_effect_jobs_payload(
+        params if params is not None else dict(request.query_params),
+        service=_service(),
+        current_base_url=safe_current_base_url(request),
+    )
     context.update(
         {
             "breadcrumbs": [{"label": "客户管理后台", "href": "/"}, {"label": "External Effects", "href": ""}],
@@ -147,10 +152,23 @@ async def admin_external_effects_action(request: Request):
         repo = build_external_effect_repository()
         service = ExternalEffectService(repo)
         effect_types = [_text(form.get("effect_type"))] if _text(form.get("effect_type")) else None
+        if action == "create-test-loopback":
+            result = create_loopback_job(
+                request=request,
+                service=service,
+                scenario=_text(form.get("scenario")),
+                response_status=_int(form.get("response_status"), default=0, minimum=0, maximum=599) or None,
+            )
+            return templates.TemplateResponse(
+                request,
+                "admin_console/external_effects.html",
+                _page_context(request, page_notice="生产虚拟测试 job 已创建。", action_result=result, params={**params, "job_id": result["job"]["id"]}),
+            )
         if action == "run-due-preview":
             result = ExternalEffectWorker(repo).preview_due(
-                batch_size=_int(form.get("batch_size"), default=50, minimum=1),
+                batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
                 effect_types=effect_types,
+                test_only=_bool(form.get("test_only"), default=False),
             )
             result["route_owner"] = ROUTE_OWNER
             return templates.TemplateResponse(
@@ -160,9 +178,10 @@ async def admin_external_effects_action(request: Request):
             )
         if action == "run-due-dry-run":
             result = ExternalEffectWorker(repo).run_due(
-                batch_size=_int(form.get("batch_size"), default=50, minimum=1),
+                batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
                 dry_run=True,
                 effect_types=effect_types,
+                test_only=_bool(form.get("test_only"), default=False),
             )
             result["route_owner"] = ROUTE_OWNER
             result["real_external_call_executed"] = False
@@ -170,6 +189,19 @@ async def admin_external_effects_action(request: Request):
                 request,
                 "admin_console/external_effects.html",
                 _page_context(request, page_notice="run-due dry-run 已完成。", action_result=result, params=params),
+            )
+        if action == "run-due-test-execute":
+            result = ExternalEffectWorker(repo).run_due(
+                batch_size=1,
+                dry_run=False,
+                effect_types=effect_types,
+                test_only=True,
+            )
+            result["route_owner"] = ROUTE_OWNER
+            return templates.TemplateResponse(
+                request,
+                "admin_console/external_effects.html",
+                _page_context(request, page_notice="test-only batch_size=1 执行已完成。", action_result=result, params=params),
             )
         if action == "retry":
             job = service.retry(_int(form.get("job_id"), default=0, minimum=0, maximum=10**12))
@@ -232,6 +264,7 @@ def list_external_effect_jobs(
 
 @router.get("/api/admin/external-effects/diagnostics")
 def external_effect_diagnostics(
+    request: Request,
     effect_type: str = "",
     status: str = "",
     target_type: str = "",
@@ -253,6 +286,7 @@ def external_effect_diagnostics(
             }
         ),
         service=_service(),
+        current_base_url=safe_current_base_url(request),
     )
 
 
@@ -280,8 +314,9 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
     payload = await _payload(request)
     repo = build_external_effect_repository()
     result = ExternalEffectWorker(repo).preview_due(
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=50, minimum=1),
+        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
+        test_only=_bool(payload.get("test_only"), default=False),
     )
     result["route_owner"] = ROUTE_OWNER
     return _json(result)
@@ -296,13 +331,76 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     dry_run = _bool(payload.get("dry_run"), default=True)
     repo = build_external_effect_repository()
     result = ExternalEffectWorker(repo).run_due(
-        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=50, minimum=1),
+        batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         dry_run=dry_run,
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
+        test_only=_bool(payload.get("test_only"), default=False),
     )
     result["route_owner"] = ROUTE_OWNER
     result["real_external_call_executed"] = bool(result.get("real_external_call_executed")) and not dry_run
     return _json(result)
+
+
+@router.post("/api/external-effects/test-receiver/{receiver_token}")
+async def external_effect_test_receiver(receiver_token: str, request: Request) -> JSONResponse:
+    status_code, payload = await record_test_receiver_request(
+        request=request,
+        receiver_token=receiver_token,
+        repository=build_external_effect_repository(),
+    )
+    return _json(payload, status_code=status_code)
+
+
+@router.post("/api/admin/external-effects/test-loopback/jobs")
+async def create_external_effect_test_loopback_job(request: Request) -> JSONResponse:
+    payload = await _payload(request)
+    token_error = _action_or_internal_token_error(request, payload)
+    if token_error:
+        return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER}, status_code=401)
+    if _text(payload.get("webhook_url")) or _text(payload.get("target_url")):
+        return _json({"ok": False, "error": "webhook_url_not_allowed", "route_owner": ROUTE_OWNER}, status_code=400)
+    try:
+        result = create_loopback_job(
+            request=request,
+            service=_service(),
+            scenario=_text(payload.get("scenario")),
+            response_status=int(payload.get("response_status")) if payload.get("response_status") not in (None, "") else None,
+        )
+    except ValueError as exc:
+        return _json({"ok": False, "error": str(exc), "route_owner": ROUTE_OWNER}, status_code=400)
+    result["route_owner"] = ROUTE_OWNER
+    return _json(result)
+
+
+@router.get("/api/admin/external-effects/test-receipts")
+def list_external_effect_test_receipts(
+    job_id: str = "",
+    effect_type: str = "",
+    trace_id: str = "",
+    receiver_token: str = "",
+    received_from: str = "",
+    received_to: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    filters = {
+        "job_id": job_id,
+        "effect_type": effect_type,
+        "trace_id": trace_id,
+        "receiver_token": receiver_token,
+        "received_from": received_from,
+        "received_to": received_to,
+    }
+    items, total = _service().list_test_receipts(filters, limit=_int(limit, default=50, minimum=1), offset=_int(offset, default=0))
+    return {"ok": True, "items": [item.to_dict() for item in items], "total": total, "filters": filters, "route_owner": ROUTE_OWNER}
+
+
+@router.get("/api/admin/external-effects/test-receipts/{receipt_id}")
+def get_external_effect_test_receipt(receipt_id: str) -> JSONResponse:
+    receipt = _service().get_test_receipt(receipt_id)
+    if not receipt:
+        return _json({"ok": False, "error": "external_effect_test_receipt_not_found", "route_owner": ROUTE_OWNER}, status_code=404)
+    return _json({"ok": True, "receipt": receipt.to_dict(), "route_owner": ROUTE_OWNER})
 
 
 @router.post("/api/admin/external-effects/jobs/{job_id}/retry")
