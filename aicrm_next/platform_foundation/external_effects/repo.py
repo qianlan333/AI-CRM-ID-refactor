@@ -17,6 +17,7 @@ from .models import (
     ExternalEffectAttempt,
     ExternalEffectCreateRequest,
     ExternalEffectJob,
+    ExternalEffectTestReceipt,
     public_datetime,
     utcnow,
 )
@@ -82,6 +83,21 @@ def _public_attempt(row: dict[str, Any] | None) -> ExternalEffectAttempt | None:
     return ExternalEffectAttempt(**payload)
 
 
+def _public_receipt(row: dict[str, Any] | None) -> ExternalEffectTestReceipt | None:
+    if not row:
+        return None
+    payload = dict(row)
+    for key in ("headers_summary_json", "payload_summary_json", "body_json"):
+        payload[key] = _json_obj(payload.get(key))
+    payload["received_at"] = public_datetime(payload.get("received_at"))
+    payload["id"] = int(payload.get("id") or 0)
+    payload["job_id"] = int(payload.get("job_id") or 0)
+    payload["response_status"] = int(payload.get("response_status") or 200)
+    signature_valid = payload.get("signature_valid")
+    payload["signature_valid"] = None if signature_valid is None else bool(signature_valid)
+    return ExternalEffectTestReceipt(**payload)
+
+
 def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for key, value in dict(payload or {}).items():
@@ -132,10 +148,10 @@ class ExternalEffectRepository:
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         raise NotImplementedError
 
-    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
+    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         raise NotImplementedError
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
+    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         raise NotImplementedError
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
@@ -163,6 +179,34 @@ class ExternalEffectRepository:
         raise NotImplementedError
 
     def record_attempt(self, *, job: ExternalEffectJob, status: str, adapter_mode: str, request_summary: dict[str, Any], response_summary: dict[str, Any], error_code: str = "", error_message: str = "") -> ExternalEffectAttempt:
+        raise NotImplementedError
+
+    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
+        raise NotImplementedError
+
+    def create_test_receipt(
+        self,
+        *,
+        receiver_token: str,
+        job: ExternalEffectJob,
+        request_method: str,
+        request_path: str,
+        headers_summary: dict[str, Any],
+        payload_summary: dict[str, Any],
+        payload_hash: str,
+        body_json: dict[str, Any],
+        signature_valid: bool | None,
+        response_status: int,
+    ) -> ExternalEffectTestReceipt:
+        raise NotImplementedError
+
+    def list_test_receipts(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectTestReceipt], int]:
+        raise NotImplementedError
+
+    def get_test_receipt(self, receipt_id: str) -> ExternalEffectTestReceipt | None:
+        raise NotImplementedError
+
+    def test_receipt_metrics(self) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -376,8 +420,9 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             "oldest_failed_retryable_age_seconds": int(float(row.get("oldest_failed_retryable_age_seconds") or 0)),
         }
 
-    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
+    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         type_filter = "AND effect_type = ANY(:effect_types)" if effect_types else ""
+        test_filter = "AND COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
         params: dict[str, Any] = {"limit": max(1, min(int(limit or 50), 200))}
         if effect_types:
             params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
@@ -390,6 +435,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
               {type_filter}
+              {test_filter}
             ORDER BY priority ASC, scheduled_at ASC, id ASC
             LIMIT :limit
             """,
@@ -397,8 +443,9 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
         )
         return [job for row in rows if (job := _public_job(row)) is not None]
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
+    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         type_filter = "AND effect_type = ANY(:effect_types)" if effect_types else ""
+        test_filter = "AND COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
         params: dict[str, Any] = {"limit": max(1, min(int(limit or 50), 200)), "locked_by": _text(locked_by)}
         if effect_types:
             params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
@@ -412,6 +459,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                   AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
                   {type_filter}
+                  {test_filter}
                 ORDER BY priority ASC, scheduled_at ASC, id ASC
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED
@@ -509,6 +557,143 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectRepository):
             raise RuntimeError("external effect attempt insert failed")
         return attempt
 
+    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
+        return _public_job(
+            self._one(
+                """
+                SELECT *
+                FROM external_effect_job
+                WHERE payload_json->>'receiver_token' = :receiver_token
+                  AND payload_json->>'execution_scope' = 'test_loopback'
+                LIMIT 1
+                """,
+                {"receiver_token": _text(receiver_token)},
+            )
+        )
+
+    def create_test_receipt(
+        self,
+        *,
+        receiver_token: str,
+        job: ExternalEffectJob,
+        request_method: str,
+        request_path: str,
+        headers_summary: dict[str, Any],
+        payload_summary: dict[str, Any],
+        payload_hash: str,
+        body_json: dict[str, Any],
+        signature_valid: bool | None,
+        response_status: int,
+    ) -> ExternalEffectTestReceipt:
+        receipt_id = "eer_" + __import__("uuid").uuid4().hex
+        row = self._write_one(
+            """
+            INSERT INTO external_effect_test_receipt (
+                receipt_id, receiver_token, job_id, effect_type, trace_id, idempotency_key,
+                target_type, target_id, business_type, business_id, request_method,
+                request_path, headers_summary_json, payload_summary_json, payload_hash,
+                body_json, signature_valid, response_status, received_at
+            )
+            VALUES (
+                :receipt_id, :receiver_token, :job_id, :effect_type, :trace_id, :idempotency_key,
+                :target_type, :target_id, :business_type, :business_id, :request_method,
+                :request_path, CAST(:headers_summary AS jsonb), CAST(:payload_summary AS jsonb),
+                :payload_hash, CAST(:body_json AS jsonb), :signature_valid, :response_status,
+                CURRENT_TIMESTAMP
+            )
+            RETURNING *
+            """,
+            {
+                "receipt_id": receipt_id,
+                "receiver_token": _text(receiver_token),
+                "job_id": int(job.id),
+                "effect_type": job.effect_type,
+                "trace_id": job.trace_id,
+                "idempotency_key": job.idempotency_key,
+                "target_type": job.target_type,
+                "target_id": job.target_id,
+                "business_type": job.business_type,
+                "business_id": job.business_id,
+                "request_method": _text(request_method) or "POST",
+                "request_path": _text(request_path),
+                "headers_summary": _json_dumps(scrub_summary(headers_summary or {})),
+                "payload_summary": _json_dumps(scrub_summary(payload_summary or {})),
+                "payload_hash": _text(payload_hash),
+                "body_json": _json_dumps(body_json or {}),
+                "signature_valid": signature_valid,
+                "response_status": int(response_status or 200),
+            },
+        )
+        receipt = _public_receipt(row)
+        if receipt is None:
+            raise RuntimeError("external effect test receipt insert failed")
+        return receipt
+
+    def list_test_receipts(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectTestReceipt], int]:
+        filters = dict(filters or {})
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+        for key in ("job_id", "effect_type", "trace_id", "receiver_token"):
+            value = _text(filters.get(key))
+            if value:
+                clauses.append(f"{key} = :{key}")
+                params[key] = int(value) if key == "job_id" else value
+        if _text(filters.get("received_from")):
+            clauses.append("received_at >= CAST(:received_from AS timestamptz)")
+            params["received_from"] = _text(filters.get("received_from"))
+        if _text(filters.get("received_to")):
+            clauses.append("received_at <= CAST(:received_to AS timestamptz)")
+            params["received_to"] = _text(filters.get("received_to"))
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        count_row = self._one(f"SELECT COUNT(*) AS total FROM external_effect_test_receipt {where}", params)
+        rows = self._all(
+            f"""
+            SELECT *
+            FROM external_effect_test_receipt
+            {where}
+            ORDER BY received_at DESC, id DESC
+            LIMIT :limit OFFSET :offset
+            """,
+            {**params, "limit": max(1, min(int(limit or 50), 200)), "offset": max(0, int(offset or 0))},
+        )
+        return [receipt for row in rows if (receipt := _public_receipt(row)) is not None], int((count_row or {}).get("total") or 0)
+
+    def get_test_receipt(self, receipt_id: str) -> ExternalEffectTestReceipt | None:
+        return _public_receipt(self._one("SELECT * FROM external_effect_test_receipt WHERE receipt_id = :receipt_id LIMIT 1", {"receipt_id": _text(receipt_id)}))
+
+    def test_receipt_metrics(self) -> dict[str, Any]:
+        row = self._one(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE received_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS test_receipt_count_24h,
+                MAX(received_at) AS latest_test_receipt_at,
+                COUNT(*) FILTER (
+                    WHERE response_status BETWEEN 200 AND 299
+                      AND received_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+                ) AS real_external_call_executed_to_test_receiver_count
+            FROM external_effect_test_receipt
+            """
+        ) or {}
+        blocked = self._one("SELECT COUNT(*) AS count FROM external_effect_job WHERE last_error_code = 'test_execution_only_required'") or {}
+        loopback_due = self._one(
+            """
+            SELECT COUNT(*) AS count
+            FROM external_effect_job
+            WHERE payload_json->>'execution_scope' = 'test_loopback'
+              AND status IN ('queued', 'failed_retryable')
+              AND scheduled_at <= CURRENT_TIMESTAMP
+              AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+              AND (locked_at IS NULL OR locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+            """
+        ) or {}
+        return {
+            "test_receipt_count_24h": int(row.get("test_receipt_count_24h") or 0),
+            "latest_test_receipt_at": public_datetime(row.get("latest_test_receipt_at")),
+            "loopback_eligible_job_count": int(loopback_due.get("count") or 0),
+            "non_test_execution_blocked_count": int(blocked.get("count") or 0),
+            "real_external_call_executed_to_test_receiver_count": int(row.get("real_external_call_executed_to_test_receiver_count") or 0),
+        }
+
     def _update(self, job_id: int, set_sql: str, params: dict[str, Any]) -> ExternalEffectJob | None:
         row = self._write_one(
             f"""
@@ -527,8 +712,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
     def __init__(self) -> None:
         self._jobs: list[dict[str, Any]] = []
         self._attempts: list[dict[str, Any]] = []
+        self._receipts: list[dict[str, Any]] = []
         self._next_id = 1
         self._next_attempt_id = 1
+        self._next_receipt_id = 1
 
     def create_job(self, request: ExternalEffectCreateRequest) -> ExternalEffectJob:
         key = _idempotency_key(request)
@@ -650,7 +837,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             "oldest_failed_retryable_age_seconds": self._oldest_age_seconds(retry_due, now, "next_retry_at", fallback_key="scheduled_at"),
         }
 
-    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
+    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
         now = utcnow()
         type_set = {_text(item) for item in effect_types or [] if _text(item)}
         rows = [
@@ -658,6 +845,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             for row in self._jobs
             if row.get("status") in {"queued", "failed_retryable"}
             and (not type_set or row.get("effect_type") in type_set)
+            and (not test_only or (row.get("payload_json") or {}).get("execution_scope") == "test_loopback")
             and self._dt(row.get("scheduled_at")) <= now
             and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
@@ -665,8 +853,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         rows.sort(key=lambda row: (int(row.get("priority") or 100), row.get("scheduled_at") or "", int(row.get("id") or 0)))
         return [job for row in rows[: max(1, min(int(limit or 50), 200))] if (job := _public_job(row)) is not None]
 
-    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None) -> list[ExternalEffectJob]:
-        jobs = self.list_due_jobs(limit=limit, effect_types=effect_types)
+    def acquire_due_jobs(self, *, limit: int = 50, locked_by: str, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
+        jobs = self.list_due_jobs(limit=limit, effect_types=effect_types, test_only=test_only)
         now = public_datetime(utcnow())
         for job in jobs:
             row = self._find(job.id)
@@ -733,6 +921,87 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         attempt = _public_attempt(row)
         assert attempt is not None
         return attempt
+
+    def get_job_by_receiver_token(self, receiver_token: str) -> ExternalEffectJob | None:
+        token = _text(receiver_token)
+        for row in self._jobs:
+            payload = row.get("payload_json") or {}
+            if payload.get("receiver_token") == token and payload.get("execution_scope") == "test_loopback":
+                return _public_job(row)
+        return None
+
+    def create_test_receipt(
+        self,
+        *,
+        receiver_token: str,
+        job: ExternalEffectJob,
+        request_method: str,
+        request_path: str,
+        headers_summary: dict[str, Any],
+        payload_summary: dict[str, Any],
+        payload_hash: str,
+        body_json: dict[str, Any],
+        signature_valid: bool | None,
+        response_status: int,
+    ) -> ExternalEffectTestReceipt:
+        now = public_datetime(utcnow())
+        row = {
+            "id": self._next_receipt_id,
+            "receipt_id": "eer_" + __import__("uuid").uuid4().hex,
+            "receiver_token": _text(receiver_token),
+            "job_id": int(job.id),
+            "effect_type": job.effect_type,
+            "trace_id": job.trace_id,
+            "idempotency_key": job.idempotency_key,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "business_type": job.business_type,
+            "business_id": job.business_id,
+            "request_method": _text(request_method) or "POST",
+            "request_path": _text(request_path),
+            "headers_summary_json": scrub_summary(headers_summary or {}),
+            "payload_summary_json": scrub_summary(payload_summary or {}),
+            "payload_hash": _text(payload_hash),
+            "body_json": dict(body_json or {}),
+            "signature_valid": signature_valid,
+            "response_status": int(response_status or 200),
+            "received_at": now,
+        }
+        self._next_receipt_id += 1
+        self._receipts.append(row)
+        receipt = _public_receipt(row)
+        assert receipt is not None
+        return receipt
+
+    def list_test_receipts(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectTestReceipt], int]:
+        filters = dict(filters or {})
+        rows = list(self._receipts)
+        for key in ("job_id", "effect_type", "trace_id", "receiver_token"):
+            value = _text(filters.get(key))
+            if value:
+                rows = [row for row in rows if _text(row.get(key)) == value]
+        rows.sort(key=lambda row: (row.get("received_at") or "", int(row.get("id") or 0)), reverse=True)
+        total = len(rows)
+        window = rows[max(0, int(offset or 0)) : max(0, int(offset or 0)) + max(1, min(int(limit or 50), 200))]
+        return [receipt for row in window if (receipt := _public_receipt(row)) is not None], total
+
+    def get_test_receipt(self, receipt_id: str) -> ExternalEffectTestReceipt | None:
+        for row in self._receipts:
+            if row.get("receipt_id") == _text(receipt_id):
+                return _public_receipt(row)
+        return None
+
+    def test_receipt_metrics(self) -> dict[str, Any]:
+        now = utcnow()
+        recent = [row for row in self._receipts if self._dt(row.get("received_at")) >= now - timedelta(hours=24)]
+        latest = max((self._dt(row.get("received_at")) for row in self._receipts), default=None)
+        return {
+            "test_receipt_count_24h": len(recent),
+            "latest_test_receipt_at": public_datetime(latest) if latest else "",
+            "loopback_eligible_job_count": len(self.list_due_jobs(limit=200, test_only=True)),
+            "non_test_execution_blocked_count": len([row for row in self._jobs if row.get("last_error_code") == "test_execution_only_required"]),
+            "real_external_call_executed_to_test_receiver_count": len([row for row in recent if 200 <= int(row.get("response_status") or 0) < 300]),
+        }
 
     def _find(self, job_id: int) -> dict[str, Any] | None:
         for row in self._jobs:

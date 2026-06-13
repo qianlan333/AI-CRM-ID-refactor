@@ -78,6 +78,15 @@ class ExternalEffectService:
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         return self._repo.queue_metrics(filters or {})
 
+    def list_test_receipts(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0):
+        return self._repo.list_test_receipts(filters or {}, limit=limit, offset=offset)
+
+    def get_test_receipt(self, receipt_id: str):
+        return self._repo.get_test_receipt(receipt_id)
+
+    def test_receipt_metrics(self) -> dict[str, Any]:
+        return self._repo.test_receipt_metrics()
+
     def enqueue(self, job_id: int) -> ExternalEffectJob | None:
         return self._repo.enqueue_job(job_id)
 

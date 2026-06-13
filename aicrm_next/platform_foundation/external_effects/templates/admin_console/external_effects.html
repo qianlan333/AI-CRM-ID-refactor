@@ -80,6 +80,98 @@
   </div>
 </section>
 
+<section class="admin-card external-effects-test-loopback">
+  <div class="admin-card-head">
+    <h2>生产虚拟测试</h2>
+  </div>
+  <div class="external-effects-guard-grid">
+    <div>
+      <div class="admin-card-label">Test Receiver</div>
+      <div class="external-effects-mode external-effects-mode--{{ 'executable' if payload.test_receiver_enabled else 'disabled' }}">{{ payload.test_receiver_enabled|string|lower }}</div>
+      <p class="admin-card-copy">test_execution_only={{ payload.test_execution_only|string|lower }}</p>
+    </div>
+    <div>
+      <div class="admin-card-label">Current Base URL</div>
+      <code>{{ payload.current_base_url_detected or "unavailable" }}</code>
+    </div>
+    <div>
+      <div class="admin-card-label">Receipts 24h</div>
+      <div class="admin-card-value admin-card-value--compact">{{ payload.test_receipt_count_24h }}</div>
+      <p class="admin-card-copy">latest_test_receipt_at={{ payload.latest_test_receipt_at or "-" }}</p>
+    </div>
+    <div>
+      <div class="admin-card-label">Loopback Due</div>
+      <div class="admin-card-value admin-card-value--compact">{{ payload.loopback_eligible_job_count }}</div>
+      <p class="admin-card-copy">test receiver only，不触达真实客户。</p>
+    </div>
+  </div>
+  <div class="external-effects-actions external-effects-actions--stacked">
+    {% for item in [
+      ("questionnaire_submission_push_success", 200, "创建问卷 webhook 成功测试 job"),
+      ("order_paid_push_success", 200, "创建订单 webhook 成功测试 job"),
+      ("questionnaire_submission_push_retry_500", 500, "创建 500 retry 测试 job"),
+      ("order_paid_push_terminal_400", 400, "创建 400 terminal 测试 job")
+    ] %}
+    <form method="POST" action="/admin/external-effects/actions">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <input type="hidden" name="action" value="create-test-loopback">
+      <input type="hidden" name="scenario" value="{{ item[0] }}">
+      <input type="hidden" name="response_status" value="{{ item[1] }}">
+      <button type="submit" class="admin-button admin-button--secondary">{{ item[2] }}</button>
+    </form>
+    {% endfor %}
+    <form method="POST" action="/admin/external-effects/actions">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <input type="hidden" name="action" value="run-due-preview">
+      <input type="hidden" name="test_only" value="true">
+      <input type="hidden" name="batch_size" value="10">
+      <button type="submit" class="admin-button admin-button--secondary">Test-only Run-due Preview</button>
+    </form>
+    <form method="POST" action="/admin/external-effects/actions">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <input type="hidden" name="action" value="run-due-dry-run">
+      <input type="hidden" name="test_only" value="true">
+      <input type="hidden" name="batch_size" value="10">
+      <button type="submit" class="admin-button admin-button--primary">Test-only Run-due Dry-run</button>
+    </form>
+    <form method="POST" action="/admin/external-effects/actions">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <input type="hidden" name="action" value="run-due-test-execute">
+      <input type="hidden" name="test_only" value="true">
+      <input type="hidden" name="batch_size" value="1">
+      <button type="submit" class="admin-button admin-button--danger">仅执行 test-only job，batch_size=1，不触达真实客户。</button>
+    </form>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>最近 test jobs</th>
+          <th>最近 receipts</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            {% for job in payload.recent_test_jobs %}
+            <div><a href="?job_id={{ job.id }}">#{{ job.id }}</a> <code>{{ job.effect_type }}</code> {{ job.status }}</div>
+            {% else %}
+            <span class="admin-muted-text">暂无 test job</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% for receipt in payload.recent_test_receipts %}
+            <div><code>{{ receipt.receipt_id }}</code> job_id={{ receipt.job_id }} status={{ receipt.response_status }}</div>
+            {% else %}
+            <span class="admin-muted-text">暂无 receipt</span>
+            {% endfor %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 {% if metrics.eligible_due_count > 0 %}
 <section class="admin-alert admin-alert--warning">队列存在可扫描积压：eligible_due_count={{ metrics.eligible_due_count }}，请先执行 Run-due Preview，再执行 Dry-run。</section>
 {% endif %}
@@ -102,7 +194,7 @@
       {% for key, value in payload["filters"].items() %}
       <input type="hidden" name="{{ key }}" value="{{ value }}">
       {% endfor %}
-      <input type="number" name="batch_size" value="50" min="1" max="200" aria-label="batch_size">
+      <input type="number" name="batch_size" value="10" min="1" max="200" aria-label="batch_size">
       <button type="submit" class="admin-button admin-button--secondary">Run-due Preview</button>
     </form>
     <form method="POST" action="/admin/external-effects/actions">
@@ -111,7 +203,7 @@
       {% for key, value in payload["filters"].items() %}
       <input type="hidden" name="{{ key }}" value="{{ value }}">
       {% endfor %}
-      <input type="number" name="batch_size" value="50" min="1" max="200" aria-label="batch_size">
+      <input type="number" name="batch_size" value="10" min="1" max="200" aria-label="batch_size">
       <button type="submit" class="admin-button admin-button--primary">Run-due Dry-run</button>
     </form>
     <div class="external-effects-real-call">
@@ -359,6 +451,10 @@
 
 .external-effects-actions input[type="number"] {
   max-width: 92px;
+}
+
+.external-effects-actions--stacked {
+  margin: 16px 0;
 }
 
 .external-effects-real-call {
