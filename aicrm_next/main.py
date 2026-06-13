@@ -60,6 +60,8 @@ from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
+from .platform_foundation.external_effects.api import router as external_effects_router
+from .platform_foundation.external_effects import reset_external_effect_fixture_state
 from .public_product.api import router as public_product_router
 from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
 from .questionnaire.api import router as questionnaire_router
@@ -108,6 +110,7 @@ def create_app() -> FastAPI:
         reset_wecom_tag_write_fixture_state()
         reset_wecom_tag_live_mutation_fixture_state()
         reset_sidebar_jssdk_attempts()
+        reset_external_effect_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -151,6 +154,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(platform_router)
+    app.include_router(external_effects_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_shell_router)
     app.include_router(admin_config_router)

@@ -4,6 +4,7 @@ from typing import Any
 
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
+from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 
 from .mutation_commands import (
@@ -147,12 +148,21 @@ def _handle_plan_mutation(command: Command) -> dict[str, Any]:
         tag_ids=tag_ids,
         source_context=dict(command.payload.get("source_context") or {}),
     )
+    external_effect_job = _plan_wecom_tag_external_effect_job(
+        command=command,
+        effect_type=effect_type,
+        external_userid=external_userid,
+        tag_ids=tag_ids,
+        source_context=dict(command.payload.get("source_context") or {}),
+    )
     return {
         "effect_type": effect_type,
         "external_userid": external_userid,
         "tag_ids": tag_ids,
         "source_context": dict(command.payload.get("source_context") or {}),
         "side_effect_plan": _plan_response(plan),
+        "external_effect_job": external_effect_job,
+        "external_effect_job_id": external_effect_job.get("id") if external_effect_job else None,
     }
 
 
@@ -189,6 +199,49 @@ def _create_side_effect_plan(
     )
 
 
+def _plan_wecom_tag_external_effect_job(
+    *,
+    command: Command,
+    effect_type: str,
+    external_userid: str,
+    tag_ids: list[str],
+    source_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    external_effect_type = WECOM_CONTACT_TAG_UNMARK if effect_type == "wecom.tag.unmark" else WECOM_CONTACT_TAG_MARK
+    try:
+        return ExternalEffectService().plan_effect(
+            effect_type=external_effect_type,
+            adapter_name="wecom",
+            operation="tag_unmark" if external_effect_type == WECOM_CONTACT_TAG_UNMARK else "tag_mark",
+            target_type="external_user",
+            target_id=external_userid,
+            business_type="wecom_tag",
+            business_id=external_userid,
+            payload={
+                "external_userid": external_userid,
+                "tag_ids": tag_ids,
+                "operator": command.context.actor_id,
+                "source_context": source_context,
+                "blocked_plan_only": True,
+            },
+            payload_summary={
+                "external_userid_redacted": _redact_external_userid(external_userid),
+                "tag_count": len(tag_ids),
+                "source": source_context.get("source") or command.context.source_route,
+                "wecom_api_called": False,
+            },
+            context=command.context,
+            source_module="customer_tags.live_mutation",
+            source_command_id=command.command_id,
+            risk_level="high",
+            requires_approval=True,
+            execution_mode="shadow",
+            idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{external_effect_type}",
+        )
+    except Exception:
+        return None
+
+
 def _plan_response(plan: SideEffectPlan) -> dict[str, Any]:
     payload = plan.to_dict()
     plan_payload = dict(payload.pop("payload") or {})
@@ -216,6 +269,8 @@ def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dic
         "external_userid": payload.get("external_userid") or "",
         "tag_ids": list(payload.get("tag_ids") or []),
         "side_effect_plan": payload.get("side_effect_plan") or {},
+        "external_effect_job": payload.get("external_effect_job"),
+        "external_effect_job_id": payload.get("external_effect_job_id"),
         "real_external_call_executed": False,
         "wecom_api_called": False,
         "live_call_executed": False,

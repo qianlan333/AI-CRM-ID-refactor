@@ -182,4 +182,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0034_reset_miniprogram_only_material_jobs_20260611" in heads[0]
+            assert "0039_external_effect_queue" in heads[0]

@@ -161,6 +161,8 @@ _TABLES_TO_TRUNCATE = [
     "questionnaire_score_rules",
     "questionnaires",
     "external_push_delivery",
+    "external_effect_attempt",
+    "external_effect_job",
     "external_push_config",
     "domain_event_outbox",
     "wechat_pay_product_page_slices",
