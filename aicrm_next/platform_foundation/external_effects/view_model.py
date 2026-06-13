@@ -4,6 +4,7 @@ from typing import Any
 
 from .adapters import webhook_execution_settings
 from .service import ExternalEffectService
+from .test_receiver import test_execution_only_enabled, test_receiver_enabled
 
 ROUTE_OWNER = "ai_crm_next"
 JOB_DISPLAY_FIELDS = [
@@ -77,6 +78,7 @@ def build_external_effect_jobs_payload(
     params: dict[str, Any],
     *,
     service: ExternalEffectService | None = None,
+    current_base_url: str = "",
 ) -> dict[str, Any]:
     service = service or ExternalEffectService()
     filters = external_effect_filters(params)
@@ -88,6 +90,10 @@ def build_external_effect_jobs_payload(
     selected_job_id = _bounded_int(params.get("job_id"), default=0, minimum=0, maximum=10**12)
     selected_job = service.get(selected_job_id) if selected_job_id else None
     attempts = service.list_attempts(selected_job_id) if selected_job else []
+    receipt_items, receipt_total = service.list_test_receipts({}, limit=10, offset=0)
+    recent_jobs, _recent_jobs_total = service.list_jobs({}, limit=50, offset=0)
+    test_jobs = [item for item in recent_jobs if item.payload_json.get("execution_scope") == "test_loopback"][:10]
+    receipt_metrics = service.test_receipt_metrics()
     return {
         "ok": True,
         "items": [item.to_dict() for item in items],
@@ -102,6 +108,13 @@ def build_external_effect_jobs_payload(
         "display_fields": list(JOB_DISPLAY_FIELDS),
         "route_owner": ROUTE_OWNER,
         "real_external_call_executed": False,
+        "test_receiver_enabled": test_receiver_enabled(),
+        "test_execution_only": test_execution_only_enabled(),
+        "current_base_url_detected": current_base_url,
+        "recent_test_jobs": [item.to_dict() for item in test_jobs],
+        "recent_test_receipts": [item.to_dict() for item in receipt_items],
+        "test_receipt_total": receipt_total,
+        **receipt_metrics,
         **_execution_summary(),
     }
 
@@ -110,12 +123,14 @@ def build_external_effect_diagnostics_payload(
     params: dict[str, Any] | None = None,
     *,
     service: ExternalEffectService | None = None,
+    current_base_url: str = "",
 ) -> dict[str, Any]:
     service = service or ExternalEffectService()
     filters = external_effect_filters(dict(params or {}))
     counts = service.count_jobs(filters)
     queue_metrics = service.queue_metrics(filters)
     execution = _execution_summary()
+    receipt_metrics = service.test_receipt_metrics()
     return {
         "ok": True,
         "route_owner": ROUTE_OWNER,
@@ -124,6 +139,10 @@ def build_external_effect_diagnostics_payload(
         "real_execution_enabled": execution["real_execution_enabled"],
         "allowed_effect_types": execution["allowed_effect_types"],
         "execution_mode": execution["execution_mode"],
+        "test_receiver_enabled": test_receiver_enabled(),
+        "test_execution_only": test_execution_only_enabled(),
+        "current_base_url_detected": current_base_url,
+        **receipt_metrics,
         "webhook_execution": execution["webhook_execution"],
         "execution_default": "dry_run",
         "adapter_execution_default": "blocked",

@@ -162,6 +162,7 @@ _TABLES_TO_TRUNCATE = [
     "questionnaires",
     "external_push_delivery",
     "external_effect_attempt",
+    "external_effect_test_receipt",
     "external_effect_job",
     "external_push_config",
     "domain_event_outbox",

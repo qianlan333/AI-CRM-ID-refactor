@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 from uuid import uuid4
 
@@ -7,6 +8,15 @@ from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .models import ExternalEffectJob
 from .repo import ExternalEffectRepository, build_external_effect_repository
 from .retry_policy import next_retry_at, status_for_failure
+
+
+def _enabled(name: str) -> bool:
+    return str(os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_test_job(job: ExternalEffectJob) -> bool:
+    payload = dict(job.payload_json or {})
+    return payload.get("execution_scope") == "test_loopback" or payload.get("is_test") is True
 
 
 class ExternalEffectWorker:
@@ -21,8 +31,8 @@ class ExternalEffectWorker:
         self._adapters = adapter_registry or DEFAULT_ADAPTER_REGISTRY
         self._locked_by = locked_by or f"external-effect-worker-{uuid4().hex[:8]}"
 
-    def preview_due(self, *, batch_size: int = 50, effect_types: list[str] | None = None) -> dict[str, Any]:
-        jobs = self._repo.list_due_jobs(limit=batch_size, effect_types=effect_types)
+    def preview_due(self, *, batch_size: int = 10, effect_types: list[str] | None = None, test_only: bool = False) -> dict[str, Any]:
+        jobs = self._repo.list_due_jobs(limit=batch_size, effect_types=effect_types, test_only=test_only)
         return {
             "ok": True,
             "items": [job.to_dict() for job in jobs],
@@ -34,16 +44,27 @@ class ExternalEffectWorker:
                 "blocked_count": 0,
             },
             "dry_run": True,
+            "test_only": bool(test_only),
             "real_external_call_executed": False,
         }
 
-    def run_due(self, *, batch_size: int = 50, dry_run: bool = True, effect_types: list[str] | None = None) -> dict[str, Any]:
+    def run_due(self, *, batch_size: int = 10, dry_run: bool = True, effect_types: list[str] | None = None, test_only: bool = False) -> dict[str, Any]:
         if dry_run:
-            payload = self.preview_due(batch_size=batch_size, effect_types=effect_types)
+            payload = self.preview_due(batch_size=batch_size, effect_types=effect_types, test_only=test_only)
             payload["dry_run"] = True
             return payload
+        if _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not test_only:
+            return {
+                "ok": False,
+                "error": "test_only_required",
+                "items": [],
+                "counts": {"candidate_count": 0, "processed_count": 0, "succeeded_count": 0, "failed_count": 0, "blocked_count": 0},
+                "dry_run": False,
+                "test_only": False,
+                "real_external_call_executed": False,
+            }
 
-        jobs = self._repo.acquire_due_jobs(limit=batch_size, locked_by=self._locked_by, effect_types=effect_types)
+        jobs = self._repo.acquire_due_jobs(limit=batch_size, locked_by=self._locked_by, effect_types=effect_types, test_only=test_only)
         items: list[dict[str, Any]] = []
         counts = {"candidate_count": len(jobs), "processed_count": 0, "succeeded_count": 0, "failed_count": 0, "blocked_count": 0}
         real_external_call_executed = False
@@ -64,6 +85,7 @@ class ExternalEffectWorker:
             "items": items,
             "counts": counts,
             "dry_run": False,
+            "test_only": bool(test_only),
             "real_external_call_executed": real_external_call_executed,
         }
 
@@ -72,6 +94,28 @@ class ExternalEffectWorker:
         if job is None:
             return {"ok": False, "error": "job_not_found", "real_external_call_executed": False}
         self._repo.mark_dispatching(job.id, locked_by=self._locked_by)
+        if _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not _is_test_job(job):
+            attempt = self._repo.record_attempt(
+                job=job,
+                status="blocked",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary={"effect_type": job.effect_type, "test_execution_only": True},
+                response_summary={"blocked": True, "real_external_call_executed": False},
+                error_code="test_execution_only_required",
+                error_message="AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1 blocks non-test jobs.",
+            )
+            updated = self._repo.mark_blocked(
+                job.id,
+                attempt_id=attempt.attempt_id,
+                error_code="test_execution_only_required",
+                error_message="AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1 blocks non-test jobs.",
+            )
+            return {
+                "ok": False,
+                "job": updated.to_dict() if updated else job.to_dict(),
+                "attempt": attempt.to_dict(),
+                "real_external_call_executed": False,
+            }
         dispatch_result = self._adapters.get(job.adapter_name).dispatch(job)
         attempt = self._repo.record_attempt(
             job=job,
