@@ -8,6 +8,11 @@ from uuid import uuid4
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.external_calls import InMemoryExternalCallAttemptRepository
+from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectService,
+    WEBHOOK_CUSTOMER_AUTOMATION_RETRY,
+    WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE,
+)
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 
 ROUTE_OWNER = "ai_crm_next"
@@ -287,6 +292,13 @@ def _handle_delivery_retry(command: Command) -> dict[str, Any]:
         plan=plan,
         request_summary={"delivery_id": delivery_id},
     )
+    external_effect_job = _plan_customer_webhook_external_effect_job(
+        command=command,
+        effect_type=WEBHOOK_CUSTOMER_AUTOMATION_RETRY,
+        target_id=str(delivery_id),
+        candidates=[candidate],
+        payload_summary={"delivery_id": delivery_id},
+    )
     return _planned_payload(
         source_status="next_customer_webhook_retry_plan",
         status="planned_blocked",
@@ -298,6 +310,8 @@ def _handle_delivery_retry(command: Command) -> dict[str, Any]:
             "delivery": {"id": delivery_id, "status": "blocked_plan_only"},
             "outbound_webhook_executed": False,
             "retried_count": 0,
+            "external_effect_job": external_effect_job,
+            "external_effect_job_id": external_effect_job.get("id") if external_effect_job else None,
         },
     )
 
@@ -325,6 +339,13 @@ def _handle_delivery_retry_due(command: Command) -> dict[str, Any]:
         plan=plan,
         request_summary={"limit": limit},
     )
+    external_effect_job = _plan_customer_webhook_external_effect_job(
+        command=command,
+        effect_type=WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE,
+        target_id=f"due:{limit}",
+        candidates=[candidate],
+        payload_summary={"limit": limit},
+    )
     return _planned_payload(
         source_status="next_customer_webhook_retry_due_plan",
         status="planned_blocked",
@@ -335,6 +356,8 @@ def _handle_delivery_retry_due(command: Command) -> dict[str, Any]:
             "limit": limit,
             "outbound_webhook_executed": False,
             "retried_count": 0,
+            "external_effect_job": external_effect_job,
+            "external_effect_job_id": external_effect_job.get("id") if external_effect_job else None,
         },
     )
 
@@ -370,6 +393,46 @@ def _create_plan(
         risk_level=command_cls.risk_level,
         requires_approval=command_cls.requires_approval,
     )
+
+
+def _plan_customer_webhook_external_effect_job(
+    *,
+    command: Command,
+    effect_type: str,
+    target_id: str,
+    candidates: list[dict[str, Any]],
+    payload_summary: dict[str, Any],
+) -> dict[str, Any] | None:
+    try:
+        return ExternalEffectService().plan_effect(
+            effect_type=effect_type,
+            adapter_name="customer_outbound_webhook",
+            operation="post",
+            target_type="customer_automation_webhook_delivery",
+            target_id=target_id,
+            business_type="customer_automation_webhook",
+            business_id=target_id,
+            payload={
+                "command_payload": dict(command.payload or {}),
+                "candidates": candidates,
+                "blocked_plan_only": True,
+            },
+            payload_summary={
+                "candidate_count": len(candidates),
+                "estimated_action_count": _estimated_action_count(candidates),
+                **payload_summary,
+            },
+            context=command.context,
+            source_module="automation_engine.customer_webhooks",
+            source_command_id=command.command_id,
+            risk_level="high",
+            requires_approval=True,
+            execution_mode="shadow",
+            status="blocked",
+            idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{effect_type}",
+        )
+    except Exception:
+        return None
 
 
 def _record_blocked_attempt(

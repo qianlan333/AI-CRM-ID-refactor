@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -8,6 +9,10 @@ from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation
 from aicrm_next.customer_tags.mutation_commands import PlanQuestionnaireTagSideEffectCommand
+from aicrm_next.platform_foundation.external_effects import (
+    ExternalEffectService,
+    WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+)
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.command_bus.models import utcnow_iso
@@ -17,8 +22,10 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError, block
 from aicrm_next.shared.runtime import production_data_ready
 
 from .domain import score_and_tags, validate_required_answers
-from .external_push import deliver_questionnaire_external_push
+from .external_push import build_questionnaire_external_push_payload, deliver_questionnaire_external_push
 from .repo import QuestionnaireRepository, build_questionnaire_repository
+
+LOGGER = logging.getLogger(__name__)
 
 
 class QuestionnaireH5WriteInputError(ValueError):
@@ -327,6 +334,13 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         submission=submission,
         computed_result=result,
     )
+    external_effect_job = _plan_questionnaire_external_effect_job(
+        command=command,
+        questionnaire=item,
+        submission=submission,
+        computed_result=result,
+        external_push_result=external_push_result,
+    )
     tag_side_effect = _plan_questionnaire_tag_side_effect(
         command=command,
         questionnaire=item,
@@ -367,6 +381,8 @@ def _handle_submit(command: Command) -> dict[str, Any]:
             "wecom_tag": tag_side_effect,
             "external_push": external_push_result,
         },
+        "external_effect_job_id": external_effect_job.get("id") if external_effect_job else None,
+        "external_effect_job": external_effect_job,
     }
 
 
@@ -548,6 +564,55 @@ def _plan_questionnaire_tag_side_effect(
             trace_id=command.context.trace_id,
         )
     )
+
+
+def _plan_questionnaire_external_effect_job(
+    *,
+    command: Command,
+    questionnaire: dict[str, Any],
+    submission: dict[str, Any],
+    computed_result: dict[str, Any],
+    external_push_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    try:
+        config = dict(questionnaire.get("external_push_config") or {})
+        payload = build_questionnaire_external_push_payload(
+            questionnaire=questionnaire,
+            submission=submission,
+            computed_result=computed_result,
+        )
+        if config.get("webhook_url"):
+            payload = {"webhook_url": config.get("webhook_url"), "payload": payload}
+        job = ExternalEffectService().plan_effect(
+            effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+            adapter_name="outbound_webhook",
+            operation="post",
+            target_type="questionnaire_submission",
+            target_id=str(submission.get("submission_id") or ""),
+            business_type="questionnaire",
+            business_id=str(questionnaire.get("id") or ""),
+            payload=payload,
+            payload_summary={
+                "questionnaire_id": int(questionnaire.get("id") or 0),
+                "slug": questionnaire.get("slug") or "",
+                "submission_id": submission.get("submission_id") or "",
+                "external_push_enabled": bool(external_push_result.get("enabled")),
+                "external_push_attempted_by_legacy_path": bool(external_push_result.get("attempted")),
+                "external_push_status": external_push_result.get("status") or "",
+            },
+            context=command.context,
+            source_module="questionnaire.h5_write",
+            source_event_id=str((external_push_result.get("log") or {}).get("id") or ""),
+            source_command_id=command.command_id,
+            risk_level="medium",
+            requires_approval=False,
+            execution_mode="shadow",
+            idempotency_key=f"{command.idempotency_key or command.command_id}:external-effect:{WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH}",
+        )
+        return job
+    except Exception:
+        LOGGER.exception("questionnaire_external_effect_shadow_job_failed")
+        return None
 
 
 def _plan_response(plan: SideEffectPlan) -> dict[str, Any]:
