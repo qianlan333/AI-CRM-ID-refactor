@@ -71,6 +71,11 @@ def test_execution_only_enabled() -> bool:
     return _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY")
 
 
+def allowed_base_hosts() -> set[str]:
+    raw = str(os.getenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS") or "")
+    return {_host_without_port(item.strip().lower()) for item in raw.split(",") if item.strip()}
+
+
 def detect_current_base_url(request: Request) -> str:
     proto = str(request.headers.get("X-Forwarded-Proto") or request.url.scheme or "").split(",", 1)[0].strip().lower()
     host = str(request.headers.get("X-Forwarded-Host") or request.headers.get("host") or "").split(",", 1)[0].strip()
@@ -78,6 +83,8 @@ def detect_current_base_url(request: Request) -> str:
         raise ValueError("invalid_forwarded_proto")
     if not _valid_host(host):
         raise ValueError("invalid_host")
+    if not _host_allowed_by_env(host):
+        raise ValueError("host_not_allowed")
     return f"{proto}://{host}"
 
 
@@ -90,8 +97,20 @@ def safe_current_base_url(request: Request) -> str:
 
 def _valid_host(host: str) -> bool:
     normalized = host.strip().lower()
-    without_port = normalized.rsplit(":", 1)[0] if ":" in normalized and not normalized.startswith("[") else normalized
+    without_port = _host_without_port(normalized)
     return bool(host and _HOST_PATTERN.match(host) and without_port not in _BLOCKED_HOSTS and not without_port.startswith("127."))
+
+
+def _host_without_port(host: str) -> str:
+    normalized = host.strip().lower()
+    return normalized.rsplit(":", 1)[0] if ":" in normalized and not normalized.startswith("[") else normalized
+
+
+def _host_allowed_by_env(host: str) -> bool:
+    allowed = allowed_base_hosts()
+    if not allowed:
+        return True
+    return _host_without_port(host) in allowed
 
 
 def canonical_payload_hash(body: dict[str, Any]) -> str:

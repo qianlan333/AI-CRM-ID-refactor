@@ -34,7 +34,54 @@ Expected before enabling test mode:
 Open `/admin/external-effects` and confirm it shows no real external call by
 default.
 
-## 2. Enable The Test Receiver
+## 2. Host Trust Boundary Check
+
+Production loopback testing must not start until both the reverse proxy and the
+application allowlist agree on the current production host.
+
+Nginx must overwrite forwarded host headers on every location that proxies to
+AI-CRM Next:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+```
+
+The application must also restrict detected base hosts:
+
+```bash
+export AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS=www.youcangogogo.com,youcangogogo.com
+```
+
+Validate that a forged forwarded host cannot affect diagnostics:
+
+```bash
+curl -sS \
+  -H 'X-Forwarded-Host: attacker.example.com' \
+  -H 'X-Forwarded-Proto: https' \
+  "$BASE_URL/api/admin/external-effects/diagnostics" \
+  | jq '{current_base_url_detected}'
+```
+
+Expected:
+
+```json
+{
+  "current_base_url_detected": "https://www.youcangogogo.com"
+}
+```
+
+If this check fails, do not enable:
+
+- `AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED`
+- `AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE`
+
+Also do not create test-loopback jobs or run run-due.
+
+## 3. Enable The Test Receiver
 
 Enable only the loopback receiver and test-only execution guard:
 
@@ -52,7 +99,7 @@ POST /api/external-effects/test-receiver/{receiver_token}
 Receiver URLs are generated from `X-Forwarded-Proto` and `X-Forwarded-Host`, or
 from the current request URL. Do not hardcode a production domain.
 
-## 3. Enable One Low-Risk Effect Type
+## 4. Enable One Low-Risk Effect Type
 
 For questionnaire loopback:
 
@@ -70,7 +117,7 @@ export AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES=webhook.order_paid.push
 Never include WeCom, payment-query, Feishu, OpenClaw, or MCP effect types in the
 allowlist.
 
-## 4. Create A Test Loopback Job
+## 5. Create A Test Loopback Job
 
 Create a synthetic job through the admin API. Do not pass `webhook_url`; the
 server generates the current-domain receiver URL.
@@ -87,7 +134,7 @@ curl -sS -X POST "$BASE_URL/api/admin/external-effects/test-loopback/jobs" \
 
 The response includes `receiver_url`, `job`, and `runbook_next_steps`.
 
-## 5. Preview
+## 6. Preview
 
 Preview must happen before any execution:
 
@@ -105,7 +152,7 @@ curl -sS -X POST "$BASE_URL/api/admin/external-effects/run-due/preview" \
 Expected: `dry_run=true`, `test_only=true`,
 `real_external_call_executed=false`.
 
-## 6. Dry-Run
+## 7. Dry-Run
 
 ```bash
 curl -sS -X POST "$BASE_URL/api/admin/external-effects/run-due" \
@@ -121,7 +168,7 @@ curl -sS -X POST "$BASE_URL/api/admin/external-effects/run-due" \
 
 Expected: no receipt and no real external call.
 
-## 7. Execute One Test Job
+## 8. Execute One Test Job
 
 Only after preview and dry-run match the expected candidate:
 
@@ -139,7 +186,7 @@ curl -sS -X POST "$BASE_URL/api/admin/external-effects/run-due" \
 
 The only acceptable real call target is this app's own test receiver URL.
 
-## 8. Verify Receipt, Attempt, Diagnostics
+## 9. Verify Receipt, Attempt, Diagnostics
 
 ```bash
 curl -sS "$BASE_URL/api/admin/external-effects/test-receipts?job_id=$JOB_ID" | jq
@@ -158,7 +205,7 @@ The receipt trace and idempotency key must match the job. The receipt
 `payload_hash` proves the loopback receiver received the expected synthetic
 payload.
 
-## 9. Failure Tests
+## 10. Failure Tests
 
 500 retryable:
 
@@ -191,7 +238,7 @@ by adapter gate.
 Dry-run no send: keep `dry_run=true`. Expected: no receipt and
 `real_external_call_executed=false`.
 
-## 10. Rollback
+## 11. Rollback
 
 Disable all virtual execution switches:
 
@@ -213,7 +260,7 @@ curl -sS -X POST "$BASE_URL/api/admin/external-effects/jobs/$JOB_ID/cancel" \
 
 After rollback, run-due must no longer perform real execution.
 
-## 11. Prohibited Actions
+## 12. Prohibited Actions
 
 - Do not send real WeCom private messages, group sends, group messages, or
   welcome messages.
