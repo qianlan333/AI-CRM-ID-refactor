@@ -699,6 +699,48 @@ def test_external_effect_test_loopback_job_uses_current_host_and_rejects_unsafe_
     assert arbitrary_url.json()["error"] == "webhook_url_not_allowed"
 
 
+def test_external_effect_loopback_allowed_base_hosts_accepts_configured_hosts(next_client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS", "www.youcangogogo.com")
+
+    forwarded = next_client.post(
+        "/api/admin/external-effects/test-loopback/jobs",
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "www.youcangogogo.com"},
+        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+    )
+    host_fallback = next_client.post(
+        "/api/admin/external-effects/test-loopback/jobs",
+        headers={"X-Forwarded-Proto": "https", "Host": "www.youcangogogo.com"},
+        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+    )
+
+    assert forwarded.status_code == 200
+    assert forwarded.json()["receiver_url"].startswith("https://www.youcangogogo.com/api/external-effects/test-receiver/")
+    assert host_fallback.status_code == 200
+    assert host_fallback.json()["receiver_url"].startswith("https://www.youcangogogo.com/api/external-effects/test-receiver/")
+
+
+def test_external_effect_loopback_allowed_base_hosts_rejects_forged_forwarded_host(next_client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS", "www.youcangogogo.com")
+
+    created = next_client.post(
+        "/api/admin/external-effects/test-loopback/jobs",
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "attacker.example.com"},
+        json={"admin_action_token": ensure_admin_action_token(), "scenario": "questionnaire_submission_push_success", "response_status": 200},
+    )
+    diagnostics = next_client.get(
+        "/api/admin/external-effects/diagnostics",
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "attacker.example.com"},
+    )
+    jobs = next_client.get("/api/admin/external-effects/jobs")
+
+    assert created.status_code == 400
+    assert created.json()["error"] == "host_not_allowed"
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["current_base_url_detected"] == ""
+    assert "attacker.example.com" not in diagnostics.text
+    assert jobs.json()["total"] == 0
+
+
 def test_external_effect_receiver_enabled_records_receipt(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", "1")
     created = next_client.post(
