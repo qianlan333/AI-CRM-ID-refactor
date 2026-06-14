@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from aicrm_next.integration_gateway.fake_adapters import FakeWeComDispatchAdapter
+from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
 from aicrm_next.shared.errors import ContractError
 from aicrm_next.shared.postgres_connection import get_db
 
@@ -171,7 +172,28 @@ class NextOutboundMessageQueueGateway:
             ),
         ).fetchone()
         db.commit()
-        return int((row or {}).get("id") or 0)
+        job_id = int((row or {}).get("id") or 0)
+        if job_id:
+            safe_emit(
+                "broadcast_task.created",
+                emit_broadcast_task_created_shadow_event,
+                job={
+                    "id": job_id,
+                    "source_type": "workflow",
+                    "source_table": "automation_group_ops_plans",
+                    "source_id": source_id,
+                    "idempotency_key": command.idempotency_key,
+                    "target_count": 1,
+                    "batch_key": f"group_ops:{command.plan_id}",
+                    "trace_id": command.idempotency_key,
+                    "created_by": command.created_by,
+                },
+                source_module="automation_engine.group_ops.action_dispatcher",
+                source_route="group_ops.action_dispatcher.enqueue_private_message",
+                operator=command.created_by,
+                source="group_ops_private_message",
+            )
+        return job_id
 
 
 class NextPrivateMessageTaskGateway:

@@ -6,6 +6,12 @@ from uuid import uuid4
 
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
+from aicrm_next.platform_foundation.internal_events.shadow import (
+    AI_CAMPAIGN_APPROVED_EVENT_TYPE,
+    AI_CAMPAIGN_STARTED_EVENT_TYPE,
+    emit_ai_campaign_shadow_event,
+    safe_emit,
+)
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 
 from .campaigns_read import build_campaign_read_repository
@@ -229,7 +235,19 @@ def _handle_approve(command: Command) -> dict[str, Any]:
     campaign_code = str(command.payload.get("campaign_code") or "").strip()
     repo = _repo()
     campaign = _update_campaign_status(repo, campaign_code, review_status="approved")
-    return {"write_model_status": "updated", "campaign": campaign}
+    internal_event = safe_emit(
+        "ai_campaign.approved",
+        emit_ai_campaign_shadow_event,
+        command=command,
+        event_type=AI_CAMPAIGN_APPROVED_EVENT_TYPE,
+        campaign=campaign,
+    )
+    return {
+        "write_model_status": "updated",
+        "campaign": campaign,
+        "internal_event_id": internal_event.get("event_id") or "",
+        "internal_event_status": internal_event.get("status") or "",
+    }
 
 
 def _handle_reject(command: Command) -> dict[str, Any]:
@@ -244,7 +262,20 @@ def _handle_start(command: Command) -> dict[str, Any]:
     repo = _repo()
     campaign = _update_campaign_status(repo, campaign_code, review_status="approved", run_status="active")
     plan = _create_start_side_effect_plan(command=command, target_id=campaign_code, payload_summary={"campaign_code": campaign_code})
-    return {"write_model_status": "planned", "campaign": campaign, "side_effect_plan": _plan_response(plan)}
+    internal_event = safe_emit(
+        "ai_campaign.started",
+        emit_ai_campaign_shadow_event,
+        command=command,
+        event_type=AI_CAMPAIGN_STARTED_EVENT_TYPE,
+        campaign=campaign,
+    )
+    return {
+        "write_model_status": "planned",
+        "campaign": campaign,
+        "side_effect_plan": _plan_response(plan),
+        "internal_event_id": internal_event.get("event_id") or "",
+        "internal_event_status": internal_event.get("status") or "",
+    }
 
 
 def _handle_pause(command: Command) -> dict[str, Any]:

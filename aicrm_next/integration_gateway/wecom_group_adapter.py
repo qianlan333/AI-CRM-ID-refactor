@@ -6,6 +6,7 @@ import os
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
+from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
 from aicrm_next.shared.postgres_connection import get_db
 
 from .audit import record_audit_event
@@ -648,7 +649,18 @@ class NextGroupOpsQueueGateway:
             ),
         ).fetchone()
         db.commit()
-        return int((row or {}).get("id") or 0)
+        job_id = int((row or {}).get("id") or 0)
+        if job_id:
+            safe_emit(
+                "broadcast_task.created",
+                emit_broadcast_task_created_shadow_event,
+                job={**fields, "id": job_id, "trace_id": fields["idempotency_key"], "batch_key": f"group_ops:{plan_id}"},
+                source_module="integration_gateway.wecom_group_adapter",
+                source_route="wecom_group_adapter.enqueue_group_message",
+                operator=created_by,
+                source="group_ops_group_message",
+            )
+        return job_id
 
 
 class NextGroupOpsQueueStatsGateway:

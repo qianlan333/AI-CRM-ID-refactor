@@ -5,6 +5,7 @@ from typing import Any
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK
+from aicrm_next.platform_foundation.internal_events.shadow import emit_customer_tag_shadow_event, safe_emit
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 
 from .mutation_commands import (
@@ -155,6 +156,15 @@ def _handle_plan_mutation(command: Command) -> dict[str, Any]:
         tag_ids=tag_ids,
         source_context=dict(command.payload.get("source_context") or {}),
     )
+    internal_event = safe_emit(
+        "customer.tag_mutation",
+        emit_customer_tag_shadow_event,
+        command=command,
+        effect_type=effect_type,
+        external_userid=external_userid,
+        tag_ids=tag_ids,
+        source_context=dict(command.payload.get("source_context") or {}),
+    )
     return {
         "effect_type": effect_type,
         "external_userid": external_userid,
@@ -163,6 +173,8 @@ def _handle_plan_mutation(command: Command) -> dict[str, Any]:
         "side_effect_plan": _plan_response(plan),
         "external_effect_job": external_effect_job,
         "external_effect_job_id": external_effect_job.get("id") if external_effect_job else None,
+        "internal_event_id": internal_event.get("event_id") or "",
+        "internal_event_status": internal_event.get("status") or "",
     }
 
 
@@ -271,6 +283,8 @@ def _response_from_result(result: CommandResult, payload: dict[str, Any]) -> dic
         "side_effect_plan": payload.get("side_effect_plan") or {},
         "external_effect_job": payload.get("external_effect_job"),
         "external_effect_job_id": payload.get("external_effect_job_id"),
+        "internal_event_id": payload.get("internal_event_id") or "",
+        "internal_event_status": payload.get("internal_event_status") or "",
         "real_external_call_executed": False,
         "wecom_api_called": False,
         "live_call_executed": False,

@@ -182,4 +182,4 @@ def test_alembic_commands_can_walk_revision_graph() -> None:
         if args == ("heads",):
             heads = [line for line in result.stdout.splitlines() if "(head)" in line]
             assert len(heads) == 1
-            assert "0042_legacy_webhook_deprecation_registry" in heads[0]
+            assert "0043_internal_event_queue" in heads[0]
