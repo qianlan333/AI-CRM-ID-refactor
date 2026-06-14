@@ -279,19 +279,15 @@
                       <option value="url_link">动态 URL Link 接口</option>
                     </select>
                   </div>
-                  <div class="field full">
+                  <div class="field full" data-h5-url-fields>
                     <label>H5 跳转地址</label>
                     <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path">
-                    <small>普通 H5 落地页或动态 URL Link 失败时的备用地址。</small>
+                    <small>支付成功后直接进入该 H5 地址。</small>
                   </div>
                   <div class="field full" data-url-link-fields>
                     <label>动态 URL Link 接口</label>
                     <input name="completion_url_link_source_url" placeholder="https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay">
                     <small>支付成功后先访问该接口，从 JSON 里取微信官方 URL Link 后再跳转。</small>
-                  </div>
-                  <div class="field" data-url-link-fields>
-                    <label>响应字段</label>
-                    <input name="completion_url_link_response_key" placeholder="url_link" value="url_link">
                   </div>
                 </div>
                 <div class="warning" data-validation-warning hidden></div>
@@ -484,10 +480,10 @@
     const typeEl = root.querySelector('[name="completion_target_type"]');
     const h5UrlEl = root.querySelector('[name="completion_h5_url"]');
     const sourceUrlEl = root.querySelector('[name="completion_url_link_source_url"]');
-    const responseKeyEl = root.querySelector('[name="completion_url_link_response_key"]');
     function syncVisibility() {
       bodyEl.hidden = !enabledEl.checked;
       const isUrlLink = typeEl && typeEl.value === "url_link";
+      root.querySelectorAll("[data-h5-url-fields]").forEach(el => { el.hidden = isUrlLink; });
       root.querySelectorAll("[data-url-link-fields]").forEach(el => { el.hidden = !isUrlLink; });
     }
     function fill(initial) {
@@ -496,16 +492,14 @@
       if (typeEl) typeEl.value = target.target_type === "url_link" ? "url_link" : "h5";
       h5UrlEl.value = target.h5_url || target.fallback_url || product.completion_redirect_url || "";
       if (sourceUrlEl) sourceUrlEl.value = target.url_link.source_url || "";
-      if (responseKeyEl) responseKeyEl.value = target.url_link.response_url_key || "url_link";
       syncVisibility();
     }
     root.collectCompletionTarget = function collectCompletionTarget(options = {}) {
       const validate = options.validate !== false;
       const enabled = enabledEl.checked;
       const targetType = typeEl && typeEl.value === "url_link" ? "url_link" : "h5";
-      const h5Url = h5UrlEl.value.trim();
+      const h5Url = targetType === "h5" ? h5UrlEl.value.trim() : "";
       const sourceUrl = sourceUrlEl ? sourceUrlEl.value.trim() : "";
-      const responseUrlKey = responseKeyEl ? responseKeyEl.value.trim() || "url_link" : "url_link";
       const payload = {
         enabled,
         target_type: targetType,
@@ -523,7 +517,7 @@
           enabled: targetType === "url_link" && Boolean(sourceUrl),
           url: "",
           source_url: sourceUrl,
-          response_url_key: responseUrlKey
+          response_url_key: "url_link"
         }
       };
       warningEl.hidden = true;
