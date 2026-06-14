@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from aicrm_next.platform_foundation.external_calls import scrub_summary
+
 from .adapters import webhook_execution_settings
+from .models import ExternalEffectAttempt, ExternalEffectJob
 from .service import ExternalEffectService
 from .test_receiver import test_execution_only_enabled, test_receiver_enabled
 
@@ -32,6 +35,7 @@ EXPECTED_INDEXES = [
     "idx_external_effect_attempt_job",
     "idx_external_effect_attempt_trace",
 ]
+PROBLEM_STATUSES = {"failed_retryable", "failed_terminal", "blocked", "dispatching"}
 
 
 def _text(value: Any) -> str:
@@ -156,6 +160,184 @@ def build_external_effect_diagnostics_payload(
         "counts": counts,
         "queue_metrics": queue_metrics,
         "filters": _public_filters(filters),
+    }
+
+
+def _problem_label(job: ExternalEffectJob) -> str:
+    if job.status == "failed_retryable":
+        return "retryable_failure"
+    if job.status == "failed_terminal":
+        return "terminal_failure"
+    if job.status == "blocked":
+        return "blocked_by_policy"
+    if job.status == "dispatching":
+        return "possibly_stuck_dispatching"
+    if job.last_error_code or job.last_error_message:
+        return "has_last_error"
+    return ""
+
+
+def _troubleshooting_job_item(job: ExternalEffectJob) -> dict[str, Any]:
+    return {
+        "id": job.id,
+        "tenant_id": job.tenant_id,
+        "effect_type": job.effect_type,
+        "adapter_name": job.adapter_name,
+        "operation": job.operation,
+        "status": job.status,
+        "execution_mode": job.execution_mode,
+        "problem_label": _problem_label(job),
+        "target_type": job.target_type,
+        "target_id": job.target_id,
+        "business_type": job.business_type,
+        "business_id": job.business_id,
+        "source_module": job.source_module,
+        "source_route": job.source_route,
+        "trace_id": job.trace_id,
+        "request_id": job.request_id,
+        "correlation_id": job.correlation_id,
+        "idempotency_key": job.idempotency_key,
+        "actor_id": job.actor_id,
+        "actor_type": job.actor_type,
+        "risk_level": job.risk_level,
+        "requires_approval": job.requires_approval,
+        "attempt_count": job.attempt_count,
+        "max_attempts": job.max_attempts,
+        "last_attempt_id": job.last_attempt_id,
+        "last_error_code": job.last_error_code,
+        "last_error_message": job.last_error_message,
+        "scheduled_at": job.scheduled_at,
+        "next_retry_at": job.next_retry_at,
+        "locked_at": job.locked_at,
+        "locked_by": job.locked_by,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "executed_at": job.executed_at,
+        "cancelled_at": job.cancelled_at,
+        "payload_summary_json": scrub_summary(dict(job.payload_summary_json or {})),
+    }
+
+
+def _troubleshooting_attempt_item(attempt: ExternalEffectAttempt) -> dict[str, Any]:
+    return {
+        "id": attempt.id,
+        "attempt_id": attempt.attempt_id,
+        "job_id": attempt.job_id,
+        "adapter_name": attempt.adapter_name,
+        "adapter_mode": attempt.adapter_mode,
+        "operation": attempt.operation,
+        "trace_id": attempt.trace_id,
+        "request_id": attempt.request_id,
+        "status": attempt.status,
+        "request_summary_json": scrub_summary(dict(attempt.request_summary_json or {})),
+        "response_summary_json": scrub_summary(dict(attempt.response_summary_json or {})),
+        "error_code": attempt.error_code,
+        "error_message": attempt.error_message,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at,
+    }
+
+
+def _troubleshooting_filters(params: dict[str, Any] | None = None) -> dict[str, str]:
+    raw = dict(params or {})
+    return {
+        **external_effect_filters(raw),
+        "last_error_code": _text(raw.get("last_error_code")),
+        "idempotency_key": _text(raw.get("idempotency_key")),
+    }
+
+
+def _problem_only(params: dict[str, Any] | None = None) -> bool:
+    value = (params or {}).get("problem_only")
+    if value in (None, ""):
+        return True
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _matches_extra_filters(job: ExternalEffectJob, filters: dict[str, str], *, problem_only: bool) -> bool:
+    if problem_only and job.status not in PROBLEM_STATUSES and not job.last_error_code and not job.last_error_message:
+        return False
+    if filters.get("last_error_code") and filters["last_error_code"] not in job.last_error_code:
+        return False
+    if filters.get("idempotency_key") and filters["idempotency_key"] not in job.idempotency_key:
+        return False
+    return True
+
+
+def build_troubleshooting_summary_payload(
+    params: dict[str, Any] | None = None,
+    *,
+    service: ExternalEffectService | None = None,
+) -> dict[str, Any]:
+    service = service or ExternalEffectService()
+    filters = _troubleshooting_filters(params)
+    base_filters = {key: value for key, value in filters.items() if key in {"effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"}}
+    counts = service.count_jobs(base_filters)
+    queue_metrics = service.queue_metrics(base_filters)
+    problem_count = sum(int(counts.get(status, 0) or 0) for status in ("failed_retryable", "failed_terminal", "blocked"))
+    return {
+        "ok": True,
+        "route_owner": ROUTE_OWNER,
+        "capability_owner": "ai_crm_next/platform_foundation",
+        "source": "external_effect_job/external_effect_attempt",
+        "purpose": "external_effect_queue_troubleshooting",
+        "real_external_call_executed": False,
+        "problem_count": problem_count,
+        "counts": counts,
+        "queue_metrics": queue_metrics,
+        "problem_statuses": sorted(PROBLEM_STATUSES),
+        "filters": _public_filters(filters),
+        **_execution_summary(),
+    }
+
+
+def build_troubleshooting_jobs_payload(
+    params: dict[str, Any] | None = None,
+    *,
+    service: ExternalEffectService | None = None,
+) -> dict[str, Any]:
+    service = service or ExternalEffectService()
+    filters = _troubleshooting_filters(params)
+    base_filters = {key: value for key, value in filters.items() if key in {"effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id"}}
+    limit = _bounded_int((params or {}).get("limit"), default=50, minimum=1, maximum=200)
+    offset = _bounded_int((params or {}).get("offset"), default=0, minimum=0, maximum=100000)
+    problem_only = _problem_only(params)
+    fetch_limit = min(1000, max(200, limit + offset + 50))
+    jobs, _total = service.list_jobs(base_filters, limit=fetch_limit, offset=0)
+    filtered = [job for job in jobs if _matches_extra_filters(job, filters, problem_only=problem_only)]
+    page = filtered[offset : offset + limit]
+    return {
+        "ok": True,
+        "route_owner": ROUTE_OWNER,
+        "source": "external_effect_job",
+        "purpose": "external_effect_queue_troubleshooting",
+        "items": [_troubleshooting_job_item(job) for job in page],
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "filters": _public_filters(filters),
+        "problem_only": problem_only,
+        "real_external_call_executed": False,
+    }
+
+
+def build_troubleshooting_job_detail_payload(
+    job_id: int,
+    *,
+    service: ExternalEffectService | None = None,
+) -> dict[str, Any] | None:
+    service = service or ExternalEffectService()
+    job = service.get(job_id)
+    if not job:
+        return None
+    return {
+        "ok": True,
+        "route_owner": ROUTE_OWNER,
+        "source": "external_effect_job/external_effect_attempt",
+        "purpose": "external_effect_queue_troubleshooting",
+        "job": _troubleshooting_job_item(job),
+        "attempts": [_troubleshooting_attempt_item(attempt) for attempt in service.list_attempts(job_id)],
+        "real_external_call_executed": False,
     }
 
 

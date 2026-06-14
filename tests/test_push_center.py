@@ -207,11 +207,24 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert 'id="filterForm"' in response.text
     assert 'id="pushCenterTable"' in response.text
     assert 'id="detailPanel"' in response.text
+    assert 'class="push-center-header"' not in response.text
+    assert "push-center-title" not in response.text
+    assert 'href="#refresh"' in response.text
+    assert 'href="#export"' in response.text
+    assert "<colgroup>" in response.text
+    assert "push-center-col-section" in response.text
+    assert "push-center-section-label" in response.text
+    assert "push-center-ellipsis" in response.text
+    assert "STATUS_LABELS" in response.text
+    assert "EFFECT_TYPE_LABELS" in response.text
+    assert "TARGET_TYPE_LABELS" in response.text
+    assert "BUSINESS_TYPE_LABELS" in response.text
     assert "/api/admin/push-center/stats" in response.text
     assert "/api/admin/push-center/jobs" in response.text
     assert 'data-action="retry"' in response.text
     assert 'data-action="cancel"' in response.text
     assert "问卷外推" in response.text
+    assert "外部动作队列" not in response.text
     assert "payload_json" not in response.text
     assert "token" not in response.text.lower()
     assert "secret" not in response.text.lower()

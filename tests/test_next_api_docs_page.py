@@ -45,6 +45,7 @@ def test_api_docs_view_model_scans_current_fastapi_routes() -> None:
         "素材 / 发送内容",
         "交易 / 商品",
         "AI 助手 / 兼容代理",
+        "外部动作队列排障",
     }.issubset(group_titles)
     for expected in [
         ("GET", "/health"),
@@ -68,6 +69,9 @@ def test_api_docs_view_model_scans_current_fastapi_routes() -> None:
         ("POST", "/api/checkout/wechat"),
         ("GET", "/api/admin/ai-assist/contract"),
         ("POST", "/api/admin/cloud-orchestrator/campaigns/run-due"),
+        ("GET", "/api/admin/external-effects/troubleshooting/summary"),
+        ("GET", "/api/admin/external-effects/troubleshooting/jobs"),
+        ("GET", "/api/admin/external-effects/troubleshooting/jobs/{job_id}"),
     ]:
         assert expected in paths
 
@@ -85,6 +89,8 @@ def test_admin_api_docs_page_renders_rich_docs_not_real_data_table(monkeypatch) 
     assert "/api/admin/automation-conversion/group-ops/plans" in html
     assert "/api/admin/image-library/upload" in html
     assert "/api/products/{page_slug}" in html
+    assert "外部动作队列排障" in html
+    assert "/api/admin/external-effects/troubleshooting/summary" in html
     assert "data-real-data-table" not in html
     assert "real-data-table" not in html
     assert "复制全部 219 个接口" not in html

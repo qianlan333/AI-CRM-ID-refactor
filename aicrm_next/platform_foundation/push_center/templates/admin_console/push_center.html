@@ -2,17 +2,6 @@
 
 {% block content %}
 <section class="push-center-page" data-route-owner="ai_crm_next">
-  <header class="push-center-header">
-    <div>
-      <h1 class="push-center-title">推送中心</h1>
-      <p class="push-center-desc">统一查看 AI 助手、私信群发、群运营、问卷、订单、标签、Webhook 等所有外部推送任务。</p>
-    </div>
-    <div class="push-center-actions">
-      <button class="admin-button admin-button--secondary" type="button" id="refreshBtn">刷新</button>
-      <button class="admin-button admin-button--secondary" type="button" id="exportBtn">导出当前筛选</button>
-    </div>
-  </header>
-
   <section class="push-center-stats" id="statsGrid" aria-label="推送统计">
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">全部推送</div><div class="push-center-stat-value" data-stat="total">-</div></article>
     <article class="admin-card push-center-stat"><div class="push-center-stat-label">待执行</div><div class="push-center-stat-value" data-stat="queued">-</div></article>
@@ -73,6 +62,15 @@
 
       <div class="push-center-table-wrap">
         <table class="admin-table push-center-table" id="pushCenterTable">
+          <colgroup>
+            <col class="push-center-col-task">
+            <col class="push-center-col-section">
+            <col class="push-center-col-status">
+            <col class="push-center-col-target">
+            <col class="push-center-col-business">
+            <col class="push-center-col-error">
+            <col class="push-center-col-time">
+          </colgroup>
           <thead>
             <tr>
               <th>任务</th>
@@ -103,15 +101,11 @@
 
 <style>
 .push-center-page { --pc-line: #e5e7eb; --pc-muted: #6b7280; --pc-primary: #2563eb; --pc-success: #059669; --pc-warning: #d97706; --pc-danger: #dc2626; --pc-blocked: #7c3aed; }
-.push-center-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
-.push-center-title { font-size: 24px; font-weight: 700; margin: 0 0 6px; }
-.push-center-desc { color: var(--pc-muted); font-size: 14px; margin: 0; }
-.push-center-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .push-center-stats { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .push-center-stat { padding: 14px; }
 .push-center-stat-label { font-size: 12px; color: var(--pc-muted); margin-bottom: 8px; }
 .push-center-stat-value { font-size: 22px; font-weight: 700; }
-.push-center-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
+.push-center-layout { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; align-items: start; }
 .push-center-main, .push-center-detail-card { overflow: hidden; }
 .push-center-card-head { padding: 14px 16px; border-bottom: 1px solid var(--pc-line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .push-center-card-title { font-weight: 700; font-size: 15px; }
@@ -123,10 +117,21 @@
 .push-center-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--pc-muted); }
 .push-center-field input, .push-center-field select { height: 36px; border: 1px solid var(--pc-line); border-radius: 10px; padding: 0 10px; background: #fff; font-size: 13px; color: #1f2937; }
 .push-center-table-wrap { overflow-x: auto; }
+.push-center-table { table-layout: fixed; min-width: 980px; }
+.push-center-col-task { width: 170px; }
+.push-center-col-section { width: 116px; }
+.push-center-col-status { width: 96px; }
+.push-center-col-target { width: 245px; }
+.push-center-col-business { width: 235px; }
+.push-center-col-error { width: 150px; }
+.push-center-col-time { width: 138px; }
 .push-center-table th, .push-center-table td { vertical-align: top; }
 .push-center-table tbody tr[data-job-id] { cursor: pointer; }
 .push-center-table tbody tr[data-job-id]:hover td { background: #f9fafb; }
 .push-center-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.push-center-strong { font-weight: 600; color: #111827; }
+.push-center-ellipsis { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.push-center-section-label { display: inline-block; max-width: 104px; overflow: hidden; text-overflow: ellipsis; vertical-align: top; white-space: nowrap; }
 .push-center-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .push-center-badge.succeeded { color: var(--pc-success); background: #ecfdf5; }
 .push-center-badge.queued, .push-center-badge.dispatching { color: var(--pc-primary); background: #eff6ff; }
@@ -156,6 +161,67 @@
 <script>
 (() => {
   const state = { section: "", filters: {}, selectedJobId: null };
+  const STATUS_LABELS = {
+    planned: "已计划",
+    approved: "已审批",
+    queued: "待执行",
+    dispatching: "执行中",
+    succeeded: "成功",
+    failed_retryable: "失败可重试",
+    failed_terminal: "失败不可重试",
+    blocked: "已阻断",
+    cancelled: "已取消",
+    expired: "已过期"
+  };
+  const EFFECT_TYPE_LABELS = {
+    "webhook.questionnaire_submission.push": "问卷外推",
+    "webhook.order_paid.push": "订单外推",
+    "webhook.customer_automation.retry": "客户 Webhook 重试",
+    "webhook.customer_automation.retry_due": "客户 Webhook 到期重试",
+    "ai_assist.campaign.message.plan": "AI 助手触达计划",
+    "ai_assist.campaign.message.loopback": "AI 助手测试触达",
+    "wecom.message.private.send": "企微私信",
+    "wecom.message.group.send": "企微群消息",
+    "wecom.message.broadcast.send": "企微群发",
+    "group_ops.message.loopback": "群运营测试消息",
+    "group_ops.webhook.action.loopback": "群运营 Webhook 测试",
+    "wecom.contact.tag.mark": "企微打标签",
+    "wecom.contact.tag.unmark": "企微去标签",
+    "wecom.welcome_message.send": "企微欢迎语",
+    "payment.wechat.order.query": "微信支付订单查询",
+    "payment.wechat.refund.query": "微信支付退款查询",
+    "feishu.webhook.notify": "飞书通知",
+    "openclaw.context.push": "OpenClaw 推送",
+    "media.storage.upload": "素材上传",
+    "wecom.media.upload": "企微素材上传"
+  };
+  const TARGET_TYPE_LABELS = {
+    external_user: "客户",
+    campaign_member: "活动成员",
+    group_ops_webhook_event: "群运营事件",
+    group_ops_trigger_event: "群运营触发",
+    questionnaire_submission: "问卷提交",
+    wechat_pay_order: "微信支付订单",
+    customer_webhook_delivery: "客户 Webhook 投递",
+    customer_automation_webhook_delivery: "客户 Webhook 投递",
+    wecom_external_user: "企微客户",
+    wecom_group_chat: "企微群聊",
+    media_asset: "素材"
+  };
+  const BUSINESS_TYPE_LABELS = {
+    ai_assist_campaign: "AI 助手活动",
+    private_broadcast: "私信群发",
+    user_ops_broadcast: "私信群发",
+    group_ops_plan: "群运营计划",
+    group_broadcast: "群群发",
+    questionnaire: "问卷",
+    commerce_order: "订单",
+    customer_automation_webhook: "客户 Webhook",
+    wecom_tag: "企微标签",
+    welcome_message: "欢迎语",
+    payment_query: "支付查询",
+    integration: "集成推送"
+  };
 
   function qs(params) {
     const p = new URLSearchParams();
@@ -171,9 +237,18 @@
     }[c]));
   }
 
+  function labelFor(map, value) {
+    return map[value] || value || "-";
+  }
+
+  function ellipsis(value, className = "") {
+    return `<span class="push-center-ellipsis ${className}" title="${escapeHtml(value || "-")}">${escapeHtml(value || "-")}</span>`;
+  }
+
   function badge(status) {
-    const safeStatus = escapeHtml(status || "-");
-    return `<span class="push-center-badge ${escapeHtml(status || "")}">${safeStatus}</span>`;
+    const safeClass = escapeHtml(status || "");
+    const safeLabel = escapeHtml(labelFor(STATUS_LABELS, status));
+    return `<span class="push-center-badge ${safeClass}">${safeLabel}</span>`;
   }
 
   async function readJson(response) {
@@ -206,25 +281,26 @@
       <tr data-job-id="${Number(item.id)}">
         <td>
           <div class="push-center-mono">#${escapeHtml(item.id)}</div>
-          <div class="push-center-muted">${escapeHtml(item.effect_type)}</div>
+          ${ellipsis(labelFor(EFFECT_TYPE_LABELS, item.effect_type), "push-center-strong")}
+          ${ellipsis(item.effect_type, "push-center-mono push-center-muted")}
         </td>
-        <td>${escapeHtml(item.section_label || item.section || "-")}</td>
+        <td><span class="push-center-section-label" title="${escapeHtml(item.section_label || item.section || "-")}">${escapeHtml(item.section_label || item.section || "-")}</span></td>
         <td>${badge(item.status)}</td>
         <td>
-          <div>${escapeHtml(item.target_type || "-")}</div>
-          <div class="push-center-mono push-center-muted">${escapeHtml(item.target_id || "-")}</div>
+          ${ellipsis(labelFor(TARGET_TYPE_LABELS, item.target_type), "push-center-strong")}
+          ${ellipsis(item.target_id, "push-center-mono push-center-muted")}
         </td>
         <td>
-          <div>${escapeHtml(item.business_type || "-")}</div>
-          <div class="push-center-mono push-center-muted">${escapeHtml(item.business_id || "-")}</div>
+          ${ellipsis(labelFor(BUSINESS_TYPE_LABELS, item.business_type), "push-center-strong")}
+          ${ellipsis(item.business_id, "push-center-mono push-center-muted")}
         </td>
         <td>
-          <div>${escapeHtml(item.last_error_code || "")}</div>
-          <div class="push-center-muted">${escapeHtml(item.last_error_message || "")}</div>
+          ${ellipsis(item.last_error_code || "", "push-center-mono")}
+          ${ellipsis(item.last_error_message || "", "push-center-muted")}
         </td>
         <td>
-          <div>${escapeHtml(item.created_at || "-")}</div>
-          <div class="push-center-muted">attempts: ${escapeHtml(item.attempt_count || 0)}</div>
+          ${ellipsis(item.created_at || "-")}
+          <div class="push-center-muted">尝试 ${escapeHtml(item.attempt_count || 0)}</div>
         </td>
       </tr>
     `).join("");
@@ -247,6 +323,9 @@
 
     const job = data.job || {};
     const attempts = data.attempts || [];
+    const jobEffectLabel = labelFor(EFFECT_TYPE_LABELS, job.effect_type);
+    const jobBusinessLabel = labelFor(BUSINESS_TYPE_LABELS, job.business_type);
+    const jobTargetLabel = labelFor(TARGET_TYPE_LABELS, job.target_type);
     document.getElementById("detailStatus").innerHTML = badge(job.status);
     const panel = document.getElementById("detailPanel");
     panel.className = "push-center-detail-body";
@@ -255,9 +334,9 @@
         <h3>基础信息</h3>
         <div class="push-center-kv">
           <div class="push-center-kv-key">任务 ID</div><div class="push-center-mono">#${escapeHtml(job.id)}</div>
-          <div class="push-center-kv-key">effect_type</div><div class="push-center-mono">${escapeHtml(job.effect_type)}</div>
-          <div class="push-center-kv-key">业务对象</div><div>${escapeHtml(job.business_type)} / <span class="push-center-mono">${escapeHtml(job.business_id)}</span></div>
-          <div class="push-center-kv-key">目标</div><div>${escapeHtml(job.target_type)} / <span class="push-center-mono">${escapeHtml(job.target_id)}</span></div>
+          <div class="push-center-kv-key">任务类型</div><div>${escapeHtml(jobEffectLabel)} <span class="push-center-mono push-center-muted">${escapeHtml(job.effect_type)}</span></div>
+          <div class="push-center-kv-key">业务对象</div><div>${escapeHtml(jobBusinessLabel)} / <span class="push-center-mono">${escapeHtml(job.business_id)}</span></div>
+          <div class="push-center-kv-key">目标</div><div>${escapeHtml(jobTargetLabel)} / <span class="push-center-mono">${escapeHtml(job.target_id)}</span></div>
           <div class="push-center-kv-key">trace_id</div><div class="push-center-mono">${escapeHtml(job.trace_id)}</div>
           <div class="push-center-kv-key">idempotency</div><div class="push-center-mono">${escapeHtml(job.idempotency_key)}</div>
           <div class="push-center-kv-key">来源模块</div><div>${escapeHtml(job.source_module)}</div>
@@ -313,6 +392,17 @@
     await loadDetail(jobId);
   }
 
+  function refreshCurrentView() {
+    loadStats();
+    loadJobs();
+    if (state.selectedJobId) loadDetail(state.selectedJobId);
+  }
+
+  function exportCurrentFilter() {
+    const params = qs({ section: state.section, limit: 200, ...state.filters });
+    window.open(`/api/admin/push-center/jobs?${params}`, "_blank", "noopener");
+  }
+
   function bindEvents() {
     document.getElementById("sectionTabs").addEventListener("click", event => {
       const btn = event.target.closest(".push-center-tab");
@@ -331,15 +421,18 @@
       loadJobs();
     });
 
-    document.getElementById("refreshBtn").addEventListener("click", () => {
-      loadStats();
-      loadJobs();
-      if (state.selectedJobId) loadDetail(state.selectedJobId);
+    document.querySelectorAll('a[href="#refresh"]').forEach(anchor => {
+      anchor.addEventListener("click", event => {
+        event.preventDefault();
+        refreshCurrentView();
+      });
     });
 
-    document.getElementById("exportBtn").addEventListener("click", () => {
-      const params = qs({ section: state.section, limit: 200, ...state.filters });
-      window.open(`/api/admin/push-center/jobs?${params}`, "_blank", "noopener");
+    document.querySelectorAll('a[href="#export"]').forEach(anchor => {
+      anchor.addEventListener("click", event => {
+        event.preventDefault();
+        exportCurrentFilter();
+      });
     });
 
     document.getElementById("detailPanel").addEventListener("click", event => {

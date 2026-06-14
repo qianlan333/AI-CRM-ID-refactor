@@ -26,7 +26,7 @@ from aicrm_next.platform_foundation.external_effects import (
     WECOM_CONTACT_TAG_UNMARK,
     reset_external_effect_fixture_state,
 )
-from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository
+from aicrm_next.platform_foundation.external_effects.repo import InMemoryExternalEffectRepository, build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.retry_policy import classify_error_code, retry_delay_seconds
 from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry, WebhookAdapter
@@ -560,7 +560,7 @@ def test_external_effect_diagnostics_metrics_execution_mode_and_allowed_types(ne
     assert enabled_body["allowed_effect_types"] == [WEBHOOK_ORDER_PAID_PUSH]
 
 
-def test_external_effect_admin_page_shows_counts_filters_list_detail_and_attempts(next_client: TestClient) -> None:
+def test_external_effect_admin_page_is_removed_and_troubleshooting_api_covers_queue_debug(next_client: TestClient) -> None:
     service = ExternalEffectService()
     job = service.plan_effect(
         effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
@@ -574,6 +574,19 @@ def test_external_effect_admin_page_shows_counts_filters_list_detail_and_attempt
         context=_sample_context("trace-page"),
         idempotency_key="page-external-effect-job",
         status="queued",
+        payload_summary={"token": "secret-token", "safe": "visible"},
+    )
+    repo = build_external_effect_repository()
+    job_obj = repo.get_job(job["id"])
+    assert job_obj is not None
+    repo.record_attempt(
+        job=job_obj,
+        status="blocked",
+        adapter_mode="disabled",
+        request_summary={"Authorization": "Bearer secret", "effect_type": WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH},
+        response_summary={"access_token": "secret", "blocked": True},
+        error_code="shadow_only",
+        error_message="blocked by test",
     )
     for effect_type, target_type, target_id, business_type, business_id in [
         (WEBHOOK_ORDER_PAID_PUSH, "wechat_pay_order", "page-order-1", "commerce_order", "page-order-1"),
@@ -635,45 +648,27 @@ def test_external_effect_admin_page_shows_counts_filters_list_detail_and_attempt
         status="failed_terminal",
     )
 
-    response = next_client.get(
-        "/admin/external-effects",
-        params={"job_id": job["id"]},
-    )
+    page = next_client.get("/admin/external-effects")
+    push_center = next_client.get("/admin/push-center")
+    summary = next_client.get("/api/admin/external-effects/troubleshooting/summary").json()
+    jobs = next_client.get(
+        "/api/admin/external-effects/troubleshooting/jobs",
+        params={"problem_only": "false", "trace_id": "trace-page"},
+    ).json()
+    detail = next_client.get(f"/api/admin/external-effects/troubleshooting/jobs/{job['id']}").json()
 
-    assert response.status_code == 200
-    html = response.text
-    for text in [
-        "总任务",
-        "任务列表",
-        "任务详情",
-        "执行尝试",
-        "Run-due Preview",
-        "Run-due Dry-run",
-        "real_external_call_executed=<code>false</code>",
-        "执行防护",
-        "当前执行模式",
-        "disabled",
-        "当前没有真实外部调用",
-        "Allowed effect types",
-        "队列积压提示",
-        "eligible_due_count=",
-        "failed_retryable_count=",
-        "failed_terminal_count=",
-        "external-effects-row--retryable",
-        "external-effects-row--terminal",
-        "Retry",
-        "Cancel",
-        WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
-        WEBHOOK_ORDER_PAID_PUSH,
-        WEBHOOK_CUSTOMER_AUTOMATION_RETRY,
-        WECOM_CONTACT_TAG_MARK,
-        "page-sub-1",
-        "page-q-1",
-        "trace-page",
-        "page-external-effect-job",
-        "shadow_only",
-    ]:
-        assert text in html
+    assert page.status_code == 404
+    assert push_center.status_code == 200
+    assert summary["purpose"] == "external_effect_queue_troubleshooting"
+    assert summary["real_external_call_executed"] is False
+    assert summary["problem_count"] >= 1
+    assert jobs["total"] == 1
+    assert jobs["items"][0]["payload_summary_json"]["token"] == "[redacted]"
+    assert "payload_json" not in jobs["items"][0]
+    assert detail["job"]["id"] == job["id"]
+    assert detail["job"]["payload_summary_json"]["token"] == "[redacted]"
+    assert detail["attempts"][0]["request_summary_json"]["Authorization"] == "[redacted]"
+    assert detail["attempts"][0]["response_summary_json"]["access_token"] == "[redacted]"
 
 
 def test_external_effect_gray_runbook_documents_disabled_preview_dry_run_real_batch_and_rollback() -> None:
@@ -916,7 +911,7 @@ def test_external_effect_loopback_dry_run_allowlist_miss_and_test_only_gate(next
     assert repo.test_receipt_metrics()["non_test_execution_blocked_count"] == 1
 
 
-def test_external_effect_diagnostics_and_admin_page_show_virtual_test_state(next_client: TestClient, monkeypatch) -> None:
+def test_external_effect_diagnostics_and_api_docs_show_virtual_test_state(next_client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY", "1")
     monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "1")
@@ -926,28 +921,19 @@ def test_external_effect_diagnostics_and_admin_page_show_virtual_test_state(next
         "/api/admin/external-effects/diagnostics",
         headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
     ).json()
-    page = next_client.get(
-        "/admin/external-effects",
-        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "crm.example.test"},
-    )
+    docs = next_client.get("/admin/api-docs")
 
     assert diagnostics["test_receiver_enabled"] is True
     assert diagnostics["test_execution_only"] is True
     assert diagnostics["current_base_url_detected"] == "https://crm.example.test"
     assert diagnostics["allowed_effect_types"] == [WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH]
     assert diagnostics["real_execution_enabled"] is True
-    html = page.text
+    html = docs.text
     for text in [
-        "生产虚拟测试",
-        "Test Receiver",
-        "test_execution_only=true",
-        "Current Base URL",
-        "https://crm.example.test",
-        "创建问卷 webhook 成功测试 job",
-        "创建订单 webhook 成功测试 job",
-        "创建 500 retry 测试 job",
-        "创建 400 terminal 测试 job",
-        "仅执行 test-only job，batch_size=1，不触达真实客户。",
+        "外部动作队列排障",
+        "/api/admin/external-effects/troubleshooting/summary",
+        "/api/admin/external-effects/troubleshooting/jobs",
+        "/api/admin/external-effects/troubleshooting/jobs/{job_id}",
     ]:
         assert text in html
 
