@@ -20,6 +20,7 @@ https://www.youcangogogo.com
 |---|---|---|
 | 查询用户基础信息 | `GET` | `https://www.youcangogogo.com/api/external/users/resolve` |
 | 查询问卷提交 | `GET` | `https://www.youcangogogo.com/api/external/questionnaire-submissions` |
+| 查询聊天记录 | `GET` | `https://www.youcangogogo.com/api/external/chat-records` |
 | 批量查询订单 | `GET` | `https://www.youcangogogo.com/api/external/orders` |
 | 查询订单详情 | `GET` | `https://www.youcangogogo.com/api/external/orders/{order_no}` |
 
@@ -134,6 +135,158 @@ curl -H "Authorization: Bearer $TOKEN" \
   },
   "route_owner": "ai_crm_next",
   "source_status": "external_user_basic",
+  "fallback_used": false
+}
+```
+
+## 查询聊天记录
+
+```http
+GET /api/external/chat-records
+```
+
+按用户身份键查询本地归档聊天记录。该接口与订单 API 使用同一个 `AUTOMATION_INTERNAL_API_TOKEN`，只读本地 `archived_messages`/消息读模型，不会实时调用企微，也不会发送消息或触发自动化。
+
+### Query 参数
+
+`mobile`、`unionid`、`external_userid` 至少传一个。`start_time` 和 `chat_scene` 必传。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `mobile` | string | 条件必填 | - | 手机号 |
+| `unionid` | string | 条件必填 | - | 微信 unionid |
+| `external_userid` | string | 条件必填 | - | 企业微信外部联系人 ID |
+| `start_time` | integer | 是 | - | 聊天记录起始时间，秒级 Unix 时间戳 |
+| `chat_scene` | string | 是 | - | 聊天场景：`private`/`私信` 或 `group`/`群聊` |
+| `with_userid` | string | 否 | `HuangYouCan` | 私信场景下查询和哪个员工的聊天记录；空值默认 `HuangYouCan` |
+| `cursor` | string | 否 | - | 下一页游标，使用上一页返回的 `next_cursor` |
+
+分页固定每页 `20` 条。首次请求不传 `cursor`；如果 `has_more=true`，下一页保持原筛选条件不变并追加 `cursor`。
+
+### 请求示例
+
+按手机号查询与 `HuangYouCan` 的私信记录：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/chat-records?mobile=13800138000&start_time=1780272000&chat_scene=private"
+```
+
+按 unionid 查询与指定员工的私信记录：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/chat-records?unionid=orSqJ5iT9UoeYQRVxvAoo_8avkmA&start_time=1780272000&chat_scene=private&with_userid=ZhaoYanFang"
+```
+
+按 external_userid 查询群聊记录：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/chat-records?external_userid=wm_xxx&start_time=1780272000&chat_scene=group"
+```
+
+拉取下一页：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/chat-records?mobile=13800138000&start_time=1780272000&chat_scene=private&cursor=xxxx"
+```
+
+### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | 是否成功 |
+| `items` / `messages` | 聊天记录数组 |
+| `total` | 当前筛选条件下的总数 |
+| `count` | 当前页返回条数 |
+| `limit` | 固定为 `20` |
+| `next_cursor` | 下一页游标；为空表示没有下一页 |
+| `has_more` | 是否还有下一页 |
+| `external_userid` | 最终解析出的企业微信外部联系人 ID |
+| `matched_by` | 本次匹配使用的键：`external_userid`、`unionid` 或 `mobile` |
+| `filters` | 服务端实际使用的筛选条件 |
+| `route_owner` | 路由归属，固定为 `ai_crm_next` |
+| `source_status` | 固定为 `external_chat_records` |
+| `read_model_status` | 读模型状态 |
+| `fallback_used` | 固定为 `false` |
+
+`items[]` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `msgid` | 消息 ID |
+| `chat_scene` | 标准化聊天场景：`private` 或 `group` |
+| `chat_type` | 原始聊天类型 |
+| `external_userid` | 企业微信外部联系人 ID |
+| `with_userid` | 员工 userid；私信场景通常是本次对话员工 |
+| `sender` | 发送方 |
+| `receiver` | 接收方 |
+| `chat_id` | 群聊 ID；私信为空 |
+| `roomid` | 群聊 roomid；私信为空 |
+| `group_name` | 群名；私信为空 |
+| `msgtype` | 消息类型 |
+| `content` | 消息内容 |
+| `send_time` | 发送时间 |
+| `source_id` | 本地归档行 ID |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "msgid": "msg_001",
+      "chat_scene": "private",
+      "chat_type": "single",
+      "external_userid": "wm_xxx",
+      "with_userid": "HuangYouCan",
+      "sender": "wm_xxx",
+      "receiver": "HuangYouCan",
+      "chat_id": "",
+      "roomid": "",
+      "group_name": "",
+      "msgtype": "text",
+      "content": "我刚买了 9.9，想知道第一步怎么做",
+      "send_time": "2026-06-14T09:20:30+00:00",
+      "source_id": "123"
+    }
+  ],
+  "messages": [
+    {
+      "msgid": "msg_001",
+      "chat_scene": "private",
+      "chat_type": "single",
+      "external_userid": "wm_xxx",
+      "with_userid": "HuangYouCan",
+      "sender": "wm_xxx",
+      "receiver": "HuangYouCan",
+      "chat_id": "",
+      "roomid": "",
+      "group_name": "",
+      "msgtype": "text",
+      "content": "我刚买了 9.9，想知道第一步怎么做",
+      "send_time": "2026-06-14T09:20:30+00:00",
+      "source_id": "123"
+    }
+  ],
+  "total": 1,
+  "count": 1,
+  "limit": 20,
+  "next_cursor": "",
+  "has_more": false,
+  "external_userid": "wm_xxx",
+  "matched_by": "mobile",
+  "filters": {
+    "chat_scene": "private",
+    "start_time": "2026-06-01 00:00:00",
+    "with_userid": "HuangYouCan"
+  },
+  "route_owner": "ai_crm_next",
+  "source_status": "external_chat_records",
+  "read_model_status": "primary",
   "fallback_used": false
 }
 ```
@@ -477,7 +630,7 @@ POST /api/admin/wechat-shop/orders/{order_id}/sync
 
 ## 时间戳说明
 
-`paid_from`、`paid_to`、`created_from`、`created_to`、`submitted_from`、`submitted_to` 都必须传秒级 Unix 时间戳。
+`paid_from`、`paid_to`、`created_from`、`created_to`、`submitted_from`、`submitted_to`、`start_time` 都必须传秒级 Unix 时间戳。
 
 示例：
 
