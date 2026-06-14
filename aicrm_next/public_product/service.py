@@ -578,7 +578,19 @@ def _pay_page_script(state_json: str) -> str:
       function fallbackUrlFromTarget(target) {{
         if (!target || !target.enabled) return "";
         const link = target.url_link || {{}};
-        return String(link.url || target.fallback_url || target.h5_url || "");
+        return String(target.fallback_url || target.h5_url || link.url || "");
+      }}
+
+      function dynamicUrlLinkResolverUrl(target, fallbackUrl) {{
+        const link = target && target.url_link ? target.url_link : {{}};
+        const sourceUrl = String(link.source_url || "").trim();
+        if (!/^https:\\/\\/[^\\s\\\\]+$/i.test(sourceUrl)) return "";
+        const params = new URLSearchParams();
+        params.set("source_url", sourceUrl);
+        params.set("response_url_key", String(link.response_url_key || "url_link"));
+        const candidateFallback = String(fallbackUrl || fallbackUrlFromTarget(target) || "").trim();
+        if (candidateFallback && isSafeRedirectUrl(candidateFallback)) params.set("fallback_url", candidateFallback);
+        return "/api/h5/navigation-target/url-link/resolve?" + params.toString();
       }}
 
       function miniProgramActionFromTarget(target, order) {{
@@ -591,13 +603,28 @@ def _pay_page_script(state_json: str) -> str:
         return {{ type: "mini_program", navigation_target: target, fallback_url: fallbackUrl }};
       }}
 
+      function urlLinkActionFromTarget(target, order) {{
+        if (!target || !target.enabled || target.target_type !== "url_link") return null;
+        const link = target.url_link || {{}};
+        const fallbackUrl = fallbackUrlFromTarget(target) || String((order && order.success_url) || "");
+        if (link.source_url) return {{ type: "url_link", navigation_target: target, fallback_url: fallbackUrl }};
+        if (link.url && isSafeRedirectUrl(link.url)) return {{ type: "redirect", redirect_url: link.url }};
+        return fallbackUrl && isSafeRedirectUrl(fallbackUrl) ? {{ type: "redirect", redirect_url: fallbackUrl }} : null;
+      }}
+
       function completionActionFromOrder(order) {{
         const action = order && order.completion_action ? order.completion_action : {{}};
         if (action && action.type === "mini_program" && action.navigation_target) {{
           const miniAction = miniProgramActionFromTarget(action.navigation_target, order);
           if (miniAction) return miniAction;
         }}
+        if (action && action.type === "url_link" && action.navigation_target) {{
+          const linkAction = urlLinkActionFromTarget(action.navigation_target, order);
+          if (linkAction) return linkAction;
+        }}
         const target = order && order.completion_target ? order.completion_target : {{}};
+        const linkAction = urlLinkActionFromTarget(target, order);
+        if (linkAction) return linkAction;
         const miniAction = miniProgramActionFromTarget(target, order);
         if (miniAction) return miniAction;
         const actionUrl = String((action && action.redirect_url) || "");
@@ -683,6 +710,14 @@ def _pay_page_script(state_json: str) -> str:
         const autoShowQr = !options || options.autoShowQr !== false;
         paidOrder = order || paidOrder || {{}};
         const completionAction = completionActionFromOrder(paidOrder);
+        if (completionAction.type === "url_link") {{
+          const resolverUrl = dynamicUrlLinkResolverUrl(completionAction.navigation_target, completionAction.fallback_url);
+          if (resolverUrl) {{
+            setState("报名成功，正在打开小程序...", "success");
+            window.location.href = resolverUrl;
+            return;
+          }}
+        }}
         if (completionAction.type === "mini_program") {{
           setState("报名成功，正在打开小程序...", "success");
           if (checkoutCard) checkoutCard.style.display = "none";

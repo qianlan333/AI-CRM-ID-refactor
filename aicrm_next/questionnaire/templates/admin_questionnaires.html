@@ -2939,6 +2939,8 @@
         url_link: {
           enabled: false,
           url: '',
+          source_url: '',
+          response_url_key: 'url_link',
           expire_type: 0,
           expire_interval: 30,
         },
@@ -2949,9 +2951,9 @@
       const target = { ...defaultCompletionTarget(redirectUrl), ...(value || {}) };
       target.mini_program = { ...defaultCompletionTarget().mini_program, ...(target.mini_program || {}) };
       target.url_link = { ...defaultCompletionTarget().url_link, ...(target.url_link || {}) };
-      if (target.target_type !== 'mini_program') target.target_type = 'h5';
-      target.open_strategy = target.target_type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect';
-      target.url_link.enabled = false;
+      if (!['h5', 'url_link'].includes(target.target_type)) target.target_type = 'h5';
+      target.open_strategy = target.target_type === 'url_link' ? 'url_link' : 'h5_redirect';
+      target.url_link.enabled = target.target_type === 'url_link' && Boolean(target.url_link.url || target.url_link.source_url);
       return target;
     }
 
@@ -2969,11 +2971,28 @@
             </label>
           </div>
 
-          <div class="target-body" data-target-body hidden>
-            <div class="field-grid">
+            <div class="target-body" data-target-body hidden>
+              <div class="field-grid">
+              <div class="field full">
+                <label>跳转类型</label>
+                <select name="completion_target_type">
+                  <option value="h5" ${target.target_type === 'h5' ? 'selected' : ''}>H5 跳转地址</option>
+                  <option value="url_link" ${target.target_type === 'url_link' ? 'selected' : ''}>动态 URL Link 接口</option>
+                </select>
+              </div>
               <div class="field full">
                 <label>H5 跳转地址</label>
-                <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path" value="${escapeHtml(target.h5_url || target.fallback_url || '')}">
+                <input name="completion_h5_url" data-h5-url-field placeholder="https://example.com/landing 或 /internal/path" value="${escapeHtml(target.h5_url || target.fallback_url || '')}">
+                <small>普通 H5 落地页或动态 URL Link 失败时的备用地址。</small>
+              </div>
+              <div class="field full" data-url-link-fields>
+                <label>动态 URL Link 接口</label>
+                <input name="completion_url_link_source_url" placeholder="https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay" value="${escapeHtml(target.url_link.source_url || '')}">
+                <small>提交成功后先访问该接口，从 JSON 里取微信官方 URL Link 后再跳转。</small>
+              </div>
+              <div class="field" data-url-link-fields>
+                <label>响应字段</label>
+                <input name="completion_url_link_response_key" placeholder="url_link" value="${escapeHtml(target.url_link.response_url_key || 'url_link')}">
               </div>
             </div>
             <div class="warning" data-validation-warning hidden></div>
@@ -2986,19 +3005,30 @@
       const enabledEl = root.querySelector('[data-target-enabled]');
       const bodyEl = root.querySelector('[data-target-body]');
       const warningEl = root.querySelector('[data-validation-warning]');
+      const typeEl = root.querySelector('[name="completion_target_type"]');
+      const h5UrlEl = root.querySelector('[name="completion_h5_url"]');
+      const sourceUrlEl = root.querySelector('[name="completion_url_link_source_url"]');
+      const responseKeyEl = root.querySelector('[name="completion_url_link_response_key"]');
 
       function syncVisibility() {
         bodyEl.hidden = !enabledEl.checked;
+        const isUrlLink = typeEl && typeEl.value === 'url_link';
+        root.querySelectorAll('[data-url-link-fields]').forEach((el) => {
+          el.hidden = !isUrlLink;
+        });
       }
 
       root.collectCompletionTarget = function collectCompletionTarget(options = {}) {
         const validate = options.validate !== false;
         const enabled = enabledEl.checked;
-        const h5Url = root.querySelector('[name="completion_h5_url"]').value.trim();
+        const targetType = typeEl && typeEl.value === 'url_link' ? 'url_link' : 'h5';
+        const h5Url = h5UrlEl.value.trim();
+        const sourceUrl = sourceUrlEl ? sourceUrlEl.value.trim() : '';
+        const responseUrlKey = responseKeyEl ? responseKeyEl.value.trim() || 'url_link' : 'url_link';
         const payload = {
           enabled,
-          target_type: 'h5',
-          open_strategy: 'h5_redirect',
+          target_type: targetType,
+          open_strategy: targetType === 'url_link' ? 'url_link' : 'h5_redirect',
           h5_url: h5Url,
           fallback_url: '',
           mini_program: {
@@ -3009,14 +3039,21 @@
             env_version: 'release',
           },
           url_link: {
-            enabled: false,
+            enabled: targetType === 'url_link' && Boolean(sourceUrl),
             url: '',
+            source_url: sourceUrl,
+            response_url_key: responseUrlKey,
           },
         };
         warningEl.hidden = true;
         warningEl.textContent = '';
-        if (validate && enabled && !h5Url) {
+        if (validate && enabled && targetType === 'h5' && !h5Url) {
           warningEl.textContent = '请填写 H5 跳转地址。';
+          warningEl.hidden = false;
+          throw new Error(warningEl.textContent);
+        }
+        if (validate && enabled && targetType === 'url_link' && !sourceUrl) {
+          warningEl.textContent = '请填写动态 URL Link 接口。';
           warningEl.hidden = false;
           throw new Error(warningEl.textContent);
         }
