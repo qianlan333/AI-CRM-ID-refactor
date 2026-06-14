@@ -9,7 +9,7 @@ from uuid import uuid4
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.external_calls import InMemoryExternalCallAttemptRepository
-from aicrm_next.platform_foundation.external_effects import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, ExternalEffectService
+from aicrm_next.platform_foundation.external_effects import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, WECOM_MESSAGE_PRIVATE_SEND, ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
 from aicrm_next.platform_foundation.external_effects.test_receiver import TEST_RECEIVER_PATH_PREFIX, canonical_payload_hash
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
@@ -23,6 +23,7 @@ ADAPTER_MODE = "real_blocked"
 DEFAULT_BATCH_SIZE = 200
 MAX_BATCH_SIZE = 1000
 AI_ASSIST_EXTERNAL_EFFECT_TEST_MODE_KEY = "AI_ASSIST_EXTERNAL_EFFECT_TEST_MODE"
+AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE_KEY = "AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE"
 
 
 class CloudCampaignRunDueInputError(ValueError):
@@ -195,12 +196,15 @@ def _due_candidates(batch_size: int) -> tuple[list[dict[str, Any]], dict[str, An
                 {
                     "campaign_code": campaign_code,
                     "campaign_id": campaign.get("id"),
+                    "owner_userid": campaign.get("owner_userid"),
+                    "campaign_trace_id": campaign.get("trace_id"),
                     "member_id": member.get("member_id"),
                     "external_contact_id": member.get("external_contact_id"),
                     "member_status": member.get("status"),
                     "current_step_index": member.get("current_step_index"),
                     "next_step_index": next_step.get("step_index", 0),
                     "next_due_at": member.get("next_due_at") or "",
+                    "next_step": next_step,
                     "estimated_actions": 1,
                 }
             )
@@ -215,6 +219,15 @@ def _enabled(name: str) -> bool:
 
 def _is_loopback_test_mode(command: Command) -> bool:
     return bool(command.payload.get("test_only")) or _enabled(AI_ASSIST_EXTERNAL_EFFECT_TEST_MODE_KEY)
+
+
+def _send_mode(command: Command) -> str:
+    if _is_loopback_test_mode(command):
+        return "loopback"
+    mode = str(os.getenv(AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE_KEY, "") or "").strip().lower()
+    if mode in {"wecom", "wecom_private", "private_message"}:
+        return "wecom_private"
+    return "shadow"
 
 
 def _receiver_response_status(command: Command) -> int:
@@ -293,26 +306,88 @@ def _loopback_payload_for_candidate(
     return payload, {"idempotency_key": idempotency_key, "payload_summary": summary}
 
 
+def _wecom_private_payload_for_candidate(
+    *,
+    command: Command,
+    candidate: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    campaign_code = str(candidate.get("campaign_code") or "").strip()
+    external_userid = str(candidate.get("external_contact_id") or "").strip()
+    step = candidate.get("next_step") if isinstance(candidate.get("next_step"), dict) else {}
+    step_index = int(candidate.get("next_step_index") or step.get("step_index") or 0)
+    content_payload = step.get("content_payload_json") if isinstance(step.get("content_payload_json"), dict) else {}
+    content_text = str(step.get("content_text") or content_payload.get("content_text") or "").strip()
+    idempotency_key = (
+        f"{command.idempotency_key or command.command_id}:external-effect:"
+        f"{WECOM_MESSAGE_PRIVATE_SEND}:{campaign_code}:{external_userid}:{step_index}"
+    )
+    attachments = content_payload.get("attachments") if isinstance(content_payload.get("attachments"), list) else []
+    payload = {
+        "channel": "wecom_private",
+        "owner_userid": str(candidate.get("owner_userid") or "").strip(),
+        "sender": str(candidate.get("owner_userid") or "").strip(),
+        "external_userids": [external_userid],
+        "content_text": content_text,
+        "attachments": attachments,
+        "campaign_code": campaign_code,
+        "campaign_id": candidate.get("campaign_id"),
+        "member_id": candidate.get("member_id"),
+        "step_index": step_index,
+        "wecom_send_executed": False,
+    }
+    payload_summary = {
+        "campaign_code": campaign_code,
+        "campaign_id": candidate.get("campaign_id"),
+        "target_type": "external_user",
+        "target_id": external_userid,
+        "owner_userid": str(candidate.get("owner_userid") or "").strip(),
+        "member_id": candidate.get("member_id"),
+        "step_index": step_index,
+        "content_text_length": len(content_text),
+        "attachment_count": len(attachments),
+        "wecom_send_executed": False,
+    }
+    return payload, {"idempotency_key": idempotency_key, "payload_summary": payload_summary}
+
+
 def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if not candidates:
         return [], []
-    loopback_mode = _is_loopback_test_mode(command)
+    send_mode = _send_mode(command)
+    loopback_mode = send_mode == "loopback"
     service = ExternalEffectService()
     jobs: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for candidate in candidates:
-        target_id, _target_kind = _candidate_target_id(candidate)
         campaign_code = str(candidate.get("campaign_code") or "").strip()
+        target_id, _target_kind = _candidate_target_id(candidate)
         if not campaign_code or not target_id:
             continue
-        payload, meta = _loopback_payload_for_candidate(command=command, candidate=candidate, loopback_mode=loopback_mode)
+        if send_mode == "wecom_private":
+            external_userid = str(candidate.get("external_contact_id") or "").strip()
+            if not external_userid:
+                continue
+            effect_type = WECOM_MESSAGE_PRIVATE_SEND
+            adapter_name = "wecom_private_message"
+            target_type = "external_user"
+            target_id = external_userid
+            payload, meta = _wecom_private_payload_for_candidate(command=command, candidate=candidate)
+            execution_mode = "execute"
+            status = "queued"
+        else:
+            effect_type = AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK
+            adapter_name = "outbound_webhook"
+            target_type = "campaign_member"
+            payload, meta = _loopback_payload_for_candidate(command=command, candidate=candidate, loopback_mode=loopback_mode)
+            execution_mode = "execute" if loopback_mode else "shadow"
+            status = "queued" if loopback_mode else "planned"
         try:
             jobs.append(
                 service.plan_effect(
-                    effect_type=AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
-                    adapter_name="outbound_webhook",
+                    effect_type=effect_type,
+                    adapter_name=adapter_name,
                     operation="post",
-                    target_type="campaign_member",
+                    target_type=target_type,
                     target_id=target_id,
                     business_type="ai_assist_campaign",
                     business_id=campaign_code,
@@ -324,8 +399,8 @@ def _plan_external_effect_jobs(*, command: Command, candidates: list[dict[str, A
                     source_command_id=command.command_id,
                     risk_level="medium",
                     requires_approval=False,
-                    execution_mode="execute" if loopback_mode else "shadow",
-                    status="queued" if loopback_mode else "planned",
+                    execution_mode=execution_mode,
+                    status=status,
                     idempotency_key=str(meta["idempotency_key"]),
                 )
             )

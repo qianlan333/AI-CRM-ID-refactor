@@ -14,6 +14,7 @@ from aicrm_next.cloud_orchestrator.run_due import (
 from aicrm_next.platform_foundation.external_effects import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
     WEBHOOK_ORDER_PAID_PUSH,
+    WECOM_MESSAGE_PRIVATE_SEND,
     ExternalEffectService,
     reset_external_effect_fixture_state,
 )
@@ -238,6 +239,158 @@ def test_ai_assist_campaign_loopback_allowlist_miss_blocks_without_receipt(next_
     assert calls == []
     assert receipts == []
     assert total == 0
+
+
+def test_ai_assist_campaign_run_due_wecom_private_mode_creates_queued_external_effect_job_without_send(monkeypatch) -> None:
+    _reset_fixture_state()
+    monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+
+    result = execute_cloud_campaign_run_due_command(
+        PlanCloudCampaignRunDueCommand(
+            batch_size=1,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due",
+            idempotency_key="ai-assist-wecom-private-plan",
+            trace_id="trace_ai_assist_wecom_private_plan",
+        )
+    )
+    service = ExternalEffectService()
+    items, total = service.list_jobs({"effect_type": WECOM_MESSAGE_PRIVATE_SEND, "business_type": "ai_assist_campaign"})
+    job = items[0]
+
+    assert result["ok"] is True
+    assert result["external_effect_job_ids"] == [job.id]
+    assert result["real_external_call_executed"] is False
+    assert result["wecom_send_executed"] is False
+    assert total == 1
+    assert job.status == "queued"
+    assert job.execution_mode == "execute"
+    assert job.adapter_name == "wecom_private_message"
+    assert job.target_type == "external_user"
+    assert job.target_id == "wm_fixture_a"
+    assert job.payload_json["owner_userid"] == "owner_fixture"
+    assert job.payload_json["external_userids"] == ["wm_fixture_a"]
+    assert job.payload_json["content_text"] == "fixture hello"
+
+
+def test_wecom_private_external_effect_default_disabled_blocks_without_wecom_call(monkeypatch) -> None:
+    _reset_fixture_state()
+    monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+    calls: list[dict] = []
+
+    class _Adapter:
+        def create_private_message_task(self, payload, *, idempotency_key=""):
+            calls.append({"payload": payload, "idempotency_key": idempotency_key})
+            return {"ok": True, "side_effect_executed": True, "wecom_msgid": "msg-should-not-send"}
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())
+    plan = execute_cloud_campaign_run_due_command(
+        PlanCloudCampaignRunDueCommand(
+            batch_size=1,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due",
+            idempotency_key="ai-assist-wecom-private-disabled",
+        )
+    )
+    job_id = plan["external_effect_job_ids"][0]
+
+    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    updated = ExternalEffectService().get(job_id)
+    attempts = ExternalEffectService().list_attempts(job_id)
+
+    assert result["counts"]["blocked_count"] == 1
+    assert result["real_external_call_executed"] is False
+    assert calls == []
+    assert updated is not None
+    assert updated.status == "blocked"
+    assert attempts[0].error_code == "wecom_execution_disabled"
+
+
+def test_wecom_private_external_effect_allowlisted_execute_succeeds(monkeypatch) -> None:
+    _reset_fixture_state()
+    monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_PRIVATE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS", "wm_fixture_a")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner_fixture")
+    calls: list[dict] = []
+
+    class _Adapter:
+        def create_private_message_task(self, payload, *, idempotency_key=""):
+            calls.append({"payload": payload, "idempotency_key": idempotency_key})
+            return {
+                "ok": True,
+                "mode": "production",
+                "side_effect_executed": True,
+                "exact_target_verified": True,
+                "requested_external_userids": ["wm_fixture_a"],
+                "wecom_msgid": "msg-ai-assist-real-queue",
+                "error_code": "",
+                "error_message": "",
+            }
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())
+    plan = execute_cloud_campaign_run_due_command(
+        PlanCloudCampaignRunDueCommand(
+            batch_size=1,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due",
+            idempotency_key="ai-assist-wecom-private-success",
+        )
+    )
+    job_id = plan["external_effect_job_ids"][0]
+
+    preview = ExternalEffectWorker().preview_due(batch_size=1, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    dry_run = ExternalEffectWorker().run_due(batch_size=1, dry_run=True, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    updated = ExternalEffectService().get(job_id)
+    attempts = ExternalEffectService().list_attempts(job_id)
+
+    assert preview["counts"]["candidate_count"] == 1
+    assert dry_run["real_external_call_executed"] is False
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["real_external_call_executed"] is True
+    assert len(calls) == 1
+    assert calls[0]["payload"]["sender"] == "owner_fixture"
+    assert calls[0]["payload"]["external_userids"] == ["wm_fixture_a"]
+    assert calls[0]["payload"]["text"] == {"content": "fixture hello"}
+    assert updated is not None
+    assert updated.status == "succeeded"
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].response_summary_json["wecom_send_executed"] is True
+
+
+def test_wecom_private_external_effect_target_allowlist_miss_blocks(monkeypatch) -> None:
+    _reset_fixture_state()
+    monkeypatch.setenv("AI_ASSIST_EXTERNAL_EFFECT_SEND_MODE", "wecom_private")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", WECOM_MESSAGE_PRIVATE_SEND)
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS", "wm_other")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS", "owner_fixture")
+    calls: list[dict] = []
+
+    class _Adapter:
+        def create_private_message_task(self, payload, *, idempotency_key=""):
+            calls.append({"payload": payload, "idempotency_key": idempotency_key})
+            return {"ok": True, "side_effect_executed": True}
+
+    monkeypatch.setattr("aicrm_next.integration_gateway.wecom_private_adapter.build_wecom_private_message_adapter", lambda: _Adapter())
+    plan = execute_cloud_campaign_run_due_command(
+        PlanCloudCampaignRunDueCommand(
+            batch_size=1,
+            source_route="/api/admin/cloud-orchestrator/campaigns/run-due",
+            idempotency_key="ai-assist-wecom-private-target-miss",
+        )
+    )
+    job_id = plan["external_effect_job_ids"][0]
+
+    result = ExternalEffectWorker().run_due(batch_size=1, dry_run=False, effect_types=[WECOM_MESSAGE_PRIVATE_SEND], test_only=False)
+    updated = ExternalEffectService().get(job_id)
+    attempts = ExternalEffectService().list_attempts(job_id)
+
+    assert result["counts"]["blocked_count"] == 1
+    assert result["real_external_call_executed"] is False
+    assert calls == []
+    assert updated is not None
+    assert updated.status == "blocked"
+    assert attempts[0].error_code == "target_not_allowed"
 
 
 def test_ai_assist_campaign_loopback_test_only_false_is_rejected(monkeypatch) -> None:
