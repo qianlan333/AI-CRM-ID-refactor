@@ -84,8 +84,8 @@ def deliver_questionnaire_external_push(
 
 
 def questionnaire_external_push_mode() -> str:
-    mode = str(os.getenv(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY) or "shadow").strip().lower()
-    return mode if mode in QUESTIONNAIRE_EXTERNAL_PUSH_MODES else "shadow"
+    mode = str(os.getenv(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY) or "queue").strip().lower()
+    return mode if mode in QUESTIONNAIRE_EXTERNAL_PUSH_MODES else "queue"
 
 
 def plan_questionnaire_external_push_effect(

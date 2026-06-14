@@ -34,13 +34,13 @@ GROUP_OPS_EFFECT_ACTION_TYPES = {
 
 
 def group_ops_outbound_mode() -> str:
-    mode = clean_text(os.getenv("AICRM_GROUP_OPS_OUTBOUND_MODE") or "shadow").lower()
-    return mode if mode in GROUP_OPS_OUTBOUND_MODES else "shadow"
+    mode = clean_text(os.getenv("AICRM_GROUP_OPS_OUTBOUND_MODE") or "external_effect").lower()
+    return mode if mode in GROUP_OPS_OUTBOUND_MODES else "external_effect"
 
 
 def group_ops_external_effect_send_mode() -> str:
-    mode = clean_text(os.getenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE") or "loopback").lower()
-    return mode if mode in GROUP_OPS_EXTERNAL_EFFECT_SEND_MODES else "loopback"
+    mode = clean_text(os.getenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE") or "wecom_group").lower()
+    return mode if mode in GROUP_OPS_EXTERNAL_EFFECT_SEND_MODES else "wecom_group"
 
 
 def group_ops_effect_action_type(action_type: str) -> bool:
@@ -48,10 +48,13 @@ def group_ops_effect_action_type(action_type: str) -> bool:
 
 
 def external_effect_response_defaults(*, outbound_mode: str | None = None) -> dict[str, Any]:
+    mode = clean_text(outbound_mode or group_ops_outbound_mode()) or "external_effect"
     return {
         "external_effect_job_ids": [],
         "legacy_broadcast_job_ids": [],
-        "outbound_mode": clean_text(outbound_mode or group_ops_outbound_mode()) or "shadow",
+        "outbound_mode": mode,
+        "legacy_outbound_disabled": mode == "external_effect",
+        "external_effect_required": mode == "external_effect",
         "real_external_call_executed": False,
         "wecom_send_executed": False,
         "real_wecom_call_executed": False,

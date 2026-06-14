@@ -117,6 +117,7 @@ def test_group_ops_run_due_shadow_keeps_legacy_queue_and_creates_shadow_job(grou
 
 def test_group_ops_run_due_external_effect_skips_legacy_queue_and_creates_queued_job(group_ops_api_client, monkeypatch):
     monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "external_effect")
+    monkeypatch.setenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE", "loopback")
     gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(

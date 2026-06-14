@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -83,13 +84,21 @@ def _run(repo, queue=None, seen=None, now=None):
 
     seen = seen if seen is not None else set()
     queue = queue or RecordingQueueGateway(seen)
-    return run_group_ops_due_scheduler(
-        repo=repo,
-        queue_gateway=queue,
-        duplicate_checker=lambda key: key in seen,
-        now=now or datetime(2026, 5, 28, 10, 1, tzinfo=timezone.utc),
-        operator="pytest-scheduler",
-    ), queue
+    old_mode = os.environ.get("AICRM_GROUP_OPS_OUTBOUND_MODE")
+    os.environ["AICRM_GROUP_OPS_OUTBOUND_MODE"] = "shadow"
+    try:
+        return run_group_ops_due_scheduler(
+            repo=repo,
+            queue_gateway=queue,
+            duplicate_checker=lambda key: key in seen,
+            now=now or datetime(2026, 5, 28, 10, 1, tzinfo=timezone.utc),
+            operator="pytest-scheduler",
+        ), queue
+    finally:
+        if old_mode is None:
+            os.environ.pop("AICRM_GROUP_OPS_OUTBOUND_MODE", None)
+        else:
+            os.environ["AICRM_GROUP_OPS_OUTBOUND_MODE"] = old_mode
 
 
 def test_active_standard_plan_due_node_enqueues_broadcast_job():
@@ -132,13 +141,21 @@ def test_group_ops_scheduler_uses_next_queue_gateway_payload_contract():
     )
     queue = NextGroupOpsQueueGateway(insert_job_fn=fake_insert_job)
 
-    summary = run_group_ops_due_scheduler(
-        repo=repo,
-        queue_gateway=queue,
-        duplicate_checker=lambda key: False,
-        now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc),
-        operator="pytest-scheduler",
-    )
+    old_mode = os.environ.get("AICRM_GROUP_OPS_OUTBOUND_MODE")
+    os.environ["AICRM_GROUP_OPS_OUTBOUND_MODE"] = "shadow"
+    try:
+        summary = run_group_ops_due_scheduler(
+            repo=repo,
+            queue_gateway=queue,
+            duplicate_checker=lambda key: False,
+            now=datetime(2026, 5, 28, 2, 1, tzinfo=timezone.utc),
+            operator="pytest-scheduler",
+        )
+    finally:
+        if old_mode is None:
+            os.environ.pop("AICRM_GROUP_OPS_OUTBOUND_MODE", None)
+        else:
+            os.environ["AICRM_GROUP_OPS_OUTBOUND_MODE"] = old_mode
 
     assert summary["group_ops_enqueued_jobs"] == 1
     assert captured["channel"] == "wecom_customer_group"
