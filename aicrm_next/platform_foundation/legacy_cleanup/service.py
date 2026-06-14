@@ -134,8 +134,29 @@ class LegacyWebhookCleanupService:
             entries.append(self._repo.upsert_deprecation(payload, deprecated_at=timestamp, delete_scheduled_at=delete_at))
         return entries
 
+    def mark_default_deprecations(self, *, now: datetime | None = None, operator: str = DEFAULT_DEPRECATED_BY) -> dict[str, Any]:
+        timestamp = _now(now)
+        entries = self.ensure_default_deprecations(now=timestamp)
+        for item in entries:
+            self._repo.record_audit(
+                legacy_key=item.legacy_key,
+                action="mark_legacy_deprecated",
+                operator=_text(operator) or DEFAULT_DEPRECATED_BY,
+                before={},
+                after=item.to_dict(),
+            )
+        counts = _counts(entries)
+        return {
+            "ok": True,
+            "items": [item.to_dict() for item in entries],
+            "total": len(entries),
+            "counts": counts,
+            "next_delete_scheduled_at": _next_delete_time(entries),
+            "route_owner": "ai_crm_next",
+            "real_external_call_executed": False,
+        }
+
     def status(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
-        self.ensure_default_deprecations()
         items, total = self._repo.list_deprecations(filters or {}, limit=500, offset=0)
         counts = _counts(items)
         return {
@@ -149,7 +170,6 @@ class LegacyWebhookCleanupService:
         }
 
     def preview_due(self, *, now: datetime | None = None, limit: int = 50) -> dict[str, Any]:
-        self.ensure_default_deprecations()
         timestamp = _now(now)
         due = self._repo.due_deprecations(now=timestamp, limit=limit)
         return {
@@ -162,7 +182,6 @@ class LegacyWebhookCleanupService:
         }
 
     def run_due(self, *, dry_run: bool = True, now: datetime | None = None, limit: int = 50, operator: str = "system") -> dict[str, Any]:
-        self.ensure_default_deprecations()
         timestamp = _now(now)
         due = self._repo.due_deprecations(now=timestamp, limit=limit)
         if dry_run:
@@ -216,7 +235,6 @@ class LegacyWebhookCleanupService:
         }
 
     def disabled_payload(self, legacy_key: str, *, error: str = "legacy_webhook_deprecated") -> dict[str, Any]:
-        self.ensure_default_deprecations()
         item = self._repo.get_deprecation(legacy_key)
         delete_scheduled_at = item.delete_scheduled_at if item else public_datetime(utcnow() + timedelta(days=7))
         return legacy_disabled_payload(legacy_key, delete_scheduled_at=delete_scheduled_at, error=error)
