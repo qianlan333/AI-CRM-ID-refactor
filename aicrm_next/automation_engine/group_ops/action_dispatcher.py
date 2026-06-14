@@ -295,6 +295,17 @@ class GroupOpsActionDispatcher:
                 "side_effect_executed": False,
                 "audit": audit,
             }
+        if action_type in {"send_group_message", "group_notice", "webhook_notify"}:
+            audit = self._audit.record(command=command, action_type=action_type, status="planned", side_effect_executed=False)
+            return {
+                "ok": True,
+                "status": "planned",
+                "action_ref_id": "",
+                "side_effect_executed": False,
+                "wecom_send_executed": False,
+                "real_group_notice_executed": False,
+                "audit": audit,
+            }
         raise ContractError(f"unsupported group ops action: {action_type}")
 
     def _command(self, input_data: dict[str, Any], action: dict[str, Any]) -> GroupOpsActionCommand:

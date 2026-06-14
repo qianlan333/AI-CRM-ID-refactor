@@ -10,6 +10,8 @@ from typing import Any, Protocol
 import requests
 
 from .models import (
+    GROUP_OPS_MESSAGE_LOOPBACK,
+    GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
     ExternalEffectDispatchResult,
@@ -17,7 +19,14 @@ from .models import (
 )
 from .retry_policy import http_error_code
 
-LOW_RISK_WEBHOOK_EFFECT_TYPES = frozenset({WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, WEBHOOK_ORDER_PAID_PUSH})
+LOW_RISK_WEBHOOK_EFFECT_TYPES = frozenset(
+    {
+        WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+        WEBHOOK_ORDER_PAID_PUSH,
+        GROUP_OPS_MESSAGE_LOOPBACK,
+        GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
+    }
+)
 
 
 class ExternalEffectAdapter(Protocol):

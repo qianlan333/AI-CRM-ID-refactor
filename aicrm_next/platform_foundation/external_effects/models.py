@@ -30,6 +30,8 @@ WEBHOOK_CUSTOMER_AUTOMATION_RETRY = "webhook.customer_automation.retry"
 WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE = "webhook.customer_automation.retry_due"
 WECOM_CONTACT_TAG_MARK = "wecom.contact.tag.mark"
 WECOM_CONTACT_TAG_UNMARK = "wecom.contact.tag.unmark"
+GROUP_OPS_MESSAGE_LOOPBACK = "group_ops.message.loopback"
+GROUP_OPS_WEBHOOK_ACTION_LOOPBACK = "group_ops.webhook.action.loopback"
 
 
 def utcnow() -> datetime:
