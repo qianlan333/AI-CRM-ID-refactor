@@ -124,15 +124,16 @@ def process_payment_succeeded_event(*, order: dict[str, Any], transaction: dict[
             "transaction": dict(transaction or {}),
         }
     )
-    event = insert_event(
-        AutomationEventInput(
-            event_type=EVENT_PAYMENT_SUCCEEDED,
-            source_type="payment",
-            source_id=order_id,
-            idempotency_key=f"payment:{order_id}",
-            external_userid=text(order.get("external_userid") or order.get("userid_snapshot")),
-            phone=text(order.get("mobile_snapshot") or order.get("respondent_key")),
-            payload_json=payload_json if isinstance(payload_json, dict) else {},
+    with db_session():
+        event = insert_event(
+            AutomationEventInput(
+                event_type=EVENT_PAYMENT_SUCCEEDED,
+                source_type="payment",
+                source_id=order_id,
+                idempotency_key=f"payment:{order_id}",
+                external_userid=text(order.get("external_userid") or order.get("userid_snapshot")),
+                phone=text(order.get("mobile_snapshot") or order.get("respondent_key")),
+                payload_json=payload_json if isinstance(payload_json, dict) else {},
+            )
         )
-    )
-    return process_event(int(event["id"]))
+        return process_event(int(event["id"]))

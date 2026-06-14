@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
@@ -59,6 +60,7 @@ def test_payment_succeeded_event_normalizes_payment_payload_before_insert(monkey
 
     monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.insert_event", fake_insert_event)
     monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_event", lambda event_id: {"event_id": event_id})
+    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.db_session", nullcontext)
 
     result = process_payment_succeeded_event(order=_payment_order(), transaction=_transaction())
     payload = captured[0]["payload_json"]
