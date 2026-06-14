@@ -19,3 +19,23 @@ def test_product_editor_toggles_are_persisted_business_enablement_controls() -> 
     assert "enabled: Boolean(externalPush.enabled)," in text
     assert "externalPushEnabled" not in text
     assert "支付成功外推" not in text
+
+
+def test_product_editor_completion_target_ui_is_simplified_to_h5_or_weapp() -> None:
+    text = TEMPLATE.read_text(encoding="utf-8")
+
+    assert '<option value="h5">跳转 H5 页面</option>' in text
+    assert '<option value="mini_program">打开微信小程序</option>' in text
+    assert "splitMiniProgramPathInput" in text
+    assert "completion_target: completionTarget" in text
+
+    assert "completionRedirectUrl" not in text
+    assert "completion_open_strategy" not in text
+    assert "data-open-strategy" not in text
+    assert "target-desc" not in text
+    assert "mode-note" not in text
+    assert "mini_program_query" not in text
+    assert "mini_program_url_link" not in text
+    assert "data-url-link-fields" not in text
+    assert "打开小程序 URL Link" not in text
+    assert "URL Link 兜底" not in text
