@@ -51,6 +51,7 @@ def test_standard_run_due_requires_allowlist_before_queue(group_ops_api_client, 
 
 
 def test_standard_run_due_with_allow_node_ids_enqueues_broadcast_job(group_ops_api_client, monkeypatch):
+    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
     gateway = _install_recording_gateway(monkeypatch)
 
     response = group_ops_api_client.post(

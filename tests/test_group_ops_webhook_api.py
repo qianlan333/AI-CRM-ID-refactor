@@ -42,6 +42,7 @@ def _webhook_payload(idempotency_key: str = "daily-lesson-2026-05-25") -> dict:
 
 
 def test_webhook_accepts_and_queues_fixed_group_bundle(group_ops_api_client, monkeypatch):
+    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
     gateway = _install_recording_gateway(monkeypatch)
     _bind_three_groups(group_ops_api_client)
 
@@ -67,6 +68,7 @@ def test_webhook_accepts_and_queues_fixed_group_bundle(group_ops_api_client, mon
 
 
 def test_webhook_idempotency_does_not_enqueue_twice(group_ops_api_client, monkeypatch):
+    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
     gateway = _install_recording_gateway(monkeypatch)
 
     first = group_ops_api_client.post(
@@ -88,6 +90,7 @@ def test_webhook_idempotency_does_not_enqueue_twice(group_ops_api_client, monkey
 
 
 def test_webhook_auth_failure_writes_no_event_or_queue(group_ops_api_client, monkeypatch):
+    monkeypatch.setenv("AICRM_GROUP_OPS_OUTBOUND_MODE", "shadow")
     gateway = _install_recording_gateway(monkeypatch)
 
     missing = group_ops_api_client.post(

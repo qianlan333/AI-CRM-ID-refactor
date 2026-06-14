@@ -56,6 +56,7 @@ ADMIN_ROUTE_REGISTRY: dict[str, AdminRoute] = {
     ),
     "api.admin_jobs": AdminRoute("api.admin_jobs", "/admin/jobs"),
     "api.admin_external_effects_page": AdminRoute("api.admin_external_effects_page", "/admin/external-effects"),
+    "api.admin_push_center_page": AdminRoute("api.admin_push_center_page", "/admin/push-center"),
     "api.admin_broadcast_jobs": AdminRoute("api.admin_broadcast_jobs", "/admin/broadcast-jobs"),
     "api.admin_console_jobs_action": AdminRoute("api.admin_console_jobs_action", "/admin/jobs/actions"),
     "api.admin_wechat_pay_transactions_page": AdminRoute(
@@ -175,6 +176,7 @@ ADMIN_NAV_GROUPS: list[dict[str, Any]] = [
         "title": "配置及后台",
         "items": [
             {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
+            {"key": "push_center", "label": "推送中心", "endpoint": "api.admin_push_center_page"},
             {"key": "external_effects", "label": "外部动作队列", "endpoint": "api.admin_external_effects_page"},
             {"key": "owner_migration", "label": "负责人迁移", "endpoint": "api.admin_owner_migration_page"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config"},

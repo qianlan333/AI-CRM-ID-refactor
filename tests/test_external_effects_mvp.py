@@ -953,6 +953,7 @@ def test_external_effect_diagnostics_and_admin_page_show_virtual_test_state(next
 
 
 def test_questionnaire_submit_keeps_external_push_and_creates_shadow_job(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE", "shadow")
     repo = build_questionnaire_repository()
     questionnaire = repo._questionnaires[0]  # type: ignore[attr-defined]
     questionnaire["external_push_config"] = {"enabled": True, "webhook_url": "https://hooks.example.com/questionnaire"}

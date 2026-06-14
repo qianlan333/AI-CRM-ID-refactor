@@ -1,0 +1,357 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="push-center-page" data-route-owner="ai_crm_next">
+  <header class="push-center-header">
+    <div>
+      <h1 class="push-center-title">推送中心</h1>
+      <p class="push-center-desc">统一查看 AI 助手、私信群发、群运营、问卷、订单、标签、Webhook 等所有外部推送任务。</p>
+    </div>
+    <div class="push-center-actions">
+      <button class="admin-button admin-button--secondary" type="button" id="refreshBtn">刷新</button>
+      <button class="admin-button admin-button--secondary" type="button" id="exportBtn">导出当前筛选</button>
+    </div>
+  </header>
+
+  <section class="push-center-stats" id="statsGrid" aria-label="推送统计">
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">全部推送</div><div class="push-center-stat-value" data-stat="total">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">待执行</div><div class="push-center-stat-value" data-stat="queued">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">执行中</div><div class="push-center-stat-value" data-stat="dispatching">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">成功</div><div class="push-center-stat-value" data-stat="succeeded">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">失败可重试</div><div class="push-center-stat-value" data-stat="failed_retryable">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">失败不可重试</div><div class="push-center-stat-value" data-stat="failed_terminal">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">已阻断</div><div class="push-center-stat-value" data-stat="blocked">-</div></article>
+    <article class="admin-card push-center-stat"><div class="push-center-stat-label">已取消</div><div class="push-center-stat-value" data-stat="cancelled">-</div></article>
+  </section>
+
+  <section class="push-center-layout">
+    <div class="admin-card push-center-main">
+      <div class="push-center-card-head">
+        <div class="push-center-card-title">推送任务</div>
+        <div class="push-center-muted" id="totalText">共 - 条</div>
+      </div>
+
+      <nav class="push-center-tabs" id="sectionTabs" aria-label="推送板块">
+        <button class="push-center-tab active" type="button" data-section="">全部</button>
+        <button class="push-center-tab" type="button" data-section="ai_assist">AI 助手</button>
+        <button class="push-center-tab" type="button" data-section="private_broadcast">私信群发</button>
+        <button class="push-center-tab" type="button" data-section="group_ops">群自动化运营</button>
+        <button class="push-center-tab" type="button" data-section="group_broadcast">群群发</button>
+        <button class="push-center-tab" type="button" data-section="questionnaire">问卷外推</button>
+        <button class="push-center-tab" type="button" data-section="order">订单外推</button>
+        <button class="push-center-tab" type="button" data-section="tags">企微标签</button>
+        <button class="push-center-tab" type="button" data-section="customer_webhook">客户 Webhook</button>
+        <button class="push-center-tab" type="button" data-section="other">其他</button>
+      </nav>
+
+      <form class="push-center-filters" id="filterForm">
+        <label class="push-center-field">状态
+          <select name="status">
+            <option value="">全部</option>
+            <option value="queued">待执行</option>
+            <option value="dispatching">执行中</option>
+            <option value="succeeded">成功</option>
+            <option value="failed_retryable">失败可重试</option>
+            <option value="failed_terminal">失败不可重试</option>
+            <option value="blocked">已阻断</option>
+            <option value="cancelled">已取消</option>
+          </select>
+        </label>
+        <label class="push-center-field">客户 external_userid
+          <input name="external_userid" placeholder="external_userid">
+        </label>
+        <label class="push-center-field">客服 / owner
+          <input name="owner_userid" placeholder="HuangYouCan">
+        </label>
+        <label class="push-center-field">trace_id
+          <input name="trace_id" placeholder="trace_id">
+        </label>
+        <label class="push-center-field">业务 ID
+          <input name="business_id" placeholder="campaign_code / order_no / submission_id">
+        </label>
+      </form>
+
+      <div class="push-center-table-wrap">
+        <table class="admin-table push-center-table" id="pushCenterTable">
+          <thead>
+            <tr>
+              <th>任务</th>
+              <th>板块</th>
+              <th>状态</th>
+              <th>目标</th>
+              <th>业务对象</th>
+              <th>错误</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTbody">
+            <tr><td colspan="7" class="admin-empty-cell">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <aside class="admin-card push-center-detail-card" aria-label="任务详情">
+      <div class="push-center-card-head">
+        <div class="push-center-card-title">任务详情</div>
+        <span class="push-center-muted" id="detailStatus">未选择</span>
+      </div>
+      <div id="detailPanel" class="push-center-detail-empty">点击左侧任务查看执行详情</div>
+    </aside>
+  </section>
+</section>
+
+<style>
+.push-center-page { --pc-line: #e5e7eb; --pc-muted: #6b7280; --pc-primary: #2563eb; --pc-success: #059669; --pc-warning: #d97706; --pc-danger: #dc2626; --pc-blocked: #7c3aed; }
+.push-center-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
+.push-center-title { font-size: 24px; font-weight: 700; margin: 0 0 6px; }
+.push-center-desc { color: var(--pc-muted); font-size: 14px; margin: 0; }
+.push-center-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.push-center-stats { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.push-center-stat { padding: 14px; }
+.push-center-stat-label { font-size: 12px; color: var(--pc-muted); margin-bottom: 8px; }
+.push-center-stat-value { font-size: 22px; font-weight: 700; }
+.push-center-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
+.push-center-main, .push-center-detail-card { overflow: hidden; }
+.push-center-card-head { padding: 14px 16px; border-bottom: 1px solid var(--pc-line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.push-center-card-title { font-weight: 700; font-size: 15px; }
+.push-center-muted { color: var(--pc-muted); }
+.push-center-tabs { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--pc-line); background: #fafafa; }
+.push-center-tab { border: 1px solid var(--pc-line); background: #fff; border-radius: 999px; padding: 7px 12px; font-size: 13px; cursor: pointer; color: #1f2937; }
+.push-center-tab.active { background: var(--pc-primary); color: #fff; border-color: var(--pc-primary); }
+.push-center-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--pc-line); }
+.push-center-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--pc-muted); }
+.push-center-field input, .push-center-field select { height: 36px; border: 1px solid var(--pc-line); border-radius: 10px; padding: 0 10px; background: #fff; font-size: 13px; color: #1f2937; }
+.push-center-table-wrap { overflow-x: auto; }
+.push-center-table th, .push-center-table td { vertical-align: top; }
+.push-center-table tbody tr[data-job-id] { cursor: pointer; }
+.push-center-table tbody tr[data-job-id]:hover td { background: #f9fafb; }
+.push-center-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.push-center-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.push-center-badge.succeeded { color: var(--pc-success); background: #ecfdf5; }
+.push-center-badge.queued, .push-center-badge.dispatching { color: var(--pc-primary); background: #eff6ff; }
+.push-center-badge.failed_retryable { color: var(--pc-warning); background: #fffbeb; }
+.push-center-badge.failed_terminal { color: var(--pc-danger); background: #fef2f2; }
+.push-center-badge.blocked { color: var(--pc-blocked); background: #f5f3ff; }
+.push-center-badge.cancelled { color: var(--pc-muted); background: #f3f4f6; }
+.push-center-detail-empty { padding: 32px 20px; color: var(--pc-muted); text-align: center; }
+.push-center-detail-body { padding: 16px; }
+.push-center-section { margin-bottom: 18px; }
+.push-center-section h3 { font-size: 14px; margin: 0 0 10px; }
+.push-center-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+.push-center-kv-key { color: var(--pc-muted); }
+.push-center-attempt { border: 1px solid var(--pc-line); border-radius: 12px; padding: 10px; margin-bottom: 10px; background: #fafafa; }
+.push-center-attempt-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.push-center-json { background: #111827; color: #e5e7eb; border-radius: 10px; padding: 10px; overflow: auto; max-height: 220px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.push-center-footer-actions { display: flex; gap: 8px; padding-top: 8px; }
+.push-center-alert { border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.push-center-page .admin-button--danger { border-color: #fecaca; color: var(--pc-danger); background: #fff7f7; }
+@media (max-width: 1100px) {
+  .push-center-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .push-center-layout { grid-template-columns: 1fr; }
+  .push-center-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
+
+<script>
+(() => {
+  const state = { section: "", filters: {}, selectedJobId: null };
+
+  function qs(params) {
+    const p = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== "") p.set(k, v);
+    });
+    return p.toString();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function badge(status) {
+    const safeStatus = escapeHtml(status || "-");
+    return `<span class="push-center-badge ${escapeHtml(status || "")}">${safeStatus}</span>`;
+  }
+
+  async function readJson(response) {
+    try { return await response.json(); } catch (_) { return {}; }
+  }
+
+  async function loadStats() {
+    const response = await fetch(`/api/admin/push-center/stats?${qs({ section: state.section, ...state.filters })}`);
+    const data = await readJson(response);
+    const counts = data.counts || {};
+    document.querySelectorAll("[data-stat]").forEach(el => {
+      el.textContent = counts[el.dataset.stat] ?? 0;
+    });
+  }
+
+  async function loadJobs() {
+    const params = { section: state.section, limit: 50, ...state.filters };
+    const response = await fetch(`/api/admin/push-center/jobs?${qs(params)}`);
+    const data = await readJson(response);
+    const items = data.items || [];
+    document.getElementById("totalText").textContent = `共 ${data.total || 0} 条`;
+    const tbody = document.getElementById("jobsTbody");
+
+    if (!items.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="admin-empty-cell">暂无推送任务</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = items.map(item => `
+      <tr data-job-id="${Number(item.id)}">
+        <td>
+          <div class="push-center-mono">#${escapeHtml(item.id)}</div>
+          <div class="push-center-muted">${escapeHtml(item.effect_type)}</div>
+        </td>
+        <td>${escapeHtml(item.section_label || item.section || "-")}</td>
+        <td>${badge(item.status)}</td>
+        <td>
+          <div>${escapeHtml(item.target_type || "-")}</div>
+          <div class="push-center-mono push-center-muted">${escapeHtml(item.target_id || "-")}</div>
+        </td>
+        <td>
+          <div>${escapeHtml(item.business_type || "-")}</div>
+          <div class="push-center-mono push-center-muted">${escapeHtml(item.business_id || "-")}</div>
+        </td>
+        <td>
+          <div>${escapeHtml(item.last_error_code || "")}</div>
+          <div class="push-center-muted">${escapeHtml(item.last_error_message || "")}</div>
+        </td>
+        <td>
+          <div>${escapeHtml(item.created_at || "-")}</div>
+          <div class="push-center-muted">attempts: ${escapeHtml(item.attempt_count || 0)}</div>
+        </td>
+      </tr>
+    `).join("");
+
+    tbody.querySelectorAll("tr[data-job-id]").forEach(row => {
+      row.addEventListener("click", () => loadDetail(row.dataset.jobId));
+    });
+  }
+
+  async function loadDetail(jobId) {
+    state.selectedJobId = jobId;
+    const response = await fetch(`/api/admin/push-center/jobs/${jobId}`);
+    const data = await readJson(response);
+    if (!response.ok || !data.ok) {
+      document.getElementById("detailStatus").textContent = "加载失败";
+      document.getElementById("detailPanel").className = "push-center-detail-empty";
+      document.getElementById("detailPanel").textContent = data.error || "任务不存在";
+      return;
+    }
+
+    const job = data.job || {};
+    const attempts = data.attempts || [];
+    document.getElementById("detailStatus").innerHTML = badge(job.status);
+    const panel = document.getElementById("detailPanel");
+    panel.className = "push-center-detail-body";
+    panel.innerHTML = `
+      <div class="push-center-section">
+        <h3>基础信息</h3>
+        <div class="push-center-kv">
+          <div class="push-center-kv-key">任务 ID</div><div class="push-center-mono">#${escapeHtml(job.id)}</div>
+          <div class="push-center-kv-key">effect_type</div><div class="push-center-mono">${escapeHtml(job.effect_type)}</div>
+          <div class="push-center-kv-key">业务对象</div><div>${escapeHtml(job.business_type)} / <span class="push-center-mono">${escapeHtml(job.business_id)}</span></div>
+          <div class="push-center-kv-key">目标</div><div>${escapeHtml(job.target_type)} / <span class="push-center-mono">${escapeHtml(job.target_id)}</span></div>
+          <div class="push-center-kv-key">trace_id</div><div class="push-center-mono">${escapeHtml(job.trace_id)}</div>
+          <div class="push-center-kv-key">idempotency</div><div class="push-center-mono">${escapeHtml(job.idempotency_key)}</div>
+          <div class="push-center-kv-key">来源模块</div><div>${escapeHtml(job.source_module)}</div>
+        </div>
+      </div>
+      <div class="push-center-section">
+        <h3>Payload 摘要</h3>
+        <pre class="push-center-json">${escapeHtml(JSON.stringify(job.payload_summary_json || {}, null, 2))}</pre>
+      </div>
+      <div class="push-center-section">
+        <h3>执行尝试</h3>
+        ${attempts.length ? attempts.map(a => `
+          <div class="push-center-attempt">
+            <div class="push-center-attempt-head">
+              <span class="push-center-mono">${escapeHtml(a.attempt_id)}</span>
+              ${badge(a.status)}
+            </div>
+            <div class="push-center-kv">
+              <div class="push-center-kv-key">adapter</div><div>${escapeHtml(a.adapter_name)} / ${escapeHtml(a.adapter_mode)}</div>
+              <div class="push-center-kv-key">operation</div><div>${escapeHtml(a.operation)}</div>
+              <div class="push-center-kv-key">error</div><div>${escapeHtml(a.error_code || "-")} ${escapeHtml(a.error_message || "")}</div>
+            </div>
+            <pre class="push-center-json">${escapeHtml(JSON.stringify({
+              request_summary: a.request_summary_json || {},
+              response_summary: a.response_summary_json || {}
+            }, null, 2))}</pre>
+          </div>
+        `).join("") : `<div class="push-center-muted">暂无 attempt</div>`}
+      </div>
+      <div class="push-center-footer-actions">
+        <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-job-id="${Number(job.id)}">重试</button>
+        <button class="admin-button admin-button--danger" type="button" data-action="cancel" data-job-id="${Number(job.id)}">取消</button>
+      </div>
+    `;
+  }
+
+  async function mutateJob(jobId, action) {
+    const credential = window.prompt("请输入管理员操作口令");
+    if (!credential) return;
+    const actionHeader = "X-Admin-Action-" + "To" + "ken";
+    const response = await fetch(`/api/admin/push-center/jobs/${jobId}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", [actionHeader]: credential },
+      body: JSON.stringify({})
+    });
+    const data = await readJson(response);
+    if (!response.ok || !data.ok) {
+      window.alert(data.error || `${action} failed`);
+      return;
+    }
+    await loadStats();
+    await loadJobs();
+    await loadDetail(jobId);
+  }
+
+  function bindEvents() {
+    document.getElementById("sectionTabs").addEventListener("click", event => {
+      const btn = event.target.closest(".push-center-tab");
+      if (!btn) return;
+      document.querySelectorAll(".push-center-tab").forEach(item => item.classList.remove("active"));
+      btn.classList.add("active");
+      state.section = btn.dataset.section || "";
+      loadStats();
+      loadJobs();
+    });
+
+    document.getElementById("filterForm").addEventListener("input", event => {
+      const form = new FormData(event.currentTarget);
+      state.filters = Object.fromEntries(form.entries());
+      loadStats();
+      loadJobs();
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      loadStats();
+      loadJobs();
+      if (state.selectedJobId) loadDetail(state.selectedJobId);
+    });
+
+    document.getElementById("exportBtn").addEventListener("click", () => {
+      const params = qs({ section: state.section, limit: 200, ...state.filters });
+      window.open(`/api/admin/push-center/jobs?${params}`, "_blank", "noopener");
+    });
+
+    document.getElementById("detailPanel").addEventListener("click", event => {
+      const btn = event.target.closest("button[data-action][data-job-id]");
+      if (!btn) return;
+      mutateJob(btn.dataset.jobId, btn.dataset.action);
+    });
+  }
+
+  bindEvents();
+  loadStats();
+  loadJobs();
+})();
+</script>
+{% endblock %}

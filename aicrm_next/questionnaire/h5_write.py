@@ -335,6 +335,9 @@ def _handle_submit(command: Command) -> dict[str, Any]:
             "reason": "queued_external_effect",
             "status": "queued",
             "mode": external_push_mode,
+            "legacy_outbound_disabled": True,
+            "external_effect_required": True,
+            "real_external_call_executed": False,
         }
     else:
         external_push_result = deliver_questionnaire_external_push(
