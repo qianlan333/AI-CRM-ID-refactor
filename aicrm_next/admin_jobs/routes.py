@@ -37,6 +37,7 @@ from .notification_settings import (
     validate_feishu_webhook,
 )
 from aicrm_next.admin_shell import admin_path_for, shell_context
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 
 router = APIRouter()
 
@@ -274,10 +275,11 @@ async def api_admin_jobs_webhook_deliveries_run(request: Request):
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    try:
-        return _jsonable(execute_jobs_action(action="run-webhook-retries", form={"limit": payload.get("limit"), "confirm": normalized_bool(payload.get("confirm"))}, operator=_operator_from_request(request, payload)))
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    body = LegacyWebhookCleanupService().disabled_payload(
+        "old_customer_webhook_delivery_retry",
+        error="legacy_webhook_retry_disabled",
+    )
+    return JSONResponse(body, status_code=409)
 
 
 @router.post("/api/admin/jobs/webhook-deliveries/{delivery_id}/retry")
@@ -286,12 +288,12 @@ async def api_admin_jobs_webhook_delivery_retry(delivery_id: int, request: Reque
     token_error = await _action_token_error(request, payload)
     if token_error:
         return JSONResponse({"ok": False, "error": token_error}, status_code=401)
-    try:
-        return _jsonable(execute_jobs_action(action="retry-webhook-delivery", form={"delivery_id": delivery_id, "confirm": normalized_bool(payload.get("confirm"))}, operator=_operator_from_request(request, payload)))
-    except LookupError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    body = LegacyWebhookCleanupService().disabled_payload(
+        "old_customer_webhook_delivery_retry",
+        error="legacy_webhook_retry_disabled",
+    )
+    body["delivery_id"] = int(delivery_id)
+    return JSONResponse(body, status_code=409)
 
 
 @router.get("/admin/broadcast-jobs", name="api.admin_broadcast_jobs", response_class=HTMLResponse)

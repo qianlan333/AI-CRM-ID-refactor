@@ -194,6 +194,21 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     assert cancelled.json()["job"]["status"] == "cancelled"
 
 
+def test_push_center_legacy_deprecations_api(next_client: TestClient) -> None:
+    response = next_client.get("/api/admin/push-center/legacy-deprecations")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["counts"]["total"] >= 10
+    assert body["counts"]["scheduled"] >= 10
+    assert body["next_delete_scheduled_at"]
+    assert any(item["legacy_key"] == "old_ai_assist_direct_send" for item in body["items"])
+    assert body["real_external_call_executed"] is False
+    assert "token" not in response.text.lower()
+    assert "secret" not in response.text.lower()
+
+
 def test_push_center_page_smoke(next_client: TestClient) -> None:
     reset_external_effect_fixture_state()
     _plan_job(effect_type=WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, business_type="questionnaire", business_id="q_page", target_type="questionnaire_submission", target_id="sub_page")
@@ -203,6 +218,8 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert response.status_code == 200
     assert "推送中心" in response.text
     assert 'id="statsGrid"' in response.text
+    assert 'id="legacyDeprecationsPanel"' in response.text
+    assert 'id="legacyDeprecationsList"' in response.text
     assert 'id="sectionTabs"' in response.text
     assert 'id="filterForm"' in response.text
     assert 'id="pushCenterTable"' in response.text
@@ -219,6 +236,13 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert "EFFECT_TYPE_LABELS" in response.text
     assert "TARGET_TYPE_LABELS" in response.text
     assert "BUSINESS_TYPE_LABELS" in response.text
+    assert "formatBeijingTime" in response.text
+    assert 'timeZone: "Asia/Shanghai"' in response.text
+    assert "push-center-time-date" in response.text
+    assert "push-center-time-clock" in response.text
+    assert "/api/admin/push-center/legacy-deprecations" in response.text
+    assert "旧链路下线状态" in response.text
+    assert "下次删除" in response.text
     assert "/api/admin/push-center/stats" in response.text
     assert "/api/admin/push-center/jobs" in response.text
     assert 'data-action="retry"' in response.text
