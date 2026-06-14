@@ -13,7 +13,7 @@ from fastapi import Request
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
-from .models import WEBHOOK_ORDER_PAID_PUSH, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, utcnow, public_datetime
+from .models import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, WEBHOOK_ORDER_PAID_PUSH, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, utcnow, public_datetime
 from .repo import ExternalEffectRepository, _payload_summary
 from .service import ExternalEffectService
 
@@ -55,6 +55,14 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "business_type": "commerce_order",
         "business_id_prefix": "synthetic_order_terminal",
         "default_response_status": 400,
+    },
+    "ai_assist_campaign_message_loopback_success": {
+        "effect_type": AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
+        "target_type": "campaign_member",
+        "target_id_prefix": "synthetic_campaign_member",
+        "business_type": "ai_assist_campaign",
+        "business_id_prefix": "synthetic_ai_assist_campaign",
+        "default_response_status": 200,
     },
 }
 
@@ -242,7 +250,12 @@ async def record_test_receiver_request(*, request: Request, receiver_token: str,
 
 
 def _signature_valid(*, payload: dict[str, Any], body: dict[str, Any], headers: Any) -> bool | None:
-    secret = str(payload.get("signature_secret") or "").strip()
+    secret = str(
+        payload.get("signature_secret")
+        or payload.get("signing_secret")
+        or os.getenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
+        or ""
+    ).strip()
     if not secret:
         return None
     provided = str(headers.get("X-AICRM-External-Effect-Signature") or "").strip()

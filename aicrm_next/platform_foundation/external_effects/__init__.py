@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from .models import (
+    AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
+    AI_ASSIST_CAMPAIGN_MESSAGE_PLAN,
     WEBHOOK_CUSTOMER_AUTOMATION_RETRY,
     WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE,
     WEBHOOK_ORDER_PAID_PUSH,
@@ -18,6 +20,8 @@ __all__ = [
     "ExternalEffectJob",
     "ExternalEffectService",
     "InMemoryExternalEffectRepository",
+    "AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK",
+    "AI_ASSIST_CAMPAIGN_MESSAGE_PLAN",
     "WEBHOOK_CUSTOMER_AUTOMATION_RETRY",
     "WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE",
     "WEBHOOK_ORDER_PAID_PUSH",
@@ -26,4 +30,3 @@ __all__ = [
     "WECOM_CONTACT_TAG_UNMARK",
     "reset_external_effect_fixture_state",
 ]
-

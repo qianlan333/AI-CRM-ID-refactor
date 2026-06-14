@@ -28,6 +28,8 @@ WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH = "webhook.questionnaire_submission.push"
 WEBHOOK_ORDER_PAID_PUSH = "webhook.order_paid.push"
 WEBHOOK_CUSTOMER_AUTOMATION_RETRY = "webhook.customer_automation.retry"
 WEBHOOK_CUSTOMER_AUTOMATION_RETRY_DUE = "webhook.customer_automation.retry_due"
+AI_ASSIST_CAMPAIGN_MESSAGE_PLAN = "ai_assist.campaign.message.plan"
+AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK = "ai_assist.campaign.message.loopback"
 WECOM_CONTACT_TAG_MARK = "wecom.contact.tag.mark"
 WECOM_CONTACT_TAG_UNMARK = "wecom.contact.tag.unmark"
 
