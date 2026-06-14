@@ -79,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("routes", help="Print AI-CRM Next route inventory.")
     cleanup = subparsers.add_parser("legacy-webhook-cleanup", help="Legacy webhook cleanup commands.")
     cleanup_subparsers = cleanup.add_subparsers(dest="legacy_cleanup_command")
+    cleanup_mark = cleanup_subparsers.add_parser("mark-deprecated", help="Mark default legacy webhook entries as deprecated.")
+    cleanup_mark.add_argument("--operator", default="cli")
     cleanup_run_due = cleanup_subparsers.add_parser("run-due", help="Run due legacy webhook cleanup candidates.")
     cleanup_run_due.add_argument("--dry-run", action="store_true", default=False, help="Preview cleanup without mutating state.")
     cleanup_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due cleanup entries.")
@@ -119,6 +121,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_next_routes()
         return
     if command == "legacy-webhook-cleanup":
+        if getattr(args, "legacy_cleanup_command", "") == "mark-deprecated":
+            from aicrm_next.platform_foundation.legacy_cleanup.jobs import print_mark_deprecated_result
+
+            print_mark_deprecated_result(operator=getattr(args, "operator", "cli"))
+            return
         if getattr(args, "legacy_cleanup_command", "") == "run-due":
             from aicrm_next.platform_foundation.legacy_cleanup.jobs import print_run_due_result
 

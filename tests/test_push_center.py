@@ -195,9 +195,17 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
 
 
 def test_push_center_legacy_deprecations_api(next_client: TestClient) -> None:
+    from aicrm_next.platform_foundation.legacy_cleanup.repo import reset_legacy_cleanup_fixture_state
+    from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
+
+    reset_legacy_cleanup_fixture_state()
+    before = next_client.get("/api/admin/push-center/legacy-deprecations")
+    LegacyWebhookCleanupService().mark_default_deprecations(operator="pytest")
     response = next_client.get("/api/admin/push-center/legacy-deprecations")
     body = response.json()
 
+    assert before.status_code == 200
+    assert before.json()["counts"]["total"] == 0
     assert response.status_code == 200
     assert body["ok"] is True
     assert body["counts"]["total"] >= 10

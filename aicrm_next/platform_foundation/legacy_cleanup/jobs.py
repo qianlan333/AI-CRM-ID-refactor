@@ -6,6 +6,14 @@ from typing import Any
 from .service import LegacyWebhookCleanupService
 
 
+def mark_deprecated_cli(*, operator: str = "cli") -> dict[str, Any]:
+    return LegacyWebhookCleanupService().mark_default_deprecations(operator=operator)
+
+
+def print_mark_deprecated_result(*, operator: str = "cli") -> None:
+    print(json.dumps(mark_deprecated_cli(operator=operator), ensure_ascii=False, default=str))
+
+
 def run_due_cli(*, dry_run: bool = True, limit: int = 50, operator: str = "cli") -> dict[str, Any]:
     return LegacyWebhookCleanupService().run_due(dry_run=dry_run, limit=limit, operator=operator)
 

@@ -96,6 +96,16 @@ def legacy_webhook_cleanup_status(
     return _json(payload)
 
 
+@router.post("/api/admin/legacy-webhook-cleanup/deprecations/mark")
+async def legacy_webhook_cleanup_mark_deprecated(request: Request) -> JSONResponse:
+    payload = await _payload(request)
+    token_error = _action_or_internal_token_error(request, payload)
+    if token_error:
+        return _json({"ok": False, "error": token_error}, status_code=401)
+    result = LegacyWebhookCleanupService().mark_default_deprecations(operator=_text(payload.get("operator")) or "api")
+    return _json(result)
+
+
 @router.post("/api/admin/legacy-webhook-cleanup/run-due/preview")
 async def legacy_webhook_cleanup_preview(request: Request) -> JSONResponse:
     payload = await _payload(request)
