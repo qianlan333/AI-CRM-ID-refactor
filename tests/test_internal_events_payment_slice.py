@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
+
 from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
 from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
 from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
@@ -139,17 +142,27 @@ def test_webhook_order_paid_consumer_creates_external_effect_job_without_externa
     conn = _PaymentConn()
     _apply_transaction(conn, _transaction())
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
+    legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_INTERNAL_PAYMENT"})
+    legacy_job = legacy_jobs[0]
 
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["webhook_order_paid_consumer"])
     jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_INTERNAL_PAYMENT"})
-    consumer_job = [job for job in jobs if job.idempotency_key == f"payment.succeeded:WXP_INTERNAL_PAYMENT:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"]
+    attempts = ExternalEffectService().list_attempts(legacy_job.id)
+    response_summary = result["items"][0]["attempt"]["response_summary_json"]
 
+    assert legacy_total == 1
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
-    assert total >= 1
-    assert len(consumer_job) == 1
-    assert consumer_job[0].source_event_id == event.event_id
-    assert consumer_job[0].execution_mode == "shadow"
+    assert total == 1
+    assert jobs[0].id == legacy_job.id
+    assert jobs[0].idempotency_key == f"wechat-pay:WXP_INTERNAL_PAYMENT:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].status == "planned"
+    assert attempts == []
+    assert response_summary["external_effect_job_reused"] is True
+    assert response_summary["external_effect_job_created"] is False
+    assert response_summary["external_effect_job_id"] == legacy_job.id
+    assert event.event_id
 
 
 def test_automation_payment_consumer_executes_and_records_attempt(monkeypatch) -> None:
@@ -175,6 +188,53 @@ def test_automation_payment_consumer_executes_and_records_attempt(monkeypatch) -
     assert automation_calls[0]["order"]["out_trade_no"] == "WXP_INTERNAL_PAYMENT"
     assert runs[0].status == "succeeded"
     assert [attempt for attempt in attempts if attempt.consumer_name == "automation_payment_consumer"][0].status == "succeeded"
+
+
+def test_automation_payment_consumer_handles_datetime_payload_without_terminal_failure(monkeypatch, next_pg_schema) -> None:
+    _reset_state()
+    _enable_payment_events(monkeypatch)
+    _patch_legacy_outbox(monkeypatch)
+    conn = _PaymentConn()
+    transaction = _transaction()
+    transaction["success_time"] = datetime(2026, 6, 14, 12, 42, 36, tzinfo=timezone.utc)
+    transaction["amount"]["payer_total"] = Decimal("990")
+    transaction["nested"] = {"seen_at": [datetime(2026, 6, 14, 12, 43, 0, tzinfo=timezone.utc)]}
+    _apply_transaction(conn, transaction)
+    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
+
+    result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["automation_payment_consumer"])
+    runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id, "consumer_name": "automation_payment_consumer"})
+    attempts = [attempt for attempt in InternalEventService().list_attempts(event_id=event.event_id) if attempt.consumer_name == "automation_payment_consumer"]
+
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["counts"]["failed_terminal_count"] == 0
+    assert runs[0].status == "succeeded"
+    assert runs[0].result_summary_json["automation_processed"] is True
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].response_summary_json["automation_processed"] is True
+
+
+def test_webhook_order_paid_consumer_creates_shadow_job_when_no_existing_legacy_job(monkeypatch) -> None:
+    _reset_state()
+    _enable_payment_events(monkeypatch)
+    _patch_legacy_outbox(monkeypatch)
+    _apply_transaction(_PaymentConn(), _transaction())
+    reset_external_effect_fixture_state()
+    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
+
+    result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["webhook_order_paid_consumer"])
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_INTERNAL_PAYMENT"})
+    attempts = ExternalEffectService().list_attempts(jobs[0].id)
+    response_summary = result["items"][0]["attempt"]["response_summary_json"]
+
+    assert result["counts"]["succeeded_count"] == 1
+    assert total == 1
+    assert jobs[0].idempotency_key == f"payment.succeeded:WXP_INTERNAL_PAYMENT:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].status == "planned"
+    assert attempts == []
+    assert response_summary["external_effect_job_reused"] is False
+    assert response_summary["external_effect_job_created"] is True
 
 
 def test_dnd_consumer_is_skipped_with_visible_reason(monkeypatch) -> None:

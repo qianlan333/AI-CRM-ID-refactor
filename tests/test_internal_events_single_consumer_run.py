@@ -195,29 +195,29 @@ def test_single_consumer_execute_only_updates_specified_consumer(monkeypatch) ->
     assert attempts[0].consumer_name == "order_projection_consumer"
 
 
-def test_webhook_single_consumer_creates_shadow_external_effect_without_external_attempt(monkeypatch) -> None:
+def test_webhook_single_consumer_reuses_shadow_external_effect_without_external_attempt(monkeypatch) -> None:
     event = _emit_payment(monkeypatch)
+    legacy_jobs, legacy_total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+    legacy_job = legacy_jobs[0]
 
     result = _run(event.event_id, "webhook_order_paid_consumer")
     jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
-    consumer_jobs = [
-        item
-        for item in jobs
-        if item.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    ]
-    job = consumer_jobs[0]
-    attempts = ExternalEffectService().list_attempts(job.id)
+    attempts = ExternalEffectService().list_attempts(legacy_job.id)
+    response_summary = result["attempt"]["response_summary_json"]
 
+    assert legacy_total == 1
     assert result["counts"]["succeeded_count"] == 1
     assert result["real_external_call_executed"] is False
-    assert total >= 1
-    assert len(consumer_jobs) == 1
-    assert job.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    assert job.source_event_id == event.event_id
-    assert job.execution_mode == "shadow"
-    assert job.status == "planned"
-    assert job.attempt_count == 0
+    assert total == 1
+    assert jobs[0].id == legacy_job.id
+    assert jobs[0].idempotency_key == f"wechat-pay:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].execution_mode == "shadow"
+    assert jobs[0].status == "planned"
+    assert jobs[0].attempt_count == 0
     assert attempts == []
+    assert response_summary["external_effect_job_reused"] is True
+    assert response_summary["external_effect_job_created"] is False
+    assert event.event_id
 
 
 def test_skipped_single_consumer_records_reason_without_touching_other_runs(monkeypatch) -> None:
@@ -257,11 +257,8 @@ def test_repeated_webhook_single_consumer_does_not_duplicate_external_effect_job
 
     assert first["counts"]["succeeded_count"] == 1
     assert second["counts"]["succeeded_count"] == 1
-    consumer_jobs = [
-        item
-        for item in jobs
-        if item.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
-    ]
-    assert total >= 1
-    assert len(consumer_jobs) == 1
-    assert consumer_jobs[0].attempt_count == 0
+    assert first["attempt"]["response_summary_json"]["external_effect_job_reused"] is True
+    assert second["attempt"]["response_summary_json"]["external_effect_job_reused"] is True
+    assert total == 1
+    assert jobs[0].idempotency_key == f"wechat-pay:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert jobs[0].attempt_count == 0

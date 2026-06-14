@@ -102,7 +102,33 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
             error_code="order_identity_missing",
             error_message="order id or out_trade_no is required",
         )
-    job = ExternalEffectService().plan_effect(
+    external_effects = ExternalEffectService()
+    existing_job = external_effects.find_existing_job(
+        effect_type=WEBHOOK_ORDER_PAID_PUSH,
+        target_type="wechat_pay_order",
+        target_id=target_id,
+        business_type="commerce_order",
+        business_id=out_trade_no,
+    )
+    if existing_job is not None:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
+            response_summary={
+                "external_effect_job_created": False,
+                "external_effect_job_reused": True,
+                "external_effect_job_id": existing_job.id,
+                "effect_type": WEBHOOK_ORDER_PAID_PUSH,
+                "execution_mode": existing_job.execution_mode,
+                "status": existing_job.status,
+            },
+            result_summary={
+                "external_effect_job_id": existing_job.id,
+                "external_effect_job_reused": True,
+                "effect_type": WEBHOOK_ORDER_PAID_PUSH,
+            },
+        )
+    job = external_effects.plan_effect(
         effect_type=WEBHOOK_ORDER_PAID_PUSH,
         adapter_name="outbound_webhook",
         operation="post",
@@ -151,8 +177,15 @@ def webhook_order_paid_consumer(event: InternalEvent, run: InternalEventConsumer
     return InternalEventConsumerResult(
         status="succeeded",
         request_summary={"event_id": event.event_id, "out_trade_no": out_trade_no},
-        response_summary={"external_effect_job_created": True, "external_effect_job_id": job.get("id"), "effect_type": WEBHOOK_ORDER_PAID_PUSH},
-        result_summary={"external_effect_job_id": job.get("id"), "effect_type": WEBHOOK_ORDER_PAID_PUSH},
+        response_summary={
+            "external_effect_job_created": True,
+            "external_effect_job_reused": False,
+            "external_effect_job_id": job.get("id"),
+            "effect_type": WEBHOOK_ORDER_PAID_PUSH,
+            "execution_mode": job.get("execution_mode"),
+            "status": job.get("status"),
+        },
+        result_summary={"external_effect_job_id": job.get("id"), "external_effect_job_reused": False, "effect_type": WEBHOOK_ORDER_PAID_PUSH},
     )
 
 
