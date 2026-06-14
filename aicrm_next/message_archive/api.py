@@ -16,6 +16,7 @@ from .application import (
     blocked_messages_side_effect,
     deprecated_messages_route,
 )
+from .sync_service import archive_health_payload, execute_archive_sync
 
 router = APIRouter()
 _EXTERNAL_CHAT_SOURCE_STATUS = "external_chat_records"
@@ -54,6 +55,19 @@ def _external_auth_failure(request: Request) -> JSONResponse | None:
             message="internal token not configured",
             status_code=503,
         )
+    auth_header = _text(request.headers.get("Authorization"))
+    provided = _text(auth_header[7:]) if auth_header.startswith("Bearer ") else ""
+    if not provided:
+        return _external_error(error_code="missing_internal_token", message="missing internal token", status_code=401)
+    if provided != expected:
+        return _external_error(error_code="invalid_internal_token", message="invalid internal token", status_code=401)
+    return None
+
+
+def _internal_auth_failure(request: Request) -> JSONResponse | None:
+    expected = _text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    if not expected:
+        return None
     auth_header = _text(request.headers.get("Authorization"))
     provided = _text(auth_header[7:]) if auth_header.startswith("Bearer ") else ""
     if not provided:
@@ -136,6 +150,78 @@ def list_external_chat_records(
         "fallback_used": False,
     }
     return JSONResponse(jsonable_encoder(response_payload))
+
+
+@router.get("/api/archive/health")
+def archive_health(request: Request) -> JSONResponse:
+    auth_failure = _internal_auth_failure(request)
+    if auth_failure:
+        return auth_failure
+    try:
+        return JSONResponse(jsonable_encoder(archive_health_payload()))
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_code": "archive_health_failed",
+                "message": str(exc),
+                "route_owner": "ai_crm_next",
+                "source_status": "next_archive_sync",
+                "fallback_used": False,
+            },
+            status_code=502,
+        )
+
+
+@router.post("/api/archive/sync")
+async def archive_sync(request: Request) -> JSONResponse:
+    auth_failure = _internal_auth_failure(request)
+    if auth_failure:
+        return auth_failure
+    try:
+        raw_payload = await request.json()
+    except Exception:
+        raw_payload = {}
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    if os.getenv("AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_code": "in_process_archive_sync_disabled",
+                "message": "Run scripts/run_incremental_archive_sync.py so the WeCom archive SDK stays outside the web process.",
+                "route_owner": "ai_crm_next",
+                "source_status": "next_archive_sync",
+                "fallback_used": False,
+                "runner": "scripts/run_incremental_archive_sync.py",
+                "reply_monitor_skipped": True,
+            },
+            status_code=409,
+        )
+    try:
+        result = execute_archive_sync(
+            start_time=_text(payload.get("start_time")) or "2000-01-01 00:00:00",
+            end_time=_text(payload.get("end_time")) or "2099-12-31 23:59:59",
+            owner_userid=_text(payload.get("owner_userid")),
+            cursor=_text(payload.get("cursor")),
+            limit=int(payload.get("limit") or 100),
+            max_pages=int(payload.get("max_pages") or 1000),
+        )
+        return JSONResponse(jsonable_encoder(result))
+    except ValueError as exc:
+        return _external_error(error_code="invalid_request", message=str(exc), status_code=400)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_code": "archive_sync_failed",
+                "message": str(exc),
+                "route_owner": "ai_crm_next",
+                "source_status": "next_archive_sync",
+                "fallback_used": False,
+                "reply_monitor_skipped": True,
+            },
+            status_code=502,
+        )
 
 
 @router.get("/api/messages/search")

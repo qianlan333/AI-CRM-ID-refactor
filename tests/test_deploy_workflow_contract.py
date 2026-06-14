@@ -275,6 +275,25 @@ def test_reply_monitor_capture_systemd_units_are_deployable():
     assert "Unit=aicrm-reply-monitor-capture.service" in timer
 
 
+def test_archive_sync_systemd_units_are_deployable():
+    service = (ROOT / "deploy" / "aicrm-archive-sync.service").read_text(encoding="utf-8")
+    timer = (ROOT / "deploy" / "aicrm-archive-sync.timer").read_text(encoding="utf-8")
+
+    assert "After=network.target openclaw-wecom-postgres.service" in service
+    assert "Requires=openclaw-wecom-postgres.service" in service
+    assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+    assert "Environment=APP_HOST=127.0.0.1" in service
+    assert "Environment=APP_PORT=5001" in service
+    assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+    assert "python -m scripts.run_incremental_archive_sync" in service
+    assert "wecom_ability_service" not in service
+    assert "legacy_flask_app" not in service
+    assert "run-legacy" not in service
+    assert "OnCalendar=*-*-* *:00/5:00" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=aicrm-archive-sync.service" in timer
+
+
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert not (ROOT / "scripts" / "backup_sqlite.sh").exists()
     retired_seed_demo = ROOT / "scripts" / ("seed_" + "automation_conversion_demo.py")

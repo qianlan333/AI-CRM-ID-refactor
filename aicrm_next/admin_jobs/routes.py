@@ -208,6 +208,8 @@ async def api_admin_jobs_archive_sync_run(request: Request):
         "end_time": normalized_text(payload.get("end_time")),
         "owner_userid": normalized_text(payload.get("owner_userid")),
         "cursor": normalized_text(payload.get("cursor")),
+        "limit": normalized_text(payload.get("limit")),
+        "max_pages": normalized_text(payload.get("max_pages")),
         "confirm": normalized_bool(payload.get("confirm")),
     }
     try:
