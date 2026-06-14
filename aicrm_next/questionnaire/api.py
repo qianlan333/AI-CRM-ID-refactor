@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import base64
 import csv
+from datetime import datetime, timezone
 import json
 import logging
+import os
 from io import StringIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -45,6 +48,7 @@ from .application import (
     GetQuestionnaireResultsSummaryQuery,
     GetSubmissionResultQuery,
     LatestSubmitDebugQuery,
+    ListExternalQuestionnaireSubmissionsQuery,
     ListQuestionnaireQuestionsQuery,
     ListQuestionnaireSubmissionsQuery,
     ListQuestionnairesQuery,
@@ -59,6 +63,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 _TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "frontend_compat" / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+_EXTERNAL_SOURCE_STATUS = "external_questionnaire_submissions"
+_EXTERNAL_TOKEN_ENV_KEY = "AUTOMATION_INTERNAL_API_TOKEN"
 
 _QUESTIONNAIRE_IDENTITY_HINT_FIELDS = (
     "respondent_key",
@@ -84,6 +90,74 @@ def _read_response(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
     if payload.get("source_status") == "production_unavailable":
         return JSONResponse(jsonable_encoder(payload), status_code=503)
     return payload
+
+
+def _external_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _external_error(*, error_code: str, message: str, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error_code": error_code,
+            "message": message,
+            "route_owner": "ai_crm_next",
+            "source_status": _EXTERNAL_SOURCE_STATUS,
+            "fallback_used": False,
+        },
+        status_code=status_code,
+    )
+
+
+def _external_auth_failure(request: Request) -> JSONResponse | None:
+    expected = _external_text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    if not expected:
+        return _external_error(
+            error_code="internal_token_not_configured",
+            message="internal token not configured",
+            status_code=503,
+        )
+    auth_header = _external_text(request.headers.get("Authorization"))
+    provided = _external_text(auth_header[7:]) if auth_header.startswith("Bearer ") else ""
+    if not provided:
+        return _external_error(error_code="missing_internal_token", message="missing internal token", status_code=401)
+    if provided != expected:
+        return _external_error(error_code="invalid_internal_token", message="invalid internal token", status_code=401)
+    return None
+
+
+def _external_encode_cursor(offset: int | None) -> str:
+    if offset is None:
+        return ""
+    payload = json.dumps({"offset": max(0, int(offset))}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _external_decode_cursor(cursor: str | None) -> int:
+    token = _external_text(cursor)
+    if not token:
+        return 0
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        return max(0, int(payload.get("offset") or 0))
+    except Exception as exc:
+        raise ValueError("cursor is invalid") from exc
+
+
+def _external_timestamp_filter(value: int | None, name: str) -> str | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError(f"{name} must be a Unix timestamp in seconds")
+    if value > 9_999_999_999:
+        raise ValueError(f"{name} must be a Unix timestamp in seconds, not milliseconds")
+    return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _external_filters(**kwargs: Any) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if value not in {None, ""}}
 
 
 def _csv_value(value: Any) -> Any:
@@ -185,6 +259,66 @@ async def _h5_json_body(request: Request) -> dict[str, Any]:
 
 def _as_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@router.get("/api/external/questionnaire-submissions")
+def list_external_questionnaire_submissions(
+    request: Request,
+    mobile: str | None = Query(None, description="手机号"),
+    unionid: str | None = Query(None, description="微信 unionid"),
+    external_userid: str | None = Query(None, description="企业微信 external_userid"),
+    questionnaire_id: int | None = Query(None, ge=1, description="问卷 ID"),
+    submitted_from: int | None = Query(None, description="提交开始秒级 Unix 时间戳"),
+    submitted_to: int | None = Query(None, description="提交结束秒级 Unix 时间戳"),
+    limit: int = Query(100, ge=1, le=500, description="分页条数，最大 500"),
+    cursor: str | None = Query(None, description="下一页游标"),
+) -> JSONResponse:
+    auth_failure = _external_auth_failure(request)
+    if auth_failure:
+        return auth_failure
+    if not any(_external_text(value) for value in (mobile, unionid, external_userid)):
+        return _external_error(
+            error_code="invalid_request",
+            message="one of mobile, unionid, or external_userid is required",
+            status_code=400,
+        )
+    try:
+        offset = _external_decode_cursor(cursor)
+        submitted_from_filter = _external_timestamp_filter(submitted_from, "submitted_from")
+        submitted_to_filter = _external_timestamp_filter(submitted_to, "submitted_to")
+        if submitted_from_filter and submitted_to_filter and submitted_from_filter > submitted_to_filter:
+            raise ValueError("submitted_from must be earlier than or equal to submitted_to")
+        filters = _external_filters(
+            mobile=mobile,
+            unionid=unionid,
+            external_userid=external_userid,
+            questionnaire_id=questionnaire_id,
+            submitted_from=submitted_from_filter,
+            submitted_to=submitted_to_filter,
+        )
+        payload = ListExternalQuestionnaireSubmissionsQuery()(filters=filters, limit=limit, offset=offset)
+    except ValueError as exc:
+        return _external_error(error_code="invalid_request", message=str(exc), status_code=400)
+
+    if payload.get("source_status") == "production_unavailable":
+        return JSONResponse(jsonable_encoder(payload), status_code=503)
+    items = list(payload.get("items") or [])
+    total = int(payload.get("total") or 0)
+    next_offset = offset + len(items) if offset + len(items) < total else None
+    response_payload = {
+        "ok": True,
+        "items": items,
+        "total": total,
+        "limit": int(payload.get("limit") or limit),
+        "next_cursor": _external_encode_cursor(next_offset),
+        "has_more": next_offset is not None,
+        "filters": payload.get("filters") or {},
+        "route_owner": "ai_crm_next",
+        "source_status": _EXTERNAL_SOURCE_STATUS,
+        "read_model_status": payload.get("read_model_status") or "",
+        "fallback_used": False,
+    }
+    return JSONResponse(jsonable_encoder(response_payload))
 
 
 def _is_redirect_response_mode(response_mode: str | None, browser_redirect: Any = None) -> bool:

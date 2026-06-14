@@ -24,6 +24,13 @@ class QuestionnaireRepository(Protocol):
     def list_questions(self, questionnaire_id: int) -> list[dict[str, Any]] | None: ...
     def get_results_summary(self, questionnaire_id: int) -> dict[str, Any] | None: ...
     def list_submissions(self, questionnaire_id: int, *, limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int] | None: ...
+    def list_external_submissions(
+        self,
+        *,
+        filters: dict[str, Any],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]: ...
     def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]: ...
     def set_enabled(self, questionnaire_id: int, enabled: bool) -> dict[str, Any] | None: ...
     def delete_questionnaire(self, questionnaire_id: int) -> bool: ...
@@ -319,6 +326,60 @@ def _answers_from_snapshots(answer_snapshots: list[dict[str, Any]]) -> dict[str,
     return answers
 
 
+def _external_answer_projection(answer: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "question_title_snapshot": _text(answer.get("question_title_snapshot")),
+        "selected_option_texts_snapshot": _json_list(answer.get("selected_option_texts_snapshot")),
+        "text_value": _text(answer.get("text_value")),
+        "score_contribution": float(answer.get("score_contribution") or 0),
+    }
+
+
+def _external_submission_projection(row: dict[str, Any], answers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "mobile": _text(row.get("mobile") or row.get("mobile_snapshot")),
+        "unionid": _text(row.get("unionid")),
+        "external_userid": _text(row.get("external_userid")),
+        "submitted_at": _timestamp(row.get("submitted_at") or row.get("created_at")),
+        "questionnaire_id": int(row.get("questionnaire_id") or 0),
+        "questionnaire_title": _text(row.get("questionnaire_title") or row.get("title") or row.get("name")),
+        "final_tags": _json_list(row.get("final_tags")),
+        "assessment_result_snapshot": _json_dict(row.get("assessment_result_snapshot")),
+        "answers": [_external_answer_projection(dict(answer)) for answer in answers or []],
+    }
+
+
+def _parse_comparable_timestamp(value: Any) -> datetime | None:
+    text = _text(value).strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+        return datetime.fromisoformat(text.replace(" ", "T")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def _matches_external_submission_filters(row: dict[str, Any], filters: dict[str, Any]) -> bool:
+    if _text(filters.get("mobile")) and _text(row.get("mobile") or row.get("mobile_snapshot")) != _text(filters.get("mobile")):
+        return False
+    if _text(filters.get("unionid")) and _text(row.get("unionid")) != _text(filters.get("unionid")):
+        return False
+    if _text(filters.get("external_userid")) and _text(row.get("external_userid")) != _text(filters.get("external_userid")):
+        return False
+    if filters.get("questionnaire_id") not in (None, "") and int(row.get("questionnaire_id") or 0) != int(filters.get("questionnaire_id") or 0):
+        return False
+    submitted_at = _parse_comparable_timestamp(row.get("submitted_at") or row.get("created_at"))
+    submitted_from = _parse_comparable_timestamp(filters.get("submitted_from"))
+    submitted_to = _parse_comparable_timestamp(filters.get("submitted_to"))
+    if submitted_from and (not submitted_at or submitted_at < submitted_from):
+        return False
+    if submitted_to and (not submitted_at or submitted_at > submitted_to):
+        return False
+    return True
+
+
 def _mobile_answer(questions: list[dict[str, Any]], answers: dict[str, Any]) -> str:
     for question in questions:
         if _text(question.get("type")) != "mobile":
@@ -514,6 +575,32 @@ class InMemoryQuestionnaireRepository:
                 row["answer_snapshots"] = _answer_snapshots(questionnaire.get("questions") or [], dict(row.get("answers") or {}))
             rows.append(row)
         return rows[int(offset) : int(offset) + int(limit)], len(rows)
+
+    def list_external_submissions(
+        self,
+        *,
+        filters: dict[str, Any],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        questionnaire_by_id = {int(item["id"]): item for item in self._questionnaires}
+        rows: list[dict[str, Any]] = []
+        for item in self._submissions:
+            questionnaire = questionnaire_by_id.get(int(item.get("questionnaire_id") or 0))
+            if not questionnaire:
+                continue
+            row = deepcopy(item)
+            row.setdefault("submitted_at", row.get("created_at"))
+            row.setdefault("mobile", row.get("mobile_snapshot") or row.get("mobile"))
+            row.setdefault("assessment_result_snapshot", (row.get("result_json") or {}).get("assessment_result") if isinstance(row.get("result_json"), dict) else {})
+            row["questionnaire_title"] = _text(questionnaire.get("title") or questionnaire.get("name"))
+            if "answer_snapshots" not in row:
+                row["answer_snapshots"] = _answer_snapshots(questionnaire.get("questions") or [], dict(row.get("answers") or {}))
+            if _matches_external_submission_filters(row, filters):
+                rows.append(row)
+        rows.sort(key=lambda item: (_text(item.get("submitted_at") or item.get("created_at")), _text(item.get("submission_id"))), reverse=True)
+        page = rows[int(offset) : int(offset) + int(limit)]
+        return [_external_submission_projection(row, row.get("answer_snapshots") or []) for row in page], len(rows)
 
     def save_questionnaire(self, payload: dict[str, Any], questionnaire_id: int | None = None) -> dict[str, Any]:
         now = _now()
@@ -984,6 +1071,89 @@ class PostgresQuestionnaireReadRepository:
                 "answers": answers_by_submission.get(int(row.get("id") or 0), {}),
                 "answer_snapshots": answer_snapshots_by_submission.get(int(row.get("id") or 0), []),
             }
+            for row in rows
+        ]
+        return items, total
+
+    def list_external_submissions(
+        self,
+        *,
+        filters: dict[str, Any],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        clauses = ["1 = 1"]
+        params: list[Any] = []
+        if _text(filters.get("mobile")).strip():
+            clauses.append("qs.mobile_snapshot = %s")
+            params.append(_text(filters.get("mobile")).strip())
+        if _text(filters.get("unionid")).strip():
+            clauses.append("qs.unionid = %s")
+            params.append(_text(filters.get("unionid")).strip())
+        if _text(filters.get("external_userid")).strip():
+            clauses.append("qs.external_userid = %s")
+            params.append(_text(filters.get("external_userid")).strip())
+        if filters.get("questionnaire_id") not in (None, ""):
+            clauses.append("qs.questionnaire_id = %s")
+            params.append(int(filters.get("questionnaire_id") or 0))
+        if _text(filters.get("submitted_from")).strip():
+            clauses.append("qs.submitted_at >= %s")
+            params.append(_text(filters.get("submitted_from")).strip())
+        if _text(filters.get("submitted_to")).strip():
+            clauses.append("qs.submitted_at <= %s")
+            params.append(_text(filters.get("submitted_to")).strip())
+
+        where_sql = " AND ".join(clauses)
+        with self._connect() as conn:
+            total = int(
+                (
+                    conn.execute(
+                        f"SELECT COUNT(*) AS total FROM questionnaire_submissions qs WHERE {where_sql}",
+                        tuple(params),
+                    ).fetchone()
+                    or {}
+                ).get("total")
+                or 0
+            )
+            rows = conn.execute(
+                f"""
+                SELECT
+                    qs.id,
+                    qs.questionnaire_id,
+                    qs.unionid,
+                    qs.external_userid,
+                    qs.mobile_snapshot,
+                    qs.submitted_at,
+                    qs.final_tags,
+                    qs.assessment_result_snapshot,
+                    COALESCE(NULLIF(q.title, ''), NULLIF(q.name, ''), '') AS questionnaire_title
+                FROM questionnaire_submissions qs
+                LEFT JOIN questionnaires q ON q.id = qs.questionnaire_id
+                WHERE {where_sql}
+                ORDER BY qs.submitted_at DESC, qs.id DESC
+                LIMIT %s OFFSET %s
+                """,
+                tuple(params + [int(limit), int(offset)]),
+            ).fetchall()
+            row_ids = [int(row["id"]) for row in rows]
+            answer_rows = []
+            if row_ids:
+                answer_rows = conn.execute(
+                    """
+                    SELECT submission_id, question_title_snapshot, selected_option_texts_snapshot,
+                           text_value, score_contribution
+                    FROM questionnaire_submission_answers
+                    WHERE submission_id = ANY(%s)
+                    ORDER BY submission_id ASC, id ASC
+                    """,
+                    (row_ids,),
+                ).fetchall()
+
+        answers_by_submission: dict[int, list[dict[str, Any]]] = {}
+        for answer in answer_rows:
+            answers_by_submission.setdefault(int(answer.get("submission_id") or 0), []).append(dict(answer))
+        items = [
+            _external_submission_projection(dict(row), answers_by_submission.get(int(row.get("id") or 0), []))
             for row in rows
         ]
         return items, total

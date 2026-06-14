@@ -1,10 +1,10 @@
-# 外部订单查询 API
+# 外部只读 API
 
 ## 概述
 
-这组接口给外部系统只读拉取订单数据，覆盖 `wechat`、`alipay`、`wechat_shop` 三类渠道。
+这组接口给外部系统只读拉取订单、用户基础信息和问卷提交数据。
 
-接口只查询本地订单读模型，不会创建订单、发起支付、发起退款，也不会主动同步微信小店订单。
+接口只查询本地读模型，不会创建订单、发起支付、发起退款、主动同步微信小店订单，也不会触发企微、webhook 或自动化发送。
 
 ## 生产访问地址
 
@@ -19,6 +19,7 @@ https://www.youcangogogo.com
 | 能力 | Method | 完整 URL |
 |---|---|---|
 | 查询用户基础信息 | `GET` | `https://www.youcangogogo.com/api/external/users/resolve` |
+| 查询问卷提交 | `GET` | `https://www.youcangogogo.com/api/external/questionnaire-submissions` |
 | 批量查询订单 | `GET` | `https://www.youcangogogo.com/api/external/orders` |
 | 查询订单详情 | `GET` | `https://www.youcangogogo.com/api/external/orders/{order_no}` |
 
@@ -133,6 +134,138 @@ curl -H "Authorization: Bearer $TOKEN" \
   },
   "route_owner": "ai_crm_next",
   "source_status": "external_user_basic",
+  "fallback_used": false
+}
+```
+
+## 查询问卷提交
+
+```http
+GET /api/external/questionnaire-submissions
+```
+
+按用户身份键查询问卷提交和答案快照。该接口与订单 API 使用同一个 `AUTOMATION_INTERNAL_API_TOKEN`，只读本地问卷提交读模型，不会触发外部推送、企微打标、支付或自动化动作。
+
+### Query 参数
+
+`mobile`、`unionid`、`external_userid` 至少传一个。其余参数可选。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---:|---|---|
+| `mobile` | string | 条件必填 | - | 手机号 |
+| `unionid` | string | 条件必填 | - | 微信 unionid |
+| `external_userid` | string | 条件必填 | - | 企业微信外部联系人 ID |
+| `questionnaire_id` | integer | 否 | - | 指定某份问卷 |
+| `submitted_from` | integer | 否 | - | 提交开始时间，秒级 Unix 时间戳 |
+| `submitted_to` | integer | 否 | - | 提交结束时间，秒级 Unix 时间戳 |
+| `limit` | integer | 否 | `100` | 每页条数，最大 `500` |
+| `cursor` | string | 否 | - | 下一页游标，使用上一页返回的 `next_cursor` |
+
+### 请求示例
+
+按真实付费用户手机号查询最近 5 条问卷提交：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/questionnaire-submissions?mobile=13800138000&limit=5"
+```
+
+按 unionid + 指定问卷查询：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/questionnaire-submissions?unionid=orSqJ5iT9UoeYQRVxvAoo_8avkmA&questionnaire_id=21&limit=5"
+```
+
+按时间窗口查询：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+"https://www.youcangogogo.com/api/external/questionnaire-submissions?mobile=13800138000&submitted_from=1780272000&submitted_to=1781222399&limit=20"
+```
+
+### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | 是否成功 |
+| `items` | 问卷提交数组 |
+| `total` | 当前筛选条件下的总数 |
+| `limit` | 当前页大小 |
+| `next_cursor` | 下一页游标；为空表示没有下一页 |
+| `has_more` | 是否还有下一页 |
+| `filters` | 服务端实际使用的筛选条件 |
+| `route_owner` | 路由归属，固定为 `ai_crm_next` |
+| `source_status` | 固定为 `external_questionnaire_submissions` |
+| `read_model_status` | 读模型状态 |
+| `fallback_used` | 固定为 `false` |
+
+`items[]` 提交级字段：
+
+| 字段 | 说明 |
+|---|---|
+| `mobile` | 手机号 |
+| `unionid` | 微信 unionid |
+| `external_userid` | 企业微信外部联系人 ID |
+| `submitted_at` | 提交时间 |
+| `questionnaire_id` | 问卷 ID |
+| `questionnaire_title` | 问卷标题快照 |
+| `final_tags` | 本次问卷计算出的最终标签数组 |
+| `assessment_result_snapshot` | 测评结果快照对象 |
+| `answers` | 答案数组 |
+
+`answers[]` 答案级字段：
+
+| 字段 | 说明 |
+|---|---|
+| `question_title_snapshot` | 问题标题快照 |
+| `selected_option_texts_snapshot` | 选项文本快照数组 |
+| `text_value` | 文本答案；选择题的其他填写内容也在这里 |
+| `score_contribution` | 本题分数贡献 |
+
+响应示例：
+
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "mobile": "13800138000",
+      "unionid": "orSqJ5iT9UoeYQRVxvAoo_8avkmA",
+      "external_userid": "wm_xxx",
+      "submitted_at": "2026-06-14T09:20:30+00:00",
+      "questionnaire_id": 21,
+      "questionnaire_title": "首月体验问卷",
+      "final_tags": ["tag_interest_ai_tools"],
+      "assessment_result_snapshot": {
+        "level": "starter"
+      },
+      "answers": [
+        {
+          "question_title_snapshot": "你现在卡在哪里？",
+          "selected_option_texts_snapshot": ["不知道怎么开始"],
+          "text_value": "",
+          "score_contribution": 3.0
+        },
+        {
+          "question_title_snapshot": "你最想要什么帮助？",
+          "selected_option_texts_snapshot": [],
+          "text_value": "希望有人帮我拆第一步",
+          "score_contribution": 0.0
+        }
+      ]
+    }
+  ],
+  "total": 1,
+  "limit": 5,
+  "next_cursor": "",
+  "has_more": false,
+  "filters": {
+    "mobile": "13800138000"
+  },
+  "route_owner": "ai_crm_next",
+  "source_status": "external_questionnaire_submissions",
+  "read_model_status": "primary",
   "fallback_used": false
 }
 ```
@@ -344,7 +477,7 @@ POST /api/admin/wechat-shop/orders/{order_id}/sync
 
 ## 时间戳说明
 
-`paid_from`、`paid_to`、`created_from`、`created_to` 都必须传秒级 Unix 时间戳。
+`paid_from`、`paid_to`、`created_from`、`created_to`、`submitted_from`、`submitted_to` 都必须传秒级 Unix 时间戳。
 
 示例：
 
