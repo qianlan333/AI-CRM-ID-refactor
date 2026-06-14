@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
@@ -165,7 +166,8 @@ async def admin_external_effects_action(request: Request):
                 _page_context(request, page_notice="生产虚拟测试 job 已创建。", action_result=result, params={**params, "job_id": result["job"]["id"]}),
             )
         if action == "run-due-preview":
-            result = ExternalEffectWorker(repo).preview_due(
+            result = await run_in_threadpool(
+                ExternalEffectWorker(repo).preview_due,
                 batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
                 effect_types=effect_types,
                 test_only=_bool(form.get("test_only"), default=False),
@@ -177,7 +179,8 @@ async def admin_external_effects_action(request: Request):
                 _page_context(request, page_notice="run-due preview 已生成。", action_result=result, params=params),
             )
         if action == "run-due-dry-run":
-            result = ExternalEffectWorker(repo).run_due(
+            result = await run_in_threadpool(
+                ExternalEffectWorker(repo).run_due,
                 batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
                 dry_run=True,
                 effect_types=effect_types,
@@ -191,7 +194,8 @@ async def admin_external_effects_action(request: Request):
                 _page_context(request, page_notice="run-due dry-run 已完成。", action_result=result, params=params),
             )
         if action == "run-due-test-execute":
-            result = ExternalEffectWorker(repo).run_due(
+            result = await run_in_threadpool(
+                ExternalEffectWorker(repo).run_due,
                 batch_size=1,
                 dry_run=False,
                 effect_types=effect_types,
@@ -313,7 +317,8 @@ async def preview_external_effect_run_due(request: Request) -> JSONResponse:
         return _json({"ok": False, "error": token_error, "route_owner": ROUTE_OWNER, "real_external_call_executed": False}, status_code=401)
     payload = await _payload(request)
     repo = build_external_effect_repository()
-    result = ExternalEffectWorker(repo).preview_due(
+    result = await run_in_threadpool(
+        ExternalEffectWorker(repo).preview_due,
         batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
         test_only=_bool(payload.get("test_only"), default=False),
@@ -330,7 +335,8 @@ async def run_external_effect_due(request: Request) -> JSONResponse:
     payload = await _payload(request)
     dry_run = _bool(payload.get("dry_run"), default=True)
     repo = build_external_effect_repository()
-    result = ExternalEffectWorker(repo).run_due(
+    result = await run_in_threadpool(
+        ExternalEffectWorker(repo).run_due,
         batch_size=_int(payload.get("batch_size") or payload.get("limit"), default=10, minimum=1),
         dry_run=dry_run,
         effect_types=[_text(item) for item in payload.get("effect_types") or [] if _text(item)] or None,
