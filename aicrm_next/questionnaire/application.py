@@ -165,6 +165,41 @@ class ListQuestionnaireSubmissionsQuery:
     __call__ = execute
 
 
+class ListExternalQuestionnaireSubmissionsQuery:
+    def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
+        self._repo = repo
+
+    def execute(self, *, filters: dict[str, Any], limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        repo, unavailable = _repo_or_payload(self._repo)
+        if unavailable:
+            return {**unavailable, "items": [], "total": 0, "limit": limit, "offset": offset, "filters": dict(filters or {})}
+        assert repo is not None
+        try:
+            rows, total = repo.list_external_submissions(filters=dict(filters or {}), limit=limit, offset=offset)
+        except Exception as exc:
+            if production_data_ready():
+                return {
+                    **_production_unavailable(exc),
+                    "items": [],
+                    "total": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "filters": dict(filters or {}),
+                }
+            raise
+        return {
+            "ok": True,
+            **_read_meta(repo),
+            "items": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filters": dict(filters or {}),
+        }
+
+    __call__ = execute
+
+
 class UpsertQuestionnaireCommand:
     def __init__(self, repo: QuestionnaireRepository | None = None) -> None:
         self._repo = repo or build_questionnaire_repository()

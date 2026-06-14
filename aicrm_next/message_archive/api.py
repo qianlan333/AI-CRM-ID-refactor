@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+import base64
+import json
+import os
+from typing import Any
+
+from fastapi import APIRouter, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from .application import (
+    ListExternalChatRecordsQuery,
     ListArchivedMessagesQuery,
     SearchArchivedMessagesQuery,
     blocked_messages_side_effect,
@@ -12,11 +18,124 @@ from .application import (
 )
 
 router = APIRouter()
+_EXTERNAL_CHAT_SOURCE_STATUS = "external_chat_records"
+_EXTERNAL_TOKEN_ENV_KEY = "AUTOMATION_INTERNAL_API_TOKEN"
+_EXTERNAL_CHAT_PAGE_SIZE = 20
 
 
 def _response(payload: dict) -> JSONResponse:
     status_code = int(payload.pop("status_code", 200) or 200)
     return JSONResponse(jsonable_encoder(payload), status_code=status_code)
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _external_error(*, error_code: str, message: str, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": False,
+            "error_code": error_code,
+            "message": message,
+            "route_owner": "ai_crm_next",
+            "source_status": _EXTERNAL_CHAT_SOURCE_STATUS,
+            "fallback_used": False,
+        },
+        status_code=status_code,
+    )
+
+
+def _external_auth_failure(request: Request) -> JSONResponse | None:
+    expected = _text(os.getenv(_EXTERNAL_TOKEN_ENV_KEY))
+    if not expected:
+        return _external_error(
+            error_code="internal_token_not_configured",
+            message="internal token not configured",
+            status_code=503,
+        )
+    auth_header = _text(request.headers.get("Authorization"))
+    provided = _text(auth_header[7:]) if auth_header.startswith("Bearer ") else ""
+    if not provided:
+        return _external_error(error_code="missing_internal_token", message="missing internal token", status_code=401)
+    if provided != expected:
+        return _external_error(error_code="invalid_internal_token", message="invalid internal token", status_code=401)
+    return None
+
+
+def _encode_cursor(offset: int | None) -> str:
+    if offset is None:
+        return ""
+    payload = json.dumps({"offset": max(0, int(offset))}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str | None) -> int:
+    token = _text(cursor)
+    if not token:
+        return 0
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        return max(0, int(payload.get("offset") or 0))
+    except Exception as exc:
+        raise ValueError("cursor is invalid") from exc
+
+
+@router.get("/api/external/chat-records")
+def list_external_chat_records(
+    request: Request,
+    mobile: str | None = Query(None, description="手机号"),
+    unionid: str | None = Query(None, description="微信 unionid"),
+    external_userid: str | None = Query(None, description="企业微信 external_userid"),
+    start_time: int | None = Query(None, description="起始秒级 Unix 时间戳"),
+    chat_scene: str = Query(..., description="private/group；也接受 私信/群聊"),
+    with_userid: str | None = Query(None, description="私信场景下对话员工 userid，默认 HuangYouCan"),
+    cursor: str | None = Query(None, description="下一页游标"),
+) -> JSONResponse:
+    auth_failure = _external_auth_failure(request)
+    if auth_failure:
+        return auth_failure
+    try:
+        offset = _decode_cursor(cursor)
+        payload = ListExternalChatRecordsQuery()(
+            mobile=mobile or "",
+            unionid=unionid or "",
+            external_userid=external_userid or "",
+            start_time=start_time,
+            chat_scene=chat_scene,
+            with_userid=with_userid or "HuangYouCan",
+            limit=_EXTERNAL_CHAT_PAGE_SIZE,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return _external_error(error_code="invalid_request", message=str(exc), status_code=400)
+
+    status_code = int(payload.pop("status_code", 200) or 200)
+    if status_code != 200:
+        return JSONResponse(jsonable_encoder(payload), status_code=status_code)
+
+    items = list(payload.get("items") or [])
+    total = int(payload.get("total") or 0)
+    next_offset = offset + len(items) if offset + len(items) < total else None
+    response_payload = {
+        "ok": True,
+        "items": items,
+        "messages": items,
+        "total": total,
+        "count": len(items),
+        "limit": _EXTERNAL_CHAT_PAGE_SIZE,
+        "next_cursor": _encode_cursor(next_offset),
+        "has_more": next_offset is not None,
+        "external_userid": payload.get("external_userid") or "",
+        "matched_by": payload.get("matched_by") or "",
+        "filters": payload.get("filters") or {},
+        "route_owner": "ai_crm_next",
+        "source_status": _EXTERNAL_CHAT_SOURCE_STATUS,
+        "read_model_status": payload.get("read_model_status") or "",
+        "fallback_used": False,
+    }
+    return JSONResponse(jsonable_encoder(response_payload))
 
 
 @router.get("/api/messages/search")
