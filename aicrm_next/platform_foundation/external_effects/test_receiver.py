@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import re
 from datetime import timedelta
 from typing import Any
@@ -12,6 +11,7 @@ from uuid import uuid4
 from fastapi import Request
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
+from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 
 from .models import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
@@ -92,7 +92,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
 
 
 def _enabled(name: str) -> bool:
-    return str(os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return runtime_bool(name)
 
 
 def test_receiver_enabled() -> bool:
@@ -104,8 +104,7 @@ def test_execution_only_enabled() -> bool:
 
 
 def allowed_base_hosts() -> set[str]:
-    raw = str(os.getenv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS") or "")
-    return {_host_without_port(item.strip().lower()) for item in raw.split(",") if item.strip()}
+    return {_host_without_port(item.strip().lower()) for item in runtime_csv("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS") if item.strip()}
 
 
 def detect_current_base_url(request: Request) -> str:
@@ -277,7 +276,7 @@ def _signature_valid(*, payload: dict[str, Any], body: dict[str, Any], headers: 
     secret = str(
         payload.get("signature_secret")
         or payload.get("signing_secret")
-        or os.getenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
+        or runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
         or ""
     ).strip()
     if not secret:

@@ -11,6 +11,7 @@ import requests
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
+from aicrm_next.shared.runtime_settings import runtime_setting
 
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
@@ -84,7 +85,7 @@ def deliver_questionnaire_external_push(
 
 
 def questionnaire_external_push_mode() -> str:
-    mode = str(os.getenv(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY) or "queue").strip().lower()
+    mode = runtime_setting(QUESTIONNAIRE_EXTERNAL_PUSH_MODE_KEY, "queue").strip().lower()
     return mode if mode in QUESTIONNAIRE_EXTERNAL_PUSH_MODES else "queue"
 
 

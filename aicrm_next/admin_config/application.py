@@ -119,6 +119,143 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "侧边栏 JSSDK 请求超时时间（秒）。",
         "min": 1,
     },
+    "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE": {
+        "key": "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE",
+        "label": "问卷外推模式",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "legacy=旧同步；shadow=旧同步+队列记录；queue=只入统一外部动作队列。",
+    },
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
+        "label": "Webhook 队列真实执行",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后仍只执行允许列表中的 webhook effect_type；run-due 默认仍为 dry-run。",
+    },
+    "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+        "label": "企微消息队列真实执行",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后仍必须命中 effect_type、owner、target、群 webhook/chat 白名单；不包含标签、欢迎语或批量放大能力。",
+    },
+    "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED": {
+        "key": "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED",
+        "label": "测试接收端启用",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "仅用于本域名 loopback 验收；生产常态应关闭。",
+    },
+    "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY": {
+        "key": "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY",
+        "label": "仅允许测试任务真实执行",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后非 test_loopback / is_test 任务即使命中 allowlist 也会被阻断。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+        "label": "允许执行的外部动作类型",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；禁止 *。问卷外推填写 webhook.questionnaire_submission.push。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS",
+        "label": "允许生成 loopback URL 的域名",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；生产应为 www.youcangogogo.com,youcangogogo.com，禁止 localhost / 127.0.0.1 / *。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+        "label": "允许执行的企微客服账号",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；真实企微消息执行必须命中。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+        "label": "允许执行的私信客户 external_userid",
+        "mode": "editable",
+        "input_type": "textarea",
+        "type": "string",
+        "description": "逗号或换行分隔；真实私信执行必须单目标且命中。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS",
+        "label": "允许执行的群运营 webhook key",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；真实群运营消息执行必须命中。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS",
+        "label": "允许执行的群 chat_id",
+        "mode": "editable",
+        "input_type": "textarea",
+        "type": "string",
+        "description": "逗号或换行分隔；为空时由 adapter 的单群和 webhook key 约束兜底。",
+    },
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS": {
+        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
+        "label": "Webhook 队列请求超时",
+        "mode": "editable",
+        "input_type": "number",
+        "type": "integer",
+        "description": "External Effect Queue 调用 webhook 的超时时间（秒）。",
+        "min": 1,
+    },
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET": {
+        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET",
+        "label": "Webhook 队列签名密钥",
+        "mode": "masked",
+        "input_type": "password",
+        "type": "secret",
+        "description": "用于 External Effect Queue webhook HMAC 签名；留空表示保持原值。",
+    },
+    "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE",
+        "label": "支付查询队列真实执行（预留）",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "预留配置位；当前 External Effect Queue 未注册真实支付查询 adapter，开启不会产生真实支付查询。",
+    },
+    "AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE",
+        "label": "Feishu 通知队列真实执行（预留）",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "预留配置位；当前 External Effect Queue 未注册真实 Feishu adapter。",
+    },
+    "AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE",
+        "label": "OpenClaw 推送队列真实执行（预留）",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "预留配置位；当前 OpenClaw 真实执行仍由 integration_gateway 安全边界控制。",
+    },
+    "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
+        "label": "素材上传队列真实执行（预留）",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "预留配置位；当前 External Effect Queue 未注册真实素材上传 adapter。",
+    },
     "WECHAT_SHOP_ENABLED": {
         "key": "WECHAT_SHOP_ENABLED",
         "label": "微信小店已启用",
@@ -214,6 +351,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
         "QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS",
+        "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
     }:
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
     if key in {
@@ -222,9 +360,32 @@ def _validate_known_setting(key: str, value: str) -> str:
         "LAOHUANG_CHAT_ENABLED",
         "WECHAT_PAY_ENABLED",
         "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
+        "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
+        "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
+        "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED",
+        "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY",
+        "AICRM_EXTERNAL_EFFECT_PAYMENT_EXECUTE",
+        "AICRM_EXTERNAL_EFFECT_FEISHU_EXECUTE",
+        "AICRM_EXTERNAL_EFFECT_OPENCLAW_EXECUTE",
+        "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE",
         "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
+    if key == "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE":
+        allowed_modes = {"legacy", "shadow", "queue"}
+        if normalized and normalized not in allowed_modes:
+            raise ValueError("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE 只允许 legacy / shadow / queue")
+        return normalized or "queue"
+    if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES":
+        if "*" in {item.strip() for item in normalized.replace("\n", " ").replace(",", " ").split() if item.strip()}:
+            raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES 不允许使用 *")
+        return normalized
+    if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS":
+        blocked = {"*", "localhost", "127.0.0.1", "::1", "testserver"}
+        hosts = {item.strip().lower().split(":", 1)[0] for item in normalized.replace("\n", ",").split(",") if item.strip()}
+        if hosts & blocked:
+            raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_BASE_HOSTS 不允许使用本地、测试或通配域名")
+        return normalized
     if key == "LAOHUANG_CHAT_SEND_CHANNEL":
         if normalized and normalized != "private_message":
             raise ValueError("LAOHUANG_CHAT_SEND_CHANNEL 首版只允许 private_message")
