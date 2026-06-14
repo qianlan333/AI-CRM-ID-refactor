@@ -68,13 +68,13 @@ def test_admin_jobs_webhooks_tab_filters_retries_and_audits(monkeypatch):
         "/api/admin/jobs/webhook-deliveries/2/retry",
         json={"confirm": True, "admin_action_token": token, "operator": "tester-webhook"},
     )
-    assert retry.status_code == 200
+    assert retry.status_code == 409
     assert retry.json()["ok"] is False
-    assert retry.json()["reason"] == "webhook_not_configured"
-
-    repo = build_admin_jobs_repository()
-    assert repo.audit_logs[-1]["operator"] == "tester-webhook"
-    assert repo.audit_logs[-1]["action_type"] == "retry_webhook_delivery"
+    assert retry.json()["legacy_outbound_disabled"] is True
+    assert retry.json()["external_effect_required"] is True
+    assert retry.json()["migration_target"] == "external_effect_queue"
+    assert retry.json()["push_center_url"] == "/admin/push-center"
+    assert retry.json()["real_external_call_executed"] is False
 
 
 def test_admin_broadcast_jobs_page_filters_and_actions(monkeypatch):

@@ -154,6 +154,8 @@ _TABLES_TO_TRUNCATE = [
     # — questionnaire
     "questionnaire_external_push_logs",
     "questionnaire_scrm_apply_logs",
+    "legacy_webhook_cleanup_audit",
+    "legacy_webhook_deprecation_registry",
     "questionnaire_submission_answers",
     "questionnaire_submissions",
     "questionnaire_options",

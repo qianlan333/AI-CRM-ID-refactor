@@ -32,6 +32,7 @@ _GROUPS = [
     _GroupSpec("materials-send-content", "素材 / 发送内容", "图片、附件、小程序素材库，以及发送内容校验、预览和素材选择器。"),
     _GroupSpec("commerce", "交易 / 商品", "商品页、下单、订单查询、微信支付、支付宝与后台交易管理。"),
     _GroupSpec("ai-assist-compat", "AI 助手 / 兼容代理", "AI 助手契约、云编排、定时任务兼容代理与外部适配入口。"),
+    _GroupSpec("push-center", "推送中心", "统一推送任务查询、执行明细、旧链路下线状态与清理任务。"),
     _GroupSpec("external-effects", "外部动作队列排障", "External Effect Queue 的排障查询、diagnostics、run-due 和测试 receiver API。"),
     _GroupSpec("other", "其他 API", "当前 FastAPI 注册表中尚未归入固定业务分组的公开 API。"),
 ]
@@ -106,6 +107,9 @@ _PATH_LABELS = {
     "cloud-orchestrator": "云编排",
     "reply-monitor": "回复监听",
     "jobs": "后台任务",
+    "push-center": "推送中心",
+    "legacy-deprecations": "旧链路下线状态",
+    "legacy-webhook-cleanup": "旧链路清理",
     "external-effects": "外部动作队列",
     "troubleshooting": "排障",
     "diagnostics": "诊断",
@@ -138,6 +142,8 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
     from aicrm_next.ops_enrollment.api import router as user_ops_router
     from aicrm_next.platform_foundation.api import router as platform_router
     from aicrm_next.platform_foundation.external_effects.api import router as external_effects_router
+    from aicrm_next.platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
+    from aicrm_next.platform_foundation.push_center.api import router as push_center_router
     from aicrm_next.public_product.api import router as public_product_router
     from aicrm_next.questionnaire.api import router as questionnaire_router
     from aicrm_next.send_content.api import router as send_content_router
@@ -160,6 +166,8 @@ def _router_sources(frontend_router: APIRouter | None = None) -> list[APIRouter]
         media_library_router,
         ai_assist_router,
         send_content_router,
+        push_center_router,
+        legacy_cleanup_router,
         external_effects_router,
     ]
     if frontend_router is not None:
@@ -260,6 +268,8 @@ def _group_id_for(path: str) -> str:
         or path.startswith("/api/admin/automation-conversion/jobs")
     ):
         return "ai-assist-compat"
+    if path.startswith("/api/admin/push-center") or path.startswith("/api/admin/legacy-webhook-cleanup"):
+        return "push-center"
     if path.startswith("/api/admin/external-effects") or path.startswith("/api/external-effects"):
         return "external-effects"
     if path.startswith("/api/admin/automation-conversion"):

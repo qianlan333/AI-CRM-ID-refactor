@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
 from aicrm_next.admin_shell import admin_path_for, shell_context
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 
 from . import CAPABILITY_OWNER, ROUTE_OWNER
 from .repository import PushCenterRepository
@@ -183,6 +184,27 @@ def push_center_stats(
 ) -> dict[str, Any]:
     payload = build_stats_payload(locals(), repository=PushCenterRepository())
     payload["capability_owner"] = CAPABILITY_OWNER
+    return payload
+
+
+@router.get("/api/admin/push-center/legacy-deprecations")
+def push_center_legacy_deprecations(
+    legacy_key: str = "",
+    legacy_type: str = "",
+    legacy_module: str = "",
+    status: str = "",
+    delete_status: str = "",
+) -> dict[str, Any]:
+    payload = LegacyWebhookCleanupService().status(
+        {
+            "legacy_key": legacy_key,
+            "legacy_type": legacy_type,
+            "legacy_module": legacy_module,
+            "status": status,
+            "delete_status": delete_status,
+        }
+    )
+    payload["route_owner"] = ROUTE_OWNER
     return payload
 
 

@@ -77,6 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("run", help="Run AI-CRM Next FastAPI app (default runtime).")
     subparsers.add_parser("health", help="Check AI-CRM Next health via TestClient.")
     subparsers.add_parser("routes", help="Print AI-CRM Next route inventory.")
+    cleanup = subparsers.add_parser("legacy-webhook-cleanup", help="Legacy webhook cleanup commands.")
+    cleanup_subparsers = cleanup.add_subparsers(dest="legacy_cleanup_command")
+    cleanup_run_due = cleanup_subparsers.add_parser("run-due", help="Run due legacy webhook cleanup candidates.")
+    cleanup_run_due.add_argument("--dry-run", action="store_true", default=False, help="Preview cleanup without mutating state.")
+    cleanup_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due cleanup entries.")
+    cleanup_run_due.add_argument("--limit", type=int, default=50)
+    cleanup_run_due.add_argument("--operator", default="cli")
     subparsers.add_parser("run-legacy", help="Removed legacy Flask startup command.")
     subparsers.add_parser("init-db-legacy", help="Removed legacy Flask database init command.")
     subparsers.add_parser("init-db", help="Removed legacy Flask database init command.")
@@ -106,6 +113,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
     if command == "routes":
         print_next_routes()
+        return
+    if command == "legacy-webhook-cleanup":
+        if getattr(args, "legacy_cleanup_command", "") == "run-due":
+            from aicrm_next.platform_foundation.legacy_cleanup.jobs import print_run_due_result
+
+            dry_run = not bool(getattr(args, "execute", False))
+            if getattr(args, "dry_run", False):
+                dry_run = True
+            print_run_due_result(dry_run=dry_run, limit=getattr(args, "limit", 50), operator=getattr(args, "operator", "cli"))
+            return
+        parser.print_help()
         return
     if command == "run-legacy":
         removed_legacy_command(command)

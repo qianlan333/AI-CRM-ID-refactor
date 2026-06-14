@@ -62,6 +62,8 @@ from .owner_migration.api import router as owner_migration_router
 from .platform_foundation.api import router as platform_router
 from .platform_foundation.external_effects.api import router as external_effects_router
 from .platform_foundation.external_effects import reset_external_effect_fixture_state
+from .platform_foundation.legacy_cleanup import reset_legacy_cleanup_fixture_state
+from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
 from .platform_foundation.push_center.api import router as push_center_router
 from .public_product.api import router as public_product_router
 from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
@@ -112,6 +114,7 @@ def create_app() -> FastAPI:
         reset_wecom_tag_live_mutation_fixture_state()
         reset_sidebar_jssdk_attempts()
         reset_external_effect_fixture_state()
+        reset_legacy_cleanup_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -156,6 +159,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(platform_router)
     app.include_router(external_effects_router)
+    app.include_router(legacy_cleanup_router)
     app.include_router(push_center_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_shell_router)
