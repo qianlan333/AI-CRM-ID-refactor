@@ -2,28 +2,29 @@ from __future__ import annotations
 
 import hmac
 import os
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from aicrm_next.admin_jobs.routes import ensure_admin_action_token, validate_admin_action_token
-from aicrm_next.admin_shell import admin_path_for, shell_context
+from aicrm_next.admin_jobs.routes import validate_admin_action_token
 
 from .repo import build_external_effect_repository
 from .service import ExternalEffectService
-from .test_receiver import create_loopback_job, detect_current_base_url, record_test_receiver_request, safe_current_base_url
-from .view_model import build_external_effect_diagnostics_payload, build_external_effect_jobs_payload, external_effect_filters
+from .test_receiver import create_loopback_job, record_test_receiver_request, safe_current_base_url
+from .view_model import (
+    build_external_effect_diagnostics_payload,
+    build_external_effect_jobs_payload,
+    build_troubleshooting_job_detail_payload,
+    build_troubleshooting_jobs_payload,
+    build_troubleshooting_summary_payload,
+    external_effect_filters,
+)
 from .worker import ExternalEffectWorker
 
 router = APIRouter()
 ROUTE_OWNER = "ai_crm_next"
-_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-_FRONTEND_COMPAT_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend_compat" / "templates"
-templates = Jinja2Templates(directory=[_TEMPLATES_DIR, _FRONTEND_COMPAT_TEMPLATES_DIR])
 
 
 def _text(value: Any) -> str:
@@ -87,157 +88,6 @@ def _service() -> ExternalEffectService:
     return ExternalEffectService(build_external_effect_repository())
 
 
-def _page_context(
-    request: Request,
-    *,
-    page_notice: str = "",
-    page_error: str = "",
-    action_result: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    context = shell_context(
-        request=request,
-        page_title="External Effects",
-        page_summary="统一外部动作队列的 shadow 任务、执行尝试和排障入口。",
-        active_endpoint="api.admin_external_effects_page",
-    )
-    payload = build_external_effect_jobs_payload(
-        params if params is not None else dict(request.query_params),
-        service=_service(),
-        current_base_url=safe_current_base_url(request),
-    )
-    context.update(
-        {
-            "breadcrumbs": [{"label": "客户管理后台", "href": "/"}, {"label": "External Effects", "href": ""}],
-            "external_effects": payload,
-            "page_notice": page_notice,
-            "page_error": page_error,
-            "action_result": action_result or {},
-            "admin_action_token": ensure_admin_action_token(),
-            "url_for": admin_path_for,
-        }
-    )
-    return context
-
-
-def _page_params_from_form(form: Any, request: Request) -> dict[str, Any]:
-    params = dict(request.query_params)
-    for key in ("effect_type", "status", "target_type", "target_id", "business_type", "business_id", "trace_id", "job_id", "limit", "offset"):
-        form_value = _text(form.get(key))
-        if form_value:
-            params[key] = form_value
-        elif key in params and key not in {"job_id"}:
-            params.pop(key, None)
-    return params
-
-
-@router.get("/admin/external-effects", name="api.admin_external_effects_page", response_class=HTMLResponse)
-def admin_external_effects_page(request: Request):
-    return templates.TemplateResponse(request, "admin_console/external_effects.html", _page_context(request))
-
-
-@router.post("/admin/external-effects/actions", name="api.admin_external_effects_action", response_class=HTMLResponse)
-async def admin_external_effects_action(request: Request):
-    form = await request.form()
-    params = _page_params_from_form(form, request)
-    token_error = validate_admin_action_token(_text(form.get("admin_action_token")))
-    if token_error:
-        return templates.TemplateResponse(
-            request,
-            "admin_console/external_effects.html",
-            _page_context(request, page_error=token_error, params=params),
-        )
-
-    action = _text(form.get("action"))
-    try:
-        repo = build_external_effect_repository()
-        service = ExternalEffectService(repo)
-        effect_types = [_text(form.get("effect_type"))] if _text(form.get("effect_type")) else None
-        if action == "create-test-loopback":
-            result = create_loopback_job(
-                request=request,
-                service=service,
-                scenario=_text(form.get("scenario")),
-                response_status=_int(form.get("response_status"), default=0, minimum=0, maximum=599) or None,
-            )
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice="生产虚拟测试 job 已创建。", action_result=result, params={**params, "job_id": result["job"]["id"]}),
-            )
-        if action == "run-due-preview":
-            result = await run_in_threadpool(
-                ExternalEffectWorker(repo).preview_due,
-                batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
-                effect_types=effect_types,
-                test_only=_bool(form.get("test_only"), default=False),
-            )
-            result["route_owner"] = ROUTE_OWNER
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice="run-due preview 已生成。", action_result=result, params=params),
-            )
-        if action == "run-due-dry-run":
-            result = await run_in_threadpool(
-                ExternalEffectWorker(repo).run_due,
-                batch_size=_int(form.get("batch_size"), default=10, minimum=1, maximum=200),
-                dry_run=True,
-                effect_types=effect_types,
-                test_only=_bool(form.get("test_only"), default=False),
-            )
-            result["route_owner"] = ROUTE_OWNER
-            result["real_external_call_executed"] = False
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice="run-due dry-run 已完成。", action_result=result, params=params),
-            )
-        if action == "run-due-test-execute":
-            result = await run_in_threadpool(
-                ExternalEffectWorker(repo).run_due,
-                batch_size=1,
-                dry_run=False,
-                effect_types=effect_types,
-                test_only=True,
-            )
-            result["route_owner"] = ROUTE_OWNER
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice="test-only batch_size=1 执行已完成。", action_result=result, params=params),
-            )
-        if action == "retry":
-            job = service.retry(_int(form.get("job_id"), default=0, minimum=0, maximum=10**12))
-            result = {"ok": bool(job), "job": job.to_dict() if job else None, "real_external_call_executed": False}
-            notice = "任务已重新入队。" if job else "任务当前不可 retry。"
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice=notice, action_result=result, params=params),
-            )
-        if action == "cancel":
-            job = service.cancel(_int(form.get("job_id"), default=0, minimum=0, maximum=10**12))
-            result = {"ok": bool(job), "job": job.to_dict() if job else None, "real_external_call_executed": False}
-            notice = "任务已取消。" if job else "任务当前不可 cancel。"
-            return templates.TemplateResponse(
-                request,
-                "admin_console/external_effects.html",
-                _page_context(request, page_notice=notice, action_result=result, params=params),
-            )
-        return templates.TemplateResponse(
-            request,
-            "admin_console/external_effects.html",
-            _page_context(request, page_error="未知 external effects 操作。", params=params),
-        )
-    except Exception as exc:
-        return templates.TemplateResponse(
-            request,
-            "admin_console/external_effects.html",
-            _page_context(request, page_error=str(exc), params=params),
-        )
-
-
 @router.get("/api/admin/external-effects/jobs")
 def list_external_effect_jobs(
     effect_type: str = "",
@@ -292,6 +142,60 @@ def external_effect_diagnostics(
         service=_service(),
         current_base_url=safe_current_base_url(request),
     )
+
+
+@router.get(
+    "/api/admin/external-effects/troubleshooting/summary",
+    summary="外部动作队列排障汇总",
+    description="返回 External Effect Queue 的排障汇总、失败/阻断计数、队列指标和执行保护状态。不执行任何外部调用。",
+)
+def external_effect_troubleshooting_summary(
+    effect_type: str = "",
+    status: str = "",
+    target_type: str = "",
+    target_id: str = "",
+    business_type: str = "",
+    business_id: str = "",
+    trace_id: str = "",
+    last_error_code: str = "",
+    idempotency_key: str = "",
+    problem_only: str = "true",
+) -> dict[str, Any]:
+    return build_troubleshooting_summary_payload(locals(), service=_service())
+
+
+@router.get(
+    "/api/admin/external-effects/troubleshooting/jobs",
+    summary="查询外部动作队列问题任务",
+    description="按 effect_type、status、target、business、trace_id、last_error_code、idempotency_key 查询问题任务。默认只返回 failed/blocked/dispatching 或带 last_error 的任务，且不返回 payload_json。",
+)
+def list_external_effect_troubleshooting_jobs(
+    effect_type: str = "",
+    status: str = "",
+    target_type: str = "",
+    target_id: str = "",
+    business_type: str = "",
+    business_id: str = "",
+    trace_id: str = "",
+    last_error_code: str = "",
+    idempotency_key: str = "",
+    problem_only: str = "true",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    return build_troubleshooting_jobs_payload(locals(), service=_service())
+
+
+@router.get(
+    "/api/admin/external-effects/troubleshooting/jobs/{job_id}",
+    summary="查询外部动作队列问题任务详情",
+    description="返回单个 external_effect_job 的脱敏排障详情和 external_effect_attempt 列表。不返回完整 payload_json。",
+)
+def get_external_effect_troubleshooting_job(job_id: int) -> JSONResponse:
+    payload = build_troubleshooting_job_detail_payload(job_id, service=_service())
+    if not payload:
+        return _json({"ok": False, "error": "external_effect_job_not_found", "route_owner": ROUTE_OWNER}, status_code=404)
+    return _json(payload)
 
 
 @router.get("/api/admin/external-effects/jobs/{job_id}")

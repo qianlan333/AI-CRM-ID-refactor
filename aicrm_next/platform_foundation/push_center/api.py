@@ -84,7 +84,7 @@ def _page_context(request: Request, *, page_notice: str = "", page_error: str = 
     context = shell_context(
         request=request,
         page_title="推送中心",
-        page_summary="按业务板块查看统一外部动作队列的推送任务、执行状态和 attempts。",
+        page_summary="按业务板块查看推送任务、执行状态和 attempts。",
         active_endpoint="api.admin_push_center_page",
     )
     context.update(
@@ -95,6 +95,10 @@ def _page_context(request: Request, *, page_notice: str = "", page_error: str = 
             "page_notice": page_notice,
             "page_error": page_error,
             "action_result": action_result or {},
+            "page_actions": [
+                {"label": "刷新", "href": "#refresh", "variant": "secondary"},
+                {"label": "导出当前筛选", "href": "#export", "variant": "secondary"},
+            ],
             "admin_action_token": ensure_admin_action_token(),
             "url_for": admin_path_for,
         }

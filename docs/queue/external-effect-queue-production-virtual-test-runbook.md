@@ -31,8 +31,10 @@ Expected before enabling test mode:
 }
 ```
 
-Open `/admin/external-effects` and confirm it shows no real external call by
-default.
+Open `/admin/push-center` for business delivery inspection. For queue-level
+diagnostics, use `/admin/api-docs` and the
+`/api/admin/external-effects/troubleshooting/*` APIs; the old
+`/admin/external-effects` CRM page is intentionally not exposed.
 
 ## 2. Host Trust Boundary Check
 
