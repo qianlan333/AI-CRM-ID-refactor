@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from aicrm_next.navigation_target import completion_target_projection
 from aicrm_next.shared.errors import ContractError
 
 CHOICE_QUESTION_TYPES = {"single_choice", "multi_choice"}
@@ -33,6 +34,10 @@ def _external_push_value(item: dict[str, Any], config: dict[str, Any], key: str,
 def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
     enabled = bool(item.get("enabled", not bool(item.get("is_disabled", False))))
     external_push_config = dict(item.get("external_push_config") or {})
+    completion_target = completion_target_projection(
+        item.get("completion_target_json") if item.get("completion_target_json") is not None else item.get("completion_target"),
+        legacy_h5_url=item.get("redirect_url"),
+    )
     normalized = {
         "id": item["id"],
         "slug": str(item.get("slug") or "").strip(),
@@ -44,6 +49,7 @@ def normalize_questionnaire(item: dict[str, Any]) -> dict[str, Any]:
         "status": str(item.get("status") or ("disabled" if not enabled else "published")),
         "version": int(item.get("version") or 1),
         "redirect_url": str(item.get("redirect_url") or "").strip(),
+        **completion_target,
         "answer_display_mode": str(item.get("answer_display_mode") or "all_in_one").strip() or "all_in_one",
         "submit_button_text": str(item.get("submit_button_text") or "提交").strip(),
         "created_at": item.get("created_at") or "",
@@ -124,6 +130,9 @@ def summary_projection(item: dict[str, Any]) -> dict[str, Any]:
         "enabled",
         "is_disabled",
         "redirect_url",
+        "completion_target",
+        "completion_target_enabled",
+        "completion_target_type",
         "created_at",
         "updated_at",
         "status",
@@ -160,6 +169,9 @@ def public_projection(item: dict[str, Any]) -> dict[str, Any]:
             "description",
             "enabled",
             "redirect_url",
+            "completion_target",
+            "completion_target_enabled",
+            "completion_target_type",
             "answer_display_mode",
             "submit_button_text",
             "created_at",

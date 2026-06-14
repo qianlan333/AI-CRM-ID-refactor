@@ -225,6 +225,12 @@ def render_pay_landing(product: dict[str, Any], page_state: dict[str, Any]) -> s
       <div class="success-tick">✓</div>
       <div class="success-title">支付成功</div>
       <div class="success-desc" id="successDesc">报名成功</div>
+      <div id="weappLaunchPanel" class="weapp-launch-panel" hidden>
+        <div class="weapp-launch-title">正在打开小程序</div>
+        <div class="weapp-launch-desc" id="weappLaunchDesc">请点击下方按钮继续。</div>
+        <div id="weappLaunchHost"></div>
+        <a id="weappFallbackLink" class="fallback-link" href="#">无法打开？点击备用链接</a>
+      </div>
       {qr_button_html}
     </section>
   </main>
@@ -410,6 +416,15 @@ def _pay_page_styles() -> str:
     .success-tick { width: 66px; height: 66px; border-radius: 50%; background: var(--green-bg); color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; margin: 18px auto; }
     .success-title { font-size: 22px; font-weight: 950; }
     .success-desc { color: var(--muted); margin: 8px 0 0; }
+    .weapp-launch-panel[hidden] { display: none; }
+    .weapp-launch-panel {
+      display: grid; gap: 10px; margin-top: 16px; padding: 14px;
+      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+      text-align: left;
+    }
+    .weapp-launch-title { color: var(--text); font-size: 15px; font-weight: 900; }
+    .weapp-launch-desc { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .fallback-link { display: inline-flex; color: #3370ff; font-size: 14px; font-weight: 800; text-decoration: none; }
     .qr-modal {
       position: fixed; inset: 0; background: rgba(16, 32, 58, .48); backdrop-filter: blur(4px);
       z-index: 40; display: none; align-items: center; justify-content: center; padding: 22px;
@@ -447,6 +462,10 @@ def _pay_page_script(state_json: str) -> str:
       const leadQrImage = document.getElementById("leadQrImage");
       const showLeadQrButton = document.getElementById("showLeadQrButton");
       const closeQrButton = document.getElementById("closeQrButton");
+      const weappLaunchPanel = document.getElementById("weappLaunchPanel");
+      const weappLaunchHost = document.getElementById("weappLaunchHost");
+      const weappLaunchDesc = document.getElementById("weappLaunchDesc");
+      const weappFallbackLink = document.getElementById("weappFallbackLink");
       let activeOrderNo = "";
       let paidOrder = state.paid_order || null;
 
@@ -548,8 +567,39 @@ def _pay_page_script(state_json: str) -> str:
         return /^https:\\/\\//.test(url) || /^\\/(?!\\/)[^\\s\\\\]*$/.test(url);
       }}
 
+      function escapeAttr(value) {{
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }}
+
+      function fallbackUrlFromTarget(target) {{
+        if (!target || !target.enabled) return "";
+        const link = target.url_link || {{}};
+        return String(link.url || target.fallback_url || target.h5_url || "");
+      }}
+
+      function miniProgramActionFromTarget(target, order) {{
+        if (!target || !target.enabled || target.target_type !== "mini_program") return null;
+        const mini = target.mini_program || {{}};
+        const fallbackUrl = fallbackUrlFromTarget(target) || String((order && order.success_url) || "");
+        if (!mini.path || (!mini.username && !mini.appid)) {{
+          return fallbackUrl && isSafeRedirectUrl(fallbackUrl) ? {{ type: "redirect", redirect_url: fallbackUrl }} : null;
+        }}
+        return {{ type: "mini_program", navigation_target: target, fallback_url: fallbackUrl }};
+      }}
+
       function completionActionFromOrder(order) {{
         const action = order && order.completion_action ? order.completion_action : {{}};
+        if (action && action.type === "mini_program" && action.navigation_target) {{
+          const miniAction = miniProgramActionFromTarget(action.navigation_target, order);
+          if (miniAction) return miniAction;
+        }}
+        const target = order && order.completion_target ? order.completion_target : {{}};
+        const miniAction = miniProgramActionFromTarget(target, order);
+        if (miniAction) return miniAction;
         const actionUrl = String((action && action.redirect_url) || "");
         if (action && action.type === "redirect" && actionUrl && isSafeRedirectUrl(actionUrl)) {{
           return {{ type: "redirect", redirect_url: actionUrl }};
@@ -561,6 +611,53 @@ def _pay_page_script(state_json: str) -> str:
           return {{ type: "redirect", redirect_url: fallbackUrl }};
         }}
         return {{ type: "default", redirect_url: "" }};
+      }}
+
+      function openMiniProgram(action) {{
+        const target = (action && action.navigation_target) || {{}};
+        const mini = target.mini_program || {{}};
+        const fallbackUrl = String(action.fallback_url || fallbackUrlFromTarget(target) || "");
+        const safeFallback = fallbackUrl && isSafeRedirectUrl(fallbackUrl) ? fallbackUrl : "#";
+        if (weappLaunchPanel) weappLaunchPanel.hidden = false;
+        if (weappLaunchHost) weappLaunchHost.innerHTML = "";
+        if (weappFallbackLink) weappFallbackLink.href = safeFallback;
+        if (weappLaunchDesc) weappLaunchDesc.textContent = "请点击下方按钮继续。";
+        if (!/MicroMessenger/i.test(navigator.userAgent || "") || typeof customElements === "undefined" || !customElements.get("wx-open-launch-weapp") || !mini.username || !mini.path) {{
+          if (weappLaunchDesc) weappLaunchDesc.textContent = "无法直接打开，点击备用链接。";
+          return;
+        }}
+        const path = String(mini.path || "/") + (mini.query ? "?" + mini.query : "");
+        if (weappLaunchHost) {{
+          weappLaunchHost.innerHTML = `
+            <wx-open-launch-weapp
+              id="launch-weapp"
+              username="${{escapeAttr(mini.username)}}"
+              path="${{escapeAttr(path)}}">
+              <template>
+                <style>
+                  .weapp-launch-button {{
+                    width: 100%;
+                    height: 48px;
+                    border: 0;
+                    border-radius: 8px;
+                    background: #3370ff;
+                    color: #fff;
+                    font-size: 16px;
+                    font-weight: 800;
+                  }}
+                </style>
+                <button class="weapp-launch-button">打开小程序</button>
+              </template>
+            </wx-open-launch-weapp>
+          `;
+          const launcher = weappLaunchHost.querySelector("#launch-weapp");
+          if (launcher) {{
+            launcher.addEventListener("error", function() {{
+              if (weappLaunchDesc) weappLaunchDesc.textContent = "无法直接打开，点击备用链接。";
+            }});
+            launcher.addEventListener("launch", function() {{ setState("正在打开小程序...", "success"); }});
+          }}
+        }}
       }}
 
       function leadQrFromOrder(order) {{
@@ -586,6 +683,16 @@ def _pay_page_script(state_json: str) -> str:
         const autoShowQr = !options || options.autoShowQr !== false;
         paidOrder = order || paidOrder || {{}};
         const completionAction = completionActionFromOrder(paidOrder);
+        if (completionAction.type === "mini_program") {{
+          setState("报名成功，正在打开小程序...", "success");
+          if (checkoutCard) checkoutCard.style.display = "none";
+          if (successBox) successBox.classList.add("show");
+          if (successDesc) {{
+            successDesc.textContent = "已购买 " + state.product.name + "，支付金额 ¥" + (Number(state.product.amount_total || 0) / 100).toFixed(2) + "。";
+          }}
+          openMiniProgram(completionAction);
+          return;
+        }}
         if (completionAction.type === "redirect" && completionAction.redirect_url) {{
           setState("报名成功，正在跳转...", "success");
           window.location.href = completionAction.redirect_url;

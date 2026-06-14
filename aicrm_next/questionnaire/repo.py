@@ -7,6 +7,7 @@ import re
 from typing import Any, Protocol
 from uuid import uuid4
 
+from aicrm_next.navigation_target.service import normalize_completion_target_for_storage
 from aicrm_next.shared.repository_provider import RepositoryProviderError
 from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
@@ -233,6 +234,7 @@ def _questionnaire_payload(payload: dict[str, Any], *, slug: str) -> dict[str, A
     external_push = _external_push_payload(payload)
     assessment_config = _json_dict(payload.get("assessment_config") or payload.get("result_config"))
     title = _text(payload.get("title") or payload.get("name")).strip()
+    completion_target = normalize_completion_target_for_storage(payload, legacy_url_key="redirect_url")
     return {
         "slug": slug,
         "name": _text(payload.get("name") or title).strip(),
@@ -240,6 +242,7 @@ def _questionnaire_payload(payload: dict[str, Any], *, slug: str) -> dict[str, A
         "description": _text(payload.get("description")),
         "is_disabled": _as_bool(payload.get("is_disabled"), default=not _as_bool(payload.get("enabled"), default=True)),
         "redirect_url": _text(payload.get("redirect_url")),
+        "completion_target_json": completion_target,
         "answer_display_mode": _text(payload.get("answer_display_mode") or "all_in_one") or "all_in_one",
         "assessment_enabled": _as_bool(payload.get("assessment_enabled")),
         "assessment_config": assessment_config,
@@ -535,6 +538,10 @@ class InMemoryQuestionnaireRepository:
                 "description": str(payload.get("description") or ""),
                 "enabled": bool(payload.get("enabled", item.get("enabled", True))),
                 "redirect_url": str(payload.get("redirect_url") or ""),
+                "completion_target_json": deepcopy(
+                    payload.get("completion_target_json")
+                    or normalize_completion_target_for_storage(payload, legacy_url_key="redirect_url")
+                ),
                 "submit_button_text": str(payload.get("submit_button_text") or "提交"),
                 "answer_display_mode": str(payload.get("answer_display_mode") or item.get("answer_display_mode") or "all_in_one"),
                 "assessment_enabled": bool(payload.get("assessment_enabled", item.get("assessment_enabled", False))),
@@ -753,6 +760,7 @@ class PostgresQuestionnaireReadRepository:
             "status": "disabled" if not enabled else "published",
             "version": int(row.get("version") or 1),
             "redirect_url": _text(row.get("redirect_url")),
+            "completion_target_json": _json_dict(row.get("completion_target_json")),
             "answer_display_mode": _text(row.get("answer_display_mode") or "all_in_one"),
             "assessment_enabled": bool(row.get("assessment_enabled")),
             "assessment_config": _json_dict(row.get("assessment_config")),
@@ -1034,13 +1042,13 @@ class PostgresQuestionnaireReadRepository:
                     row = conn.execute(
                         """
                         INSERT INTO questionnaires (
-                            slug, name, title, description, is_disabled, redirect_url,
+                            slug, name, title, description, is_disabled, redirect_url, completion_target_json,
                             answer_display_mode, assessment_enabled, assessment_config,
                             external_push_enabled, external_push_url, external_push_type, external_push_expires_at_ts,
                             external_push_day, external_push_frequency, external_push_remark, external_push_custom_params,
                             created_at, updated_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                         RETURNING id
                         """,
                         (
@@ -1050,6 +1058,7 @@ class PostgresQuestionnaireReadRepository:
                             normalized["description"],
                             normalized["is_disabled"],
                             normalized["redirect_url"],
+                            _jsonb(normalized["completion_target_json"]),
                             normalized["answer_display_mode"],
                             normalized["assessment_enabled"],
                             _jsonb(normalized["assessment_config"]),
@@ -1069,7 +1078,7 @@ class PostgresQuestionnaireReadRepository:
                         """
                         UPDATE questionnaires
                         SET slug = %s, name = %s, title = %s, description = %s, is_disabled = %s,
-                            redirect_url = %s, answer_display_mode = %s, assessment_enabled = %s,
+                            redirect_url = %s, completion_target_json = %s, answer_display_mode = %s, assessment_enabled = %s,
                             assessment_config = %s, external_push_enabled = %s, external_push_url = %s,
                             external_push_type = %s, external_push_expires_at_ts = %s, external_push_day = %s,
                             external_push_frequency = %s, external_push_remark = %s,
@@ -1083,6 +1092,7 @@ class PostgresQuestionnaireReadRepository:
                             normalized["description"],
                             normalized["is_disabled"],
                             normalized["redirect_url"],
+                            _jsonb(normalized["completion_target_json"]),
                             normalized["answer_display_mode"],
                             normalized["assessment_enabled"],
                             _jsonb(normalized["assessment_config"]),

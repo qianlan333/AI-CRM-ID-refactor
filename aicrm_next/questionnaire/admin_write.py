@@ -8,6 +8,7 @@ from uuid import uuid4
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
+from aicrm_next.navigation_target.service import normalize_completion_target_for_storage
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import admin_detail_projection, summary_projection
@@ -407,6 +408,7 @@ def _normalize_upsert_payload(payload: dict[str, Any]) -> dict[str, Any]:
         assessment_config = raw.get("result_config") or {}
     if not isinstance(assessment_config, dict):
         raise QuestionnaireAdminWriteInputError("assessment_config must be an object")
+    completion_target = normalize_completion_target_for_storage(raw, legacy_url_key="redirect_url")
     return {
         "slug": slug,
         "name": _normalized_text(raw.get("name") or title),
@@ -415,6 +417,7 @@ def _normalize_upsert_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "enabled": not is_disabled,
         "is_disabled": is_disabled,
         "redirect_url": _normalized_text(raw.get("redirect_url")),
+        "completion_target_json": completion_target,
         "submit_button_text": _normalized_text(raw.get("submit_button_text") or "提交"),
         "answer_display_mode": answer_display_mode,
         "assessment_enabled": _normalized_bool(raw.get("assessment_enabled")),

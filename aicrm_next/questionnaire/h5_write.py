@@ -16,7 +16,7 @@ from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
 from aicrm_next.shared.runtime import production_data_ready
 
-from .domain import score_and_tags, validate_required_answers
+from .domain import normalize_questionnaire, score_and_tags, validate_required_answers
 from .external_push import (
     deliver_questionnaire_external_push,
     plan_questionnaire_external_push_effect,
@@ -369,6 +369,7 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         tag_side_effect=tag_side_effect,
     )
     real_external_call_executed = bool(external_push_result.get("attempted")) if external_push_mode != "queue" else False
+    questionnaire_projection = normalize_questionnaire(item)
     return {
         "ok": True,
         "success": True,
@@ -386,6 +387,9 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         "score": score,
         "final_tags": final_tags,
         "redirect_url": item.get("redirect_url") or f"/s/{item['slug']}/submitted",
+        "completion_target": questionnaire_projection["completion_target"],
+        "completion_target_enabled": questionnaire_projection["completion_target_enabled"],
+        "completion_target_type": questionnaire_projection["completion_target_type"],
         "write_model_status": "submitted",
         "external_push": external_push_result,
         "external_push_mode": external_push_mode,

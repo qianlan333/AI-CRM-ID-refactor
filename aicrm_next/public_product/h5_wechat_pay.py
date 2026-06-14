@@ -15,6 +15,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from aicrm_next.commerce.domain import completion_redirect_projection, safe_completion_redirect_url
+from aicrm_next.navigation_target import completion_action_for_target, completion_target_projection
 from aicrm_next.commerce.external_push_outbox import enqueue_transaction_paid_outbox
 from aicrm_next.commerce.product_code_aliases import product_code_filter_values
 from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
@@ -258,6 +259,7 @@ def checkout_page_state(product: dict[str, Any], request: Request) -> dict[str, 
         "enabled": _env_bool("WECHAT_PAY_ENABLED", False),
         "require_mobile": bool(product.get("require_mobile")),
         "cta_text": _normalized_text(product.get("buy_button_text")) or "确认支付",
+        "completion_target": product.get("completion_target") or {},
         "completion_action": product.get("completion_action") or {"type": "default", "redirect_url": ""},
         "paid_order": paid_order,
         "price_display": format_price(product),
@@ -347,16 +349,30 @@ def _is_order_effectively_paid(row: dict[str, Any]) -> bool:
 
 
 def _completion_redirect_from_product(product: dict[str, Any]) -> dict[str, Any]:
-    return completion_redirect_projection(
+    completion_redirect = completion_redirect_projection(
         product.get("completion_redirect_enabled"),
         product.get("completion_redirect_url"),
     )
+    completion_target = completion_target_projection(
+        product.get("completion_target_json") if product.get("completion_target_json") is not None else product.get("completion_target"),
+        legacy_h5_url=completion_redirect.get("completion_redirect_url"),
+        legacy_enabled=completion_redirect.get("completion_redirect_enabled"),
+    )
+    return {
+        **completion_redirect,
+        **completion_target,
+        "completion_action": completion_action_for_target(
+            completion_target["completion_target"],
+            legacy_redirect_url=completion_redirect.get("completion_redirect_url"),
+            legacy_enabled=completion_redirect.get("completion_redirect_enabled"),
+        ),
+    }
 
 
 def _completion_redirect_for_product_code(conn: Any, product_code: str) -> dict[str, Any]:
     row = conn.execute(
         """
-        SELECT completion_redirect_enabled, completion_redirect_url
+        SELECT completion_redirect_enabled, completion_redirect_url, completion_target_json
         FROM wechat_pay_products
         WHERE product_code = %s
         LIMIT 1
@@ -365,7 +381,7 @@ def _completion_redirect_for_product_code(conn: Any, product_code: str) -> dict[
     ).fetchone()
     if not row:
         return completion_redirect_projection(False, "")
-    return completion_redirect_projection(row.get("completion_redirect_enabled"), row.get("completion_redirect_url"))
+    return _completion_redirect_from_product(dict(row))
 
 
 def _lead_qr_payload(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -522,6 +538,17 @@ def _order_payload(
     completion = dict(effective_completion.get("completion_redirect") or {})
     completion_url = safe_completion_redirect_url(completion.get("url") or effective_completion.get("completion_redirect_url"))
     completion_enabled = bool(completion.get("enabled")) and bool(completion_url)
+    completion_target = (effective_completion.get("completion_target") or effective_completion.get("completion_target_json") or {}) if isinstance(effective_completion, dict) else {}
+    target_enabled = bool(completion_target.get("enabled")) if isinstance(completion_target, dict) else False
+    completion_action = (
+        completion_action_for_target(
+            completion_target,
+            legacy_redirect_url=completion_url,
+            legacy_enabled=completion_enabled,
+        )
+        if isinstance(completion_target, dict) and completion_target
+        else ({"type": "redirect", "redirect_url": completion_url} if completion_enabled else {"type": "default", "redirect_url": ""})
+    )
     status = _normalized_text(row.get("status"))
     if _is_order_fully_refunded(row):
         status = "full_refunded"
@@ -541,9 +568,10 @@ def _order_payload(
         "completion_redirect_enabled": bool(effective_completion.get("completion_redirect_enabled")),
         "completion_redirect_url": completion_url,
         "completion_redirect": {"enabled": completion_enabled, "url": completion_url if completion_enabled else ""},
-        "completion_action": {"type": "redirect", "redirect_url": completion_url} if completion_enabled else {"type": "default", "redirect_url": ""},
+        "completion_target": completion_target if isinstance(completion_target, dict) else {},
+        "completion_action": completion_action,
     }
-    if _is_order_effectively_paid(row) and not completion_enabled and lead_qr and lead_qr.get("qr_url"):
+    if _is_order_effectively_paid(row) and not completion_enabled and not target_enabled and lead_qr and lead_qr.get("qr_url"):
         payload["lead_qr"] = lead_qr
         payload["completion_action"] = {"type": "lead_qr", "redirect_url": ""}
     return payload
