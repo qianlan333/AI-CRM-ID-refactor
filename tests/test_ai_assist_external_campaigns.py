@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from aicrm_next.ai_assist import external_campaigns as service
+from aicrm_next.platform_foundation.external_effects import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, ExternalEffectService, reset_external_effect_fixture_state
 
 
 def _json_response_payload(response: Any) -> dict[str, Any]:
@@ -251,19 +252,24 @@ def test_external_campaign_token_required(monkeypatch) -> None:
 
 
 def test_external_campaign_dry_run_preview_no_write() -> None:
+    reset_external_effect_fixture_state()
     repo = _repo_with_target()
     result = service.create_external_campaigns(_payload(dry_run=True), repo=repo)
+    _items, total = ExternalEffectService().list_jobs({"effect_type": AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK})
 
     assert result["ok"] is True
     assert result["dry_run"] is True
     assert result["side_effect_executed"] is False
     assert result["campaigns"][0]["would_create"] is True
     assert repo.write_calls == []
+    assert total == 0
 
 
 def test_external_campaign_create_single_recipient_success() -> None:
+    reset_external_effect_fixture_state()
     repo = _repo_with_target()
     result = service.create_external_campaigns(_payload(), repo=repo)
+    _items, total = ExternalEffectService().list_jobs({"effect_type": AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK})
 
     campaign = result["campaigns"][0]
     assert campaign["status"] == "created"
@@ -281,6 +287,7 @@ def test_external_campaign_create_single_recipient_success() -> None:
         "submit_campaign_for_review",
     ]
     assert repo.real_outbound_send_called is False
+    assert total == 0
 
 
 def test_external_campaign_allows_attachment_only_step() -> None:
