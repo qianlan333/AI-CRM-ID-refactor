@@ -10,6 +10,7 @@ from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import (
     GROUP_OPS_MESSAGE_LOOPBACK,
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
+    WECOM_MESSAGE_GROUP_SEND,
 )
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.test_receiver import (
@@ -21,6 +22,7 @@ from aicrm_next.platform_foundation.external_effects.models import public_dateti
 from .domain import clean_text, mask_sensitive_payload
 
 GROUP_OPS_OUTBOUND_MODES = {"legacy", "shadow", "external_effect"}
+GROUP_OPS_EXTERNAL_EFFECT_SEND_MODES = {"loopback", "wecom_group"}
 GROUP_OPS_EFFECT_ACTION_TYPES = {
     "enqueue",
     "publish_task",
@@ -34,6 +36,11 @@ GROUP_OPS_EFFECT_ACTION_TYPES = {
 def group_ops_outbound_mode() -> str:
     mode = clean_text(os.getenv("AICRM_GROUP_OPS_OUTBOUND_MODE") or "shadow").lower()
     return mode if mode in GROUP_OPS_OUTBOUND_MODES else "shadow"
+
+
+def group_ops_external_effect_send_mode() -> str:
+    mode = clean_text(os.getenv("AICRM_GROUP_OPS_EXTERNAL_EFFECT_SEND_MODE") or "loopback").lower()
+    return mode if mode in GROUP_OPS_EXTERNAL_EFFECT_SEND_MODES else "loopback"
 
 
 def group_ops_effect_action_type(action_type: str) -> bool:
@@ -108,6 +115,8 @@ def plan_group_ops_external_effect(
     content_summary: str = "",
     content_payload: dict[str, Any] | None = None,
     operator_member_id: str = "",
+    owner_userid: str = "",
+    webhook_key: str = "",
     source_module: str = "automation_engine.group_ops",
     source_route: str = "",
     source_event_id: str = "",
@@ -122,6 +131,15 @@ def plan_group_ops_external_effect(
     mode = clean_text(outbound_mode or group_ops_outbound_mode()).lower()
     if mode == "legacy" and not force_shadow:
         return None
+    send_mode = group_ops_external_effect_send_mode()
+    if (
+        effect_type == GROUP_OPS_MESSAGE_LOOPBACK
+        and mode == "external_effect"
+        and not force_shadow
+        and not test_loopback
+        and send_mode == "wecom_group"
+    ):
+        effect_type = WECOM_MESSAGE_GROUP_SEND
     execution_mode = "shadow"
     status = "planned"
     if mode == "external_effect" and not force_shadow:
@@ -142,6 +160,8 @@ def plan_group_ops_external_effect(
         "content_summary": clean_text(content_summary)[:500],
         "content_payload": content_payload_summary(content_payload),
         "operator_member_id": clean_text(operator_member_id),
+        "owner_userid": clean_text(owner_userid) or clean_text(operator_member_id),
+        "webhook_key": clean_text(webhook_key),
         "test_only": bool(test_loopback),
     }
     payload: dict[str, Any] = {
@@ -153,6 +173,10 @@ def plan_group_ops_external_effect(
         "content_summary": clean_text(content_summary)[:500],
         "content_payload": content_payload_redacted,
         "operator_member_id": clean_text(operator_member_id),
+        "owner_userid": clean_text(owner_userid) or clean_text(operator_member_id),
+        "webhook_key": clean_text(webhook_key),
+        "mention_all": False,
+        "is_mention_all": False,
         "wecom_send_executed": False,
     }
     if test_loopback and clean_text(test_receiver_base_url):
@@ -171,6 +195,8 @@ def plan_group_ops_external_effect(
         "content_summary": clean_text(content_summary)[:200],
         "content_payload": content_payload_summary(content_payload),
         "operator_member_id_present": bool(clean_text(operator_member_id)),
+        "owner_userid_present": bool(clean_text(owner_userid) or clean_text(operator_member_id)),
+        "webhook_key": clean_text(webhook_key),
         "execution_scope": payload.get("execution_scope", ""),
         "receiver_response_status": payload.get("receiver_response_status", 0),
         "expected_payload_hash": payload.get("expected_payload_hash", ""),
@@ -192,8 +218,8 @@ def plan_group_ops_external_effect(
     try:
         return ExternalEffectService().plan_effect(
             effect_type=effect_type,
-            adapter_name="outbound_webhook",
-            operation="post",
+            adapter_name="wecom_group_message" if effect_type == WECOM_MESSAGE_GROUP_SEND else "outbound_webhook",
+            operation="send_group_message" if effect_type == WECOM_MESSAGE_GROUP_SEND else "post",
             target_type=target_type,
             target_id=clean_text(target_id) or clean_text(node_id) or clean_text(trigger_event_id) or str(plan_id),
             business_type="group_ops_plan",
@@ -228,6 +254,8 @@ def plan_group_ops_action_effect(
     operator_member_id: str,
     source_route: str,
     idempotency_key: str,
+    owner_userid: str = "",
+    webhook_key: str = "",
     outbound_mode: str | None = None,
     test_loopback: bool = False,
     test_receiver_base_url: str = "",
@@ -251,6 +279,8 @@ def plan_group_ops_action_effect(
         content_summary=clean_text(action.get("content") or action.get("title") or action_type),
         content_payload={"action": action, "recipient": recipient},
         operator_member_id=operator_member_id,
+        owner_userid=clean_text(owner_userid) or operator_member_id,
+        webhook_key=webhook_key,
         source_module="automation_engine.group_ops.webhook",
         source_route=source_route,
         source_event_id=trigger_event_id,

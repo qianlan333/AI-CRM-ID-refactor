@@ -15,6 +15,7 @@ from .models import (
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+    WECOM_MESSAGE_GROUP_SEND,
     WECOM_MESSAGE_PRIVATE_SEND,
     ExternalEffectDispatchResult,
     ExternalEffectJob,
@@ -51,6 +52,18 @@ def webhook_execution_settings() -> dict[str, Any]:
         "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE"),
         "allowed_types": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")),
         "supported_types": sorted(LOW_RISK_WEBHOOK_EFFECT_TYPES),
+    }
+
+
+def wecom_execution_settings() -> dict[str, Any]:
+    return {
+        "enabled": _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"),
+        "allowed_types": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")),
+        "allowed_target_external_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")),
+        "allowed_group_ops_webhook_keys": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS")),
+        "allowed_owner_userids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")),
+        "allowed_group_chat_ids": sorted(_csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")),
+        "supported_types": [WECOM_MESSAGE_PRIVATE_SEND, WECOM_MESSAGE_GROUP_SEND],
     }
 
 
@@ -334,12 +347,144 @@ class WeComPrivateMessageAdapter:
         return ""
 
 
+class WeComGroupMessageExternalEffectAdapter:
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        gate_error = self._execution_gate_error(job, payload)
+        request_summary = self._request_summary(job, payload)
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="blocked",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wecom_send_executed": False,
+                },
+                error_code=gate_error,
+                error_message="WeCom group message adapter execution is blocked by external effect gates.",
+                real_external_call_executed=False,
+            )
+
+        wecom_payload = self._wecom_payload(payload)
+        try:
+            from aicrm_next.integration_gateway.wecom_group_adapter import build_wecom_group_message_adapter
+
+            result = build_wecom_group_message_adapter().create_group_message_task(
+                wecom_payload,
+                idempotency_key=job.idempotency_key or job.trace_id or str(job.id),
+            )
+        except Exception as exc:
+            return ExternalEffectDispatchResult(
+                status="failed_retryable",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={"real_external_call_executed": True, "wecom_send_executed": False},
+                error_code="network_error",
+                error_message=str(exc),
+                real_external_call_executed=True,
+            )
+
+        response_summary = {
+            "adapter": result.get("adapter"),
+            "mode": result.get("mode"),
+            "operation": result.get("operation"),
+            "audit_id": result.get("audit_id"),
+            "requested_chat_count": int(result.get("requested_chat_count") or len(list(result.get("requested_chat_ids") or []))),
+            "exact_target_required": bool(result.get("exact_target_required")),
+            "exact_target_verified": bool(result.get("exact_target_verified")),
+            "wecom_msgid_present": bool(str(result.get("wecom_msgid") or "").strip()),
+            "real_external_call_executed": bool(result.get("side_effect_executed")),
+            "wecom_send_executed": bool(result.get("side_effect_executed")),
+        }
+        if result.get("ok") and result.get("exact_target_verified") is True:
+            return ExternalEffectDispatchResult(
+                status="succeeded",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary=response_summary,
+                real_external_call_executed=bool(result.get("side_effect_executed")),
+            )
+        error_code = str(result.get("error_code") or "wecom_group_message_failed").strip()
+        return ExternalEffectDispatchResult(
+            status="failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code,
+            error_message=str(result.get("error_message") or error_code)[:500],
+            real_external_call_executed=bool(result.get("side_effect_executed")),
+        )
+
+    def _request_summary(self, job: ExternalEffectJob, payload: dict[str, Any]) -> dict[str, Any]:
+        chat_ids = self._chat_ids(payload)
+        return {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "webhook_key": str(payload.get("webhook_key") or ""),
+            "owner_userid": str(payload.get("owner_userid") or payload.get("sender") or ""),
+            "chat_count": len(chat_ids),
+            "mention_all": bool(payload.get("mention_all") or payload.get("is_mention_all")),
+            "content_text_length": len(str(((payload.get("content_payload") or {}).get("text") or {}).get("content") or "")),
+        }
+
+    def _execution_gate_error(self, job: ExternalEffectJob, payload: dict[str, Any]) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type != WECOM_MESSAGE_GROUP_SEND:
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return "execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        webhook_key = str(payload.get("webhook_key") or "").strip()
+        allowed_webhook_keys = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS")
+        if not webhook_key or webhook_key not in allowed_webhook_keys:
+            return "group_ops_webhook_key_not_allowed"
+        owner = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
+        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
+        if not owner or owner not in allowed_owners:
+            return "owner_userid_not_allowed"
+        if payload.get("mention_all") is True or payload.get("is_mention_all") is True:
+            return "mention_all_blocked"
+        chat_ids = self._chat_ids(payload)
+        if len(chat_ids) != 1:
+            return "single_group_required"
+        allowed_chat_ids = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS")
+        if allowed_chat_ids and any(chat_id not in allowed_chat_ids for chat_id in chat_ids):
+            return "group_chat_id_not_allowed"
+        content_payload = payload.get("content_payload")
+        if not isinstance(content_payload, dict):
+            return "payload_invalid"
+        text = content_payload.get("text") if isinstance(content_payload.get("text"), dict) else {}
+        attachments = content_payload.get("attachments") if isinstance(content_payload.get("attachments"), list) else []
+        if not str(text.get("content") or "").strip() and not attachments:
+            return "payload_invalid"
+        return ""
+
+    def _chat_ids(self, payload: dict[str, Any]) -> list[str]:
+        return [str(item or "").strip() for item in list(payload.get("chat_ids") or []) if str(item or "").strip()]
+
+    def _wecom_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        content_payload = dict(payload.get("content_payload") or {})
+        result = dict(content_payload)
+        result["sender"] = str(payload.get("owner_userid") or payload.get("sender") or content_payload.get("sender") or "").strip()
+        result["chat_ids"] = self._chat_ids(payload)
+        return result
+
+
 class ExternalEffectAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ExternalEffectAdapter] = {
             "outbound_webhook": WebhookAdapter(),
             "webhook": WebhookAdapter(),
             "wecom_private_message": WeComPrivateMessageAdapter(),
+            "wecom_group_message": WeComGroupMessageExternalEffectAdapter(),
         }
         self._disabled = DisabledAdapter()
 

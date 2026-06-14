@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
-from .models import ExternalEffectJob
+from .models import WECOM_MESSAGE_GROUP_SEND, ExternalEffectJob
 from .repo import ExternalEffectRepository, build_external_effect_repository
 from .retry_policy import next_retry_at, status_for_failure
 
@@ -53,6 +53,16 @@ class ExternalEffectWorker:
             payload = self.preview_due(batch_size=batch_size, effect_types=effect_types, test_only=test_only)
             payload["dry_run"] = True
             return payload
+        if WECOM_MESSAGE_GROUP_SEND in set(effect_types or []) and int(batch_size or 0) != 1:
+            return {
+                "ok": False,
+                "error": "batch_size_one_required",
+                "items": [],
+                "counts": {"candidate_count": 0, "processed_count": 0, "succeeded_count": 0, "failed_count": 0, "blocked_count": 0},
+                "dry_run": False,
+                "test_only": bool(test_only),
+                "real_external_call_executed": False,
+            }
         if _enabled("AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY") and not test_only:
             return {
                 "ok": False,
