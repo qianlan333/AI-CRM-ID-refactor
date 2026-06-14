@@ -509,6 +509,7 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
             lead_channel_id BIGINT,
             completion_redirect_enabled BOOLEAN NOT NULL DEFAULT FALSE,
             completion_redirect_url TEXT NOT NULL DEFAULT '',
+            completion_target_json JSONB,
             metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -521,6 +522,10 @@ def _bootstrap_next_test_baseline_schema(url: str) -> None:
         """
         ALTER TABLE wechat_pay_products
         ADD COLUMN IF NOT EXISTS completion_redirect_url TEXT NOT NULL DEFAULT ''
+        """,
+        """
+        ALTER TABLE wechat_pay_products
+        ADD COLUMN IF NOT EXISTS completion_target_json JSONB
         """,
         """
         CREATE TABLE IF NOT EXISTS wechat_pay_orders (

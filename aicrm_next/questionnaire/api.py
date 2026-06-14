@@ -274,6 +274,7 @@ def _h5_write_error(
     write_model_status: str,
     degraded: bool = False,
     error_code: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         {
@@ -286,6 +287,7 @@ def _h5_write_error(
             "fallback_used": False,
             "real_external_call_executed": False,
             "degraded": degraded,
+            **(extra or {}),
         },
         status_code=status_code,
     )
@@ -410,7 +412,24 @@ async def _execute_h5_submit(request: Request, slug: str) -> Response:
             error_code="invalid_questionnaire_submission",
         )
     except QuestionnaireH5AlreadySubmittedError as exc:
-        return _h5_write_error(str(exc), status_code=409, source_status="already_submitted", write_model_status="already_submitted")
+        status_payload: dict[str, Any] = {}
+        try:
+            identity_result = _questionnaire_identity_result_from_request(request)
+            status_payload = GetPublicQuestionnaireSubmissionStatusQuery()(slug, identity=identity_result["identity"])
+        except Exception:
+            status_payload = {}
+        return _h5_write_error(
+            str(exc),
+            status_code=409,
+            source_status="already_submitted",
+            write_model_status="already_submitted",
+            extra={
+                "redirect_url": status_payload.get("redirect_url") or status_payload.get("submitted_url"),
+                "completion_target": status_payload.get("completion_target"),
+                "completion_target_enabled": status_payload.get("completion_target_enabled"),
+                "completion_target_type": status_payload.get("completion_target_type"),
+            },
+        )
     except QuestionnaireH5WriteNotFoundError as exc:
         return _h5_write_error(str(exc), status_code=404, source_status="not_found", write_model_status="not_found")
     except QuestionnaireH5WriteProductionUnavailableError as exc:
@@ -753,6 +772,9 @@ def public_get_questionnaire(request: Request, slug: str) -> Response:
                     "error": "already_submitted",
                     "message": "已经提交过该问卷",
                     "redirect_url": submission_status.get("redirect_url") or submission_status.get("submitted_url"),
+                    "completion_target": submission_status.get("completion_target"),
+                    "completion_target_enabled": submission_status.get("completion_target_enabled"),
+                    "completion_target_type": submission_status.get("completion_target_type"),
                 },
                 status_code=409,
             ), identity_result)
@@ -968,6 +990,9 @@ def public_questionnaire_h5_page(request: Request, slug: str):
         "api_url": f"/api/h5/questionnaires/{slug}",
         "diagnostics_url": f"/api/h5/questionnaires/{slug}/client-diagnostics",
         "submitted_url": f"/s/{slug}/submitted",
+        "completion_target": questionnaire.get("completion_target") or {},
+        "completion_target_enabled": bool(questionnaire.get("completion_target_enabled")),
+        "completion_target_type": questionnaire.get("completion_target_type") or "h5",
         "request_hints": request_hints,
         "initial_questionnaire": {**questionnaire, "questions": questions} if page_mode == "questionnaire" else None,
         "answer_display_mode": questionnaire.get("answer_display_mode") or "all_in_one",
