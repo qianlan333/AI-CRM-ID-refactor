@@ -10,10 +10,11 @@ def test_product_editor_toggles_are_persisted_business_enablement_controls() -> 
     text = TEMPLATE.read_text(encoding="utf-8")
 
     assert "展开配置" not in text
-    assert "let afterActionEnabled = Boolean(product.completion_redirect_enabled || product.lead_channel_id);" in text
-    assert "setAfterActionEnabled(Boolean(product.completion_redirect_enabled || product.lead_channel_id));" in text
+    assert "let afterActionEnabled = Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id);" in text
+    assert "setAfterActionEnabled(Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id));" in text
     assert 'lead_channel_id: afterActionEnabled && afterActionMode === "lead"' in text
-    assert 'const enabled = afterActionEnabled && afterActionMode === "redirect";' in text
+    assert 'const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.target_type === "h5";' in text
+    assert "completion_target: completionTarget" in text
     assert "setExternalPushActive(Boolean(externalPush.enabled));" in text
     assert "enabled: Boolean(externalPush.enabled)," in text
     assert "externalPushEnabled" not in text
