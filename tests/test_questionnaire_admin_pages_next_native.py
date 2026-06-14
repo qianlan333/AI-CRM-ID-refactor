@@ -74,3 +74,28 @@ def test_questionnaire_admin_templates_live_in_questionnaire_bundle() -> None:
     assert (root / "aicrm_next/questionnaire/templates/admin_questionnaires.html").exists()
     assert not (root / "aicrm_next/frontend_compat/templates/admin_console/questionnaires.html").exists()
     assert not (root / "aicrm_next/frontend_compat/templates/admin_questionnaires.html").exists()
+
+
+def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> None:
+    root = Path(__file__).resolve().parents[1]
+    templates = [
+        root / "aicrm_next/questionnaire/templates/admin_questionnaires.html",
+        root / "aicrm_next/frontend_compat/templates/admin_console/questionnaire_detail.html",
+    ]
+
+    for template in templates:
+        text = template.read_text(encoding="utf-8")
+        assert "提交后动作" in text
+        assert "跳转 H5 页面" in text
+        assert "打开微信小程序" in text
+        assert "splitMiniProgramPathInput" in text
+
+        assert "field-redirect-url" not in text
+        assert "v2-basic-redirect" not in text
+        assert "completion_open_strategy" not in text
+        assert "data-open-strategy" not in text
+        assert "mini_program_query" not in text
+        assert "mini_program_url_link" not in text
+        assert "data-url-link-fields" not in text
+        assert "打开小程序 URL Link" not in text
+        assert "URL Link 兜底" not in text

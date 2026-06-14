@@ -73,7 +73,24 @@
   .product-share-input { min-width: 0; height: 42px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; color: var(--text); padding: 0 12px; }
   .product-share-qr-wrap { display: grid; justify-items: center; gap: 10px; }
   .product-share-qr { width: 220px; height: 220px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 12px; }
-  @media (max-width: 980px) { .product-edit-top, .product-field-grid, .product-option-grid, .product-share-row, .product-upload-row { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; } .product-side { position: static; } }
+  .target-card { max-width: 760px; border: 1px solid #e5e6eb; border-radius: 12px; background: #ffffff; padding: 20px; }
+  .target-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+  .target-title { margin: 0; font-size: 18px; font-weight: 800; }
+  .target-desc { margin: 6px 0 0; color: #86909c; font-size: 13px; line-height: 1.6; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: #1f2329; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .switch input { width: 18px; height: 18px; }
+  .target-body[hidden] { display: none; }
+  .target-card .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .target-card .field { display: grid; gap: 7px; }
+  .target-card .field.full { grid-column: 1 / -1; }
+  .target-card .field label { color: #1f2329; font-size: 13px; font-weight: 700; }
+  .target-card .field small { color: #86909c; line-height: 1.5; }
+  .target-card input, .target-card select, .target-card textarea { width: 100%; min-height: 40px; border: 1px solid #e5e6eb; border-radius: 8px; padding: 9px 10px; background: #fff; color: #1f2329; font: inherit; outline: none; }
+  .target-card textarea { min-height: 72px; resize: vertical; }
+  .target-card input:focus, .target-card select:focus, .target-card textarea:focus { border-color: #3370ff; box-shadow: 0 0 0 3px rgba(51, 112, 255, .12); }
+  .mode-note { margin-top: 14px; padding: 12px; border-radius: 8px; background: #f2f5ff; color: #2451c6; font-size: 13px; line-height: 1.6; }
+  .warning { margin-top: 12px; color: #f53f3f; font-size: 13px; line-height: 1.6; }
+  @media (max-width: 980px) { .product-edit-top, .product-field-grid, .product-option-grid, .product-share-row, .product-upload-row { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; } .product-side { position: static; } .target-card .field-grid { grid-template-columns: 1fr; } .target-head { flex-direction: column; } }
 </style>
 {% endblock %}
 
@@ -243,11 +260,75 @@
                 <label for="leadChannel">引流渠道码</label>
                 <select id="leadChannel"></select>
               </div>
-              <div class="product-field">
-                <label for="completionRedirectUrl">跳转链接</label>
-                <input id="completionRedirectUrl" placeholder="https://example.com/welcome">
-              </div>
             </div>
+            <section class="target-card" data-completion-target-config>
+              <div class="target-head">
+                <div>
+                  <h2 class="target-title">支付成功后动作</h2>
+                  <p class="target-desc">
+                    用于问卷提交成功后 / 支付成功后。关闭时保持原来的 H5 跳转；打开后可以优先打开小程序，并保留 H5 兜底。
+                  </p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" name="completion_target_enabled" data-target-enabled>
+                  启用
+                </label>
+              </div>
+
+              <div class="target-body" data-target-body hidden>
+                <div class="field-grid">
+                  <div class="field">
+                    <label>完成后动作类型</label>
+                    <select name="completion_target_type" data-target-type>
+                      <option value="h5">跳转 H5 页面</option>
+                      <option value="mini_program">打开微信小程序</option>
+                    </select>
+                  </div>
+
+                  <div class="field full" data-h5-fields>
+                    <label>H5 跳转地址</label>
+                    <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path">
+                    <small>用于普通跳转，也作为小程序打开失败时的兜底。</small>
+                  </div>
+
+                  <div class="field" data-mini-fields>
+                    <label>小程序 AppID</label>
+                    <input name="mini_program_appid" placeholder="wx1234567890abcdef">
+                  </div>
+
+                  <div class="field" data-mini-fields>
+                    <label>小程序原始 ID</label>
+                    <input name="mini_program_username" placeholder="gh_xxxxxxxxxxxx">
+                    <small>wx-open-launch-weapp 推荐使用 gh_ 开头的原始 ID。</small>
+                  </div>
+
+                  <div class="field full" data-mini-fields>
+                    <label>小程序页面路径</label>
+                    <input name="mini_program_path" placeholder="/pages/index/index?id=123">
+                  </div>
+
+                  <div class="field" data-mini-fields>
+                    <label>小程序环境</label>
+                    <select name="mini_program_env_version">
+                      <option value="release">正式版 release</option>
+                      <option value="trial">体验版 trial</option>
+                      <option value="develop">开发版 develop</option>
+                    </select>
+                  </div>
+
+                  <div class="field full">
+                    <label>兜底链接</label>
+                    <input name="completion_fallback_url" placeholder="https://example.com/fallback 或 /fallback">
+                    <small>非微信环境、小程序打开失败、开放标签不可用时使用。</small>
+                  </div>
+                </div>
+
+                <div class="mode-note" data-mode-note>
+                  当前为 H5 普通跳转模式。
+                </div>
+                <div class="warning" data-validation-warning hidden></div>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -356,6 +437,7 @@
     require_mobile: false,
     completion_redirect_enabled: false,
     completion_redirect_url: "",
+    completion_target: null,
     slices: []
   }, initialProduct);
   let externalPush = { enabled: false, webhook_url: "", push_type: "", expires_at_ts: "", day: "", frequency: "", remark: "", custom_params: {} };
@@ -363,7 +445,7 @@
   let dragId = "";
   let activeShareUrl = "";
   let shareInfo = null;
-  let afterActionEnabled = Boolean(product.completion_redirect_enabled || product.lead_channel_id);
+  let afterActionEnabled = Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id);
   let afterActionMode = product.completion_redirect_enabled ? "redirect" : "lead";
 
   function $(id) { return document.getElementById(id); }
@@ -404,6 +486,136 @@
     document.querySelectorAll("[data-after-mode]").forEach(option => {
       option.classList.toggle("active", option.dataset.afterMode === afterActionMode);
     });
+  }
+  function defaultCompletionTarget(url = "") {
+    const h5Url = String(url || "").trim();
+    return {
+      enabled: Boolean(h5Url),
+      target_type: "h5",
+      open_strategy: "h5_redirect",
+      h5_url: h5Url,
+      fallback_url: "",
+      mini_program: { appid: "", username: "", path: "", query: "", env_version: "release" },
+      url_link: { enabled: false, url: "", expire_type: 0, expire_interval: 30 }
+    };
+  }
+  function normalizeCompletionTarget(value, fallbackUrl = "") {
+    const base = defaultCompletionTarget(fallbackUrl);
+    const target = Object.assign({}, base, value || {});
+    target.mini_program = Object.assign({}, base.mini_program, target.mini_program || {});
+    target.url_link = Object.assign({}, base.url_link, target.url_link || {});
+    if (target.target_type !== "mini_program") target.target_type = "h5";
+    target.open_strategy = target.target_type === "mini_program" ? "wechat_open_tag" : "h5_redirect";
+    target.url_link.enabled = false;
+    return target;
+  }
+  function miniProgramPathDisplay(mini) {
+    const path = String((mini && mini.path) || "");
+    const query = String((mini && mini.query) || "");
+    return path + (query ? `?${query}` : "");
+  }
+  function splitMiniProgramPathInput(value) {
+    const raw = String(value || "").trim();
+    const index = raw.indexOf("?");
+    if (index < 0) return { path: raw, query: "" };
+    return { path: raw.slice(0, index), query: raw.slice(index + 1) };
+  }
+  function mountCompletionTargetConfig(root, initialValue) {
+    const enabledEl = root.querySelector("[data-target-enabled]");
+    const bodyEl = root.querySelector("[data-target-body]");
+    const typeEl = root.querySelector("[data-target-type]");
+    const noteEl = root.querySelector("[data-mode-note]");
+    const warningEl = root.querySelector("[data-validation-warning]");
+    const fieldGroups = {
+      h5: root.querySelectorAll("[data-h5-fields]"),
+      mini: root.querySelectorAll("[data-mini-fields]")
+    };
+    function setGroupVisible(nodes, visible) {
+      nodes.forEach(node => { node.hidden = !visible; });
+    }
+    function syncVisibility() {
+      const enabled = enabledEl.checked;
+      const type = typeEl.value;
+      bodyEl.hidden = !enabled;
+      setGroupVisible(fieldGroups.h5, enabled && type === "h5");
+      setGroupVisible(fieldGroups.mini, enabled && type === "mini_program");
+      if (!enabled) {
+        noteEl.textContent = "当前未启用，保存后保持原有跳转逻辑。";
+        return;
+      }
+      if (type === "mini_program") {
+        noteEl.textContent = "微信内优先使用开放标签打开小程序；失败时使用兜底链接。";
+        return;
+      }
+      noteEl.textContent = "提交/支付成功后跳转 H5 页面。";
+    }
+    function fill(initial) {
+      const target = normalizeCompletionTarget(initial, product.completion_redirect_url || "");
+      const mini = target.mini_program || {};
+      enabledEl.checked = Boolean(target.enabled);
+      typeEl.value = target.target_type || "h5";
+      root.querySelector('[name="completion_h5_url"]').value = target.h5_url || "";
+      root.querySelector('[name="completion_fallback_url"]').value = target.fallback_url || "";
+      root.querySelector('[name="mini_program_appid"]').value = mini.appid || "";
+      root.querySelector('[name="mini_program_username"]').value = mini.username || "";
+      root.querySelector('[name="mini_program_path"]').value = miniProgramPathDisplay(mini);
+      root.querySelector('[name="mini_program_env_version"]').value = mini.env_version || "release";
+      syncVisibility();
+    }
+    root.collectCompletionTarget = function collectCompletionTarget(options = {}) {
+      const validate = options.validate !== false;
+      const enabled = enabledEl.checked;
+      const type = typeEl.value;
+      const miniPath = splitMiniProgramPathInput(root.querySelector('[name="mini_program_path"]').value);
+      const payload = {
+        enabled,
+        target_type: type,
+        open_strategy: type === "mini_program" ? "wechat_open_tag" : "h5_redirect",
+        h5_url: root.querySelector('[name="completion_h5_url"]').value.trim(),
+        fallback_url: root.querySelector('[name="completion_fallback_url"]').value.trim(),
+        mini_program: {
+          appid: root.querySelector('[name="mini_program_appid"]').value.trim(),
+          username: root.querySelector('[name="mini_program_username"]').value.trim(),
+          path: miniPath.path,
+          query: miniPath.query,
+          env_version: root.querySelector('[name="mini_program_env_version"]').value
+        },
+        url_link: {
+          enabled: false,
+          url: ""
+        }
+      };
+      warningEl.hidden = true;
+      warningEl.textContent = "";
+      if (validate && enabled && type === "mini_program") {
+        const mini = payload.mini_program;
+        if (!mini.username && !mini.appid) {
+          warningEl.textContent = "请填写小程序原始 ID 或 AppID。";
+          warningEl.hidden = false;
+          throw new Error(warningEl.textContent);
+        }
+        if (!mini.path || mini.path[0] !== "/") {
+          warningEl.textContent = "小程序页面路径必须以 / 开头。";
+          warningEl.hidden = false;
+          throw new Error(warningEl.textContent);
+        }
+      }
+      return payload;
+    };
+    root.addEventListener("input", () => {
+      product.completion_target = root.collectCompletionTarget({ validate: false });
+      if (product.completion_target.target_type === "h5") {
+        product.completion_redirect_url = product.completion_target.h5_url || "";
+      }
+    });
+    root.addEventListener("change", () => {
+      syncVisibility();
+      product.completion_target = root.collectCompletionTarget({ validate: false });
+      if (product.completion_target.target_type === "h5") {
+        product.completion_redirect_url = product.completion_target.h5_url || "";
+      }
+    });
+    fill(initialValue);
   }
   async function copyText(text) {
     const value = String(text || "");
@@ -493,21 +705,27 @@
     $("requireMobile").value = product.require_mobile ? "true" : "false";
     $("productDescription").value = product.description || "";
     $("leadChannel").value = String(product.lead_channel_id || 0);
-    $("completionRedirectUrl").value = product.completion_redirect_url || "";
-    setAfterActionEnabled(Boolean(product.completion_redirect_enabled || product.lead_channel_id));
+    setAfterActionEnabled(Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id));
     selectAfterActionMode(product.completion_redirect_enabled ? "redirect" : "lead");
+    const targetRoot = document.querySelector("[data-completion-target-config]");
+    if (targetRoot) mountCompletionTargetConfig(targetRoot, product.completion_target || defaultCompletionTarget(product.completion_redirect_url || ""));
     renderSlices();
   }
 
   function completionRedirectPayload() {
-    const enabled = afterActionEnabled && afterActionMode === "redirect";
-    const url = String($("completionRedirectUrl").value || "").trim();
-    const isSafeInternalPath = /^\/(?!\/)[^\s\\]*$/.test(url);
-    if (enabled && !url) throw new Error("请填写跳转链接");
-    if (enabled && !/^https:\/\/[^/\s?#]+/i.test(url) && !isSafeInternalPath) throw new Error("跳转链接格式不合法");
+    const targetRoot = document.querySelector("[data-completion-target-config]");
+    const completionTarget = targetRoot && targetRoot.collectCompletionTarget
+      ? targetRoot.collectCompletionTarget()
+      : normalizeCompletionTarget(product.completion_target, product.completion_redirect_url || "");
+    if (!afterActionEnabled) completionTarget.enabled = false;
+    const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.target_type === "h5";
+    const targetUrl = completionTarget.target_type === "h5" ? completionTarget.h5_url : "";
+    if (enabled && !targetUrl) throw new Error("请填写 H5 跳转地址");
+    if (enabled && !/^https:\/\/[^/\s?#]+/i.test(targetUrl) && !/^\/(?!\/)[^\s\\]*$/.test(targetUrl)) throw new Error("H5 跳转地址格式不合法");
     return {
       completion_redirect_enabled: enabled,
-      completion_redirect_url: enabled ? url : ""
+      completion_redirect_url: enabled ? targetUrl : "",
+      completion_target: completionTarget
     };
   }
 

@@ -113,6 +113,97 @@
       font-weight: 700;
       white-space: nowrap;
     }
+    .target-card {
+      max-width: 760px;
+      border: 1px solid #e5e6eb;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 20px;
+    }
+    .target-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .target-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .target-desc {
+      margin: 6px 0 0;
+      color: #86909c;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      color: #1f2329;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .switch input { width: 18px; height: 18px; }
+    .target-body[hidden] { display: none; }
+    .target-card .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .target-card .field {
+      display: grid;
+      gap: 7px;
+    }
+    .target-card .field.full { grid-column: 1 / -1; }
+    .target-card .field label {
+      color: #1f2329;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .target-card .field small {
+      color: #86909c;
+      line-height: 1.5;
+    }
+    .target-card input,
+    .target-card select,
+    .target-card textarea {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid #e5e6eb;
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: #fff;
+      color: #1f2329;
+      font: inherit;
+      outline: none;
+    }
+    .target-card textarea { min-height: 72px; resize: vertical; }
+    .target-card input:focus,
+    .target-card select:focus,
+    .target-card textarea:focus {
+      border-color: #3370ff;
+      box-shadow: 0 0 0 3px rgba(51, 112, 255, .12);
+    }
+    .mode-note {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #f2f5ff;
+      color: #2451c6;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .warning {
+      margin-top: 12px;
+      color: #f53f3f;
+      font-size: 13px;
+      line-height: 1.6;
+    }
     .topbar-actions,
     .field-grid,
     .header-actions,
@@ -983,6 +1074,8 @@
       .phone-screen { min-height: 0; }
       .field-grid.compact,
       .field-grid.triple { grid-template-columns: 1fr; }
+      .target-card .field-grid { grid-template-columns: 1fr; }
+      .target-head { flex-direction: column; }
       .topbar-actions { width: 100%; }
       .topbar-actions .btn { flex: 1 1 160px; }
     }
@@ -2574,7 +2667,7 @@
         name: '问卷名称',
         title: '问卷标题',
         description: '问卷说明',
-        redirect_url: '提交后跳转地址',
+        redirect_url: '提交后动作 H5 地址',
         slug: '分享标识',
         min_score: '最低分',
         max_score: '最高分',
@@ -2843,6 +2936,228 @@
       return ['all_in_one', 'one_by_one'].includes(value) ? value : 'all_in_one';
     }
 
+    function defaultCompletionTarget(redirectUrl = '') {
+      const h5Url = String(redirectUrl || '').trim();
+      return {
+        enabled: Boolean(h5Url),
+        target_type: 'h5',
+        open_strategy: 'h5_redirect',
+        h5_url: h5Url,
+        fallback_url: '',
+        mini_program: {
+          appid: '',
+          username: '',
+          path: '',
+          query: '',
+          env_version: 'release',
+        },
+        url_link: {
+          enabled: false,
+          url: '',
+          expire_type: 0,
+          expire_interval: 30,
+        },
+      };
+    }
+
+    function normalizeCompletionTarget(value, redirectUrl = '') {
+      const target = { ...defaultCompletionTarget(redirectUrl), ...(value || {}) };
+      target.mini_program = { ...defaultCompletionTarget().mini_program, ...(target.mini_program || {}) };
+      target.url_link = { ...defaultCompletionTarget().url_link, ...(target.url_link || {}) };
+      if (target.target_type !== 'mini_program') target.target_type = 'h5';
+      target.open_strategy = target.target_type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect';
+      target.url_link.enabled = false;
+      return target;
+    }
+
+    function miniProgramPathDisplay(mini) {
+      const path = String(mini?.path || '');
+      const query = String(mini?.query || '');
+      return path + (query ? `?${query}` : '');
+    }
+
+    function splitMiniProgramPathInput(value) {
+      const raw = String(value || '').trim();
+      const index = raw.indexOf('?');
+      if (index < 0) return { path: raw, query: '' };
+      return {
+        path: raw.slice(0, index),
+        query: raw.slice(index + 1),
+      };
+    }
+
+    function completionTargetConfigHtml(initial, title = '完成后动作') {
+      const target = normalizeCompletionTarget(initial);
+      const mini = target.mini_program || {};
+      return `
+        <section class="target-card" data-completion-target-config>
+          <div class="target-head">
+            <div>
+              <h2 class="target-title">${escapeHtml(title)}</h2>
+              <p class="target-desc">
+                用于问卷提交成功后 / 支付成功后。关闭时保持原来的 H5 跳转；打开后可以优先打开小程序，并保留 H5 兜底。
+              </p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" name="completion_target_enabled" data-target-enabled ${target.enabled ? 'checked' : ''}>
+              启用
+            </label>
+          </div>
+
+          <div class="target-body" data-target-body hidden>
+            <div class="field-grid">
+              <div class="field">
+                <label>完成后动作类型</label>
+                <select name="completion_target_type" data-target-type>
+                  <option value="h5" ${target.target_type === 'h5' ? 'selected' : ''}>跳转 H5 页面</option>
+                  <option value="mini_program" ${target.target_type === 'mini_program' ? 'selected' : ''}>打开微信小程序</option>
+                </select>
+              </div>
+
+              <div class="field full" data-h5-fields>
+                <label>H5 跳转地址</label>
+                <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path" value="${escapeHtml(target.h5_url || '')}">
+                <small>用于普通跳转，也作为小程序打开失败时的兜底。</small>
+              </div>
+
+              <div class="field" data-mini-fields>
+                <label>小程序 AppID</label>
+                <input name="mini_program_appid" placeholder="wx1234567890abcdef" value="${escapeHtml(mini.appid || '')}">
+              </div>
+
+              <div class="field" data-mini-fields>
+                <label>小程序原始 ID</label>
+                <input name="mini_program_username" placeholder="gh_xxxxxxxxxxxx" value="${escapeHtml(mini.username || '')}">
+                <small>wx-open-launch-weapp 推荐使用 gh_ 开头的原始 ID。</small>
+              </div>
+
+              <div class="field full" data-mini-fields>
+                <label>小程序页面路径</label>
+                <input name="mini_program_path" placeholder="/pages/index/index?id=123" value="${escapeHtml(miniProgramPathDisplay(mini))}">
+              </div>
+
+              <div class="field" data-mini-fields>
+                <label>小程序环境</label>
+                <select name="mini_program_env_version">
+                  <option value="release" ${(mini.env_version || 'release') === 'release' ? 'selected' : ''}>正式版 release</option>
+                  <option value="trial" ${mini.env_version === 'trial' ? 'selected' : ''}>体验版 trial</option>
+                  <option value="develop" ${mini.env_version === 'develop' ? 'selected' : ''}>开发版 develop</option>
+                </select>
+              </div>
+
+              <div class="field full">
+                <label>兜底链接</label>
+                <input name="completion_fallback_url" placeholder="https://example.com/fallback 或 /fallback" value="${escapeHtml(target.fallback_url || '')}">
+                <small>非微信环境、小程序打开失败、开放标签不可用时使用。</small>
+              </div>
+            </div>
+
+            <div class="mode-note" data-mode-note>
+              当前为 H5 普通跳转模式。
+            </div>
+            <div class="warning" data-validation-warning hidden></div>
+          </div>
+        </section>
+      `;
+    }
+
+    function mountCompletionTargetConfig(root, initialValue, onChange) {
+      const enabledEl = root.querySelector('[data-target-enabled]');
+      const bodyEl = root.querySelector('[data-target-body]');
+      const typeEl = root.querySelector('[data-target-type]');
+      const noteEl = root.querySelector('[data-mode-note]');
+      const warningEl = root.querySelector('[data-validation-warning]');
+      const fieldGroups = {
+        h5: root.querySelectorAll('[data-h5-fields]'),
+        mini: root.querySelectorAll('[data-mini-fields]'),
+      };
+
+      function setGroupVisible(nodes, visible) {
+        nodes.forEach((node) => { node.hidden = !visible; });
+      }
+
+      function syncVisibility() {
+        const enabled = enabledEl.checked;
+        const type = typeEl.value;
+        bodyEl.hidden = !enabled;
+        setGroupVisible(fieldGroups.h5, enabled && type === 'h5');
+        setGroupVisible(fieldGroups.mini, enabled && type === 'mini_program');
+        if (!enabled) {
+          noteEl.textContent = '当前未启用，保存后保持原有跳转逻辑。';
+          return;
+        }
+        if (type === 'mini_program') {
+          noteEl.textContent = '微信内优先使用开放标签打开小程序；失败时使用兜底链接。';
+          return;
+        }
+        noteEl.textContent = '提交/支付成功后跳转 H5 页面。';
+      }
+
+      root.collectCompletionTarget = function collectCompletionTarget(options = {}) {
+        const validate = options.validate !== false;
+        const enabled = enabledEl.checked;
+        const type = typeEl.value;
+        const miniPath = splitMiniProgramPathInput(root.querySelector('[name="mini_program_path"]').value);
+        const payload = {
+          enabled,
+          target_type: type,
+          open_strategy: type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect',
+          h5_url: root.querySelector('[name="completion_h5_url"]').value.trim(),
+          fallback_url: root.querySelector('[name="completion_fallback_url"]').value.trim(),
+          mini_program: {
+            appid: root.querySelector('[name="mini_program_appid"]').value.trim(),
+            username: root.querySelector('[name="mini_program_username"]').value.trim(),
+            path: miniPath.path,
+            query: miniPath.query,
+            env_version: root.querySelector('[name="mini_program_env_version"]').value,
+          },
+          url_link: {
+            enabled: false,
+            url: '',
+          },
+        };
+        warningEl.hidden = true;
+        warningEl.textContent = '';
+        if (validate && enabled && type === 'mini_program') {
+          const mini = payload.mini_program;
+          if (!mini.username && !mini.appid) {
+            warningEl.textContent = '请填写小程序原始 ID 或 AppID。';
+            warningEl.hidden = false;
+            throw new Error(warningEl.textContent);
+          }
+          if (!mini.path || mini.path[0] !== '/') {
+            warningEl.textContent = '小程序页面路径必须以 / 开头。';
+            warningEl.hidden = false;
+            throw new Error(warningEl.textContent);
+          }
+        }
+        return payload;
+      };
+
+      function notifyChange() {
+        syncVisibility();
+        if (onChange) onChange(root.collectCompletionTarget({ validate: false }));
+      }
+
+      root.addEventListener('input', notifyChange);
+      root.addEventListener('change', notifyChange);
+      syncVisibility();
+      if (onChange) onChange(root.collectCompletionTarget({ validate: false }));
+    }
+
+    function activeCompletionTarget(options = {}) {
+      const root = document.querySelector('[data-completion-target-config]');
+      if (root && root.collectCompletionTarget) {
+        const target = root.collectCompletionTarget(options);
+        state.questionnaire.completion_target = target;
+        if (target.target_type === 'h5') {
+          state.questionnaire.redirect_url = target.h5_url || '';
+        }
+        return target;
+      }
+      return normalizeCompletionTarget(state.questionnaire.completion_target, state.questionnaire.redirect_url);
+    }
+
     function blankQuestionnaire() {
       const defaultPreset = editorConfig.defaultAssessment ? buildSiyuanIpAssessmentPreset() : null;
       const defaultAssessmentConfig = defaultPreset ? defaultPreset.assessment_config : {};
@@ -2854,6 +3169,7 @@
         title: defaultPreset ? defaultPreset.title : '',
         description: defaultPreset ? defaultPreset.description : '',
         redirect_url: '',
+        completion_target: defaultCompletionTarget(''),
         answer_display_mode: 'all_in_one',
         assessment_enabled: Boolean(editorConfig.defaultAssessment),
         assessment_config: defaultAssessmentConfig,
@@ -2906,6 +3222,7 @@
         title: questionnaire.title || '',
         description: questionnaire.description || '',
         redirect_url: questionnaire.redirect_url || '',
+        completion_target: normalizeCompletionTarget(questionnaire.completion_target, questionnaire.redirect_url || ''),
         answer_display_mode: normalizeAnswerDisplayMode(questionnaire.answer_display_mode),
         assessment_enabled: hasSource ? Boolean(questionnaire.assessment_enabled) : draft.assessment_enabled,
         assessment_config: assessmentConfig,
@@ -3017,11 +3334,14 @@
     }
 
     function serializePayload(options = {}) {
+      const completionTarget = activeCompletionTarget({ validate: options.validateCompletion !== false });
+      const redirectUrl = completionTarget.target_type === 'h5' ? (completionTarget.h5_url || '') : state.questionnaire.redirect_url;
       return {
         name: state.questionnaire.name,
         title: state.questionnaire.title,
         description: state.questionnaire.description,
-        redirect_url: state.questionnaire.redirect_url,
+        redirect_url: redirectUrl,
+        completion_target: completionTarget,
         answer_display_mode: normalizeAnswerDisplayMode(state.questionnaire.answer_display_mode),
         assessment_enabled: Boolean(state.questionnaire.assessment_enabled),
         assessment_config: state.questionnaire.assessment_enabled
@@ -3077,7 +3397,7 @@
     }
 
     function serializeDraftSnapshot() {
-      return JSON.stringify(serializePayload());
+      return JSON.stringify(serializePayload({ validateCompletion: false }));
     }
 
     function isDraftDirty() {
@@ -3596,9 +3916,7 @@
           <label class="field">问卷说明
             <textarea id="field-description">${escapeHtml(state.questionnaire.description)}</textarea>
           </label>
-          <label class="field">提交后跳转地址
-            <input id="field-redirect-url" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}" placeholder="可选，提交后跳转的地址">
-          </label>
+          ${completionTargetConfigHtml(state.questionnaire.completion_target, '提交后动作')}
           <label class="field">答题展示方式
             <select id="field-answer-display-mode">
               <option value="all_in_one" ${normalizeAnswerDisplayMode(state.questionnaire.answer_display_mode) === 'all_in_one' ? 'selected' : ''}>整页答题</option>
@@ -3689,10 +4007,16 @@
         state.questionnaire.description = event.target.value;
         renderPreview();
       });
-      inspectorBodyEl.querySelector('#field-redirect-url').addEventListener('input', (event) => {
-        state.questionnaire.redirect_url = event.target.value;
-        updateDraftIndicator();
-      });
+      const completionTargetRoot = inspectorBodyEl.querySelector('[data-completion-target-config]');
+      if (completionTargetRoot) {
+        mountCompletionTargetConfig(completionTargetRoot, state.questionnaire.completion_target, (target) => {
+          state.questionnaire.completion_target = target;
+          if (target.target_type === 'h5') {
+            state.questionnaire.redirect_url = target.h5_url || '';
+          }
+          updateDraftIndicator();
+        });
+      }
       inspectorBodyEl.querySelector('#field-answer-display-mode').addEventListener('change', (event) => {
         state.questionnaire.answer_display_mode = normalizeAnswerDisplayMode(event.target.value);
         updateDraftIndicator();
@@ -4714,9 +5038,7 @@
                   <label class="field" style="margin-bottom:0;font-weight:600;"><input id="v2-basic-disabled" type="checkbox" ${state.questionnaire.is_disabled ? 'checked' : ''}> 停用问卷</label>
                 </label>
               </div>
-              <label class="field">提交后动作 / 跳转地址
-                <input id="v2-basic-redirect" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}" placeholder="为空时提交后展示测评结果页">
-              </label>
+              ${completionTargetConfigHtml(state.questionnaire.completion_target, '提交后动作')}
               <label class="field">答题展示方式
                 <select id="v2-basic-answer-display-mode">
                   <option value="all_in_one" ${normalizeAnswerDisplayMode(state.questionnaire.answer_display_mode) === 'all_in_one' ? 'selected' : ''}>整页答题</option>
@@ -4747,10 +5069,16 @@
         state.questionnaire.is_disabled = event.target.checked;
         updateDraftIndicator();
       });
-      phoneStage.querySelector('#v2-basic-redirect').addEventListener('input', (event) => {
-        state.questionnaire.redirect_url = event.target.value;
-        updateDraftIndicator();
-      });
+      const completionTargetRoot = phoneStage.querySelector('[data-completion-target-config]');
+      if (completionTargetRoot) {
+        mountCompletionTargetConfig(completionTargetRoot, state.questionnaire.completion_target, (target) => {
+          state.questionnaire.completion_target = target;
+          if (target.target_type === 'h5') {
+            state.questionnaire.redirect_url = target.h5_url || '';
+          }
+          updateDraftIndicator();
+        });
+      }
       phoneStage.querySelector('#v2-basic-answer-display-mode').addEventListener('change', (event) => {
         state.questionnaire.answer_display_mode = normalizeAnswerDisplayMode(event.target.value);
         updateDraftIndicator();

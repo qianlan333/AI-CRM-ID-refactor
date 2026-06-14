@@ -239,6 +239,7 @@
       <thead>
         <tr>
           <th>问卷名称</th>
+          <th>提交后动作</th>
           <th>创建时间</th>
           <th>提交数</th>
           <th>操作</th>
@@ -246,7 +247,7 @@
       </thead>
       <tbody id="questionnaire-table-body">
         <tr>
-          <td colspan="4">问卷列表加载中...</td>
+          <td colspan="5">问卷列表加载中...</td>
         </tr>
       </tbody>
     </table>
@@ -334,6 +335,14 @@
     if (Number.isNaN(date.getTime())) return raw;
     const pad = (number) => String(number).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function completionTargetLabel(item) {
+    const target = item.completion_target || {};
+    if (!target.enabled) return '沿用原跳转';
+    if (target.target_type === 'mini_program') return '打开微信小程序';
+    if (target.target_type === 'url_link') return '打开小程序 URL Link';
+    return '跳转 H5 页面';
   }
 
   function filteredQuestionnaires() {
@@ -455,6 +464,7 @@
             </span>
           </div>
         </td>
+        <td><span class="questionnaire-row-muted">${escapeHtml(completionTargetLabel(item))}</span></td>
         <td><span class="questionnaire-row-muted">${escapeHtml(formatDateTime(item.created_at))}</span></td>
         <td>${escapeHtml(String(item.submission_count || 0))}</td>
         <td>

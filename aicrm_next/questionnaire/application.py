@@ -12,7 +12,7 @@ from aicrm_next.shared.repository_provider import RepositoryProviderError, block
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
-from .domain import admin_detail_projection, extract_submission_mobile, score_and_tags, summary_projection, validate_required_answers
+from .domain import admin_detail_projection, extract_submission_mobile, normalize_questionnaire, score_and_tags, summary_projection, validate_required_answers
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
 from .oauth import QuestionnaireOAuthAdapter, build_questionnaire_oauth_adapter
 from .public_access import (
@@ -406,6 +406,7 @@ class SubmitQuestionnaireCommand:
             final_tags=final_tags,
         )
         automation_event = self._automation_event_from_gateway(automation_gateway_result)
+        questionnaire_projection = normalize_questionnaire(item)
         return {
             "ok": True,
             "submission_id": submission["submission_id"],
@@ -418,6 +419,9 @@ class SubmitQuestionnaireCommand:
             "score": score,
             "final_tags": final_tags,
             "redirect_url": item.get("redirect_url") or f"/s/{item['slug']}/submitted",
+            "completion_target": questionnaire_projection["completion_target"],
+            "completion_target_enabled": questionnaire_projection["completion_target_enabled"],
+            "completion_target_type": questionnaire_projection["completion_target_type"],
             "result_message": "提交成功",
             "automation_event": automation_event,
             "side_effect_safety": self._side_effect_gateway.side_effect_safety(),
