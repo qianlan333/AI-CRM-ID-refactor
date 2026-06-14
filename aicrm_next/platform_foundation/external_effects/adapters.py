@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 from typing import Any, Protocol
 
 import requests
@@ -205,7 +204,7 @@ class WebhookAdapter:
         secret = str(
             payload.get("signature_secret")
             or payload.get("signing_secret")
-            or os.getenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
+            or runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
             or ""
         ).strip()
         if not secret:
