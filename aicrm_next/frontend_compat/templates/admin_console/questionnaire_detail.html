@@ -92,7 +92,6 @@
       <input type="hidden" name="redirect_url" value="{{ editor_payload.redirect_url }}">
       <input type="hidden" name="completion_target" id="completion-target-json">
       {% set completion_target = questionnaire_payload.questionnaire.completion_target or {} %}
-      {% set mini = completion_target.mini_program or {} %}
       <section class="target-card" data-completion-target-config>
         <div class="target-head">
           <div>
@@ -106,32 +105,9 @@
 
         <div class="target-body" data-target-body hidden>
           <div class="field-grid">
-            <div class="field">
-              <label>完成后动作类型</label>
-              <select name="completion_target_type" data-target-type>
-                <option value="h5"{% if completion_target.target_type != "mini_program" %} selected{% endif %}>跳转 H5 页面</option>
-                <option value="mini_program"{% if completion_target.target_type == "mini_program" %} selected{% endif %}>打开微信小程序</option>
-              </select>
-            </div>
-
-            <div class="field full" data-h5-fields>
+            <div class="field full">
               <label>H5 跳转地址</label>
-              <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path" value="{{ completion_target.h5_url or editor_payload.redirect_url }}">
-            </div>
-
-            <div class="field" data-mini-fields>
-              <label>小程序原始 ID</label>
-              <input name="mini_program_username" placeholder="gh_xxxxxxxxxxxx" value="{{ mini.username or '' }}">
-            </div>
-
-            <div class="field full" data-mini-fields>
-              <label>小程序页面路径</label>
-              <input name="mini_program_path" placeholder="/pages/index/index?id=123" value="{{ (mini.path or '') ~ ('?' ~ mini.query if mini.query else '') }}">
-            </div>
-
-            <div class="field full" data-mini-fields>
-              <label>兜底链接</label>
-              <input name="completion_fallback_url" placeholder="https://example.com/fallback 或 /fallback" value="{{ completion_target.fallback_url or '' }}">
+              <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path" value="{{ completion_target.h5_url or completion_target.fallback_url or editor_payload.redirect_url }}">
             </div>
           </div>
           <div class="warning" data-validation-warning hidden></div>
@@ -262,49 +238,26 @@
   function mountCompletionTargetConfig(root) {
     const enabledEl = root.querySelector('[data-target-enabled]');
     const bodyEl = root.querySelector('[data-target-body]');
-    const typeEl = root.querySelector('[data-target-type]');
     const warningEl = root.querySelector('[data-validation-warning]');
-    const fieldGroups = {
-      h5: root.querySelectorAll('[data-h5-fields]'),
-      mini: root.querySelectorAll('[data-mini-fields]')
-    };
-
-    function setGroupVisible(nodes, visible) {
-      nodes.forEach((node) => { node.hidden = !visible; });
-    }
 
     function syncVisibility() {
-      const enabled = enabledEl.checked;
-      const type = typeEl.value;
-      bodyEl.hidden = !enabled;
-      setGroupVisible(fieldGroups.h5, enabled && type === 'h5');
-      setGroupVisible(fieldGroups.mini, enabled && type === 'mini_program');
-    }
-
-    function splitMiniProgramPathInput(value) {
-      const raw = String(value || '').trim();
-      const index = raw.indexOf('?');
-      if (index < 0) return { path: raw, query: '' };
-      return { path: raw.slice(0, index), query: raw.slice(index + 1) };
+      bodyEl.hidden = !enabledEl.checked;
     }
 
     root.collectCompletionTarget = function collectCompletionTarget() {
       const enabled = enabledEl.checked;
-      const type = typeEl.value;
-      const miniPath = splitMiniProgramPathInput(root.querySelector('[name="mini_program_path"]').value);
       const h5Url = root.querySelector('[name="completion_h5_url"]').value.trim();
-      const fallbackUrl = root.querySelector('[name="completion_fallback_url"]').value.trim();
       const payload = {
         enabled,
-        target_type: type,
-        open_strategy: type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect',
-        h5_url: type === 'h5' ? h5Url : '',
-        fallback_url: type === 'mini_program' ? fallbackUrl : '',
+        target_type: 'h5',
+        open_strategy: 'h5_redirect',
+        h5_url: h5Url,
+        fallback_url: '',
         mini_program: {
           appid: '',
-          username: root.querySelector('[name="mini_program_username"]').value.trim(),
-          path: miniPath.path,
-          query: miniPath.query,
+          username: '',
+          path: '',
+          query: '',
           env_version: 'release'
         },
         url_link: {
@@ -314,24 +267,15 @@
       };
       warningEl.hidden = true;
       warningEl.textContent = '';
-      if (enabled && type === 'mini_program') {
-        const mini = payload.mini_program;
-        if (!mini.username) {
-          warningEl.textContent = '请填写小程序原始 ID。';
-          warningEl.hidden = false;
-          throw new Error(warningEl.textContent);
-        }
-        if (!mini.path || mini.path[0] !== '/') {
-          warningEl.textContent = '小程序页面路径必须以 / 开头。';
-          warningEl.hidden = false;
-          throw new Error(warningEl.textContent);
-        }
+      if (enabled && !h5Url) {
+        warningEl.textContent = '请填写 H5 跳转地址。';
+        warningEl.hidden = false;
+        throw new Error(warningEl.textContent);
       }
       return payload;
     };
 
     enabledEl.addEventListener('change', syncVisibility);
-    typeEl.addEventListener('change', syncVisibility);
     syncVisibility();
   }
 

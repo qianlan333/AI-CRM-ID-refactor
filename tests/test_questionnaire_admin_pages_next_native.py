@@ -87,9 +87,13 @@ def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> No
         text = template.read_text(encoding="utf-8")
         assert "提交后跳转" in text
         assert "提交后动作" not in text
-        assert "跳转 H5 页面" in text
-        assert "打开微信小程序" in text
-        assert "splitMiniProgramPathInput" in text
+        assert "H5 跳转地址" in text
+        assert "打开微信小程序" not in text
+        assert "completion_target_type" not in text
+        assert "splitMiniProgramPathInput" not in text
+        assert "小程序原始 ID" not in text
+        assert "小程序页面路径" not in text
+        assert "兜底链接" not in text
 
         assert "field-redirect-url" not in text
         assert "v2-basic-redirect" not in text
@@ -97,9 +101,10 @@ def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> No
         assert "data-open-strategy" not in text
         assert "target-desc" not in text
         assert "mode-note" not in text
-        assert "小程序 AppID" not in text
         assert "mini_program_appid" not in text
-        assert "小程序环境" not in text
+        assert "mini_program_username" not in text
+        assert "mini_program_path" not in text
+        assert "completion_fallback_url" not in text
         assert "mini_program_env_version" not in text
         assert "mini_program_query" not in text
         assert "mini_program_url_link" not in text
