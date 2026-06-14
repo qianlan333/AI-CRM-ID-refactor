@@ -242,7 +242,12 @@ async def record_test_receiver_request(*, request: Request, receiver_token: str,
 
 
 def _signature_valid(*, payload: dict[str, Any], body: dict[str, Any], headers: Any) -> bool | None:
-    secret = str(payload.get("signature_secret") or "").strip()
+    secret = str(
+        payload.get("signature_secret")
+        or payload.get("signing_secret")
+        or os.getenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_SIGNING_SECRET")
+        or ""
+    ).strip()
     if not secret:
         return None
     provided = str(headers.get("X-AICRM-External-Effect-Signature") or "").strip()
