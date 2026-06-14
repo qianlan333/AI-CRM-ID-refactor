@@ -9,6 +9,7 @@ from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCE
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
 from aicrm_next.public_product import h5_wechat_pay
 from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
+from tests.automation_runtime_v2_test_helpers import db
 
 
 class _FakeCursor:
@@ -73,7 +74,9 @@ def _transaction(out_trade_no: str = "WXP_INTERNAL_PAYMENT") -> dict:
 
 
 def _enable_payment_events(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", "0")
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT", "1")
 
 
@@ -91,6 +94,23 @@ def _patch_legacy_outbox(monkeypatch, outbox_id: int = 9001) -> list[dict]:
 
     monkeypatch.setattr(h5_wechat_pay, "enqueue_transaction_paid_outbox", fake_enqueue)
     return calls
+
+
+def _delete_order_paid_external_effect_jobs(business_id: str) -> None:
+    conn = db()
+    rows = conn.execute(
+        """
+        SELECT id
+        FROM external_effect_job
+        WHERE effect_type = ? AND business_id = ?
+        """,
+        (WEBHOOK_ORDER_PAID_PUSH, business_id),
+    ).fetchall()
+    ids = [int(row["id"]) for row in rows]
+    for job_id in ids:
+        conn.execute("DELETE FROM external_effect_attempt WHERE job_id = ?", (job_id,))
+        conn.execute("DELETE FROM external_effect_job WHERE id = ?", (job_id,))
+    conn.commit()
 
 
 def test_payment_success_emits_payment_succeeded_and_duplicate_notify_is_idempotent(monkeypatch) -> None:
@@ -208,10 +228,16 @@ def test_automation_payment_consumer_handles_datetime_payload_without_terminal_f
 
     assert result["counts"]["succeeded_count"] == 1
     assert result["counts"]["failed_terminal_count"] == 0
+    assert result["counts"]["failed_retryable_count"] == 0
     assert runs[0].status == "succeeded"
     assert runs[0].result_summary_json["automation_processed"] is True
     assert attempts[0].status == "succeeded"
     assert attempts[0].response_summary_json["automation_processed"] is True
+    assert attempts[0].response_summary_json["automation_status"] == "ignored"
+    assert attempts[0].response_summary_json["automation_reason"] == "membership_unresolved"
+    assert "handler_exception" not in attempts[0].response_summary_json
+    assert attempts[0].error_code == ""
+    assert attempts[0].error_message == ""
 
 
 def test_webhook_order_paid_consumer_creates_shadow_job_when_no_existing_legacy_job(monkeypatch) -> None:
@@ -220,6 +246,7 @@ def test_webhook_order_paid_consumer_creates_shadow_job_when_no_existing_legacy_
     _patch_legacy_outbox(monkeypatch)
     _apply_transaction(_PaymentConn(), _transaction())
     reset_external_effect_fixture_state()
+    _delete_order_paid_external_effect_jobs("WXP_INTERNAL_PAYMENT")
     event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
 
     result = InternalEventWorker().run_due(batch_size=1, dry_run=False, consumer_names=["webhook_order_paid_consumer"])

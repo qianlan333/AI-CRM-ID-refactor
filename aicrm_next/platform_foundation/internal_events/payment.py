@@ -203,10 +203,17 @@ def automation_payment_consumer(event: InternalEvent, run: InternalEventConsumer
     from aicrm_next.automation_runtime_v2.bridge import process_payment_succeeded_event
 
     result = process_payment_succeeded_event(order=order, transaction=transaction)
+    automation_summary = {
+        "automation_processed": True,
+        "automation_event_id": result.get("event_id"),
+        "automation_status": result.get("status") or "processed",
+        "automation_reason": result.get("reason") or "",
+        "automation_counts": result.get("counts") or {},
+    }
     return InternalEventConsumerResult(
         status="succeeded",
         request_summary={"event_id": event.event_id, "out_trade_no": _text(order.get("out_trade_no"))},
-        response_summary={"automation_processed": True, "result": result},
+        response_summary=automation_summary,
         result_summary={"automation_processed": True},
     )
 
