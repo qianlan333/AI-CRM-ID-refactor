@@ -15,6 +15,7 @@ from .models import (
     GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
     WEBHOOK_ORDER_PAID_PUSH,
     WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+    WECOM_MESSAGE_PRIVATE_SEND,
     ExternalEffectDispatchResult,
     ExternalEffectJob,
 )
@@ -203,11 +204,142 @@ class WebhookAdapter:
         return headers, True
 
 
+class WeComPrivateMessageAdapter:
+    def dispatch(self, job: ExternalEffectJob) -> ExternalEffectDispatchResult:
+        payload = dict(job.payload_json or {})
+        external_userids = [str(item or "").strip() for item in list(payload.get("external_userids") or []) if str(item or "").strip()]
+        owner_userid = str(payload.get("owner_userid") or payload.get("sender") or "").strip()
+        content_text = str(payload.get("content_text") or "").strip()
+        gate_error = self._execution_gate_error(job=job, payload=payload, external_userids=external_userids, owner_userid=owner_userid)
+        request_summary = {
+            "effect_type": job.effect_type,
+            "operation": job.operation,
+            "target_type": job.target_type,
+            "target_id": job.target_id,
+            "owner_userid": owner_userid,
+            "external_userid_count": len(external_userids),
+            "content_text_length": len(content_text),
+            "attachment_count": len(payload.get("attachments") or []) if isinstance(payload.get("attachments"), list) else 0,
+        }
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="blocked",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={"blocked": True, "execution_gate": gate_error, "real_external_call_executed": False, "wecom_send_executed": False},
+                error_code=gate_error,
+                error_message="WeCom private-message adapter execution is blocked by external effect execution gates.",
+                real_external_call_executed=False,
+            )
+        adapter_payload: dict[str, Any] = {
+            "sender": owner_userid,
+            "external_userids": external_userids,
+        }
+        if content_text:
+            adapter_payload["text"] = {"content": content_text}
+        attachments = payload.get("attachments")
+        if isinstance(attachments, list) and attachments:
+            adapter_payload["attachments"] = attachments
+        try:
+            from aicrm_next.integration_gateway.wecom_private_adapter import build_wecom_private_message_adapter
+
+            result = build_wecom_private_message_adapter().create_private_message_task(
+                adapter_payload,
+                idempotency_key=job.idempotency_key or str(job.id),
+            )
+        except Exception as exc:
+            return ExternalEffectDispatchResult(
+                status="failed_retryable",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={"real_external_call_executed": True, "wecom_send_executed": False},
+                error_code="adapter_exception",
+                error_message=str(exc),
+                real_external_call_executed=True,
+            )
+        side_effect_executed = bool(result.get("side_effect_executed"))
+        ok = bool(result.get("ok"))
+        error_code = str(result.get("error_code") or "").strip()
+        response_summary = {
+            "real_external_call_executed": side_effect_executed,
+            "wecom_send_executed": side_effect_executed,
+            "adapter_mode": str(result.get("mode") or ""),
+            "exact_target_verified": bool(result.get("exact_target_verified")),
+            "requested_external_userid_count": len(result.get("requested_external_userids") or external_userids),
+            "wecom_msgid_present": bool(str(result.get("wecom_msgid") or "").strip()),
+        }
+        if ok:
+            return ExternalEffectDispatchResult(
+                status="succeeded",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary=response_summary,
+                real_external_call_executed=side_effect_executed,
+            )
+        if not side_effect_executed:
+            return ExternalEffectDispatchResult(
+                status="blocked",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary=response_summary,
+                error_code=error_code or "adapter_blocked",
+                error_message=str(result.get("error_message") or "WeCom private-message adapter blocked before external call."),
+                real_external_call_executed=False,
+            )
+        retryable = error_code in {"external_call_unknown", "adapter_exception", "network_error", "timeout", "rate_limited"}
+        return ExternalEffectDispatchResult(
+            status="failed_retryable" if retryable else "failed_terminal",
+            adapter_mode="execute",
+            request_summary=request_summary,
+            response_summary=response_summary,
+            error_code=error_code or "wecom_private_send_failed",
+            error_message=str(result.get("error_message") or "WeCom private-message send failed."),
+            real_external_call_executed=True,
+        )
+
+    def _execution_gate_error(
+        self,
+        *,
+        job: ExternalEffectJob,
+        payload: dict[str, Any],
+        external_userids: list[str],
+        owner_userid: str,
+    ) -> str:
+        if job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            return "shadow_only"
+        if job.effect_type != WECOM_MESSAGE_PRIVATE_SEND:
+            return "unsupported_effect_type"
+        if not _enabled("AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"):
+            return "wecom_execution_disabled"
+        allowed_types = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES")
+        if job.effect_type not in allowed_types:
+            return "effect_type_not_allowed"
+        if len(external_userids) != 1:
+            return "single_target_required"
+        target_id = str(job.target_id or "").strip()
+        if target_id != external_userids[0]:
+            return "target_mismatch"
+        allowed_targets = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS")
+        if external_userids[0] not in allowed_targets:
+            return "target_not_allowed"
+        allowed_owners = _csv_env("AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS")
+        if owner_userid not in allowed_owners:
+            return "owner_not_allowed"
+        if str(payload.get("channel") or "").strip() != "wecom_private":
+            return "channel_not_allowed"
+        has_text = bool(str(payload.get("content_text") or "").strip())
+        has_attachments = isinstance(payload.get("attachments"), list) and bool(payload.get("attachments"))
+        if not has_text and not has_attachments:
+            return "payload_invalid"
+        return ""
+
+
 class ExternalEffectAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ExternalEffectAdapter] = {
             "outbound_webhook": WebhookAdapter(),
             "webhook": WebhookAdapter(),
+            "wecom_private_message": WeComPrivateMessageAdapter(),
         }
         self._disabled = DisabledAdapter()
 
