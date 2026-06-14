@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
-from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.identity_contact.application import BindMobileToExternalContactCommand, ResolvePersonIdentityQuery
+from aicrm_next.identity_contact.dto import BindMobileToExternalContactRequest, ResolvePersonIdentityRequest
 from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation
 from aicrm_next.customer_tags.mutation_commands import PlanQuestionnaireTagSideEffectCommand
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
@@ -315,6 +315,15 @@ def _handle_submit(command: Command) -> dict[str, Any]:
                 "updated_at": utcnow_iso(),
             }
         )
+        mobile_binding = _sync_questionnaire_mobile_binding(command=command, submission=submission)
+        if mobile_binding.get("ok") and not mobile_binding.get("skipped"):
+            submission = {
+                **submission,
+                "binding_status": mobile_binding.get("binding_status") or "bound",
+                "person_id": mobile_binding.get("person_id") or submission.get("person_id"),
+                "mobile": mobile_binding.get("mobile") or submission.get("mobile"),
+                "follow_user_userid": mobile_binding.get("owner_userid") or submission.get("follow_user_userid"),
+            }
     except NotFoundError:
         raise
     except ContractError:
@@ -396,9 +405,11 @@ def _handle_submit(command: Command) -> dict[str, Any]:
         "write_model_status": "submitted",
         "external_push": external_push_result,
         "external_push_mode": external_push_mode,
+        "mobile_binding": mobile_binding,
         "real_external_call_executed": real_external_call_executed,
         "side_effect_plan": _plan_response(side_effect_plan),
         "side_effects": {
+            "mobile_binding": mobile_binding,
             "wecom_tag": tag_side_effect,
             "external_push": external_push_result,
         },
@@ -497,6 +508,63 @@ def _public_identity(submission: dict[str, Any]) -> dict[str, Any]:
             submission.get(key)
             for key in ["external_userid", "openid", "unionid", "mobile", "person_id"]
         ),
+    }
+
+
+def _sync_questionnaire_mobile_binding(*, command: Command, submission: dict[str, Any]) -> dict[str, Any]:
+    external_userid = str(submission.get("external_userid") or "").strip()
+    mobile = str(submission.get("mobile") or submission.get("mobile_snapshot") or "").strip()
+    if not external_userid or not mobile:
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "missing_external_userid_or_mobile",
+            "external_userid": external_userid,
+            "mobile": mobile,
+            "source_status": "questionnaire_mobile_binding",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
+    try:
+        result = BindMobileToExternalContactCommand()(
+            BindMobileToExternalContactRequest(
+                external_userid=external_userid,
+                mobile=mobile,
+                owner_userid=str(submission.get("follow_user_userid") or "").strip(),
+                bind_by_userid="questionnaire_h5_submit",
+                customer_name="问卷提交用户",
+                force_rebind=True,
+            )
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "skipped": False,
+            "reason": "mobile_binding_failed",
+            "error": str(exc),
+            "external_userid": external_userid,
+            "mobile": mobile,
+            "source_status": "questionnaire_mobile_binding_failed",
+            "route_owner": "ai_crm_next",
+            "fallback_used": False,
+            "real_external_call_executed": False,
+        }
+    return {
+        "ok": bool(result.get("ok", True)),
+        "skipped": False,
+        "reason": "",
+        "external_userid": str(result.get("external_userid") or external_userid),
+        "mobile": str(result.get("mobile") or mobile),
+        "owner_userid": str(result.get("owner_userid") or submission.get("follow_user_userid") or ""),
+        "person_id": result.get("person_id"),
+        "binding_status": str(result.get("binding_status") or "bound"),
+        "source_status": str(result.get("source_status") or "questionnaire_mobile_binding"),
+        "route_owner": "ai_crm_next",
+        "fallback_used": False,
+        "side_effect_executed": bool(result.get("side_effect_executed")),
+        "real_external_call_executed": False,
+        "command_id": command.command_id,
     }
 
 

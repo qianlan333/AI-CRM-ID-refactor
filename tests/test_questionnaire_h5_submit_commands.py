@@ -57,6 +57,8 @@ def test_h5_submit_executes_next_commandbus_and_writes_submission_projection(cli
     assert body["identity"]["anonymous"] is False
     assert body["external_userid"] == "wx_ext_001"
     assert body["mobile"] == "13800138000"
+    assert body["mobile_binding"]["ok"] is True
+    assert body["mobile_binding"]["real_external_call_executed"] is False
 
     result = client.get(f"/api/h5/questionnaires/hxc-activation-v1/result/{body['submission_id']}")
     assert result.status_code == 200
@@ -133,7 +135,62 @@ def test_h5_submit_persists_when_identity_resolution_is_unavailable(client: Test
     assert body["success"] is True
     assert body["external_userid"] == "wm_identity_resolution_down_001"
     assert body["mobile"] == "13800138099"
-    assert body["binding_status"] == "identity_resolution_unavailable"
+    assert body["binding_status"] == "bound"
+    assert body["mobile_binding"]["source_status"] == "fixture_identity_binding"
+
+
+def test_h5_submit_syncs_mobile_binding_without_external_webhook_switch(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+
+    class FakeBindMobileCommand:
+        def __call__(self, request):
+            calls.append(request)
+            return {
+                "ok": True,
+                "source_status": "fixture_identity_binding",
+                "external_userid": request.external_userid,
+                "mobile": request.mobile,
+                "owner_userid": request.owner_userid or "HuangYouCan",
+                "person_id": "fixture_person_questionnaire",
+                "binding_status": "bound",
+                "side_effect_executed": False,
+            }
+
+    monkeypatch.setattr(
+        "aicrm_next.questionnaire.h5_write.BindMobileToExternalContactCommand",
+        lambda: FakeBindMobileCommand(),
+    )
+
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={
+            "answers": {"q_activation": "activated"},
+            "identity": {
+                "external_userid": "wm_questionnaire_bind_001",
+                "mobile": "13800138123",
+            },
+        },
+        headers={"Idempotency-Key": "h5-submit-mobile-binding"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_next_command(body, "questionnaire.h5.submit")
+    assert body["external_push_mode"] == "queue"
+    assert body["external_push"]["attempted"] is False
+    assert body["mobile_binding"]["ok"] is True
+    assert body["mobile_binding"]["source_status"] == "fixture_identity_binding"
+    assert body["mobile_binding"]["real_external_call_executed"] is False
+    assert body["binding_status"] == "bound"
+    assert body["person_id"] == "fixture_person_questionnaire"
+    assert body["side_effects"]["mobile_binding"]["owner_userid"] == "HuangYouCan"
+    assert calls
+    assert calls[0].external_userid == "wm_questionnaire_bind_001"
+    assert calls[0].mobile == "13800138123"
+    assert calls[0].bind_by_userid == "questionnaire_h5_submit"
+    assert calls[0].force_rebind is True
 
 
 def test_h5_submit_rejects_repeated_identity(client: TestClient) -> None:
