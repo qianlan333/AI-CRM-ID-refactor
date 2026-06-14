@@ -183,6 +183,36 @@ def test_questionnaire_completion_target_admin_public_submit_and_repeat(client: 
     assert repeat.json()["completion_target"]["target_type"] == "mini_program"
 
 
+def test_questionnaire_dynamic_url_link_completion_target(client: TestClient) -> None:
+    target = {
+        "enabled": True,
+        "target_type": "url_link",
+        "open_strategy": "url_link",
+        "h5_url": "/s/dynamic-url-link-survey/submitted",
+        "url_link": {
+            "enabled": True,
+            "source_url": "https://ip.lhbl.com.cn/api/wxlink?from=questionnaire",
+            "response_url_key": "url_link",
+        },
+    }
+    create = client.post(
+        "/api/admin/questionnaires",
+        json={**_payload("动态 URL Link 问卷"), "slug": "dynamic-url-link-survey", "completion_target": target},
+    )
+    assert create.status_code == 200
+    body = create.json()
+    assert body["questionnaire"]["completion_target_type"] == "url_link"
+    assert body["questionnaire"]["completion_target"]["url_link"]["source_url"] == "https://ip.lhbl.com.cn/api/wxlink?from=questionnaire"
+
+    submit = client.post(
+        "/api/h5/questionnaires/dynamic-url-link-survey/submit",
+        json={"answers": {"q1": "yes"}, "identity": {"respondent_key": "dynamic-url-link-user"}},
+    )
+    assert submit.status_code == 200
+    assert submit.json()["completion_target"]["target_type"] == "url_link"
+    assert submit.json()["completion_target"]["url_link"]["response_url_key"] == "url_link"
+
+
 def test_questionnaire_legacy_redirect_auto_builds_h5_completion_target(client: TestClient) -> None:
     create = client.post(
         "/api/admin/questionnaires",

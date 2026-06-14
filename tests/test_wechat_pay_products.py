@@ -170,6 +170,46 @@ def test_product_completion_target_admin_update_preview_and_order_payload():
     assert "lead_qr" not in order
 
 
+def test_product_dynamic_url_link_completion_target_order_payload():
+    from aicrm_next.public_product.h5_wechat_pay import _order_payload
+
+    repo = InMemoryCommerceRepository()
+    target = {
+        "enabled": True,
+        "target_type": "url_link",
+        "open_strategy": "url_link",
+        "h5_url": "/paid-fallback",
+        "url_link": {
+            "enabled": True,
+            "source_url": "https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay",
+            "response_url_key": "url_link",
+        },
+    }
+    created = UpsertProductCommand(repo)(
+        ProductUpsertRequest(**_product_payload(product_code="dynamic_url_link_001", page_slug="dynamic-url-link-001", completion_target=target))
+    )["product"]
+    assert created["completion_target"]["target_type"] == "url_link"
+    assert created["completion_redirect_enabled"] is False
+    assert created["completion_action"]["type"] == "url_link"
+
+    order = _order_payload(
+        {
+            "out_trade_no": "WXP_DYNAMIC_URL_LINK",
+            "product_code": "dynamic_url_link_001",
+            "product_name": "动态 URL Link 商品",
+            "amount_total": 19900,
+            "currency": "CNY",
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        },
+        completion_redirect=created,
+        lead_qr={"qr_url": "https://example.com/lead.png"},
+    )
+    assert order["completion_action"]["type"] == "url_link"
+    assert order["completion_action"]["navigation_target"]["url_link"]["source_url"].endswith("from=qianlan_pay")
+    assert "lead_qr" not in order
+
+
 def test_product_legacy_completion_redirect_auto_builds_h5_completion_target():
     repo = InMemoryCommerceRepository()
     created = UpsertProductCommand(repo)(

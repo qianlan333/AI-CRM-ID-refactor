@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from aicrm_next.commerce.product_code_aliases import canonical_product_code
+from aicrm_next.navigation_target.resolver import url_link_resolver_response
 from aicrm_next.shared.errors import NotFoundError
 
 from .h5_wechat_pay import (
@@ -111,6 +112,15 @@ async def h5_wechat_pay_create_jsapi_order(request: Request) -> JSONResponse:
 @router.get("/api/h5/wechat-pay/orders/{out_trade_no}", name="api.h5_wechat_pay_order_status")
 def h5_wechat_pay_order_status(out_trade_no: str, request: Request) -> JSONResponse:
     return order_status_response(out_trade_no, request)
+
+
+@router.get("/api/h5/navigation-target/url-link/resolve", name="api.h5_navigation_target_url_link_resolve")
+def h5_navigation_target_url_link_resolve(request: Request) -> Response:
+    return url_link_resolver_response(
+        source_url=request.query_params.get("source_url"),
+        response_url_key=request.query_params.get("response_url_key") or "url_link",
+        fallback_url=request.query_params.get("fallback_url") or "",
+    )
 
 
 @router.post("/api/h5/wechat-pay/notify", name="api.h5_wechat_pay_notify")

@@ -484,12 +484,24 @@
       function fallbackUrlFromTarget(target) {
         if (!target || !target.enabled) return '';
         const link = target.url_link || {};
-        return String(link.url || target.fallback_url || target.h5_url || '');
+        return String(target.fallback_url || target.h5_url || link.url || '');
       }
 
       function safeFallbackUrl(fallbackUrl, target) {
         const candidate = String(fallbackUrl || fallbackUrlFromTarget(target) || submittedUrl || '').trim();
         return candidate && isSafeRedirectUrl(candidate) ? candidate : submittedUrl;
+      }
+
+      function dynamicUrlLinkResolverUrl(target, fallbackUrl) {
+        const link = target && target.url_link ? target.url_link : {};
+        const sourceUrl = String(link.source_url || '').trim();
+        if (!/^https:\/\/[^\s\\]+$/i.test(sourceUrl)) return '';
+        const params = new URLSearchParams();
+        params.set('source_url', sourceUrl);
+        params.set('response_url_key', String(link.response_url_key || 'url_link'));
+        const safeFallback = safeFallbackUrl(fallbackUrl, target);
+        if (safeFallback) params.set('fallback_url', safeFallback);
+        return `/api/h5/navigation-target/url-link/resolve?${params.toString()}`;
       }
 
       function escapeAttr(value) {
@@ -556,6 +568,11 @@
         }
         if (normalizedTarget.target_type === 'url_link') {
           const link = normalizedTarget.url_link || {};
+          const resolverUrl = dynamicUrlLinkResolverUrl(normalizedTarget, safeFallback);
+          if (resolverUrl) {
+            window.location.href = resolverUrl;
+            return;
+          }
           if (link.url && isSafeRedirectUrl(link.url)) {
             window.location.href = link.url;
             return;

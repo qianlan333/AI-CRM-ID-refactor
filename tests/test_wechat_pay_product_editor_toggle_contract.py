@@ -13,7 +13,7 @@ def test_product_editor_toggles_are_persisted_business_enablement_controls() -> 
     assert "let afterActionEnabled = Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id);" in text
     assert "setAfterActionEnabled(Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id));" in text
     assert 'lead_channel_id: afterActionEnabled && afterActionMode === "lead"' in text
-    assert 'const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.target_type === "h5";' in text
+    assert 'const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.enabled;' in text
     assert "completion_target: completionTarget" in text
     assert "setExternalPushActive(Boolean(externalPush.enabled));" in text
     assert "enabled: Boolean(externalPush.enabled)," in text
@@ -21,12 +21,13 @@ def test_product_editor_toggles_are_persisted_business_enablement_controls() -> 
     assert "支付成功外推" not in text
 
 
-def test_product_editor_completion_target_ui_is_h5_only() -> None:
+def test_product_editor_completion_target_ui_has_h5_and_dynamic_url_link_only() -> None:
     text = TEMPLATE.read_text(encoding="utf-8")
 
     assert "H5 跳转地址" in text
+    assert "动态 URL Link 接口" in text
     assert "打开微信小程序" not in text
-    assert "completion_target_type" not in text
+    assert "completion_target_type" in text
     assert "splitMiniProgramPathInput" not in text
     assert "completion_target: completionTarget" in text
 
@@ -42,6 +43,6 @@ def test_product_editor_completion_target_ui_is_h5_only() -> None:
     assert "mini_program_env_version" not in text
     assert "mini_program_query" not in text
     assert "mini_program_url_link" not in text
-    assert "data-url-link-fields" not in text
+    assert "data-url-link-fields" in text
     assert "打开小程序 URL Link" not in text
     assert "URL Link 兜底" not in text

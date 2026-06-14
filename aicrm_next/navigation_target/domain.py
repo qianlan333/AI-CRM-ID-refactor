@@ -26,6 +26,8 @@ DEFAULT_COMPLETION_TARGET: dict[str, Any] = {
     "url_link": {
         "enabled": False,
         "url": "",
+        "source_url": "",
+        "response_url_key": "url_link",
         "expire_type": 0,
         "expire_interval": 30,
     },
@@ -62,6 +64,18 @@ def validate_completion_url(value: Any, *, field_name: str) -> str:
     if raw and not safe_url:
         raise ContractError(f"{field_name} must be an https URL or safe internal path")
     return safe_url
+
+
+def validate_url_link_source_url(value: Any, *, field_name: str = "url_link.source_url") -> str:
+    raw = _text(value)
+    if not raw:
+        return ""
+    if any(char.isspace() for char in raw) or "\\" in raw:
+        raise ContractError(f"{field_name} must be an https URL")
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ContractError(f"{field_name} must be an https URL")
+    return raw
 
 
 def validate_mini_program_path(value: Any) -> str:
@@ -127,6 +141,8 @@ def normalize_completion_target(
     h5_url = validate_completion_url(raw.get("h5_url") or "", field_name="h5_url")
     fallback_url = validate_completion_url(raw.get("fallback_url") or "", field_name="fallback_url")
     url_link_url = validate_completion_url(url_link_raw.get("url") or "", field_name="url_link.url")
+    url_link_source_url = validate_url_link_source_url(url_link_raw.get("source_url") or "")
+    response_url_key = _text(url_link_raw.get("response_url_key") or "url_link") or "url_link"
     mini_program = {
         "appid": _text(mini_raw.get("appid")),
         "username": _text(mini_raw.get("username")),
@@ -137,6 +153,8 @@ def normalize_completion_target(
     url_link = {
         "enabled": _bool(url_link_raw.get("enabled")),
         "url": url_link_url,
+        "source_url": url_link_source_url,
+        "response_url_key": response_url_key,
         "expire_type": int(url_link_raw.get("expire_type") or 0),
         "expire_interval": int(url_link_raw.get("expire_interval") or 30),
     }
@@ -148,9 +166,9 @@ def normalize_completion_target(
             raise ContractError("mini_program.username or mini_program.appid is required when mini_program target is enabled")
         if not mini_program["path"]:
             raise ContractError("mini_program.path is required when mini_program target is enabled")
-    if enabled and target_type == "url_link" and not url_link_url:
-        raise ContractError("url_link.url is required when url_link target is enabled")
-    if target_type == "url_link" and url_link_url:
+    if enabled and target_type == "url_link" and not (url_link_url or url_link_source_url):
+        raise ContractError("url_link.url or url_link.source_url is required when url_link target is enabled")
+    if target_type == "url_link" and (url_link_url or url_link_source_url):
         url_link["enabled"] = True
 
     return {
@@ -198,7 +216,11 @@ def completion_action_for_target(target: dict[str, Any], *, legacy_redirect_url:
     if target_type == "mini_program":
         return {"type": "mini_program", "navigation_target": normalized}
     if target_type == "url_link":
-        url = safe_completion_url((normalized.get("url_link") or {}).get("url"))
+        link = normalized.get("url_link") or {}
+        source_url = _text(link.get("source_url"))
+        if source_url:
+            return {"type": "url_link", "navigation_target": normalized, "redirect_url": ""}
+        url = safe_completion_url(link.get("url"))
         return {"type": "redirect", "redirect_url": url} if url else {"type": "default", "redirect_url": ""}
     url = safe_completion_url(normalized.get("h5_url"))
     return {"type": "redirect", "redirect_url": url} if url else {"type": "default", "redirect_url": ""}

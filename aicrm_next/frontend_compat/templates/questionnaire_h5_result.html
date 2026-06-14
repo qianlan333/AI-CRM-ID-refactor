@@ -297,6 +297,16 @@
     function isSafeRedirectUrl(url) {
       return /^https:\/\//.test(url) || /^\/(?!\/)[^\s\\]*$/.test(url);
     }
+    function dynamicUrlLinkResolverUrl(target, fallbackUrl) {
+      const urlLink = target && target.url_link ? target.url_link : {};
+      const sourceUrl = String(urlLink.source_url || '').trim();
+      if (!/^https:\/\/[^\s\\]+$/i.test(sourceUrl)) return '';
+      const params = new URLSearchParams();
+      params.set('source_url', sourceUrl);
+      params.set('response_url_key', String(urlLink.response_url_key || 'url_link'));
+      if (fallbackUrl && isSafeRedirectUrl(fallbackUrl)) params.set('fallback_url', fallbackUrl);
+      return `/api/h5/navigation-target/url-link/resolve?${params.toString()}`;
+    }
     function handleCompletionTarget(target, fallbackUrl) {
       const panel = document.getElementById('weapp-launch-panel');
       const host = document.getElementById('weapp-launch-host');
@@ -310,6 +320,11 @@
         return;
       }
       if (target.target_type === 'url_link') {
+        const resolverUrl = dynamicUrlLinkResolverUrl(target, safeFallback);
+        if (resolverUrl) {
+          window.location.href = resolverUrl;
+          return;
+        }
         const url = target.url_link && target.url_link.url;
         if (url && isSafeRedirectUrl(url)) window.location.href = url;
         return;

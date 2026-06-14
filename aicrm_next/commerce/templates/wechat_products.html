@@ -273,8 +273,25 @@
               <div class="target-body" data-target-body hidden>
                 <div class="field-grid">
                   <div class="field full">
+                    <label>跳转类型</label>
+                    <select name="completion_target_type">
+                      <option value="h5">H5 跳转地址</option>
+                      <option value="url_link">动态 URL Link 接口</option>
+                    </select>
+                  </div>
+                  <div class="field full">
                     <label>H5 跳转地址</label>
                     <input name="completion_h5_url" placeholder="https://example.com/landing 或 /internal/path">
+                    <small>普通 H5 落地页或动态 URL Link 失败时的备用地址。</small>
+                  </div>
+                  <div class="field full" data-url-link-fields>
+                    <label>动态 URL Link 接口</label>
+                    <input name="completion_url_link_source_url" placeholder="https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay">
+                    <small>支付成功后先访问该接口，从 JSON 里取微信官方 URL Link 后再跳转。</small>
+                  </div>
+                  <div class="field" data-url-link-fields>
+                    <label>响应字段</label>
+                    <input name="completion_url_link_response_key" placeholder="url_link" value="url_link">
                   </div>
                 </div>
                 <div class="warning" data-validation-warning hidden></div>
@@ -447,7 +464,7 @@
       h5_url: h5Url,
       fallback_url: "",
       mini_program: { appid: "", username: "", path: "", query: "", env_version: "release" },
-      url_link: { enabled: false, url: "", expire_type: 0, expire_interval: 30 }
+      url_link: { enabled: false, url: "", source_url: "", response_url_key: "url_link", expire_type: 0, expire_interval: 30 }
     };
   }
   function normalizeCompletionTarget(value, fallbackUrl = "") {
@@ -455,32 +472,44 @@
     const target = Object.assign({}, base, value || {});
     target.mini_program = Object.assign({}, base.mini_program, target.mini_program || {});
     target.url_link = Object.assign({}, base.url_link, target.url_link || {});
-    if (target.target_type !== "mini_program") target.target_type = "h5";
-    target.open_strategy = target.target_type === "mini_program" ? "wechat_open_tag" : "h5_redirect";
-    target.url_link.enabled = false;
+    if (!["h5", "url_link"].includes(target.target_type)) target.target_type = "h5";
+    target.open_strategy = target.target_type === "url_link" ? "url_link" : "h5_redirect";
+    target.url_link.enabled = target.target_type === "url_link" && Boolean(target.url_link.url || target.url_link.source_url);
     return target;
   }
   function mountCompletionTargetConfig(root, initialValue) {
     const enabledEl = root.querySelector("[data-target-enabled]");
     const bodyEl = root.querySelector("[data-target-body]");
     const warningEl = root.querySelector("[data-validation-warning]");
+    const typeEl = root.querySelector('[name="completion_target_type"]');
+    const h5UrlEl = root.querySelector('[name="completion_h5_url"]');
+    const sourceUrlEl = root.querySelector('[name="completion_url_link_source_url"]');
+    const responseKeyEl = root.querySelector('[name="completion_url_link_response_key"]');
     function syncVisibility() {
       bodyEl.hidden = !enabledEl.checked;
+      const isUrlLink = typeEl && typeEl.value === "url_link";
+      root.querySelectorAll("[data-url-link-fields]").forEach(el => { el.hidden = !isUrlLink; });
     }
     function fill(initial) {
       const target = normalizeCompletionTarget(initial, product.completion_redirect_url || "");
       enabledEl.checked = Boolean(target.enabled);
-      root.querySelector('[name="completion_h5_url"]').value = target.h5_url || target.fallback_url || product.completion_redirect_url || "";
+      if (typeEl) typeEl.value = target.target_type === "url_link" ? "url_link" : "h5";
+      h5UrlEl.value = target.h5_url || target.fallback_url || product.completion_redirect_url || "";
+      if (sourceUrlEl) sourceUrlEl.value = target.url_link.source_url || "";
+      if (responseKeyEl) responseKeyEl.value = target.url_link.response_url_key || "url_link";
       syncVisibility();
     }
     root.collectCompletionTarget = function collectCompletionTarget(options = {}) {
       const validate = options.validate !== false;
       const enabled = enabledEl.checked;
-      const h5Url = root.querySelector('[name="completion_h5_url"]').value.trim();
+      const targetType = typeEl && typeEl.value === "url_link" ? "url_link" : "h5";
+      const h5Url = h5UrlEl.value.trim();
+      const sourceUrl = sourceUrlEl ? sourceUrlEl.value.trim() : "";
+      const responseUrlKey = responseKeyEl ? responseKeyEl.value.trim() || "url_link" : "url_link";
       const payload = {
         enabled,
-        target_type: "h5",
-        open_strategy: "h5_redirect",
+        target_type: targetType,
+        open_strategy: targetType === "url_link" ? "url_link" : "h5_redirect",
         h5_url: h5Url,
         fallback_url: "",
         mini_program: {
@@ -491,14 +520,21 @@
           env_version: "release"
         },
         url_link: {
-          enabled: false,
-          url: ""
+          enabled: targetType === "url_link" && Boolean(sourceUrl),
+          url: "",
+          source_url: sourceUrl,
+          response_url_key: responseUrlKey
         }
       };
       warningEl.hidden = true;
       warningEl.textContent = "";
-      if (validate && enabled && !h5Url) {
+      if (validate && enabled && targetType === "h5" && !h5Url) {
         warningEl.textContent = "请填写 H5 跳转地址。";
+        warningEl.hidden = false;
+        throw new Error(warningEl.textContent);
+      }
+      if (validate && enabled && targetType === "url_link" && !sourceUrl) {
+        warningEl.textContent = "请填写动态 URL Link 接口。";
         warningEl.hidden = false;
         throw new Error(warningEl.textContent);
       }
@@ -608,7 +644,7 @@
     $("productDescription").value = product.description || "";
     $("leadChannel").value = String(product.lead_channel_id || 0);
     setAfterActionEnabled(Boolean((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled || product.lead_channel_id));
-    selectAfterActionMode(product.completion_redirect_enabled ? "redirect" : "lead");
+    selectAfterActionMode(((product.completion_target && product.completion_target.enabled) || product.completion_redirect_enabled) ? "redirect" : "lead");
     const targetRoot = document.querySelector("[data-completion-target-config]");
     if (targetRoot) mountCompletionTargetConfig(targetRoot, product.completion_target || defaultCompletionTarget(product.completion_redirect_url || ""));
     renderSlices();
@@ -620,13 +656,13 @@
       ? targetRoot.collectCompletionTarget()
       : normalizeCompletionTarget(product.completion_target, product.completion_redirect_url || "");
     if (!afterActionEnabled) completionTarget.enabled = false;
-    const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.target_type === "h5";
+    const enabled = afterActionEnabled && afterActionMode === "redirect" && completionTarget.enabled;
     const targetUrl = completionTarget.target_type === "h5" ? completionTarget.h5_url : "";
-    if (enabled && !targetUrl) throw new Error("请填写 H5 跳转地址");
-    if (enabled && !/^https:\/\/[^/\s?#]+/i.test(targetUrl) && !/^\/(?!\/)[^\s\\]*$/.test(targetUrl)) throw new Error("H5 跳转地址格式不合法");
+    if (enabled && completionTarget.target_type === "h5" && !targetUrl) throw new Error("请填写 H5 跳转地址");
+    if (enabled && completionTarget.target_type === "h5" && !/^https:\/\/[^/\s?#]+/i.test(targetUrl) && !/^\/(?!\/)[^\s\\]*$/.test(targetUrl)) throw new Error("H5 跳转地址格式不合法");
     return {
-      completion_redirect_enabled: enabled,
-      completion_redirect_url: enabled ? targetUrl : "",
+      completion_redirect_enabled: enabled && completionTarget.target_type === "h5",
+      completion_redirect_url: enabled && completionTarget.target_type === "h5" ? targetUrl : "",
       completion_target: completionTarget
     };
   }

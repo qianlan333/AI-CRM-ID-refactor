@@ -76,7 +76,7 @@ def test_questionnaire_admin_templates_live_in_questionnaire_bundle() -> None:
     assert not (root / "aicrm_next/frontend_compat/templates/admin_questionnaires.html").exists()
 
 
-def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> None:
+def test_questionnaire_completion_target_ui_keeps_simple_h5_and_dynamic_url_link_modes() -> None:
     root = Path(__file__).resolve().parents[1]
     templates = [
         root / "aicrm_next/questionnaire/templates/admin_questionnaires.html",
@@ -88,8 +88,9 @@ def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> No
         assert "提交后跳转" in text
         assert "提交后动作" not in text
         assert "H5 跳转地址" in text
+        assert "动态 URL Link 接口" in text
         assert "打开微信小程序" not in text
-        assert "completion_target_type" not in text
+        assert "completion_target_type" in text
         assert "splitMiniProgramPathInput" not in text
         assert "小程序原始 ID" not in text
         assert "小程序页面路径" not in text
@@ -108,6 +109,6 @@ def test_questionnaire_completion_target_ui_is_simplified_to_h5_or_weapp() -> No
         assert "mini_program_env_version" not in text
         assert "mini_program_query" not in text
         assert "mini_program_url_link" not in text
-        assert "data-url-link-fields" not in text
+        assert "data-url-link-fields" in text
         assert "打开小程序 URL Link" not in text
         assert "URL Link 兜底" not in text
