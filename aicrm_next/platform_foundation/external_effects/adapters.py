@@ -4,10 +4,11 @@ import hashlib
 import hmac
 import json
 import os
-import re
 from typing import Any, Protocol
 
 import requests
+
+from aicrm_next.shared.runtime_settings import runtime_bool, runtime_csv, runtime_setting
 
 from .models import (
     AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
@@ -39,12 +40,11 @@ class ExternalEffectAdapter(Protocol):
 
 
 def _enabled(name: str) -> bool:
-    return str(os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return runtime_bool(name)
 
 
 def _csv_env(name: str) -> set[str]:
-    raw = str(os.getenv(name, "") or "").strip()
-    return {item.strip() for item in re.split(r"[,\s]+", raw) if item.strip()}
+    return runtime_csv(name)
 
 
 def webhook_execution_settings() -> dict[str, Any]:
@@ -125,7 +125,7 @@ class WebhookAdapter:
                 error_message="webhook payload body must be a JSON object or array",
                 real_external_call_executed=False,
             )
-        timeout = float(os.getenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS") or "5")
+        timeout = float(runtime_setting("AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS", "5") or "5")
         headers, signature_configured = self._headers(payload=payload, body=body)
         request_summary = {
             "effect_type": job.effect_type,

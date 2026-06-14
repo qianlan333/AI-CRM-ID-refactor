@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 from uuid import uuid4
+
+from aicrm_next.shared.runtime_settings import runtime_bool
 
 from .adapters import DEFAULT_ADAPTER_REGISTRY, ExternalEffectAdapterRegistry
 from .models import WECOM_MESSAGE_GROUP_SEND, ExternalEffectJob
@@ -11,7 +12,7 @@ from .retry_policy import next_retry_at, status_for_failure
 
 
 def _enabled(name: str) -> bool:
-    return str(os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return runtime_bool(name)
 
 
 def _is_test_job(job: ExternalEffectJob) -> bool:

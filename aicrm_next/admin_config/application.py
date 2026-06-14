@@ -119,6 +119,39 @@ EXTRA_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "侧边栏 JSSDK 请求超时时间（秒）。",
         "min": 1,
     },
+    "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE": {
+        "key": "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE",
+        "label": "问卷外推模式",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "legacy=旧同步；shadow=旧同步+队列记录；queue=只入统一外部动作队列。",
+    },
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE": {
+        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
+        "label": "Webhook 队列真实执行",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "boolean",
+        "description": "开启后仍只执行允许列表中的 webhook effect_type；run-due 默认仍为 dry-run。",
+    },
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES": {
+        "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+        "label": "允许执行的外部动作类型",
+        "mode": "editable",
+        "input_type": "text",
+        "type": "string",
+        "description": "逗号分隔；禁止 *。问卷外推填写 webhook.questionnaire_submission.push。",
+    },
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS": {
+        "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
+        "label": "Webhook 队列请求超时",
+        "mode": "editable",
+        "input_type": "number",
+        "type": "integer",
+        "description": "External Effect Queue 调用 webhook 的超时时间（秒）。",
+        "min": 1,
+    },
     "WECHAT_SHOP_ENABLED": {
         "key": "WECHAT_SHOP_ENABLED",
         "label": "微信小店已启用",
@@ -214,6 +247,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
         "QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS",
+        "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
     }:
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
     if key in {
@@ -222,9 +256,19 @@ def _validate_known_setting(key: str, value: str) -> str:
         "LAOHUANG_CHAT_ENABLED",
         "WECHAT_PAY_ENABLED",
         "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
+        "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
         "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
+    if key == "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE":
+        allowed_modes = {"legacy", "shadow", "queue"}
+        if normalized and normalized not in allowed_modes:
+            raise ValueError("AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE 只允许 legacy / shadow / queue")
+        return normalized or "queue"
+    if key == "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES":
+        if "*" in {item.strip() for item in normalized.replace("\n", " ").replace(",", " ").split() if item.strip()}:
+            raise ValueError("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES 不允许使用 *")
+        return normalized
     if key == "LAOHUANG_CHAT_SEND_CHANNEL":
         if normalized and normalized != "private_message":
             raise ValueError("LAOHUANG_CHAT_SEND_CHANNEL 首版只允许 private_message")

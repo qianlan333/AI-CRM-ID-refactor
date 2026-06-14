@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from aicrm_next.main import create_app
+from aicrm_next.platform_foundation.external_effects.adapters import webhook_execution_settings
+from aicrm_next.questionnaire.external_push import questionnaire_external_push_mode
 from aicrm_next.shared.db_session import reset_engine_cache_for_tests
 
 
@@ -445,6 +447,52 @@ def test_config_category_settings_save_skips_empty_sensitive_and_rejects_cross_c
     assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'WECHAT_PAY_API_V3_KEY'") == "original-v3-secret"
     assert cross_category.status_code == 400
     assert "not in category" in cross_category.json()["error"]
+
+
+def test_webhooks_push_category_controls_external_effect_runtime(monkeypatch, tmp_path) -> None:
+    client = _prepare_client(monkeypatch, tmp_path)
+    database_url = _db_url(monkeypatch)
+    token = _token(client.get("/admin/config/app-settings").text)
+
+    detail_page = client.get("/admin/config/detail/webhooks_push")
+    assert detail_page.status_code == 200
+    assert "Webhook 队列真实执行" in detail_page.text
+    assert "问卷外推模式" in detail_page.text
+    assert "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES" in detail_page.text
+
+    saved = client.put(
+        "/api/admin/config/categories/webhooks_push/settings",
+        json={
+            "admin_action_token": token,
+            "operator": "webhook-runtime-test",
+            "settings": {
+                "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_MODE": "queue",
+                "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE": True,
+                "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES": "webhook.questionnaire_submission.push",
+                "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS": "9",
+            },
+        },
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["changed_count"] == 4
+    assert _scalar(database_url, "SELECT value FROM app_settings WHERE key = 'AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE'") == "true"
+    assert questionnaire_external_push_mode() == "queue"
+    execution = webhook_execution_settings()
+    assert execution["enabled"] is True
+    assert execution["allowed_types"] == ["webhook.questionnaire_submission.push"]
+
+    rejected = client.put(
+        "/api/admin/config/categories/webhooks_push/settings",
+        json={
+            "admin_action_token": token,
+            "operator": "webhook-runtime-test",
+            "settings": {"AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES": "*"},
+        },
+    )
+
+    assert rejected.status_code == 400
+    assert "不允许使用 *" in rejected.json()["error"]
 
 
 def test_config_category_check_and_invalid_category_are_controlled(monkeypatch, tmp_path) -> None:
