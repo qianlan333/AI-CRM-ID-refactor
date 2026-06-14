@@ -143,6 +143,16 @@ class InternalEventRepository:
     def get_consumer_run_by_id(self, run_id: int) -> InternalEventConsumerRun | None:
         raise NotImplementedError
 
+    def acquire_consumer_run(
+        self,
+        *,
+        event_id: str,
+        consumer_name: str,
+        locked_by: str,
+        force: bool = False,
+    ) -> InternalEventConsumerRun | None:
+        raise NotImplementedError
+
     def list_attempts(self, consumer_run_id: int | None = None, *, event_id: str = "") -> list[InternalEventConsumerAttempt]:
         raise NotImplementedError
 
@@ -420,6 +430,54 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
 
     def get_consumer_run_by_id(self, run_id: int) -> InternalEventConsumerRun | None:
         return _public_run(self._one("SELECT * FROM internal_event_consumer_run WHERE id = :run_id LIMIT 1", {"run_id": int(run_id)}))
+
+    def acquire_consumer_run(
+        self,
+        *,
+        event_id: str,
+        consumer_name: str,
+        locked_by: str,
+        force: bool = False,
+    ) -> InternalEventConsumerRun | None:
+        allowed_statuses = (
+            "'pending','failed_retryable','failed_terminal','blocked','succeeded','skipped'"
+            if force
+            else "'pending','failed_retryable','failed_terminal','blocked'"
+        )
+        retry_guard = (
+            ""
+            if force
+            else "AND (r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)"
+        )
+        row = self._write_one(
+            f"""
+            WITH target AS (
+                SELECT r.id
+                FROM internal_event_consumer_run r
+                WHERE r.event_id = :event_id
+                  AND r.consumer_name = :consumer_name
+                  AND r.status IN ({allowed_statuses})
+                  AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                  {retry_guard}
+                ORDER BY r.created_at ASC, r.id ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE internal_event_consumer_run r
+            SET locked_at = CURRENT_TIMESTAMP,
+                locked_by = :locked_by,
+                updated_at = CURRENT_TIMESTAMP
+            FROM target
+            WHERE r.id = target.id
+            RETURNING r.*
+            """,
+            {
+                "event_id": _text(event_id),
+                "consumer_name": _text(consumer_name),
+                "locked_by": _text(locked_by),
+            },
+        )
+        return _public_run(row)
 
     def list_attempts(self, consumer_run_id: int | None = None, *, event_id: str = "") -> list[InternalEventConsumerAttempt]:
         params: dict[str, Any] = {}
@@ -786,6 +844,38 @@ class InMemoryInternalEventRepository(InternalEventRepository):
 
     def get_consumer_run_by_id(self, run_id: int) -> InternalEventConsumerRun | None:
         return _public_run(self._find_run(run_id))
+
+    def acquire_consumer_run(
+        self,
+        *,
+        event_id: str,
+        consumer_name: str,
+        locked_by: str,
+        force: bool = False,
+    ) -> InternalEventConsumerRun | None:
+        now = utcnow()
+        stale_cutoff = now - timedelta(minutes=5)
+        allowed_statuses = (
+            {"pending", "failed_retryable", "failed_terminal", "blocked", "succeeded", "skipped"}
+            if force
+            else {"pending", "failed_retryable", "failed_terminal", "blocked"}
+        )
+        for row in self._runs:
+            if row.get("event_id") != _text(event_id) or row.get("consumer_name") != _text(consumer_name):
+                continue
+            if row.get("status") not in allowed_statuses:
+                return None
+            locked_at = self._dt(row.get("locked_at")) if row.get("locked_at") else datetime.min.replace(tzinfo=timezone.utc)
+            if locked_at > stale_cutoff:
+                return None
+            if not force and row.get("status") == "failed_retryable" and row.get("next_retry_at"):
+                if self._dt(row.get("next_retry_at")) > now:
+                    return None
+            row["locked_at"] = public_datetime(now)
+            row["locked_by"] = _text(locked_by)
+            row["updated_at"] = public_datetime(now)
+            return _public_run(row)
+        return None
 
     def list_attempts(self, consumer_run_id: int | None = None, *, event_id: str = "") -> list[InternalEventConsumerAttempt]:
         rows = list(self._attempts)

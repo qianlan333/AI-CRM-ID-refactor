@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from aicrm_next.platform_foundation.external_effects import WEBHOOK_ORDER_PAID_PUSH, ExternalEffectService, reset_external_effect_fixture_state
+from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
+from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
+from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
+from aicrm_next.public_product import h5_wechat_pay
+from aicrm_next.public_product.h5_wechat_pay import _apply_transaction
+
+
+PAYMENT_CONSUMERS = {
+    "order_projection_consumer",
+    "webhook_order_paid_consumer",
+    "automation_payment_consumer",
+    "customer_business_summary_consumer",
+    "dnd_policy_consumer",
+    "ai_assist_notify_consumer",
+}
+
+
+class _FakeCursor:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _PaymentConn:
+    def __init__(self, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
+        self.order = {
+            "id": 881,
+            "out_trade_no": out_trade_no,
+            "product_code": "subscription_trial_month",
+            "product_name": "Single Consumer Slice",
+            "amount_total": 990,
+            "payer_total": 990,
+            "status": "paying",
+            "trade_state": "NOTPAY",
+            "external_userid": "wm_single_consumer",
+            "userid_snapshot": "user_single",
+            "respondent_key": "respondent_single",
+            "mobile_snapshot": "13800005678",
+            "paid_at": "",
+        }
+
+    def execute(self, query, params):
+        normalized = " ".join(query.split())
+        if normalized.startswith("SELECT * FROM wechat_pay_orders"):
+            return _FakeCursor(dict(self.order))
+        if normalized.startswith("UPDATE wechat_pay_orders"):
+            self.order.update(
+                {
+                    "status": params[0],
+                    "trade_state": params[1],
+                    "transaction_id": params[2],
+                    "bank_type": params[3],
+                    "payer_openid": params[4] or self.order.get("payer_openid", ""),
+                    "payer_total": params[5],
+                    "paid_at": params[7],
+                    "notify_payload_json": params[8],
+                }
+            )
+            return _FakeCursor(dict(self.order))
+        raise AssertionError(query)
+
+
+def _transaction(out_trade_no: str = "WXP_SINGLE_CONSUMER") -> dict:
+    return {
+        "out_trade_no": out_trade_no,
+        "trade_state": "SUCCESS",
+        "transaction_id": f"wx_tx_{out_trade_no}",
+        "bank_type": "OTHERS",
+        "success_time": "2026-06-14T12:42:36+08:00",
+        "amount": {"payer_total": 990},
+        "payer": {"openid": "openid_single"},
+    }
+
+
+def _enable_shadow_payment_events(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "payment.succeeded")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT", "1")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE", "0")
+    monkeypatch.setenv("AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES", "")
+
+
+def _reset_state() -> None:
+    reset_internal_event_fixture_state()
+    reset_external_effect_fixture_state()
+
+
+def _patch_legacy_outbox(monkeypatch) -> None:
+    monkeypatch.setattr(
+        h5_wechat_pay,
+        "enqueue_transaction_paid_outbox",
+        lambda conn, order: {"id": 9101, "event_type": "transaction.paid"},
+    )
+
+
+def _emit_payment(monkeypatch, *, out_trade_no: str = "WXP_SINGLE_CONSUMER"):
+    _reset_state()
+    _enable_shadow_payment_events(monkeypatch)
+    _patch_legacy_outbox(monkeypatch)
+    _apply_transaction(_PaymentConn(out_trade_no=out_trade_no), _transaction(out_trade_no))
+    event = InternalEventService().list_events({"event_type": PAYMENT_SUCCEEDED_EVENT_TYPE})[0][0]
+    runs, total = InternalEventService().list_consumer_runs({"event_id": event.event_id})
+    assert total == 6
+    assert {run.consumer_name for run in runs} == PAYMENT_CONSUMERS
+    return event
+
+
+def _run(event_id: str, consumer_name: str, *, dry_run: bool = False, force: bool = False, reason: str = "production_gray_single_consumer"):
+    return InternalEventWorker().dispatch_one_consumer(
+        event_id,
+        consumer_name,
+        dry_run=dry_run,
+        force=force,
+        reason=reason,
+    )
+
+
+def _statuses(event_id: str) -> dict[str, str]:
+    runs, _ = InternalEventService().list_consumer_runs({"event_id": event_id})
+    return {run.consumer_name: run.status for run in runs}
+
+
+def test_single_consumer_run_requires_token(next_client: TestClient, monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    response = next_client.post(
+        f"/api/admin/internal-events/{event.event_id}/consumers/order_projection_consumer/run",
+        json={"dry_run": True},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] in {"automation_internal_token_not_configured", "internal_token_required", "缺少 admin_action_token"}
+
+    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "single-consumer-token")
+    authorized = next_client.post(
+        f"/api/admin/internal-events/{event.event_id}/consumers/order_projection_consumer/run",
+        json={"reason": "production_gray_single_consumer"},
+        headers={"Authorization": "Bearer single-consumer-token"},
+    )
+    attempts = InternalEventService().list_attempts(event_id=event.event_id)
+
+    assert authorized.status_code == 200
+    assert authorized.json()["dry_run"] is True
+    assert authorized.json()["counts"]["candidate_count"] == 1
+    assert authorized.json()["counts"]["processed_count"] == 0
+    assert authorized.json()["real_external_call_executed"] is False
+    assert attempts == []
+
+
+def test_single_consumer_dry_run_does_not_change_state(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    result = _run(event.event_id, "order_projection_consumer", dry_run=True)
+    runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id})
+    attempts = InternalEventService().list_attempts(event_id=event.event_id)
+
+    assert result["ok"] is True
+    assert result["dry_run"] is True
+    assert result["counts"]["candidate_count"] == 1
+    assert result["counts"]["processed_count"] == 0
+    assert result["real_external_call_executed"] is False
+    assert {run.status for run in runs} == {"pending"}
+    assert attempts == []
+
+
+def test_single_consumer_execute_only_updates_specified_consumer(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    result = _run(event.event_id, "order_projection_consumer")
+    statuses = _statuses(event.event_id)
+    attempts = InternalEventService().list_attempts(event_id=event.event_id)
+
+    assert result["ok"] is True
+    assert result["dry_run"] is False
+    assert result["counts"]["processed_count"] == 1
+    assert result["counts"]["succeeded_count"] == 1
+    assert statuses["order_projection_consumer"] == "succeeded"
+    assert {name: status for name, status in statuses.items() if name != "order_projection_consumer"} == {
+        "webhook_order_paid_consumer": "pending",
+        "automation_payment_consumer": "pending",
+        "customer_business_summary_consumer": "pending",
+        "dnd_policy_consumer": "pending",
+        "ai_assist_notify_consumer": "pending",
+    }
+    assert len(attempts) == 1
+    assert attempts[0].consumer_name == "order_projection_consumer"
+
+
+def test_webhook_single_consumer_creates_shadow_external_effect_without_external_attempt(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    result = _run(event.event_id, "webhook_order_paid_consumer")
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+    consumer_jobs = [
+        item
+        for item in jobs
+        if item.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    ]
+    job = consumer_jobs[0]
+    attempts = ExternalEffectService().list_attempts(job.id)
+
+    assert result["counts"]["succeeded_count"] == 1
+    assert result["real_external_call_executed"] is False
+    assert total >= 1
+    assert len(consumer_jobs) == 1
+    assert job.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    assert job.source_event_id == event.event_id
+    assert job.execution_mode == "shadow"
+    assert job.status == "planned"
+    assert job.attempt_count == 0
+    assert attempts == []
+
+
+def test_skipped_single_consumer_records_reason_without_touching_other_runs(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    result = _run(event.event_id, "dnd_policy_consumer")
+    runs, _ = InternalEventService().list_consumer_runs({"event_id": event.event_id})
+    dnd = next(run for run in runs if run.consumer_name == "dnd_policy_consumer")
+
+    assert result["counts"]["skipped_count"] == 1
+    assert dnd.status == "skipped"
+    assert dnd.result_summary_json["reason"] == "dnd_policy_not_configured"
+    assert {run.status for run in runs if run.consumer_name != "dnd_policy_consumer"} == {"pending"}
+
+
+def test_failed_single_consumer_only_marks_itself_failed(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    def broken_automation(*, order, transaction):
+        raise RuntimeError("automation serialization not ready")
+
+    monkeypatch.setattr("aicrm_next.automation_runtime_v2.bridge.process_payment_succeeded_event", broken_automation)
+    result = _run(event.event_id, "automation_payment_consumer")
+    statuses = _statuses(event.event_id)
+
+    assert result["counts"]["failed_retryable_count"] == 1
+    assert statuses["automation_payment_consumer"] == "failed_retryable"
+    assert {status for name, status in statuses.items() if name != "automation_payment_consumer"} == {"pending"}
+
+
+def test_repeated_webhook_single_consumer_does_not_duplicate_external_effect_job(monkeypatch) -> None:
+    event = _emit_payment(monkeypatch)
+
+    first = _run(event.event_id, "webhook_order_paid_consumer")
+    second = _run(event.event_id, "webhook_order_paid_consumer", force=True)
+    jobs, total = ExternalEffectService().list_jobs({"effect_type": WEBHOOK_ORDER_PAID_PUSH, "business_id": "WXP_SINGLE_CONSUMER"})
+
+    assert first["counts"]["succeeded_count"] == 1
+    assert second["counts"]["succeeded_count"] == 1
+    consumer_jobs = [
+        item
+        for item in jobs
+        if item.idempotency_key == f"payment.succeeded:WXP_SINGLE_CONSUMER:external-effect:{WEBHOOK_ORDER_PAID_PUSH}"
+    ]
+    assert total >= 1
+    assert len(consumer_jobs) == 1
+    assert consumer_jobs[0].attempt_count == 0
