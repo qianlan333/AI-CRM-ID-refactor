@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from typing import Any
 
 from aicrm_next.shared.runtime import production_data_ready
+from aicrm_next.message_archive.sync_service import execute_archive_sync
 
 from .domain import (
     BROADCAST_SOURCE_TYPES,
@@ -289,7 +290,23 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
             preview = {"ok": True, "preview_only": True, "confirm_required": True, "request": request_payload}
             _audit(repo, operator=operator_value, action_type="preview_archive_sync", target_type=TARGET_JOBS_ACTION, target_id="archive_sync", before=request_payload, after=preview)
             return preview
-        payload = {"ok": True, "sync_run": {"id": "next-native-manual", "status": "success"}, "runner": "aicrm_next_admin_jobs"}
+        if os.getenv("AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return {
+                "ok": False,
+                "error_code": "in_process_archive_sync_disabled",
+                "message": "请使用 scripts/run_incremental_archive_sync.py 执行会话存档同步，避免企微 native SDK 运行在 Web 进程内。",
+                "runner": "scripts/run_incremental_archive_sync.py",
+                "reply_monitor_skipped": True,
+            }
+        payload = execute_archive_sync(
+            start_time=request_payload["start_time"],
+            end_time=request_payload["end_time"],
+            owner_userid=request_payload["owner_userid"],
+            cursor=request_payload["cursor"],
+            limit=normalized_int(form.get("limit"), default=100, minimum=1, maximum=1000),
+            max_pages=normalized_int(form.get("max_pages"), default=1000, minimum=1, maximum=10000),
+        )
+        payload["runner"] = "aicrm_next_admin_jobs"
         _audit(repo, operator=operator_value, action_type="run_archive_sync", target_type=TARGET_JOBS_ACTION, target_id="archive_sync", before=request_payload, after=payload)
         return payload
     if action == "ack-message-batch":

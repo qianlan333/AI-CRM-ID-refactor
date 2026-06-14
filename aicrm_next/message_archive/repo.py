@@ -42,6 +42,25 @@ class MessageArchiveRepository(Protocol):
     ) -> tuple[list[JsonDict], int]: ...
 
 
+class ArchiveSyncRepository(Protocol):
+    def create_sync_run(self, *, start_time: str, end_time: str, owner_userid: str, cursor: str) -> int: ...
+
+    def finish_sync_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        fetched_count: int,
+        inserted_count: int,
+        raw_response: dict[str, Any] | None = None,
+        error_message: str = "",
+    ) -> None: ...
+
+    def get_archive_last_seq(self) -> int: ...
+
+    def insert_messages_and_advance_seq(self, messages: list[JsonDict], *, last_seq: int) -> int: ...
+
+
 class FixtureMessageArchiveRepository:
     def __init__(self) -> None:
         self._messages: list[JsonDict] = [
@@ -298,10 +317,125 @@ class PostgresMessageArchiveReadRepository:
         return [_project_external_chat_record(dict(row)) for row in rows], total
 
 
+class PostgresArchiveSyncRepository:
+    def __init__(self, database_url: str | None = None) -> None:
+        self._database_url = _psycopg_url(str(database_url or raw_database_url()).strip())
+
+    def _connect(self):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(self._database_url, row_factory=dict_row)
+
+    def create_sync_run(self, *, start_time: str, end_time: str, owner_userid: str, cursor: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO sync_runs (status, start_time, end_time, owner_userid, cursor)
+                VALUES ('running', %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (start_time, end_time, owner_userid, cursor),
+            ).fetchone()
+            conn.commit()
+        return int((row or {}).get("id") or 0)
+
+    def finish_sync_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        fetched_count: int,
+        inserted_count: int,
+        raw_response: dict[str, Any] | None = None,
+        error_message: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE sync_runs
+                SET status = %s,
+                    fetched_count = %s,
+                    inserted_count = %s,
+                    raw_response = %s,
+                    error_message = %s,
+                    finished_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (
+                    status,
+                    int(fetched_count),
+                    int(inserted_count),
+                    json.dumps(raw_response, ensure_ascii=False, default=str) if raw_response is not None else None,
+                    error_message,
+                    int(run_id),
+                ),
+            )
+            conn.commit()
+
+    def get_archive_last_seq(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT last_seq FROM archive_sync_state WHERE state_key = 'global'").fetchone()
+        return int((row or {}).get("last_seq") or 0)
+
+    def insert_messages_and_advance_seq(self, messages: list[JsonDict], *, last_seq: int) -> int:
+        inserted = 0
+        with self._connect() as conn:
+            try:
+                for message in messages:
+                    row = conn.execute(
+                        """
+                        INSERT INTO archived_messages (
+                            seq, msgid, chat_type, external_userid, owner_userid, sender, receiver,
+                            msgtype, content, send_time, raw_payload
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (msgid) DO NOTHING
+                        RETURNING id
+                        """,
+                        (
+                            int(message.get("seq") or 0),
+                            str(message.get("msgid") or ""),
+                            str(message.get("chat_type") or "private"),
+                            str(message.get("external_userid") or ""),
+                            str(message.get("owner_userid") or ""),
+                            str(message.get("sender") or ""),
+                            str(message.get("receiver") or ""),
+                            str(message.get("msgtype") or "text"),
+                            str(message.get("content") or ""),
+                            str(message.get("send_time") or ""),
+                            str(message.get("raw_payload") or ""),
+                        ),
+                    ).fetchone()
+                    if row:
+                        inserted += 1
+                conn.execute(
+                    """
+                    INSERT INTO archive_sync_state (state_key, last_seq, updated_at)
+                    VALUES ('global', %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (state_key) DO UPDATE SET
+                        last_seq = GREATEST(archive_sync_state.last_seq, excluded.last_seq),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (int(last_seq),),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return inserted
+
+
 def build_message_archive_repository() -> MessageArchiveRepository:
     if production_data_ready():
         return assert_repository_allowed(PostgresMessageArchiveReadRepository(), capability_owner="message_archive")
     return assert_repository_allowed(FixtureMessageArchiveRepository(), capability_owner="message_archive")
+
+
+def build_archive_sync_repository() -> ArchiveSyncRepository:
+    if not production_data_ready():
+        raise RuntimeError("archive sync requires PostgreSQL production data mode")
+    return assert_repository_allowed(PostgresArchiveSyncRepository(), capability_owner="message_archive")
 
 
 def _page(rows: list[JsonDict], *, limit: int | None, offset: int) -> list[JsonDict]:
