@@ -9,12 +9,36 @@ from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, Interna
 from .models import InternalEventConsumerResult, InternalEventConsumerRun, utcnow
 from .repository import InternalEventRepository, build_internal_event_repository
 
+_EXECUTABLE_STATUSES = {"pending", "failed_retryable", "failed_terminal", "blocked"}
+_FINISHED_STATUSES = {"succeeded", "skipped"}
+_FORCE_REASON_HINTS = ("gray", "grey", "test", "loopback", "production_gray", "灰度")
+
 
 def _next_retry_at(attempt_count: int, retry_after_seconds: int | None = None):
     if retry_after_seconds is not None and retry_after_seconds > 0:
         return utcnow() + timedelta(seconds=min(int(retry_after_seconds), 24 * 60 * 60))
     delays = [60, 300, 900, 3600, 6 * 3600]
     return utcnow() + timedelta(seconds=delays[min(max(int(attempt_count or 0), 0), len(delays) - 1)])
+
+
+def _single_counts(*, candidate: int = 0, processed: int = 0, status: str = "") -> dict[str, int]:
+    counts = {
+        "candidate_count": int(candidate or 0),
+        "processed_count": int(processed or 0),
+        "succeeded_count": 0,
+        "failed_retryable_count": 0,
+        "failed_terminal_count": 0,
+        "blocked_count": 0,
+        "skipped_count": 0,
+    }
+    if status in {"succeeded", "failed_retryable", "failed_terminal", "blocked", "skipped"}:
+        counts[f"{status}_count"] = 1
+    return counts
+
+
+def _force_reason_allowed(reason: str) -> bool:
+    lowered = str(reason or "").strip().lower()
+    return any(hint in lowered for hint in _FORCE_REASON_HINTS)
 
 
 class InternalEventWorker:
@@ -143,6 +167,160 @@ class InternalEventWorker:
             "counts": counts,
             "dry_run": False,
             "event_types": effective_event_types or [],
+            "config": diagnostics_payload(),
+            "real_external_call_executed": False,
+        }
+
+    def dispatch_one_consumer(
+        self,
+        event_id: str,
+        consumer_name: str,
+        *,
+        dry_run: bool = True,
+        force: bool = False,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        event_id = str(event_id or "").strip()
+        consumer_name = str(consumer_name or "").strip()
+        reason = str(reason or "").strip()
+        run = self._repo.get_consumer_run(event_id, consumer_name)
+        if run is None:
+            return {
+                "ok": False,
+                "error": "consumer_run_not_found",
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": bool(force),
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        event = self._repo.get_event(run.event_id)
+        if event is None:
+            return {
+                "ok": False,
+                "error": "internal_event_not_found",
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": bool(force),
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        handler = self._registry.get_handler(event.event_type, run.consumer_name)
+        if handler is None:
+            return {
+                "ok": False,
+                "error": "consumer_handler_not_registered",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": bool(force),
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        if run.status in _FINISHED_STATUSES and not force:
+            return {
+                "ok": False,
+                "error": "consumer_run_already_finished",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": False,
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        if force and run.status in _FINISHED_STATUSES and not _force_reason_allowed(reason):
+            return {
+                "ok": False,
+                "error": "force_requires_test_or_gray_reason",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": True,
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        if run.status not in _EXECUTABLE_STATUSES and not force:
+            return {
+                "ok": False,
+                "error": "consumer_run_not_executable",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": bool(dry_run),
+                "force": False,
+                "reason": reason,
+                "real_external_call_executed": False,
+            }
+        if dry_run:
+            return {
+                "ok": True,
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [{"event": event.to_dict(), "consumer_run": run.to_dict(), "would_execute": True}],
+                "counts": _single_counts(candidate=1, processed=0),
+                "dry_run": True,
+                "force": bool(force),
+                "reason": reason,
+                "config": diagnostics_payload(),
+                "real_external_call_executed": False,
+            }
+        if not internal_events_enabled():
+            return {
+                "ok": False,
+                "error": "internal_events_disabled",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": False,
+                "force": bool(force),
+                "reason": reason,
+                "config": diagnostics_payload(),
+                "real_external_call_executed": False,
+            }
+
+        acquired = self._repo.acquire_consumer_run(
+            event_id=event.event_id,
+            consumer_name=run.consumer_name,
+            locked_by=self._locked_by,
+            force=bool(force),
+        )
+        if acquired is None:
+            return {
+                "ok": False,
+                "error": "consumer_run_locked_or_not_executable",
+                "event": event.to_dict(),
+                "consumer_run": run.to_dict(),
+                "items": [],
+                "counts": _single_counts(),
+                "dry_run": False,
+                "force": bool(force),
+                "reason": reason,
+                "config": diagnostics_payload(),
+                "real_external_call_executed": False,
+            }
+        item = self.dispatch_one(acquired)
+        status = str(item.get("consumer_run", {}).get("status") or "")
+        return {
+            "ok": True,
+            "items": [item],
+            "event": item.get("event") or event.to_dict(),
+            "consumer_run": item.get("consumer_run") or acquired.to_dict(),
+            "attempt": item.get("attempt"),
+            "counts": _single_counts(candidate=1, processed=1, status=status),
+            "dry_run": False,
+            "force": bool(force),
+            "reason": reason,
             "config": diagnostics_payload(),
             "real_external_call_executed": False,
         }

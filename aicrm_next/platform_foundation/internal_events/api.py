@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hmac
 import os
+from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +63,21 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
         "X-AICRM-Route-Owner": ROUTE_OWNER,
         "X-AICRM-Real-External-Call-Executed": "true" if bool(payload.get("real_external_call_executed")) else "false",
     }
-    return JSONResponse(payload, status_code=status_code, headers=headers)
+    return JSONResponse(_json_safe(payload), status_code=status_code, headers=headers)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if hasattr(value, "obj") and value.__class__.__module__.startswith("psycopg.types.json"):
+        return _json_safe(value.obj)
+    return value
 
 
 def _internal_token_error(request: Request) -> str:
@@ -193,6 +209,27 @@ def get_internal_event(event_id: str) -> JSONResponse:
     if not payload:
         return _json({"ok": False, "error": "internal_event_not_found"}, status_code=404)
     return _json(payload)
+
+
+@router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/run")
+async def run_internal_event_consumer(event_id: str, consumer_name: str, request: Request) -> JSONResponse:
+    payload = await _payload(request)
+    token_error = _action_or_internal_token_error(request, payload)
+    if token_error:
+        return _json({"ok": False, "error": token_error}, status_code=401)
+    result = await run_in_threadpool(
+        InternalEventWorker(build_internal_event_repository()).dispatch_one_consumer,
+        event_id,
+        consumer_name,
+        dry_run=_bool(payload.get("dry_run"), default=True),
+        force=_bool(payload.get("force"), default=False),
+        reason=_text(payload.get("reason")),
+    )
+    if result.get("ok"):
+        return _json(result)
+    error = _text(result.get("error"))
+    status_code = 404 if error in {"consumer_run_not_found", "internal_event_not_found"} else 409
+    return _json(result, status_code=status_code)
 
 
 @router.post("/api/admin/internal-events/{event_id}/consumers/{consumer_name}/retry")
