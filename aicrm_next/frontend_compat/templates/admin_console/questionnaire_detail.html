@@ -13,7 +13,9 @@
   .target-title { margin: 0; font-size: 18px; font-weight: 800; }
   .switch { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: #1f2329; font-weight: 700; font-size: 14px; cursor: pointer; }
   .switch input { width: 18px; height: 18px; }
-  .target-body[hidden] { display: none; }
+  .target-body[hidden],
+  [data-h5-url-fields][hidden],
+  [data-url-link-fields][hidden] { display: none !important; }
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .target-card .field { display: grid; gap: 7px; }
   .target-card .field.full { grid-column: 1 / -1; }
@@ -121,6 +123,10 @@
               <label>动态 URL Link 接口</label>
               <input name="completion_url_link_source_url" placeholder="https://ip.lhbl.com.cn/api/wxlink?from=qianlan_pay" value="{{ (completion_target.url_link or {}).source_url or '' }}">
               <small>提交成功后先访问该接口，从 JSON 里取微信官方 URL Link 后再跳转。</small>
+            </div>
+            <div class="field" data-url-link-fields>
+              <label>响应字段</label>
+              <input name="completion_url_link_response_key" placeholder="url_link" value="{{ (completion_target.url_link or {}).response_url_key or 'url_link' }}">
             </div>
           </div>
           <div class="warning" data-validation-warning hidden></div>
@@ -255,6 +261,7 @@
     const typeEl = root.querySelector('[name="completion_target_type"]');
     const h5UrlEl = root.querySelector('[name="completion_h5_url"]');
     const sourceUrlEl = root.querySelector('[name="completion_url_link_source_url"]');
+    const responseKeyEl = root.querySelector('[name="completion_url_link_response_key"]');
 
     function syncVisibility() {
       bodyEl.hidden = !enabledEl.checked;
@@ -272,6 +279,7 @@
       const targetType = typeEl && typeEl.value === 'url_link' ? 'url_link' : 'h5';
       const h5Url = targetType === 'h5' ? h5UrlEl.value.trim() : '';
       const sourceUrl = sourceUrlEl ? sourceUrlEl.value.trim() : '';
+      const responseUrlKey = responseKeyEl ? responseKeyEl.value.trim() || 'url_link' : 'url_link';
       const payload = {
         enabled,
         target_type: targetType,
@@ -289,7 +297,7 @@
           enabled: targetType === 'url_link' && Boolean(sourceUrl),
           url: '',
           source_url: sourceUrl,
-          response_url_key: 'url_link'
+          response_url_key: responseUrlKey
         }
       };
       warningEl.hidden = true;
