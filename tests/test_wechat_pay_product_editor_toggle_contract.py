@@ -32,6 +32,12 @@ def test_product_editor_completion_target_ui_is_simplified_to_h5_or_weapp() -> N
     assert "completionRedirectUrl" not in text
     assert "completion_open_strategy" not in text
     assert "data-open-strategy" not in text
+    assert "target-desc" not in text
+    assert "mode-note" not in text
+    assert "小程序 AppID" not in text
+    assert "mini_program_appid" not in text
+    assert "小程序环境" not in text
+    assert "mini_program_env_version" not in text
     assert "mini_program_query" not in text
     assert "mini_program_url_link" not in text
     assert "data-url-link-fields" not in text
