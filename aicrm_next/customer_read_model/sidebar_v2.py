@@ -225,13 +225,22 @@ class SidebarV2SqlRepository:
                 WHERE COALESCE(m.unionid, '') <> ''
             ),
             matching_orders AS (
-                SELECT mobile_snapshot, userid_snapshot, paid_at, created_at, id
+                SELECT mobile_snapshot, userid_snapshot, paid_at, created_at, id::text AS id
                 FROM wechat_pay_orders
                 WHERE COALESCE(mobile_snapshot, '') <> ''
                   AND (status = 'paid' OR trade_state = 'SUCCESS')
                   AND (
                     (COALESCE(external_userid, '') <> '' AND external_userid = (SELECT external_userid FROM target))
                     OR (COALESCE(payer_openid, '') <> '' AND payer_openid IN (SELECT openid FROM identity_openids))
+                    OR (COALESCE(unionid, '') <> '' AND unionid IN (SELECT unionid FROM identity_unionids))
+                  )
+                UNION ALL
+                SELECT buyer_mobile AS mobile_snapshot, '' AS userid_snapshot, paid_at, created_at, order_id::text AS id
+                FROM wechat_shop_orders
+                WHERE COALESCE(buyer_mobile, '') <> ''
+                  AND (deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid'))
+                  AND (
+                    (COALESCE(openid, '') <> '' AND openid IN (SELECT openid FROM identity_openids))
                     OR (COALESCE(unionid, '') <> '' AND unionid IN (SELECT unionid FROM identity_unionids))
                   )
             )
@@ -278,7 +287,8 @@ class SidebarV2SqlRepository:
             ),
             external_orders AS (
                 SELECT
-                    id, out_trade_no, transaction_id, product_code,
+                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
+                    id::text AS id, out_trade_no, transaction_id, product_code,
                     COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
                     amount_total, currency, external_userid AS order_external_userid,
                     mobile_snapshot, payer_openid, unionid, status, trade_state,
@@ -292,7 +302,8 @@ class SidebarV2SqlRepository:
             ),
             mobile_orders AS (
                 SELECT
-                    id, out_trade_no, transaction_id, product_code,
+                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
+                    id::text AS id, out_trade_no, transaction_id, product_code,
                     COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
                     amount_total, currency, external_userid AS order_external_userid,
                     mobile_snapshot, payer_openid, unionid, status, trade_state,
@@ -305,7 +316,8 @@ class SidebarV2SqlRepository:
             ),
             openid_orders AS (
                 SELECT
-                    id, out_trade_no, transaction_id, product_code,
+                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
+                    id::text AS id, out_trade_no, transaction_id, product_code,
                     COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
                     amount_total, currency, external_userid AS order_external_userid,
                     mobile_snapshot, payer_openid, unionid, status, trade_state,
@@ -318,7 +330,8 @@ class SidebarV2SqlRepository:
             ),
             unionid_orders AS (
                 SELECT
-                    id, out_trade_no, transaction_id, product_code,
+                    'wechat_pay' AS provider, 'wechat_pay' AS channel, '微信支付' AS channel_label,
+                    id::text AS id, out_trade_no, transaction_id, product_code,
                     COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
                     amount_total, currency, external_userid AS order_external_userid,
                     mobile_snapshot, payer_openid, unionid, status, trade_state,
@@ -329,6 +342,75 @@ class SidebarV2SqlRepository:
                 ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
                 LIMIT :candidate_limit
             ),
+            wechat_shop_mobile_orders AS (
+                SELECT
+                    'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
+                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
+                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                    amount_total, currency, '' AS order_external_userid,
+                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
+                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
+                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
+                    END AS status,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
+                        ELSE status_code::text
+                    END AS trade_state,
+                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
+                    COALESCE(paid_at, created_at) AS sort_at
+                FROM wechat_shop_orders
+                WHERE buyer_mobile IN (SELECT mobile FROM bound_mobiles)
+                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
+                LIMIT :candidate_limit
+            ),
+            wechat_shop_openid_orders AS (
+                SELECT
+                    'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
+                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
+                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                    amount_total, currency, '' AS order_external_userid,
+                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
+                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
+                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
+                    END AS status,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
+                        ELSE status_code::text
+                    END AS trade_state,
+                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
+                    COALESCE(paid_at, created_at) AS sort_at
+                FROM wechat_shop_orders
+                WHERE openid IN (SELECT openid FROM identity_openids)
+                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
+                LIMIT :candidate_limit
+            ),
+            wechat_shop_unionid_orders AS (
+                SELECT
+                    'wechat_shop' AS provider, 'wechat_shop' AS channel, '微信小店' AS channel_label,
+                    order_id::text AS id, order_id::text AS out_trade_no, transaction_id, product_code,
+                    COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
+                    amount_total, currency, '' AS order_external_userid,
+                    buyer_mobile AS mobile_snapshot, openid AS payer_openid, unionid,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'paid'
+                        WHEN business_status IN ('closed', 'cancelled') THEN 'closed'
+                        ELSE COALESCE(NULLIF(business_status, ''), 'pending')
+                    END AS status,
+                    CASE
+                        WHEN deal_recorded IS TRUE OR status_code::text = '30' OR business_status IN ('deal', 'paid') THEN 'SUCCESS'
+                        ELSE status_code::text
+                    END AS trade_state,
+                    refunded_amount_total, '' AS refund_status, paid_at, created_at,
+                    COALESCE(paid_at, created_at) AS sort_at
+                FROM wechat_shop_orders
+                WHERE unionid IN (SELECT unionid FROM identity_unionids)
+                ORDER BY COALESCE(paid_at, created_at) DESC, order_id DESC
+                LIMIT :candidate_limit
+            ),
             candidate_orders AS (
                 SELECT * FROM external_orders
                 UNION ALL
@@ -337,14 +419,20 @@ class SidebarV2SqlRepository:
                 SELECT * FROM openid_orders
                 UNION ALL
                 SELECT * FROM unionid_orders
+                UNION ALL
+                SELECT * FROM wechat_shop_mobile_orders
+                UNION ALL
+                SELECT * FROM wechat_shop_openid_orders
+                UNION ALL
+                SELECT * FROM wechat_shop_unionid_orders
             ),
             deduped_orders AS (
-                SELECT DISTINCT ON (id) *
+                SELECT DISTINCT ON (provider, id) *
                 FROM candidate_orders
-                ORDER BY id
+                ORDER BY provider, id, sort_at DESC NULLS LAST
             )
             SELECT
-                id, out_trade_no, transaction_id, product_code,
+                provider, channel, channel_label, id, out_trade_no, transaction_id, product_code,
                 product_name, amount_total, currency, order_external_userid,
                 mobile_snapshot, payer_openid, unionid, status, trade_state,
                 refunded_amount_total, refund_status, paid_at, created_at
@@ -879,17 +967,24 @@ class SidebarCommerceReadModel:
 
     def _order_item(self, order: dict[str, Any]) -> dict[str, Any]:
         order_id = _text(order.get("id"))
+        provider = _text(order.get("provider") or "wechat_pay")
+        channel = _text(order.get("channel") or provider)
+        channel_label = _text(order.get("channel_label")) or ("微信小店" if provider == "wechat_shop" else "微信支付")
         product_code = _text(order.get("product_code"))
         product_name = _text(order.get("product_name")) or product_code or "未命名商品"
         status = self._order_status(order)
+        detail_base = "/admin/wechat-shop/transactions" if provider == "wechat_shop" else "/admin/wechat-pay/transactions"
         return {
             "id": _text(order.get("out_trade_no")) or order_id,
             "order_id": order_id,
+            "provider": provider,
+            "channel": channel,
+            "channel_label": channel_label,
             "title": product_name,
             "amount_label": _money_label(order.get("amount_total")),
             "status_label": ORDER_STATUS_LABELS.get(status, status),
             "paid_at": _format_time(order.get("paid_at") or order.get("created_at")),
-            "detail_url": f"/admin/wechat-pay/transactions/{order_id}" if order_id else "",
+            "detail_url": f"{detail_base}/{order_id}" if order_id else "",
         }
 
     def _order_status(self, order: dict[str, Any]) -> str:
