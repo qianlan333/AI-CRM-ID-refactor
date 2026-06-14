@@ -69,6 +69,27 @@ class ExternalEffectService:
     def list_jobs(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectJob], int]:
         return self._repo.list_jobs(filters or {}, limit=limit, offset=offset)
 
+    def find_existing_job(
+        self,
+        *,
+        effect_type: str,
+        target_type: str,
+        target_id: str,
+        business_type: str,
+        business_id: str,
+    ) -> ExternalEffectJob | None:
+        jobs, _ = self.list_jobs(
+            {
+                "effect_type": effect_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "business_type": business_type,
+                "business_id": business_id,
+            },
+            limit=1,
+        )
+        return jobs[0] if jobs else None
+
     def list_attempts(self, job_id: int):
         return self._repo.list_attempts(job_id)
 

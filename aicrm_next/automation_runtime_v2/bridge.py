@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 from aicrm_next.shared.postgres_connection import db_session, get_db
@@ -21,6 +24,26 @@ def _active_bindings(channel_id: int) -> list[dict[str, Any]]:
         (int(channel_id),),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def process_channel_entry_event(
@@ -92,6 +115,15 @@ def _process_channel_entry_event(
 
 def process_payment_succeeded_event(*, order: dict[str, Any], transaction: dict[str, Any] | None = None) -> dict[str, Any]:
     order_id = text(order.get("out_trade_no") or order.get("id") or (transaction or {}).get("out_trade_no"))
+    payload_json = _json_safe(
+        {
+            "order_id": order_id,
+            "product_id": order.get("product_id") or order.get("product_code"),
+            "amount": order.get("amount_total") or order.get("payer_total"),
+            "paid_at": order.get("paid_at"),
+            "transaction": dict(transaction or {}),
+        }
+    )
     event = insert_event(
         AutomationEventInput(
             event_type=EVENT_PAYMENT_SUCCEEDED,
@@ -100,13 +132,7 @@ def process_payment_succeeded_event(*, order: dict[str, Any], transaction: dict[
             idempotency_key=f"payment:{order_id}",
             external_userid=text(order.get("external_userid") or order.get("userid_snapshot")),
             phone=text(order.get("mobile_snapshot") or order.get("respondent_key")),
-            payload_json={
-                "order_id": order_id,
-                "product_id": order.get("product_id") or order.get("product_code"),
-                "amount": order.get("amount_total") or order.get("payer_total"),
-                "paid_at": order.get("paid_at"),
-                "transaction": dict(transaction or {}),
-            },
+            payload_json=payload_json if isinstance(payload_json, dict) else {},
         )
     )
     return process_event(int(event["id"]))
