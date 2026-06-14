@@ -162,9 +162,22 @@ class InternalEventWorker:
         if effective_event_types == [] or effective_consumers == []:
             return self._empty_due_response(dry_run=True, event_types=effective_event_types, consumer_names=effective_consumers)
         runs = self._repo.list_due_runs(limit=batch_size, event_types=effective_event_types, consumer_names=effective_consumers)
+        items: list[dict[str, Any]] = []
+        for run in runs:
+            event = self._repo.get_event(run.event_id)
+            event_payload = event.to_dict() if event else {}
+            items.append(
+                {
+                    **run.to_dict(),
+                    "event_type": str(event_payload.get("event_type") or ""),
+                    "aggregate_type": str(event_payload.get("aggregate_type") or ""),
+                    "aggregate_id": str(event_payload.get("aggregate_id") or ""),
+                    "would_execute": True,
+                }
+            )
         return {
             "ok": True,
-            "items": [{**run.to_dict(), "would_execute": True} for run in runs],
+            "items": items,
             "counts": {
                 "candidate_count": len(runs),
                 "processed_count": 0,

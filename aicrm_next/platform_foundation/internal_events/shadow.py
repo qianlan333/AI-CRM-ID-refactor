@@ -5,9 +5,10 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 
-from .config import event_type_allowed, internal_events_enabled
+from .config import event_type_allowed, internal_events_enabled, questionnaire_internal_events_enabled
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
+from .questionnaire import register_questionnaire_event_consumers
 from .service import InternalEventService
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +35,23 @@ def _redact_external_userid(external_userid: str) -> str:
     if len(value) <= 8:
         return "<redacted>"
     return f"{value[:4]}...{value[-4:]}"
+
+
+def _mask_mobile(value: Any) -> str:
+    text = _text(value)
+    if len(text) < 7:
+        return "<redacted>" if text else ""
+    return f"{text[:3]}****{text[-4:]}"
+
+
+def _questionnaire_subject_id(submission: dict[str, Any]) -> str:
+    external_userid = _text(submission.get("external_userid"))
+    if external_userid:
+        return _redact_external_userid(external_userid)
+    respondent_key = _text(submission.get("respondent_key"))
+    if respondent_key:
+        return _redact_external_userid(respondent_key)
+    return _mask_mobile(submission.get("mobile"))
 
 
 def _source_context_source(source_context: dict[str, Any], fallback: str) -> str:
@@ -124,10 +142,7 @@ def webhook_owner_migration_consumer(event: InternalEvent, run: InternalEventCon
 
 def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
     registry = registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
-    registry.register(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE, "questionnaire_webhook_consumer", questionnaire_webhook_consumer, consumer_type="external_effect_planner")
-    registry.register(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE, "questionnaire_tag_consumer", questionnaire_tag_consumer, consumer_type="orchestration")
-    registry.register(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE, "automation_questionnaire_consumer", automation_questionnaire_consumer, consumer_type="orchestration")
-    registry.register(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE, "customer_summary_consumer", customer_summary_consumer, consumer_type="projection")
+    register_questionnaire_event_consumers(registry)
 
     for event_type in (CUSTOMER_TAGGED_EVENT_TYPE, CUSTOMER_UNTAGGED_EVENT_TYPE):
         registry.register(event_type, "tag_external_effect_shadow_consumer", tag_external_effect_shadow_consumer, consumer_type="external_effect_planner")
@@ -160,19 +175,33 @@ def emit_questionnaire_submitted_shadow_event(
     score: int,
     final_tags: list[str],
 ) -> dict[str, Any]:
-    if not _event_enabled(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE):
+    if not questionnaire_internal_events_enabled():
+        return {"status": "skipped", "reason": "questionnaire_internal_events_disabled"}
+    if not event_type_allowed(QUESTIONNAIRE_SUBMITTED_EVENT_TYPE):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     submission_id = _text(submission.get("submission_id"))
     if not submission_id:
         return {"status": "skipped", "reason": "submission_id_missing"}
     register_shadow_event_consumers()
+    answer_snapshots = [
+        dict(item)
+        for item in (submission.get("answer_snapshots") or [])
+        if isinstance(item, dict)
+    ]
+    answer_count = len(answer_snapshots) if answer_snapshots else len(dict(submission.get("answers") or {}))
+    external_push_config = dict(questionnaire.get("external_push_config") or {})
+    external_push_summary = {
+        "enabled": bool(external_push_config.get("enabled") or questionnaire.get("external_push_enabled")),
+        "target_url_present": bool(_text(external_push_config.get("webhook_url") or questionnaire.get("external_push_url"))),
+        "type": _text(external_push_config.get("type") or questionnaire.get("external_push_type")),
+    }
     result = InternalEventService().emit_event(
         event_type=QUESTIONNAIRE_SUBMITTED_EVENT_TYPE,
         event_version=1,
         aggregate_type="questionnaire_submission",
         aggregate_id=submission_id,
         subject_type="customer",
-        subject_id=_text(submission.get("external_userid") or submission.get("respondent_key") or submission.get("mobile")),
+        subject_id=_questionnaire_subject_id(submission),
         idempotency_key=f"questionnaire.submitted:{submission_id}",
         source_module="questionnaire.h5_write",
         source_command_id=command.command_id,
@@ -186,10 +215,39 @@ def emit_questionnaire_submitted_shadow_event(
             dry_run=command.context.dry_run,
         ),
         payload={
-            "questionnaire": {"id": questionnaire.get("id"), "slug": questionnaire.get("slug")},
-            "submission": dict(submission),
+            "questionnaire": {
+                "id": questionnaire.get("id"),
+                "slug": questionnaire.get("slug"),
+                "title": questionnaire.get("title") or questionnaire.get("name"),
+                "external_push_config": external_push_config,
+                "external_push_enabled": bool(questionnaire.get("external_push_enabled")),
+                "external_push_url": questionnaire.get("external_push_url") or "",
+            },
+            "submission": {
+                "submission_id": submission_id,
+                "questionnaire_id": int(questionnaire.get("id") or submission.get("questionnaire_id") or 0),
+                "slug": questionnaire.get("slug") or submission.get("slug") or "",
+                "respondent_key": submission.get("respondent_key") or "",
+                "external_userid": submission.get("external_userid") or "",
+                "openid_present": bool(_text(submission.get("openid"))),
+                "unionid_present": bool(_text(submission.get("unionid"))),
+                "mobile_present": bool(_text(submission.get("mobile"))),
+                "person_id": submission.get("person_id"),
+                "binding_status": submission.get("binding_status") or "",
+                "submitted_at": submission.get("submitted_at") or submission.get("created_at") or "",
+                "created_at": submission.get("created_at") or "",
+                "score": int(score or 0),
+                "answer_count": answer_count,
+            },
+            "answer_snapshots": answer_snapshots,
             "score": score,
             "final_tags": list(final_tags or []),
+            "external_push": external_push_summary,
+            "source": {
+                "source_route": command.context.source_route,
+                "trace_id": command.context.trace_id,
+                "command_id": command.command_id,
+            },
         },
         payload_summary={
             "questionnaire_id": int(questionnaire.get("id") or 0),
@@ -197,6 +255,7 @@ def emit_questionnaire_submitted_shadow_event(
             "submission_id": submission_id,
             "external_userid_present": bool(_text(submission.get("external_userid"))),
             "mobile_present": bool(_text(submission.get("mobile"))),
+            "answer_count": answer_count,
             "score": int(score or 0),
             "final_tag_count": len(final_tags or []),
         },

@@ -29,6 +29,10 @@ def payment_internal_events_enabled() -> bool:
     return internal_events_enabled() and env_bool("AICRM_INTERNAL_EVENTS_PAYMENT_ENABLED", default=False)
 
 
+def questionnaire_internal_events_enabled() -> bool:
+    return internal_events_enabled() and env_bool("AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED", default=False)
+
+
 def internal_events_shadow_only() -> bool:
     return env_bool("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", default=not fixture_mode())
 
@@ -74,6 +78,7 @@ def diagnostics_payload() -> dict[str, Any]:
     return {
         "internal_events_enabled": internal_events_enabled(),
         "payment_internal_events_enabled": payment_internal_events_enabled(),
+        "questionnaire_internal_events_enabled": questionnaire_internal_events_enabled(),
         "shadow_only": internal_events_shadow_only(),
         "auto_execute_enabled": auto_execute_enabled(),
         "allowed_event_types": allowed_event_types(),

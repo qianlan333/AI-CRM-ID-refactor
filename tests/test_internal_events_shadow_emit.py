@@ -27,6 +27,9 @@ def _client(monkeypatch) -> TestClient:
 
 
 def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_effects(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_QUESTIONNAIRE_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "questionnaire.submitted")
     client = _client(monkeypatch)
 
     response = client.post(
@@ -58,13 +61,15 @@ def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_
         "submission_id": body["submission_id"],
         "external_userid_present": True,
         "mobile_present": True,
+        "answer_count": 2,
         "score": 13,
         "final_tag_count": 2,
     }
-    assert run_total == 4
+    assert run_total == 5
     assert sorted(run.consumer_name for run in runs) == [
         "automation_questionnaire_consumer",
         "customer_summary_consumer",
+        "questionnaire_projection_consumer",
         "questionnaire_tag_consumer",
         "questionnaire_webhook_consumer",
     ]
