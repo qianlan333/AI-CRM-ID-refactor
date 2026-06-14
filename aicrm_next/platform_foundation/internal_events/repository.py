@@ -507,14 +507,30 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         if _text(filters.get("event_type")):
             clauses.append("e.event_type = :event_type")
             params["event_type"] = _text(filters.get("event_type"))
+        if filters.get("event_types"):
+            event_types = [_text(item) for item in filters.get("event_types") or [] if _text(item)]
+            if event_types:
+                clauses.append("e.event_type = ANY(:event_types)")
+                params["event_types"] = event_types
+        if _text(filters.get("consumer_name")):
+            clauses.append("r.consumer_name = :consumer_name")
+            params["consumer_name"] = _text(filters.get("consumer_name"))
+        if filters.get("consumer_names"):
+            consumer_names = [_text(item) for item in filters.get("consumer_names") or [] if _text(item)]
+            if consumer_names:
+                clauses.append("r.consumer_name = ANY(:consumer_names)")
+                params["consumer_names"] = consumer_names
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        due_predicate = """
+            r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')
+            AND (r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)
+            AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+        """
         row = self._one(
             f"""
             SELECT
                 COUNT(*) FILTER (
-                    WHERE r.status IN ('pending', 'failed_retryable')
-                      AND (r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)
-                      AND (r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                    WHERE {due_predicate}
                 ) AS due_count,
                 COUNT(*) FILTER (WHERE r.status = 'failed_retryable') AS failed_retryable_count,
                 COUNT(*) FILTER (WHERE r.status = 'failed_terminal') AS failed_terminal_count,
@@ -531,11 +547,37 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
             """,
             params,
         ) or {}
+        by_event_type = self._all(
+            f"""
+            SELECT e.event_type, COUNT(*) AS due_count
+            FROM internal_event_consumer_run r
+            JOIN internal_event e ON e.event_id = r.event_id
+            {where}
+            {"AND" if where else "WHERE"} {due_predicate}
+            GROUP BY e.event_type
+            ORDER BY e.event_type ASC
+            """,
+            params,
+        )
+        by_consumer = self._all(
+            f"""
+            SELECT r.consumer_name, COUNT(*) AS due_count
+            FROM internal_event_consumer_run r
+            JOIN internal_event e ON e.event_id = r.event_id
+            {where}
+            {"AND" if where else "WHERE"} {due_predicate}
+            GROUP BY r.consumer_name
+            ORDER BY r.consumer_name ASC
+            """,
+            params,
+        )
         return {
             "due_count": int(row.get("due_count") or 0),
             "failed_retryable_count": int(row.get("failed_retryable_count") or 0),
             "failed_terminal_count": int(row.get("failed_terminal_count") or 0),
             "oldest_pending_age_seconds": int(float(row.get("oldest_pending_age_seconds") or 0)),
+            "due_count_by_event_type": {_text(item.get("event_type")): int(item.get("due_count") or 0) for item in by_event_type},
+            "due_count_by_consumer": {_text(item.get("consumer_name")): int(item.get("due_count") or 0) for item in by_consumer},
         }
 
     def list_due_runs(self, *, limit: int = 50, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
@@ -699,8 +741,8 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
 
     def _due_filters(self, *, event_types: list[str] | None, consumer_names: list[str] | None) -> tuple[str, dict[str, Any]]:
         filters = [
-            "r.status IN ('pending', 'failed_retryable')",
-            "(r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)",
+            "r.status IN ('pending', 'failed_retryable', 'failed_terminal', 'blocked')",
+            "(r.status <> 'failed_retryable' OR r.next_retry_at IS NULL OR r.next_retry_at <= CURRENT_TIMESTAMP)",
             "(r.locked_at IS NULL OR r.locked_at <= CURRENT_TIMESTAMP - INTERVAL '5 minutes')",
         ]
         params: dict[str, Any] = {}
@@ -890,20 +932,35 @@ class InMemoryInternalEventRepository(InternalEventRepository):
     def queue_metrics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
         now = utcnow()
         rows = list(self._filtered_runs(filters or {}))
+        event_type_set = {_text(item) for item in (filters or {}).get("event_types") or [] if _text(item)}
+        consumer_set = {_text(item) for item in (filters or {}).get("consumer_names") or [] if _text(item)}
+        if event_type_set:
+            rows = [row for row in rows if (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type in event_type_set]
+        if consumer_set:
+            rows = [row for row in rows if _text(row.get("consumer_name")) in consumer_set]
         due_rows = [
             row
             for row in rows
-            if row.get("status") in {"pending", "failed_retryable"}
-            and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
+            if row.get("status") in {"pending", "failed_retryable", "failed_terminal", "blocked"}
+            and (row.get("status") != "failed_retryable" or not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
         ]
         pending_due = [row for row in due_rows if row.get("status") == "pending"]
         oldest = min((self._dt(row.get("created_at")) for row in pending_due), default=None)
+        by_event_type: dict[str, int] = {}
+        by_consumer: dict[str, int] = {}
+        for row in due_rows:
+            event_type = (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type
+            consumer_name = _text(row.get("consumer_name"))
+            by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
+            by_consumer[consumer_name] = by_consumer.get(consumer_name, 0) + 1
         return {
             "due_count": len(due_rows),
             "failed_retryable_count": len([row for row in rows if row.get("status") == "failed_retryable"]),
             "failed_terminal_count": len([row for row in rows if row.get("status") == "failed_terminal"]),
             "oldest_pending_age_seconds": max(0, int((now - oldest).total_seconds())) if oldest else 0,
+            "due_count_by_event_type": dict(sorted(by_event_type.items())),
+            "due_count_by_consumer": dict(sorted(by_consumer.items())),
         }
 
     def list_due_runs(self, *, limit: int = 50, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> list[InternalEventConsumerRun]:
@@ -913,10 +970,10 @@ class InMemoryInternalEventRepository(InternalEventRepository):
         rows = [
             row
             for row in self._runs
-            if row.get("status") in {"pending", "failed_retryable"}
+            if row.get("status") in {"pending", "failed_retryable", "failed_terminal", "blocked"}
             and (not consumer_set or row.get("consumer_name") in consumer_set)
             and (not event_type_set or (self.get_event(row.get("event_id") or "") or InternalEvent()).event_type in event_type_set)
-            and (not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
+            and (row.get("status") != "failed_retryable" or not row.get("next_retry_at") or self._dt(row.get("next_retry_at")) <= now)
             and (not row.get("locked_at") or self._dt(row.get("locked_at")) <= now - timedelta(minutes=5))
         ]
         rows.sort(key=lambda row: (row.get("next_retry_at") or row.get("created_at") or "", int(row.get("id") or 0)))
