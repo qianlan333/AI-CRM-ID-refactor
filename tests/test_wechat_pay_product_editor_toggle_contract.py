@@ -26,6 +26,7 @@ def test_product_editor_completion_target_ui_has_h5_and_dynamic_url_link_only() 
 
     assert "H5 跳转地址" in text
     assert "动态 URL Link 接口" in text
+    assert "响应字段" not in text
     assert "打开微信小程序" not in text
     assert "completion_target_type" in text
     assert "splitMiniProgramPathInput" not in text
@@ -43,6 +44,7 @@ def test_product_editor_completion_target_ui_has_h5_and_dynamic_url_link_only() 
     assert "mini_program_env_version" not in text
     assert "mini_program_query" not in text
     assert "mini_program_url_link" not in text
+    assert "data-h5-url-fields" in text
     assert "data-url-link-fields" in text
     assert "打开小程序 URL Link" not in text
     assert "URL Link 兜底" not in text
