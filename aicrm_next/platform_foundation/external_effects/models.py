@@ -32,6 +32,8 @@ AI_ASSIST_CAMPAIGN_MESSAGE_PLAN = "ai_assist.campaign.message.plan"
 AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK = "ai_assist.campaign.message.loopback"
 WECOM_CONTACT_TAG_MARK = "wecom.contact.tag.mark"
 WECOM_CONTACT_TAG_UNMARK = "wecom.contact.tag.unmark"
+GROUP_OPS_MESSAGE_LOOPBACK = "group_ops.message.loopback"
+GROUP_OPS_WEBHOOK_ACTION_LOOPBACK = "group_ops.webhook.action.loopback"
 
 
 def utcnow() -> datetime:

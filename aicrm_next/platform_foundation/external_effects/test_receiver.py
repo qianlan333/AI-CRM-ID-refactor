@@ -13,7 +13,15 @@ from fastapi import Request
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 
-from .models import AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK, WEBHOOK_ORDER_PAID_PUSH, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH, utcnow, public_datetime
+from .models import (
+    AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
+    GROUP_OPS_MESSAGE_LOOPBACK,
+    GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
+    WEBHOOK_ORDER_PAID_PUSH,
+    WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH,
+    utcnow,
+    public_datetime,
+)
 from .repo import ExternalEffectRepository, _payload_summary
 from .service import ExternalEffectService
 
@@ -56,12 +64,28 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "business_id_prefix": "synthetic_order_terminal",
         "default_response_status": 400,
     },
+    "group_ops_message_loopback_success": {
+        "effect_type": GROUP_OPS_MESSAGE_LOOPBACK,
+        "target_type": "group_ops_node",
+        "target_id_prefix": "synthetic_group_ops_node",
+        "business_type": "group_ops_plan",
+        "business_id_prefix": "synthetic_group_ops_plan",
+        "default_response_status": 200,
+    },
     "ai_assist_campaign_message_loopback_success": {
         "effect_type": AI_ASSIST_CAMPAIGN_MESSAGE_LOOPBACK,
         "target_type": "campaign_member",
         "target_id_prefix": "synthetic_campaign_member",
         "business_type": "ai_assist_campaign",
         "business_id_prefix": "synthetic_ai_assist_campaign",
+        "default_response_status": 200,
+    },
+    "group_ops_webhook_action_loopback_success": {
+        "effect_type": GROUP_OPS_WEBHOOK_ACTION_LOOPBACK,
+        "target_type": "group_ops_trigger_event",
+        "target_id_prefix": "synthetic_group_ops_trigger_event",
+        "business_type": "group_ops_plan",
+        "business_id_prefix": "synthetic_group_ops_plan",
         "default_response_status": 200,
     },
 }
