@@ -49,6 +49,7 @@ from .external_effects import (
     GROUP_OPS_MESSAGE_LOOPBACK,
     external_effect_response_defaults,
     group_ops_effect_action_type,
+    group_ops_external_effect_send_mode,
     group_ops_outbound_mode,
     plan_group_ops_action_effect,
     plan_group_ops_external_effect,
@@ -860,6 +861,8 @@ class RunGroupOpsPlanDueCommand:
                 content_summary=clean_text(candidate["content_summary"]),
                 content_payload=dict(candidate["content_payload"]),
                 operator_member_id=clean_text(request.operator) or clean_text(plan.get("owner_userid")),
+                owner_userid=clean_text(plan.get("owner_userid")),
+                webhook_key=clean_text(plan.get("webhook_key")),
                 source_module="automation_engine.group_ops.run_due",
                 source_route="/api/admin/automation-conversion/group-ops/plans/{plan_id}/run-due",
                 source_command_id=source_id,
@@ -1318,6 +1321,8 @@ class ReceiveGroupOpsWebhookCommand:
                             operator_member_id=clean_text(plan.get("owner_userid")),
                             source_route="/api/automation/group-ops/webhooks/{webhook_key}",
                             idempotency_key=idem,
+                            owner_userid=clean_text(plan.get("owner_userid")),
+                            webhook_key=clean_text(plan.get("webhook_key")),
                             outbound_mode=outbound_mode,
                             test_loopback=bool(request.external_effect_test_loopback),
                             test_receiver_base_url=clean_text(request.test_receiver_base_url),
@@ -1447,37 +1452,41 @@ class ReceiveGroupOpsWebhookCommand:
         queue_content_payload["channel"] = "wecom_customer_group"
         queue_content_payload["chat_ids"] = chat_ids
         queue_content_payload["sender"] = clean_text(plan.get("owner_userid"))
-        if self._queue_gateway is None:
-            from aicrm_next.integration_gateway.wecom_group_adapter import build_group_ops_queue_gateway
+        outbound_mode = group_ops_outbound_mode()
+        legacy_job_ids: list[int] = []
+        if outbound_mode in {"legacy", "shadow"}:
+            if self._queue_gateway is None:
+                from aicrm_next.integration_gateway.wecom_group_adapter import build_group_ops_queue_gateway
 
-            queue_gateway = build_group_ops_queue_gateway()
-        else:
-            queue_gateway = self._queue_gateway
-        try:
-            job_id = queue_gateway.enqueue_group_message(
-                plan_id=int(plan["id"]),
-                source_id=f"{plan['id']}:webhook:{event['id']}",
-                scheduled_at=request.scheduled_at,
-                owner_userid=clean_text(plan.get("owner_userid")),
-                chat_ids=chat_ids,
-                content_payload=queue_content_payload,
-                content_summary=(normalized_content.get("text") or {}).get("content", "") or f"{len(normalized_content.get('attachments') or [])} attachments",
-            )
-        except Exception as exc:
-            failed = repo.update_webhook_event(
-                int(event["id"]),
-                {"status": "failed", "error_message": str(exc), "broadcast_job_ids": []},
-            )
-            return _response(
-                {
-                    "status": "failed",
-                    "event": failed,
-                    "broadcast_job_ids": [],
-                    **external_effect_response_defaults(outbound_mode=group_ops_outbound_mode()),
-                },
-                status_code=500,
-                repo=repo,
-            )
+                queue_gateway = build_group_ops_queue_gateway()
+            else:
+                queue_gateway = self._queue_gateway
+            try:
+                job_id = queue_gateway.enqueue_group_message(
+                    plan_id=int(plan["id"]),
+                    source_id=f"{plan['id']}:webhook:{event['id']}",
+                    scheduled_at=request.scheduled_at,
+                    owner_userid=clean_text(plan.get("owner_userid")),
+                    chat_ids=chat_ids,
+                    content_payload=queue_content_payload,
+                    content_summary=(normalized_content.get("text") or {}).get("content", "") or f"{len(normalized_content.get('attachments') or [])} attachments",
+                )
+                legacy_job_ids.append(int(job_id))
+            except Exception as exc:
+                failed = repo.update_webhook_event(
+                    int(event["id"]),
+                    {"status": "failed", "error_message": str(exc), "broadcast_job_ids": []},
+                )
+                return _response(
+                    {
+                        "status": "failed",
+                        "event": failed,
+                        "broadcast_job_ids": [],
+                        **external_effect_response_defaults(outbound_mode=outbound_mode),
+                    },
+                    status_code=500,
+                    repo=repo,
+                )
         planned = plan_group_ops_external_effect(
             effect_type=GROUP_OPS_MESSAGE_LOOPBACK,
             plan_id=int(plan["id"]),
@@ -1489,27 +1498,30 @@ class ReceiveGroupOpsWebhookCommand:
             content_summary=(normalized_content.get("text") or {}).get("content", "") or f"{len(normalized_content.get('attachments') or [])} attachments",
             content_payload=queue_content_payload,
             operator_member_id=clean_text(plan.get("owner_userid")),
+            owner_userid=clean_text(plan.get("owner_userid")),
+            webhook_key=clean_text(plan.get("webhook_key")),
             source_module="automation_engine.group_ops.legacy_bundle",
             source_route="/api/automation/group-ops/webhooks/{webhook_key}",
             source_event_id=str(event["id"]),
             source_command_id=f"{plan['id']}:webhook:{event['id']}",
             idempotency_key=f"group-ops-legacy-bundle:{plan['id']}:{event['id']}:{request_idempotency}",
-            outbound_mode=group_ops_outbound_mode(),
-            force_shadow=True,
+            outbound_mode=outbound_mode,
+            force_shadow=outbound_mode != "external_effect",
             test_loopback=bool(request.external_effect_test_loopback),
             test_receiver_base_url=clean_text(request.test_receiver_base_url),
             test_receiver_response_status=int(request.test_receiver_response_status or 200),
         )
         external_effect_job_ids = [int(planned["id"])] if planned and int(planned.get("id") or 0) else []
-        queued = repo.update_webhook_event(int(event["id"]), {"status": "queued", "broadcast_job_ids": [int(job_id)]})
+        queued = repo.update_webhook_event(int(event["id"]), {"status": "queued", "broadcast_job_ids": legacy_job_ids})
         return _response(
             {
                 "status": "queued",
                 "event": queued,
-                "broadcast_job_ids": [int(job_id)],
-                "legacy_broadcast_job_ids": [int(job_id)],
+                "broadcast_job_ids": legacy_job_ids,
+                "legacy_broadcast_job_ids": legacy_job_ids,
                 "external_effect_job_ids": external_effect_job_ids,
-                "outbound_mode": group_ops_outbound_mode(),
+                "outbound_mode": outbound_mode,
+                "external_effect_send_mode": group_ops_external_effect_send_mode(),
                 "real_external_call_executed": False,
                 "wecom_send_executed": False,
                 "real_wecom_call_executed": False,
