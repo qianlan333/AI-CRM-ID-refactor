@@ -1,0 +1,424 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="internal-events-page" data-route-owner="ai_crm_next">
+  <section class="internal-events-stats" id="statsGrid" aria-label="事件统计">
+    <article class="admin-card internal-events-stat"><div class="internal-events-stat-label">全部事件</div><div class="internal-events-stat-value" data-stat="total">-</div></article>
+    <article class="admin-card internal-events-stat"><div class="internal-events-stat-label">待处理消费者</div><div class="internal-events-stat-value" data-stat="due">-</div></article>
+    <article class="admin-card internal-events-stat"><div class="internal-events-stat-label">失败可重试</div><div class="internal-events-stat-value" data-stat="failed_retryable">-</div></article>
+    <article class="admin-card internal-events-stat"><div class="internal-events-stat-label">失败不可重试</div><div class="internal-events-stat-value" data-stat="failed_terminal">-</div></article>
+  </section>
+
+  <section class="internal-events-layout">
+    <div class="admin-card internal-events-main">
+      <div class="internal-events-card-head">
+        <div class="internal-events-card-title">事件列表</div>
+        <div class="internal-events-muted" id="totalText">共 - 条</div>
+      </div>
+
+      <form class="internal-events-filters" id="filterForm">
+        <label class="internal-events-field">事件类型
+          <input name="event_type" placeholder="payment.succeeded">
+        </label>
+        <label class="internal-events-field">聚合类型
+          <input name="aggregate_type" placeholder="wechat_pay_order">
+        </label>
+        <label class="internal-events-field">聚合 ID
+          <input name="aggregate_id" placeholder="order id / out_trade_no">
+        </label>
+        <label class="internal-events-field">主体类型
+          <input name="subject_type" placeholder="customer">
+        </label>
+        <label class="internal-events-field">主体 ID
+          <input name="subject_id" placeholder="external_userid / userid">
+        </label>
+        <label class="internal-events-field">消费者
+          <input name="consumer_name" placeholder="webhook_order_paid_consumer">
+        </label>
+        <label class="internal-events-field">消费者状态
+          <select name="consumer_status">
+            <option value="">全部</option>
+            <option value="pending">待处理</option>
+            <option value="running">执行中</option>
+            <option value="succeeded">成功</option>
+            <option value="failed_retryable">失败可重试</option>
+            <option value="failed_terminal">失败不可重试</option>
+            <option value="blocked">已阻断</option>
+            <option value="skipped">已跳过</option>
+          </select>
+        </label>
+        <label class="internal-events-field">trace_id
+          <input name="trace_id" placeholder="trace_id">
+        </label>
+        <label class="internal-events-field">来源模块
+          <input name="source_module" placeholder="public_product.h5_wechat_pay">
+        </label>
+        <label class="internal-events-field">创建起始
+          <input name="created_from" type="datetime-local">
+        </label>
+        <label class="internal-events-field">创建结束
+          <input name="created_to" type="datetime-local">
+        </label>
+      </form>
+
+      <div class="internal-events-table-wrap">
+        <table class="admin-table internal-events-table" id="internalEventsTable">
+          <colgroup>
+            <col class="internal-events-col-event">
+            <col class="internal-events-col-type">
+            <col class="internal-events-col-object">
+            <col class="internal-events-col-source">
+            <col class="internal-events-col-consumers">
+            <col class="internal-events-col-time">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>事件</th>
+              <th>类型</th>
+              <th>业务对象</th>
+              <th>来源</th>
+              <th>消费者</th>
+              <th>发生时间</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTbody">
+            <tr><td colspan="6" class="admin-empty-cell">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <aside class="admin-card internal-events-detail-card" aria-label="事件详情">
+      <div class="internal-events-card-head">
+        <div class="internal-events-card-title">事件详情</div>
+        <span class="internal-events-muted" id="detailStatus">未选择</span>
+      </div>
+      <div id="detailPanel" class="internal-events-detail-empty">点击左侧事件查看消费者状态</div>
+    </aside>
+  </section>
+</section>
+
+<style>
+.internal-events-page { --ie-line: #e5e7eb; --ie-muted: #6b7280; --ie-primary: #2563eb; --ie-success: #059669; --ie-warning: #d97706; --ie-danger: #dc2626; --ie-blocked: #7c3aed; }
+.internal-events-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.internal-events-stat { padding: 14px; }
+.internal-events-stat-label { font-size: 12px; color: var(--ie-muted); margin-bottom: 8px; }
+.internal-events-stat-value { font-size: 22px; font-weight: 700; }
+.internal-events-layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 16px; align-items: start; }
+.internal-events-main, .internal-events-detail-card { overflow: hidden; }
+.internal-events-card-head { padding: 14px 16px; border-bottom: 1px solid var(--ie-line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.internal-events-card-title { font-weight: 700; font-size: 15px; }
+.internal-events-muted { color: var(--ie-muted); }
+.internal-events-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--ie-line); }
+.internal-events-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ie-muted); }
+.internal-events-field input, .internal-events-field select { height: 36px; border: 1px solid var(--ie-line); border-radius: 8px; padding: 0 10px; background: #fff; font-size: 13px; color: #1f2937; min-width: 0; }
+.internal-events-table-wrap { overflow-x: auto; }
+.internal-events-table { table-layout: fixed; min-width: 1060px; }
+.internal-events-col-event { width: 220px; }
+.internal-events-col-type { width: 160px; }
+.internal-events-col-object { width: 240px; }
+.internal-events-col-source { width: 190px; }
+.internal-events-col-consumers { width: 160px; }
+.internal-events-col-time { width: 150px; }
+.internal-events-table th, .internal-events-table td { vertical-align: top; }
+.internal-events-table tbody tr[data-event-id] { cursor: pointer; }
+.internal-events-table tbody tr[data-event-id]:hover td { background: #f9fafb; }
+.internal-events-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.internal-events-strong { font-weight: 600; color: #111827; }
+.internal-events-ellipsis { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.internal-events-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.internal-events-badge.succeeded { color: var(--ie-success); background: #ecfdf5; }
+.internal-events-badge.pending, .internal-events-badge.running { color: var(--ie-primary); background: #eff6ff; }
+.internal-events-badge.failed_retryable { color: var(--ie-warning); background: #fffbeb; }
+.internal-events-badge.failed_terminal { color: var(--ie-danger); background: #fef2f2; }
+.internal-events-badge.blocked { color: var(--ie-blocked); background: #f5f3ff; }
+.internal-events-badge.skipped { color: var(--ie-muted); background: #f3f4f6; }
+.internal-events-counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.internal-events-chip { border: 1px solid var(--ie-line); border-radius: 999px; padding: 2px 7px; font-size: 12px; color: #374151; background: #fff; }
+.internal-events-detail-empty { padding: 32px 20px; color: var(--ie-muted); text-align: center; }
+.internal-events-detail-body { padding: 16px; }
+.internal-events-section { margin-bottom: 18px; }
+.internal-events-section h3 { font-size: 14px; margin: 0 0 10px; }
+.internal-events-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+.internal-events-kv-key { color: var(--ie-muted); }
+.internal-events-json { background: #111827; color: #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; max-height: 220px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.internal-events-consumer-table { min-width: 760px; table-layout: fixed; }
+.internal-events-detail-table-wrap { overflow-x: auto; }
+.internal-events-action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.internal-events-attempt { border: 1px solid var(--ie-line); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fafafa; }
+.internal-events-attempt-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.internal-events-page .admin-button--danger { border-color: #fecaca; color: var(--ie-danger); background: #fff7f7; }
+@media (max-width: 1200px) {
+  .internal-events-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .internal-events-layout { grid-template-columns: 1fr; }
+  .internal-events-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .internal-events-filters, .internal-events-stats { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(() => {
+  const state = { filters: {}, selectedEventId: null };
+  const STATUS_LABELS = {
+    pending: "待处理",
+    running: "执行中",
+    succeeded: "成功",
+    failed_retryable: "失败可重试",
+    failed_terminal: "失败不可重试",
+    blocked: "已阻断",
+    skipped: "已跳过"
+  };
+  const CONSUMER_LABELS = {
+    order_projection_consumer: "订单消费者",
+    webhook_order_paid_consumer: "webhook 消费者",
+    automation_payment_consumer: "自动化消费者",
+    customer_business_summary_consumer: "客户摘要消费者",
+    dnd_policy_consumer: "DND 消费者",
+    ai_assist_notify_consumer: "AI 助手消费者"
+  };
+
+  function qs(params) {
+    const p = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== "") p.set(k, v);
+    });
+    return p.toString();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function ellipsis(value, className = "") {
+    return `<span class="internal-events-ellipsis ${className}" title="${escapeHtml(value || "-")}">${escapeHtml(value || "-")}</span>`;
+  }
+
+  function statusLabel(status) {
+    return STATUS_LABELS[status] || status || "-";
+  }
+
+  function consumerLabel(name) {
+    return CONSUMER_LABELS[name] || name || "-";
+  }
+
+  function badge(status) {
+    return `<span class="internal-events-badge ${escapeHtml(status || "")}">${escapeHtml(statusLabel(status))}</span>`;
+  }
+
+  async function readJson(response) {
+    try { return await response.json(); } catch (_) { return {}; }
+  }
+
+  async function loadEvents() {
+    const response = await fetch(`/api/admin/internal-events?${qs({ limit: 50, ...state.filters })}`);
+    const data = await readJson(response);
+    const counts = data.counts || {};
+    document.querySelector('[data-stat="total"]').textContent = counts.total ?? data.total ?? 0;
+    document.querySelector('[data-stat="due"]').textContent = counts.due ?? 0;
+    document.querySelector('[data-stat="failed_retryable"]').textContent = counts.failed_retryable ?? 0;
+    document.querySelector('[data-stat="failed_terminal"]').textContent = counts.failed_terminal ?? 0;
+    document.getElementById("totalText").textContent = `共 ${data.total || 0} 条`;
+
+    const items = data.items || [];
+    const tbody = document.getElementById("eventsTbody");
+    if (!items.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="admin-empty-cell">暂无事件</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = items.map(item => `
+      <tr data-event-id="${escapeHtml(item.event_id)}">
+        <td>
+          ${ellipsis(item.event_id, "internal-events-mono internal-events-strong")}
+          ${ellipsis(item.trace_id, "internal-events-mono internal-events-muted")}
+        </td>
+        <td>${ellipsis(item.event_type, "internal-events-strong")}</td>
+        <td>
+          ${ellipsis(item.aggregate, "internal-events-mono")}
+          ${ellipsis(item.subject, "internal-events-muted")}
+        </td>
+        <td>
+          ${ellipsis(item.source_module, "internal-events-strong")}
+          ${ellipsis(item.source_route, "internal-events-muted")}
+        </td>
+        <td>
+          <div class="internal-events-counts">
+            <span class="internal-events-chip">总 ${Number(item.consumer_total || 0)}</span>
+            <span class="internal-events-chip">成 ${Number(item.succeeded_count || 0)}</span>
+            <span class="internal-events-chip">败 ${Number(item.failed_count || 0)}</span>
+            <span class="internal-events-chip">跳 ${Number(item.skipped_count || 0)}</span>
+            <span class="internal-events-chip">待 ${Number(item.pending_count || 0)}</span>
+          </div>
+        </td>
+        <td>
+          ${ellipsis(item.occurred_at || "-")}
+          ${ellipsis(item.created_at || "", "internal-events-muted")}
+        </td>
+      </tr>
+    `).join("");
+    tbody.querySelectorAll("tr[data-event-id]").forEach(row => {
+      row.addEventListener("click", () => loadDetail(row.dataset.eventId));
+    });
+  }
+
+  async function loadDetail(eventId) {
+    state.selectedEventId = eventId;
+    const response = await fetch(`/api/admin/internal-events/${encodeURIComponent(eventId)}`);
+    const data = await readJson(response);
+    if (!response.ok || !data.ok) {
+      document.getElementById("detailStatus").textContent = "加载失败";
+      document.getElementById("detailPanel").className = "internal-events-detail-empty";
+      document.getElementById("detailPanel").textContent = data.error || "事件不存在";
+      return;
+    }
+    const event = data.event || {};
+    const runs = data.consumer_runs || [];
+    const attempts = data.attempts || [];
+    document.getElementById("detailStatus").textContent = event.event_type || "事件";
+    const panel = document.getElementById("detailPanel");
+    panel.className = "internal-events-detail-body";
+    panel.innerHTML = `
+      <div class="internal-events-section">
+        <h3>事件摘要</h3>
+        <div class="internal-events-kv">
+          <div class="internal-events-kv-key">event_id</div><div class="internal-events-mono">${escapeHtml(event.event_id)}</div>
+          <div class="internal-events-kv-key">event_type</div><div>${escapeHtml(event.event_type)}</div>
+          <div class="internal-events-kv-key">aggregate</div><div class="internal-events-mono">${escapeHtml(event.aggregate)}</div>
+          <div class="internal-events-kv-key">subject</div><div class="internal-events-mono">${escapeHtml(event.subject)}</div>
+          <div class="internal-events-kv-key">source</div><div>${escapeHtml(event.source_module)} <span class="internal-events-muted">${escapeHtml(event.source_route)}</span></div>
+          <div class="internal-events-kv-key">trace_id</div><div class="internal-events-mono">${escapeHtml(event.trace_id)}</div>
+        </div>
+      </div>
+      <div class="internal-events-section">
+        <h3>payload_summary_json</h3>
+        <pre class="internal-events-json">${escapeHtml(JSON.stringify(data.payload_summary_json || {}, null, 2))}</pre>
+      </div>
+      <div class="internal-events-section">
+        <h3>消费者状态</h3>
+        <div class="internal-events-detail-table-wrap">
+          <table class="admin-table internal-events-consumer-table">
+            <thead>
+              <tr>
+                <th>消费者</th>
+                <th>状态</th>
+                <th>尝试</th>
+                <th>错误</th>
+                <th>下次重试</th>
+                <th>结果摘要</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${runs.map(run => `
+                <tr>
+                  <td>
+                    ${ellipsis(consumerLabel(run.consumer_name), "internal-events-strong")}
+                    ${ellipsis(run.consumer_name, "internal-events-mono internal-events-muted")}
+                  </td>
+                  <td>${badge(run.status)}</td>
+                  <td>${Number(run.attempt_count || 0)} / ${Number(run.max_attempts || 0)}</td>
+                  <td>
+                    ${ellipsis(run.last_error_code || "", "internal-events-mono")}
+                    ${ellipsis(run.last_error_message || "", "internal-events-muted")}
+                  </td>
+                  <td>${ellipsis(run.next_retry_at || "-")}</td>
+                  <td><pre class="internal-events-json">${escapeHtml(JSON.stringify(run.result_summary_json || {}, null, 2))}</pre></td>
+                  <td>
+                    <div class="internal-events-action-row">
+                      <button class="admin-button admin-button--secondary" type="button" data-action="retry" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">重试</button>
+                      <button class="admin-button admin-button--danger" type="button" data-action="skip" data-event-id="${escapeHtml(event.event_id)}" data-consumer-name="${escapeHtml(run.consumer_name)}">跳过</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="internal-events-section">
+        <h3>attempts 明细</h3>
+        ${attempts.length ? attempts.map(attempt => `
+          <div class="internal-events-attempt">
+            <div class="internal-events-attempt-head">
+              <span>
+                <span class="internal-events-mono">${escapeHtml(attempt.attempt_id)}</span>
+                <span class="internal-events-muted">${escapeHtml(consumerLabel(attempt.consumer_name))}</span>
+              </span>
+              ${badge(attempt.status)}
+            </div>
+            <div class="internal-events-kv">
+              <div class="internal-events-kv-key">error</div><div>${escapeHtml(attempt.error || "-")}</div>
+              <div class="internal-events-kv-key">started</div><div>${escapeHtml(attempt.started_at || "-")}</div>
+              <div class="internal-events-kv-key">completed</div><div>${escapeHtml(attempt.completed_at || "-")}</div>
+            </div>
+            <pre class="internal-events-json">${escapeHtml(JSON.stringify({
+              request_summary: attempt.request_summary_json || {},
+              response_summary: attempt.response_summary_json || {}
+            }, null, 2))}</pre>
+          </div>
+        `).join("") : `<div class="internal-events-muted">暂无 attempt</div>`}
+      </div>
+    `;
+  }
+
+  async function mutateConsumer(eventId, consumerName, action) {
+    const credential = window.prompt("请输入管理员操作口令");
+    if (!credential) return;
+    const reason = action === "skip" ? window.prompt("跳过原因", "operator_skip") || "" : "";
+    const actionHeader = "X-Admin-Action-" + "To" + "ken";
+    const response = await fetch(`/api/admin/internal-events/${encodeURIComponent(eventId)}/consumers/${encodeURIComponent(consumerName)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", [actionHeader]: credential },
+      body: JSON.stringify({ reason })
+    });
+    const data = await readJson(response);
+    if (!response.ok || !data.ok) {
+      window.alert(data.error || `${action} failed`);
+      return;
+    }
+    await loadEvents();
+    await loadDetail(eventId);
+  }
+
+  function refreshCurrentView() {
+    loadEvents();
+    if (state.selectedEventId) loadDetail(state.selectedEventId);
+  }
+
+  function exportCurrentFilter() {
+    window.open(`/api/admin/internal-events?${qs({ limit: 200, ...state.filters })}`, "_blank", "noopener");
+  }
+
+  function bindEvents() {
+    document.getElementById("filterForm").addEventListener("input", event => {
+      const form = new FormData(event.currentTarget);
+      state.filters = Object.fromEntries(form.entries());
+      loadEvents();
+    });
+    document.querySelectorAll('a[href="#refresh"]').forEach(anchor => {
+      anchor.addEventListener("click", event => {
+        event.preventDefault();
+        refreshCurrentView();
+      });
+    });
+    document.querySelectorAll('a[href="#export"]').forEach(anchor => {
+      anchor.addEventListener("click", event => {
+        event.preventDefault();
+        exportCurrentFilter();
+      });
+    });
+    document.getElementById("detailPanel").addEventListener("click", event => {
+      const btn = event.target.closest("button[data-action][data-event-id][data-consumer-name]");
+      if (!btn) return;
+      mutateConsumer(btn.dataset.eventId, btn.dataset.consumerName, btn.dataset.action);
+    });
+  }
+
+  bindEvents();
+  loadEvents();
+})();
+</script>
+{% endblock %}

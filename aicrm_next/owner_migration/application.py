@@ -17,6 +17,10 @@ from aicrm_next.channel_entry.wecom_adapter import (
     ProductionWeComAdapter,
     missing_wecom_config,
 )
+from aicrm_next.platform_foundation.internal_events.shadow import (
+    emit_owner_migration_executed_shadow_event,
+    safe_emit,
+)
 from aicrm_next.shared.runtime import production_data_ready
 
 from .repo import FixtureOwnerMigrationRepository, PostgresOwnerMigrationRepository
@@ -264,6 +268,14 @@ class OwnerMigrationService:
         self._repo.save_result(result)
         self._repo.mark_preview_executed(preview_token, result_id)
         self._repo.audit_owner_migration_event("owner_migration_execute", result)
+        internal_event = safe_emit(
+            "owner_migration.executed",
+            emit_owner_migration_executed_shadow_event,
+            command=command,
+            result=result,
+        )
+        result["internal_event_id"] = internal_event.get("event_id") or ""
+        result["internal_event_status"] = internal_event.get("status") or ""
         return result
 
     def export_session_errors(self, session_id: str) -> dict[str, Any]:
@@ -379,7 +391,22 @@ class OwnerMigrationService:
             result["wecom_transfer"] = transfer
         else:
             result = self._repo.preview_owner_migration(source_owner_userid=source, target_owner_userid=target)
-        return {"ok": True, "mode": "execute" if command.execute else "preview", "source_owner_userid": source, "target_owner_userid": target, "operator": operator, "wecom_diagnostics": _wecom_transfer_diagnostics(), **result}
+        payload = {"ok": True, "mode": "execute" if command.execute else "preview", "source_owner_userid": source, "target_owner_userid": target, "operator": operator, "wecom_diagnostics": _wecom_transfer_diagnostics(), **result}
+        if command.execute:
+            event_result = {
+                **payload,
+                "result_id": clean_text(payload.get("result_id")) or f"{source}:{target}:{operator}",
+                "job_id": clean_text(payload.get("job_id")) or f"legacy:{source}:{target}:{operator}",
+            }
+            internal_event = safe_emit(
+                "owner_migration.executed",
+                emit_owner_migration_executed_shadow_event,
+                command=command,
+                result=event_result,
+            )
+            payload["internal_event_id"] = internal_event.get("event_id") or ""
+            payload["internal_event_status"] = internal_event.get("status") or ""
+        return payload
 
     def _validate_owners(self, source: str, target: str) -> dict[str, Any] | None:
         if not source:

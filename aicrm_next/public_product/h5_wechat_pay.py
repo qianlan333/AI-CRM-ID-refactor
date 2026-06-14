@@ -22,6 +22,9 @@ from aicrm_next.commerce.wechat_pay_client import WeChatPayClient, WeChatPayClie
 from aicrm_next.integration_gateway.wechat_oauth_client import WeChatOAuthClientError, build_wechat_oauth_client
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_ORDER_PAID_PUSH
+from aicrm_next.platform_foundation.internal_events import InternalEventService, register_payment_succeeded_consumers
+from aicrm_next.platform_foundation.internal_events.config import event_type_allowed, payment_internal_events_enabled
+from aicrm_next.platform_foundation.internal_events.payment import PAYMENT_SUCCEEDED_EVENT_TYPE
 from aicrm_next.questionnaire.oauth import questionnaire_h5_identity_from_cookies
 from aicrm_next.shared.runtime import production_data_ready, raw_database_url
 
@@ -348,6 +351,87 @@ def _is_order_effectively_paid(row: dict[str, Any]) -> bool:
     return _normalized_text(row.get("status")) == "paid" or _normalized_text(row.get("trade_state")) == "SUCCESS"
 
 
+def _masked_mobile(value: Any) -> str:
+    text = _normalized_text(value)
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 7:
+        return f"{digits[:3]}****{digits[-4:]}"
+    return ""
+
+
+def _payment_subject_id(order: dict[str, Any]) -> str:
+    return (
+        _normalized_text(order.get("external_userid"))
+        or _normalized_text(order.get("userid_snapshot"))
+        or _normalized_text(order.get("respondent_key"))
+    )
+
+
+def _emit_payment_succeeded_internal_event(
+    *,
+    order: dict[str, Any],
+    transaction: dict[str, Any],
+    outbox: dict[str, Any] | None,
+    source_route: str,
+) -> dict[str, Any] | None:
+    if not payment_internal_events_enabled() or not event_type_allowed(PAYMENT_SUCCEEDED_EVENT_TYPE):
+        return None
+    out_trade_no = _normalized_text(order.get("out_trade_no") or transaction.get("out_trade_no"))
+    aggregate_id = _normalized_text(order.get("id") or out_trade_no)
+    if not out_trade_no or not aggregate_id:
+        return None
+    subject_id = _payment_subject_id(order)
+    try:
+        register_payment_succeeded_consumers()
+        result = InternalEventService().emit_event(
+            event_type=PAYMENT_SUCCEEDED_EVENT_TYPE,
+            event_version=1,
+            aggregate_type="wechat_pay_order",
+            aggregate_id=aggregate_id,
+            subject_type="customer",
+            subject_id=subject_id,
+            idempotency_key=f"payment.succeeded:{out_trade_no}",
+            source_module="public_product.h5_wechat_pay",
+            source_command_id=out_trade_no,
+            correlation_id=out_trade_no,
+            context=CommandContext(
+                actor_id="wechat_pay_notify",
+                actor_type="system",
+                trace_id=out_trade_no,
+                request_id=_normalized_text(transaction.get("transaction_id")),
+                source_route=source_route or "/api/h5/wechat-pay/notify",
+            ),
+            payload={
+                "order": dict(order),
+                "transaction": dict(transaction or {}),
+                "domain_event_outbox_id": (outbox or {}).get("id"),
+                "legacy_event_aliases": ["transaction.paid", "payment_succeeded"],
+            },
+            payload_summary={
+                "out_trade_no": out_trade_no,
+                "order_id": order.get("id"),
+                "aggregate_id": aggregate_id,
+                "subject_type": "customer",
+                "subject_id": subject_id,
+                "product_code": order.get("product_code"),
+                "amount_total": int(order.get("amount_total") or order.get("payer_total") or 0),
+                "status": order.get("status"),
+                "trade_state": order.get("trade_state"),
+                "paid_at": str(order.get("paid_at") or ""),
+                "mobile_masked": _masked_mobile(order.get("mobile_snapshot")),
+                "domain_event_outbox_id": (outbox or {}).get("id"),
+            },
+        )
+        LOGGER.info(
+            "payment_succeeded_internal_event_ensured",
+            extra={"out_trade_no": out_trade_no, "event_id": (result.get("event") or {}).get("event_id")},
+        )
+        return result
+    except Exception:
+        LOGGER.exception("payment_succeeded_internal_event_failed", extra={"out_trade_no": out_trade_no})
+        return None
+
+
 def _completion_redirect_from_product(product: dict[str, Any]) -> dict[str, Any]:
     completion_redirect = completion_redirect_projection(
         product.get("completion_redirect_enabled"),
@@ -640,7 +724,7 @@ def _mark_order_failed(conn: Any, out_trade_no: str, error_message: str) -> None
     )
 
 
-def _apply_transaction(conn: Any, transaction: dict[str, Any]) -> dict[str, Any]:
+def _apply_transaction(conn: Any, transaction: dict[str, Any], *, source_route: str = "/api/h5/wechat-pay/notify") -> dict[str, Any]:
     trade_no = _normalized_text(transaction.get("out_trade_no"))
     trade_state = _normalized_text(transaction.get("trade_state"))
     status = "paid" if trade_state == "SUCCESS" else ("closed" if trade_state in {"CLOSED", "REVOKED"} else "paying")
@@ -681,6 +765,12 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any]) -> dict[str, Any]
     is_paid = _normalized_text(order_payload.get("status")) == "paid" or _normalized_text(order_payload.get("trade_state")) == "SUCCESS"
     if is_paid:
         outbox = enqueue_transaction_paid_outbox(conn, order_payload)
+        _emit_payment_succeeded_internal_event(
+            order=order_payload,
+            transaction=transaction,
+            outbox=outbox,
+            source_route=source_route,
+        )
         _plan_order_paid_external_effect_job(order=order_payload, transaction=transaction, outbox=outbox)
         LOGGER.info(
             "wechat_pay_transaction_paid_outbox_ensured",
@@ -692,7 +782,11 @@ def _apply_transaction(conn: Any, transaction: dict[str, Any]) -> dict[str, Any]
                 "was_paid": was_paid,
             },
         )
-        if not was_paid:
+        direct_automation_disabled = payment_internal_events_enabled() and _env_bool(
+            "AICRM_INTERNAL_EVENTS_PAYMENT_DISABLE_LEGACY_AUTOMATION_DIRECT",
+            False,
+        )
+        if not was_paid and not direct_automation_disabled:
             try:
                 from aicrm_next.automation_runtime_v2.bridge import process_payment_succeeded_event
 
@@ -859,7 +953,7 @@ def order_status_response(out_trade_no: str, request: Request) -> JSONResponse:
         if _normalized_text(request.query_params.get("refresh")).lower() in {"1", "true", "yes", "on"}:
             try:
                 transaction = WeChatPayClient(_client_config()).query_order_by_out_trade_no(trade_no)
-                order = _apply_transaction(conn, transaction)
+                order = _apply_transaction(conn, transaction, source_route=f"/api/h5/wechat-pay/orders/{trade_no}")
                 conn.commit()
             except Exception as exc:
                 conn.rollback()
@@ -885,7 +979,7 @@ async def notify_response(request: Request) -> JSONResponse:
         if not production_data_ready():
             raise RuntimeError("production_database_required")
         with _connect() as conn:
-            _apply_transaction(conn, transaction)
+            _apply_transaction(conn, transaction, source_route="/api/h5/wechat-pay/notify")
             conn.commit()
         return JSONResponse({"code": "SUCCESS", "message": "成功"})
     except Exception as exc:

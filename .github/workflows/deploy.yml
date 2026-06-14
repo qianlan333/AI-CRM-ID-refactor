@@ -40,6 +40,8 @@ jobs:
             sudo systemctl stop openclaw-broadcast-queue-worker.service || true
             sudo systemctl stop aicrm-wechat-shop-order-sync.timer || true
             sudo systemctl stop aicrm-wechat-shop-order-sync.service || true
+            sudo systemctl stop openclaw-internal-event-worker.timer || true
+            sudo systemctl stop openclaw-internal-event-worker.service || true
             python3 -m alembic upgrade head
             sudo systemctl restart openclaw-wecom-postgres.service
             for _ in $(seq 1 20); do
@@ -59,6 +61,8 @@ jobs:
             sudo cp deploy/openclaw-broadcast-queue-worker.timer /etc/systemd/system/
             sudo cp deploy/aicrm-wechat-shop-order-sync.service /etc/systemd/system/
             sudo cp deploy/aicrm-wechat-shop-order-sync.timer /etc/systemd/system/
+            sudo cp deploy/openclaw-internal-event-worker.service /etc/systemd/system/
+            sudo cp deploy/openclaw-internal-event-worker.timer /etc/systemd/system/
             sudo systemctl daemon-reload
             sudo systemctl enable openclaw-external-push-worker.timer
             sudo systemctl restart openclaw-external-push-worker.timer
@@ -88,3 +92,10 @@ jobs:
               sudo journalctl -u openclaw-broadcast-queue-worker.service -n 80 --no-pager || true
             fi
             sudo systemctl status openclaw-broadcast-queue-worker.timer --no-pager
+            sudo systemctl enable openclaw-internal-event-worker.timer
+            sudo systemctl restart openclaw-internal-event-worker.timer
+            if ! sudo systemctl start openclaw-internal-event-worker.service; then
+              sudo systemctl status openclaw-internal-event-worker.service --no-pager || true
+              sudo journalctl -u openclaw-internal-event-worker.service -n 80 --no-pager || true
+            fi
+            sudo systemctl status openclaw-internal-event-worker.timer --no-pager

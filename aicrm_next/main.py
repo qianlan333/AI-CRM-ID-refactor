@@ -64,6 +64,8 @@ from .platform_foundation.external_effects.api import router as external_effects
 from .platform_foundation.external_effects import reset_external_effect_fixture_state
 from .platform_foundation.legacy_cleanup import reset_legacy_cleanup_fixture_state
 from .platform_foundation.legacy_cleanup.api import router as legacy_cleanup_router
+from .platform_foundation.internal_events.api import router as internal_events_router
+from .platform_foundation.internal_events import register_payment_succeeded_consumers, register_shadow_event_consumers, reset_internal_event_fixture_state
 from .platform_foundation.push_center.api import router as push_center_router
 from .public_product.api import router as public_product_router
 from .questionnaire.admin_pages import router as questionnaire_admin_pages_router
@@ -88,6 +90,8 @@ _CUSTOMER_TAGS_DIR = Path(__file__).resolve().parent / "customer_tags"
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+    register_payment_succeeded_consumers()
+    register_shadow_event_consumers()
 
     if fixture_mode():
         reset_user_ops_fixture_state()
@@ -115,6 +119,7 @@ def create_app() -> FastAPI:
         reset_sidebar_jssdk_attempts()
         reset_external_effect_fixture_state()
         reset_legacy_cleanup_fixture_state()
+        reset_internal_event_fixture_state()
 
     @app.exception_handler(RepositoryProviderError)
     async def repository_provider_error_handler(request, exc):
@@ -160,6 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_router)
     app.include_router(external_effects_router)
     app.include_router(legacy_cleanup_router)
+    app.include_router(internal_events_router)
     app.include_router(push_center_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_shell_router)

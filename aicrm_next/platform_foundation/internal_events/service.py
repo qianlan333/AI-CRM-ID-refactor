@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from aicrm_next.platform_foundation.command_bus.models import CommandContext
+
+from .config import diagnostics_payload as config_diagnostics_payload
+from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .models import InternalEvent, InternalEventConsumerRun, InternalEventCreateRequest
+from .repository import InternalEventRepository, build_internal_event_repository
+
+
+class InternalEventService:
+    def __init__(
+        self,
+        repository: InternalEventRepository | None = None,
+        consumer_registry: InternalEventConsumerRegistry | None = None,
+    ):
+        self._repo = repository or build_internal_event_repository()
+        self._registry = consumer_registry or DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY
+
+    def emit_event(
+        self,
+        *,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        payload: dict[str, Any] | None = None,
+        payload_summary: dict[str, Any] | None = None,
+        context: CommandContext | None = None,
+        event_version: int = 1,
+        subject_type: str = "",
+        subject_id: str = "",
+        idempotency_key: str = "",
+        source_module: str = "",
+        source_command_id: str = "",
+        correlation_id: str = "",
+        occurred_at: datetime | None = None,
+        tenant_id: str = "aicrm",
+    ) -> dict[str, Any]:
+        request = InternalEventCreateRequest(
+            event_type=event_type,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            payload=dict(payload or {}),
+            payload_summary=dict(payload_summary or {}),
+            context=context or CommandContext(),
+            event_version=event_version,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            idempotency_key=idempotency_key,
+            source_module=source_module,
+            source_command_id=source_command_id,
+            correlation_id=correlation_id,
+            occurred_at=occurred_at,
+            tenant_id=tenant_id,
+        )
+        event = self._repo.create_event(request)
+        runs = self.register_consumer_runs(event)
+        return {"event": event.to_dict(), "consumer_runs": [run.to_dict() for run in runs]}
+
+    def register_consumer_runs(self, event: InternalEvent) -> list[InternalEventConsumerRun]:
+        runs: list[InternalEventConsumerRun] = []
+        for consumer in self._registry.list_for_event_type(event.event_type):
+            runs.append(
+                self._repo.create_consumer_run(
+                    event=event,
+                    consumer_name=consumer.consumer_name,
+                    consumer_type=consumer.consumer_type,
+                    max_attempts=consumer.max_attempts,
+                )
+            )
+        return runs
+
+    def get_event(self, event_id: str) -> InternalEvent | None:
+        return self._repo.get_event(event_id)
+
+    def list_events(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[InternalEvent], int]:
+        return self._repo.list_events(filters or {}, limit=limit, offset=offset)
+
+    def list_consumer_runs(self, filters: dict[str, Any] | None = None, *, limit: int = 100, offset: int = 0) -> tuple[list[InternalEventConsumerRun], int]:
+        return self._repo.list_consumer_runs(filters or {}, limit=limit, offset=offset)
+
+    def list_attempts(self, consumer_run_id: int | None = None, *, event_id: str = ""):
+        return self._repo.list_attempts(consumer_run_id, event_id=event_id)
+
+    def retry_consumer_run(self, event_id: str, consumer_name: str) -> InternalEventConsumerRun | None:
+        return self._repo.retry_consumer_run(event_id, consumer_name)
+
+    def skip_consumer_run(self, event_id: str, consumer_name: str, *, reason: str = ""):
+        return self._repo.skip_consumer_run(event_id, consumer_name, reason=reason)
+
+    def diagnostics(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        metrics = self._repo.queue_metrics(filters or {})
+        return {
+            "ok": True,
+            **metrics,
+            "queue_metrics": metrics,
+            "schema_contract": {
+                "event_idempotency_constraint": "UNIQUE (tenant_id, idempotency_key)",
+                "consumer_run_uniqueness_constraint": "UNIQUE (tenant_id, event_id, consumer_name)",
+                "external_effect_boundary": "external_effect_job remains external side effects only",
+            },
+            "registered_consumers": self._registry.to_dict(),
+            "config": config_diagnostics_payload(),
+            "real_external_call_executed": False,
+        }
+
+
+def default_internal_event_service() -> InternalEventService:
+    return InternalEventService()

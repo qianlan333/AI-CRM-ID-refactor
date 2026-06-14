@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from aicrm_next.cloud_orchestrator.campaigns_read import reset_campaign_read_fixture_state
+from aicrm_next.cloud_orchestrator.campaigns_write import (
+    ApproveCloudCampaignCommand,
+    StartCloudCampaignCommand,
+    execute_cloud_campaign_command,
+    reset_campaign_write_fixture_state,
+)
+from aicrm_next.customer_tags.live_mutation import execute_wecom_tag_mutation, reset_wecom_tag_live_mutation_fixture_state
+from aicrm_next.customer_tags.mutation_commands import PlanWeComTagMarkCommand, PlanWeComTagUnmarkCommand
+from aicrm_next.main import create_app
+from aicrm_next.platform_foundation.internal_events import InternalEventService, reset_internal_event_fixture_state
+from aicrm_next.questionnaire.repo import reset_questionnaire_fixture_state
+
+
+def _client(monkeypatch) -> TestClient:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("AICRM_NEXT_ENV", raising=False)
+    reset_questionnaire_fixture_state()
+    reset_internal_event_fixture_state()
+    return TestClient(create_app())
+
+
+def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_effects(monkeypatch) -> None:
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/api/h5/questionnaires/hxc-activation-v1/submit",
+        json={
+            "answers": {"q_activation": "activated", "q_interest": ["ai_tools"]},
+            "identity": {"external_userid": "wm_shadow_questionnaire", "mobile": "13800138000"},
+            "source": {"scene": "p0-2d"},
+        },
+        headers={"Idempotency-Key": "p0-2d-questionnaire-submit"},
+    )
+    body = response.json()
+    events, total = InternalEventService().list_events({"event_type": "questionnaire.submitted"})
+    runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
+
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert "external_effect_job_id" in body
+    assert body["side_effects"]["wecom_tag"]["external_effect_job_id"]
+    assert body["internal_event_status"] == "emitted"
+    assert body["internal_event_id"] == events[0].event_id
+    assert total == 1
+    assert events[0].aggregate_type == "questionnaire_submission"
+    assert events[0].aggregate_id == body["submission_id"]
+    assert events[0].idempotency_key == f"questionnaire.submitted:{body['submission_id']}"
+    assert events[0].payload_summary_json == {
+        "questionnaire_id": 1,
+        "slug": "hxc-activation-v1",
+        "submission_id": body["submission_id"],
+        "external_userid_present": True,
+        "mobile_present": True,
+        "score": 13,
+        "final_tag_count": 2,
+    }
+    assert run_total == 4
+    assert sorted(run.consumer_name for run in runs) == [
+        "automation_questionnaire_consumer",
+        "customer_summary_consumer",
+        "questionnaire_tag_consumer",
+        "questionnaire_webhook_consumer",
+    ]
+
+
+def test_customer_tag_mark_and_unmark_shadow_emit_internal_events() -> None:
+    reset_internal_event_fixture_state()
+    reset_wecom_tag_live_mutation_fixture_state()
+
+    mark = execute_wecom_tag_mutation(
+        PlanWeComTagMarkCommand(
+            idempotency_key="p0-2d-tag-mark",
+            external_userid="wx_ext_tag_shadow_001",
+            tag_ids=["tag_a", "tag_b"],
+            source_route="/api/admin/customer-tags/live/mark",
+            source_context={"source": "unit_test"},
+        )
+    )
+    unmark = execute_wecom_tag_mutation(
+        PlanWeComTagUnmarkCommand(
+            idempotency_key="p0-2d-tag-unmark",
+            external_userid="wx_ext_tag_shadow_001",
+            tag_ids=["tag_a"],
+            source_route="/api/admin/customer-tags/live/unmark",
+            source_context={"source": "unit_test"},
+        )
+    )
+    tagged_events, tagged_total = InternalEventService().list_events({"event_type": "customer.tagged"})
+    untagged_events, untagged_total = InternalEventService().list_events({"event_type": "customer.untagged"})
+
+    assert mark["ok"] is True
+    assert mark["external_effect_job_id"]
+    assert mark["internal_event_status"] == "emitted"
+    assert mark["internal_event_id"] == tagged_events[0].event_id
+    assert unmark["internal_event_id"] == untagged_events[0].event_id
+    assert tagged_total == 1
+    assert untagged_total == 1
+    assert tagged_events[0].idempotency_key == "customer.tagged:p0-2d-tag-mark"
+    assert tagged_events[0].payload_summary_json["external_userid_redacted"] == "wx_e..._001"
+    assert tagged_events[0].payload_summary_json["tag_count"] == 2
+    assert tagged_events[0].payload_summary_json["source"] == "unit_test"
+    assert InternalEventService().list_consumer_runs({"event_id": tagged_events[0].event_id})[1] == 2
+
+
+def test_ai_campaign_approve_and_start_shadow_emit_internal_events() -> None:
+    reset_internal_event_fixture_state()
+    reset_campaign_read_fixture_state()
+    reset_campaign_write_fixture_state()
+
+    approve = execute_cloud_campaign_command(
+        ApproveCloudCampaignCommand(
+            campaign_code="camp_next_read_fixture",
+            idempotency_key="p0-2d-campaign-approve",
+            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/approve",
+        )
+    )
+    start = execute_cloud_campaign_command(
+        StartCloudCampaignCommand(
+            campaign_code="camp_next_read_fixture",
+            idempotency_key="p0-2d-campaign-start",
+            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/start",
+        )
+    )
+    approved_events, approved_total = InternalEventService().list_events({"event_type": "ai_campaign.approved"})
+    started_events, started_total = InternalEventService().list_events({"event_type": "ai_campaign.started"})
+
+    assert approve["ok"] is True
+    assert approve["internal_event_status"] == "emitted"
+    assert approve["internal_event_id"] == approved_events[0].event_id
+    assert start["internal_event_id"] == started_events[0].event_id
+    assert approved_total == 1
+    assert started_total == 1
+    assert approved_events[0].aggregate_type == "ai_campaign"
+    assert approved_events[0].aggregate_id == "camp_next_read_fixture"
+    assert approved_events[0].payload_summary_json["campaign_code"] == "camp_next_read_fixture"
+    assert approved_events[0].payload_summary_json["review_status"] == "approved"
+    assert started_events[0].payload_summary_json["run_status"] == "active"
+    assert InternalEventService().list_consumer_runs({"event_id": approved_events[0].event_id})[1] == 3
+    assert InternalEventService().list_consumer_runs({"event_id": started_events[0].event_id})[1] == 3
+
+
+def test_shadow_emit_failure_does_not_break_original_tag_write(monkeypatch) -> None:
+    reset_internal_event_fixture_state()
+    reset_wecom_tag_live_mutation_fixture_state()
+
+    class BrokenInternalEventService:
+        def emit_event(self, **_kwargs):
+            raise RuntimeError("internal event unavailable")
+
+    monkeypatch.setattr("aicrm_next.platform_foundation.internal_events.shadow.InternalEventService", BrokenInternalEventService)
+
+    result = execute_wecom_tag_mutation(
+        PlanWeComTagMarkCommand(
+            idempotency_key="p0-2d-tag-emit-failure",
+            external_userid="wx_ext_tag_shadow_failure",
+            tag_ids=["tag_a"],
+            source_route="/api/admin/customer-tags/live/mark",
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["external_effect_job_id"]
+    assert result["internal_event_status"] == "failed"
+    assert result["real_external_call_executed"] is False
+
+
+def test_ai_campaign_created_todo_documents_missing_create_write_path() -> None:
+    source = Path("docs/queue/internal-event-shadow-todo.md").read_text(encoding="utf-8")
+
+    assert "ai_campaign.created" in source
+    assert "create-campaign command handler" in source
+    assert "Do not invent a create path" in source

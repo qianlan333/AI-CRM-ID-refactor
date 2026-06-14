@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
 from aicrm_next.shared.postgres_connection import get_db
 
 from .domain import TRIGGER_ON_ENTER_STAGE, TRIGGER_SCHEDULED, TRIGGER_WEBHOOK_PUSH, as_int, text
@@ -72,6 +73,26 @@ def enqueue(task_plan_id: int, *, operator_id: str = "automation_runtime_v2") ->
         metadata_json={"sender_resolution": sender_resolution},
     )
     updated = update_plan_status(int(task_plan_id), "enqueued", broadcast_job_id=job_id, diagnostics={"broadcast_job_id": job_id, "sender_resolution": sender_resolution})
+    if job_id:
+        safe_emit(
+            "broadcast_task.created",
+            emit_broadcast_task_created_shadow_event,
+            job={
+                "id": job_id,
+                "source_type": "automation_runtime_v2",
+                "source_table": "automation_task_plan_v2",
+                "source_id": source_id,
+                "idempotency_key": source_id,
+                "target_count": 1,
+                "batch_key": f"automation_runtime_v2:{as_int(plan.get('program_id'))}",
+                "trace_id": source_id,
+                "created_by": text(operator_id) or "automation_runtime_v2",
+            },
+            source_module="automation_runtime_v2.outbox",
+            source_route="automation_runtime_v2.enqueue",
+            operator=text(operator_id) or "automation_runtime_v2",
+            source="automation_runtime_v2",
+        )
     return {"status": "enqueued" if job_id else "duplicate", "broadcast_job_id": job_id, "plan": updated}
 
 
