@@ -91,11 +91,10 @@
       <label class="admin-field"><span>访问标识</span><input type="text" name="slug" value="{{ editor_payload.slug }}"></label>
       <label class="admin-field"><span>标题</span><input type="text" name="title" value="{{ editor_payload.title }}"></label>
       <label class="admin-field"><span>说明</span><textarea name="description" rows="3">{{ editor_payload.description }}</textarea></label>
-      <label class="admin-field"><span>提交后跳转地址</span><input type="text" name="redirect_url" value="{{ editor_payload.redirect_url }}"></label>
+      <input type="hidden" name="redirect_url" value="{{ editor_payload.redirect_url }}">
       <input type="hidden" name="completion_target" id="completion-target-json">
       {% set completion_target = questionnaire_payload.questionnaire.completion_target or {} %}
       {% set mini = completion_target.mini_program or {} %}
-      {% set url_link = completion_target.url_link or {} %}
       <section class="target-card" data-completion-target-config>
         <div class="target-head">
           <div>
@@ -115,18 +114,8 @@
             <div class="field">
               <label>完成后动作类型</label>
               <select name="completion_target_type" data-target-type>
-                <option value="h5"{% if completion_target.target_type == "h5" or not completion_target.target_type %} selected{% endif %}>跳转 H5 页面</option>
+                <option value="h5"{% if completion_target.target_type != "mini_program" %} selected{% endif %}>跳转 H5 页面</option>
                 <option value="mini_program"{% if completion_target.target_type == "mini_program" %} selected{% endif %}>打开微信小程序</option>
-                <option value="url_link"{% if completion_target.target_type == "url_link" %} selected{% endif %}>打开小程序 URL Link</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label>打开策略</label>
-              <select name="completion_open_strategy" data-open-strategy>
-                <option value="h5_redirect"{% if completion_target.open_strategy == "h5_redirect" or not completion_target.open_strategy %} selected{% endif %}>H5 普通跳转</option>
-                <option value="wechat_open_tag"{% if completion_target.open_strategy == "wechat_open_tag" %} selected{% endif %}>微信开放标签直达小程序</option>
-                <option value="url_link"{% if completion_target.open_strategy == "url_link" %} selected{% endif %}>URL Link 兜底</option>
               </select>
             </div>
 
@@ -149,12 +138,7 @@
 
             <div class="field full" data-mini-fields>
               <label>小程序页面路径</label>
-              <input name="mini_program_path" placeholder="/pages/index/index.html" value="{{ mini.path or '' }}">
-            </div>
-
-            <div class="field full" data-mini-fields>
-              <label>小程序参数 query</label>
-              <textarea name="mini_program_query" placeholder="source=questionnaire&scene=xxx">{{ mini.query or '' }}</textarea>
+              <input name="mini_program_path" placeholder="/pages/index/index?id=123" value="{{ (mini.path or '') ~ ('?' ~ mini.query if mini.query else '') }}">
             </div>
 
             <div class="field" data-mini-fields>
@@ -164,11 +148,6 @@
                 <option value="trial"{% if mini.env_version == "trial" %} selected{% endif %}>体验版 trial</option>
                 <option value="develop"{% if mini.env_version == "develop" %} selected{% endif %}>开发版 develop</option>
               </select>
-            </div>
-
-            <div class="field" data-url-link-fields>
-              <label>URL Link</label>
-              <input name="mini_program_url_link" placeholder="https://wxaurl.cn/xxxx" value="{{ url_link.url or '' }}">
             </div>
 
             <div class="field full">
@@ -310,13 +289,11 @@
     const enabledEl = root.querySelector('[data-target-enabled]');
     const bodyEl = root.querySelector('[data-target-body]');
     const typeEl = root.querySelector('[data-target-type]');
-    const strategyEl = root.querySelector('[data-open-strategy]');
     const noteEl = root.querySelector('[data-mode-note]');
     const warningEl = root.querySelector('[data-validation-warning]');
     const fieldGroups = {
       h5: root.querySelectorAll('[data-h5-fields]'),
-      mini: root.querySelectorAll('[data-mini-fields]'),
-      urlLink: root.querySelectorAll('[data-url-link-fields]')
+      mini: root.querySelectorAll('[data-mini-fields]')
     };
 
     function setGroupVisible(nodes, visible) {
@@ -329,44 +306,44 @@
       bodyEl.hidden = !enabled;
       setGroupVisible(fieldGroups.h5, enabled && type === 'h5');
       setGroupVisible(fieldGroups.mini, enabled && type === 'mini_program');
-      setGroupVisible(fieldGroups.urlLink, enabled && type === 'url_link');
       if (!enabled) {
         noteEl.textContent = '当前未启用，保存后保持原有跳转逻辑。';
         return;
       }
       if (type === 'mini_program') {
-        strategyEl.value = 'wechat_open_tag';
         noteEl.textContent = '微信内优先使用开放标签打开小程序；失败时使用兜底链接。';
         return;
       }
-      if (type === 'url_link') {
-        strategyEl.value = 'url_link';
-        noteEl.textContent = '优先跳转 URL Link，适合无法使用开放标签的场景。';
-        return;
-      }
-      strategyEl.value = 'h5_redirect';
       noteEl.textContent = '提交/支付成功后跳转 H5 页面。';
+    }
+
+    function splitMiniProgramPathInput(value) {
+      const raw = String(value || '').trim();
+      const index = raw.indexOf('?');
+      if (index < 0) return { path: raw, query: '' };
+      return { path: raw.slice(0, index), query: raw.slice(index + 1) };
     }
 
     root.collectCompletionTarget = function collectCompletionTarget() {
       const enabled = enabledEl.checked;
       const type = typeEl.value;
+      const miniPath = splitMiniProgramPathInput(root.querySelector('[name="mini_program_path"]').value);
       const payload = {
         enabled,
         target_type: type,
-        open_strategy: strategyEl.value,
+        open_strategy: type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect',
         h5_url: root.querySelector('[name="completion_h5_url"]').value.trim(),
         fallback_url: root.querySelector('[name="completion_fallback_url"]').value.trim(),
         mini_program: {
           appid: root.querySelector('[name="mini_program_appid"]').value.trim(),
           username: root.querySelector('[name="mini_program_username"]').value.trim(),
-          path: root.querySelector('[name="mini_program_path"]').value.trim(),
-          query: root.querySelector('[name="mini_program_query"]').value.trim(),
+          path: miniPath.path,
+          query: miniPath.query,
           env_version: root.querySelector('[name="mini_program_env_version"]').value
         },
         url_link: {
-          enabled: type === 'url_link',
-          url: root.querySelector('[name="mini_program_url_link"]').value.trim()
+          enabled: false,
+          url: ''
         }
       };
       warningEl.hidden = true;

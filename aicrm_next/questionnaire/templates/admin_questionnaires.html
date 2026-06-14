@@ -2667,7 +2667,7 @@
         name: '问卷名称',
         title: '问卷标题',
         description: '问卷说明',
-        redirect_url: '提交后跳转地址',
+        redirect_url: '提交后动作 H5 地址',
         slug: '分享标识',
         min_score: '最低分',
         max_score: '最高分',
@@ -2964,13 +2964,31 @@
       const target = { ...defaultCompletionTarget(redirectUrl), ...(value || {}) };
       target.mini_program = { ...defaultCompletionTarget().mini_program, ...(target.mini_program || {}) };
       target.url_link = { ...defaultCompletionTarget().url_link, ...(target.url_link || {}) };
+      if (target.target_type !== 'mini_program') target.target_type = 'h5';
+      target.open_strategy = target.target_type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect';
+      target.url_link.enabled = false;
       return target;
+    }
+
+    function miniProgramPathDisplay(mini) {
+      const path = String(mini?.path || '');
+      const query = String(mini?.query || '');
+      return path + (query ? `?${query}` : '');
+    }
+
+    function splitMiniProgramPathInput(value) {
+      const raw = String(value || '').trim();
+      const index = raw.indexOf('?');
+      if (index < 0) return { path: raw, query: '' };
+      return {
+        path: raw.slice(0, index),
+        query: raw.slice(index + 1),
+      };
     }
 
     function completionTargetConfigHtml(initial, title = '完成后动作') {
       const target = normalizeCompletionTarget(initial);
       const mini = target.mini_program || {};
-      const urlLink = target.url_link || {};
       return `
         <section class="target-card" data-completion-target-config>
           <div class="target-head">
@@ -2993,16 +3011,6 @@
                 <select name="completion_target_type" data-target-type>
                   <option value="h5" ${target.target_type === 'h5' ? 'selected' : ''}>跳转 H5 页面</option>
                   <option value="mini_program" ${target.target_type === 'mini_program' ? 'selected' : ''}>打开微信小程序</option>
-                  <option value="url_link" ${target.target_type === 'url_link' ? 'selected' : ''}>打开小程序 URL Link</option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label>打开策略</label>
-                <select name="completion_open_strategy" data-open-strategy>
-                  <option value="h5_redirect" ${target.open_strategy === 'h5_redirect' ? 'selected' : ''}>H5 普通跳转</option>
-                  <option value="wechat_open_tag" ${target.open_strategy === 'wechat_open_tag' ? 'selected' : ''}>微信开放标签直达小程序</option>
-                  <option value="url_link" ${target.open_strategy === 'url_link' ? 'selected' : ''}>URL Link 兜底</option>
                 </select>
               </div>
 
@@ -3025,12 +3033,7 @@
 
               <div class="field full" data-mini-fields>
                 <label>小程序页面路径</label>
-                <input name="mini_program_path" placeholder="/pages/index/index.html" value="${escapeHtml(mini.path || '')}">
-              </div>
-
-              <div class="field full" data-mini-fields>
-                <label>小程序参数 query</label>
-                <textarea name="mini_program_query" placeholder="source=questionnaire&scene=xxx">${escapeHtml(mini.query || '')}</textarea>
+                <input name="mini_program_path" placeholder="/pages/index/index?id=123" value="${escapeHtml(miniProgramPathDisplay(mini))}">
               </div>
 
               <div class="field" data-mini-fields>
@@ -3040,11 +3043,6 @@
                   <option value="trial" ${mini.env_version === 'trial' ? 'selected' : ''}>体验版 trial</option>
                   <option value="develop" ${mini.env_version === 'develop' ? 'selected' : ''}>开发版 develop</option>
                 </select>
-              </div>
-
-              <div class="field" data-url-link-fields>
-                <label>URL Link</label>
-                <input name="mini_program_url_link" placeholder="https://wxaurl.cn/xxxx" value="${escapeHtml(urlLink.url || '')}">
               </div>
 
               <div class="field full">
@@ -3067,13 +3065,11 @@
       const enabledEl = root.querySelector('[data-target-enabled]');
       const bodyEl = root.querySelector('[data-target-body]');
       const typeEl = root.querySelector('[data-target-type]');
-      const strategyEl = root.querySelector('[data-open-strategy]');
       const noteEl = root.querySelector('[data-mode-note]');
       const warningEl = root.querySelector('[data-validation-warning]');
       const fieldGroups = {
         h5: root.querySelectorAll('[data-h5-fields]'),
         mini: root.querySelectorAll('[data-mini-fields]'),
-        urlLink: root.querySelectorAll('[data-url-link-fields]'),
       };
 
       function setGroupVisible(nodes, visible) {
@@ -3086,22 +3082,14 @@
         bodyEl.hidden = !enabled;
         setGroupVisible(fieldGroups.h5, enabled && type === 'h5');
         setGroupVisible(fieldGroups.mini, enabled && type === 'mini_program');
-        setGroupVisible(fieldGroups.urlLink, enabled && type === 'url_link');
         if (!enabled) {
           noteEl.textContent = '当前未启用，保存后保持原有跳转逻辑。';
           return;
         }
         if (type === 'mini_program') {
-          strategyEl.value = 'wechat_open_tag';
           noteEl.textContent = '微信内优先使用开放标签打开小程序；失败时使用兜底链接。';
           return;
         }
-        if (type === 'url_link') {
-          strategyEl.value = 'url_link';
-          noteEl.textContent = '优先跳转 URL Link，适合无法使用开放标签的场景。';
-          return;
-        }
-        strategyEl.value = 'h5_redirect';
         noteEl.textContent = '提交/支付成功后跳转 H5 页面。';
       }
 
@@ -3109,22 +3097,23 @@
         const validate = options.validate !== false;
         const enabled = enabledEl.checked;
         const type = typeEl.value;
+        const miniPath = splitMiniProgramPathInput(root.querySelector('[name="mini_program_path"]').value);
         const payload = {
           enabled,
           target_type: type,
-          open_strategy: strategyEl.value,
+          open_strategy: type === 'mini_program' ? 'wechat_open_tag' : 'h5_redirect',
           h5_url: root.querySelector('[name="completion_h5_url"]').value.trim(),
           fallback_url: root.querySelector('[name="completion_fallback_url"]').value.trim(),
           mini_program: {
             appid: root.querySelector('[name="mini_program_appid"]').value.trim(),
             username: root.querySelector('[name="mini_program_username"]').value.trim(),
-            path: root.querySelector('[name="mini_program_path"]').value.trim(),
-            query: root.querySelector('[name="mini_program_query"]').value.trim(),
+            path: miniPath.path,
+            query: miniPath.query,
             env_version: root.querySelector('[name="mini_program_env_version"]').value,
           },
           url_link: {
-            enabled: type === 'url_link',
-            url: root.querySelector('[name="mini_program_url_link"]').value.trim(),
+            enabled: false,
+            url: '',
           },
         };
         warningEl.hidden = true;
@@ -3927,9 +3916,6 @@
           <label class="field">问卷说明
             <textarea id="field-description">${escapeHtml(state.questionnaire.description)}</textarea>
           </label>
-          <label class="field">提交后跳转地址
-            <input id="field-redirect-url" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}" placeholder="可选，提交后跳转的地址">
-          </label>
           ${completionTargetConfigHtml(state.questionnaire.completion_target, '提交后动作')}
           <label class="field">答题展示方式
             <select id="field-answer-display-mode">
@@ -4021,21 +4007,12 @@
         state.questionnaire.description = event.target.value;
         renderPreview();
       });
-      inspectorBodyEl.querySelector('#field-redirect-url').addEventListener('input', (event) => {
-        state.questionnaire.redirect_url = event.target.value;
-        if (!state.questionnaire.completion_target || state.questionnaire.completion_target.target_type === 'h5') {
-          state.questionnaire.completion_target = defaultCompletionTarget(event.target.value);
-        }
-        updateDraftIndicator();
-      });
       const completionTargetRoot = inspectorBodyEl.querySelector('[data-completion-target-config]');
       if (completionTargetRoot) {
         mountCompletionTargetConfig(completionTargetRoot, state.questionnaire.completion_target, (target) => {
           state.questionnaire.completion_target = target;
           if (target.target_type === 'h5') {
             state.questionnaire.redirect_url = target.h5_url || '';
-            const redirectInput = inspectorBodyEl.querySelector('#field-redirect-url');
-            if (redirectInput) redirectInput.value = state.questionnaire.redirect_url;
           }
           updateDraftIndicator();
         });
@@ -5061,9 +5038,6 @@
                   <label class="field" style="margin-bottom:0;font-weight:600;"><input id="v2-basic-disabled" type="checkbox" ${state.questionnaire.is_disabled ? 'checked' : ''}> 停用问卷</label>
                 </label>
               </div>
-              <label class="field">提交后动作 / 跳转地址
-                <input id="v2-basic-redirect" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}" placeholder="为空时提交后展示测评结果页">
-              </label>
               ${completionTargetConfigHtml(state.questionnaire.completion_target, '提交后动作')}
               <label class="field">答题展示方式
                 <select id="v2-basic-answer-display-mode">
@@ -5095,21 +5069,12 @@
         state.questionnaire.is_disabled = event.target.checked;
         updateDraftIndicator();
       });
-      phoneStage.querySelector('#v2-basic-redirect').addEventListener('input', (event) => {
-        state.questionnaire.redirect_url = event.target.value;
-        if (!state.questionnaire.completion_target || state.questionnaire.completion_target.target_type === 'h5') {
-          state.questionnaire.completion_target = defaultCompletionTarget(event.target.value);
-        }
-        updateDraftIndicator();
-      });
       const completionTargetRoot = phoneStage.querySelector('[data-completion-target-config]');
       if (completionTargetRoot) {
         mountCompletionTargetConfig(completionTargetRoot, state.questionnaire.completion_target, (target) => {
           state.questionnaire.completion_target = target;
           if (target.target_type === 'h5') {
             state.questionnaire.redirect_url = target.h5_url || '';
-            const redirectInput = phoneStage.querySelector('#v2-basic-redirect');
-            if (redirectInput) redirectInput.value = state.questionnaire.redirect_url;
           }
           updateDraftIndicator();
         });
