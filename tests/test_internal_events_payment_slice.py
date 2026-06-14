@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -97,6 +98,8 @@ def _patch_legacy_outbox(monkeypatch, outbox_id: int = 9001) -> list[dict]:
 
 
 def _delete_order_paid_external_effect_jobs(business_id: str) -> None:
+    if not os.getenv("DATABASE_URL"):
+        return
     conn = db()
     rows = conn.execute(
         """

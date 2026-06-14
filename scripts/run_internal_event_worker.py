@@ -19,9 +19,16 @@ def _csv(value: str) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
+def _default_limit() -> int:
+    return read_int_env(
+        "AICRM_INTERNAL_EVENTS_WORKER_BATCH_SIZE",
+        read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE),
+    )
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the AI-CRM Internal Event Queue worker.")
-    parser.add_argument("--limit", "--batch-size", dest="limit", type=int, default=read_int_env("AICRM_INTERNAL_EVENT_WORKER_BATCH_SIZE", DEFAULT_WORKER_BATCH_SIZE))
+    parser.add_argument("--limit", "--batch-size", dest="limit", type=int, default=_default_limit())
     parser.add_argument("--event-types", default="")
     parser.add_argument("--consumer-names", default="")
     parser.add_argument("--execute", action="store_true", default=False, help="Dispatch consumers. Without this flag the worker dry-runs.")
@@ -33,7 +40,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def run(*, limit: int | None = None, dry_run: bool = True, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> dict:
     return InternalEventWorker().run_due(
-        batch_size=int(limit or DEFAULT_WORKER_BATCH_SIZE),
+        batch_size=int(limit or _default_limit()),
         dry_run=bool(dry_run),
         event_types=event_types,
         consumer_names=consumer_names,
