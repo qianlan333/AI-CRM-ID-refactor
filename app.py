@@ -84,6 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due cleanup entries.")
     cleanup_run_due.add_argument("--limit", type=int, default=50)
     cleanup_run_due.add_argument("--operator", default="cli")
+    targets = subparsers.add_parser("p0-1-test-targets", help="P0-1 production test target manifest commands.")
+    targets_subparsers = targets.add_subparsers(dest="p0_1_targets_command")
+    targets_validate = targets_subparsers.add_parser("validate", help="Validate the P0-1 production test target manifest.")
+    targets_validate.add_argument("manifest", nargs="?", default="docs/queue/p0-1-production-test-targets.yaml")
     subparsers.add_parser("run-legacy", help="Removed legacy Flask startup command.")
     subparsers.add_parser("init-db-legacy", help="Removed legacy Flask database init command.")
     subparsers.add_parser("init-db", help="Removed legacy Flask database init command.")
@@ -123,6 +127,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 dry_run = True
             print_run_due_result(dry_run=dry_run, limit=getattr(args, "limit", 50), operator=getattr(args, "operator", "cli"))
             return
+        parser.print_help()
+        return
+    if command == "p0-1-test-targets":
+        if getattr(args, "p0_1_targets_command", "") == "validate":
+            from scripts.p0_1_validate_test_targets import main as validate_targets_main
+
+            raise SystemExit(validate_targets_main([getattr(args, "manifest", "docs/queue/p0-1-production-test-targets.yaml")]))
         parser.print_help()
         return
     if command == "run-legacy":
