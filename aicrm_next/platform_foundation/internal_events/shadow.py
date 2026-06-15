@@ -638,6 +638,8 @@ def emit_broadcast_task_created_shadow_event(
     ops_plan_id = _text(job.get("ops_plan_id") or job.get("plan_id"))
     if not ops_plan_id and source_type.startswith("cloud_plan"):
         ops_plan_id = batch_id.removeprefix("cloud_plan_recipient:")
+    safe_ops_plan_ref = _safe_ops_plan_ref(ops_plan_id)
+    safe_ops_plan_hash = _hash_text(ops_plan_id)
     safe_job_payload = {
         "task_id": job_id,
         "task_code": _text(job.get("task_code") or job.get("code")),
@@ -649,9 +651,9 @@ def emit_broadcast_task_created_shadow_event(
         "source_id_hash": safe_source_hash,
         "source_id_present": bool(source_id),
         "related_campaign_code": campaign_code,
-        "related_ops_plan_id": _safe_ops_plan_ref(ops_plan_id),
-        "related_ops_plan_ref": _safe_ops_plan_ref(ops_plan_id),
-        "related_ops_plan_hash": _hash_text(ops_plan_id),
+        "related_ops_plan_id": safe_ops_plan_ref,
+        "related_ops_plan_ref": safe_ops_plan_ref,
+        "related_ops_plan_hash": safe_ops_plan_hash,
         "related_ops_plan_present": bool(ops_plan_id),
         "task_type": task_type,
         "send_channel": send_channel,
@@ -700,7 +702,10 @@ def emit_broadcast_task_created_shadow_event(
             "send_channel": send_channel,
             "source": source_type,
             "campaign_code": campaign_code,
-            "ops_plan_id": ops_plan_id,
+            "ops_plan_id": safe_ops_plan_ref,
+            "ops_plan_ref": safe_ops_plan_ref,
+            "ops_plan_hash": safe_ops_plan_hash,
+            "ops_plan_present": bool(ops_plan_id),
             "target_count": target_count,
             "status": _text(job.get("status") or "created"),
             "scheduled": bool(scheduled_at),

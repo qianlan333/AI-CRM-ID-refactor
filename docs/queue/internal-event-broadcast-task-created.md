@@ -35,8 +35,8 @@ Some creation paths, especially the group-ops private-message enqueue path, can
 receive `source_id`, `trace_id`, or `idempotency_key` values that embed a raw
 `external_userid` or other customer identifier. `broadcast_task.created` must
 never persist those raw values in `internal_event.payload_json`,
-`internal_event.trace_id`, `internal_event.correlation_id`, or
-`internal_event.source_command_id`.
+`internal_event.payload_summary_json`, `internal_event.trace_id`,
+`internal_event.correlation_id`, or `internal_event.source_command_id`.
 
 The emit helper stores source references as follows:
 
@@ -102,9 +102,12 @@ GET /api/admin/internal-events?event_type=broadcast_task.created&trace_hash={ups
 
 The service hashes non-hash input before querying
 `payload.broadcast_task.original_trace_hash`, so callers may pass a non-PII
-plan code or a precomputed 16-character hash. The API does not return or persist
-the raw upstream trace, raw `external_userid`, mobile number, openid, unionid,
-webhook URL, token, or message body.
+plan code or a precomputed 16-character hash. If the raw upstream trace happens
+to look like a 16-character hexadecimal hash, the service tries both candidates:
+the supplied value as a precomputed hash and `sha256(supplied)[:16]` as the raw
+trace hash. The API does not return or persist the raw upstream trace, raw
+`external_userid`, mobile number, openid, unionid, webhook URL, token, or
+message body.
 
 `payload_summary_json` is the admin-visible summary:
 
@@ -113,14 +116,20 @@ webhook URL, token, or message body.
 - `send_channel`
 - `source`
 - `campaign_code`
-- `ops_plan_id`
+- `ops_plan_id`: `ops_plan_ref:{sha256[:16]}` when an ops plan is present.
+  This field name is retained for compatibility, but the value is never raw.
+- `ops_plan_ref`: same safe reference.
+- `ops_plan_hash`: the first 16 hex characters of a SHA-256 hash.
+- `ops_plan_present`: boolean indicator only.
 - `target_count`
 - `status`
 - `scheduled`
 
-It must not include customer lists, mobile numbers, raw `external_userid`,
-openid, unionid, full message bodies, full prompts, full strategy text, tokens,
-secrets, webhook URLs, or external receiver URLs.
+It must not include raw upstream plan ids, raw trace ids, raw source ids,
+customer lists, mobile numbers, raw `external_userid`, openid, unionid, full
+message bodies, full prompts, full strategy text, tokens, secrets, webhook URLs,
+or external receiver URLs. The list and detail APIs expose this summary, so the
+summary follows the same redaction rules as stored payloads.
 
 ## Feature Flag
 

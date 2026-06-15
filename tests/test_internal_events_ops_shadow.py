@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from aicrm_next.cloud_orchestrator.application import ApproveCloudPlanCommand, ApproveCloudPlanRecipientCommand
 from aicrm_next.cloud_orchestrator.repository import reset_cloud_plan_fixture_state
 from aicrm_next.owner_migration.application import OwnerMigrationCommand, OwnerMigrationService
@@ -122,9 +124,12 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
     monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "broadcast_task.created")
     reset_internal_event_fixture_state()
     reset_cloud_plan_fixture_state()
-    ApproveCloudPlanCommand().execute("plan_probe", operator="pytest")
+    plan_id = "plan_probe"
+    plan_hash = hashlib.sha256(plan_id.encode("utf-8")).hexdigest()[:16]
+    plan_ref = f"ops_plan_ref:{plan_hash}"
+    ApproveCloudPlanCommand().execute(plan_id, operator="pytest")
 
-    result = ApproveCloudPlanRecipientCommand().execute("plan_probe", 1, operator="pytest")
+    result = ApproveCloudPlanRecipientCommand().execute(plan_id, 1, operator="pytest")
     events, total = InternalEventService().list_events({"event_type": "broadcast_task.created", "aggregate_id": str(result["job_id"])})
     trace_events, trace_total = InternalEventService().list_events({"event_type": "broadcast_task.created", "original_trace_hash": "plan_probe"})
     runs, run_total = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
@@ -144,7 +149,10 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monke
         "send_channel": "",
         "source": "cloud_plan_recipient_approval",
         "campaign_code": "",
-        "ops_plan_id": "plan_probe",
+        "ops_plan_id": plan_ref,
+        "ops_plan_ref": plan_ref,
+        "ops_plan_hash": plan_hash,
+        "ops_plan_present": True,
         "target_count": 1,
         "status": "created",
         "scheduled": False,
