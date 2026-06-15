@@ -56,6 +56,11 @@ Emit requires all of:
 - `AICRM_INTERNAL_EVENTS_OPS_PLAN_ENABLED=1`
 - `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES` contains `ops_plan.approved`
 
+Unlike the older generic event gate, `ops_plan.approved` requires an explicit
+allowlist entry. An empty `AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES` value skips
+ops-plan emits with `ops_plan_event_type_not_explicitly_allowed`; it must not
+fall back to allow-all for this event family.
+
 Diagnostics exposes:
 
 - `ops_plan_internal_events_enabled`
@@ -87,7 +92,33 @@ The event registers four consumers:
   - Current behavior: skipped with `broadcast_task_planner_not_configured`.
   - Does not create or send real broadcast tasks.
 
+For compatibility with older pending runs, the registry also accepts the legacy
+consumer name `ai_assist_notify_consumer` for `ops_plan.approved`. This is a
+dispatch-only handler alias and returns skipped with
+`ops_plan_legacy_ai_assist_notify_not_configured`. It is not part of the
+fan-out list for newly emitted events, so new `ops_plan.approved` events still
+create exactly the four consumers above.
+
 No consumer performs real WeCom, Feishu, webhook, payment, or refund calls.
+
+## Idempotency Compatibility
+
+New events use:
+
+```text
+ops_plan.approved:{aggregate_type}:{plan_id}:{approved_marker}
+```
+
+Older shadow runs may already exist with:
+
+```text
+ops_plan.approved:{aggregate_type}:{plan_id}
+```
+
+Before creating a new event, emit checks for the old key. If it exists, the
+existing event is returned and no new event or consumer runs are created. This
+keeps historical approvals idempotent without a schema migration or data
+rewrite.
 
 ## Worker Pair Allowlist
 
