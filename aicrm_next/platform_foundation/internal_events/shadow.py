@@ -5,7 +5,13 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 
-from .config import customer_tags_internal_events_enabled, event_type_allowed, internal_events_enabled, questionnaire_internal_events_enabled
+from .config import (
+    ai_campaign_internal_events_enabled,
+    customer_tags_internal_events_enabled,
+    event_type_allowed,
+    internal_events_enabled,
+    questionnaire_internal_events_enabled,
+)
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 from .customer_identity import CUSTOMER_PHONE_BOUND_EVENT_TYPE, register_customer_identity_event_consumers
@@ -149,12 +155,16 @@ def ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRu
     return _skipped("ai_assist_notify_not_configured", event, run)
 
 
+def ai_campaign_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("ai_campaign_ai_assist_notify_not_configured", event, run)
+
+
 def campaign_summary_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return _skipped("campaign_summary_not_configured", event, run)
 
 
 def broadcast_task_planner_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
-    return _skipped("broadcast_task_planner_shadow_only", event, run)
+    return _skipped("broadcast_task_planner_not_configured", event, run)
 
 
 def broadcast_queue_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
@@ -196,9 +206,10 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
         registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
 
     for event_type in (AI_CAMPAIGN_CREATED_EVENT_TYPE, AI_CAMPAIGN_APPROVED_EVENT_TYPE, AI_CAMPAIGN_STARTED_EVENT_TYPE):
-        registry.register(event_type, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
+        registry.register(event_type, "ai_campaign_ai_assist_notify_consumer", ai_campaign_ai_assist_notify_consumer, consumer_type="orchestration")
         registry.register(event_type, "campaign_summary_consumer", campaign_summary_consumer, consumer_type="projection")
         registry.register(event_type, "broadcast_task_planner_consumer", broadcast_task_planner_consumer, consumer_type="orchestration")
+        registry.register(event_type, "audit_projection_consumer", audit_projection_consumer, consumer_type="projection")
 
     registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "broadcast_queue_projection_consumer", broadcast_queue_projection_consumer, consumer_type="projection")
     registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "push_center_link_consumer", push_center_link_consumer, consumer_type="projection")
@@ -387,13 +398,23 @@ def emit_ai_campaign_shadow_event(
     event_type: str,
     campaign: dict[str, Any],
 ) -> dict[str, Any]:
-    if not _event_enabled(event_type):
+    if not ai_campaign_internal_events_enabled():
+        return {"status": "skipped", "reason": "ai_campaign_internal_events_disabled"}
+    if not event_type_allowed(event_type):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     campaign_code = _text(campaign.get("campaign_code") or command.payload.get("campaign_code"))
     if not campaign_code:
         return {"status": "skipped", "reason": "campaign_code_missing"}
     register_shadow_event_consumers()
-    stable_key = command.idempotency_key or command.command_id
+    status = _text(campaign.get("run_status") or campaign.get("status"))
+    review_status = _text(campaign.get("review_status"))
+    event_version_key = _ai_campaign_event_version_key(event_type=event_type, campaign=campaign)
+    operator = _text(command.context.actor_id)
+    target_count = int(campaign.get("member_count") or campaign.get("target_count") or campaign.get("audience_count") or 0)
+    objective = _text(campaign.get("intent") or campaign.get("objective"))
+    created_at = _text(campaign.get("created_at"))
+    approved_at = _text(campaign.get("approved_at"))
+    started_at = _text(campaign.get("started_at"))
     result = InternalEventService().emit_event(
         event_type=event_type,
         event_version=1,
@@ -401,20 +422,72 @@ def emit_ai_campaign_shadow_event(
         aggregate_id=campaign_code,
         subject_type="ai_campaign",
         subject_id=campaign_code,
-        idempotency_key=f"{event_type}:{campaign_code}:{stable_key}",
+        idempotency_key=f"{event_type}:{campaign_code}:{event_version_key}",
         source_module="cloud_orchestrator.campaigns_write",
         source_command_id=command.command_id,
-        correlation_id=stable_key,
+        correlation_id=command.idempotency_key or command.command_id,
         context=command.context,
-        payload={"campaign": dict(campaign or {})},
+        payload={
+            "campaign": {
+                "campaign_code": campaign_code,
+                "campaign_id": campaign.get("id"),
+                "status": status,
+                "review_status": review_status,
+                "run_status": status,
+                "display_name": _text(campaign.get("display_name")),
+                "objective": objective,
+                "objective_present": bool(objective),
+                "target_count": target_count,
+                "audience_count": target_count,
+                "operator": operator,
+                "created_at": created_at,
+                "approved_at": approved_at,
+                "started_at": started_at,
+                "trace_id": _text(campaign.get("trace_id") or command.context.trace_id),
+                "metadata": _safe_campaign_metadata(campaign.get("metadata") or campaign.get("metadata_json")),
+            },
+            "source": {
+                "source_module": "cloud_orchestrator.campaigns_write",
+                "source_route": command.context.source_route,
+                "command_id": command.command_id,
+                "trace_id": command.context.trace_id,
+            },
+        },
         payload_summary={
             "campaign_code": campaign_code,
-            "review_status": _text(campaign.get("review_status")),
-            "run_status": _text(campaign.get("run_status")),
+            "status": status or review_status,
+            "review_status": review_status,
+            "run_status": status,
+            "operator": operator,
             "source": command.context.source_route,
+            "target_count": target_count,
+            "objective_present": bool(objective),
+            "approved": event_type == AI_CAMPAIGN_APPROVED_EVENT_TYPE or review_status == "approved",
+            "started": event_type == AI_CAMPAIGN_STARTED_EVENT_TYPE or status == "active",
         },
     )
     return {"status": "emitted", "event_id": result["event"]["event_id"], "consumer_run_count": len(result.get("consumer_runs") or [])}
+
+
+def _ai_campaign_event_version_key(*, event_type: str, campaign: dict[str, Any]) -> str:
+    if event_type == AI_CAMPAIGN_CREATED_EVENT_TYPE:
+        return "created"
+    if event_type == AI_CAMPAIGN_APPROVED_EVENT_TYPE:
+        return _text(campaign.get("approved_at") or campaign.get("approval_version") or "approved")
+    if event_type == AI_CAMPAIGN_STARTED_EVENT_TYPE:
+        return _text(campaign.get("started_at") or campaign.get("start_version") or "started")
+    return "v1"
+
+
+def _safe_campaign_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    allowed = {}
+    for key in ("group_code", "group_label", "source", "source_type", "business_domain"):
+        text = _text(value.get(key))
+        if text:
+            allowed[key] = text
+    return allowed
 
 
 def emit_broadcast_task_created_shadow_event(
