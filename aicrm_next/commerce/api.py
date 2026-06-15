@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from urllib.parse import quote
 
@@ -17,6 +18,7 @@ from .admin_transactions import (
     default_filters,
     create_wechat_refund_request,
     export_orders_csv,
+    handle_wechat_refund_notify,
     list_wechat_admin_orders,
     list_wechat_product_options,
 )
@@ -304,6 +306,21 @@ def _payment_final_options_payload(route: str, methods: list[str], *, source_sta
         "adapter_mode": "real_blocked",
         **_payment_final_side_effects(source_status=source_status),
     }
+
+
+def _external_base_url(request: Request) -> str:
+    configured = str(
+        os.getenv("AICRM_PUBLIC_BASE_URL")
+        or os.getenv("PUBLIC_BASE_URL")
+        or os.getenv("APP_BASE_URL")
+        or ""
+    ).strip()
+    return configured.rstrip("/") if configured else str(request.base_url).rstrip("/")
+
+
+def _refund_notify_url(request: Request) -> str:
+    configured = str(os.getenv("WECHAT_PAY_REFUND_NOTIFY_URL") or "").strip()
+    return configured or f"{_external_base_url(request)}/api/h5/wechat-pay/refund/notify"
 
 
 def _product_admin_context(
@@ -631,8 +648,10 @@ def retry_wechat_order_external_push_delivery(order_id: str, delivery_id: str) -
 @router.post("/api/admin/wechat-pay/orders/{order_id}/refunds")
 async def request_wechat_admin_refund(order_id: str, request: Request) -> JSONResponse:
     payload = await request.json()
+    normalized_payload = dict(payload) if isinstance(payload, dict) else {}
+    normalized_payload["refund_notify_url"] = _refund_notify_url(request)
     try:
-        result = create_wechat_refund_request(order_id, payload if isinstance(payload, dict) else {})
+        result = create_wechat_refund_request(order_id, normalized_payload)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc), **_payment_final_side_effects()}, status_code=400, headers=_payment_final_headers())
     provider_refund_executed = bool((result.get("refund") or {}).get("provider_refund_executed"))
@@ -647,6 +666,16 @@ async def request_wechat_admin_refund(order_id: str, request: Request) -> JSONRe
             real_refund_executed=provider_refund_executed,
         ),
     )
+
+
+@router.post("/api/h5/wechat-pay/refund/notify")
+async def wechat_refund_notify(request: Request) -> JSONResponse:
+    body = (await request.body()).decode("utf-8")
+    try:
+        handle_wechat_refund_notify(body, dict(request.headers))
+        return JSONResponse({"code": "SUCCESS", "message": "成功"})
+    except Exception as exc:
+        return JSONResponse({"code": "FAIL", "message": str(exc)}, status_code=401)
 
 
 @router.get("/api/admin/wechat-pay/products")

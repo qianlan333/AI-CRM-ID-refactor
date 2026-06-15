@@ -6,6 +6,7 @@ import types
 import pytest
 
 from aicrm_next.commerce import admin_transactions
+from aicrm_next.commerce import api as commerce_api
 
 
 def _paid_order(**overrides):
@@ -155,3 +156,149 @@ def test_next_postgres_refund_marks_failed_when_wechat_pay_rejects(monkeypatch):
     assert "status = 'failed'" in sql_text
     assert "'refund_failed'" in sql_text
     assert connections[0].commits == 2
+
+
+def _install_fetching_fake_psycopg(monkeypatch, refund_row: dict):
+    executed: list[tuple[str, tuple]] = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.last_sql = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=()):
+            self.last_sql = sql
+            executed.append((sql, tuple(params)))
+
+        def fetchone(self):
+            if "SELECT r.*" in self.last_sql:
+                return dict(refund_row)
+            if "RETURNING refund_status" in self.last_sql:
+                return {"refund_status": "full_refunded"}
+            return None
+
+    class FakeConnection:
+        def __init__(self):
+            self.commits = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            self.commits += 1
+
+    connections: list[FakeConnection] = []
+
+    def connect(*args, **kwargs):
+        conn = FakeConnection()
+        connections.append(conn)
+        return conn
+
+    psycopg = types.ModuleType("psycopg")
+    psycopg.connect = connect
+    rows = types.ModuleType("psycopg.rows")
+    rows.dict_row = object()
+    psycopg_types = types.ModuleType("psycopg.types")
+    json_module = types.ModuleType("psycopg.types.json")
+    json_module.Jsonb = lambda value: value
+    monkeypatch.setitem(sys.modules, "psycopg", psycopg)
+    monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
+    monkeypatch.setitem(sys.modules, "psycopg.types", psycopg_types)
+    monkeypatch.setitem(sys.modules, "psycopg.types.json", json_module)
+    monkeypatch.setattr(admin_transactions, "database_mode", lambda: "postgres")
+    monkeypatch.setattr(admin_transactions, "_database_url", lambda: "postgresql://test/test")
+    return executed, connections
+
+
+def test_next_postgres_refund_result_updates_order_once(monkeypatch):
+    executed, connections = _install_fetching_fake_psycopg(
+        monkeypatch,
+        {
+            "id": 4,
+            "order_id": 147,
+            "out_trade_no": "WXP_REAL_REFUND",
+            "transaction_id": "420000REALNEXT",
+            "out_refund_no": "WXRTEST0001",
+            "refund_id": "503000000020260615",
+            "status": "PROCESSING",
+            "refund_amount_total": 6900,
+        },
+    )
+
+    result = admin_transactions.apply_wechat_refund_result(
+        {
+            "out_trade_no": "WXP_REAL_REFUND",
+            "transaction_id": "420000REALNEXT",
+            "out_refund_no": "WXRTEST0001",
+            "refund_id": "503000000020260615",
+            "refund_status": "SUCCESS",
+            "amount": {"refund": 6900, "total": 6900, "currency": "CNY"},
+        },
+        raw_event={"event_type": "REFUND.SUCCESS", "id": "notify-refund-001"},
+    )
+
+    assert result["refund"]["status"] == "SUCCESS"
+    assert result["order_refund_status"] == "full_refunded"
+    assert result["updated_order_amount"] is True
+    sql_text = "\n".join(sql for sql, _params in executed)
+    assert "UPDATE wechat_pay_refunds" in sql_text
+    assert "UPDATE wechat_pay_orders" in sql_text
+    assert any("refund_succeeded" in params for _sql, params in executed)
+    assert connections[0].commits == 1
+
+
+def test_next_postgres_refund_result_is_idempotent_when_already_success(monkeypatch):
+    executed, _connections = _install_fetching_fake_psycopg(
+        monkeypatch,
+        {
+            "id": 4,
+            "order_id": 147,
+            "out_trade_no": "WXP_REAL_REFUND",
+            "transaction_id": "420000REALNEXT",
+            "out_refund_no": "WXRTEST0001",
+            "refund_id": "503000000020260615",
+            "status": "SUCCESS",
+            "refund_amount_total": 6900,
+        },
+    )
+
+    result = admin_transactions.apply_wechat_refund_result(
+        {
+            "out_refund_no": "WXRTEST0001",
+            "refund_id": "503000000020260615",
+            "refund_status": "SUCCESS",
+            "amount": {"refund": 6900, "total": 6900, "currency": "CNY"},
+        }
+    )
+
+    assert result["updated_order_amount"] is False
+    sql_text = "\n".join(sql for sql, _params in executed)
+    assert "UPDATE wechat_pay_refunds" in sql_text
+    assert "UPDATE wechat_pay_orders" not in sql_text
+
+
+def test_next_refund_notify_route_returns_wechat_success(next_client, monkeypatch):
+    calls: list[tuple[str, dict]] = []
+
+    def fake_handle(body: str, headers: dict):
+        calls.append((body, headers))
+        return {"ok": True}
+
+    monkeypatch.setattr(commerce_api, "handle_wechat_refund_notify", fake_handle)
+
+    response = next_client.post("/api/h5/wechat-pay/refund/notify", content='{"event_type":"REFUND.SUCCESS"}')
+
+    assert response.status_code == 200
+    assert response.json() == {"code": "SUCCESS", "message": "成功"}
+    assert calls[0][0] == '{"event_type":"REFUND.SUCCESS"}'
