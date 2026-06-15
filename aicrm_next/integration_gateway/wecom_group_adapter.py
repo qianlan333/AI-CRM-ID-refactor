@@ -6,7 +6,9 @@ import os
 from typing import Any, Callable
 
 from aicrm_next.automation_engine.group_ops.domain import normalize_group_admin_userids
+from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
 from aicrm_next.platform_foundation.internal_events.shadow import emit_broadcast_task_created_shadow_event, safe_emit
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.postgres_connection import get_db
 
 from .audit import record_audit_event
@@ -38,6 +40,28 @@ def _safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _requested_chat_ids(payload: dict[str, Any]) -> list[str]:
     return [str(item or "").strip() for item in list((payload or {}).get("chat_ids") or []) if str(item or "").strip()]
+
+
+def _record_legacy_runtime_marker(legacy_key: str, *, metadata: dict[str, Any] | None = None) -> None:
+    try:
+        mark_legacy_path_invoked(
+            legacy_path="broadcast_task.legacy_group_ops_queue_gateway",
+            replacement_event_type="broadcast_task.created",
+            replacement_consumer="broadcast_queue_projection_consumer",
+            source_module="integration_gateway.wecom_group_adapter",
+            source_route="NextGroupOpsQueueGateway.enqueue_group_message",
+            aggregate_id=(metadata or {}).get("plan_id") or "",
+            reason="group_ops_queue_gateway_replaced_by_broadcast_task_created",
+        )
+        LegacyWebhookCleanupService().record_runtime_marker(
+            legacy_key,
+            marker="legacy_path_invoked",
+            operator="integration_gateway.wecom_group_adapter",
+            metadata=metadata or {},
+            real_external_call_executed=False,
+        )
+    except Exception:
+        pass
 
 
 class WeComGroupMessageAdapter:
@@ -581,6 +605,10 @@ class NextGroupOpsQueueGateway:
         created_by: str = "group_ops_webhook",
     ) -> int:
         cleaned_chat_ids = [str(item or "").strip() for item in chat_ids if str(item or "").strip()]
+        _record_legacy_runtime_marker(
+            "old_group_ops_queue_gateway_send",
+            metadata={"operation": "enqueue_group_message", "plan_id": plan_id, "plan_id_present": bool(plan_id), "chat_count": len(cleaned_chat_ids)},
+        )
         payload = dict(content_payload or {})
         payload["channel"] = "wecom_customer_group"
         payload["chat_ids"] = cleaned_chat_ids

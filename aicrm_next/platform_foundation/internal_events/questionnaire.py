@@ -6,6 +6,7 @@ from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
 
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
+from .legacy_path_markers import mark_legacy_path_invoked
 from .models import InternalEvent, InternalEventConsumerResult, InternalEventConsumerRun
 
 QUESTIONNAIRE_SUBMITTED_EVENT_TYPE = "questionnaire.submitted"
@@ -66,6 +67,18 @@ def _target_url(questionnaire: dict[str, Any]) -> str:
 
 def _bool(value: Any) -> bool:
     return str(value if value is not None else "").strip().lower() in {"1", "true", "yes", "on", "t"}
+
+
+def _mark_legacy_hook(event: InternalEvent, run: InternalEventConsumerRun, *, legacy_path: str, reason: str) -> None:
+    mark_legacy_path_invoked(
+        legacy_path=legacy_path,
+        replacement_event_type=event.event_type,
+        replacement_consumer=run.consumer_name,
+        source_module="platform_foundation.internal_events.questionnaire",
+        source_route=f"/internal-events/{event.event_type}/{run.consumer_name}",
+        aggregate_id=event.aggregate_id or event.subject_id,
+        reason=reason,
+    )
 
 
 def _questionnaire_external_body(
@@ -133,6 +146,12 @@ def questionnaire_projection_consumer(event: InternalEvent, run: InternalEventCo
 
 
 def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="questionnaire.legacy_webhook_external_push",
+        reason="questionnaire_webhook_replaced_by_internal_event_consumer",
+    )
     questionnaire = _questionnaire_from_event(event)
     submission = _submission_from_event(event)
     submission_id = _submission_id(event, submission)
@@ -256,6 +275,12 @@ def questionnaire_webhook_consumer(event: InternalEvent, run: InternalEventConsu
 
 
 def questionnaire_tag_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="questionnaire.legacy_tag_side_effect",
+        reason="questionnaire_tag_hook_replaced_by_internal_event_consumer",
+    )
     return InternalEventConsumerResult(
         status="skipped",
         request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
@@ -265,6 +290,12 @@ def questionnaire_tag_consumer(event: InternalEvent, run: InternalEventConsumerR
 
 
 def automation_questionnaire_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    _mark_legacy_hook(
+        event,
+        run,
+        legacy_path="questionnaire.legacy_automation_trigger",
+        reason="questionnaire_automation_hook_replaced_by_internal_event_consumer",
+    )
     return InternalEventConsumerResult(
         status="skipped",
         request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},

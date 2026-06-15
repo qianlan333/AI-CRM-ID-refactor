@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 
 from .models import InternalEvent, InternalEventConsumerAttempt, InternalEventConsumerRun
+from .legacy_path_markers import legacy_path_marker_diagnostics
 from .repository import InternalEventRepository, build_internal_event_repository
 from .service import InternalEventService
 
@@ -235,6 +236,7 @@ def build_diagnostics_payload(params: dict[str, Any] | None = None, *, service: 
     service = service or InternalEventService()
     filters = internal_event_filters(params)
     payload = service.diagnostics(filters)
+    payload.update(legacy_path_marker_diagnostics())
     payload["filters"] = _public_filters(filters)
     payload["route_owner"] = ROUTE_OWNER
     payload["real_external_call_executed"] = False

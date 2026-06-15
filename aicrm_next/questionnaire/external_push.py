@@ -9,6 +9,8 @@ from typing import Any
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
 from aicrm_next.platform_foundation.external_effects.models import public_datetime, utcnow
+from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.shared.runtime_settings import runtime_setting
 
 STATUS_SUCCESS = "success"
@@ -28,6 +30,25 @@ def deliver_questionnaire_external_push(
     submission: dict[str, Any],
     computed_result: dict[str, Any],
 ) -> dict[str, Any]:
+    try:
+        mark_legacy_path_invoked(
+            legacy_path="questionnaire.legacy_webhook_external_push",
+            replacement_event_type="questionnaire.submitted",
+            replacement_consumer="questionnaire_webhook_consumer",
+            source_module="questionnaire.external_push",
+            source_route="questionnaire.deliver_questionnaire_external_push",
+            aggregate_id=(submission or {}).get("submission_id") or (submission or {}).get("id") or "",
+            reason="questionnaire_external_push_replaced_by_internal_event_consumer",
+        )
+        LegacyWebhookCleanupService().record_runtime_marker(
+            "old_questionnaire_sync_external_push",
+            marker="legacy_path_invoked",
+            operator="questionnaire.external_push",
+            metadata={"questionnaire_id_present": bool((questionnaire or {}).get("id")), "submission_id_present": bool((submission or {}).get("submission_id"))},
+            real_external_call_executed=False,
+        )
+    except Exception:
+        pass
     config = dict(questionnaire.get("external_push_config") or {})
     if not _bool(config.get("enabled") or questionnaire.get("external_push_enabled")):
         return {"enabled": False, "attempted": False, "ok": True, "reason": "external_push_disabled"}

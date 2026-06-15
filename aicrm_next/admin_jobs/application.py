@@ -11,6 +11,7 @@ from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.message_archive.sync_service import execute_archive_sync
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_GENERIC_PUSH
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 
 from .domain import (
     BROADCAST_SOURCE_TYPES,
@@ -31,6 +32,19 @@ from .repository import AdminJobsRepository, build_admin_jobs_repository, clean_
 
 TARGET_JOBS_ACTION = "jobs_console_action"
 TARGET_BROADCAST_JOB = "broadcast_job"
+
+
+def _record_legacy_marker(legacy_key: str, *, marker: str = "legacy_path_invoked", metadata: dict[str, Any] | None = None) -> None:
+    try:
+        LegacyWebhookCleanupService().record_runtime_marker(
+            legacy_key,
+            marker=marker,
+            operator="admin_jobs.application",
+            metadata=metadata or {},
+            real_external_call_executed=False,
+        )
+    except Exception:
+        pass
 
 
 def _operator(value: Any) -> str:
@@ -326,6 +340,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
         if not normalized_bool(form.get("confirm")):
             raise ValueError("执行待处理作业前请先勾选确认")
         limit = normalized_int(form.get("limit"), default=20)
+        _record_legacy_marker("old_admin_jobs_deferred_run", metadata={"action": action, "limit": limit})
         payload = repo.run_due_deferred_jobs(limit=limit, operator=operator_value)
         _audit(repo, operator=operator_value, action_type="run_deferred_jobs", target_type=TARGET_JOBS_ACTION, target_id=f"limit:{limit}", before={"limit": limit}, after=payload)
         return payload
@@ -336,6 +351,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
         before = repo.get_webhook_delivery(delivery_id)
         if not before:
             raise LookupError("delivery not found")
+        _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"action": action, "delivery_id_present": True})
         payload = retry_webhook_delivery(repo, before)
         _audit(repo, operator=operator_value, action_type="retry_webhook_delivery", target_type=TARGET_JOBS_ACTION, target_id=str(delivery_id), before=before, after=payload)
         return payload
@@ -344,6 +360,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
             raise ValueError("执行 webhook 自动重试前请先勾选确认")
         limit = normalized_int(form.get("limit"), default=20)
         deliveries = repo.due_webhook_deliveries(limit=limit)
+        _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"action": action, "limit": limit, "candidate_count": len(deliveries)})
         results = [retry_webhook_delivery(repo, row) for row in deliveries]
         payload = {"ok": True, "count": len(results), "retried_count": len(results), "success_count": sum(1 for item in results if item.get("ok")), "failed_count": sum(1 for item in results if not item.get("ok")), "deliveries": results}
         _audit(repo, operator=operator_value, action_type="run_webhook_retries", target_type=TARGET_JOBS_ACTION, target_id=f"limit:{limit}", before={"limit": limit}, after=payload)
@@ -352,6 +369,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str, repo: AdminJob
 
 
 def retry_webhook_delivery(repo: AdminJobsRepository, delivery: dict[str, Any]) -> dict[str, Any]:
+    _record_legacy_marker("old_customer_webhook_delivery_retry", metadata={"operation": "retry_webhook_delivery", "delivery_id_present": bool(delivery.get("id"))})
     if normalized_text(delivery.get("status")) == "success":
         raise ValueError("delivery already succeeded")
     now = datetime.now(timezone.utc)
@@ -542,6 +560,7 @@ def _broadcast_job_view(row: dict[str, Any]) -> dict[str, Any]:
 def approve_broadcast_job(job_id: int, *, operator: str, repo: AdminJobsRepository | None = None) -> dict[str, Any]:
     repo = repo or build_admin_jobs_repository()
     before = repo.get_broadcast_job(job_id) or {}
+    _record_legacy_marker("old_broadcast_jobs_direct_approve_cancel", metadata={"operation": "approve_broadcast_job", "job_id_present": bool(job_id)})
     after = repo.approve_broadcast_job(job_id, approved_by=_operator(operator))
     if not after:
         raise ValueError("job not approvable (not waiting_approval)")
@@ -553,6 +572,7 @@ def approve_broadcast_job(job_id: int, *, operator: str, repo: AdminJobsReposito
 def cancel_broadcast_job(job_id: int, *, operator: str, reason: str = "", repo: AdminJobsRepository | None = None) -> dict[str, Any]:
     repo = repo or build_admin_jobs_repository()
     before = repo.get_broadcast_job(job_id) or {}
+    _record_legacy_marker("old_broadcast_jobs_direct_approve_cancel", metadata={"operation": "cancel_broadcast_job", "job_id_present": bool(job_id)})
     after = repo.cancel_broadcast_job(job_id, cancelled_by=_operator(operator), reason=normalized_text(reason))
     if not after:
         raise ValueError("job not cancelable (not queued or waiting_approval)")

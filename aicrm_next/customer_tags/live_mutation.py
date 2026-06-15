@@ -5,6 +5,7 @@ from typing import Any
 from aicrm_next.platform_foundation.audit_ledger import InMemoryAuditLedger
 from aicrm_next.platform_foundation.command_bus import Command, CommandBus, CommandContext, CommandResult
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WECOM_CONTACT_TAG_MARK, WECOM_CONTACT_TAG_UNMARK
+from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
 from aicrm_next.platform_foundation.internal_events.shadow import emit_customer_tag_shadow_event, safe_emit
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 
@@ -142,6 +143,15 @@ def _handle_plan_mutation(command: Command) -> dict[str, Any]:
     effect_type = command.command_name
     external_userid = str(command.payload.get("external_userid") or "").strip()
     tag_ids = list(command.payload.get("tag_ids") or [])
+    mark_legacy_path_invoked(
+        legacy_path="customer_tag.legacy_wecom_side_effect_planning",
+        replacement_event_type="customer.untagged" if effect_type == "wecom.tag.unmark" else "customer.tagged",
+        replacement_consumer="tag_external_effect_shadow_consumer",
+        source_module="customer_tags.live_mutation",
+        source_route="execute_wecom_tag_mutation",
+        aggregate_id=command.idempotency_key or command.command_id,
+        reason="customer_tag_wecom_side_effect_replaced_by_internal_event_consumer",
+    )
     plan = _create_side_effect_plan(
         command=command,
         effect_type=effect_type,

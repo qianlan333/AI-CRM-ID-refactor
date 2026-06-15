@@ -101,6 +101,9 @@ class LegacyCleanupRepository:
     def recent_legacy_execution_count(self, *, legacy_key: str, since: datetime) -> int:
         raise NotImplementedError
 
+    def legacy_action_counts(self, *, since: datetime) -> dict[str, dict[str, int]]:
+        raise NotImplementedError
+
 
 class SQLAlchemyLegacyCleanupRepository(LegacyCleanupRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
@@ -310,6 +313,26 @@ class SQLAlchemyLegacyCleanupRepository(LegacyCleanupRepository):
         )
         return int((row or {}).get("total") or 0)
 
+    def legacy_action_counts(self, *, since: datetime) -> dict[str, dict[str, int]]:
+        rows = self._all(
+            """
+            SELECT legacy_key, action, COUNT(*) AS total
+            FROM legacy_webhook_cleanup_audit
+            WHERE action IN ('legacy_path_invoked', 'legacy_real_execution')
+              AND created_at >= CAST(:since AS timestamptz)
+            GROUP BY legacy_key, action
+            """,
+            {"since": public_datetime(since)},
+        )
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            key = _text(row.get("legacy_key"))
+            action = _text(row.get("action"))
+            if not key or not action:
+                continue
+            counts.setdefault(key, {})[action] = int(row.get("total") or 0)
+        return counts
+
 
 class InMemoryLegacyCleanupRepository(LegacyCleanupRepository):
     def __init__(self) -> None:
@@ -459,6 +482,22 @@ class InMemoryLegacyCleanupRepository(LegacyCleanupRepository):
                 and created >= since
             ]
         )
+
+    def legacy_action_counts(self, *, since: datetime) -> dict[str, dict[str, int]]:
+        counts: dict[str, dict[str, int]] = {}
+        for row in self._audits:
+            action = _text(row.get("action"))
+            if action not in {"legacy_path_invoked", "legacy_real_execution"}:
+                continue
+            created = _dt(row.get("created_at"))
+            if created is None or created < since:
+                continue
+            key = _text(row.get("legacy_key"))
+            if not key:
+                continue
+            bucket = counts.setdefault(key, {})
+            bucket[action] = bucket.get(action, 0) + 1
+        return counts
 
     def _find(self, legacy_key: str) -> dict[str, Any] | None:
         key = _text(legacy_key)

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from aicrm_next.platform_foundation.command_bus import CommandContext
 from aicrm_next.platform_foundation.external_effects import ExternalEffectService, WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH
+from aicrm_next.platform_foundation.internal_events.legacy_path_markers import mark_legacy_path_invoked
+from aicrm_next.platform_foundation.legacy_cleanup.service import LegacyWebhookCleanupService
 from aicrm_next.platform_foundation.side_effects import InMemorySideEffectPlanRepository, SideEffectPlan
 from aicrm_next.shared.errors import NotFoundError
 
@@ -19,6 +21,28 @@ STATUS_SKIPPED = "skipped"
 STATUS_PLANNED = "planned"
 _REAL_RETRY_ENV = "AICRM_QUESTIONNAIRE_EXTERNAL_PUSH_RETRY_REAL_ENABLED"
 _plans = InMemorySideEffectPlanRepository()
+
+
+def _record_legacy_marker(metadata: dict[str, Any] | None = None) -> None:
+    try:
+        mark_legacy_path_invoked(
+            legacy_path="questionnaire.legacy_webhook_retry",
+            replacement_event_type="questionnaire.submitted",
+            replacement_consumer="questionnaire_webhook_consumer",
+            source_module="questionnaire.external_push_logs",
+            source_route="QuestionnaireExternalPushRetryService.retry_one",
+            aggregate_id=(metadata or {}).get("push_log_id") or "",
+            reason="questionnaire_webhook_retry_replaced_by_internal_event_consumer",
+        )
+        LegacyWebhookCleanupService().record_runtime_marker(
+            "old_questionnaire_sync_external_push",
+            marker="legacy_path_invoked",
+            operator="questionnaire.external_push_logs",
+            metadata=metadata or {},
+            real_external_call_executed=False,
+        )
+    except Exception:
+        pass
 
 
 @dataclass(frozen=True)
@@ -216,6 +240,7 @@ class QuestionnaireExternalPushRetryService:
         self._adapter = adapter or ExternalPushDeliveryAdapter()
 
     def retry_one(self, command: QuestionnaireExternalPushRetryCommand) -> dict[str, Any]:
+        _record_legacy_marker({"operation": "retry_one", "push_log_id_present": bool(command.push_log_id)})
         source = self._repo.get_external_push_log(int(command.push_log_id))
         if not source:
             raise NotFoundError("questionnaire external push log not found")

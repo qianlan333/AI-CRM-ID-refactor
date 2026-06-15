@@ -90,7 +90,12 @@ def test_cleanup_run_due_blocks_when_recent_legacy_execution_exists() -> None:
         after={"real_external_call_executed": True},
     )
 
-    result = service.run_due(dry_run=False, now=now, limit=1, operator="pytest-cleanup")
+    result = service.run_due(
+        dry_run=False,
+        now=now,
+        limit=len(DEFAULT_LEGACY_DEPRECATIONS),
+        operator="pytest-cleanup",
+    )
     failed = repo.get_deprecation("old_ai_assist_direct_send")
 
     assert result["counts"]["failed"] == 1
@@ -98,6 +103,52 @@ def test_cleanup_run_due_blocks_when_recent_legacy_execution_exists() -> None:
     assert failed.delete_status == "failed"
     assert failed.notes_json["error"] == "recent_legacy_execution_detected"
     assert repo.list_audits(legacy_key="old_ai_assist_direct_send", limit=10)[0].action == "delete_legacy_entry_failed"
+
+
+def test_runtime_marker_adds_observation_counters_without_real_external_call() -> None:
+    reset_legacy_cleanup_fixture_state()
+    now = _fixed_now()
+    service = LegacyWebhookCleanupService()
+    service.ensure_default_deprecations(now=now)
+
+    invoked = service.record_runtime_marker(
+        "old_external_push_outbox_worker",
+        operator="pytest",
+        metadata={"operation": "run_due_external_push_events"},
+    )
+    real = service.record_runtime_marker(
+        "old_payment_direct_automation_bridge",
+        marker="legacy_real_execution",
+        operator="pytest",
+        metadata={"event_type": "payment.succeeded"},
+        real_external_call_executed=False,
+    )
+    status = service.status()
+    by_key = {item["legacy_key"]: item for item in status["items"]}
+
+    assert invoked["ok"] is True
+    assert real["ok"] is True
+    assert invoked["real_external_call_executed"] is False
+    assert by_key["old_external_push_outbox_worker"]["runtime_observation"]["legacy_path_invoked_count"] == 1
+    assert by_key["old_external_push_outbox_worker"]["runtime_observation"]["legacy_real_execution_count"] == 0
+    assert by_key["old_payment_direct_automation_bridge"]["runtime_observation"]["legacy_real_execution_count"] == 1
+    assert status["runtime_observation"]["legacy_path_invoked_count"] == 1
+    assert status["runtime_observation"]["legacy_real_execution_count"] == 1
+    assert status["real_external_call_executed"] is False
+
+
+def test_disabled_payload_marks_legacy_invocation_for_observation() -> None:
+    reset_legacy_cleanup_fixture_state()
+    service = LegacyWebhookCleanupService()
+    service.ensure_default_deprecations(now=_fixed_now())
+
+    body = service.disabled_payload("old_customer_webhook_delivery_retry", error="legacy_webhook_retry_disabled")
+    status = service.status({"legacy_key": "old_customer_webhook_delivery_retry"})
+
+    assert body["ok"] is False
+    assert body["legacy_outbound_disabled"] is True
+    assert status["items"][0]["runtime_observation"]["legacy_path_invoked_count"] == 1
+    assert status["items"][0]["runtime_observation"]["legacy_real_execution_count"] == 0
 
 
 def test_legacy_cleanup_api_requires_token_for_run_due(next_client: TestClient, monkeypatch) -> None:

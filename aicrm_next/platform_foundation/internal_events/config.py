@@ -57,6 +57,19 @@ def owner_migration_internal_events_enabled() -> bool:
     return internal_events_enabled() and env_bool("AICRM_INTERNAL_EVENTS_OWNER_MIGRATION_ENABLED", default=False)
 
 
+def legacy_path_markers_enabled() -> bool:
+    return env_bool("AICRM_INTERNAL_EVENTS_LEGACY_PATH_MARKERS_ENABLED", default=False)
+
+
+def legacy_path_retire_after_days() -> int:
+    raw = _text(os.getenv("AICRM_INTERNAL_EVENTS_LEGACY_PATH_RETIRE_AFTER_DAYS"))
+    try:
+        parsed = int(raw or 7)
+    except (TypeError, ValueError):
+        parsed = 7
+    return max(1, min(parsed, 365))
+
+
 def internal_events_shadow_only() -> bool:
     return env_bool("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", default=not fixture_mode())
 
@@ -147,6 +160,8 @@ def diagnostics_payload() -> dict[str, Any]:
         "ops_plan_internal_events_enabled": ops_plan_internal_events_enabled(),
         "broadcast_task_internal_events_enabled": broadcast_task_internal_events_enabled(),
         "owner_migration_internal_events_enabled": owner_migration_internal_events_enabled(),
+        "legacy_path_markers_enabled": legacy_path_markers_enabled(),
+        "legacy_path_retire_after_days": legacy_path_retire_after_days(),
         "shadow_only": internal_events_shadow_only(),
         "auto_execute_enabled": auto_execute_enabled(),
         "allowed_event_types": allowed_event_types(),
