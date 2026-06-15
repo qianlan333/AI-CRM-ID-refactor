@@ -8,6 +8,7 @@ from aicrm_next.platform_foundation.command_bus import Command, CommandContext
 from .config import (
     ai_campaign_internal_events_enabled,
     allowed_event_types,
+    broadcast_task_internal_events_enabled,
     customer_tags_internal_events_enabled,
     event_type_allowed,
     internal_events_enabled,
@@ -157,6 +158,14 @@ def ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRu
     return _skipped("ai_assist_notify_not_configured", event, run)
 
 
+def broadcast_task_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("broadcast_task_ai_assist_notify_not_configured", event, run)
+
+
+def legacy_broadcast_task_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    return _skipped("broadcast_task_legacy_ai_assist_notify_not_configured", event, run)
+
+
 def ai_campaign_ai_assist_notify_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
     return _skipped("ai_campaign_ai_assist_notify_not_configured", event, run)
 
@@ -178,10 +187,32 @@ def broadcast_task_planner_consumer(event: InternalEvent, run: InternalEventCons
 
 
 def broadcast_queue_projection_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == BROADCAST_TASK_CREATED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "broadcast_queue_projection": "broadcast_task_created_recorded",
+                "real_external_call_executed": False,
+            },
+            result_summary={"broadcast_queue_projection": "broadcast_task_created_recorded"},
+        )
     return _succeeded_noop("broadcast_queue_projection_shadow_only", event, run)
 
 
 def push_center_link_consumer(event: InternalEvent, run: InternalEventConsumerRun) -> InternalEventConsumerResult:
+    if event.event_type == BROADCAST_TASK_CREATED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "push_center_link": "shadow_only",
+                "real_external_call_executed": False,
+            },
+            result_summary={"push_center_link": "shadow_only"},
+        )
     return _succeeded_noop("push_center_link_shadow_only", event, run)
 
 
@@ -213,6 +244,17 @@ def audit_projection_consumer(event: InternalEvent, run: InternalEventConsumerRu
                 "audit_projection": "ops_plan_approved_recorded",
             },
             result_summary={"audit_projection": "ops_plan_approved_recorded"},
+        )
+    if event.event_type == BROADCAST_TASK_CREATED_EVENT_TYPE:
+        return InternalEventConsumerResult(
+            status="succeeded",
+            request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
+            response_summary={
+                "succeeded": True,
+                "audit_projection": "broadcast_task_created_recorded",
+                "real_external_call_executed": False,
+            },
+            result_summary={"audit_projection": "broadcast_task_created_recorded"},
         )
     return _succeeded_noop("audit_projection_shadow_only", event, run)
 
@@ -247,7 +289,9 @@ def register_shadow_event_consumers(registry: InternalEventConsumerRegistry | No
 
     registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "broadcast_queue_projection_consumer", broadcast_queue_projection_consumer, consumer_type="projection")
     registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "push_center_link_consumer", push_center_link_consumer, consumer_type="projection")
-    registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "ai_assist_notify_consumer", ai_assist_notify_consumer, consumer_type="orchestration")
+    registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "broadcast_task_ai_assist_notify_consumer", broadcast_task_ai_assist_notify_consumer, consumer_type="orchestration")
+    registry.register(BROADCAST_TASK_CREATED_EVENT_TYPE, "audit_projection_consumer", audit_projection_consumer, consumer_type="projection")
+    registry.register_handler_alias(BROADCAST_TASK_CREATED_EVENT_TYPE, "ai_assist_notify_consumer", legacy_broadcast_task_ai_assist_notify_consumer)
 
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "automation_schedule_refresh_consumer", automation_schedule_refresh_consumer, consumer_type="orchestration")
     registry.register(OPS_PLAN_APPROVED_EVENT_TYPE, "ops_plan_ai_assist_notify_consumer", ops_plan_ai_assist_notify_consumer, consumer_type="orchestration")
@@ -534,19 +578,56 @@ def emit_broadcast_task_created_shadow_event(
     operator: str = "",
     source: str = "",
 ) -> dict[str, Any]:
-    if not _event_enabled(BROADCAST_TASK_CREATED_EVENT_TYPE):
+    if not broadcast_task_internal_events_enabled():
+        return {"status": "skipped", "reason": "broadcast_task_internal_events_disabled"}
+    configured_event_types = allowed_event_types()
+    if not configured_event_types or BROADCAST_TASK_CREATED_EVENT_TYPE not in set(configured_event_types):
+        return {"status": "skipped", "reason": "broadcast_task_event_type_not_explicitly_allowed"}
+    if not event_type_allowed(BROADCAST_TASK_CREATED_EVENT_TYPE, configured=configured_event_types):
         return {"status": "skipped", "reason": "internal_events_disabled_or_event_type_not_allowed"}
     job_id = _text(job.get("id") or job.get("job_id") or job.get("broadcast_job_id"))
     if not job_id:
         return {"status": "skipped", "reason": "broadcast_job_id_missing"}
     trace_id = _text(job.get("trace_id") or job.get("idempotency_key") or job.get("source_id") or job_id)
+    source_type = _text(source or job.get("source_type") or source_module)
+    source_id = _text(job.get("source_id"))
+    batch_id = _text(job.get("batch_key") or source_id or job_id)
+    scheduled_at = _text(job.get("scheduled_at") or job.get("scheduled_for"))
+    target_count = int(job.get("target_count") or job.get("audience_count") or 0)
+    send_channel = _text(job.get("send_channel") or job.get("channel"))
+    task_type = _text(job.get("task_type") or job.get("content_type") or job.get("source_type") or "broadcast_task")
+    campaign_code = _text(job.get("campaign_code") or job.get("campaign_id"))
+    ops_plan_id = _text(job.get("ops_plan_id") or job.get("plan_id"))
+    if not ops_plan_id and source_type.startswith("cloud_plan"):
+        ops_plan_id = batch_id.removeprefix("cloud_plan_recipient:")
+    safe_job_payload = {
+        "task_id": job_id,
+        "task_code": _text(job.get("task_code") or job.get("code")),
+        "source_type": _text(job.get("source_type")),
+        "source_module": source_module,
+        "source_route": source_route,
+        "source_id": source_id,
+        "related_campaign_code": campaign_code,
+        "related_ops_plan_id": ops_plan_id,
+        "task_type": task_type,
+        "send_channel": send_channel,
+        "target_count": target_count,
+        "audience_count": target_count,
+        "created_by": _text(operator or job.get("created_by")),
+        "scheduled_at": scheduled_at,
+        "status": _text(job.get("status") or "created"),
+        "trace_id": trace_id,
+        "command_id": source_id,
+        "content_summary_present": bool(_text(job.get("content_summary"))),
+        "target_external_userids_count": len(job.get("target_external_userids") or []) if isinstance(job.get("target_external_userids"), list) else target_count,
+    }
     register_shadow_event_consumers()
     result = InternalEventService().emit_event(
         event_type=BROADCAST_TASK_CREATED_EVENT_TYPE,
         event_version=1,
-        aggregate_type="broadcast_job",
+        aggregate_type="broadcast_task",
         aggregate_id=job_id,
-        subject_type="broadcast_job",
+        subject_type="broadcast_task",
         subject_id=job_id,
         idempotency_key=f"broadcast_task.created:{job_id}",
         source_module=source_module,
@@ -559,12 +640,17 @@ def emit_broadcast_task_created_shadow_event(
             request_id=f"broadcast_task.created:{job_id}",
             source_route=source_route,
         ),
-        payload={"job": dict(job or {})},
+        payload={"broadcast_task": safe_job_payload},
         payload_summary={
-            "count": int(job.get("target_count") or 0),
-            "batch_id": _text(job.get("batch_key") or job.get("source_id") or job_id),
-            "operator": _text(operator or job.get("created_by")),
-            "source": _text(source or job.get("source_type") or source_module),
+            "task_id": job_id,
+            "task_type": task_type,
+            "send_channel": send_channel,
+            "source": source_type,
+            "campaign_code": campaign_code,
+            "ops_plan_id": ops_plan_id,
+            "target_count": target_count,
+            "status": _text(job.get("status") or "created"),
+            "scheduled": bool(scheduled_at),
         },
     )
     return {"status": "emitted", "event_id": result["event"]["event_id"], "consumer_run_count": len(result.get("consumer_runs") or [])}

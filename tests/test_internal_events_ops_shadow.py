@@ -116,7 +116,10 @@ def test_cloud_plan_approval_shadow_emits_ops_plan_approved(monkeypatch) -> None
     ]
 
 
-def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created() -> None:
+def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_BROADCAST_TASK_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "broadcast_task.created")
     reset_internal_event_fixture_state()
     reset_cloud_plan_fixture_state()
     ApproveCloudPlanCommand().execute("plan_probe", operator="pytest")
@@ -133,18 +136,24 @@ def test_cloud_plan_recipient_approval_shadow_emits_broadcast_task_created() -> 
     assert total == 1
     assert trace_total == 1
     assert trace_events[0].event_id == events[0].event_id
-    assert events[0].aggregate_type == "broadcast_job"
+    assert events[0].aggregate_type == "broadcast_task"
     assert events[0].payload_summary_json == {
-        "count": 1,
-        "batch_id": "cloud_plan_recipient:plan_probe",
-        "operator": "pytest",
+        "task_id": str(result["job_id"]),
+        "task_type": "cloud_plan",
+        "send_channel": "",
         "source": "cloud_plan_recipient_approval",
+        "campaign_code": "",
+        "ops_plan_id": "plan_probe",
+        "target_count": 1,
+        "status": "created",
+        "scheduled": False,
     }
     assert "external_userids" not in events[0].payload_summary_json
-    assert run_total == 3
+    assert run_total == 4
     assert sorted(run.consumer_name for run in runs) == [
-        "ai_assist_notify_consumer",
+        "audit_projection_consumer",
         "broadcast_queue_projection_consumer",
+        "broadcast_task_ai_assist_notify_consumer",
         "push_center_link_consumer",
     ]
 
