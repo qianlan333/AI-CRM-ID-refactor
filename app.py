@@ -86,6 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due cleanup entries.")
     cleanup_run_due.add_argument("--limit", type=int, default=50)
     cleanup_run_due.add_argument("--operator", default="cli")
+    external_effects = subparsers.add_parser("external-effects", help="External Effect Queue commands.")
+    external_effects_subparsers = external_effects.add_subparsers(dest="external_effects_command")
+    external_effects_run_due = external_effects_subparsers.add_parser("run-due", help="Run due External Effect Queue jobs.")
+    external_effects_run_due.add_argument("--dry-run", action="store_true", default=False, help="Preview due jobs without executing adapters.")
+    external_effects_run_due.add_argument("--execute", action="store_true", default=False, help="Execute due jobs when the scheduler switch is enabled.")
+    external_effects_run_due.add_argument("--limit", type=int, default=0)
+    external_effects_run_due.add_argument("--operator", default="cli")
     targets = subparsers.add_parser("p0-1-test-targets", help="P0-1 production test target manifest commands.")
     targets_subparsers = targets.add_subparsers(dest="p0_1_targets_command")
     targets_validate = targets_subparsers.add_parser("validate", help="Validate the P0-1 production test target manifest.")
@@ -133,6 +140,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             if getattr(args, "dry_run", False):
                 dry_run = True
             print_run_due_result(dry_run=dry_run, limit=getattr(args, "limit", 50), operator=getattr(args, "operator", "cli"))
+            return
+        parser.print_help()
+        return
+    if command == "external-effects":
+        if getattr(args, "external_effects_command", "") == "run-due":
+            from aicrm_next.platform_foundation.external_effects.jobs import print_run_due_result
+
+            dry_run = not bool(getattr(args, "execute", False))
+            if getattr(args, "dry_run", False):
+                dry_run = True
+            limit = int(getattr(args, "limit", 0) or 0) or None
+            print_run_due_result(dry_run=dry_run, limit=limit, operator=getattr(args, "operator", "cli"))
             return
         parser.print_help()
         return
