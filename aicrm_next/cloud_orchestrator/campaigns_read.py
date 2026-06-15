@@ -161,6 +161,7 @@ def _step_payload_view(payload: dict[str, Any]) -> dict[str, Any]:
 class CloudCampaignReadRepository(Protocol):
     def list_campaigns(self, *, review_status: str = "", run_status: str = "", group_code: str = "", limit: int = 5000, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
     def get_campaign(self, campaign_code: str) -> dict[str, Any] | None: ...
+    def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any] | None: ...
     def campaign_overview(self, campaign_code: str) -> dict[str, Any] | None: ...
     def list_members(self, campaign_code: str, *, status: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any] | None: ...
     def list_steps(self, campaign_code: str) -> dict[str, Any] | None: ...
@@ -233,6 +234,48 @@ class PostgresCloudCampaignReadRepository:
                 (campaign_code,),
             ).fetchone()
         return _campaign_view(dict(row)) if row else None
+
+    def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        campaign_code = _text(payload.get("campaign_code"))
+        if not campaign_code:
+            return None
+        existing = self.get_campaign(campaign_code)
+        if existing:
+            return existing
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        if isinstance(payload.get("metadata_json"), dict):
+            metadata = dict(payload["metadata_json"])
+        display_name = _text(payload.get("display_name") or payload.get("name") or campaign_code)
+        intent = _text(payload.get("intent") or payload.get("objective"))
+        anchor_mode = _text(payload.get("anchor_mode") or "campaign_start_date")
+        anchor_date = _text(payload.get("anchor_date"))
+        created_by_agent = _text(payload.get("created_by_agent") or payload.get("operator") or "admin_ui")
+        owner_userid = _text(payload.get("owner_userid") or payload.get("operator"))
+        trace_id = _text(payload.get("trace_id") or campaign_code)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO campaigns (
+                    campaign_code, display_name, intent, anchor_mode, anchor_date,
+                    review_status, run_status, created_by_agent, owner_userid, trace_id,
+                    metadata_json, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, 'draft', 'draft', %s, %s, %s, %s::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    campaign_code,
+                    display_name,
+                    intent,
+                    anchor_mode,
+                    anchor_date,
+                    created_by_agent,
+                    owner_userid,
+                    trace_id,
+                    json.dumps(metadata, ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+        return self.get_campaign(campaign_code)
 
     def campaign_overview(self, campaign_code: str) -> dict[str, Any] | None:
         campaign = self.get_campaign(campaign_code)
@@ -417,6 +460,37 @@ class InMemoryCloudCampaignReadRepository:
             if row["campaign_code"] == campaign_code:
                 return _campaign_view(copy.deepcopy(row))
         return None
+
+    def create_campaign(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        campaign_code = _text(payload.get("campaign_code"))
+        if not campaign_code:
+            return None
+        existing = self.get_campaign(campaign_code)
+        if existing:
+            return existing
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        if isinstance(payload.get("metadata_json"), dict):
+            metadata = dict(payload["metadata_json"])
+        row = {
+            "id": max([int(item.get("id") or 0) for item in self.campaigns] or [0]) + 1,
+            "campaign_code": campaign_code,
+            "display_name": _text(payload.get("display_name") or payload.get("name") or campaign_code),
+            "intent": _text(payload.get("intent") or payload.get("objective")),
+            "anchor_mode": _text(payload.get("anchor_mode") or "campaign_start_date"),
+            "anchor_date": _text(payload.get("anchor_date")),
+            "review_status": _text(payload.get("review_status") or "draft"),
+            "run_status": _text(payload.get("run_status") or "draft"),
+            "created_by_agent": _text(payload.get("created_by_agent") or payload.get("operator") or "admin_ui"),
+            "owner_userid": _text(payload.get("owner_userid") or payload.get("operator")),
+            "trace_id": _text(payload.get("trace_id") or campaign_code),
+            "created_at": "2026-06-03T15:00:00+08:00",
+            "updated_at": "2026-06-03T15:00:00+08:00",
+            "metadata_json": metadata,
+            "segment_count": int(payload.get("segment_count") or 0),
+            "member_count": int(payload.get("member_count") or payload.get("target_count") or 0),
+        }
+        self.campaigns.append(row)
+        return _campaign_view(copy.deepcopy(row))
 
     def update_campaign_status(
         self,

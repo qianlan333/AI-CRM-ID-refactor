@@ -44,6 +44,7 @@ from .campaigns_write import (
     BatchStartCloudCampaignsCommand,
     CloudCampaignWriteInputError,
     CloudCampaignWriteNotFoundError,
+    CreateCloudCampaignCommand,
     DeleteCloudCampaignCommand,
     DeleteCloudCampaignStepCommand,
     PauseCloudCampaignCommand,
@@ -520,6 +521,21 @@ def api_list_cloud_campaigns(
         offset=offset,
     )
     return JSONResponse(payload, headers=_CAMPAIGN_READ_HEADERS)
+
+
+@router.post("/api/admin/cloud-orchestrator/campaigns")
+async def api_create_cloud_campaign(request: Request) -> JSONResponse:
+    payload = await _campaign_write_payload(request)
+    campaign_code = str(payload.get("campaign_code") or "").strip()
+    command = CreateCloudCampaignCommand(
+        campaign_code=campaign_code,
+        **_campaign_command_common(
+            request,
+            payload,
+            "/api/admin/cloud-orchestrator/campaigns",
+        ),
+    )
+    return _campaign_write_response(command)
 
 
 @router.get("/api/admin/cloud-orchestrator/campaigns/{campaign_code}")

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi.testclient import TestClient
 
 from aicrm_next.cloud_orchestrator.campaigns_read import reset_campaign_read_fixture_state
 from aicrm_next.cloud_orchestrator.campaigns_write import (
     ApproveCloudCampaignCommand,
+    CreateCloudCampaignCommand,
     StartCloudCampaignCommand,
     execute_cloud_campaign_command,
     reset_campaign_write_fixture_state,
@@ -117,41 +116,64 @@ def test_customer_tag_mark_and_unmark_shadow_emit_internal_events(monkeypatch) -
     assert InternalEventService().list_consumer_runs({"event_id": tagged_events[0].event_id})[1] == 3
 
 
-def test_ai_campaign_approve_and_start_shadow_emit_internal_events() -> None:
+def test_ai_campaign_created_approve_and_start_shadow_emit_internal_events(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_AI_CAMPAIGN_ENABLED", "1")
+    monkeypatch.setenv(
+        "AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES",
+        "ai_campaign.created,ai_campaign.approved,ai_campaign.started",
+    )
     reset_internal_event_fixture_state()
     reset_campaign_read_fixture_state()
     reset_campaign_write_fixture_state()
 
+    created = execute_cloud_campaign_command(
+        CreateCloudCampaignCommand(
+            campaign_code="camp_next_shadow_created",
+            idempotency_key="p0-2d-campaign-create",
+            source_route="/api/admin/cloud-orchestrator/campaigns",
+            payload={"display_name": "Shadow Created Campaign", "objective": "shadow created"},
+        )
+    )
     approve = execute_cloud_campaign_command(
         ApproveCloudCampaignCommand(
-            campaign_code="camp_next_read_fixture",
+            campaign_code="camp_next_shadow_created",
             idempotency_key="p0-2d-campaign-approve",
-            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/approve",
+            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_shadow_created/approve",
         )
     )
     start = execute_cloud_campaign_command(
         StartCloudCampaignCommand(
-            campaign_code="camp_next_read_fixture",
+            campaign_code="camp_next_shadow_created",
             idempotency_key="p0-2d-campaign-start",
-            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_read_fixture/start",
+            source_route="/api/admin/cloud-orchestrator/campaigns/camp_next_shadow_created/start",
         )
     )
+    created_events, created_total = InternalEventService().list_events({"event_type": "ai_campaign.created"})
     approved_events, approved_total = InternalEventService().list_events({"event_type": "ai_campaign.approved"})
     started_events, started_total = InternalEventService().list_events({"event_type": "ai_campaign.started"})
 
+    assert created["ok"] is True
+    assert created["internal_event_status"] == "emitted"
+    assert created["internal_event_id"] == created_events[0].event_id
     assert approve["ok"] is True
     assert approve["internal_event_status"] == "emitted"
     assert approve["internal_event_id"] == approved_events[0].event_id
     assert start["internal_event_id"] == started_events[0].event_id
+    assert created_total == 1
     assert approved_total == 1
     assert started_total == 1
+    assert created_events[0].idempotency_key == "ai_campaign.created:camp_next_shadow_created:created"
     assert approved_events[0].aggregate_type == "ai_campaign"
-    assert approved_events[0].aggregate_id == "camp_next_read_fixture"
-    assert approved_events[0].payload_summary_json["campaign_code"] == "camp_next_read_fixture"
+    assert approved_events[0].aggregate_id == "camp_next_shadow_created"
+    assert approved_events[0].idempotency_key == "ai_campaign.approved:camp_next_shadow_created:approved"
+    assert started_events[0].idempotency_key == "ai_campaign.started:camp_next_shadow_created:started"
+    assert approved_events[0].payload_summary_json["campaign_code"] == "camp_next_shadow_created"
     assert approved_events[0].payload_summary_json["review_status"] == "approved"
     assert started_events[0].payload_summary_json["run_status"] == "active"
-    assert InternalEventService().list_consumer_runs({"event_id": approved_events[0].event_id})[1] == 3
-    assert InternalEventService().list_consumer_runs({"event_id": started_events[0].event_id})[1] == 3
+    assert InternalEventService().list_consumer_runs({"event_id": created_events[0].event_id})[1] == 4
+    assert InternalEventService().list_consumer_runs({"event_id": approved_events[0].event_id})[1] == 4
+    assert InternalEventService().list_consumer_runs({"event_id": started_events[0].event_id})[1] == 4
 
 
 def test_shadow_emit_failure_does_not_break_original_tag_write(monkeypatch) -> None:
@@ -180,11 +202,3 @@ def test_shadow_emit_failure_does_not_break_original_tag_write(monkeypatch) -> N
     assert result["external_effect_job_id"]
     assert result["internal_event_status"] == "failed"
     assert result["real_external_call_executed"] is False
-
-
-def test_ai_campaign_created_todo_documents_missing_create_write_path() -> None:
-    source = Path("docs/queue/internal-event-shadow-todo.md").read_text(encoding="utf-8")
-
-    assert "ai_campaign.created" in source
-    assert "create-campaign command handler" in source
-    assert "Do not invent a create path" in source
