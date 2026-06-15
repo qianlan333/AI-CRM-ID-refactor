@@ -10,6 +10,7 @@ from .service import InternalEventService
 ROUTE_OWNER = "ai_crm_next"
 
 FILTER_KEYS = (
+    "event_section",
     "event_type",
     "aggregate_type",
     "aggregate_id",

@@ -25,6 +25,14 @@ from .models import (
 )
 
 _SENSITIVE_PAYLOAD_KEYS = {"token", "secret", "password", "authorization", "access_token", "refresh_token"}
+EVENT_SECTION_EVENT_TYPES: dict[str, tuple[str, ...]] = {
+    "payment": ("payment.succeeded",),
+    "questionnaire": ("questionnaire.submitted",),
+    "broadcast": ("broadcast_task.created", "ops_plan.approved"),
+    "ai_assist": ("ai_campaign.created", "ai_campaign.approved", "ai_campaign.started"),
+    "customer": ("customer.phone_bound", "customer.tagged", "customer.untagged"),
+    "owner_migration": ("owner_migration.executed",),
+}
 
 
 def _text(value: Any) -> str:
@@ -327,11 +335,21 @@ class SQLAlchemyInternalEventRepository(InternalEventRepository):
         filters = dict(filters or {})
         clauses: list[str] = []
         params: dict[str, Any] = {}
+        event_section = _text(filters.get("event_section"))
         for key in ("event_type", "aggregate_type", "aggregate_id", "subject_type", "subject_id", "trace_id", "idempotency_key", "source_module"):
             value = _text(filters.get(key))
             if value:
                 clauses.append(f"{key} = :{key}")
                 params[key] = value
+        if event_section and not _text(filters.get("event_type")):
+            known_types = sorted({event_type for values in EVENT_SECTION_EVENT_TYPES.values() for event_type in values})
+            section_types = list(EVENT_SECTION_EVENT_TYPES.get(event_section, ()))
+            if section_types:
+                clauses.append("event_type = ANY(:event_section_types)")
+                params["event_section_types"] = section_types
+            elif event_section == "other" and known_types:
+                clauses.append("NOT (event_type = ANY(:known_event_section_types))")
+                params["known_event_section_types"] = known_types
         trace_hashes = _trace_hash_candidates(filters)
         if trace_hashes:
             trace_clauses: list[str] = []
@@ -1214,10 +1232,18 @@ class InMemoryInternalEventRepository(InternalEventRepository):
 
     def _filtered_events(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
         rows = list(self._events)
+        event_section = _text(filters.get("event_section"))
         for key in ("event_type", "aggregate_type", "aggregate_id", "subject_type", "subject_id", "trace_id", "idempotency_key", "source_module"):
             value = _text(filters.get(key))
             if value:
                 rows = [row for row in rows if _text(row.get(key)) == value]
+        if event_section and not _text(filters.get("event_type")):
+            known_types = {event_type for values in EVENT_SECTION_EVENT_TYPES.values() for event_type in values}
+            section_types = set(EVENT_SECTION_EVENT_TYPES.get(event_section, ()))
+            if section_types:
+                rows = [row for row in rows if _text(row.get("event_type")) in section_types]
+            elif event_section == "other":
+                rows = [row for row in rows if _text(row.get("event_type")) not in known_types]
         trace_hashes = set(_trace_hash_candidates(filters))
         if trace_hashes:
             rows = [
