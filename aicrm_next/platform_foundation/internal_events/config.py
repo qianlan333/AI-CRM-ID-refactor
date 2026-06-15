@@ -49,6 +49,10 @@ def ops_plan_internal_events_enabled() -> bool:
     return internal_events_enabled() and env_bool("AICRM_INTERNAL_EVENTS_OPS_PLAN_ENABLED", default=False)
 
 
+def broadcast_task_internal_events_enabled() -> bool:
+    return internal_events_enabled() and env_bool("AICRM_INTERNAL_EVENTS_BROADCAST_TASK_ENABLED", default=False)
+
+
 def internal_events_shadow_only() -> bool:
     return env_bool("AICRM_INTERNAL_EVENTS_SHADOW_ONLY", default=not fixture_mode())
 
@@ -137,6 +141,7 @@ def diagnostics_payload() -> dict[str, Any]:
         "customer_identity_internal_events_enabled": customer_identity_internal_events_enabled(),
         "ai_campaign_internal_events_enabled": ai_campaign_internal_events_enabled(),
         "ops_plan_internal_events_enabled": ops_plan_internal_events_enabled(),
+        "broadcast_task_internal_events_enabled": broadcast_task_internal_events_enabled(),
         "shadow_only": internal_events_shadow_only(),
         "auto_execute_enabled": auto_execute_enabled(),
         "allowed_event_types": allowed_event_types(),

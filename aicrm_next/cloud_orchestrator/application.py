@@ -173,8 +173,7 @@ class ApproveCloudPlanRecipientCommand:
             "ok": True,
             **result,
             "stats": self._repo.plan_stats(plan_id),
-            "internal_event_id": internal_event.get("event_id") or "",
-            "internal_event_status": internal_event.get("status") or "",
+            **_internal_event_response(internal_event),
         }
 
     __call__ = execute
