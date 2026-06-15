@@ -75,7 +75,10 @@ def test_questionnaire_submit_shadow_emits_internal_event_without_changing_side_
     ]
 
 
-def test_customer_tag_mark_and_unmark_shadow_emit_internal_events() -> None:
+def test_customer_tag_mark_and_unmark_shadow_emit_internal_events(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_CUSTOMER_TAGS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "customer.tagged,customer.untagged")
     reset_internal_event_fixture_state()
     reset_wecom_tag_live_mutation_fixture_state()
 
@@ -111,7 +114,7 @@ def test_customer_tag_mark_and_unmark_shadow_emit_internal_events() -> None:
     assert tagged_events[0].payload_summary_json["external_userid_redacted"] == "wx_e..._001"
     assert tagged_events[0].payload_summary_json["tag_count"] == 2
     assert tagged_events[0].payload_summary_json["source"] == "unit_test"
-    assert InternalEventService().list_consumer_runs({"event_id": tagged_events[0].event_id})[1] == 2
+    assert InternalEventService().list_consumer_runs({"event_id": tagged_events[0].event_id})[1] == 3
 
 
 def test_ai_campaign_approve_and_start_shadow_emit_internal_events() -> None:
@@ -152,6 +155,9 @@ def test_ai_campaign_approve_and_start_shadow_emit_internal_events() -> None:
 
 
 def test_shadow_emit_failure_does_not_break_original_tag_write(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_CUSTOMER_TAGS_ENABLED", "1")
+    monkeypatch.setenv("AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_TYPES", "customer.tagged,customer.untagged")
     reset_internal_event_fixture_state()
     reset_wecom_tag_live_mutation_fixture_state()
 
