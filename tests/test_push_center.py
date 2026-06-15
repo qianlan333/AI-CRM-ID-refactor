@@ -118,6 +118,13 @@ def test_push_center_jobs_filters_and_payload_redaction(next_client: TestClient)
     assert body["items"][0]["payload_summary"]["token"] == "[redacted]"
     assert "payload_json" not in body["items"][0]
 
+    planned = next_client.get("/api/admin/push-center/jobs?section=questionnaire&status=pending").json()
+    assert planned["total"] == 1
+    assert planned["items"][0]["status"] == "pending"
+    assert planned["items"][0]["status_label"] == "待执行"
+    assert planned["items"][0]["raw_status"] == "planned"
+    assert {item["key"] for item in planned["status_definitions"]} == {"pending", "running", "succeeded", "failed"}
+
 
 def test_push_center_detail_includes_attempts_without_full_payload(next_client: TestClient) -> None:
     reset_external_effect_fixture_state()
@@ -189,9 +196,11 @@ def test_push_center_sections_stats_retry_cancel_auth(next_client: TestClient, m
     assert stats["counts"]["failed"] == 1
     assert rejected.status_code == 401
     assert retried.status_code == 200
-    assert retried.json()["job"]["status"] == "queued"
+    assert retried.json()["job"]["status"] == "pending"
+    assert retried.json()["job"]["raw_status"] == "queued"
     assert cancelled.status_code == 200
-    assert cancelled.json()["job"]["status"] == "cancelled"
+    assert cancelled.json()["job"]["status"] == "failed"
+    assert cancelled.json()["job"]["raw_status"] == "cancelled"
 
 
 def test_push_center_legacy_deprecations_api(next_client: TestClient) -> None:
@@ -248,6 +257,9 @@ def test_push_center_page_smoke(next_client: TestClient) -> None:
     assert 'timeZone: "Asia/Shanghai"' in response.text
     assert "push-center-time-date" in response.text
     assert "push-center-time-clock" in response.text
+    assert "已计划" not in response.text
+    assert "失败可重试" not in response.text
+    assert "失败不可重试" not in response.text
     assert "/api/admin/push-center/legacy-deprecations" in response.text
     assert "旧链路下线状态" in response.text
     assert "下次删除" in response.text

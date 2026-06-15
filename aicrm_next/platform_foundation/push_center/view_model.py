@@ -8,6 +8,13 @@ from aicrm_next.platform_foundation.external_effects.models import ExternalEffec
 from . import ROUTE_OWNER
 from .repository import PushCenterRepository, external_userid_for_job, owner_userid_for_job
 from .section_mapper import label_for_section, section_for_job
+from .status_mapper import (
+    attempt_status_label,
+    push_status_label,
+    standard_attempt_status,
+    standard_push_status,
+    status_definitions_payload,
+)
 
 FILTER_KEYS = (
     "section",
@@ -51,6 +58,7 @@ def public_filters(filters: dict[str, Any]) -> dict[str, str]:
 
 def _job_base(job: ExternalEffectJob) -> dict[str, Any]:
     section = section_for_job(job)
+    status = standard_push_status(job.status)
     return {
         "id": job.id,
         "source_type": "external_effect_job",
@@ -60,7 +68,9 @@ def _job_base(job: ExternalEffectJob) -> dict[str, Any]:
         "effect_type": job.effect_type,
         "adapter_name": job.adapter_name,
         "operation": job.operation,
-        "status": job.status,
+        "status": status,
+        "status_label": push_status_label(job.status),
+        "raw_status": job.status,
         "execution_mode": job.execution_mode,
         "business_type": job.business_type,
         "business_id": job.business_id,
@@ -100,6 +110,7 @@ def job_list_item(job: ExternalEffectJob) -> dict[str, Any]:
 
 
 def attempt_item(attempt: ExternalEffectAttempt) -> dict[str, Any]:
+    status = standard_attempt_status(attempt.status)
     return {
         "id": attempt.id,
         "attempt_id": attempt.attempt_id,
@@ -109,7 +120,9 @@ def attempt_item(attempt: ExternalEffectAttempt) -> dict[str, Any]:
         "operation": attempt.operation,
         "trace_id": attempt.trace_id,
         "request_id": attempt.request_id,
-        "status": attempt.status,
+        "status": status,
+        "status_label": attempt_status_label(attempt.status),
+        "raw_status": attempt.status,
         "request_summary": scrub_summary(dict(attempt.request_summary_json or {})),
         "request_summary_json": scrub_summary(dict(attempt.request_summary_json or {})),
         "response_summary": scrub_summary(dict(attempt.response_summary_json or {})),
@@ -127,6 +140,7 @@ def build_sections_payload(params: dict[str, Any] | None = None, *, repository: 
     return {
         "ok": True,
         "sections": repository.sections(filters),
+        "status_definitions": status_definitions_payload(),
         "filters": public_filters(filters),
         "route_owner": ROUTE_OWNER,
     }
@@ -144,6 +158,7 @@ def build_jobs_payload(params: dict[str, Any] | None = None, *, repository: Push
         "total": total,
         "counts": repository.counts(filters),
         "sections": repository.sections(filters),
+        "status_definitions": status_definitions_payload(),
         "filters": public_filters(filters),
         "limit": limit,
         "offset": offset,
@@ -159,6 +174,7 @@ def build_stats_payload(params: dict[str, Any] | None = None, *, repository: Pus
         "ok": True,
         "counts": repository.counts(filters),
         "sections": repository.sections(filters),
+        "status_definitions": status_definitions_payload(),
         "filters": public_filters(filters),
         "route_owner": ROUTE_OWNER,
         "real_external_call_executed": False,
