@@ -98,6 +98,24 @@ def redact_external_effect_payload(value: Any, *, key: str = "") -> Any:
     return value
 
 
+def redact_external_effect_admin_response(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for item_key, item_value in value.items():
+            if item_key == "payload_json" and isinstance(item_value, dict):
+                redacted[item_key] = redact_external_effect_payload(item_value)
+            elif item_key in {"payload_summary_json", "request_summary_json", "response_summary_json", "body_json", "headers_summary_json"} and isinstance(item_value, dict):
+                redacted[item_key] = redact_external_effect_payload(item_value)
+            else:
+                redacted[item_key] = redact_external_effect_admin_response(redact_external_effect_payload(item_value, key=str(item_key)))
+        return redacted
+    if isinstance(value, list):
+        return [redact_external_effect_admin_response(item) for item in value]
+    if isinstance(value, tuple):
+        return [redact_external_effect_admin_response(item) for item in value]
+    return redact_external_effect_payload(value)
+
+
 def _safe_value(value: Any, *, key: str = "") -> Any:
     return redact_external_effect_payload(value, key=key)
 

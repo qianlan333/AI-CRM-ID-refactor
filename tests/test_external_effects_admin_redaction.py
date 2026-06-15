@@ -44,7 +44,7 @@ def _assert_no_sensitive_literals(text: str) -> None:
         assert literal not in text
 
 
-def _seed_sensitive_external_effect() -> int:
+def _seed_sensitive_external_effect(*, status: str = "blocked") -> int:
     reset_external_effect_fixture_state()
     service = ExternalEffectService()
     context = CommandContext(
@@ -93,7 +93,7 @@ def _seed_sensitive_external_effect() -> int:
         source_module="tests.external_effects_admin_redaction",
         source_command_id=f"cmd-{RAW_EXTERNAL_USERID}",
         idempotency_key=f"admin-redaction:{RAW_PROVIDER_TRANSACTION_ID}",
-        status="blocked",
+        status=status,
     )
     repo = build_external_effect_repository()
     job = repo.get_job(int(created["id"]))
@@ -205,3 +205,29 @@ def test_external_effect_retry_and_cancel_responses_are_redacted(next_client: Te
     _assert_no_sensitive_literals(cancelled.text)
     assert retried.json()["job"]["payload_json"]["webhook_token"] == "[redacted]"
     assert cancelled.json()["job"]["payload_json"]["authorization"] == "[redacted]"
+
+
+def test_external_effect_run_due_preview_and_dry_run_responses_are_redacted(next_client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("AUTOMATION_INTERNAL_API_TOKEN", "effect-token")
+    _seed_sensitive_external_effect(status="queued")
+
+    preview = next_client.post(
+        "/api/admin/external-effects/run-due/preview",
+        headers={"Authorization": "Bearer effect-token"},
+        json={"batch_size": 1, "effect_types": [WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH]},
+    )
+    dry_run = next_client.post(
+        "/api/admin/external-effects/run-due",
+        headers={"Authorization": "Bearer effect-token"},
+        json={"batch_size": 1, "dry_run": True, "effect_types": [WEBHOOK_QUESTIONNAIRE_SUBMISSION_PUSH]},
+    )
+
+    for response in (preview, dry_run):
+        assert response.status_code == 200
+        _assert_no_sensitive_literals(response.text)
+        body = response.json()
+        assert body["dry_run"] is True
+        assert body["real_external_call_executed"] is False
+        assert body["items"][0]["payload_json"]["mobile"] == "[redacted]"
+        assert body["items"][0]["payload_json"]["webhook_url"] == "[redacted]"
+        assert body["items"][0]["target_id"] == "[redacted]"
