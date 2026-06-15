@@ -9,6 +9,8 @@ from aicrm_next.shared.runtime import fixture_mode
 
 from .config import (
     allowed_consumers,
+    allowed_event_consumer_pairs,
+    allowed_event_consumers,
     allowed_event_types,
     auto_execute_enabled,
     auto_execute_max_batch_size,
@@ -97,12 +99,42 @@ class InternalEventWorker:
             return [item for item in requested if item in configured_set]
         return requested or configured or None
 
+    def _requested_event_types(self, event_types: list[str] | None = None) -> list[str]:
+        return [str(item or "").strip() for item in (event_types or []) if str(item or "").strip()]
+
+    def _requested_consumers(self, consumer_names: list[str] | None = None) -> list[str]:
+        return [str(item or "").strip() for item in (consumer_names or []) if str(item or "").strip()]
+
+    def _effective_event_consumers(
+        self,
+        *,
+        event_types: list[str] | None = None,
+        consumer_names: list[str] | None = None,
+    ) -> list[tuple[str, str]] | None:
+        pairs = allowed_event_consumer_pairs()
+        if not pairs:
+            return None
+        configured_event_types = set(allowed_event_types())
+        requested_event_types = set(self._requested_event_types(event_types))
+        requested_consumers = set(self._requested_consumers(consumer_names))
+        effective: list[tuple[str, str]] = []
+        for event_type, consumer_name in pairs:
+            if configured_event_types and event_type not in configured_event_types:
+                continue
+            if requested_event_types and event_type not in requested_event_types:
+                continue
+            if requested_consumers and consumer_name not in requested_consumers:
+                continue
+            effective.append((event_type, consumer_name))
+        return effective
+
     def _empty_due_response(
         self,
         *,
         dry_run: bool,
         event_types: list[str] | None,
         consumer_names: list[str] | None,
+        event_consumers: list[tuple[str, str]] | None = None,
         error: str = "",
         message: str = "",
     ) -> dict[str, Any]:
@@ -113,6 +145,7 @@ class InternalEventWorker:
             "dry_run": bool(dry_run),
             "event_types": event_types or [],
             "consumer_names": consumer_names or [],
+            "event_consumers": [f"{event_type}:{consumer_name}" for event_type, consumer_name in (event_consumers or [])],
             "config": diagnostics_payload(),
             "real_external_call_executed": False,
         }
@@ -128,14 +161,25 @@ class InternalEventWorker:
         batch_size: int,
         event_types: list[str] | None,
         consumer_names: list[str] | None,
+        event_consumers: list[tuple[str, str]] | None,
     ) -> dict[str, Any] | None:
         if not auto_execute_enabled():
             return self._empty_due_response(
                 dry_run=False,
                 event_types=event_types,
                 consumer_names=consumer_names,
+                event_consumers=event_consumers,
                 error="internal_events_auto_execute_disabled",
                 message="Set AICRM_INTERNAL_EVENTS_AUTO_EXECUTE=1 before executing due consumers.",
+            )
+        if not allowed_event_consumers() and len(allowed_event_types()) > 1:
+            return self._empty_due_response(
+                dry_run=False,
+                event_types=event_types,
+                consumer_names=consumer_names,
+                event_consumers=event_consumers,
+                error="pair_allowlist_required_for_multi_event_auto_execute",
+                message="Set AICRM_INTERNAL_EVENTS_ALLOWED_EVENT_CONSUMERS before auto-executing multiple event types.",
             )
         max_batch_size_explicit = bool(str(os.getenv("AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE") or "").strip())
         if int(batch_size or 0) > auto_execute_max_batch_size() and (not fixture_mode() or max_batch_size_explicit):
@@ -143,14 +187,16 @@ class InternalEventWorker:
                 dry_run=False,
                 event_types=event_types,
                 consumer_names=consumer_names,
+                event_consumers=event_consumers,
                 error="batch_size_exceeds_auto_execute_limit",
                 message="Reduce batch_size or explicitly raise AICRM_INTERNAL_EVENTS_AUTO_EXECUTE_MAX_BATCH_SIZE.",
             )
-        if not fixture_mode() and (not allowed_event_types() or not allowed_consumers()):
+        if not fixture_mode() and (not allowed_event_types() or (not allowed_consumers() and not allowed_event_consumers())):
             return self._empty_due_response(
                 dry_run=False,
                 event_types=event_types,
                 consumer_names=consumer_names,
+                event_consumers=event_consumers,
                 error="auto_execute_allowlist_required",
                 message="Production auto-execute requires both event type and consumer allowlists.",
             )
@@ -158,10 +204,24 @@ class InternalEventWorker:
 
     def preview_due(self, *, batch_size: int = 10, event_types: list[str] | None = None, consumer_names: list[str] | None = None) -> dict[str, Any]:
         effective_event_types = self._effective_event_types(event_types)
-        effective_consumers = self._effective_consumers(consumer_names)
-        if effective_event_types == [] or effective_consumers == []:
-            return self._empty_due_response(dry_run=True, event_types=effective_event_types, consumer_names=effective_consumers)
-        runs = self._repo.list_due_runs(limit=batch_size, event_types=effective_event_types, consumer_names=effective_consumers)
+        effective_event_consumers = self._effective_event_consumers(event_types=event_types, consumer_names=consumer_names)
+        if effective_event_consumers is not None:
+            effective_consumers = self._requested_consumers(consumer_names) or None
+        else:
+            effective_consumers = self._effective_consumers(consumer_names)
+        if effective_event_types == [] or effective_consumers == [] or effective_event_consumers == []:
+            return self._empty_due_response(
+                dry_run=True,
+                event_types=effective_event_types,
+                consumer_names=effective_consumers,
+                event_consumers=effective_event_consumers,
+            )
+        runs = self._repo.list_due_runs(
+            limit=batch_size,
+            event_types=effective_event_types,
+            consumer_names=effective_consumers,
+            event_consumers=effective_event_consumers,
+        )
         items: list[dict[str, Any]] = []
         for run in runs:
             event = self._repo.get_event(run.event_id)
@@ -190,6 +250,7 @@ class InternalEventWorker:
             "dry_run": True,
             "event_types": effective_event_types or [],
             "consumer_names": effective_consumers or [],
+            "event_consumers": [f"{event_type}:{consumer_name}" for event_type, consumer_name in (effective_event_consumers or [])],
             "config": diagnostics_payload(),
             "real_external_call_executed": False,
         }
@@ -207,17 +268,32 @@ class InternalEventWorker:
             payload["dry_run"] = True
             return payload
         effective_event_types = self._effective_event_types(event_types)
-        effective_consumers = self._effective_consumers(consumer_names)
-        if effective_event_types == [] or effective_consumers == []:
-            return self._empty_due_response(dry_run=False, event_types=effective_event_types, consumer_names=effective_consumers)
+        effective_event_consumers = self._effective_event_consumers(event_types=event_types, consumer_names=consumer_names)
+        if effective_event_consumers is not None:
+            effective_consumers = self._requested_consumers(consumer_names) or None
+        else:
+            effective_consumers = self._effective_consumers(consumer_names)
+        if effective_event_types == [] or effective_consumers == [] or effective_event_consumers == []:
+            return self._empty_due_response(
+                dry_run=False,
+                event_types=effective_event_types,
+                consumer_names=effective_consumers,
+                event_consumers=effective_event_consumers,
+            )
         if not internal_events_enabled():
             return self._empty_due_response(
                 dry_run=False,
                 event_types=effective_event_types,
                 consumer_names=effective_consumers,
+                event_consumers=effective_event_consumers,
                 error="internal_events_disabled",
             )
-        gated = self._auto_execute_gate(batch_size=batch_size, event_types=effective_event_types, consumer_names=effective_consumers)
+        gated = self._auto_execute_gate(
+            batch_size=batch_size,
+            event_types=effective_event_types,
+            consumer_names=effective_consumers,
+            event_consumers=effective_event_consumers,
+        )
         if gated is not None:
             return gated
         runs = self._repo.acquire_due_runs(
@@ -225,6 +301,7 @@ class InternalEventWorker:
             locked_by=self._locked_by,
             event_types=effective_event_types,
             consumer_names=effective_consumers,
+            event_consumers=effective_event_consumers,
         )
         items: list[dict[str, Any]] = []
         processed: list[dict[str, Any]] = []
@@ -261,6 +338,7 @@ class InternalEventWorker:
             "dry_run": False,
             "event_types": effective_event_types or [],
             "consumer_names": effective_consumers or [],
+            "event_consumers": [f"{event_type}:{consumer_name}" for event_type, consumer_name in (effective_event_consumers or [])],
             "config": diagnostics_payload(),
             "real_external_call_executed": False,
         }

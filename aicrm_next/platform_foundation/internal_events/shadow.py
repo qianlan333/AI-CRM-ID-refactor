@@ -96,6 +96,11 @@ def tag_external_effect_shadow_consumer(event: InternalEvent, run: InternalEvent
     payload = dict(event.payload_json or {})
     external_effect_job = payload.get("external_effect_job")
     side_effect_plan = payload.get("side_effect_plan")
+    side_effect_plan_id = (
+        side_effect_plan.get("id") or side_effect_plan.get("side_effect_plan_id")
+        if isinstance(side_effect_plan, dict)
+        else None
+    )
     if isinstance(external_effect_job, dict) and external_effect_job.get("id"):
         return InternalEventConsumerResult(
             status="succeeded",
@@ -116,19 +121,19 @@ def tag_external_effect_shadow_consumer(event: InternalEvent, run: InternalEvent
                 "reason": "customer_tag_external_effect_already_planned",
             },
         )
-    if isinstance(side_effect_plan, dict) and side_effect_plan.get("id"):
+    if isinstance(side_effect_plan, dict) and side_effect_plan_id:
         return InternalEventConsumerResult(
             status="succeeded",
             request_summary={"event_id": event.event_id, "consumer_name": run.consumer_name},
             response_summary={
                 "side_effect_plan_reused": True,
-                "side_effect_plan_id": side_effect_plan.get("id"),
+                "side_effect_plan_id": side_effect_plan_id,
                 "real_external_call_executed": False,
                 "wecom_api_called": False,
             },
             result_summary={
                 "side_effect_plan_reused": True,
-                "side_effect_plan_id": side_effect_plan.get("id"),
+                "side_effect_plan_id": side_effect_plan_id,
                 "reason": "customer_tag_side_effect_already_planned",
             },
         )
@@ -351,7 +356,7 @@ def emit_customer_tag_shadow_event(
                 "trace_id": command.context.trace_id,
             },
             "side_effect_plan": {
-                "id": side_effect_summary.get("id"),
+                "id": side_effect_summary.get("id") or side_effect_summary.get("side_effect_plan_id"),
                 "effect_type": side_effect_summary.get("effect_type"),
                 "status": side_effect_summary.get("status"),
             } if side_effect_summary else {},

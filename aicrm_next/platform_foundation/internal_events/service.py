@@ -5,7 +5,13 @@ from typing import Any
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
 
-from .config import allowed_consumers, allowed_event_types, diagnostics_payload as config_diagnostics_payload
+from .config import (
+    allowed_consumers,
+    allowed_event_consumer_pairs,
+    allowed_event_consumers,
+    allowed_event_types,
+    diagnostics_payload as config_diagnostics_payload,
+)
 from .consumer_registry import DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY, InternalEventConsumerRegistry
 from .models import InternalEvent, InternalEventConsumerRun, InternalEventCreateRequest
 from .repository import InternalEventRepository, build_internal_event_repository
@@ -96,13 +102,27 @@ class InternalEventService:
         metrics = self._repo.queue_metrics(base_filters)
         configured_event_types = allowed_event_types()
         configured_consumers = allowed_consumers()
+        configured_pairs = allowed_event_consumer_pairs()
         allowed_filters = dict(base_filters)
         if configured_event_types:
             allowed_filters["event_types"] = configured_event_types
-        if configured_consumers:
+        if configured_pairs:
+            allowed_filters["event_consumers"] = configured_pairs
+        elif configured_consumers:
             allowed_filters["consumer_names"] = configured_consumers
-        allowed_metrics = self._repo.queue_metrics(allowed_filters) if (configured_event_types or configured_consumers) else metrics
+        allowed_metrics = self._repo.queue_metrics(allowed_filters) if (configured_event_types or configured_consumers or configured_pairs) else metrics
+        legacy_filters = dict(base_filters)
+        if configured_event_types:
+            legacy_filters["event_types"] = configured_event_types
+        if configured_consumers:
+            legacy_filters["consumer_names"] = configured_consumers
+        legacy_metrics = self._repo.queue_metrics(legacy_filters) if (configured_event_types or configured_consumers) else metrics
         blocked_by_config_count = max(0, int(metrics.get("due_count") or 0) - int(allowed_metrics.get("due_count") or 0))
+        blocked_by_pair_allowlist_count = (
+            max(0, int(legacy_metrics.get("due_count") or 0) - int(allowed_metrics.get("due_count") or 0))
+            if allowed_event_consumers()
+            else 0
+        )
         config = config_diagnostics_payload()
         return {
             "ok": True,
@@ -111,6 +131,7 @@ class InternalEventService:
             "queue_metrics": metrics,
             "effective_queue_metrics": allowed_metrics,
             "blocked_by_config_count": blocked_by_config_count,
+            "blocked_by_pair_allowlist_count": blocked_by_pair_allowlist_count,
             "schema_contract": {
                 "event_idempotency_constraint": "UNIQUE (tenant_id, idempotency_key)",
                 "consumer_run_uniqueness_constraint": "UNIQUE (tenant_id, event_id, consumer_name)",
